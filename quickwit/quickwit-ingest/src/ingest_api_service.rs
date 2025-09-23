@@ -185,19 +185,19 @@ impl IngestApiService {
             let index_id = doc_batch.index_id.clone();
             let records_it = doc_batch.into_iter_raw();
             let max_position = self.queues.append_batch(&index_id, records_it, ctx).await?;
-            if let Some(max_position) = max_position {
-                if commit != CommitType::Auto {
-                    if commit == CommitType::Force {
-                        self.queues
-                            .append_batch(
-                                &index_id,
-                                iter::once(DocCommand::Commit::<Bytes>.into_buf()),
-                                ctx,
-                            )
-                            .await?;
-                    }
-                    notifications.push((index_id.clone(), max_position));
+            if let Some(max_position) = max_position
+                && commit != CommitType::Auto
+            {
+                if commit == CommitType::Force {
+                    self.queues
+                        .append_batch(
+                            &index_id,
+                            iter::once(DocCommand::Commit::<Bytes>.into_buf()),
+                            ctx,
+                        )
+                        .await?;
                 }
+                notifications.push((index_id.clone(), max_position));
             }
 
             num_docs += batch_num_docs;

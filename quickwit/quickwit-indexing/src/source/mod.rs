@@ -763,7 +763,7 @@ mod test_setup_helper {
         let index_config = IndexConfig::for_test(index_id, &index_uri);
         let create_index_request = CreateIndexRequest::try_from_index_and_source_configs(
             &index_config,
-            &[source_config.clone()],
+            std::slice::from_ref(source_config),
         )
         .unwrap();
         let index_uid: IndexUid = metastore

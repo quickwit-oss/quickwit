@@ -101,7 +101,7 @@ const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB
 fn get_batch_num_bytes() -> usize {
     static BATCH_NUM_BYTES_CELL: OnceCell<usize> = OnceCell::new();
     *BATCH_NUM_BYTES_CELL.get_or_init(|| {
-        quickwit_common::get_from_env("QW_INGEST_BATCH_NUM_BYTES", DEFAULT_BATCH_NUM_BYTES)
+        quickwit_common::get_from_env("QW_INGEST_BATCH_NUM_BYTES", DEFAULT_BATCH_NUM_BYTES, false)
     })
 }
 
@@ -762,13 +762,13 @@ impl Ingester {
                     }
                 };
 
-                if let Some(expected_position_inclusive) = subrequest.expected_position_inclusive {
-                    if expected_position_inclusive != current_position_inclusive {
-                        return Err(IngestV2Error::Internal(format!(
-                            "bad replica position: expected {expected_position_inclusive:?}, got \
-                             {current_position_inclusive:?}"
-                        )));
-                    }
+                if let Some(expected_position_inclusive) = subrequest.expected_position_inclusive
+                    && expected_position_inclusive != current_position_inclusive
+                {
+                    return Err(IngestV2Error::Internal(format!(
+                        "bad replica position: expected {expected_position_inclusive:?}, got \
+                         {current_position_inclusive:?}"
+                    )));
                 }
                 state_guard
                     .shards

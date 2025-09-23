@@ -139,7 +139,7 @@ pub fn jaeger_traces_search_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     jaeger_api_path_filter()
         .and(warp::path!("traces"))
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(warp::query())
         .and(require(jaeger_service_opt))
         .then(jaeger_traces_search)
         .map(|result| make_jaeger_api_response(result, BodyFormat::default()))

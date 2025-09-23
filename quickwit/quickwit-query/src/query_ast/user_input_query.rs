@@ -178,6 +178,7 @@ fn convert_user_input_ast_to_query_ast(
                 Ok(term_set_query.into())
             }
             UserInputLeaf::Exists { field } => Ok(FieldPresenceQuery { field }.into()),
+            UserInputLeaf::Regex { .. } => bail!("regex query is not supported"),
         },
         UserInputAst::Boost(underlying, boost) => {
             let query_ast = convert_user_input_ast_to_query_ast(

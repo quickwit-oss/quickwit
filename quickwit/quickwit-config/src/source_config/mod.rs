@@ -386,12 +386,12 @@ impl TryFrom<FileSourceParamsForSerde> for FileSourceParams {
                 value.notifications.remove(0),
             ))
         } else if value.notifications.len() > 1 {
-            return Err("Only one notification can be specified for now".into());
+            Err("Only one notification can be specified for now".into())
         } else {
-            return Err(
+            Err(
                 "Either `notifications` or `filepath` must be specified as file source parameters"
                     .into(),
-            );
+            )
         }
     }
 }

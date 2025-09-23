@@ -909,27 +909,6 @@ impl QueryAstTransformer for RemoveTimestampRange<'_> {
     }
 }
 
-pub(crate) fn rewrite_start_end_time_bounds(
-    start_timestamp_opt: &mut Option<i64>,
-    end_timestamp_opt: &mut Option<i64>,
-    split: &SplitIdAndFooterOffsets,
-) {
-    if let (Some(split_start), Some(split_end)) = (split.timestamp_start, split.timestamp_end) {
-        if let Some(start_timestamp) = start_timestamp_opt {
-            // both starts are inclusive
-            if *start_timestamp <= split_start {
-                *start_timestamp_opt = None;
-            }
-        }
-        if let Some(end_timestamp) = end_timestamp_opt {
-            // search end is exclusive, split end is inclusive
-            if *end_timestamp > split_end {
-                *end_timestamp_opt = None;
-            }
-        }
-    }
-}
-
 /// Checks if request is a simple all query.
 /// Simple in this case would still including sorting
 fn is_simple_all_query(search_request: &SearchRequest) -> bool {
@@ -965,19 +944,14 @@ enum CanSplitDoBetter {
 impl CanSplitDoBetter {
     /// Create a CanSplitDoBetter from a SearchRequest
     fn from_request(request: &SearchRequest, timestamp_field_name: Option<&str>) -> Self {
-        if request.max_hits == 0 {
-            if let Some(aggregation) = &request.aggregation_request {
-                if let Ok(crate::QuickwitAggregations::FindTraceIdsAggregation(
-                    find_trace_aggregation,
-                )) = serde_json::from_str(aggregation)
-                {
-                    if Some(find_trace_aggregation.span_timestamp_field_name.as_str())
-                        == timestamp_field_name
-                    {
-                        return CanSplitDoBetter::FindTraceIdsAggregation(None);
-                    }
-                }
-            }
+        if request.max_hits == 0
+            && let Some(aggregation) = &request.aggregation_request
+            && let Ok(crate::QuickwitAggregations::FindTraceIdsAggregation(find_trace_aggregation)) =
+                serde_json::from_str(aggregation)
+            && Some(find_trace_aggregation.span_timestamp_field_name.as_str())
+                == timestamp_field_name
+        {
+            return CanSplitDoBetter::FindTraceIdsAggregation(None);
         }
 
         if request.sort_fields.is_empty() {

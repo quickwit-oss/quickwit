@@ -51,10 +51,10 @@ impl PipelineStep for UserAgentParserStep {
                 continue;
             };
             if let Some(mut user_agent_string) = source_val_opt.as_str().map(String::from) {
-                if self.is_encoded {
-                    if let Ok(decoded) = urlencoding::decode(&user_agent_string) {
-                        user_agent_string = decoded.to_string();
-                    }
+                if self.is_encoded
+                    && let Ok(decoded) = urlencoding::decode(&user_agent_string)
+                {
+                    user_agent_string = decoded.to_string();
                 }
                 let ua_parser = get_user_agent_parser();
                 let client = ua_parser.parse(&user_agent_string);

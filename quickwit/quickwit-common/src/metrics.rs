@@ -356,7 +356,7 @@ impl Default for SystemMetrics {
         ];
 
         for (env_var_key, label_key) in keys {
-            if let Some(label_val) = crate::get_from_env_opt::<String>(env_var_key) {
+            if let Some(label_val) = crate::get_from_env_opt::<String>(env_var_key, false) {
                 uptime_labels.push(Label::new(label_key, label_val));
             }
         }

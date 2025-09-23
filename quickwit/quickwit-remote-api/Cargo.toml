@@ -23,6 +23,7 @@ clap = { workspace = true , features = ["derive"]}
 futures = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
+hyper-util = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }

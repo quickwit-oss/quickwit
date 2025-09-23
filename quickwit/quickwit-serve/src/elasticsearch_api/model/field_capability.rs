@@ -120,12 +120,6 @@ impl FieldCapabilityEntryResponse {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct FieldCapabilityEntry {
-    searchable: bool,
-    aggregatable: bool,
-}
-
 pub fn convert_to_es_field_capabilities_response(
     resp: ListFieldsResponse,
 ) -> FieldCapabilityResponse {

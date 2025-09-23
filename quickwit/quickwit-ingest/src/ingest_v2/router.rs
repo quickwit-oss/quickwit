@@ -66,6 +66,7 @@ fn ingest_request_timeout() -> Duration {
         let duration_ms = quickwit_common::get_from_env(
             "QW_INGEST_REQUEST_TIMEOUT_MS",
             DEFAULT_INGEST_REQUEST_TIMEOUT.as_millis() as u64,
+            false,
         );
         let minimum_ingest_request_timeout: Duration =
             PERSIST_REQUEST_TIMEOUT * (MAX_PERSIST_ATTEMPTS as u32) + Duration::from_secs(5);

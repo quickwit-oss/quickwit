@@ -106,17 +106,17 @@ pub fn parse_timestamp_str(timestamp_str: &str) -> Option<TantivyDateTime> {
         if subsecond_digits_str.is_empty() {
             return parse_timestamp_str(timestamp_secs_str);
         }
-        if let Ok(timestamp_secs) = timestamp_secs_str.parse::<i64>() {
-            if (MIN_TIMESTAMP_SECONDS..=MAX_TIMESTAMP_SECONDS).contains(&timestamp_secs) {
-                let num_subsecond_digits = subsecond_digits_str.len().min(9);
+        if let Ok(timestamp_secs @ MIN_TIMESTAMP_SECONDS..=MAX_TIMESTAMP_SECONDS) =
+            timestamp_secs_str.parse::<i64>()
+        {
+            let num_subsecond_digits = subsecond_digits_str.len().min(9);
 
-                if let Ok(subsecond_digits) =
-                    subsecond_digits_str[..num_subsecond_digits].parse::<i64>()
-                {
-                    let nanos = subsecond_digits * 10i64.pow(9 - num_subsecond_digits as u32);
-                    let timestamp_nanos = timestamp_secs * 1_000_000_000 + nanos;
-                    return Some(TantivyDateTime::from_timestamp_nanos(timestamp_nanos));
-                }
+            if let Ok(subsecond_digits) =
+                subsecond_digits_str[..num_subsecond_digits].parse::<i64>()
+            {
+                let nanos = subsecond_digits * 10i64.pow(9 - num_subsecond_digits as u32);
+                let timestamp_nanos = timestamp_secs * 1_000_000_000 + nanos;
+                return Some(TantivyDateTime::from_timestamp_nanos(timestamp_nanos));
             }
         }
     }

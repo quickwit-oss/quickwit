@@ -515,59 +515,6 @@ pub struct LeafListTermsResponse {
     #[prost(uint64, tag = "4")]
     pub num_attempted_splits: u64,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SearchStreamRequest {
-    /// Index ID
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
-    /// Quickwit Query AST encoded in Json
-    #[prost(string, tag = "11")]
-    pub query_ast: ::prost::alloc::string::String,
-    /// The time filter is interpreted as a semi-open interval. [start, end)
-    #[prost(int64, optional, tag = "4")]
-    pub start_timestamp: ::core::option::Option<i64>,
-    #[prost(int64, optional, tag = "5")]
-    pub end_timestamp: ::core::option::Option<i64>,
-    /// Name of the fast field to extract
-    #[prost(string, tag = "6")]
-    pub fast_field: ::prost::alloc::string::String,
-    /// The output format
-    #[prost(enumeration = "OutputFormat", tag = "7")]
-    pub output_format: i32,
-    /// The field by which we want to partition
-    #[prost(string, optional, tag = "9")]
-    pub partition_by_field: ::core::option::Option<::prost::alloc::string::String>,
-    /// Fields to extract snippet on.
-    #[prost(string, repeated, tag = "10")]
-    pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeafSearchStreamRequest {
-    /// Stream request. This is a perfect copy of the original stream request,
-    /// that was sent to root.
-    #[prost(message, optional, tag = "1")]
-    pub request: ::core::option::Option<SearchStreamRequest>,
-    /// Index split ids to apply the query on.
-    /// This ids are resolved from the index_uri defined in the stream request.
-    #[prost(message, repeated, tag = "2")]
-    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
-    /// `DocMapper` as json serialized trait.
-    #[prost(string, tag = "5")]
-    pub doc_mapper: ::prost::alloc::string::String,
-    /// Index URI. The index URI defines the location of the storage that contains the
-    /// split files.
-    #[prost(string, tag = "6")]
-    pub index_uri: ::prost::alloc::string::String,
-}
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct LeafSearchStreamResponse {
-    /// Row of data serialized in bytes.
-    #[prost(bytes = "vec", tag = "1")]
-    pub data: ::prost::alloc::vec::Vec<u8>,
-    /// Split id.
-    #[prost(string, tag = "2")]
-    pub split_id: ::prost::alloc::string::String,
-}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ListFieldType {
@@ -706,38 +653,6 @@ impl SortDatetimeFormat {
         }
     }
 }
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum OutputFormat {
-    /// Comma Separated Values format (<https://datatracker.ietf.org/doc/html/rfc4180>).
-    /// The delimiter is `,`.
-    ///
-    /// < This will be the default value
-    Csv = 0,
-    /// Format data by row in ClickHouse binary format.
-    /// <https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary>
-    ClickHouseRowBinary = 1,
-}
-impl OutputFormat {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            Self::Csv => "CSV",
-            Self::ClickHouseRowBinary => "CLICK_HOUSE_ROW_BINARY",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "CSV" => Some(Self::Csv),
-            "CLICK_HOUSE_ROW_BINARY" => Some(Self::ClickHouseRowBinary),
-            _ => None,
-        }
-    }
-}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -756,11 +671,6 @@ impl RpcName for LeafSearchRequest {
 impl RpcName for FetchDocsRequest {
     fn rpc_name() -> &'static str {
         "fetch_docs"
-    }
-}
-impl RpcName for LeafSearchStreamRequest {
-    fn rpc_name() -> &'static str {
-        "leaf_search_stream"
     }
 }
 impl RpcName for ListTermsRequest {
@@ -808,9 +718,6 @@ impl RpcName for SearchRequest {
         "search_plan"
     }
 }
-pub type SearchServiceStream<T> = quickwit_common::ServiceStream<
-    crate::cloudprem::CloudPremResult<T>,
->;
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait SearchService: std::fmt::Debug + Send + Sync + 'static {
@@ -840,13 +747,6 @@ pub trait SearchService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: FetchDocsRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse>;
-    /// Perform a leaf stream on a given set of splits.
-    async fn leaf_search_stream(
-        &self,
-        request: LeafSearchStreamRequest,
-    ) -> crate::cloudprem::CloudPremResult<
-        SearchServiceStream<LeafSearchStreamResponse>,
-    >;
     /// Root list terms API.
     /// This RPC identifies the set of splits on which the query should run on,
     /// and dispatches the several calls to `LeafListTerms`.
@@ -1026,14 +926,6 @@ impl SearchService for SearchServiceClient {
     ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse> {
         self.inner.0.fetch_docs(request).await
     }
-    async fn leaf_search_stream(
-        &self,
-        request: LeafSearchStreamRequest,
-    ) -> crate::cloudprem::CloudPremResult<
-        SearchServiceStream<LeafSearchStreamResponse>,
-    > {
-        self.inner.0.leaf_search_stream(request).await
-    }
     async fn root_list_terms(
         &self,
         request: ListTermsRequest,
@@ -1115,14 +1007,6 @@ pub mod mock_search_service {
             request: super::FetchDocsRequest,
         ) -> crate::cloudprem::CloudPremResult<super::FetchDocsResponse> {
             self.inner.lock().await.fetch_docs(request).await
-        }
-        async fn leaf_search_stream(
-            &self,
-            request: super::LeafSearchStreamRequest,
-        ) -> crate::cloudprem::CloudPremResult<
-            SearchServiceStream<super::LeafSearchStreamResponse>,
-        > {
-            self.inner.lock().await.leaf_search_stream(request).await
         }
         async fn root_list_terms(
             &self,
@@ -1228,22 +1112,6 @@ impl tower::Service<FetchDocsRequest> for InnerSearchServiceClient {
     fn call(&mut self, request: FetchDocsRequest) -> Self::Future {
         let svc = self.clone();
         let fut = async move { svc.0.fetch_docs(request).await };
-        Box::pin(fut)
-    }
-}
-impl tower::Service<LeafSearchStreamRequest> for InnerSearchServiceClient {
-    type Response = SearchServiceStream<LeafSearchStreamResponse>;
-    type Error = crate::cloudprem::CloudPremError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: LeafSearchStreamRequest) -> Self::Future {
-        let svc = self.clone();
-        let fut = async move { svc.0.leaf_search_stream(request).await };
         Box::pin(fut)
     }
 }
@@ -1411,11 +1279,6 @@ struct SearchServiceTowerServiceStack {
         FetchDocsResponse,
         crate::cloudprem::CloudPremError,
     >,
-    leaf_search_stream_svc: quickwit_common::tower::BoxService<
-        LeafSearchStreamRequest,
-        SearchServiceStream<LeafSearchStreamResponse>,
-        crate::cloudprem::CloudPremError,
-    >,
     root_list_terms_svc: quickwit_common::tower::BoxService<
         ListTermsRequest,
         ListTermsResponse,
@@ -1481,14 +1344,6 @@ impl SearchService for SearchServiceTowerServiceStack {
         request: FetchDocsRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse> {
         self.fetch_docs_svc.clone().ready().await?.call(request).await
-    }
-    async fn leaf_search_stream(
-        &self,
-        request: LeafSearchStreamRequest,
-    ) -> crate::cloudprem::CloudPremResult<
-        SearchServiceStream<LeafSearchStreamResponse>,
-    > {
-        self.leaf_search_stream_svc.clone().ready().await?.call(request).await
     }
     async fn root_list_terms(
         &self,
@@ -1573,16 +1428,6 @@ type FetchDocsLayer = quickwit_common::tower::BoxLayer<
     >,
     FetchDocsRequest,
     FetchDocsResponse,
-    crate::cloudprem::CloudPremError,
->;
-type LeafSearchStreamLayer = quickwit_common::tower::BoxLayer<
-    quickwit_common::tower::BoxService<
-        LeafSearchStreamRequest,
-        SearchServiceStream<LeafSearchStreamResponse>,
-        crate::cloudprem::CloudPremError,
-    >,
-    LeafSearchStreamRequest,
-    SearchServiceStream<LeafSearchStreamResponse>,
     crate::cloudprem::CloudPremError,
 >;
 type RootListTermsLayer = quickwit_common::tower::BoxLayer<
@@ -1680,7 +1525,6 @@ pub struct SearchServiceTowerLayerStack {
     root_search_layers: Vec<RootSearchLayer>,
     leaf_search_layers: Vec<LeafSearchLayer>,
     fetch_docs_layers: Vec<FetchDocsLayer>,
-    leaf_search_stream_layers: Vec<LeafSearchStreamLayer>,
     root_list_terms_layers: Vec<RootListTermsLayer>,
     leaf_list_terms_layers: Vec<LeafListTermsLayer>,
     scroll_layers: Vec<ScrollLayer>,
@@ -1769,31 +1613,6 @@ impl SearchServiceTowerLayerStack {
                 crate::cloudprem::CloudPremError,
             >,
         >>::Service as tower::Service<FetchDocsRequest>>::Future: Send + 'static,
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    LeafSearchStreamRequest,
-                    SearchServiceStream<LeafSearchStreamResponse>,
-                    crate::cloudprem::CloudPremError,
-                >,
-            > + Clone + Send + Sync + 'static,
-        <L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                LeafSearchStreamRequest,
-                SearchServiceStream<LeafSearchStreamResponse>,
-                crate::cloudprem::CloudPremError,
-            >,
-        >>::Service: tower::Service<
-                LeafSearchStreamRequest,
-                Response = SearchServiceStream<LeafSearchStreamResponse>,
-                Error = crate::cloudprem::CloudPremError,
-            > + Clone + Send + Sync + 'static,
-        <<L as tower::Layer<
-            quickwit_common::tower::BoxService<
-                LeafSearchStreamRequest,
-                SearchServiceStream<LeafSearchStreamResponse>,
-                crate::cloudprem::CloudPremError,
-            >,
-        >>::Service as tower::Service<LeafSearchStreamRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     ListTermsRequest,
@@ -2026,8 +1845,6 @@ impl SearchServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.fetch_docs_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.leaf_search_stream_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.root_list_terms_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.leaf_list_terms_layers
@@ -2100,26 +1917,6 @@ impl SearchServiceTowerLayerStack {
         <L::Service as tower::Service<FetchDocsRequest>>::Future: Send + 'static,
     {
         self.fetch_docs_layers.push(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn stack_leaf_search_stream_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<
-                quickwit_common::tower::BoxService<
-                    LeafSearchStreamRequest,
-                    SearchServiceStream<LeafSearchStreamResponse>,
-                    crate::cloudprem::CloudPremError,
-                >,
-            > + Send + Sync + 'static,
-        L::Service: tower::Service<
-                LeafSearchStreamRequest,
-                Response = SearchServiceStream<LeafSearchStreamResponse>,
-                Error = crate::cloudprem::CloudPremError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<LeafSearchStreamRequest>>::Future: Send + 'static,
-    {
-        self.leaf_search_stream_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_root_list_terms_layer<L>(mut self, layer: L) -> Self
@@ -2377,14 +2174,6 @@ impl SearchServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let leaf_search_stream_svc = self
-            .leaf_search_stream_layers
-            .into_iter()
-            .rev()
-            .fold(
-                quickwit_common::tower::BoxService::new(inner_client.clone()),
-                |svc, layer| layer.layer(svc),
-            );
         let root_list_terms_svc = self
             .root_list_terms_layers
             .into_iter()
@@ -2462,7 +2251,6 @@ impl SearchServiceTowerLayerStack {
             root_search_svc,
             leaf_search_svc,
             fetch_docs_svc,
-            leaf_search_stream_svc,
             root_list_terms_svc,
             leaf_list_terms_svc,
             scroll_svc,
@@ -2567,15 +2355,6 @@ where
             Future = BoxFuture<FetchDocsResponse, crate::cloudprem::CloudPremError>,
         >
         + tower::Service<
-            LeafSearchStreamRequest,
-            Response = SearchServiceStream<LeafSearchStreamResponse>,
-            Error = crate::cloudprem::CloudPremError,
-            Future = BoxFuture<
-                SearchServiceStream<LeafSearchStreamResponse>,
-                crate::cloudprem::CloudPremError,
-            >,
-        >
-        + tower::Service<
             ListTermsRequest,
             Response = ListTermsResponse,
             Error = crate::cloudprem::CloudPremError,
@@ -2646,14 +2425,6 @@ where
         &self,
         request: FetchDocsRequest,
     ) -> crate::cloudprem::CloudPremResult<FetchDocsResponse> {
-        self.clone().call(request).await
-    }
-    async fn leaf_search_stream(
-        &self,
-        request: LeafSearchStreamRequest,
-    ) -> crate::cloudprem::CloudPremResult<
-        SearchServiceStream<LeafSearchStreamResponse>,
-    > {
         self.clone().call(request).await
     }
     async fn root_list_terms(
@@ -2785,30 +2556,6 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 FetchDocsRequest::rpc_name(),
-            ))
-    }
-    async fn leaf_search_stream(
-        &self,
-        request: LeafSearchStreamRequest,
-    ) -> crate::cloudprem::CloudPremResult<
-        SearchServiceStream<LeafSearchStreamResponse>,
-    > {
-        self.inner
-            .clone()
-            .leaf_search_stream(request)
-            .await
-            .map(|response| {
-                let streaming: tonic::Streaming<_> = response.into_inner();
-                let stream = quickwit_common::ServiceStream::from(streaming);
-                stream
-                    .map_err(|status| crate::error::grpc_status_to_service_error(
-                        status,
-                        LeafSearchStreamRequest::rpc_name(),
-                    ))
-            })
-            .map_err(|status| crate::error::grpc_status_to_service_error(
-                status,
-                LeafSearchStreamRequest::rpc_name(),
             ))
     }
     async fn root_list_terms(
@@ -2985,22 +2732,6 @@ impl search_service_grpc_server::SearchServiceGrpc for SearchServiceGrpcServerAd
             .fetch_docs(request.into_inner())
             .await
             .map(tonic::Response::new)
-            .map_err(crate::error::grpc_error_to_grpc_status)
-    }
-    type LeafSearchStreamStream = quickwit_common::ServiceStream<
-        tonic::Result<LeafSearchStreamResponse>,
-    >;
-    async fn leaf_search_stream(
-        &self,
-        request: tonic::Request<LeafSearchStreamRequest>,
-    ) -> Result<tonic::Response<Self::LeafSearchStreamStream>, tonic::Status> {
-        self.inner
-            .0
-            .leaf_search_stream(request.into_inner())
-            .await
-            .map(|stream| tonic::Response::new(
-                stream.map_err(crate::error::grpc_error_to_grpc_status),
-            ))
             .map_err(crate::error::grpc_error_to_grpc_status)
     }
     async fn root_list_terms(
@@ -3276,33 +3007,6 @@ pub mod search_service_grpc_client {
             req.extensions_mut()
                 .insert(GrpcMethod::new("quickwit.search.SearchService", "FetchDocs"));
             self.inner.unary(req, path, codec).await
-        }
-        /// Perform a leaf stream on a given set of splits.
-        pub async fn leaf_search_stream(
-            &mut self,
-            request: impl tonic::IntoRequest<super::LeafSearchStreamRequest>,
-        ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::LeafSearchStreamResponse>>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.search.SearchService/LeafSearchStream",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("quickwit.search.SearchService", "LeafSearchStream"),
-                );
-            self.inner.server_streaming(req, path, codec).await
         }
         /// Root list terms API.
         /// This RPC identifies the set of splits on which the query should run on,
@@ -3581,23 +3285,6 @@ pub mod search_service_grpc_server {
             request: tonic::Request<super::FetchDocsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::FetchDocsResponse>,
-            tonic::Status,
-        >;
-        /// Server streaming response type for the LeafSearchStream method.
-        type LeafSearchStreamStream: tonic::codegen::tokio_stream::Stream<
-                Item = std::result::Result<
-                    super::LeafSearchStreamResponse,
-                    tonic::Status,
-                >,
-            >
-            + std::marker::Send
-            + 'static;
-        /// Perform a leaf stream on a given set of splits.
-        async fn leaf_search_stream(
-            &self,
-            request: tonic::Request<super::LeafSearchStreamRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::LeafSearchStreamStream>,
             tonic::Status,
         >;
         /// Root list terms API.
@@ -3879,57 +3566,6 @@ pub mod search_service_grpc_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.search.SearchService/LeafSearchStream" => {
-                    #[allow(non_camel_case_types)]
-                    struct LeafSearchStreamSvc<T: SearchServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: SearchServiceGrpc,
-                    > tonic::server::ServerStreamingService<
-                        super::LeafSearchStreamRequest,
-                    > for LeafSearchStreamSvc<T> {
-                        type Response = super::LeafSearchStreamResponse;
-                        type ResponseStream = T::LeafSearchStreamStream;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::ResponseStream>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::LeafSearchStreamRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as SearchServiceGrpc>::leaf_search_stream(
-                                        &inner,
-                                        request,
-                                    )
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = LeafSearchStreamSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.server_streaming(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

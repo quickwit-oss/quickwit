@@ -1140,7 +1140,7 @@ mod tests {
         use quickwit_indexing::source::sqs_queue::test_helpers::start_mock_sqs_get_queue_attributes_endpoint;
 
         let metastore = metastore_for_test();
-        let (queue_url, _guard) = start_mock_sqs_get_queue_attributes_endpoint();
+        let (queue_url, _guard) = start_mock_sqs_get_queue_attributes_endpoint().await;
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
         node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");

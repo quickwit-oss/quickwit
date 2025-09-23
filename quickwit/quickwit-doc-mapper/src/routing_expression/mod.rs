@@ -462,7 +462,7 @@ mod expression_dsl {
     }
 
     /// Parse a single path component, separated by dots. De-escape any escaped dot it may contain.
-    fn escaped_key(input: &str) -> IResult<&str, Cow<str>> {
+    fn escaped_key(input: &str) -> IResult<&str, Cow<'_, str>> {
         map(escaped(key_identifier, '\\', tag(".")), |s: &str| {
             if s.contains("\\.") {
                 Cow::Owned(s.replace("\\.", "."))
@@ -473,7 +473,7 @@ mod expression_dsl {
     }
 
     /// Parse a field name into a path, de-escaping where appropriate.
-    pub(crate) fn parse_field_name(input: &str) -> anyhow::Result<Vec<Cow<str>>> {
+    pub(crate) fn parse_field_name(input: &str) -> anyhow::Result<Vec<Cow<'_, str>>> {
         let (i, res) = separated_list0(tag("."), escaped_key)(input)
             .finish()
             .map_err(|e| anyhow::anyhow!("error parsing key expression: {e}"))?;

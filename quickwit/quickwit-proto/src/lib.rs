@@ -104,21 +104,6 @@ pub mod opentelemetry {
     }
 }
 
-impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {
-    type Error = anyhow::Error;
-
-    fn try_from(search_stream_req: search::SearchStreamRequest) -> Result<Self, Self::Error> {
-        Ok(Self {
-            index_id_patterns: vec![search_stream_req.index_id],
-            query_ast: search_stream_req.query_ast,
-            snippet_fields: search_stream_req.snippet_fields,
-            start_timestamp: search_stream_req.start_timestamp,
-            end_timestamp: search_stream_req.end_timestamp,
-            ..Default::default()
-        })
-    }
-}
-
 impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
     type Error = anyhow::Error;
 
@@ -139,10 +124,10 @@ pub struct MutMetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 impl Injector for MutMetadataMap<'_> {
     /// Sets a key-value pair in the [`MetadataMap`]. No-op if the key or value is invalid.
     fn set(&mut self, key: &str, value: String) {
-        if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes()) {
-            if let Ok(metadata_value) = tonic::metadata::MetadataValue::try_from(&value) {
-                self.0.insert(metadata_key, metadata_value);
-            }
+        if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes())
+            && let Ok(metadata_value) = tonic::metadata::MetadataValue::try_from(&value)
+        {
+            self.0.insert(metadata_key, metadata_value);
         }
     }
 }

@@ -160,8 +160,9 @@ pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
     let host = quickwit_common::get_from_env::<String>(
         "CLOUDPREM_DOGSTATSD_SERVER_HOST",
         "127.0.0.1".to_string(),
+        false,
     );
-    let port = quickwit_common::get_from_env::<u16>("CLOUDPREM_DOGSTATSD_SERVER_PORT", 8125);
+    let port = quickwit_common::get_from_env::<u16>("CLOUDPREM_DOGSTATSD_SERVER_PORT", 8125, false);
     let addr = format!("{host}:{port}");
 
     let mut global_labels = vec![::metrics::Label::new("version", build_info.version.clone())];
@@ -175,7 +176,7 @@ pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
         ("QW_NODE_ID", "cloudprem_node_id"),
     ];
     for (env_var_key, label_key) in keys {
-        if let Some(label_val) = quickwit_common::get_from_env_opt::<String>(env_var_key) {
+        if let Some(label_val) = quickwit_common::get_from_env_opt::<String>(env_var_key, false) {
             global_labels.push(::metrics::Label::new(label_key, label_val));
         }
     }
@@ -282,7 +283,7 @@ impl EventFormat<'_> {
     /// Gets the log format from the environment variable `QW_LOG_FORMAT`. Returns a JSON
     /// formatter if the variable is set to `json`, otherwise returns a full formatter.
     fn get_from_env() -> Self {
-        if get_from_env_opt::<String>("QW_LOG_FORMAT")
+        if get_from_env_opt::<String>("QW_LOG_FORMAT", false)
             .map(|log_format| log_format.eq_ignore_ascii_case("json"))
             .unwrap_or(false)
         {
@@ -396,10 +397,10 @@ pub(super) mod jemalloc_profiled {
                     seen = true;
 
                     let ext = span.extensions();
-                    if let Some(fields) = &ext.get::<FormattedFields<N>>() {
-                        if !fields.is_empty() {
-                            write!(writer, "{{{fields}}}:")?;
-                        }
+                    if let Some(fields) = &ext.get::<FormattedFields<N>>()
+                        && !fields.is_empty()
+                    {
+                        write!(writer, "{{{fields}}}:")?;
                     }
                 }
 

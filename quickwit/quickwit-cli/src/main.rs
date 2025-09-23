@@ -31,7 +31,11 @@ use tracing::error;
 /// QW_RUNTIME_NUM_THREADS environment variable.
 fn get_main_runtime_num_threads() -> usize {
     let default_num_runtime_threads: usize = quickwit_common::num_cpus().div_ceil(3);
-    quickwit_common::get_from_env("QW_TOKIO_RUNTIME_NUM_THREADS", default_num_runtime_threads)
+    quickwit_common::get_from_env(
+        "QW_TOKIO_RUNTIME_NUM_THREADS",
+        default_num_runtime_threads,
+        false,
+    )
 }
 
 fn main() -> anyhow::Result<()> {
@@ -86,6 +90,13 @@ async fn main_impl() -> anyhow::Result<()> {
             std::process::exit(1);
         }
     };
+
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("rustls crypto ring default provider installation should not fail");
+
+    #[cfg(feature = "jemalloc")]
+    quickwit_cli::jemalloc::start_jemalloc_metrics_loop();
 
     let build_info = BuildInfo::get();
     let env_filter_reload_fn =

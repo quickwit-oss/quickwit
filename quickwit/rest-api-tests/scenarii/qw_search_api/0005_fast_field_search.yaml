@@ -1,0 +1,15 @@
+# Validate searching on a fast-only (non-indexed) field
+endpoint: nested/search
+method: POST
+json:
+  query: "text_fast:fast-text-value-dashes"
+expected:
+  num_hits: 1
+---
+# Non-matching exact value should return no hits
+endpoint: nested/search
+method: POST
+json:
+  query: "text_fast:fast_text_value_dashes"
+expected:
+  num_hits: 0

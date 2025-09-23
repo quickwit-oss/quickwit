@@ -199,6 +199,10 @@ pub struct ResolvedClusterConfig {
 impl ResolvedClusterConfig {
     /// Start a cluster using this config and waits for the nodes to be ready
     pub async fn start(self) -> ClusterSandbox {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("rustls crypto ring default provider installation should not fail");
+
         start_metrics_loops();
 
         let mut node_shutdown_handles = Vec::new();

@@ -39,9 +39,8 @@ endpoint: nested/search
 method: POST
 json:
   query: "text_fast:fast-text-value-dashes"
-status_code: 400
 expected:
-  message: "invalid query: query is incompatible with schema. field text_fast is not full-text searchable)"
+  num_hits: 1
 ---
 endpoint: nested/search
 method: POST

@@ -69,7 +69,7 @@ impl ControlPlaneModel {
         self.shard_table.num_sources()
     }
 
-    pub fn shard_locations(&self) -> ShardLocations {
+    pub fn shard_locations(&self) -> ShardLocations<'_> {
         self.shard_table.shard_locations()
     }
 
