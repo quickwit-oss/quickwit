@@ -62,10 +62,6 @@ test-all: docker-compose-up
 test-failpoints:
 	@$(MAKE) -C $(QUICKWIT_SRC) test-failpoints
 
-test-lambda: DOCKER_SERVICES=localstack
-test-lambda: docker-compose-up
-	@$(MAKE) -C $(QUICKWIT_SRC) test-lambda
-
 # This will build and push all custom cross images for cross-compilation.
 # You will need to login into Docker Hub with the `quickwit` account.
 IMAGE_TAGS = x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-unknown-linux-musl

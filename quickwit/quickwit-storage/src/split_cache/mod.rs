@@ -73,10 +73,10 @@ impl SplitCache {
                     // This file is a temporary file that was being downloaded, when Quickwit was
                     // stopped (killed for instance) in a way that prevented
                     // their cleanup. It is important to remove it.
-                    if let Err(io_err) = std::fs::remove_file(&path) {
-                        if io_err.kind() != io::ErrorKind::NotFound {
-                            error!(path=?path, "failed to remove temporary file");
-                        }
+                    if let Err(io_err) = std::fs::remove_file(&path)
+                        && io_err.kind() != io::ErrorKind::NotFound
+                    {
+                        error!(path=?path, "failed to remove temporary file");
                     }
                 }
                 "split" => {

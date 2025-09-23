@@ -44,7 +44,7 @@ pub struct TagKV<'a> {
     pub value: &'a str,
 }
 impl TagKV<'_> {
-    pub fn parse_tag(tag: &str) -> Option<TagKV> {
+    pub fn parse_tag(tag: &str) -> Option<TagKV<'_>> {
         tag.split_once(':').map(|(key, value)| TagKV { key, value })
     }
 }

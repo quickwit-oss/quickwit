@@ -79,6 +79,7 @@ impl Storage for OpendalStorage {
     }
 
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
+        crate::STORAGE_METRICS.object_storage_put_total.inc();
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
@@ -91,6 +92,9 @@ impl Storage for OpendalStorage {
             .compat_write();
         tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
         storage_writer.get_mut().close().await?;
+        crate::STORAGE_METRICS
+            .object_storage_upload_num_bytes
+            .inc_by(payload.len());
         Ok(())
     }
 
@@ -103,7 +107,10 @@ impl Storage for OpendalStorage {
             .into_futures_async_read(..)
             .await?
             .compat();
-        tokio::io::copy(&mut storage_reader, output).await?;
+        let num_bytes_copied = tokio::io::copy(&mut storage_reader, output).await?;
+        crate::STORAGE_METRICS
+            .object_storage_download_num_bytes
+            .inc_by(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }
@@ -115,6 +122,7 @@ impl Storage for OpendalStorage {
         // Unlike other object store implementations, in flight requests are
         // recorded before issuing the query to the object store.
         let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
+        crate::STORAGE_METRICS.object_storage_get_total.inc();
         let storage_content = self.op.read_with(&path).range(range).await?.to_vec();
         Ok(OwnedBytes::new(storage_content))
     }
@@ -144,6 +152,12 @@ impl Storage for OpendalStorage {
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
+        crate::STORAGE_METRICS
+            .object_storage_delete_requests_total
+            .inc();
+        let _timer = crate::STORAGE_METRICS
+            .object_storage_delete_request_duration
+            .start_timer();
         self.op.delete(&path).await?;
         Ok(())
     }
@@ -159,6 +173,12 @@ impl Storage for OpendalStorage {
             {
                 let mut bulk_error = BulkDeleteError::default();
                 for (index, path) in paths.iter().enumerate() {
+                    crate::STORAGE_METRICS
+                        .object_storage_bulk_delete_requests_total
+                        .inc();
+                    let _timer = crate::STORAGE_METRICS
+                        .object_storage_bulk_delete_request_duration
+                        .start_timer();
                     let result = self.op.delete(&path.as_os_str().to_string_lossy()).await;
                     if let Err(err) = result {
                         let storage_error_kind = err.kind();

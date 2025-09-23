@@ -163,23 +163,23 @@ impl Handler<SplitsUpdate> for Publisher {
             return Ok(());
         }
         info!("publish-new-splits");
-        if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
-            if let Some(checkpoint) = checkpoint_delta_opt {
-                // We voluntarily do not log anything here.
-                //
-                // Not being to send the truncation message is a common event and should not be
-                // considered an error. For instance, if the source is a
-                // FileSource, it will terminate upon EOF and drop its
-                // mailbox.
-                let suggest_truncate_res = ctx
-                    .send_message(
-                        source_mailbox,
-                        SuggestTruncate(checkpoint.source_delta.get_source_checkpoint()),
-                    )
-                    .await;
-                if let Err(send_truncate_err) = suggest_truncate_res {
-                    warn!(error=?send_truncate_err, "failed to send truncate message from publisher to source");
-                }
+        if let Some(source_mailbox) = self.source_mailbox_opt.as_ref()
+            && let Some(checkpoint) = checkpoint_delta_opt
+        {
+            // We voluntarily do not log anything here.
+            //
+            // Not being to send the truncation message is a common event and should not be
+            // considered an error. For instance, if the source is a
+            // FileSource, it will terminate upon EOF and drop its
+            // mailbox.
+            let suggest_truncate_res = ctx
+                .send_message(
+                    source_mailbox,
+                    SuggestTruncate(checkpoint.source_delta.get_source_checkpoint()),
+                )
+                .await;
+            if let Err(send_truncate_err) = suggest_truncate_res {
+                warn!(error=?send_truncate_err, "failed to send truncate message from publisher to source");
             }
         }
 

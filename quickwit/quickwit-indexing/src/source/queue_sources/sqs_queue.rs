@@ -318,21 +318,26 @@ pub mod test_helpers {
     ///
     /// Returns the queue URL to use for the source and a guard for the
     /// temporary mock server
-    pub fn start_mock_sqs_get_queue_attributes_endpoint() -> (String, oneshot::Sender<()>) {
+    pub async fn start_mock_sqs_get_queue_attributes_endpoint() -> (String, oneshot::Sender<()>) {
         let hello = warp::path!().map(|| "{}");
         let (tx, rx) = oneshot::channel();
-        let (addr, server) =
-            warp::serve(hello).bind_with_graceful_shutdown(([127, 0, 0, 1], 0), async {
-                rx.await.ok();
-            });
-        tokio::spawn(server);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener should bind");
+        let addr = listener.local_addr().unwrap();
+
+        let server = warp::serve(hello).incoming(listener).graceful(async {
+            rx.await.ok();
+        });
+        tokio::spawn(server.run());
+
         let queue_url = format!("http://{}:{}/", addr.ip(), addr.port());
         (queue_url, tx)
     }
 
     #[tokio::test]
     async fn test_mock_sqs_get_queue_attributes_endpoint() {
-        let (queue_url, _shutdown) = start_mock_sqs_get_queue_attributes_endpoint();
+        let (queue_url, _shutdown) = start_mock_sqs_get_queue_attributes_endpoint().await;
         check_connectivity(&queue_url).await.unwrap();
         drop(_shutdown);
         check_connectivity(&queue_url).await.unwrap_err();

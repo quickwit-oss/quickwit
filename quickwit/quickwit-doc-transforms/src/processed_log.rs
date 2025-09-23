@@ -282,10 +282,10 @@ impl ProcessedLog {
 pub fn try_parse_and_update_timestamp(processed: &mut ProcessedLog, ts_val: &Value) {
     match ts_val {
         Value::Number(num) => {
-            if let Some(epoch_i64) = num.as_i64() {
-                if let Ok(dt) = parse_timestamp(epoch_i64) {
-                    processed.timestamp = dt.into_utc();
-                }
+            if let Some(epoch_i64) = num.as_i64()
+                && let Ok(dt) = parse_timestamp(epoch_i64)
+            {
+                processed.timestamp = dt.into_utc();
             }
         }
         Value::String(s) => {

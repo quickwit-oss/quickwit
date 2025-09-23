@@ -21,7 +21,6 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::types::DocMappingUid;
-use serde::Serialize;
 use tantivy::Inventory;
 use time::OffsetDateTime;
 use tracing::{info, warn};
@@ -248,7 +247,10 @@ impl MergePlanner {
     // No need to rebuild every time, we do once out of 100 times.
     fn recompute_known_splits_if_necessary(&mut self) {
         self.known_split_ids_recompute_attempt_id += 1;
-        if self.known_split_ids_recompute_attempt_id % 100 == 0 {
+        if self
+            .known_split_ids_recompute_attempt_id
+            .is_multiple_of(100)
+        {
             self.known_split_ids = self.rebuild_known_split_ids();
             self.known_split_ids_recompute_attempt_id = 0;
         }
@@ -355,11 +357,6 @@ fn belongs_to_pipeline(pipeline_id: &MergePipelineId, split: &SplitMetadata) -> 
 #[derive(Debug)]
 struct PlanMerge {
     incarnation_started_at: Instant,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct MergePlannerState {
-    pub(crate) ongoing_merge_operations: Vec<MergeOperation>,
 }
 
 #[cfg(test)]

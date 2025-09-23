@@ -97,7 +97,7 @@ impl Default for RuntimesConfig {
 fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
     let mut runtimes = HashMap::with_capacity(2);
 
-    let disable_lifo_slot = crate::get_bool_from_env("QW_DISABLE_TOKIO_LIFO_SLOT", false);
+    let disable_lifo_slot = crate::get_bool_from_env("QW_DISABLE_TOKIO_LIFO_SLOT", true);
 
     let mut blocking_runtime_builder = tokio::runtime::Builder::new_multi_thread();
     if disable_lifo_slot {

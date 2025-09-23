@@ -606,7 +606,7 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "rate(quickwit_cache_cache_hits_total{instance=~\"$instance\"}[$__rate_interval])",
+          "expr": "rate(quickwit_cache_cache_misses_total{instance=~\"$instance\"}[$__rate_interval])",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,

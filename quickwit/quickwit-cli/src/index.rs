@@ -1061,14 +1061,14 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             // TODO(#5604) remove unwrap
             .unwrap_or(response.num_docs_for_processing),
     );
-    if let Some(rejected) = response.num_rejected_docs {
-        if rejected > 0 {
-            println!(
-                "{} Rejected {} document(s).",
-                "✖".color(RED_COLOR),
-                rejected
-            );
-        }
+    if let Some(rejected) = response.num_rejected_docs
+        && rejected > 0
+    {
+        println!(
+            "{} Rejected {} document(s).",
+            "✖".color(RED_COLOR),
+            rejected
+        );
     }
     if let Some(parse_failures) = response.parse_failures {
         if !parse_failures.is_empty() {

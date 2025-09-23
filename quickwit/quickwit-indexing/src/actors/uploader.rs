@@ -125,10 +125,10 @@ enum SplitsUpdateSender {
 
 impl SplitsUpdateSender {
     fn discard(self) -> anyhow::Result<()> {
-        if let SplitsUpdateSender::Sequencer(split_uploader_tx) = self {
-            if split_uploader_tx.send(SequencerCommand::Discard).is_err() {
-                bail!("failed to send cancel command to sequencer. the sequencer is probably dead");
-            }
+        if let SplitsUpdateSender::Sequencer(split_uploader_tx) = self
+            && split_uploader_tx.send(SequencerCommand::Discard).is_err()
+        {
+            bail!("failed to send cancel command to sequencer. the sequencer is probably dead");
         }
         Ok(())
     }

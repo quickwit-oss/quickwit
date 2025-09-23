@@ -27,7 +27,6 @@ Check out our guides to see how you can use Quickwit:
 
 - [Log management](../log-management/overview.md)
 - [Distributed Tracing](../distributed-tracing/overview.md)
-- Adding full-text search capabilities to [OLAP databases such as ClickHouse](../guides/add-full-text-search-to-your-olap-db).
 
 
 ## Key features

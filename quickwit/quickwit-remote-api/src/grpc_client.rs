@@ -1,10 +1,8 @@
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use bytes::Bytes;
 use bytesize::ByteSize;
 use quickwit_proto::cloudprem::{
     CloudPremService, CloudPremServiceClient, CloudPremServiceGrpcClientAdapter, PingRequest,
@@ -12,13 +10,11 @@ use quickwit_proto::cloudprem::{
 };
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, GetKvRequest, LeafListFieldsRequest, LeafListTermsRequest,
-    LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
-    LeafSearchStreamResponse, ListFieldsRequest, ListFieldsResponse, ListTermsRequest,
-    ListTermsResponse, PutKvRequest, ReportSplitsRequest, ReportSplitsResponse, ScrollRequest,
-    SearchPlanResponse, SearchRequest, SearchResponse, SearchStreamRequest,
+    LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, ListFieldsRequest,
+    ListFieldsResponse, ListTermsRequest, ListTermsResponse, PutKvRequest, ReportSplitsRequest,
+    ReportSplitsResponse, ScrollRequest, SearchPlanResponse, SearchRequest, SearchResponse,
 };
 use quickwit_search::SearchService;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::Request;
 use tonic::metadata::{Ascii, MetadataValue};
 use tonic::transport::{ClientTlsConfig, Endpoint, Uri};
@@ -138,22 +134,7 @@ impl SearchService for CloudPremRootSearchService {
     ) -> quickwit_search::Result<FetchDocsResponse> {
         unimplemented(request)
     }
-    async fn root_search_stream(
-        &self,
-        request: SearchStreamRequest,
-    ) -> quickwit_search::Result<
-        Pin<Box<dyn futures::Stream<Item = quickwit_search::Result<Bytes>> + Send>>,
-    > {
-        unimplemented(request)
-    }
-    async fn leaf_search_stream(
-        &self,
-        request: LeafSearchStreamRequest,
-    ) -> quickwit_search::Result<
-        UnboundedReceiverStream<quickwit_search::Result<LeafSearchStreamResponse>>,
-    > {
-        unimplemented(request)
-    }
+
     async fn leaf_list_terms(
         &self,
         request: LeafListTermsRequest,

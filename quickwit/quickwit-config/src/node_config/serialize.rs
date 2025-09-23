@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use bytesize::ByteSize;
-use legacy_http::HeaderMap;
+use http::HeaderMap;
 use quickwit_common::fs::get_disk_size;
 use quickwit_common::net::{Host, find_private_ip, get_short_hostname};
 use quickwit_common::new_coolid;
@@ -684,7 +684,7 @@ mod tests {
                 split_footer_cache_capacity: ByteSize::gb(1),
                 partial_request_cache_capacity: ByteSize::mb(64),
                 max_num_concurrent_split_searches: 150,
-                max_num_concurrent_split_streams: 120,
+                _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 storage_timeout_policy: Some(crate::StorageTimeoutPolicy {
@@ -970,6 +970,7 @@ mod tests {
             assert_eq!(
                 node_config.peer_seed_addrs().await.unwrap(),
                 vec![
+                    "unresolvable.example.com:1789".to_string(),
                     "localhost:1789".to_string(),
                     "localhost:1337".to_string(),
                     "127.0.0.1:1789".to_string(),

@@ -40,14 +40,6 @@ test-all:
 test-failpoints:
 	cargo nextest run --test failpoints --features fail/failpoints
 
-test-lambda:
-	AWS_ACCESS_KEY_ID=ignored \
-	AWS_SECRET_ACCESS_KEY=ignored \
-	AWS_REGION=us-east-1 \
-	QW_S3_ENDPOINT=http://localhost:4566 \
-	QW_S3_FORCE_PATH_STYLE_ACCESS=1 \
-	cargo nextest run --all-features -p quickwit-lambda --retries 1
-
 # TODO: to be replaced by https://github.com/quickwit-oss/quickwit/issues/237
 TARGET ?= x86_64-unknown-linux-gnu
 .PHONY: build

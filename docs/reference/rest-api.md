@@ -113,61 +113,6 @@ GET api/v1/stackoverflow*/search
 }
 ```
 
-### Search stream in an index
-
-```
-GET api/v1/<index id>/search/stream?query=searchterm&fast_field=my_id
-```
-
-Streams field values from ALL documents matching a search query in the target index `<index id>`, in a specified output format among the following:
-
-- [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
-- [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary). If `partition_by_field` is set, Quickwit returns chunks of data for each partition field value. Each chunk starts with 16 bytes being partition value and content length and then the `fast_field` values in `RowBinary` format.
-
-`fast_field` and `partition_by_field` must be fast fields of type `i64` or `u64`.
-
-This endpoint is available as long as you have at least one node running a searcher service in the cluster.
-
-
-
-:::note
-
-The endpoint will return 10 million values if 10 million documents match the query. This is expected, this endpoint is made to support queries matching millions of documents and return field values in a reasonable response time.
-
-:::
-
-#### Path variable
-
-| Variable      | Description   |
-| ------------- | ------------- |
-| `index id`  | The index id  |
-
-#### Get parameters
-
-| Variable            | Type       | Description                                                                                              | Default value                                      |
-|---------------------|------------|----------------------------------------------------------------------------------------------------------|----------------------------------------------------|
-| `query`           | `String`   | Query text. See the [query language doc](query-language.md)                                                | _required_                                         |
-| `fast_field`      | `String`   | Name of a field to retrieve from documents. This field must be a fast field of type `i64` or `u64`.        | _required_                                         |
-| `search_field`    | `[String]` | Fields to search on. Comma-separated list, e.g. "field1,field2"                                            | index_config.search_settings.default_search_fields |
-| `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.  |                                                    |
-| `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.     |                                                    |
-| `partition_by_field` | `String`      | If set, the endpoint returns chunks of data for each partition field value. This field must be a fast field of type `i64` or `u64`.           |                                                    |
-| `output_format`   | `String`   | Response output format. `csv` or `clickHouseRowBinary`  | `csv` |
-
-:::info
-The `start_timestamp` and `end_timestamp` should be specified in seconds regardless of the timestamp field precision.
-:::
-
-#### Response
-
-The response is an HTTP stream. Depending on the client's capability, it is an HTTP1.1 [chunked transfer encoded stream](https://en.wikipedia.org/wiki/Chunked_transfer_encoding) or an HTTP2 stream.
-
-It returns a list of all the field values from documents matching the query. The field must be marked as "fast" in the index config for this to work.
-The formatting is based on the specified output format.
-
-On error, an "X-Stream-Error" header will be sent via the trailers channel with information about the error, and the stream will be closed via [`sender.abort()`](https://docs.rs/hyper/0.14.16/hyper/body/struct.Sender.html#method.abort).
-Depending on the client, the trailer header with error details may not be shown. The error will also be logged in quickwit ("Error when streaming search results").
-
 ## Ingest API
 
 ### Ingest data into an index

@@ -67,19 +67,18 @@ where
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<Option<T>> {
         // QW env vars take precedence over the config file values.
-        if E > QW_NONE {
-            if let Some(env_var_key) = QW_ENV_VARS.get(&E) {
-                if let Some(env_var_value) = env_vars.get(*env_var_key) {
-                    let value = env_var_value.parse::<T>().map_err(|error| {
-                        anyhow::anyhow!(
-                            "failed to convert value `{env_var_value}` read from environment \
-                             variable `{env_var_key}` to type `{}`: {error:?}",
-                            any::type_name::<T>(),
-                        )
-                    })?;
-                    return Ok(Some(value));
-                }
-            }
+        if E > QW_NONE
+            && let Some(env_var_key) = QW_ENV_VARS.get(&E)
+            && let Some(env_var_value) = env_vars.get(*env_var_key)
+        {
+            let value = env_var_value.parse::<T>().map_err(|error| {
+                anyhow::anyhow!(
+                    "failed to convert value `{env_var_value}` read from environment variable \
+                     `{env_var_key}` to type `{}`: {error:?}",
+                    any::type_name::<T>(),
+                )
+            })?;
+            return Ok(Some(value));
         }
         Ok(self.provided.or(self.default))
     }

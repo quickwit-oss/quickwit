@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use anyhow::{bail, ensure};
 use bytesize::ByteSize;
-use legacy_http::HeaderMap;
+use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::shared_consts::{
     DEFAULT_SHARD_BURST_LIMIT, DEFAULT_SHARD_SCALE_UP_FACTOR, DEFAULT_SHARD_THROUGHPUT_LIMIT,
@@ -268,7 +268,9 @@ pub struct SearcherConfig {
     pub split_footer_cache_capacity: ByteSize,
     pub partial_request_cache_capacity: ByteSize,
     pub max_num_concurrent_split_searches: usize,
-    pub max_num_concurrent_split_streams: usize,
+    // Deprecated: stream search requests are no longer supported.
+    #[serde(alias = "max_num_concurrent_split_streams", default, skip_serializing)]
+    pub _max_num_concurrent_split_streams: Option<serde::de::IgnoredAny>,
     // Strangely, if None, this will also have the effect of not forwarding
     // to searcher.
     // TODO document and fix if necessary.
@@ -322,8 +324,8 @@ impl Default for SearcherConfig {
             fast_field_cache_capacity: ByteSize::gb(1),
             split_footer_cache_capacity: ByteSize::mb(500),
             partial_request_cache_capacity: ByteSize::mb(64),
-            max_num_concurrent_split_streams: 100,
             max_num_concurrent_split_searches: 100,
+            _max_num_concurrent_split_streams: None,
             aggregation_memory_limit: ByteSize::mb(500),
             aggregation_bucket_limit: 65000,
             split_cache: None,
@@ -352,16 +354,6 @@ impl SearcherConfig {
                     "max_num_concurrent_split_searches ({}) must be lower or equal to \
                      split_cache.max_file_descriptors ({})",
                     self.max_num_concurrent_split_searches,
-                    split_cache_limits.max_file_descriptors
-                );
-            }
-            if self.max_num_concurrent_split_streams
-                > split_cache_limits.max_file_descriptors.get() as usize
-            {
-                anyhow::bail!(
-                    "max_num_concurrent_split_streams ({}) must be lower or equal to \
-                     split_cache.max_file_descriptors ({})",
-                    self.max_num_concurrent_split_streams,
                     split_cache_limits.max_file_descriptors
                 );
             }
@@ -717,15 +709,17 @@ impl NodeConfig {
         // validation purposes. Additionally, we need to append a default port if necessary and
         // finally return the addresses as strings, which is tricky for IPv6. We let the logic baked
         // in `HostAddr` handle this complexity.
+        let mut found_something = false;
         for peer_seed in &self.peer_seeds {
             let peer_seed_addr = HostAddr::parse_with_default_port(peer_seed, default_gossip_port)?;
             if let Err(error) = peer_seed_addr.resolve().await {
                 warn!(peer_seed = %peer_seed_addr, error = ?error, "failed to resolve peer seed address");
-                continue;
+            } else {
+                found_something = true;
             }
             peer_seed_addrs.push(peer_seed_addr.to_string())
         }
-        if !self.peer_seeds.is_empty() && peer_seed_addrs.is_empty() {
+        if !self.peer_seeds.is_empty() && !found_something {
             warn!("failed to resolve all the peer seed addresses")
         }
         Ok(peer_seed_addrs)

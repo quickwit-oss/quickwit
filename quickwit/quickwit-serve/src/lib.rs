@@ -150,6 +150,7 @@ fn get_metastore_client_max_concurrency() -> usize {
     quickwit_common::get_from_env(
         METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY,
         DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY,
+        false,
     )
 }
 
@@ -260,11 +261,6 @@ async fn balance_channel_for_service(
         })
     });
     BalanceChannel::from_stream(service_change_stream)
-}
-
-fn convert_status_code_to_legacy_http(status_code: http::StatusCode) -> warp::http::StatusCode {
-    warp::http::StatusCode::from_u16(status_code.as_u16())
-        .unwrap_or(warp::http::StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 async fn start_ingest_client_if_needed(
@@ -388,13 +384,12 @@ fn start_shard_positions_service(
     // We spawn a task here, because we need the ingester to be ready before spawning the
     // the `ShardPositionsService`. If we don't, all the events we emit too early will be dismissed.
     tokio::spawn(async move {
-        if let Some(ingester) = ingester_opt {
-            if wait_for_ingester_status(ingester, IngesterStatus::Ready)
+        if let Some(ingester) = ingester_opt
+            && wait_for_ingester_status(ingester, IngesterStatus::Ready)
                 .await
                 .is_err()
-            {
-                warn!("ingester failed to reach ready status");
-            }
+        {
+            warn!("ingester failed to reach ready status");
         }
         ShardPositionsService::spawn(&spawn_ctx, event_broker, cluster);
     });
@@ -417,10 +412,10 @@ async fn shutdown_signal_handler(
     shutdown_signal.await;
     // We must decommission the ingester first before terminating the indexing pipelines that
     // may consume from it. We also need to keep the gRPC server running while doing so.
-    if let Some(ingester) = ingester_opt {
-        if let Err(error) = wait_for_ingester_decommission(ingester).await {
-            error!("failed to decommission ingester gracefully: {:?}", error);
-        }
+    if let Some(ingester) = ingester_opt
+        && let Err(error) = wait_for_ingester_decommission(ingester).await
+    {
+        error!("failed to decommission ingester gracefully: {:?}", error);
     }
     let actor_exit_statuses = universe.quit().await;
 
@@ -1298,12 +1293,12 @@ async fn node_readiness_reporting_task(
     };
     info!("REST server is ready");
 
-    if let Some(ingester) = ingester_opt {
-        if let Err(error) = wait_for_ingester_status(ingester, IngesterStatus::Ready).await {
-            error!("failed to initialize ingester: {:?}", error);
-            info!("shutting down");
-            return;
-        }
+    if let Some(ingester) = ingester_opt
+        && let Err(error) = wait_for_ingester_status(ingester, IngesterStatus::Ready).await
+    {
+        error!("failed to initialize ingester: {:?}", error);
+        info!("shutting down");
+        return;
     }
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
 
@@ -1615,7 +1610,7 @@ mod tests {
             1,
             true,
             &["indexer"],
-            &[new_indexing_task.clone()],
+            std::slice::from_ref(&new_indexing_task),
         )
         .await;
         cluster_change_stream_tx

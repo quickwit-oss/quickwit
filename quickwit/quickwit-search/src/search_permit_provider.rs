@@ -200,10 +200,10 @@ impl SearchPermitActor {
         if self.num_warmup_slots_available == 0 {
             return None;
         }
-        if let Some((_, next_permit_size)) = self.permits_requests.front() {
-            if self.total_memory_allocated + next_permit_size <= self.total_memory_budget {
-                return self.permits_requests.pop_front();
-            }
+        if let Some((_, next_permit_size)) = self.permits_requests.front()
+            && self.total_memory_allocated + next_permit_size <= self.total_memory_budget
+        {
+            return self.permits_requests.pop_front();
         }
         None
     }

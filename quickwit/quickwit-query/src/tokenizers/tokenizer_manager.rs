@@ -22,7 +22,7 @@ use tantivy::tokenizer::{
 
 use crate::DEFAULT_REMOVE_TOKEN_LENGTH;
 
-const RAW_TOKENIZER_NAME: &str = "raw";
+pub const RAW_TOKENIZER_NAME: &str = "raw";
 const LOWERCASE_TOKENIZER_NAME: &str = "lowercase";
 const RAW_LOWERCASE_TOKENIZER_NAME: &str = "raw_lowercase";
 

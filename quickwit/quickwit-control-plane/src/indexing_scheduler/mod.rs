@@ -18,7 +18,7 @@ mod scheduling;
 use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
@@ -41,6 +41,8 @@ use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
 use crate::metrics::ShardLocalityMetrics;
 use crate::model::{ControlPlaneModel, ShardEntry, ShardLocations};
 use crate::{IndexerNodeInfo, IndexerPool};
+
+const DEFAULT_ENABLE_VARIABLE_SHARD_LOAD: bool = false;
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
@@ -121,7 +123,30 @@ impl fmt::Debug for IndexingScheduler {
 fn enable_variable_shard_load() -> bool {
     static IS_SHARD_LOAD_CP_ENABLED: OnceCell<bool> = OnceCell::new();
     *IS_SHARD_LOAD_CP_ENABLED.get_or_init(|| {
-        !quickwit_common::get_bool_from_env("QW_DISABLE_VARIABLE_SHARD_LOAD", false)
+        if let Some(enable_flag) =
+            quickwit_common::get_bool_from_env_opt("QW_ENABLE_VARIABLE_SHARD_LOAD")
+        {
+            return enable_flag;
+        }
+        // For backward compatibility, if QW_DISABLE_VARIABLE_SHARD_LOAD is set, we accept this
+        // value too.
+        if let Some(disable_flag) =
+            quickwit_common::get_bool_from_env_opt("QW_DISABLE_VARIABLE_SHARD_LOAD")
+        {
+            warn!(
+                disable = disable_flag,
+                "QW_DISABLE_VARIABLE_SHARD_LOAD is deprecated. Please use \
+                 QW_ENABLE_VARIABLE_SHARD_LOAD instead. We will use your setting in this version, \
+                 but will likely ignore it in future versions."
+            );
+            return !disable_flag;
+        }
+        // Defaulting to false
+        info!(
+            "QW_ENABLE_VARIABLE_SHARD_LOAD not set, defaulting to {}",
+            DEFAULT_ENABLE_VARIABLE_SHARD_LOAD
+        );
+        DEFAULT_ENABLE_VARIABLE_SHARD_LOAD
     })
 }
 
@@ -152,8 +177,20 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
         const MIN_CPU_LOAD_PER_SHARD: u32 = 50u32;
         NonZeroU32::new((num_cpu_millis as u32).max(MIN_CPU_LOAD_PER_SHARD)).unwrap()
     } else {
-        NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis() / 4).unwrap()
+        get_default_load_per_shard()
     }
+}
+
+fn get_default_load_per_shard() -> NonZeroU32 {
+    static DEFAULT_LOAD_PER_SHARD: OnceLock<NonZeroU32> = OnceLock::new();
+    *DEFAULT_LOAD_PER_SHARD.get_or_init(|| {
+        let default_load_per_shard = quickwit_common::get_from_env(
+            "QW_DEFAULT_LOAD_PER_SHARD",
+            PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
+            false,
+        );
+        NonZeroU32::new(default_load_per_shard).unwrap()
+    })
 }
 
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
@@ -318,12 +355,11 @@ impl IndexingScheduler {
                 self.rebuild_plan(model);
                 return;
             };
-        if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp {
-            if Instant::now().duration_since(last_applied_plan_timestamp)
+        if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp
+            && Instant::now().duration_since(last_applied_plan_timestamp)
                 < MIN_DURATION_BETWEEN_SCHEDULING
-            {
-                return;
-            }
+        {
+            return;
         }
         let indexers: Vec<IndexerNodeInfo> = self.get_indexers_from_indexer_pool();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
