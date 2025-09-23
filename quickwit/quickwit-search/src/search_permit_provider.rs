@@ -461,6 +461,15 @@ pub struct SyncSearchPermit {
     memory_allocation: u64,
 }
 
+impl Drop for SyncSearchPermit {
+    fn drop(&mut self) {
+        // Decrement the memory and permit counters when the permit is dropped
+        let mut state_guard = self.state.lock().unwrap();
+        state_guard.current_permits = state_guard.current_permits.saturating_sub(1);
+        state_guard.current_memory = state_guard.current_memory.saturating_sub(self.memory_allocation);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::iter::repeat_n;

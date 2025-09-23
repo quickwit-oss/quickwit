@@ -455,7 +455,7 @@ pub struct SearcherContext {
     pub fast_fields_cache: Arc<dyn StorageCache>,
     /// Counting semaphore to limit concurrent leaf search split requests.
     pub search_permit_provider: SearchPermitProvider,
-    /// Split footer cache.
+    /// Split footer cache - now supports sharing via Arc.
     pub split_footer_cache: MemorySizedCache<String>,
     /// Counting semaphore to limit concurrent split stream requests.
     pub split_stream_semaphore: Semaphore,

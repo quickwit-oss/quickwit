@@ -192,13 +192,11 @@ impl BundleStorageFileOffsets {
         tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - file slice len: {}", thread_id, file.len());
         tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}] BundleStorageFileOffsets::open - call stack trace:", thread_id);
         
-        // Print a simplified stack trace to understand the call path
+        // Print complete stack trace to understand the call path - no filters, increased to 30 frames
         let backtrace = std::backtrace::Backtrace::force_capture();
         let backtrace_str = format!("{}", backtrace);
-        for (i, line) in backtrace_str.lines().take(8).enumerate() {
-            if line.contains("tantivy4java") || line.contains("quickwit") || line.contains("bundle") || line.contains("split") {
-                tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}]   {}: {}", thread_id, i, line.trim());
-            }
+        for (i, line) in backtrace_str.lines().take(30).enumerate() {
+            tantivy4java_debug!("QUICKWIT DEBUG: [Thread {:?}]   {}: {}", thread_id, i, line.trim());
         }
         
         tantivy4java_debug!("QUICKWIT DEBUG: Splitting file from end for metadata length...");

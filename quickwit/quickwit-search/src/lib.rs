@@ -19,7 +19,7 @@
 
 mod client;
 mod cluster_client;
-mod collector;
+pub mod collector;
 mod error;
 mod fetch_docs;
 mod filters;
