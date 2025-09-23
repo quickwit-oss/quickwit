@@ -383,9 +383,26 @@ pub(crate) mod test_suite {
     #[cfg(feature = "integration-testsuite")]
     pub async fn storage_test_multi_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("hello_large.txt");
-        let test_buffer = vec![0u8; 15_000_000];
+
+        let mut test_buffer = Vec::with_capacity(15_000_000);
+        for i in 0..15_000_000u32 {
+            test_buffer.push((i % 256) as u8);
+        }
+
+        let expected_hash = md5::compute(&test_buffer);
+
         storage.put(test_path, Box::new(test_buffer)).await?;
+
         assert_eq!(storage.file_num_bytes(test_path).await?, 15_000_000);
+
+        let downloaded_data = storage.get_all(test_path).await?;
+        let actual_hash = md5::compute(&downloaded_data);
+
+        assert_eq!(
+            expected_hash, actual_hash,
+            "Content hash mismatch - data corruption detected!"
+        );
+
         Ok(())
     }
 }
