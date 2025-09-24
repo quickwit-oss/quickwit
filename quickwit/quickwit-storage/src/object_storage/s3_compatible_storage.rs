@@ -554,7 +554,7 @@ impl S3CompatibleObjectStorage {
 
         crate::STORAGE_METRICS.object_storage_get_total.inc();
         crate::STORAGE_METRICS
-            .dd_object_storage_get_bytes_total
+            .dd_object_storage_get_total
             .increment(1);
 
         let get_object_output = self
