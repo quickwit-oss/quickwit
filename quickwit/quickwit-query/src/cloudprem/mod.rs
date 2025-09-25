@@ -14,5 +14,7 @@ fn missing_required(field: &str) -> InvalidQuery {
 }
 
 fn unsupported_query_error(feature: &str) -> InvalidQuery {
-    InvalidQuery::Other(anyhow::anyhow!("unsupported feature: {feature}"))
+    InvalidQuery::Other(anyhow::anyhow!(
+        "unsupported feature in CloudPrem: {feature}"
+    ))
 }
