@@ -44,24 +44,26 @@ use quickwit_proto::metastore::{
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
     DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
     DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetIndexTemplateRequest,
-    GetIndexTemplateResponse, IndexMetadataFailure, IndexMetadataFailureReason,
-    IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch, IndexesMetadataRequest,
-    IndexesMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
-    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexTemplatesRequest,
-    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
+    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
+    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
+    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
+    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
 use time::OffsetDateTime;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 use ulid::Ulid;
+use uuid::Uuid;
 
 use self::file_backed_index::FileBackedIndex;
 pub use self::file_backed_metastore_factory::FileBackedMetastoreFactory;
@@ -1201,6 +1203,32 @@ impl MetastoreService for FileBackedMetastore {
             return Err(error);
         }
         Ok(EmptyResponse {})
+    }
+
+    // Get cluster identity api
+
+    // this returns a constant uuid. on first call, it generate said uuid if it doesn't already
+    // exists
+    async fn get_cluster_identity(
+        &self,
+        _: GetClusterIdentityRequest,
+    ) -> MetastoreResult<GetClusterIdentityResponse> {
+        let mut state_wlock_guard = self.state.write().await;
+
+        if state_wlock_guard.identity.is_nil() {
+            state_wlock_guard.identity = Uuid::new_v4();
+
+            let manifest = state_wlock_guard.as_manifest();
+
+            if let Err(error) = save_manifest(&*self.storage, &manifest).await {
+                state_wlock_guard.identity = Uuid::nil();
+                return Err(error);
+            }
+        }
+
+        Ok(GetClusterIdentityResponse {
+            uuid: state_wlock_guard.identity.hyphenated().to_string(),
+        })
     }
 }
 
