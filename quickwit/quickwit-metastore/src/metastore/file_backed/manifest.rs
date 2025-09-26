@@ -23,6 +23,7 @@ use quickwit_proto::types::{DocMappingUid, IndexId};
 use quickwit_storage::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
 use serde::{Deserialize, Serialize};
 use tracing::error;
+use uuid::Uuid;
 
 pub(super) const MANIFEST_FILE_NAME: &str = "manifest.json";
 
@@ -40,6 +41,7 @@ impl LegacyManifest {
         Manifest {
             indexes: self.indexes,
             templates: HashMap::new(),
+            identity: Uuid::nil(),
         }
     }
 }
@@ -64,6 +66,7 @@ pub(crate) struct Manifest {
     // The templates are serialized as a sorted `Vec<IndexTemplate>` so the btree map is
     // unnecessary here and we can pass the hash map as is to the `MetastoreState`
     pub templates: HashMap<IndexTemplateId, IndexTemplate>,
+    pub identity: Uuid,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -103,6 +106,8 @@ impl From<VersionedManifest> for Manifest {
 struct ManifestV0_8 {
     indexes: BTreeMap<IndexId, IndexStatus>,
     templates: Vec<IndexTemplate>,
+    #[serde(default, skip_serializing_if = "Uuid::is_nil")]
+    identity: Uuid,
 }
 
 impl From<Manifest> for ManifestV0_8 {
@@ -115,6 +120,7 @@ impl From<Manifest> for ManifestV0_8 {
         ManifestV0_8 {
             indexes: manifest.indexes,
             templates,
+            identity: manifest.identity,
         }
     }
 }
@@ -127,7 +133,11 @@ impl From<ManifestV0_8> for Manifest {
             .into_iter()
             .map(|template| (template.template_id.clone(), template))
             .collect();
-        Manifest { indexes, templates }
+        Manifest {
+            indexes,
+            templates,
+            identity: manifest.identity,
+        }
     }
 }
 
@@ -144,7 +154,11 @@ impl quickwit_config::TestableForRegression for Manifest {
             "test-template-1".to_string(),
             IndexTemplate::sample_for_regression(),
         );
-        Manifest { indexes, templates }
+        Manifest {
+            indexes,
+            templates,
+            identity: Uuid::nil(),
+        }
     }
 
     fn assert_equality(&self, other: &Self) {
@@ -320,7 +334,11 @@ mod tests {
                 IndexTemplate::for_test("test-template-2", &["test-index-bar*"], 200),
             ),
         ]);
-        let manifest = Manifest { indexes, templates };
+        let manifest = Manifest {
+            indexes,
+            templates,
+            identity: Uuid::nil(),
+        };
         let manifest_json = serde_json::to_string_pretty(&manifest).unwrap();
         let manifest_deserialized: Manifest = serde_json::from_str(&manifest_json).unwrap();
         assert_eq!(manifest, manifest_deserialized);
