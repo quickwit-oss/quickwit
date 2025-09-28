@@ -90,6 +90,7 @@ pub(crate) async fn start_cloudprem_server(
                 datadog_config.dd_api_key,
                 datadog_config.dd_application_key,
                 cloudprem_service_client.clone(),
+                services.metastore_client.clone(),
             ));
         }
         Some(cloudprem_service_client.as_grpc_service(grpc_config.max_message_size))

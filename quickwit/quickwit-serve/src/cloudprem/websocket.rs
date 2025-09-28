@@ -12,6 +12,9 @@ use prost::Message as ProstMessage;
 use quickwit_common::retry::RetryParams;
 use quickwit_proto::GrpcServiceError;
 use quickwit_proto::cloudprem::*;
+use quickwit_proto::metastore::{
+    GetClusterIdentityRequest, MetastoreService, MetastoreServiceClient,
+};
 use quickwit_proto::tonic::Code;
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinSet;
@@ -109,6 +112,7 @@ async fn single_websocket(
     dd_api_key: &str,
     dd_application_key: &str,
     service: CloudPremServiceClient,
+    cluster_remote_uid: String,
 ) -> Result<Never, TungsteniteError> {
     let mut pending_requests = JoinSet::new();
     let (sender, mut receiver) = channel(5);
@@ -125,6 +129,7 @@ async fn single_websocket(
         grpc_code: Code::Ok as u32,
         response: Some(any_response::Response::ClusterIdentify(ClusterIdentify {
             org_id: 0,
+            cluster_remote_uid,
         })),
     };
     let cluster_identify_ws = Message::binary(cluster_identify.encode_to_vec());
@@ -214,7 +219,25 @@ pub(crate) async fn maintain_websocket(
     dd_api_key: String,
     dd_application_key: String,
     service: CloudPremServiceClient,
+    metastore: MetastoreServiceClient,
 ) {
+    let mut metastore_cool_down = tokio::time::interval(Duration::from_secs(3));
+
+    // we try to get the cluster id in a loop: in case we start before a metastore is available,
+    // we don't want to disable reverse connection, or crashloop for so little
+    let cluster_remote_uid = loop {
+        metastore_cool_down.tick().await;
+        match metastore
+            .get_cluster_identity(GetClusterIdentityRequest {})
+            .await
+        {
+            Ok(response) => break response.uuid,
+            Err(e) => warn!("failed to get cluster identity from metastore: {e:?}"),
+        }
+    };
+
+    info!(cluster_remote_uid=%cluster_remote_uid, "fetched cluster remote uid");
+
     let backoff = RetryParams {
         // if this error comes from an incident at DD, we don't want to hammer the api so much that
         // it never can recover
@@ -228,10 +251,16 @@ pub(crate) async fn maintain_websocket(
     let mut retry_count = 0;
 
     loop {
-        info!("new connection");
+        info!("initiating new reverse connection");
         let before_conn = Instant::now();
-        let Err(err) =
-            single_websocket(&url, &dd_api_key, &dd_application_key, service.clone()).await;
+        let Err(err) = single_websocket(
+            &url,
+            &dd_api_key,
+            &dd_application_key,
+            service.clone(),
+            cluster_remote_uid.clone(),
+        )
+        .await;
 
         let msg = format_err(&err);
         let too_short = before_conn.elapsed() < MIN_HEALTHY_CONN_DURATION;

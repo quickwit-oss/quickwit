@@ -33,6 +33,13 @@ version: 0.8
 #
 # listen_address: 127.0.0.1
 #
+
+# cloudprem:
+#   enable_reverse_connection: true
+#   site: app.datad0g.com
+#   dd_api_key: some_api_key
+#   dd_application_key: some_app_key
+
 # rest:
 #   listen_port: 7280
 #   cors_allow_origins:

@@ -674,7 +674,9 @@ windows,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-core Authors
 windows-implement,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
+windows-implement,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-implement Authors
 windows-interface,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
+windows-interface,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-interface Authors
 windows-link,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-link,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-link Authors
 windows-registry,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
@@ -685,6 +687,7 @@ windows-strings,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The wi
 windows-sys,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-sys,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-sys Authors
 windows-targets,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
+windows-targets,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-targets Authors
 windows_aarch64_gnullvm,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows_aarch64_msvc,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows_i686_gnu,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
