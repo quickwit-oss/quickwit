@@ -75,7 +75,7 @@ use quickwit_common::tower::{
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
+use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, RetentionPolicy};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -102,7 +102,7 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
 use quickwit_proto::metastore::{
-    EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
+    EntityKind, IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient,
 };
 use quickwit_proto::search::ReportSplitsRequest;
@@ -1391,18 +1391,6 @@ async fn create_managed_indexes(
         indexes_to_create.push(("OTEL logs", otel_logs_index_config));
         indexes_to_create.push(("OTEL traces", otel_traces_index_config));
     }
-
-    if node_config.cloudprem_config.create_datadog_index {
-        let datadog_index_config_bytes = include_bytes!("../../../config/cloudprem/datadog.yaml");
-        let datadog_index_config = quickwit_config::load_index_config_from_user_config(
-            quickwit_config::ConfigFormat::Yaml,
-            datadog_index_config_bytes,
-            &node_config.default_index_root_uri,
-        )?;
-
-        indexes_to_create.push(("Datadog", datadog_index_config));
-    }
-
     for (index_name, index_config) in indexes_to_create {
         match index_manager.create_index(index_config, false).await {
             Ok(_)
@@ -1412,20 +1400,94 @@ async fn create_managed_indexes(
             Err(error) => bail!("failed to create {index_name} index: {error}"),
         };
     }
+    create_or_update_datadog_index(node_config, &mut index_manager).await?;
     Ok(())
 }
 
-pub mod lambda_search_api {
-    pub use crate::elasticsearch_api::{
-        es_compat_cat_indices_handler, es_compat_index_cat_indices_handler,
-        es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
-        es_compat_index_multi_search_handler, es_compat_index_search_handler,
-        es_compat_index_stats_handler, es_compat_resolve_index_handler, es_compat_scroll_handler,
-        es_compat_search_handler, es_compat_stats_handler,
+/// Creates the Datadog index if it doesn't exist, or updates its retention policy if necessary.
+async fn create_or_update_datadog_index(
+    node_config: &NodeConfig,
+    index_manager: &mut IndexManager,
+) -> anyhow::Result<()> {
+    if !node_config.cloudprem_config.create_datadog_index {
+        return Ok(());
+    }
+    let index_config_bytes = include_bytes!("../../../config/cloudprem/datadog.yaml");
+    let mut index_config = quickwit_config::load_index_config_from_user_config(
+        quickwit_config::ConfigFormat::Yaml,
+        index_config_bytes,
+        &node_config.default_index_root_uri,
+    )?;
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_config.index_id.clone());
+
+    let mut index_metadata = match index_manager
+        .index_metadata_opt(index_metadata_request)
+        .await?
+    {
+        Some(index_metadata) => index_metadata,
+        None => {
+            patch_retention_policy(&mut index_config.retention_policy_opt);
+
+            info!("creating Datadog index");
+            index_manager.create_index(index_config, false).await?;
+            return Ok(());
+        }
     };
-    pub use crate::index_api::get_index_metadata_handler;
-    pub use crate::rest::recover_fn;
-    pub use crate::search_api::{search_get_handler, search_post_handler};
+    if !patch_retention_policy(&mut index_metadata.index_config.retention_policy_opt) {
+        return Ok(());
+    }
+    let retention_policy = index_metadata
+        .index_config
+        .retention_policy_opt
+        .as_ref()
+        .expect("retention policy should be set");
+
+    info!(
+        retention_policy=?retention_policy,
+        "updating Datadog index retention policy"
+    );
+    index_manager
+        .update_index(index_metadata.index_uid, index_metadata.index_config)
+        .await?;
+    Ok(())
+}
+
+/// Reads the retention period from the environment variable `CP_RETENTION_PERIOD` and patches the
+/// retention policy. Returns whether the retention policy was updated.
+fn patch_retention_policy(retention_policy_opt: &mut Option<RetentionPolicy>) -> bool {
+    let Some(retention_period) = quickwit_common::get_from_env_opt("CP_RETENTION_PERIOD", false)
+    else {
+        return false;
+    };
+    match retention_policy_opt {
+        Some(retention_policy) if retention_policy.retention_period == retention_period => {
+            return false;
+        }
+        Some(retention_policy) => {
+            retention_policy.retention_period = retention_period;
+        }
+        None => {
+            let retention_policy = RetentionPolicy {
+                retention_period,
+                evaluation_schedule: RetentionPolicy::default_schedule(),
+            };
+            *retention_policy_opt = Some(retention_policy);
+        }
+    };
+    let retention_policy = retention_policy_opt
+        .as_ref()
+        .expect("retention policy should be set");
+
+    if let Err(error) = retention_policy.validate() {
+        // We don't want to crash the node if the user-provided retention period cannot be parsed,
+        // so we just log an error and return false.
+        error!(
+            "failed to update retention policy: retention period `{}` is invalid: {error}",
+            retention_policy.retention_period
+        );
+        return false;
+    }
+    true
 }
 
 #[cfg(test)]

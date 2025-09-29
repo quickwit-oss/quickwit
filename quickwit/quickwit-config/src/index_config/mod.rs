@@ -246,7 +246,7 @@ impl RetentionPolicy {
         Ok(duration)
     }
 
-    pub(super) fn validate(&self) -> anyhow::Result<()> {
+    pub fn validate(&self) -> anyhow::Result<()> {
         self.retention_period()?;
         self.evaluation_schedule()?;
         Ok(())
