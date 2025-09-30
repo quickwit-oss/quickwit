@@ -191,6 +191,7 @@ impl ObjectUriBatchReader {
         }
         let limit_num_bytes = self.current_offset + BATCH_NUM_BYTES_LIMIT as usize;
         let mut new_offset = self.current_offset;
+        let mut eof_position: Option<Position> = None;
         while new_offset < limit_num_bytes {
             if let Some(record) = source_progress
                 .protect_future(self.reader.next_record())
@@ -200,18 +201,16 @@ impl ObjectUriBatchReader {
                 batch_builder.add_doc(record.doc);
                 if record.is_last {
                     self.is_eof = true;
+                    eof_position = Some(Position::eof(new_offset));
                     break;
                 }
             } else {
                 self.is_eof = true;
+                eof_position = Some(Position::eof(new_offset));
                 break;
             }
         }
-        let to_position = if self.is_eof {
-            Position::eof(new_offset)
-        } else {
-            Position::offset(new_offset)
-        };
+        let to_position = eof_position.unwrap_or(Position::offset(new_offset));
         batch_builder.checkpoint_delta.record_partition_delta(
             self.partition_id.clone(),
             Position::offset(self.current_offset),
