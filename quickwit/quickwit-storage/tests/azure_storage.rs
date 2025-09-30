@@ -45,7 +45,7 @@ async fn azure_storage_test_suite() -> anyhow::Result<()> {
 
     object_storage.set_policy(MultiPartPolicy {
         // On azure, block size is limited between 64KB and 100MB.
-        target_part_num_bytes: 5 * 1_024 * 1_024, // 5MB
+        target_part_num_bytes: 5 * 1_024 * 1_024, // 5MiB
         max_num_parts: 10_000,
         multipart_threshold_num_bytes: 10_000_000,
         max_object_num_bytes: 5_000_000_000_000,
