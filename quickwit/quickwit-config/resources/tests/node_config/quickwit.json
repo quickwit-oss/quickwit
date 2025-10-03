@@ -75,6 +75,7 @@
     "jaeger": {
         "enable_endpoint": true,
         "lookback_period_hours": 24,
+        "lookback_period_traces_hours": 24,
         "max_trace_duration_secs": 600,
         "max_fetch_spans": 1000
     }
