@@ -139,7 +139,10 @@ impl sqlx::Type<sqlx::Postgres> for ShardId {
 
 #[cfg(feature = "postgres")]
 impl sqlx::Encode<'_, sqlx::Postgres> for ShardId {
-    fn encode_by_ref(&self, buf: &mut sqlx::postgres::PgArgumentBuffer) -> sqlx::encode::IsNull {
+    fn encode_by_ref(
+        &self,
+        buf: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         sqlx::Encode::<sqlx::Postgres>::encode(self.as_str(), buf)
     }
 }

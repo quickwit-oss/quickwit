@@ -206,8 +206,8 @@ rust-embed = "6.8"
 rustc-hash = "2.1"
 rustls = "0.23"
 rustls-pemfile = "2.2"
-sea-query = { version = "0.30" }
-sea-query-binder = { version = "0.5", features = [
+sea-query = { version = "0.32" }
+sea-query-binder = { version = "0.7", features = [
   "runtime-tokio-rustls",
   "sqlx-postgres",
 ] }
@@ -221,7 +221,7 @@ serde_yaml = "0.9"
 serial_test = { version = "3.2", features = ["file_locks"] }
 siphasher = "1.0"
 smallvec = "1"
-sqlx = { version = "0.7", features = [
+sqlx = { version = "0.8", features = [
   "migrate",
   "postgres",
   "runtime-tokio-rustls",
