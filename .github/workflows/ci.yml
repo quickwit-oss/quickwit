@@ -28,6 +28,8 @@ jobs:
   tests:
     name: Unit tests
     runs-on: ubuntu-16-core-latest
+    env:
+      CP_ENABLE_REVERSE_CONNECTION: false
     timeout-minutes: 40
     permissions:
       id-token: write

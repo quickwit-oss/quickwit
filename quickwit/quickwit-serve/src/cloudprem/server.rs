@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::CloudPremConfig;
@@ -17,8 +17,9 @@ use super::websocket::maintain_websocket;
 use crate::QuickwitServices;
 use crate::grpc::HttpHeadersCarrier;
 
-pub(crate) const DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY: &str =
-    "CP_DISABLE_CERTIFICATE_VERIFICATION";
+pub(crate) static DISABLE_CERTIFICATE_VERIFICATION: LazyLock<bool> = LazyLock::new(|| {
+    quickwit_common::get_bool_from_env("CP_DISABLE_CERTIFICATE_VERIFICATION", false)
+});
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_cloudprem_server(
@@ -82,13 +83,21 @@ pub(crate) async fn start_cloudprem_server(
         let cloudprem_service_client =
             CloudPremServiceClient::tower().build(cloudprem_service_impl);
         if cloudprem_config.enable_reverse_connection {
-            let datadog_config = cloudprem_config.datadog_config.clone().ok_or_else(|| {
-                anyhow::anyhow!("site and api keys need to be configured to use reverse connection")
-            })?;
-            tokio::spawn(maintain_websocket(
+            let datadog_config = cloudprem_config.datadog_config.clone();
+            info!(
                 datadog_config.site,
-                datadog_config.dd_api_key,
-                datadog_config.dd_application_key,
+                "connecting to Datadog using reverse connection"
+            );
+            tokio::spawn(maintain_websocket(
+                datadog_config
+                    .site
+                    .expect("site should be set when reverse connection is enabled"),
+                datadog_config
+                    .dd_api_key
+                    .expect("API key should be set when reverse connection is enabled"),
+                datadog_config
+                    .dd_application_key
+                    .expect("application key should be set when reverse connection is enabled"),
                 cloudprem_service_client.clone(),
                 services.metastore_client.clone(),
             ));
@@ -98,10 +107,8 @@ pub(crate) async fn start_cloudprem_server(
         None
     };
 
-    let disable_security =
-        quickwit_common::get_bool_from_env(DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY, false);
     let aws_mtls_interceptor_layer_opt: Option<MtlsHeaderInterceptorLayer<'static>> =
-        if disable_security {
+        if *DISABLE_CERTIFICATE_VERIFICATION {
             tracing::warn!("mTLS client certificate verification disabled");
             None
         } else {

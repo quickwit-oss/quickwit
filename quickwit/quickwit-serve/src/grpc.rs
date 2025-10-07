@@ -41,7 +41,7 @@ use tracing::*;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 use crate::cloudprem::{
-    CloudPremServiceImpl, DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY, MtlsHeaderInterceptorLayer,
+    CloudPremServiceImpl, DISABLE_CERTIFICATE_VERIFICATION, MtlsHeaderInterceptorLayer,
 };
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
@@ -269,10 +269,8 @@ pub(crate) async fn start_grpc_server(
     file_descriptor_sets.push(REFLECTION_FILE_DESCRIPTOR_SET);
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
-    let disable_security =
-        quickwit_common::get_bool_from_env(DISABLE_CERTIFICATE_VERIFICATION_ENV_KEY, false);
     let aws_mtls_interceptor_layer_opt: Option<MtlsHeaderInterceptorLayer<'static>> =
-        if disable_security {
+        if *DISABLE_CERTIFICATE_VERIFICATION {
             None
         } else {
             Some(MtlsHeaderInterceptorLayer::for_grpc_port())

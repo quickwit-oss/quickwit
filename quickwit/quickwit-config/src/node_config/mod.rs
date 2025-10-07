@@ -15,6 +15,7 @@
 mod serialize;
 
 use std::collections::{HashMap, HashSet};
+use std::convert::Infallible;
 use std::env;
 use std::net::SocketAddr;
 use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
@@ -558,61 +559,116 @@ impl Default for JaegerConfig {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+/// Reverse connection configuration.
+#[derive(Clone, PartialEq, Eq)]
 pub struct WebsocketConfig {
-    // which datadog site to connect to
-    pub site: String,
-    pub dd_api_key: String,
-    pub dd_application_key: String,
+    // The Datadog site to connect to.
+    pub site: Option<String>,
+    // The Datadog API key.
+    pub dd_api_key: Option<String>,
+    // The Datadog application key.
+    pub dd_application_key: Option<String>,
+}
+
+impl std::fmt::Debug for WebsocketConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WebsocketConfig")
+            .field("site", &self.site)
+            .field(
+                "dd_api_key",
+                &self.dd_api_key.as_ref().map(|_| "***redacted***"),
+            )
+            .field(
+                "dd_application_key",
+                &self.dd_application_key.as_ref().map(|_| "***redacted***"),
+            )
+            .finish()
+    }
 }
 
 impl WebsocketConfig {
+    // serde multikey expects a result, that's why we return an infallible result here.
     fn from_parts(
         site: Option<String>,
         dd_api_key: Option<String>,
         dd_application_key: Option<String>,
-    ) -> anyhow::Result<Option<Self>> {
-        match (site, dd_api_key, dd_application_key) {
-            (Some(site_raw), Some(dd_api_key), Some(dd_application_key)) => {
-                let site_no_proto = site_raw.strip_prefix("https://").unwrap_or(&site_raw);
-                let site_no_proto_no_slash =
-                    site_no_proto.strip_suffix("/").unwrap_or(site_no_proto);
-                // for some sites the agent support shortcut names, we try to reproduce that
-                // https://docs.datadoghq.com/agent/troubleshooting/site/?site=us
-                let site = match site_no_proto_no_slash {
-                    "datadoghq.com" => "app.datadoghq.com",
-                    "datadoghq.eu" => "app.datadoghq.eu",
-                    // we hardly care about fed, but let's have it for completness
-                    "ddog-gov.com" => "app.ddog-gov.com",
-                    site => site,
-                };
-                Ok(Some(WebsocketConfig {
-                    site: site.to_string(),
-                    dd_api_key,
-                    dd_application_key,
-                }))
-            }
-            (None, _, _) => Ok(None),
-            (Some(_), _, _) => {
-                bail!("`site` is set but `dd_api_key` or `dd_application_key` are missing")
-            }
+    ) -> Result<Self, Infallible> {
+        Ok(Self {
+            site,
+            dd_api_key,
+            dd_application_key,
+        })
+    }
+
+    fn to_parts(this: Self) -> (Option<String>, Option<String>, Option<String>) {
+        (this.site, this.dd_api_key, this.dd_application_key)
+    }
+
+    fn resolve(&self) -> Self {
+        let site = quickwit_common::get_from_env_opt::<String>("DD_SITE", false)
+            .or(self.site.clone())
+            .map(Self::normalize_site_url)
+            .unwrap_or("app.datadoghq.com".to_string());
+
+        let dd_api_key_opt = quickwit_common::get_from_env_opt::<String>("DD_API_KEY", true)
+            .or(self.dd_api_key.clone());
+
+        let dd_app_key_opt = quickwit_common::get_from_env_opt::<String>("DD_APP_KEY", true)
+            .or(self.dd_application_key.clone());
+
+        Self {
+            site: Some(site),
+            dd_api_key: dd_api_key_opt,
+            dd_application_key: dd_app_key_opt,
         }
     }
 
-    fn to_parts(this: Option<Self>) -> (Option<String>, Option<String>, Option<String>) {
-        match this {
-            Some(this) => (
-                Some(this.site),
-                Some(this.dd_api_key),
-                Some(this.dd_application_key),
-            ),
-            None => (None, None, None),
+    fn validate(&self, enable_reverse_connection: bool) -> anyhow::Result<()> {
+        ensure!(self.site.is_some(), "Datadog site should be set");
+
+        if enable_reverse_connection {
+            ensure!(
+                self.dd_api_key.is_some(),
+                "reverse connection is enabled, but Datadog API key is not set"
+            );
+            ensure!(
+                self.dd_application_key.is_some(),
+                "reverse connection is enabled, but Datadog application key is not set"
+            );
+        } else if self.dd_api_key.is_none() ^ self.dd_application_key.is_none() {
+            warn!("reverse connection is disabled, but either API key or application key is set");
+        }
+        Ok(())
+    }
+
+    fn normalize_site_url(site: String) -> String {
+        let site_no_scheme = site.strip_prefix("https://").unwrap_or(&site);
+        let site_no_scheme_no_slash = site_no_scheme.strip_suffix("/").unwrap_or(site_no_scheme);
+        // for some sites the agent supports aliases, we try to reproduce that
+        // https://docs.datadoghq.com/agent/troubleshooting/site/?site=us
+        let site = match site_no_scheme_no_slash {
+            "datadoghq.com" => "app.datadoghq.com",
+            "datadoghq.eu" => "app.datadoghq.eu",
+            // we hardly care about fed, but let's have it for completeness
+            "ddog-gov.com" => "app.ddog-gov.com",
+            site => site,
+        };
+        site.to_string()
+    }
+}
+
+impl Default for WebsocketConfig {
+    fn default() -> Self {
+        Self {
+            site: Some("app.datadoghq.com".to_string()),
+            dd_api_key: None,
+            dd_application_key: None,
         }
     }
 }
 
 #[quickwit_macros::serde_multikey]
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CloudPremConfig {
     #[serde(default)]
@@ -623,7 +679,7 @@ pub struct CloudPremConfig {
         deserializer = WebsocketConfig::from_parts,
         serializer = WebsocketConfig::to_parts,
         fields = (
-            #[serde(default)]
+            #[serde(default, alias = "dd_site")]
             pub site: Option<String>,
             #[serde(default)]
             pub dd_api_key: Option<String>,
@@ -631,8 +687,8 @@ pub struct CloudPremConfig {
             pub dd_application_key: Option<String>,
         ),
     )]
-    pub datadog_config: Option<WebsocketConfig>,
-    #[serde(default)]
+    pub datadog_config: WebsocketConfig,
+    #[serde(default = "CloudPremConfig::default_enable_reverse_connection")]
     pub enable_reverse_connection: bool,
     #[serde(default = "CloudPremConfig::default_create_datadog_index")]
     pub create_datadog_index: bool,
@@ -640,7 +696,22 @@ pub struct CloudPremConfig {
 
 impl CloudPremConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
-        self.grpc_config.validate()
+        self.grpc_config.validate()?;
+        self.datadog_config
+            .validate(self.enable_reverse_connection)?;
+
+        Ok(())
+    }
+
+    fn default_enable_reverse_connection() -> bool {
+        #[cfg(any(test, feature = "testsuite"))]
+        {
+            false
+        }
+        #[cfg(not(any(test, feature = "testsuite")))]
+        {
+            quickwit_common::get_bool_from_env("CP_ENABLE_REVERSE_CONNECTION", false)
+        }
     }
 
     fn default_create_datadog_index() -> bool {
@@ -651,6 +722,18 @@ impl CloudPremConfig {
         #[cfg(not(any(test, feature = "testsuite")))]
         {
             true
+        }
+    }
+}
+
+impl Default for CloudPremConfig {
+    fn default() -> Self {
+        Self {
+            mtls_header: None,
+            grpc_config: GrpcConfig::default(),
+            datadog_config: WebsocketConfig::default(),
+            enable_reverse_connection: Self::default_enable_reverse_connection(),
+            create_datadog_index: Self::default_create_datadog_index(),
         }
     }
 }
@@ -949,23 +1032,11 @@ mod tests {
     }
 
     #[test]
-    fn test_cleanup_site_url() {
-        let config = WebsocketConfig::from_parts(
-            Some("https://datadoghq.com/".to_string()),
-            Some("".to_string()),
-            Some("".to_string()),
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(config.site, "app.datadoghq.com");
+    fn test_normalize_site_url() {
+        let site = WebsocketConfig::normalize_site_url("https://datadoghq.com/".to_string());
+        assert_eq!(site, "app.datadoghq.com");
 
-        let config = WebsocketConfig::from_parts(
-            Some("us5.datadoghq.com".to_string()),
-            Some("".to_string()),
-            Some("".to_string()),
-        )
-        .unwrap()
-        .unwrap();
-        assert_eq!(config.site, "us5.datadoghq.com");
+        let site = WebsocketConfig::normalize_site_url("us5.datadoghq.com".to_string());
+        assert_eq!(site, "us5.datadoghq.com");
     }
 }
