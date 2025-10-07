@@ -26,13 +26,14 @@ use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
     AddSourceRequestExt, CreateIndexResponseExt, IndexMetadata, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
-    MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState, UpdateSourceRequestExt,
+    MetastoreServiceStreamSplitsExt, SplitInfo, SplitMetadata, SplitState, UpdateIndexRequestExt,
+    UpdateSourceRequestExt,
 };
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
     ListIndexesMetadataRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest, UpdateSourceRequest,
-    serde_utils,
+    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest, UpdateIndexRequest,
+    UpdateSourceRequest, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -152,6 +153,41 @@ impl IndexService {
         };
         let create_index_response = metastore.create_index(create_index_request).await?;
         let index_metadata = create_index_response.deserialize_index_metadata()?;
+        Ok(index_metadata)
+    }
+
+    /// Returns the index metadata for the given index ID if it exists.
+    pub async fn index_metadata_opt(
+        &self,
+        index_metadata_request: IndexMetadataRequest,
+    ) -> Result<Option<IndexMetadata>, IndexServiceError> {
+        let index_metadata_response = self.metastore.index_metadata(index_metadata_request).await;
+        match index_metadata_response {
+            Ok(index_metadata_response) => {
+                let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+                Ok(Some(index_metadata))
+            }
+            Err(MetastoreError::NotFound(_)) => Ok(None),
+            Err(error) => Err(IndexServiceError::Metastore(error)),
+        }
+    }
+
+    /// Updates an index with the given index config.
+    pub async fn update_index(
+        &self,
+        index_uid: IndexUid,
+        index_config: IndexConfig,
+    ) -> Result<IndexMetadata, IndexServiceError> {
+        let update_index_request = UpdateIndexRequest::try_from_updates(
+            index_uid,
+            &index_config.doc_mapping,
+            &index_config.indexing_settings,
+            &index_config.ingest_settings,
+            &index_config.search_settings,
+            &index_config.retention_policy_opt,
+        )?;
+        let update_index_response = self.metastore.update_index(update_index_request).await?;
+        let index_metadata = update_index_response.deserialize_index_metadata()?;
         Ok(index_metadata)
     }
 
@@ -553,7 +589,9 @@ pub async fn validate_storage_uri(
 mod tests {
 
     use quickwit_common::uri::Uri;
-    use quickwit_config::{CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig};
+    use quickwit_config::{
+        CLI_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, RetentionPolicy,
+    };
     use quickwit_metastore::{
         MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt, metastore_for_test,
     };
@@ -607,6 +645,68 @@ mod tests {
         assert_eq!(index_metadata_1.index_id(), index_id);
         assert_eq!(index_metadata_1.index_uri(), &index_uri);
         assert!(index_metadata_0.index_uid != index_metadata_1.index_uid);
+    }
+
+    #[tokio::test]
+    async fn test_index_metadata_opt() {
+        let metastore = metastore_for_test();
+        let storage_resolver = StorageResolver::for_test();
+        let mut index_service = IndexService::new(metastore.clone(), storage_resolver);
+
+        let index_id = "test-index";
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+        let index_metadata = index_service
+            .index_metadata_opt(index_metadata_request)
+            .await
+            .unwrap();
+        assert!(index_metadata.is_none());
+
+        let index_uri = "ram://indexes/test-index";
+        let index_config = IndexConfig::for_test(index_id, index_uri);
+        let index_uid = index_service
+            .create_index(index_config.clone(), false)
+            .await
+            .unwrap()
+            .index_uid;
+        let index_metadata_request = IndexMetadataRequest::for_index_uid(index_uid.clone());
+        let index_metadata = index_service
+            .index_metadata_opt(index_metadata_request)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(index_metadata.index_uid, index_uid);
+    }
+
+    #[tokio::test]
+    async fn test_update_index() {
+        let metastore = metastore_for_test();
+        let storage_resolver = StorageResolver::for_test();
+        let mut index_service = IndexService::new(metastore.clone(), storage_resolver);
+
+        let index_id = "test-index";
+        let index_uri = "ram://indexes/test-index";
+        let mut index_config = IndexConfig::for_test(index_id, index_uri);
+        let index_uid = index_service
+            .create_index(index_config.clone(), false)
+            .await
+            .unwrap()
+            .index_uid;
+
+        let retention_policy = RetentionPolicy {
+            retention_period: "42 hours".to_string(),
+            evaluation_schedule: "hourly".to_string(),
+        };
+        index_config.retention_policy_opt = Some(retention_policy.clone());
+
+        let updated_index_metadata = index_service
+            .update_index(index_uid, index_config)
+            .await
+            .unwrap();
+        let updated_retention_policy = updated_index_metadata
+            .index_config
+            .retention_policy_opt
+            .unwrap();
+        assert_eq!(updated_retention_policy, retention_policy);
     }
 
     #[tokio::test]

@@ -23,11 +23,10 @@ use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
     ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitInfo, SplitState,
-    UpdateIndexRequestExt,
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, UpdateIndexRequest,
+    MetastoreResult, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
@@ -392,16 +391,10 @@ pub async fn update_index(
     )
     .map_err(IndexServiceError::InvalidConfig)?;
 
-    let update_request = UpdateIndexRequest::try_from_updates(
-        index_uid,
-        &new_index_config.doc_mapping,
-        &new_index_config.indexing_settings,
-        &new_index_config.ingest_settings,
-        &new_index_config.search_settings,
-        &new_index_config.retention_policy_opt,
-    )?;
-    let update_resp = metastore.update_index(update_request).await?;
-    Ok(update_resp.deserialize_index_metadata()?)
+    let index_metadata = index_service
+        .update_index(index_uid, new_index_config)
+        .await?;
+    Ok(index_metadata)
 }
 
 pub fn clear_index_handler(

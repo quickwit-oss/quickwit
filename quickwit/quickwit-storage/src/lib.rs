@@ -383,9 +383,28 @@ pub(crate) mod test_suite {
     #[cfg(feature = "integration-testsuite")]
     pub async fn storage_test_multi_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("hello_large.txt");
-        let test_buffer = vec![0u8; 15_000_000];
-        storage.put(test_path, Box::new(test_buffer)).await?;
+
+        let mut test_buffer = Vec::with_capacity(15_000_000);
+        for i in 0..15_000_000u32 {
+            test_buffer.push((i % 256) as u8);
+        }
+
+        storage
+            .put(test_path, Box::new(test_buffer.clone()))
+            .await?;
+
         assert_eq!(storage.file_num_bytes(test_path).await?, 15_000_000);
+
+        let downloaded_data = storage.get_all(test_path).await?;
+
+        assert_eq!(test_buffer.len(), downloaded_data.len(), "Length mismatch");
+        // dont use assert_eq since we dont want large buffers to be printed
+        // if assert fails
+        assert!(
+            test_buffer.as_slice() == downloaded_data.as_slice(),
+            "Content mismatch - data corruption detected!"
+        );
+
         Ok(())
     }
 }
