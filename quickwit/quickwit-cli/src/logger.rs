@@ -157,12 +157,18 @@ pub fn setup_logging_and_tracing(
 
 #[cfg(not(any(test, feature = "testsuite")))]
 pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
-    let host = quickwit_common::get_from_env::<String>(
-        "CLOUDPREM_DOGSTATSD_SERVER_HOST",
-        "127.0.0.1".to_string(),
-        false,
-    );
-    let port = quickwit_common::get_from_env::<u16>("CLOUDPREM_DOGSTATSD_SERVER_PORT", 8125, false);
+    // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
+    // deprecated and can be removed after 2026-04-01.
+    let host: String = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_HOST", false)
+        .unwrap_or_else(|| {
+            quickwit_common::get_from_env(
+                "CP_DOGSTATSD_SERVER_HOST",
+                "127.0.0.1".to_string(),
+                false,
+            )
+        });
+    let port: u16 = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_PORT", false)
+        .unwrap_or_else(|| quickwit_common::get_from_env("CP_DOGSTATSD_SERVER_PORT", 8125, false));
     let addr = format!("{host}:{port}");
 
     let mut global_labels = vec![::metrics::Label::new("version", build_info.version.clone())];

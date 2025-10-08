@@ -178,6 +178,7 @@ struct NodeConfigBuilder {
     rest_listen_port: Option<u16>,
     gossip_listen_port: ConfigValue<u16, QW_GOSSIP_LISTEN_PORT>,
     grpc_listen_port: ConfigValue<u16, QW_GRPC_LISTEN_PORT>,
+    // Should we move this to `CloudPremConfig` and rename the env var to `CP_LISTEN_PORT`?
     cloudprem_listen_port: ConfigValue<u16, QW_CLOUDPREM_LISTEN_PORT>,
     gossip_interval_ms: ConfigValue<u32, QW_GOSSIP_INTERVAL_MS>,
     #[serde(default)]
