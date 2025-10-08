@@ -8,7 +8,7 @@ indexing_settings:
 
 retention:
   period: 30 days
-  schedule: daily
+  schedule: hourly
   
 search_settings:
   default_search_fields: []
