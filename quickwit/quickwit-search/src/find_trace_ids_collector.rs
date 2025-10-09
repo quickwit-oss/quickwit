@@ -344,12 +344,16 @@ mod serde_datetime {
     use tantivy::DateTime;
 
     pub(crate) fn serialize<S>(datetime: &DateTime, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         serializer.serialize_i64(datetime.into_timestamp_nanos())
     }
 
     pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<DateTime, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let datetime_i64: i64 = Deserialize::deserialize(deserializer)?;
         Ok(DateTime::from_timestamp_nanos(datetime_i64))
     }
@@ -357,8 +361,8 @@ mod serde_datetime {
 
 #[cfg(test)]
 mod tests {
-    use tantivy::DateTime;
     use tantivy::time::OffsetDateTime;
+    use tantivy::DateTime;
 
     use super::*;
     use crate::collector::QuickwitAggregations;
