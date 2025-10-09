@@ -75,7 +75,10 @@ use quickwit_common::tower::{
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig, RetentionPolicy};
+use quickwit_config::{
+    ClusterConfig, DocMapping, IndexConfig, IngestApiConfig, IngestSettings, NodeConfig,
+    RetentionPolicy,
+};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -1412,44 +1415,78 @@ async fn create_or_update_datadog_index(
     if !node_config.cloudprem_config.create_datadog_index {
         return Ok(());
     }
-    let index_config_bytes = include_bytes!("../../../config/cloudprem/datadog.yaml");
-    let mut index_config = quickwit_config::load_index_config_from_user_config(
+    let default_index_config_bytes = include_bytes!("../../../config/cloudprem/datadog.yaml");
+    let mut default_index_config = quickwit_config::load_index_config_from_user_config(
         quickwit_config::ConfigFormat::Yaml,
-        index_config_bytes,
+        default_index_config_bytes,
         &node_config.default_index_root_uri,
     )?;
-    let index_metadata_request = IndexMetadataRequest::for_index_id(index_config.index_id.clone());
+    let index_id = default_index_config.index_id.clone();
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
+    let latest_doc_mapping = default_index_config.doc_mapping.clone();
 
-    let mut index_metadata = match index_manager
+    let mut current_index_metadata = match index_manager
         .index_metadata_opt(index_metadata_request)
         .await?
     {
         Some(index_metadata) => index_metadata,
         None => {
-            patch_retention_policy(&mut index_config.retention_policy_opt);
+            patch_index_config(&mut default_index_config, latest_doc_mapping);
 
             info!("creating Datadog index");
-            index_manager.create_index(index_config, false).await?;
+            index_manager
+                .create_index(default_index_config, false)
+                .await?;
             return Ok(());
         }
     };
-    if !patch_retention_policy(&mut index_metadata.index_config.retention_policy_opt) {
+    if !patch_index_config(&mut current_index_metadata.index_config, latest_doc_mapping) {
         return Ok(());
     }
-    let retention_policy = index_metadata
-        .index_config
-        .retention_policy_opt
-        .as_ref()
-        .expect("retention policy should be set");
-
-    info!(
-        retention_policy=?retention_policy,
-        "updating Datadog index retention policy"
-    );
     index_manager
-        .update_index(index_metadata.index_uid, index_metadata.index_config)
+        .update_index(
+            current_index_metadata.index_uid,
+            current_index_metadata.index_config,
+        )
         .await?;
     Ok(())
+}
+
+fn patch_index_config(index_config: &mut IndexConfig, latest_doc_mapping: DocMapping) -> bool {
+    let mut mutation_occurred =
+        patch_doc_mapping(&mut index_config.doc_mapping, latest_doc_mapping);
+    mutation_occurred |= patch_ingest_settings(&mut index_config.ingest_settings);
+    mutation_occurred |= patch_retention_policy(&mut index_config.retention_policy_opt);
+    mutation_occurred
+}
+
+/// Updates the doc mapping if it has changed.
+fn patch_doc_mapping(current_doc_mapping: &mut DocMapping, latest_doc_mapping: DocMapping) -> bool {
+    if current_doc_mapping.doc_mapping_uid == latest_doc_mapping.doc_mapping_uid {
+        return false;
+    }
+    current_doc_mapping.doc_mapping_uid = latest_doc_mapping.doc_mapping_uid;
+    info!("updating Datadog index doc mapping");
+    true
+}
+
+/// Reads the min number of shards from the environment variable `CP_MIN_SHARDS` and patches the
+/// ingest settings. Returns whether the ingest settings were updated.
+fn patch_ingest_settings(ingest_settings: &mut IngestSettings) -> bool {
+    let Some(min_shards) = quickwit_common::get_from_env_opt::<usize>("CP_MIN_SHARDS", false)
+    else {
+        return false;
+    };
+    let Some(non_zero_min_shards) = NonZeroUsize::new(min_shards) else {
+        error!("failed to update Datadog index: min shards should be greater than 0");
+        return false;
+    };
+    if ingest_settings.min_shards == non_zero_min_shards {
+        return false;
+    }
+    ingest_settings.min_shards = non_zero_min_shards;
+    info!("updating Datadog index min shards");
+    true
 }
 
 /// Reads the retention period from the environment variable `CP_RETENTION_PERIOD` and patches the
@@ -1482,11 +1519,12 @@ fn patch_retention_policy(retention_policy_opt: &mut Option<RetentionPolicy>) ->
         // We don't want to crash the node if the user-provided retention period cannot be parsed,
         // so we just log an error and return false.
         error!(
-            "failed to update retention policy: retention period `{}` is invalid: {error}",
+            "failed to update Datadog index: retention period `{}` is invalid: {error}",
             retention_policy.retention_period
         );
         return false;
     }
+    info!("updating Datadog index retention policy");
     true
 }
 
