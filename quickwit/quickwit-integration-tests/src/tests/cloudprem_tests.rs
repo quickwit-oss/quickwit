@@ -1,9 +1,9 @@
 use std::time::Duration;
 
+use pomchi::DatadogLogMsg;
 use prost::Message;
 use prost_types::Any;
 use quickwit_config::service::QuickwitService;
-use quickwit_doc_transforms::DatadogLogMsg;
 use quickwit_proto::cloudprem::*;
 use serde_json::Value;
 use tonic::Request;
