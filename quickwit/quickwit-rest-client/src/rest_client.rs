@@ -550,6 +550,27 @@ impl<'a, 'b> SplitClient<'a, 'b> {
         response.check().await?;
         Ok(())
     }
+
+    pub async fn add(&self, split_uri: String) -> Result<(), Error> {
+        let path = self.splits_root_url();
+        let body_json = json!({ "split_uri": split_uri });
+        let body_vec =
+            serde_json::to_vec(&body_json).expect("serializing `body_json` should never fail");
+        let body_bytes = Bytes::from(body_vec);
+        let response = self
+            .transport
+            .send::<()>(
+                Method::POST,
+                &path,
+                None,
+                None,
+                Some(body_bytes),
+                self.timeout,
+            )
+            .await?;
+        response.check().await?;
+        Ok(())
+    }
 }
 
 /// Client for source APIs.
