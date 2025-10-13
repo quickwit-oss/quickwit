@@ -122,27 +122,27 @@ control_plane:
       memory: "2Gi"
 
 indexer:
-  replicaCount: 2
+  replicaCount: 20
 
   resources:
     # Lower-range size as per public documentation at https://docs.datadoghq.com/cloudprem/configure/cluster_sizing#indexers
     limits:
-      cpu: "2"
-      memory: "4Gi"
+      cpu: "8"
+      memory: "16Gi"
     requests:
-      cpu: "2"
-      memory: "4Gi"
+      cpu: "8"
+      memory: "16Gi"
 
 searcher:
-  replicaCount: 2
+  replicaCount: 4
 
   resources:
     limits:
-      cpu: "4"
-      memory: "4Gi"
+      cpu: "8"
+      memory: "16Gi"
     requests:
-      cpu: "4"
-      memory: "4Gi"
+      cpu: "8"
+      memory: "16Gi"
 
 seed:
   min_num_shards: 12
