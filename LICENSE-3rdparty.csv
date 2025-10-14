@@ -436,7 +436,7 @@ pnet_packet,https://github.com/libpnet/libpnet,MIT OR Apache-2.0,Robert Clipsham
 pnet_sys,https://github.com/libpnet/libpnet,MIT OR Apache-2.0,"Robert Clipsham <robert@octarineparrot.com>, Linus Färnstrand <faern@faern.net>"
 pnet_transport,https://github.com/libpnet/libpnet,MIT OR Apache-2.0,Robert Clipsham <robert@octarineparrot.com>
 poly1305,https://github.com/RustCrypto/universal-hashes,Apache-2.0 OR MIT,RustCrypto Developers
-pomchi,https://github.com/DataDog/PomChi,Datadog,The pomchi Authors
+pomchi,ssh://git@github.com/DataDog/PomChi,Datadog,The pomchi Authors
 portable-atomic,https://github.com/taiki-e/portable-atomic,Apache-2.0 OR MIT,The portable-atomic Authors
 postcard,https://github.com/jamesmunns/postcard,MIT OR Apache-2.0,James Munns <james@onevariable.com>
 potential_utf,https://github.com/unicode-org/icu4x,Unicode-3.0,The ICU4X Project Developers

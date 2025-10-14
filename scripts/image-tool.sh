@@ -159,6 +159,7 @@ build_image() {
         --build-arg QW_COMMIT_DATE="$QW_COMMIT_DATE" \
         --build-arg QW_COMMIT_HASH="$QW_COMMIT_HASH" \
         --build-arg QW_COMMIT_TAGS="$QW_COMMIT_TAGS" \
+        ${CI_JOB_TOKEN:+--build-arg CI_JOB_TOKEN="$CI_JOB_TOKEN"} \
         --platform "$PLATFORM" \
         --label target="$TARGET_ENV" \
         --metadata-file "$METADATA_FILE" \

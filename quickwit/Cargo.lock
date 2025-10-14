@@ -6322,7 +6322,7 @@ dependencies = [
 [[package]]
 name = "pomchi"
 version = "0.1.0"
-source = "git+ssh://git@github.com/DataDog/PomChi.git?rev=dd28264#dd28264f3e097ed4a755d5d9699e5c3fe64fab26"
+source = "git+ssh://git@github.com/DataDog/PomChi.git?rev=2edd207#2edd207dce2c652007d0b7ba6bcc4e2a9a593dc0"
 dependencies = [
  "bytes",
  "chrono",
@@ -6339,6 +6339,7 @@ dependencies = [
  "serde_with",
  "serde_yaml",
  "snafu 0.8.9",
+ "syslog_rfc5424",
  "thiserror 2.0.17",
  "time",
  "tokio",
