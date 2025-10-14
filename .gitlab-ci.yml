@@ -33,9 +33,9 @@ build_image:
       aud: image-integrity
   script:
       # push an unsigned image for public use, identify it with it's SHA to prevent race condition between pipelines
-    - scripts/image-tool.sh --push --platform linux/amd64,linux/arm64 --repo cloudprem --tag $CI_COMMIT_SHA
+    - scripts/image-tool.sh --push --platform linux/amd64,linux/arm64 --repo cloudprem --tag $CI_COMMIT_SHA --build-arg CI_JOB_TOKEN="$CI_JOB_TOKEN"
       # and a signed image to pomsky for internal deployments
-    - scripts/image-tool.sh --push --sign --repo pomsky
+    - scripts/image-tool.sh --push --sign --repo pomsky --build-arg CI_JOB_TOKEN="$CI_JOB_TOKEN"
 
 verify_version:
   image: $DOCKER_CI_IMAGE
