@@ -710,7 +710,7 @@ impl CloudPremConfig {
         }
         #[cfg(not(any(test, feature = "testsuite")))]
         {
-            quickwit_common::get_bool_from_env("CP_ENABLE_REVERSE_CONNECTION", false)
+            quickwit_common::get_bool_from_env("CP_ENABLE_REVERSE_CONNECTION", true)
         }
     }
 
