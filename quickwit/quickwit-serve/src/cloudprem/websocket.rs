@@ -110,7 +110,6 @@ enum Never {}
 async fn single_websocket(
     target: &str,
     dd_api_key: &str,
-    dd_application_key: &str,
     service: CloudPremServiceClient,
     cluster_remote_uid: String,
 ) -> Result<Never, TungsteniteError> {
@@ -120,7 +119,6 @@ async fn single_websocket(
     let mut request = target.into_client_request()?;
     let headers = request.headers_mut();
     headers.insert("DD-API-KEY", HeaderValue::from_str(dd_api_key)?);
-    headers.insert("DD-APPLICATION-KEY", dd_application_key.parse()?);
 
     let (mut ws, _) = connect_async(request).await?;
 
@@ -217,7 +215,6 @@ fn format_err(err: &TungsteniteError) -> String {
 pub(crate) async fn maintain_websocket(
     target: String,
     dd_api_key: String,
-    dd_application_key: String,
     service: CloudPremServiceClient,
     metastore: MetastoreServiceClient,
 ) {
@@ -256,7 +253,6 @@ pub(crate) async fn maintain_websocket(
         let Err(err) = single_websocket(
             &url,
             &dd_api_key,
-            &dd_application_key,
             service.clone(),
             cluster_remote_uid.clone(),
         )

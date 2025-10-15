@@ -1381,7 +1381,6 @@ mod tests {
                     datadog_config: WebsocketConfig {
                         site: Some("app.datadoghq.com".to_string()),
                         dd_api_key: None,
-                        dd_application_key: None,
                     },
                     enable_reverse_connection: false,
                     create_datadog_index: false,
