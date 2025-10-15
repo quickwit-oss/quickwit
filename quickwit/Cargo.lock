@@ -6921,6 +6921,7 @@ dependencies = [
 name = "quickwit-doc-transforms"
 version = "0.1.13-dev"
 dependencies = [
+ "binggan",
  "env_logger",
  "fnv",
  "quickwit-common",
@@ -6930,6 +6931,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "serde_yaml",
+ "syslog_rfc5424",
  "thiserror 2.0.17",
  "time",
  "tracing",
@@ -9498,6 +9500,16 @@ checksum = "161028c00842709450114c39db3b29f44c898055ed8833bb9b535aba7facf30e"
 dependencies = [
  "chrono",
  "nom",
+]
+
+[[package]]
+name = "syslog_rfc5424"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9f89eda0701efea38626f5bbbb81a049aeb52ad01d24fe6cfd0eb4d10efc191"
+dependencies = [
+ "thiserror 1.0.69",
+ "time",
 ]
 
 [[package]]

@@ -208,7 +208,7 @@ pub(crate) fn build_grok_rules(
 /// This kind of grammar should not be used in the grok rules, but it is.
 ///
 /// The Java Backend ignores errors in the lexer to handle this kind of rules.
-/// https://github.com/DataDog/logs-backend/blob/9b494d3875c917607bdfd460409096673fcef49d/domains/event-platform/libs/processing/processing-parsing/src/main/java/com/fsmatic/shared/parse/grok/GrokInterpreter.java#L51
+/// <https://github.com/DataDog/logs-backend/blob/9b494d3875c917607bdfd460409096673fcef49d/domains/event-platform/libs/processing/processing-parsing/src/main/java/com/fsmatic/shared/parse/grok/GrokInterpreter.java#L51>
 ///
 /// OP doesn't support this syntax.
 ///

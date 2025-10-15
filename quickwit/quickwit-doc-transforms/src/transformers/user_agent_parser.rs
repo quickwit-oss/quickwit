@@ -33,7 +33,7 @@ fn get_user_agent_parser() -> &'static UserAgentParser {
 /// A step that tries to parse a user agent string from the log and
 /// extracts details about the OS, device, and browser.
 ///
-/// https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#user-agent-parser
+/// <https://docs.datadoghq.com/logs/log_configuration/processors/?tab=ui#user-agent-parser>
 #[derive(Debug)]
 pub struct UserAgentParserStep {
     pub sources: Vec<ParsedPath>,

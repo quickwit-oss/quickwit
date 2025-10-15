@@ -21,7 +21,7 @@ use crate::pipeline::*;
 
 /// A step that constructs a string from a template and writes it to a field.
 ///
-/// https://docs.datadoghq.com/service_management/events/pipelines_and_processors/string_builder_processor/
+/// <https://docs.datadoghq.com/service_management/events/pipelines_and_processors/string_builder_processor/>
 #[derive(Debug)]
 pub struct StringBuilderStep {
     pub template: CompiledTemplateString,

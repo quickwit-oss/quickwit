@@ -56,3 +56,17 @@ cargo test --test integration_test -- --nocapture
 ```
 
 
+# Bench
+
+```bash
+cargo bench -p quickwit-doc-transforms --bench processors_bench
+...
+Running Syslog Processor Benchmarks
+10k messages
+syslog_processor              Avg: 169.40 MB/s (+3.83%)    Median: 169.42 MB/s (+3.44%)    [165.44 MB/s .. 174.56 MB/s]    
+preprocessing_pipeline        Avg: 117.19 MB/s (+2.10%)    Median: 117.17 MB/s (+1.87%)    [114.55 MB/s .. 119.05 MB/s]    
+
+Running Go Integration (Grok Parser) Benchmarks
+10k Go messages
+go_integration_processor        Avg: 8.4369 MB/s (-1.56%)    Median: 8.5250 MB/s (-0.54%)    [7.8501 MB/s .. 8.7929 MB/s]    
+```

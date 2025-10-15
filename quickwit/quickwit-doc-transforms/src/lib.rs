@@ -23,7 +23,7 @@ mod path_access;
 mod pipeline;
 mod processed_log;
 mod string_or_vec;
-mod transformers;
+pub mod transformers;
 
 pub use error::PipelineError;
 pub use flatten_tags::convert_tags;

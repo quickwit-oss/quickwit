@@ -30,7 +30,7 @@ use uuid::Uuid;
 use crate::path_access::ParsedPath;
 use crate::string_or_vec::StringOrVec;
 use crate::transformers::{
-    CoreStringAttr, CoreStringAttrRemapStep, DateRemapStep, StatusRemapStep,
+    CoreStringAttr, CoreStringAttrRemapStep, DateRemapStep, StatusRemapStep, SyslogProcessor,
 };
 use crate::{Pipeline, PipelineStep, convert_tags};
 
@@ -148,6 +148,11 @@ fn create_preprocessing_pipeline() -> Pipeline {
     };
 
     let steps: Vec<Box<dyn PipelineStep>> = vec![
+        // Add SyslogProcessor as the first step to parse syslog messages,
+        // as done in Datadog intake, with the difference that in pomsky we only try to parse
+        // logs from a syslog source.
+        // https://datadoghq.atlassian.net/wiki/spaces/AL/pages/2727873101/Interesting+Logs+Intake+Behaviors#Syslog
+        Box::new(SyslogProcessor),
         Box::new(DateRemapStep {
             sources: [
                 "@timestamp",
@@ -254,17 +259,17 @@ impl ProcessedLog {
         };
 
         // Try to parse `processed.message` as JSON
-        //    If it's a JSON object, move some attributes to core via the preprocessing pipeline.
         if let Ok(parsed_map) =
             serde_json::from_str::<serde_json::Map<String, Value>>(&processed.message)
         {
             processed.custom = parsed_map;
-            match get_preprocessing_pipeline().apply(&mut processed) {
-                Ok(_) => {}
-                Err(error) => {
-                    // This should not happen, but if it does, we log the error.
-                    warn!(%error, "failed to apply preprocessing pipeline");
-                }
+        }
+
+        match get_preprocessing_pipeline().apply(&mut processed) {
+            Ok(_) => {}
+            Err(error) => {
+                // This should not happen, but if it does, we log the error.
+                warn!(%error, "failed to apply preprocessing pipeline");
             }
         }
 
@@ -525,5 +530,31 @@ pub(crate) mod tests {
                 "source:rust",
             ]
         );
+    }
+
+    #[test]
+    fn test_process_syslog_message() {
+        let mut msg = make_datadog_log_msg();
+        msg.message = r#"<187>1 2025-10-14T07:10:44+00:00 aaabf280-c060-4637-b4e6-68f3d3c44872 vcap_nginx_access - - -  localhost - [14/Oct/2025:07:10:44 +0000] "GET /healthz HTTP/1.1" 200 214 "-" "curl/7.81.0" 127.0.0.1 vcap_request_id:064249e3-9311-4bf8-9dd7-a0068fa73016 response_time:0.002"#.to_string();
+        msg.ddsource = Some("syslog".to_string()); // Set source to syslog so processor runs
+
+        let processed = ProcessedLog::from_datadog_log_msg(msg);
+
+        assert_eq!(
+            processed.message,
+            " localhost - [14/Oct/2025:07:10:44 +0000] \"GET /healthz HTTP/1.1\" 200 214 \"-\" \
+             \"curl/7.81.0\" 127.0.0.1 vcap_request_id:064249e3-9311-4bf8-9dd7-a0068fa73016 \
+             response_time:0.002"
+        );
+        assert_eq!(processed.status, "error");
+        assert_eq!(
+            processed.host,
+            Some("aaabf280-c060-4637-b4e6-68f3d3c44872".to_string())
+        );
+        assert_eq!(
+            processed.timestamp,
+            OffsetDateTime::from_unix_timestamp(1760425844).unwrap()
+        );
+        assert_eq!(processed.custom["syslog"]["appname"], "vcap_nginx_access");
     }
 }
