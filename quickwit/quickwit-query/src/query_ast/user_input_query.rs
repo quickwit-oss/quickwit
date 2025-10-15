@@ -187,7 +187,7 @@ fn convert_user_input_ast_to_query_ast(
                 default_search_fields,
                 lenient,
             )?;
-            let boost: NotNaNf32 = (boost as f32)
+            let boost: NotNaNf32 = (boost.into_inner() as f32)
                 .try_into()
                 .map_err(|err_msg: &str| anyhow::anyhow!(err_msg))?;
             Ok(QueryAst::Boost {
