@@ -95,9 +95,6 @@ pub(crate) async fn start_cloudprem_server(
                 datadog_config
                     .dd_api_key
                     .expect("API key should be set when reverse connection is enabled"),
-                datadog_config
-                    .dd_application_key
-                    .expect("application key should be set when reverse connection is enabled"),
                 cloudprem_service_client.clone(),
                 services.metastore_client.clone(),
             ));

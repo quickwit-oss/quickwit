@@ -566,8 +566,6 @@ pub struct WebsocketConfig {
     pub site: Option<String>,
     // The Datadog API key.
     pub dd_api_key: Option<String>,
-    // The Datadog application key.
-    pub dd_application_key: Option<String>,
 }
 
 impl std::fmt::Debug for WebsocketConfig {
@@ -578,10 +576,6 @@ impl std::fmt::Debug for WebsocketConfig {
                 "dd_api_key",
                 &self.dd_api_key.as_ref().map(|_| "***redacted***"),
             )
-            .field(
-                "dd_application_key",
-                &self.dd_application_key.as_ref().map(|_| "***redacted***"),
-            )
             .finish()
     }
 }
@@ -591,17 +585,13 @@ impl WebsocketConfig {
     fn from_parts(
         site: Option<String>,
         dd_api_key: Option<String>,
-        dd_application_key: Option<String>,
+        _dd_application_key: Option<String>,
     ) -> Result<Self, Infallible> {
-        Ok(Self {
-            site,
-            dd_api_key,
-            dd_application_key,
-        })
+        Ok(Self { site, dd_api_key })
     }
 
     fn to_parts(this: Self) -> (Option<String>, Option<String>, Option<String>) {
-        (this.site, this.dd_api_key, this.dd_application_key)
+        (this.site, this.dd_api_key, None)
     }
 
     fn resolve(&self) -> Self {
@@ -613,13 +603,9 @@ impl WebsocketConfig {
         let dd_api_key_opt = quickwit_common::get_from_env_opt::<String>("DD_API_KEY", true)
             .or(self.dd_api_key.clone());
 
-        let dd_app_key_opt = quickwit_common::get_from_env_opt::<String>("DD_APP_KEY", true)
-            .or(self.dd_application_key.clone());
-
         Self {
             site: Some(site),
             dd_api_key: dd_api_key_opt,
-            dd_application_key: dd_app_key_opt,
         }
     }
 
@@ -631,12 +617,8 @@ impl WebsocketConfig {
                 self.dd_api_key.is_some(),
                 "reverse connection is enabled, but Datadog API key is not set"
             );
-            ensure!(
-                self.dd_application_key.is_some(),
-                "reverse connection is enabled, but Datadog application key is not set"
-            );
-        } else if self.dd_api_key.is_none() ^ self.dd_application_key.is_none() {
-            warn!("reverse connection is disabled, but either API key or application key is set");
+        } else if self.dd_api_key.is_none() {
+            warn!("reverse connection is disabled, but API key is set");
         }
         Ok(())
     }
@@ -662,7 +644,6 @@ impl Default for WebsocketConfig {
         Self {
             site: Some("app.datadoghq.com".to_string()),
             dd_api_key: None,
-            dd_application_key: None,
         }
     }
 }
@@ -684,6 +665,7 @@ pub struct CloudPremConfig {
             #[serde(default)]
             pub dd_api_key: Option<String>,
             #[serde(default)]
+            // this field is unused, but kept for backward compatibility
             pub dd_application_key: Option<String>,
         ),
     )]
