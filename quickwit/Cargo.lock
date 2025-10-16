@@ -7445,6 +7445,7 @@ dependencies = [
  "http-body 1.0.1",
  "http-body-util",
  "http-serde",
+ "httparse",
  "humantime",
  "hyper 1.7.0",
  "hyper-rustls 0.27.7",

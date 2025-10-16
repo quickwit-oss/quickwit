@@ -18,7 +18,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::tonic::Code;
 use tokio::sync::mpsc::{Sender, channel};
 use tokio::task::JoinSet;
-use tokio_tungstenite::connect_async;
+use tokio_tungstenite::client_async_tls;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::error::{
     Error as TungsteniteError, ProtocolError as TungsteniteProtocolError, TlsError,
@@ -108,7 +108,8 @@ async fn handle_single_ws_message_and_reply(
 enum Never {}
 
 async fn single_websocket(
-    target: &str,
+    target_domain: &str,
+    proxy_url: Option<&http::uri::Authority>,
     dd_api_key: &str,
     service: CloudPremServiceClient,
     cluster_remote_uid: String,
@@ -116,11 +117,14 @@ async fn single_websocket(
     let mut pending_requests = JoinSet::new();
     let (sender, mut receiver) = channel(5);
 
-    let mut request = target.into_client_request()?;
+    let target_url =
+        format!("wss://{target_domain}/api/unstable/cloudprem-connection-gateway/connect");
+    let mut request = target_url.into_client_request()?;
     let headers = request.headers_mut();
     headers.insert("DD-API-KEY", HeaderValue::from_str(dd_api_key)?);
 
-    let (mut ws, _) = connect_async(request).await?;
+    let stream = proxy::get_proxied_stream(target_domain, proxy_url).await?;
+    let (mut ws, _) = client_async_tls(request, stream).await?;
 
     let cluster_identify = AnyResponse {
         req_id: 0,
@@ -213,7 +217,7 @@ fn format_err(err: &TungsteniteError) -> String {
 }
 
 pub(crate) async fn maintain_websocket(
-    target: String,
+    target_domain: String,
     dd_api_key: String,
     service: CloudPremServiceClient,
     metastore: MetastoreServiceClient,
@@ -243,7 +247,26 @@ pub(crate) async fn maintain_websocket(
         max_attempts: usize::MAX,
         ..RetryParams::aggressive()
     };
-    let url = format!("wss://{target}/api/unstable/cloudprem-connection-gateway/connect");
+
+    let env_vars = std::env::vars().collect::<Vec<_>>();
+    let proxy_url = if !proxy::ignore_proxy(&target_domain, &env_vars) {
+        match proxy::get_https_proxy_url(&env_vars)
+            .map(proxy::validate_uri)
+            .transpose()
+        {
+            Ok(proxy) => proxy,
+            Err(e) => {
+                error!("got invalid proxy url: {e:?}");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(proxy_url) = proxy_url.as_ref() {
+        info!("using proxy: `{proxy_url}`")
+    }
 
     let mut retry_count = 0;
 
@@ -251,7 +274,8 @@ pub(crate) async fn maintain_websocket(
         info!("initiating new reverse connection");
         let before_conn = Instant::now();
         let Err(err) = single_websocket(
-            &url,
+            &target_domain,
+            proxy_url.as_ref(),
             &dd_api_key,
             service.clone(),
             cluster_remote_uid.clone(),
@@ -272,6 +296,275 @@ pub(crate) async fn maintain_websocket(
         } else {
             retry_count = 0;
             // we don't need to backoff, the loop already took enough time in itself
+        }
+    }
+}
+
+mod proxy {
+    use anyhow::bail;
+    use http::uri::Authority;
+    use httparse::{Response, Status};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio_tungstenite::tungstenite::error::Error as TungsteniteError;
+
+    pub fn ignore_proxy<'a>(
+        target: &str,
+        env: impl IntoIterator<Item = &'a (String, String)>,
+    ) -> bool {
+        for (key, value) in env {
+            if key.eq_ignore_ascii_case("no_proxy") {
+                for rule_fqdn in value.split(',') {
+                    // final dot indicate a fully qualified domain name, we always consider the
+                    // provided domains as FQDN so we can ignore them
+                    let rule = rule_fqdn.trim_end_matches('.');
+                    // TODO we don't support IP rules, but it's fine: we only ever use read domain
+                    // names, not IP addresses
+                    if rule.starts_with('.') {
+                        // initial dot indicate a suffix rule
+                        if let Some(start_offset) = target.len().checked_sub(rule.len())
+                            && rule.eq_ignore_ascii_case(&target[start_offset..])
+                        {
+                            return true;
+                        }
+                    } else if rule.eq_ignore_ascii_case(target) {
+                        return true;
+                    }
+                }
+                break;
+            }
+        }
+        false
+    }
+
+    pub fn get_https_proxy_url<'a>(
+        env: impl IntoIterator<Item = &'a (String, String)>,
+    ) -> Option<String> {
+        let mut all_proxy = None;
+        let mut https_proxy = None;
+        for (key, value) in env {
+            if key.eq_ignore_ascii_case("all_proxy") {
+                all_proxy = Some(value);
+            } else if key.eq_ignore_ascii_case("https_proxy") {
+                https_proxy = Some(value);
+            }
+        }
+        // prefer more specific proxy
+        https_proxy.or(all_proxy).cloned()
+    }
+
+    pub fn validate_uri(proxy_url: String) -> anyhow::Result<Authority> {
+        let parsed_uri = proxy_url.parse::<http::uri::Uri>()?;
+
+        // validation that we support that kind of uri
+        if parsed_uri.path() != "/" || parsed_uri.query().is_some() {
+            bail!("proxy url should have no path");
+        }
+        let Some(scheme) = parsed_uri.scheme() else {
+            bail!("proxy url should have a scheme");
+        };
+        if scheme != &http::uri::Scheme::HTTP {
+            // TODO we could support other schemes if requested (https or socks5 for instance, but
+            // they are less common than plain http proxy)
+            bail!("unsupported proxy url scheme: {scheme}");
+        }
+
+        let Some(authority) = parsed_uri.authority() else {
+            bail!("missing domain name in proxy url")
+        };
+
+        Ok(authority.clone())
+    }
+
+    // we use the explicit lifetime syntax otherwise our stream captures original_target and proxy,
+    // despite not needing them
+    pub async fn get_proxied_stream<'a>(
+        original_target: &str,
+        proxy_opt: Option<&Authority>,
+    ) -> Result<impl tokio::io::AsyncRead + tokio::io::AsyncWrite + use<'a>, TungsteniteError> {
+        let Some(proxy) = proxy_opt else {
+            let stream = tokio::net::TcpStream::connect((original_target, 443)).await?;
+            return Ok(stream);
+        };
+
+        let mut stream =
+            tokio::net::TcpStream::connect((proxy.host(), proxy.port_u16().unwrap_or(80))).await?;
+        let payload = format!(
+            "CONNECT {host}:443 HTTP/1.1\r\nhost: {host}:443\r\nuser-agent: \
+             datadog-cloudprem\r\n\r\n",
+            host = original_target,
+        );
+        stream.write_all(payload.as_bytes()).await?;
+        stream.flush().await?;
+
+        read_handshake(&mut stream).await?;
+
+        Ok(stream)
+    }
+
+    async fn read_handshake(stream: &mut tokio::net::TcpStream) -> Result<(), TungsteniteError> {
+        let mut buf = Vec::with_capacity(1024);
+        let mut read = 0;
+        loop {
+            buf.resize(buf.len() + 1024, 0);
+            let current_start_offset = read;
+            let peek_len = stream.peek(&mut buf).await?;
+            read += peek_len;
+
+            let mut headers = [httparse::EMPTY_HEADER; 32];
+            let mut response = Response::new(&mut headers);
+            match response.parse(&buf[..read]) {
+                Err(e) => return Err(std::io::Error::other(e).into()),
+                Ok(Status::Partial) => {
+                    // we expect an answer in less than 1KiB most of the time, so 16KiB ought to be
+                    // plenty
+                    if read > 16384 {
+                        return Err(std::io::Error::other(
+                            "proxy handshaked unfinished after 16kiB",
+                        )
+                        .into());
+                    }
+                    if let Some(code) = response.code
+                        && code != 200
+                    {
+                        return Err(std::io::Error::other(format!(
+                            "proxy connection failed with http code {code}"
+                        ))
+                        .into());
+                    }
+                    // actually comsume so we always make progress
+                    stream
+                        .read_exact(&mut buf[current_start_offset..read])
+                        .await?;
+                }
+                Ok(Status::Complete(consummed_total)) => {
+                    if response.code != Some(200) {
+                        return Err(std::io::Error::other(format!(
+                            "proxy connection failed with http code {}",
+                            response.code.unwrap_or(0)
+                        ))
+                        .into());
+                    }
+                    stream
+                        .read_exact(&mut buf[current_start_offset..consummed_total])
+                        .await?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    #[cfg(test)]
+    mod test {
+        use super::*;
+
+        #[test]
+        fn test_ignore_proxy() {
+            // prefix, but not a prefix search
+            assert!(!ignore_proxy(
+                "app.datadoghq.com",
+                [&(
+                    "No_PrOxY".to_string(),
+                    "10.0.0.0/8,datadoghq.com,abcdef".to_string()
+                )]
+            ));
+            assert!(!ignore_proxy(
+                "app.datadoghq.com",
+                [&(
+                    "No_PrOxY".to_string(),
+                    "10.0.0.0/8,datadoghq.com.,abcdef".to_string()
+                )]
+            ));
+
+            // exact match
+            assert!(ignore_proxy(
+                "app.datadoghq.com",
+                [&(
+                    "No_PrOxY".to_string(),
+                    "10.0.0.0/8,app.datadoghq.com,abcdef".to_string()
+                )]
+            ));
+            assert!(ignore_proxy(
+                "app.datadoghq.com",
+                [&(
+                    "No_PrOxY".to_string(),
+                    "10.0.0.0/8,app.datadoghq.com.,abcdef".to_string()
+                )]
+            ));
+
+            // prefix search
+            assert!(ignore_proxy(
+                "app.datadoghq.com",
+                [&(
+                    "No_PrOxY".to_string(),
+                    "10.0.0.0/8,.datadoghq.com,abcdef".to_string()
+                )]
+            ));
+            assert!(ignore_proxy(
+                "app.datadoghq.com",
+                [&(
+                    "No_PrOxY".to_string(),
+                    "10.0.0.0/8,.datadoghq.com.,abcdef".to_string()
+                )]
+            ));
+
+            // wrong variable
+            assert!(!ignore_proxy(
+                "app.datadoghq.com",
+                [&(
+                    "something_else".to_string(),
+                    "10.0.0.0/8,.datadoghq.com.,abcdef".to_string()
+                )]
+            ));
+            assert!(!ignore_proxy("app.datadoghq.com", []));
+
+            // multiple env var
+            assert!(ignore_proxy(
+                "app.datadoghq.com",
+                [
+                    &("abc".to_string(), "def".to_string()),
+                    &(
+                        "No_PrOxY".to_string(),
+                        "10.0.0.0/8,.datadoghq.com.,abcdef".to_string()
+                    )
+                ]
+            ));
+        }
+
+        #[test]
+        fn test_get_https_proxy_url() {
+            assert_eq!(get_https_proxy_url([]), None);
+            assert_eq!(
+                get_https_proxy_url([&("abc".to_string(), "def".to_string())]),
+                None
+            );
+            assert_eq!(
+                get_https_proxy_url([&("http_proxy".to_string(), "url1".to_string())]),
+                None
+            );
+
+            assert_eq!(
+                get_https_proxy_url([&("https_proxy".to_string(), "url1".to_string())]),
+                Some("url1".to_string())
+            );
+            assert_eq!(
+                get_https_proxy_url([&("all_proxy".to_string(), "url1".to_string())]),
+                Some("url1".to_string())
+            );
+
+            assert_eq!(
+                get_https_proxy_url([
+                    &("all_proxy".to_string(), "url1".to_string()),
+                    &("https_proxy".to_string(), "url2".to_string())
+                ]),
+                Some("url2".to_string())
+            );
+            assert_eq!(
+                get_https_proxy_url([
+                    &("https_proxy".to_string(), "url2".to_string()),
+                    &("all_proxy".to_string(), "url1".to_string())
+                ]),
+                Some("url2".to_string())
+            );
         }
     }
 }
