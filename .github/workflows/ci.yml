@@ -18,6 +18,7 @@ env:
   RUST_BACKTRACE: 1
   RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
   RUSTFLAGS: -Dwarnings --cfg tokio_unstable
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
 
 # Ensures that we cancel running jobs for the same PR / same workflow.
 concurrency:
