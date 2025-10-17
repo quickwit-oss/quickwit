@@ -268,6 +268,8 @@ pub struct AttributeGroupBy {
     pub total: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(message, optional, boxed, tag = "6")]
     pub child: ::core::option::Option<::prost::alloc::boxed::Box<Aggregation>>,
+    #[prost(string, optional, tag = "7")]
+    pub include: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TimeGrouping {

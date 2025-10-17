@@ -95,6 +95,7 @@ fn agg_group_by(
         child: Some(Box::new(Aggregation {
             aggregation: Some(child),
         })),
+        include: None,
     }))
 }
 

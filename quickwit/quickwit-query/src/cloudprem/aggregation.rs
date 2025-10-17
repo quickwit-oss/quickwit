@@ -15,6 +15,7 @@ use tantivy::aggregation::agg_req::{
 use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
 };
+use tantivy::aggregation::bucket::IncludeExcludeParam;
 use tantivy::aggregation::{bucket, metric};
 use tracing::warn;
 
@@ -133,6 +134,7 @@ fn handle_attribute_group_by(
     let missing = attribute_group_by
         .missing
         .map(tantivy::aggregation::Key::Str);
+    let include = attribute_group_by.include.map(IncludeExcludeParam::Regex);
     let terms_agg = bucket::TermsAggregation {
         field: field_name.clone(),
         size: Some(attribute_group_by.limit),
@@ -142,6 +144,8 @@ fn handle_attribute_group_by(
         // TODO read order
         order: None,
         missing,
+        include,
+        exclude: None,
     };
 
     let Some(child) = attribute_group_by.child else {
@@ -637,6 +641,7 @@ mod tests {
         let evp_agg = Aggregation {
             aggregation: Some(AggregationEnum::AttributeGroupBy(Box::new(
                 AttributeGroupBy {
+                    include: None,
                     expression: Some(ExpressionNode {
                         calc_node: Some(Any {
                             type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
@@ -688,11 +693,7 @@ mod tests {
                 agg: AggregationVariants::Terms(TermsAggregation {
                     field: "status".to_string(),
                     size: Some(50),
-                    segment_size: None,
-                    show_term_doc_count_error: None,
-                    min_doc_count: None,
-                    order: None,
-                    missing: None,
+                    ..Default::default()
                 }),
                 sub_aggregation: [(
                     "count:count".to_string(),
@@ -721,6 +722,7 @@ mod tests {
         let evp_agg = Aggregation {
             aggregation: Some(AggregationEnum::AttributeGroupBy(Box::new(
                 AttributeGroupBy {
+                    include: None,
                     expression: Some(ExpressionNode {
                         calc_node: Some(Any {
                             type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
@@ -790,11 +792,7 @@ mod tests {
                 agg: AggregationVariants::Terms(TermsAggregation {
                     field: "status".to_string(),
                     size: Some(10),
-                    segment_size: None,
-                    show_term_doc_count_error: None,
-                    min_doc_count: None,
-                    order: None,
-                    missing: None,
+                    ..Default::default()
                 }),
                 sub_aggregation: [(
                     "time:28800000".to_string(),
@@ -925,6 +923,7 @@ mod tests {
             Box::new(time_grouping),
         );
         let attr_group_by = quickwit_proto::cloudprem::AttributeGroupBy {
+            include: None,
             expression: None, //< this is incorrect, but whatever
             limit: 100,
             sort: None,
@@ -1101,6 +1100,7 @@ mod tests {
         });
 
         let attribute_group_by = AttributeGroupBy {
+            include: None,
             expression: Some(ExpressionNode {
                 calc_node: Some(Any {
                     type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
