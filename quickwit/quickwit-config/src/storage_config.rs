@@ -265,6 +265,10 @@ pub struct AzureStorageConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_key: Option<String>,
+    /// OAuth bearer token for Azure AD authentication
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bearer_token: Option<String>,
 }
 
 impl AzureStorageConfig {
@@ -272,10 +276,13 @@ impl AzureStorageConfig {
 
     pub const AZURE_STORAGE_ACCESS_KEY_ENV_VAR: &'static str = "QW_AZURE_STORAGE_ACCESS_KEY";
 
-    /// Redacts the access key.
+    /// Redacts the access key and bearer token.
     pub fn redact(&mut self) {
         if let Some(access_key) = self.access_key.as_mut() {
             *access_key = "***redacted***".to_string();
+        }
+        if let Some(bearer_token) = self.bearer_token.as_mut() {
+            *bearer_token = "***redacted***".to_string();
         }
     }
 
@@ -303,6 +310,10 @@ impl fmt::Debug for AzureStorageConfig {
             .field(
                 "access_key",
                 &self.access_key.as_ref().map(|_| "***redacted***"),
+            )
+            .field(
+                "bearer_token",
+                &self.bearer_token.as_ref().map(|_| "***redacted***"),
             )
             .finish()
     }

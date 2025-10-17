@@ -100,9 +100,37 @@ impl AzureBlobStorage {
         storage_credentials: StorageCredentials,
         uri: Uri,
         container_name: String,
+        endpoint: Option<String>,
     ) -> Self {
-        let container_client = BlobServiceClient::new(storage_account_name, storage_credentials)
-            .container_client(container_name);
+        use azure_storage::CloudLocation;
+
+        let blob_service_client = if let Some(endpoint_url) = endpoint {
+            // Use custom endpoint for Azurite or Azure Stack
+
+            // For Azurite, the endpoint already includes the account in the path (e.g., http://localhost:10000/devstoreaccount1)
+            // So we construct the full blob service URL by appending the account name if not already present
+            let blob_endpoint = if endpoint_url.contains(&storage_account_name) {
+                endpoint_url.clone()
+            } else {
+                let constructed = format!("{}/{}", endpoint_url.trim_end_matches('/'), storage_account_name);
+                constructed
+            };
+
+            let cloud_location = CloudLocation::Custom {
+                account: storage_account_name.clone(),
+                uri: blob_endpoint.clone(),
+            };
+            let client = BlobServiceClient::builder(cloud_location.account(), storage_credentials)
+                .cloud_location(cloud_location)
+                .blob_service_client();
+            client
+        } else {
+            // Use default Azure public cloud endpoint
+            BlobServiceClient::new(storage_account_name, storage_credentials)
+        };
+
+        let container_client = blob_service_client.container_client(container_name);
+
         Self {
             container_client,
             uri,
@@ -172,16 +200,19 @@ impl AzureBlobStorage {
                 );
                 StorageResolverError::InvalidConfig(message)
             })?;
-        let storage_credentials = if let Some(access_key) =
-            azure_storage_config.resolve_access_key()
-        {
+        let storage_credentials = if let Some(bearer_token) = &azure_storage_config.bearer_token {
+            // OAuth bearer token authentication (highest priority)
+            StorageCredentials::bearer_token(bearer_token.clone())
+        } else if let Some(access_key) = azure_storage_config.resolve_access_key() {
+            // Storage account key authentication
             StorageCredentials::access_key(storage_account_name.clone(), access_key)
         } else if let Ok(credential) = azure_identity::create_credential() {
+            // Azure Identity credential (managed identity, service principal, etc.)
             StorageCredentials::token_credential(credential)
         } else {
             return Err(StorageResolverError::InvalidConfig(
                 "could not find Azure storage account credentials using the following credential \
-                 providers: environment, managed identity, and storage account access key"
+                 providers: bearer token, access key, environment, or managed identity"
                     .to_string(),
             ));
         };
@@ -194,6 +225,7 @@ impl AzureBlobStorage {
             storage_credentials,
             uri.clone(),
             container_name,
+            None,
         );
         Ok(azure_blob_storage.with_prefix(prefix))
     }
@@ -210,16 +242,17 @@ impl AzureBlobStorage {
         path: &Path,
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Vec<u8>> {
+
         let name = self.blob_name(path);
+
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
-        retry(&self.retry_params, || async {
+
+        let result = retry(&self.retry_params, || async {
             let (mut response_stream, _in_flight_guards) = if let Some(range) = range_opt.as_ref() {
-                let stream = self
-                    .container_client
-                    .blob_client(&name)
-                    .get()
-                    .range(range.clone())
-                    .into_stream();
+                let blob_client = self.container_client.blob_client(&name);
+                let get_builder = blob_client.get();
+                let ranged_builder = get_builder.range(range.clone());
+                let stream = ranged_builder.into_stream();
                 // only record ranged get request as being in flight
                 let in_flight_guards = object_storage_get_slice_in_flight_guards(capacity);
                 (stream, Some(in_flight_guards))
@@ -232,8 +265,9 @@ impl AzureBlobStorage {
 
             Result::<_, AzureErrorWrapper>::Ok(buf)
         })
-        .await
-        .map_err(StorageError::from)
+        .await;
+
+        result.map_err(StorageError::from)
     }
 
     /// Performs a single part upload.
@@ -436,8 +470,10 @@ impl Storage for AzureBlobStorage {
 
     #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        self.get_to_vec(path, Some(range.clone()))
-            .await
+
+        let result = self.get_to_vec(path, Some(range.clone())).await;
+
+        let final_result = result
             .map(OwnedBytes::new)
             .map_err(|err| {
                 err.add_context(format!(
@@ -446,7 +482,12 @@ impl Storage for AzureBlobStorage {
                     self.uri,
                     path.display(),
                 ))
-            })
+            });
+
+        if final_result.is_ok() {
+        }
+
+        final_result
     }
 
     #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
@@ -560,9 +601,24 @@ async fn download_all(
     chunk_stream: &mut Pageable<GetBlobResponse, AzureError>,
     output: &mut Vec<u8>,
 ) -> Result<(), AzureErrorWrapper> {
+
     output.clear();
-    while let Some(chunk_result) = chunk_stream.next().await {
-        let chunk_response = chunk_result?;
+
+    let mut chunk_count = 0;
+    while let Some(chunk_result) = {
+        let next_result = chunk_stream.next().await;
+        next_result
+    } {
+        chunk_count += 1;
+        let chunk_response = match chunk_result {
+            Ok(response) => {
+                response
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        };
+
         let chunk_response_body_stream = chunk_response
             .data
             .map_err(FutureError::other)
@@ -574,6 +630,7 @@ async fn download_all(
             .object_storage_download_num_bytes
             .inc_by(num_bytes_copied);
     }
+
     // When calling `get_all`, the Vec capacity is not properly set.
     output.shrink_to_fit();
     Ok(())
