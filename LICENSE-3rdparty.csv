@@ -312,6 +312,7 @@ opentelemetry,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,Th
 opentelemetry-otlp,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp,Apache-2.0,The opentelemetry-otlp Authors
 opentelemetry-proto,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto,Apache-2.0,The opentelemetry-proto Authors
 opentelemetry_sdk,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry_sdk Authors
+ordered-float,https://github.com/reem/rust-ordered-float,MIT,"Jonathan Reem <jonathan.reem@gmail.com>, Matt Brubeck <mbrubeck@limpet.net>"
 ouroboros,https://github.com/someguynamedjosh/ouroboros,MIT OR Apache-2.0,Josh <someguynamedjosh@github.com>
 ouroboros_macro,https://github.com/someguynamedjosh/ouroboros,MIT OR Apache-2.0,Josh <someguynamedjosh@github.com>
 outref,https://github.com/Nugine/outref,MIT,The outref Authors
