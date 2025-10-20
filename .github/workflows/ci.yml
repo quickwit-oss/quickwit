@@ -57,6 +57,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Give GitHub Actions access to PomChi
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.POMCHI_ACCESS_KEY }}
       - uses: actions/checkout@v5
       - name: Install Ubuntu packages
         run: sudo apt-get -y install protobuf-compiler python3
