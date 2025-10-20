@@ -208,6 +208,7 @@ message AttributeGroupBy {
   optional string missing = 4;
   optional string total = 5;
   Aggregation child = 6;
+  optional string include = 7;
 }
 
 message TimeGrouping {
