@@ -26,31 +26,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  setup-pomchi-auth:
-    name: Setup PomChi git auth
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-    outputs:
-      token: ${{ steps.octo-sts.outputs.token }}
-    steps:
-      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
-        id: octo-sts
-        with:
-          scope: DataDog/PomChi
-          policy: access
-
-      - name: Configure git rewrite (STS token)
-        env:
-          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
-        run: |
-          echo "::add-mask::${GH_TOKEN}"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
   tests:
     name: Unit tests
     runs-on: ubuntu-16-core-latest
-    needs: setup-pomchi-auth
     env:
       CP_ENABLE_REVERSE_CONNECTION: false
     timeout-minutes: 40
@@ -106,6 +84,19 @@ jobs:
         if: steps.modified.outputs.rust_src == 'true'
         with:
           workspaces: "./quickwit -> target"
+      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/cache-cargo-install-action@v2
@@ -131,7 +122,6 @@ jobs:
   lints:
     name: Lints
     runs-on: ubuntu-16-core-latest
-    needs: setup-pomchi-auth
     timeout-minutes: 20
     permissions:
       contents: write
@@ -153,6 +143,19 @@ jobs:
               - quickwit/**/*.toml
               - quickwit/**/*.proto
               - .github/workflows/ci.yml
+      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: sudo apt-get -y install protobuf-compiler python3 python3-pip
@@ -201,12 +204,24 @@ jobs:
   thirdparty-license:
     name: Check Datadog third-party license file
     runs-on: ubuntu-latest
-    needs: setup-pomchi-auth
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
       - name: Cache cargo tools
         uses: actions/cache@v4
         with:
