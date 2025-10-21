@@ -58,7 +58,7 @@ jobs:
           --health-retries 5
     steps:
       - name: Give GitHub Actions access to PomChi
-        uses: webfactory/ssh-agent@v0.9.1
+        uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
         with:
           ssh-private-key: ${{ secrets.POMCHI_ACCESS_KEY }}
       - uses: actions/checkout@v5
