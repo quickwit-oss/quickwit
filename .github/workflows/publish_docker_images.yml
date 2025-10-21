@@ -12,6 +12,10 @@ on:
       - happy-plazza
       - qw*
       - v*
+
+permissions:
+  contents: read
+
 env:
   REGISTRY_IMAGE: quickwit/quickwit
 
@@ -27,6 +31,9 @@ jobs:
             platform: linux/arm64
             platform_suffix: arm64
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      actions: write
     environment:
       name: production
     steps:
@@ -99,6 +106,9 @@ jobs:
   merge:
     runs-on: ubuntu-latest
     needs: [docker]
+    permissions:
+      contents: read
+      actions: read
     environment: production
     steps:
       - name: Download digests

@@ -10,6 +10,10 @@ on:
     paths:
       - "quickwit/**"
       - "!quickwit/quickwit-ui/**"
+
+permissions:
+  contents: read
+
 env:
   CARGO_INCREMENTAL: 0
   QW_DISABLE_TELEMETRY: 1
@@ -28,6 +32,9 @@ jobs:
     name: Unit tests
     runs-on: "ubuntu-latest"
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: write
     services:
       # PostgreSQL service container
       postgres:
@@ -98,6 +105,9 @@ jobs:
     name: Lints
     runs-on: "ubuntu-latest"
     timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
@@ -157,6 +167,9 @@ jobs:
   thirdparty-license:
     name: Check Datadog third-party license file
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain

@@ -5,10 +5,16 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
 jobs:
   build-macos-binaries:
     name: Build ${{ matrix.target }}
     runs-on: macos-latest
+    permissions:
+      contents: write
+      actions: write
     strategy:
       matrix:
         target: [x86_64-apple-darwin, aarch64-apple-darwin]
@@ -29,6 +35,9 @@ jobs:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v5
       - name: Extract asset version
