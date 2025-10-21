@@ -12,6 +12,7 @@ environment:
   # disable mtls verification: we don't have a reverse-proxy doing decapsulation
   # and putting the certificate into a header in staging
   CP_DISABLE_CERTIFICATE_VERIFICATION: true
+  CP_ENABLE_REVERSE_CONNECTION: false
 
 podAnnotations:
   # https://docs.datadoghq.com/containers/kubernetes/prometheus/?tab=kubernetesadv2
