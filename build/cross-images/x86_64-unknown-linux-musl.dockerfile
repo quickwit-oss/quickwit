@@ -1,4 +1,4 @@
-FROM quickwit/cross-base:x86_64-unknown-linux-musl
+FROM quickwit/cross-base:x86_64-unknown-linux-musl@sha256:5bcc7843aab64f89bf85c464fa2c5a00ecc634a8b1ac88c84a864f60054450cb
 # See https://github.com/quickwit-inc/rust-musl-builder
 
 RUN echo "Upgrading CMake" && \

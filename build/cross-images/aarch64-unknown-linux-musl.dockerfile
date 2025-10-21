@@ -1,4 +1,4 @@
-FROM rustembedded/cross:aarch64-unknown-linux-musl
+FROM rustembedded/cross:aarch64-unknown-linux-musl@sha256:22627e0ba533781062127b13601c37216fdca27123390b07dfabd3f31f3c84a0
 
 
 # The Rust toolchain to use when building our image.  Set by `hooks/build`.
