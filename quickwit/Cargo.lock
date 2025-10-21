@@ -2491,6 +2491,24 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "domain"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c84070523f8ba0f9127ff156920f27eb27b302b425efe60bf5f41ec244d1c60"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "moka",
+ "octseq",
+ "rand 0.8.5",
+ "serde",
+ "smallvec",
+ "time",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "domain"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a11dd7f04a6a6d2aea0153c6e31f5ea7af8b2efdf52cdaeea7a9a592c7fefef9"
@@ -2902,6 +2920,17 @@ dependencies = [
  "log",
  "once_cell",
  "rand 0.8.5",
+]
+
+[[package]]
+name = "fancy-regex"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e24cb5a94bcae1e5408b0effca5cd7172ea3c5755049c5f3af4cd283a165298"
+dependencies = [
+ "bit-set",
+ "regex-automata",
+ "regex-syntax",
 ]
 
 [[package]]
@@ -6347,7 +6376,7 @@ dependencies = [
  "uaparser",
  "urlencoding",
  "uuid",
- "vrl",
+ "vrl 0.24.0",
  "warp 0.3.7",
  "zstd 0.13.3",
 ]
@@ -7068,7 +7097,7 @@ dependencies = [
  "toml",
  "tracing",
  "utoipa",
- "vrl",
+ "vrl 0.27.0",
 ]
 
 [[package]]
@@ -7167,30 +7196,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-doc-transforms"
-version = "0.1.13-dev"
-dependencies = [
- "binggan",
- "env_logger",
- "fnv",
- "quickwit-common",
- "quickwit-datetime",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "serde_with",
- "serde_yaml",
- "syslog_rfc5424",
- "thiserror 2.0.17",
- "time",
- "tracing",
- "uaparser",
- "urlencoding",
- "uuid",
- "vrl",
-]
-
-[[package]]
 name = "quickwit-index-management"
 version = "0.1.14-dev"
 dependencies = [
@@ -7273,7 +7278,7 @@ dependencies = [
  "tracing",
  "ulid",
  "utoipa",
- "vrl",
+ "vrl 0.27.0",
  "warp 0.4.2",
 ]
 
@@ -9762,6 +9767,16 @@ dependencies = [
 
 [[package]]
 name = "syslog_loose"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "161028c00842709450114c39db3b29f44c898055ed8833bb9b535aba7facf30e"
+dependencies = [
+ "chrono",
+ "nom 7.1.3",
+]
+
+[[package]]
+name = "syslog_loose"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6ec4df26907adce53e94eac201a9ba38744baea3bc97f34ffd591d5646231a6"
@@ -11061,6 +11076,100 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vrl"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9ceadaa40aef567a26079ff014ca7a567ba85344f1b81090b5ec7d7bb16a219"
+dependencies = [
+ "aes",
+ "aes-siv",
+ "base16",
+ "base62",
+ "base64-simd",
+ "bytes",
+ "cbc",
+ "cfb-mode",
+ "cfg-if",
+ "chacha20poly1305",
+ "charset",
+ "chrono",
+ "chrono-tz",
+ "ciborium",
+ "cidr",
+ "clap",
+ "codespan-reporting",
+ "community-id",
+ "convert_case 0.7.1",
+ "crc",
+ "crypto_secretbox",
+ "csv",
+ "ctr",
+ "digest",
+ "dns-lookup",
+ "domain 0.10.4",
+ "dyn-clone",
+ "encoding_rs",
+ "fancy-regex 0.14.0",
+ "flate2",
+ "grok",
+ "hex",
+ "hmac",
+ "hostname 0.4.1",
+ "iana-time-zone",
+ "idna",
+ "indexmap 2.11.4",
+ "indoc",
+ "influxdb-line-protocol",
+ "itertools 0.14.0",
+ "lalrpop",
+ "lalrpop-util",
+ "lz4_flex",
+ "md-5",
+ "nom 7.1.3",
+ "ofb",
+ "onig",
+ "ordered-float 4.6.0",
+ "parse-size",
+ "peeking_take_while",
+ "percent-encoding",
+ "pest",
+ "pest_derive",
+ "prost 0.13.5",
+ "prost-reflect",
+ "psl",
+ "psl-types",
+ "publicsuffix",
+ "quoted_printable",
+ "rand 0.8.5",
+ "regex",
+ "roxmltree 0.20.0",
+ "rust_decimal",
+ "seahash",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha-1",
+ "sha2",
+ "sha3",
+ "simdutf8",
+ "snafu 0.8.9",
+ "snap",
+ "strip-ansi-escapes",
+ "syslog_loose 0.21.0",
+ "termcolor",
+ "thiserror 2.0.17",
+ "tokio",
+ "tracing",
+ "ua-parser",
+ "unicode-segmentation",
+ "url",
+ "utf8-width",
+ "uuid",
+ "woothee",
+ "zstd 0.13.3",
+]
+
+[[package]]
+name = "vrl"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "374906b686967832d85e5ce8f43581924e8382787e538c61c1e2158e09fc6518"
@@ -11090,7 +11199,7 @@ dependencies = [
  "ctr",
  "digest",
  "dns-lookup",
- "domain",
+ "domain 0.11.0",
  "dyn-clone",
  "encoding_rs",
  "fancy-regex 0.15.0",
@@ -11145,7 +11254,7 @@ dependencies = [
  "snafu 0.8.9",
  "snap",
  "strip-ansi-escapes",
- "syslog_loose",
+ "syslog_loose 0.22.0",
  "termcolor",
  "thiserror 2.0.17",
  "tokio",
