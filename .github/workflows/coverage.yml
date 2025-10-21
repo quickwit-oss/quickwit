@@ -11,6 +11,9 @@ on:
       - quickwit/Cargo.lock
       - quickwit/quickwit-*/**
 
+permissions:
+  contents: read
+
 env:
   AWS_REGION: us-east-1
   AWS_ACCESS_KEY_ID: "placeholder"
@@ -28,6 +31,9 @@ jobs:
     name: Coverage
     runs-on: gh-ubuntu-arm64
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: write
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:

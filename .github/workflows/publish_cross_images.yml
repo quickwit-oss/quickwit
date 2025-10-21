@@ -8,6 +8,9 @@ on:
     paths:
       - "build/cross-images/**"
 
+permissions:
+  contents: read
+
 jobs:
   build-cross-images:
     name: Publish cross images

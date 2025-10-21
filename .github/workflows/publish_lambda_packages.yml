@@ -5,10 +5,15 @@ on:
     tags:
       - "aws-lambda-beta-*"
 
+permissions:
+  contents: read
+
 jobs:
   build-lambdas:
     name: Build Quickwit Lambdas
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v5
       - name: Install Ubuntu packages

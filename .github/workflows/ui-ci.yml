@@ -14,10 +14,16 @@ on:
       - "quickwit/quickwit-ui/**"
       - ".github/workflows/ui-ci.yml"
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     name: ${{ matrix.task.name }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
     strategy:
       fail-fast: false
       matrix:
