@@ -5,10 +5,6 @@ image:
 
 environment:
   QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
-  OTEL_EXPORTER_OTLP_ENDPOINT: http://$(HOST_IP):4317
-  OTEL_EXPORTER_OTLP_PROTOCOL: grpc
-  OTEL_EXPORTER_OTLP_COMPRESSION: zstd
-  OTEL_EXPORTER_OTLP_TIMEOUT: 10
   # disable mtls verification: we don't have a reverse-proxy doing decapsulation
   # and putting the certificate into a header in staging
   CP_DISABLE_CERTIFICATE_VERIFICATION: true
