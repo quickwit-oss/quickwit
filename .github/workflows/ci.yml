@@ -26,6 +26,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  read-other-repo:
+    name: read contents of another repo
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Needed to federate tokens.
+    steps:
+      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0 # v1.0.1
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi  # target repository
+          policy: access  # trust policy in target repo. The file name
+      - name: Use GH token
+        run: |
+          gh auth status
+          gh repo list --visibility=internal DataDog
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          GH_PAGER: cat  # (unrelated) needed to disable paging of gh cli
   tests:
     name: Unit tests
     runs-on: ubuntu-16-core-latest
