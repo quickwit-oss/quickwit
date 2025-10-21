@@ -40,7 +40,7 @@ jobs:
         run: |
           echo 'users=["ddelemeny", "fmassot", "fulmicoton", "guilload", "PSeitz", "rdettai", "trinity-1686a"]' >> $GITHUB_OUTPUT
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name == 'pull_request_target'
         name: Checkout quickwit (pull request commit)
         with:
@@ -48,7 +48,7 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           path: ./quickwit
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name != 'pull_request_target'
         name: Checkout quickwit
         with:
@@ -57,7 +57,7 @@ jobs:
           path: ./quickwit
 
       - name: Checkout benchmarking code
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor)
         with:
           repository: quickwit-oss/benchmarks
@@ -68,7 +68,7 @@ jobs:
         run: rustup update stable
 
       - name: Install protoc
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@80466ef8efa80486cdfbddf929453a4f3565c791 # v2.62.34
         with:
           tool: protoc
 
@@ -103,7 +103,7 @@ jobs:
         run: |
           echo "::error title=User not allowed to run the benchmark::User must be in list ${{ steps.authorized-users.outputs.users }}"
       - name: Add a PR comment with comparison results
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         if: contains(fromJSON(steps.authorized-users.outputs.users), github.actor) && github.event_name == 'pull_request_target'
         # Inspired from: https://github.com/actions/github-script/blob/60a0d83039c74a4aee543508d2ffcb1c3799cdea/.github/workflows/pull-request-test.yml
         with:

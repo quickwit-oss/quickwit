@@ -45,10 +45,10 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Install Ubuntu packages
         run: sudo apt-get -y install protobuf-compiler python3
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: modified
         with:
           filters: |
@@ -68,13 +68,13 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
         working-directory: ./quickwit
       - name: Setup cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
         if: steps.modified.outputs.rust_src == 'true'
         with:
           workspaces: "./quickwit -> target"
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@v2
+        uses: taiki-e/cache-cargo-install-action@7447f04c51f2ba27ca35e7f1e28fab848c5b3ba7 # v2.3.1
         with:
           tool: cargo-nextest
       - name: cargo nextest
@@ -99,8 +99,8 @@ jobs:
     runs-on: "ubuntu-latest"
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v5
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: modified
         with:
           filters: |
@@ -124,12 +124,12 @@ jobs:
         working-directory: ./quickwit
       - name: Setup cache
         if: steps.modified.outputs.rust_src == 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0 # v2.8.0
         with:
           workspaces: "./quickwit -> target"
       - name: Install cargo deny
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@v2
+        uses: taiki-e/cache-cargo-install-action@7447f04c51f2ba27ca35e7f1e28fab848c5b3ba7 # v2.3.1
         with:
           # 0.18 requires rustc 1.85
           tool: cargo-deny@0.17.0
@@ -158,12 +158,12 @@ jobs:
     name: Check Datadog third-party license file
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # stable
 
       - name: Cache cargo tools
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/bin
           key: ${{ runner.os }}-cargo-tools-${{ hashFiles('**/Cargo.lock') }}
