@@ -26,9 +26,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  setup-pomchi-auth:
+    name: Setup PomChi git auth
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    outputs:
+      token: ${{ steps.octo-sts.outputs.token }}
+    steps:
+      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
   tests:
     name: Unit tests
     runs-on: ubuntu-16-core-latest
+    needs: setup-pomchi-auth
     env:
       CP_ENABLE_REVERSE_CONNECTION: false
     timeout-minutes: 40
@@ -75,29 +97,6 @@ jobs:
       - name: Install rustup
         if: steps.modified.outputs.rust_src == 'true'
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
-      # Get a short-lived token scoped to DataDog/PomChi
-      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0 # v1.0.1
-        id: octo-sts
-        with:
-          scope: DataDog/PomChi         # target private repo
-          policy: access                # trust policy name in target repo
-      # Rewrite SSH -> HTTPS and inject the token
-      - name: Configure git to use STS token for GitHub
-        env:
-          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
-        run: |
-          # Any SSH form gets rewritten to HTTPS with the token
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
-          git config --global advice.detachedHead false
-          git --version
-      - name: Debug one fetch (masked)
-        env:
-          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
-        run: |
-          echo "::add-mask::${GH_TOKEN}"
-          GIT_TRACE=1 GIT_CURL_VERBOSE=1 git ls-remote ssh://git@github.com/DataDog/PomChi.git | head -n1 || true
-
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
         run: rustup show active-toolchain || rustup toolchain install
@@ -132,6 +131,7 @@ jobs:
   lints:
     name: Lints
     runs-on: ubuntu-16-core-latest
+    needs: setup-pomchi-auth
     timeout-minutes: 20
     permissions:
       contents: write
@@ -201,6 +201,7 @@ jobs:
   thirdparty-license:
     name: Check Datadog third-party license file
     runs-on: ubuntu-latest
+    needs: setup-pomchi-auth
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
