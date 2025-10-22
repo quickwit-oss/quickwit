@@ -578,9 +578,8 @@ impl DocProcessor {
             };
         let pipeline_opt: Option<Pipeline> = pipeline_config_opt
             .map(|config| {
-                let enable_integrations = std::env::var("CP_ENABLE_PIPELINE_INTEGRATIONS")
-                    .map(|s| s == "1" || s.to_lowercase() == "true")
-                    .unwrap_or(false);
+                let enable_integrations =
+                    quickwit_common::get_bool_from_env("CP_ENABLE_PIPELINE_INTEGRATIONS", false);
                 Pipeline::try_from_pipeline_config(&config, enable_integrations)
             })
             .transpose()?;
