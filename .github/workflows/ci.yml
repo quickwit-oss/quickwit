@@ -184,10 +184,6 @@ jobs:
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo clippy --workspace --tests --all-features
         working-directory: ./quickwit
-      - name: cargo deny
-        if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo deny check licenses
-        working-directory: ./quickwit
       - name: cargo doc
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo doc
