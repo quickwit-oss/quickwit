@@ -578,7 +578,7 @@ impl DocProcessor {
             };
         let pipeline_opt: Option<Pipeline> = pipeline_config_opt
             .map(|config| {
-                let enable_integrations = std::env::var("QW_ENABLE_INTEGRATIONS")
+                let enable_integrations = std::env::var("CP_ENABLE_PIPELINE_INTEGRATIONS")
                     .map(|s| s == "1" || s.to_lowercase() == "true")
                     .unwrap_or(false);
                 Pipeline::try_from_pipeline_config(&config, enable_integrations)
