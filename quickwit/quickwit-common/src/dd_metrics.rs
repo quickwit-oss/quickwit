@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use metrics::{Counter, Histogram as MetricsHistogram, Label, counter, histogram};
+use once_cell::sync::Lazy;
 
 pub const DD_STATUS_CODES: &[&str] = &[
     "200", "400", "401", "403", "404", "408", "429", "500", "501", "503",
@@ -102,6 +103,30 @@ impl std::fmt::Debug for DDHistograms {
         self.inner.histograms.fmt(f)
     }
 }
+
+pub struct DDIngestMetrics {
+    pub ingest_requests_total: DDCounters,
+    pub ingest_request_duration_seconds: DDHistograms,
+}
+
+impl Default for DDIngestMetrics {
+    fn default() -> Self {
+        Self {
+            ingest_requests_total: DDCounters::new(
+                "ingest_requests.count",
+                "status_code",
+                DD_STATUS_CODES,
+            ),
+            ingest_request_duration_seconds: DDHistograms::new(
+                "ingest_requests.duration_seconds",
+                "status_code",
+                DD_STATUS_CODES,
+            ),
+        }
+    }
+}
+
+pub static DD_INGEST_METRICS: Lazy<DDIngestMetrics> = Lazy::new(DDIngestMetrics::default);
 
 #[cfg(test)]
 mod tests {

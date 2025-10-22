@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::LazyLock;
+use std::time::Instant;
 
 use pomchi::DatadogLogMsg;
-use quickwit_common::dd_metrics::{DD_STATUS_CODES, DDCounters};
+use quickwit_common::dd_metrics::DD_INGEST_METRICS;
 use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::DocBatchV2Builder;
@@ -34,9 +34,6 @@ use crate::rest_api_response::into_rest_api_response;
 use crate::{Body, BodyFormat, with_arg};
 
 const DATADOG_INDEX_ID: &str = "datadog";
-
-pub static DD_INGEST_METRICS: LazyLock<DDCounters> =
-    LazyLock::new(|| DDCounters::new("ingest_requests.count", "status_code", DD_STATUS_CODES));
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(datadog_logs,))]
@@ -131,6 +128,7 @@ async fn datadog_ingest_logs(
     index_id: IndexId,
     body: Body,
 ) -> Result<(), DatadogApiError> {
+    let start = Instant::now();
     if body.content.is_empty() || body.content.as_ref() == b"{}" {
         // The datadog agent may send an empty payload as a keep alive
         // https://github.com/DataDog/datadog-agent/blob/5a6c5dd75a2233fbf954e38ddcc1484df4c21a35/pkg/logs/client/http/destination.go#L52
@@ -188,7 +186,14 @@ async fn datadog_ingest_logs(
     );
 
     if num_failures == 0 {
-        DD_INGEST_METRICS.get("200").increment(1);
+        DD_INGEST_METRICS
+            .ingest_requests_total
+            .get("200")
+            .increment(1);
+        DD_INGEST_METRICS
+            .ingest_request_duration_seconds
+            .get("200")
+            .record(start.elapsed().as_secs_f64());
         return Ok(());
     }
     let failure_reason = response.failures[0].reason();
@@ -216,7 +221,14 @@ async fn datadog_ingest_logs(
         IngestFailureReason::CircuitBreaker => (ServiceErrorCode::Internal, "circuit breaker)"),
     };
     let status_code = error_code.http_status_code();
-    DD_INGEST_METRICS.get(status_code.as_str()).increment(1);
+    DD_INGEST_METRICS
+        .ingest_requests_total
+        .get(status_code.as_str())
+        .increment(1);
+    DD_INGEST_METRICS
+        .ingest_request_duration_seconds
+        .get(status_code.as_str())
+        .record(start.elapsed().as_secs_f64());
 
     Err(DatadogApiError::Ingest(
         error_code,
