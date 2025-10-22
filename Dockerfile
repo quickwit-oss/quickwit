@@ -15,10 +15,13 @@ ARG CARGO_PROFILE=release
 ARG QW_COMMIT_DATE
 ARG QW_COMMIT_HASH
 ARG QW_COMMIT_TAGS
+ARG CI_JOB_TOKEN
 
 ENV QW_COMMIT_DATE=$QW_COMMIT_DATE
 ENV QW_COMMIT_HASH=$QW_COMMIT_HASH
 ENV QW_COMMIT_TAGS=$QW_COMMIT_TAGS
+
+RUN git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "ssh://git@github.com/DataDog/"
 
 RUN apt-get -y update \
     && apt-get -y install \

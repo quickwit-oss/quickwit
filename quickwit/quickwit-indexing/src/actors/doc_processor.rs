@@ -21,6 +21,7 @@ use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use metrics::Counter;
+use pomchi::{DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::metrics::IntCounter;
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
@@ -28,9 +29,6 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::serialized_json_size::serialized_json_obj_approx;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
-use quickwit_doc_transforms::{
-    DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog,
-};
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf, parse_otlp_spans_json, parse_otlp_spans_protobuf,
@@ -579,7 +577,11 @@ impl DocProcessor {
                 None
             };
         let pipeline_opt: Option<Pipeline> = pipeline_config_opt
-            .map(|config| Pipeline::try_from_pipeline_config(&config))
+            .map(|config| {
+                let enable_integrations =
+                    quickwit_common::get_bool_from_env("CP_ENABLE_PIPELINE_INTEGRATIONS", false);
+                Pipeline::try_from_pipeline_config(&config, enable_integrations)
+            })
             .transpose()?;
         Ok(DocProcessor {
             doc_mapper,

@@ -34,6 +34,7 @@ metrics = { workspace = true }
 once_cell = { workspace = true }
 oneshot = { workspace = true }
 openssl = { workspace = true, optional = true }
+pomchi = { workspace = true }
 percent-encoding = { workspace = true }
 pulsar = { workspace = true, optional = true }
 quickwit-query = { workspace = true }
@@ -60,7 +61,6 @@ quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
-quickwit-doc-transforms = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-opentelemetry = { workspace = true }

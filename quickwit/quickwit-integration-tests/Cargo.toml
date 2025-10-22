@@ -27,6 +27,7 @@ hyper-util = { workspace = true }
 itertools = { workspace = true }
 metrics = { workspace = true }
 metrics-util = "0.20"
+pomchi = { workspace = true }
 prost = { workspace = true }
 prost-types = { workspace = true }
 rand = { workspace = true }
@@ -50,6 +51,5 @@ quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-opentelemetry = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-rest-client = { workspace = true }
-quickwit-doc-transforms = { workspace = true }
 quickwit-serve = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }

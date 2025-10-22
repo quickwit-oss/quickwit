@@ -14,10 +14,10 @@
 
 use std::sync::LazyLock;
 
+use pomchi::DatadogLogMsg;
 use quickwit_common::dd_metrics::{DD_STATUS_CODES, DDCounters};
 use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
-use quickwit_doc_transforms::DatadogLogMsg;
 use quickwit_ingest::DocBatchV2Builder;
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{

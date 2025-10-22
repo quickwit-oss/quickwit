@@ -13,7 +13,6 @@ members = [
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
-  "quickwit-doc-transforms",
   "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
@@ -52,7 +51,6 @@ default-members = [
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
-  "quickwit-doc-transforms",
   "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
@@ -173,6 +171,7 @@ pem = "3.0.5"
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.33", features = ["std"] }
+pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "8a5124506068d66e4e71ee86adf3fb19099ec7fd" }
 postcard = { version = "1.0.4", features = [
   "use-std",
 ], default-features = false }
@@ -344,7 +343,6 @@ quickwit-control-plane = { path = "quickwit-control-plane" }
 quickwit-datetime = { path = "quickwit-datetime" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
-quickwit-doc-transforms = { path = "quickwit-doc-transforms" }
 quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }

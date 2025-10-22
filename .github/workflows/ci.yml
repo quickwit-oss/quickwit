@@ -18,6 +18,7 @@ env:
   RUST_BACKTRACE: 1
   RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
   RUSTFLAGS: -Dwarnings --cfg tokio_unstable
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
 
 # Ensures that we cancel running jobs for the same PR / same workflow.
 concurrency:
@@ -83,6 +84,19 @@ jobs:
         if: steps.modified.outputs.rust_src == 'true'
         with:
           workspaces: "./quickwit -> target"
+      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/cache-cargo-install-action@v2
@@ -129,6 +143,19 @@ jobs:
               - quickwit/**/*.toml
               - quickwit/**/*.proto
               - .github/workflows/ci.yml
+      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: sudo apt-get -y install protobuf-compiler python3 python3-pip
@@ -157,10 +184,6 @@ jobs:
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo clippy --workspace --tests --all-features
         working-directory: ./quickwit
-      - name: cargo deny
-        if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo deny check licenses
-        working-directory: ./quickwit
       - name: cargo doc
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo doc
@@ -177,11 +200,27 @@ jobs:
   thirdparty-license:
     name: Check Datadog third-party license file
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
       - name: Cache cargo tools
         uses: actions/cache@v4
         with:
