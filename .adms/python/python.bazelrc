@@ -1,0 +1,8 @@
+# File generated and managed by #dependency-management.
+# Changes are subject to overwriting.
+# DO NOT EDIT
+
+common --repo_env=PIP_INDEX_URL="https://depot-read-api-python.us1.ddbuild.io/magicmirror/magicmirror/@current/simple"
+common --repo_env=PIP_EXTRA_INDEX_URL="https://depot-read-api-python.us1.ddbuild.io/magicmirror/testing/@current/simple"
+common --repo_env=UV_INDEX="https://depot-read-api-python.us1.ddbuild.io/magicmirror/magicmirror/@current/simple https://depot-read-api-python.us1.ddbuild.io/magicmirror/testing/@current/simple"
+common --repo_env=UV_DEFAULT_INDEX="https://depot-read-api-python.us1.ddbuild.io/magicmirror/magicmirror/@current/simple"

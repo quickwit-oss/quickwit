@@ -1,0 +1,13 @@
+# File generated and managed by #dependency-management.
+# Changes are subject to overwriting.
+# DO NOT EDIT
+
+# yarn Configuration
+common --repo_env=YARN_NPM_REGISTRY_SERVER="https://depot-read-api-npm.us1.ddbuild.io/internal/magicmirror/magicmirror"
+common --repo_env=YARN_NPM_ALWAYS_AUTH="false"
+
+# npm Configuration
+common --repo_env=NPM_CONFIG_REGISTRY="https://depot-read-api-npm.us1.ddbuild.io/internal/magicmirror/magicmirror"
+common --repo_env=npm_config_registry="https://depot-read-api-npm.us1.ddbuild.io/internal/magicmirror/magicmirror"
+common --repo_env=NPM_CONFIG_ALWAYS_AUTH="false"
+common --repo_env=npm_config_always_auth="false"

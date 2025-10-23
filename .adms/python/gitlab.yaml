@@ -1,0 +1,9 @@
+# File generated and managed by #dependency-management.
+# Changes are subject to overwriting.
+# DO NOT EDIT
+
+variables:
+    PIP_INDEX_URL: "https://depot-read-api-python.us1.ddbuild.io/magicmirror/magicmirror/@current/simple"
+    PIP_EXTRA_INDEX_URL: "https://depot-read-api-python.us1.ddbuild.io/magicmirror/testing/@current/simple"
+    UV_INDEX: "https://depot-read-api-python.us1.ddbuild.io/magicmirror/magicmirror/@current/simple https://depot-read-api-python.us1.ddbuild.io/magicmirror/testing/@current/simple"
+    UV_DEFAULT_INDEX: "https://depot-read-api-python.us1.ddbuild.io/magicmirror/magicmirror/@current/simple"

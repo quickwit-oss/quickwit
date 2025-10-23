@@ -1,0 +1,11 @@
+# File generated and managed by #dependency-management.
+# Changes are subject to overwriting.
+# DO NOT EDIT
+
+variables:
+    YARN_NPM_REGISTRY_SERVER: "https://depot-read-api-npm.us1.ddbuild.io/internal/magicmirror/magicmirror"
+    YARN_NPM_ALWAYS_AUTH: "false"
+    NPM_CONFIG_REGISTRY: "https://depot-read-api-npm.us1.ddbuild.io/internal/magicmirror/magicmirror"
+    npm_config_registry: "https://depot-read-api-npm.us1.ddbuild.io/internal/magicmirror/magicmirror"
+    NPM_CONFIG_ALWAYS_AUTH: "false"
+    npm_config_always_auth: "false"

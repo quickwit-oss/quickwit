@@ -1,0 +1,7 @@
+# File generated and managed by #dependency-management.
+# Changes are subject to overwriting.
+# DO NOT EDIT
+
+# Ensure that Bazel uses the ADMS Bazel mirror for downloading dependencies.
+common --experimental_downloader_config=.adms/bazel/adms.mirror.cfg
+common --experimental_repository_downloader_retries=2

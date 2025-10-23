@@ -1,3 +1,6 @@
+include:
+  - local: .adms/npm/gitlab.yaml
+  - local: .adms/python/gitlab.yaml
 variables:
   BAZEL_CI_IMAGE: registry.ddbuild.io/images/bazel:5-gbi-jammy
   DOCKER_CI_IMAGE: registry.ddbuild.io/images/docker:27.3.1
@@ -32,9 +35,9 @@ build_image:
     DDSIGN_ID_TOKEN:
       aud: image-integrity
   script:
-      # push an unsigned image for public use, identify it with it's SHA to prevent race condition between pipelines
+    # push an unsigned image for public use, identify it with it's SHA to prevent race condition between pipelines
     - scripts/image-tool.sh --push --platform linux/amd64,linux/arm64 --repo cloudprem --tag $CI_COMMIT_SHA
-      # and a signed image to pomsky for internal deployments
+    # and a signed image to pomsky for internal deployments
     - scripts/image-tool.sh --push --sign --repo pomsky
 
 verify_version:

@@ -1,4 +1,7 @@
 # Print all `.bazelrc` option at startup
+
+# Ensure we can access our internal artifact repositories
+import %workspace%/.adms/adms.bazelrc
 --announce_rc
 
 # Show Build timestamps
