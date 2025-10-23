@@ -134,7 +134,16 @@ fn handle_attribute_group_by(
     let missing = attribute_group_by
         .missing
         .map(tantivy::aggregation::Key::Str);
-    let include = attribute_group_by.include.map(IncludeExcludeParam::Regex);
+    let include = attribute_group_by.include.map(|include| {
+        // Replace `*` with `.*` to allow wildcard matching.
+        let regex = include.replace('*', ".*");
+        if regex.contains("*") {
+            // If the original include had a `*`, we don't surround with `.*`
+            IncludeExcludeParam::Regex(include)
+        } else {
+            IncludeExcludeParam::Regex(format!(".*{}.*", include))
+        }
+    });
     let terms_agg = bucket::TermsAggregation {
         field: field_name.clone(),
         size: Some(attribute_group_by.limit),
