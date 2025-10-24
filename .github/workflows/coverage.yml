@@ -28,6 +28,9 @@ jobs:
   test:
     name: Coverage
     runs-on: ubuntu-16-core-latest
+    permissions:
+      contents: read
+      id-token: write
     timeout-minutes: 40
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
@@ -105,6 +108,19 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
 
       - name: Install lib libsasl2
         run: |
