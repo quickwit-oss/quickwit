@@ -128,7 +128,7 @@ jobs:
             ${{ runner.os }}-cargo-test
 
       - name: Install awslocal
-        run: pip install awscli-local
+        run: pip install --require-hashes -r ./.github/workflows/coverage.requirements.txt
 
       - name: Prepare LocalStack S3
         run: ./quickwit-cli/tests/prepare_tests.sh
