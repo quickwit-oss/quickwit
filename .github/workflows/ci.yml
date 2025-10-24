@@ -94,7 +94,7 @@ jobs:
         working-directory: ./quickwit
       - name: Install python packages
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: python3 -m venv venv && source venv/bin/activate && pip install pyaml requests
+        run: python3 -m venv venv && source venv/bin/activate && pip install --require-hashes -r ../../.github/workflows/ci.requirements.txt
         working-directory: ./quickwit/rest-api-tests
       - name: Run REST API tests
         if: always() && steps.modified.outputs.rust_src == 'true'
