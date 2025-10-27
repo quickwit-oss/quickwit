@@ -68,7 +68,7 @@ jobs:
         run: rustup update stable
 
       - name: Install protoc
-        uses: taiki-e/install-action@80466ef8efa80486cdfbddf929453a4f3565c791 # v2.62.34
+        uses: taiki-e/install-action@0ed4032d5406d133639ce4e858011eb498223338 # v2.62.39
         with:
           tool: protoc
 
