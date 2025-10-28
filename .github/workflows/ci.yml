@@ -98,7 +98,7 @@ jobs:
       - name: Install python packages
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: |
-          pip install --user pipenv
+          pip install --user pipenv==2025.0.4
           pipenv install --deploy --ignore-pipfile
         working-directory: ./quickwit/rest-api-tests
       - name: Run REST API tests

@@ -133,7 +133,7 @@ jobs:
 
       - name: Install python packages
         run: |
-          pip install --user pipenv
+          pip install --user pipenv==2025.0.4
           pipenv install --deploy --ignore-pipfile
         working-directory: ./quickwit/quickwit-cli/tests
 
