@@ -29,7 +29,7 @@ use tokio_util::either::Either;
 use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::{error, info};
 use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
@@ -480,6 +480,18 @@ fn get_status_with_error(rejection: Rejection) -> Result<RestApiError, Rejection
 }
 
 fn build_cors(cors_origins: &[String]) -> CorsLayer {
+    let debug_mode = quickwit_common::get_bool_from_env("QW_ENABLE_DEBUG_CORS", false);
+    if debug_mode {
+        info!("DEBUG CORS is enabled, localhost and 127.0.0.1 origins will be allowed");
+        return CorsLayer::new()
+            .allow_methods([Method::GET])
+            .allow_origin(AllowOrigin::predicate(|origin, _parts| {
+                origin.as_bytes().starts_with(b"https://localhost:")
+                    || origin.as_bytes().starts_with(b"https://127.0.0.1:")
+            }))
+            .allow_headers([http::header::CONTENT_TYPE]);
+    }
+
     let mut cors = CorsLayer::new().allow_methods([
         Method::GET,
         Method::POST,
