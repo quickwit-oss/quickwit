@@ -484,7 +484,13 @@ fn build_cors(cors_origins: &[String]) -> CorsLayer {
     if debug_mode {
         info!("CORS debug mode is enabled, localhost and 127.0.0.1 origins will be allowed");
         return CorsLayer::new()
-            .allow_methods([Method::GET, Method::POST, Method::PUT, Method::PATCH, Method::DELETE])
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+            ])
             .allow_origin(AllowOrigin::predicate(|origin, _parts| {
                 [b"https://localhost:", b"https://127.0.0.1:"]
                     .iter()
