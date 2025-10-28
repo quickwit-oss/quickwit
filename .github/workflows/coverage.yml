@@ -117,6 +117,10 @@ jobs:
           sudo apt install libsasl2-dev
           sudo apt install libsasl2-2
 
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v.5.6.0
+        with:
+          python-version: '3.11'
+
       - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
@@ -127,12 +131,15 @@ jobs:
             ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
             ${{ runner.os }}-cargo-test
 
-      - name: Install awslocal
-        run: pip install --require-hashes -r ./.github/workflows/coverage.requirements.txt
+      - name: Install python packages
+        run: |
+          pip install --user pipenv
+          pipenv install --deploy --ignore-pipfile
+        working-directory: ./quickwit/quickwit-cli/tests
 
       - name: Prepare LocalStack S3
-        run: ./quickwit-cli/tests/prepare_tests.sh
-        working-directory: ./quickwit
+        run: pipenv run ./prepare_tests.sh
+        working-directory: ./quickwit/quickwit-cli/tests
 
       # GitHub Actions does not allow services to be started with a custom command,
       # so we are running Azurite as a container manually.
