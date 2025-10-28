@@ -1,4 +1,4 @@
-FROM node:20@sha256:8cdc6b9b711af0711cc6139955cc1331fab5e0a995afd3260c52736fbc338059 AS ui-builder
+FROM node:25@sha256:7a78e83b764befdf57c544b4770f688e5b4e2a8eefcf96481ab3c32e6ec5d986 AS ui-builder
 
 COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 
