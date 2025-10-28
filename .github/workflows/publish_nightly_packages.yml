@@ -5,16 +5,22 @@ on:
   schedule:
     - cron: "0 5 * * *"
 
+permissions:
+  contents: read
+
 jobs:
   build-macos-binaries:
     name: Build ${{ matrix.target }}
     runs-on: macos-latest
+    permissions:
+      contents: write
+      actions: write
     strategy:
       fail-fast: false
       matrix:
         target: [x86_64-apple-darwin, aarch64-apple-darwin]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - uses: ./.github/actions/cargo-build-macos-binary
         with:
           target: ${{ matrix.target }}
@@ -27,8 +33,11 @@ jobs:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - uses: ./.github/actions/cross-build-binary
         with:
           target: ${{ matrix.target }}

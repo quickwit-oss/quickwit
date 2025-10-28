@@ -178,7 +178,22 @@ fn convert_user_input_ast_to_query_ast(
                 Ok(term_set_query.into())
             }
             UserInputLeaf::Exists { field } => Ok(FieldPresenceQuery { field }.into()),
-            UserInputLeaf::Regex { .. } => bail!("regex query is not supported"),
+            UserInputLeaf::Regex { field, pattern } => {
+                let field = if let Some(field) = field {
+                    field
+                } else if default_search_fields.len() == 1 {
+                    default_search_fields[0].clone()
+                } else if default_search_fields.is_empty() {
+                    bail!("regex query without field is not supported");
+                } else {
+                    bail!("regex query with multiple fields is not supported");
+                };
+                let regex_query = query_ast::RegexQuery {
+                    field,
+                    regex: pattern,
+                };
+                Ok(regex_query.into())
+            }
         },
         UserInputAst::Boost(underlying, boost) => {
             let query_ast = convert_user_input_ast_to_query_ast(
@@ -535,5 +550,22 @@ mod tests {
                 FullTextMode::PhraseFallbackToIntersection
             );
         }
+    }
+
+    #[test]
+    fn test_user_input_query_regex() {
+        let ast = UserInputQuery {
+            user_text: "field: /.*/".to_string(),
+            default_fields: None,
+            default_operator: BooleanOperand::And,
+            lenient: false,
+        }
+        .parse_user_query(&[])
+        .unwrap();
+        let QueryAst::Regex(regex_query) = ast else {
+            panic!()
+        };
+        assert_eq!(&regex_query.field, "field");
+        assert_eq!(&regex_query.regex, ".*");
     }
 }

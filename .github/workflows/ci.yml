@@ -57,10 +57,13 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Install Ubuntu packages
-        run: sudo apt-get -y install protobuf-compiler python3
-      - uses: dorny/paths-filter@v3
+        run: sudo apt-get -y install protobuf-compiler
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v.6.0.0
+        with:
+          python-version: '3.11'
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: modified
         with:
           filters: |
@@ -80,7 +83,7 @@ jobs:
         run: rustup show active-toolchain || rustup toolchain install
         working-directory: ./quickwit
       - name: Setup cache
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         if: steps.modified.outputs.rust_src == 'true'
         with:
           workspaces: "./quickwit -> target"
@@ -99,7 +102,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@v2
+        uses: taiki-e/cache-cargo-install-action@7447f04c51f2ba27ca35e7f1e28fab848c5b3ba7 # v2.3.1
         with:
           tool: cargo-nextest
       - name: cargo nextest
@@ -112,11 +115,13 @@ jobs:
         working-directory: ./quickwit
       - name: Install python packages
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: python3 -m venv venv && source venv/bin/activate && pip install pyaml requests
+        run: |
+          pip install --user pipenv==2025.0.4
+          pipenv install --deploy --ignore-pipfile
         working-directory: ./quickwit/rest-api-tests
       - name: Run REST API tests
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: source venv/bin/activate && python3 ./run_tests.py --binary ../target/debug/quickwit
+        run: pipenv run python3 ./run_tests.py --binary ../target/debug/quickwit
         working-directory: ./quickwit/rest-api-tests
 
   lints:
@@ -133,8 +138,8 @@ jobs:
       actions: write
 
     steps:
-      - uses: actions/checkout@v5
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: modified
         with:
           filters: |
@@ -171,12 +176,12 @@ jobs:
         working-directory: ./quickwit
       - name: Setup cache
         if: steps.modified.outputs.rust_src == 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         with:
           workspaces: "./quickwit -> target"
       - name: Install cargo deny
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@v2
+        uses: taiki-e/cache-cargo-install-action@7447f04c51f2ba27ca35e7f1e28fab848c5b3ba7 # v2.3.1
         with:
           # 0.18 requires rustc 1.85
           tool: cargo-deny@0.17.0
@@ -204,9 +209,9 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # stable
 
       - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
         id: octo-sts
@@ -222,7 +227,7 @@ jobs:
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
       - name: Cache cargo tools
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cargo/bin
           key: ${{ runner.os }}-cargo-tools-${{ hashFiles('**/Cargo.lock') }}

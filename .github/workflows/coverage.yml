@@ -12,6 +12,9 @@ on:
       - quickwit/Cargo.lock
       - quickwit/quickwit-*/**
 
+permissions:
+  contents: read
+
 env:
   AWS_REGION: us-east-1
   AWS_ACCESS_KEY_ID: "placeholder"
@@ -32,6 +35,9 @@ jobs:
       contents: read
       id-token: write
     timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: write
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
@@ -107,7 +113,7 @@ jobs:
           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
       - uses: DataDog/dd-octo-sts-action@08f2144903ced3254a3dafec2592563409ba2aa0
         id: octo-sts
@@ -128,7 +134,11 @@ jobs:
           sudo apt install libsasl2-dev
           sudo apt install libsasl2-2
 
-      - uses: actions/cache@v4
+      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v.6.0.0
+        with:
+          python-version: '3.11'
+
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/.cargo/git
@@ -138,12 +148,15 @@ jobs:
             ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
             ${{ runner.os }}-cargo-test
 
-      - name: Install awslocal
-        run: pip install awscli-local
+      - name: Install python packages
+        run: |
+          pip install --user pipenv==2025.0.4
+          pipenv install --deploy --ignore-pipfile
+        working-directory: ./quickwit/quickwit-cli/tests
 
       - name: Prepare LocalStack S3
-        run: ./quickwit-cli/tests/prepare_tests.sh
-        working-directory: ./quickwit
+        run: pipenv run ./prepare_tests.sh
+        working-directory: ./quickwit/quickwit-cli/tests
 
       # GitHub Actions does not allow services to be started with a custom command,
       # so we are running Azurite as a container manually.
@@ -162,7 +175,7 @@ jobs:
         run: rustup update stable
 
       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@41ef8c65f4034ff24ab1cc2cef52f3000bcf9523 # v2.62.40
         with:
           tool: cargo-llvm-cov,nextest,protoc
 

@@ -14,9 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: "Checkout Repository"
-        uses: actions/checkout@v5
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: "Dependency Review"
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@45529485b5eb76184ced07362d2331fd9d26f03f # v4.8.1
         with:
           # This is an minor vuln on the rsa crate, used for
           # google storage.

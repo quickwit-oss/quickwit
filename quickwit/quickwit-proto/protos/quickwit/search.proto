@@ -198,6 +198,9 @@ message SearchRequest {
   // Time filter, expressed in seconds since epoch.
   // That filter is to be interpreted as the semi-open interval:
   // [start_timestamp, end_timestamp).
+  // If the query AST contains a range query over the timestamp field,
+  // then the the bounds of the range query are used directly and
+  // these two fields are ignored.
   optional int64 start_timestamp = 4;
   optional int64 end_timestamp = 5;
 
