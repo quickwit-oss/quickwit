@@ -14,6 +14,9 @@ on:
       - "quickwit/quickwit-ui/**"
       - ".github/workflows/ui-ci.yml"
 
+env:
+  CP_ENABLE_REVERSE_CONNECTION: false
+
 permissions:
   contents: read
 
@@ -23,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
       actions: write
     strategy:
       fail-fast: false
@@ -65,6 +69,19 @@ jobs:
       QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
       - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 20
