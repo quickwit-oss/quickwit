@@ -34,10 +34,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    timeout-minutes: 40
-    permissions:
-      contents: read
       actions: write
+    timeout-minutes: 40
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
