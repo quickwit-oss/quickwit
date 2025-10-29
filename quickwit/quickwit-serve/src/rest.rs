@@ -36,6 +36,7 @@ use warp::hyper::http::HeaderValue;
 use warp::hyper::{Method, StatusCode, http};
 use warp::{Filter, Rejection, Reply, redirect};
 
+use crate::cloudprem_ui_api::cloudprem_ui_api_handlers;
 use crate::cluster_api::cluster_handler;
 use crate::datadog_api::datadog_api_handlers;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
@@ -196,6 +197,9 @@ pub(crate) async fn start_rest_server(
     let rest_routes = api_v1_root_route
         .or(datadog_api_handlers(
             quickwit_services.ingest_router_service.clone(),
+        ))
+        .or(cloudprem_ui_api_handlers(
+            quickwit_services.search_service.clone(),
         ))
         .boxed()
         .or(api_doc)

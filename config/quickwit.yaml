@@ -44,6 +44,7 @@ version: 0.8
 #   listen_port: 7280
 #   cors_allow_origins:
 #     - "http://localhost:3000"
+
 #   extra_headers:
 #     x-header-1: header-value-1
 #     x-header-2: header-value-2

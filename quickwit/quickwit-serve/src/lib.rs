@@ -16,6 +16,7 @@
 
 mod build_info;
 mod cloudprem;
+mod cloudprem_ui_api;
 mod cluster_api;
 mod datadog_api;
 mod decompression;

@@ -5,4 +5,4 @@ mod websocket;
 
 pub(crate) use auth::MtlsHeaderInterceptorLayer;
 pub(crate) use server::{DISABLE_CERTIFICATE_VERIFICATION, start_cloudprem_server};
-pub(crate) use service::CloudPremServiceImpl;
+pub(crate) use service::{CLOUDPREM_INDEX_ID_PATTERN, CloudPremServiceImpl};
