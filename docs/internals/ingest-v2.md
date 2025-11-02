@@ -1,6 +1,6 @@
 # Ingest V2
 
-Ingest V2 is the latest ingestion API that is designed to be more efficient and scalable for thousands of indexes than the previous version. It is the default since 0.9.
+Ingest V2 is the latest ingestion API that is designed to be more efficient and scalable for thousands of indexes than the previous version. It is currently disabled by default and can be enabled via the `QW_ENABLE_INGEST_V2` environment variable.
 
 ## Architecture
 
