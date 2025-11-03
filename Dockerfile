@@ -8,7 +8,7 @@ RUN touch .gitignore_for_build_directory \
     && NODE_ENV=production make install build
 
 
-FROM rust:bookworm@sha256:3914072ca0c3b8aad871db9169a651ccfce30cf58303e5d6f2db16d1d8a7e58f AS bin-builder
+FROM rust:bookworm@sha256:b5efaabfd787a695d2e46b37d3d9c54040e11f4c10bc2e714bbadbfcc0cd6c39 AS bin-builder
 
 ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
