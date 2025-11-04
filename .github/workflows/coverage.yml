@@ -133,7 +133,7 @@ jobs:
 
       - name: Install python packages
         run: |
-          pip install --user pipenv==2025.0.4
+          pip install --user --require-hashes -r ${{ github.workspace }}/.github/workflows/requirements.txt
           pipenv install --deploy --ignore-pipfile
         working-directory: ./quickwit/quickwit-cli/tests
 
