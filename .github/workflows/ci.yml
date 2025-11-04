@@ -68,15 +68,9 @@ jobs:
               - quickwit/**/*.proto
               - quickwit/rest-api-tests/**
               - .github/workflows/ci.yml
-      # The following step is just meant to install rustup actually.
-      # The next one installs the correct toolchain.
-      - name: Install rustup
-        if: steps.modified.outputs.rust_src == 'true'
-        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
-        run: rustup show active-toolchain || rustup toolchain install
-        working-directory: ./quickwit
+        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # stable
       - name: Setup cache
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
         if: steps.modified.outputs.rust_src == 'true'
@@ -126,17 +120,15 @@ jobs:
               - .github/workflows/ci.yml
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: sudo apt-get -y install protobuf-compiler python3 python3-pip
-      - name: Install rustup
-        if: steps.modified.outputs.rust_src == 'true'
-        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
+        run: sudo apt-get -y install protobuf-compiler
       - name: Setup nightly Rust Toolchain (for rustfmt)
         if: steps.modified.outputs.rust_src == 'true'
-        run: rustup toolchain install nightly
+        uses: dtolnay/rust-toolchain@55d80eb3c5a4228eec5390a083c092095115c6f1 # nightly
+        with:
+          components: rustfmt
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
-        run: rustup show active-toolchain || rustup toolchain install
-        working-directory: ./quickwit
+        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # stable
       - name: Setup cache
         if: steps.modified.outputs.rust_src == 'true'
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1

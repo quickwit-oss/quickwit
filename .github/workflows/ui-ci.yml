@@ -31,7 +31,6 @@ jobs:
           - name: Cypress run
             command: |
               sudo apt-get -y install protobuf-compiler
-              rustup show active-toolchain || rustup toolchain install
               CI=false yarn --cwd quickwit-ui build
               RUSTFLAGS="--cfg tokio_unstable" cargo build --features=postgres
               mkdir qwdata
@@ -70,8 +69,8 @@ jobs:
           node-version: 20
           cache: "yarn"
           cache-dependency-path: quickwit/quickwit-ui/yarn.lock
-      - name: Install rustup
-        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
+      - name: Setup stable Rust Toolchain
+        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # stable
       - name: Install JS dependencies
         run: yarn --cwd quickwit-ui install
         working-directory: ./quickwit
