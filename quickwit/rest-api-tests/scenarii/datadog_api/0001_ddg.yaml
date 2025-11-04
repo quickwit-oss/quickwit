@@ -2,7 +2,7 @@ endpoint: api/v1/datadog/search
 params:
   query: "service:*"
 expected:
-  num_hits: 1
+  num_hits: 2
 ---
 endpoint: api/v1/datadog/search
 params:
@@ -15,6 +15,14 @@ params:
   query: "service:blub"
 expected:
   num_hits: 0
+---
+endpoint: api/v1/datadog/search
+params:
+  query: "service:override-service"
+expected:
+  num_hits: 1
+  hits:
+    - { "service": "override-service", "host": "override-host", "source": "override-source"}
 ---
 # Only message is required
 method: POST

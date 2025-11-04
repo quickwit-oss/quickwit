@@ -26,6 +26,9 @@ use quickwit_proto::ingest::router::{
 };
 use quickwit_proto::types::{DocUidGenerator, IndexId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
+use serde::Deserialize;
+use serde_with::formats::CommaSeparator;
+use serde_with::{StringWithSeparator, serde_as};
 use tracing::{debug, error};
 use warp::{Filter, Rejection};
 
@@ -60,9 +63,22 @@ pub(crate) fn datadog_healthcheck_filter() -> impl Filter<Extract = (), Error = 
     path_filter.and(warp::get())
 }
 
+#[serde_as]
+#[derive(Debug, Clone, Default, Deserialize)]
+/// Option to override fields in Datadog log messages via URL parameters.
+pub struct DatadogLogsQueryParams {
+    service: Option<String>,
+    #[serde(alias = "host")]
+    hostname: Option<String>,
+    ddsource: Option<String>,
+    #[serde_as(as = "Option<StringWithSeparator::<CommaSeparator, String>>")]
+    ddtags: Option<Vec<String>>,
+}
+
 /// Based on vector agent logs endpoint:
 /// https://github.com/vectordotdev/vector/blob/450de36904f3d1524057e8cdb736941194da8d22/src/sources/datadog_agent/mod.rs#L499
-pub(crate) fn datadog_logs_filter() -> impl Filter<Extract = (Body,), Error = Rejection> + Clone {
+pub(crate) fn datadog_logs_filter()
+-> impl Filter<Extract = (Body, DatadogLogsQueryParams), Error = Rejection> + Clone {
     let path_filter = warp::path!("api" / "v1" / "input")
         .or(warp::path!("api" / "v2" / "logs"))
         .unify();
@@ -73,6 +89,7 @@ pub(crate) fn datadog_logs_filter() -> impl Filter<Extract = (Body,), Error = Re
             "application/json",
         ))
         .and(get_body_bytes())
+        .and(warp::query::<DatadogLogsQueryParams>())
 }
 
 #[utoipa::path(
@@ -84,7 +101,10 @@ pub(crate) fn datadog_logs_filter() -> impl Filter<Extract = (Body,), Error = Re
         (status = 200, description = "Successfully exported logs.", body = bool),
     ),
     params(
-        ("index_id" = String, Path, description = "The index ID to add docs to."),
+        ("service" = String, Query, description = "Override service for all messages"),
+        ("hostname" = String, Query, description = "Override hostname for all messages"),
+        ("ddsource" = String, Query, description = "Override ddsource for all messages"),
+        ("ddtags" = String, Query, description = "Override ddtags as comma-separated list"),
     )
 )]
 pub(crate) fn datadog_logs(
@@ -93,9 +113,11 @@ pub(crate) fn datadog_logs(
     datadog_logs_filter()
         .and(with_arg(ingest_router))
         .and(warp::post())
-        .then(|body, ingest_router| async move {
-            datadog_ingest_logs(ingest_router, DATADOG_INDEX_ID.to_string(), body).await
-        })
+        .then(
+            |body: Body, query: DatadogLogsQueryParams, ingest_router| async move {
+                datadog_ingest_logs(ingest_router, DATADOG_INDEX_ID.to_string(), body, query).await
+            },
+        )
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
         .boxed()
@@ -127,6 +149,7 @@ async fn datadog_ingest_logs(
     ingest_router: IngestRouterServiceClient,
     index_id: IndexId,
     body: Body,
+    query: DatadogLogsQueryParams,
 ) -> Result<(), DatadogApiError> {
     let start = Instant::now();
     if body.content.is_empty() || body.content.as_ref() == b"{}" {
@@ -142,8 +165,30 @@ async fn datadog_ingest_logs(
         // TODO: We could just validate + get the byte bounds of each object instead of the more
         // expensive serde_json rountrip.
         // e.g. Vec<RawValue> + validation
-        let messages: Vec<DatadogLogMsg> =
+        let mut messages: Vec<DatadogLogMsg> =
             serde_json::from_slice(&body.content).map_err(DatadogApiError::InvalidPayload)?;
+
+        // Apply URL parameter overrides to each message, if present.
+        if query.service.is_some()
+            || query.hostname.is_some()
+            || query.ddsource.is_some()
+            || query.ddtags.is_some()
+        {
+            for message in &mut messages {
+                if let Some(service) = &query.service {
+                    message.service = Some(service.clone());
+                }
+                if let Some(hostname) = &query.hostname {
+                    message.hostname = Some(hostname.clone());
+                }
+                if let Some(ddsource) = &query.ddsource {
+                    message.ddsource = Some(ddsource.clone());
+                }
+                if let Some(ddtags) = &query.ddtags {
+                    message.ddtags = ddtags.clone();
+                }
+            }
+        }
 
         let mut doc_batch_builder = DocBatchV2Builder::default();
         let mut doc_uid_generator = DocUidGenerator::default();

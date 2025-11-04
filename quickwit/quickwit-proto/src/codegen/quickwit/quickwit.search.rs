@@ -143,6 +143,9 @@ pub struct SearchRequest {
     /// Time filter, expressed in seconds since epoch.
     /// That filter is to be interpreted as the semi-open interval:
     /// [start_timestamp, end_timestamp).
+    /// If the query AST contains a range query over the timestamp field,
+    /// then the the bounds of the range query are used directly and
+    /// these two fields are ignored.
     #[prost(int64, optional, tag = "4")]
     pub start_timestamp: ::core::option::Option<i64>,
     #[prost(int64, optional, tag = "5")]
