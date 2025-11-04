@@ -123,7 +123,7 @@ jobs:
         run: sudo apt-get -y install protobuf-compiler
       - name: Setup nightly Rust Toolchain (for rustfmt)
         if: steps.modified.outputs.rust_src == 'true'
-        uses: dtolnay/rust-toolchain@55d80eb3c5a4228eec5390a083c092095115c6f1 # nightly
+        uses: dtolnay/rust-toolchain@5d458579430fc14a04a08a1e7d3694f545e91ce6 # nightly
         with:
           components: rustfmt
       - name: Setup stable Rust Toolchain
