@@ -981,7 +981,7 @@ mod tests {
             index_uid: IndexUid::for_test("index-2", 0),
             source_id: "source2".to_string(),
         };
-        let sources = vec![
+        let sources = [
             SourceToSchedule {
                 source_uid: source_1.clone(),
                 source_type: SourceToScheduleType::NonSharded {
