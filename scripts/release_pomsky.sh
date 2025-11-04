@@ -5,6 +5,14 @@ cargo install cargo-edit
 
 cd quickwit
 echo "Reset state of branch to main and pull latest changes"
+# Ask for confirmation
+read -p "This will reset any local changes and pull the latest changes from origin/main. Do you want to continue? (y/n) " -n 1 -r
+echo    # move to a new line
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Aborting."
+    exit 1
+fi
+git fetch origin
 git reset --hard origin/main
 git pull origin main
 
