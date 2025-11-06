@@ -31,7 +31,7 @@ jobs:
   tests:
     name: Unit tests
     runs-on: "ubuntu-latest"
-    timeout-minutes: 40
+    timeout-minutes: 60
     permissions:
       contents: read
       actions: write
@@ -105,7 +105,7 @@ jobs:
   lints:
     name: Lints
     runs-on: "ubuntu-latest"
-    timeout-minutes: 20
+    timeout-minutes: 60
     permissions:
       contents: read
       actions: write

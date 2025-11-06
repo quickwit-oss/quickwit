@@ -1266,7 +1266,7 @@ mod test {
         let mut split_4 = template_split;
         split_4.split_metadata = split_metadata_4;
 
-        let splits = vec![split_1, split_2, split_3, split_4];
+        let splits = [split_1, split_2, split_3, split_4];
 
         let splits_num_docs = splits
             .iter()
