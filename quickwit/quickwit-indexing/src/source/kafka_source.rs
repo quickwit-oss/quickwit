@@ -33,7 +33,7 @@ use rdkafka::consumer::{
 use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::util::Timeout;
-use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
+use rdkafka::{ClientContext, Message, Offset, Timestamp, TopicPartitionList};
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, spawn_blocking};
@@ -85,15 +85,22 @@ struct KafkaMessage {
     payload_len: u64,
     partition: i32,
     offset: i64,
+    /// Arrival timestamp (in seconds since the Unix epoch) of the record in the system.
+    arrival_timestamp_millis_opt: Option<u64>,
 }
 
 impl From<BorrowedMessage<'_>> for KafkaMessage {
     fn from(message: BorrowedMessage<'_>) -> Self {
+        let arrival_timestamp_millis_opt = match message.timestamp() {
+            Timestamp::LogAppendTime(timestamp) => Some(timestamp as u64),
+            _ => None,
+        };
         Self {
             doc_opt: message_payload_to_doc(&message),
             payload_len: message.payload_len() as u64,
             partition: message.partition(),
             offset: message.offset(),
+            arrival_timestamp_millis_opt,
         }
     }
 }
@@ -296,11 +303,16 @@ impl KafkaSource {
             payload_len,
             partition,
             offset,
+            arrival_timestamp_millis_opt,
             ..
         } = message;
 
         if let Some(doc) = doc_opt {
             batch.add_doc(doc);
+
+            if let Some(arrival_timestamp_millis) = arrival_timestamp_millis_opt {
+                batch.record_arrival_timestamp(arrival_timestamp_millis);
+            }
         } else {
             self.state.num_invalid_messages += 1;
         }

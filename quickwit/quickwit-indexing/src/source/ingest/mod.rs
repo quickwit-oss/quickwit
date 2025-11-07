@@ -205,6 +205,9 @@ impl IngestSource {
                 return Ok(());
             }
         };
+        // batch_builder
+        //     .record_arrival_timestamp(mrecord_batch.earliest_arrival_timestamp_secs);
+
         let assigned_shard = self
             .assigned_shards
             .get_mut(fetch_payload.shard_id())

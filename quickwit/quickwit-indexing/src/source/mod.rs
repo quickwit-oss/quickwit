@@ -515,6 +515,7 @@ pub(super) struct BatchBuilder {
     checkpoint_delta: SourceCheckpointDelta,
     force_commit: bool,
     gauge_guard: GaugeGuard<'static>,
+    earliest_arrival_timestamp_millis_opt: Option<u64>,
 }
 
 impl BatchBuilder {
@@ -539,6 +540,7 @@ impl BatchBuilder {
             num_bytes: 0,
             checkpoint_delta: SourceCheckpointDelta::default(),
             force_commit: false,
+            earliest_arrival_timestamp_millis_opt: None,
             gauge_guard,
         }
     }
@@ -554,8 +556,27 @@ impl BatchBuilder {
         self.force_commit = true;
     }
 
+    pub fn record_arrival_timestamp(&mut self, arrival_timestamp_millis: u64) {
+        if arrival_timestamp_millis == 0 {
+            return;
+        }
+        let Some(earliest_arrival_timestamp_millis) = self.earliest_arrival_timestamp_millis_opt
+        else {
+            self.earliest_arrival_timestamp_millis_opt = Some(arrival_timestamp_millis);
+            return;
+        };
+        if earliest_arrival_timestamp_millis > arrival_timestamp_millis {
+            self.earliest_arrival_timestamp_millis_opt = Some(arrival_timestamp_millis);
+        }
+    }
+
     pub fn build(self) -> RawDocBatch {
-        RawDocBatch::new(self.docs, self.checkpoint_delta, self.force_commit)
+        RawDocBatch::new(
+            self.docs,
+            self.checkpoint_delta,
+            self.force_commit,
+            self.earliest_arrival_timestamp_millis_opt,
+        )
     }
 
     #[cfg(feature = "kafka")]

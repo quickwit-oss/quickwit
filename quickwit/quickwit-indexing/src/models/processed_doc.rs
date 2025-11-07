@@ -41,6 +41,7 @@ pub struct ProcessedDocBatch {
     pub docs: Vec<ProcessedDoc>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
+    pub earliest_arrival_timestamp_millis_opt: Option<u64>,
     _gauge_guard: GaugeGuard<'static>,
 }
 
@@ -49,6 +50,7 @@ impl ProcessedDocBatch {
         docs: Vec<ProcessedDoc>,
         checkpoint_delta: SourceCheckpointDelta,
         force_commit: bool,
+        earliest_arrival_timestamp_millis_opt: Option<u64>,
     ) -> Self {
         let delta = docs.iter().map(|doc| doc.num_bytes as i64).sum::<i64>();
         let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.indexer_mailbox);
@@ -57,6 +59,7 @@ impl ProcessedDocBatch {
             docs,
             checkpoint_delta,
             force_commit,
+            earliest_arrival_timestamp_millis_opt,
             _gauge_guard: gauge_guard,
         }
     }

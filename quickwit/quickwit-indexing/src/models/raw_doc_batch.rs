@@ -24,6 +24,10 @@ pub struct RawDocBatch {
     pub docs: Vec<Bytes>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
+    /// Earliest arrival timestamp (in seconds since the Unix epoch) among all
+    /// documents in this batch. Used to track when the first document in the
+    /// batch entered the system.
+    pub earliest_arrival_timestamp_millis_opt: Option<u64>,
     _gauge_guard: GaugeGuard<'static>,
 }
 
@@ -32,6 +36,7 @@ impl RawDocBatch {
         docs: Vec<Bytes>,
         checkpoint_delta: SourceCheckpointDelta,
         force_commit: bool,
+        earliest_arrival_timestamp_millis_opt: Option<u64>,
     ) -> Self {
         let delta = docs.iter().map(|doc| doc.len() as i64).sum::<i64>();
         let mut gauge_guard =
@@ -42,6 +47,7 @@ impl RawDocBatch {
             docs,
             checkpoint_delta,
             force_commit,
+            earliest_arrival_timestamp_millis_opt,
             _gauge_guard: gauge_guard,
         }
     }
@@ -50,7 +56,7 @@ impl RawDocBatch {
     pub fn for_test(docs: &[&[u8]], range: std::ops::Range<u64>) -> Self {
         let docs = docs.iter().map(|doc| Bytes::from(doc.to_vec())).collect();
         let checkpoint_delta = SourceCheckpointDelta::from_range(range);
-        Self::new(docs, checkpoint_delta, false)
+        Self::new(docs, checkpoint_delta, false, None)
     }
 }
 
@@ -61,6 +67,10 @@ impl fmt::Debug for RawDocBatch {
             .field("num_docs", &self.docs.len())
             .field("checkpoint_delta", &self.checkpoint_delta)
             .field("force_commit", &self.force_commit)
+            .field(
+                "earliest_arrival_timestamp_millis_opt",
+                &self.earliest_arrival_timestamp_millis_opt,
+            )
             .finish()
     }
 }
@@ -72,6 +82,7 @@ impl Default for RawDocBatch {
             docs: Vec::new(),
             checkpoint_delta: SourceCheckpointDelta::default(),
             force_commit: false,
+            earliest_arrival_timestamp_millis_opt: None,
             _gauge_guard,
         }
     }

@@ -154,6 +154,7 @@ impl IndexedSplitBuilder {
 pub struct IndexedSplitBatch {
     pub splits: Vec<IndexedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    pub earliest_arrival_timestamp_millis_opt: Option<u64>,
     pub publish_lock: PublishLock,
     pub publish_token_opt: Option<PublishToken>,
     /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
@@ -178,6 +179,7 @@ pub enum CommitTrigger {
 pub struct IndexedSplitBatchBuilder {
     pub splits: Vec<IndexedSplitBuilder>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    pub earliest_arrival_timestamp_millis_opt: Option<u64>,
     pub publish_lock: PublishLock,
     pub publish_token_opt: Option<PublishToken>,
     pub commit_trigger: CommitTrigger,

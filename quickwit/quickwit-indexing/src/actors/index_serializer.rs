@@ -88,6 +88,8 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
         let indexed_split_batch = IndexedSplitBatch {
             splits,
             checkpoint_delta_opt: batch_builder.checkpoint_delta_opt,
+            earliest_arrival_timestamp_millis_opt: batch_builder
+                .earliest_arrival_timestamp_millis_opt,
             publish_lock: batch_builder.publish_lock,
             publish_token_opt: batch_builder.publish_token_opt,
             merge_task_opt: None,

@@ -240,6 +240,7 @@ impl IndexerState {
             ),
             cooperative_indexing_period,
             split_builders_guard,
+            earliest_arrival_timestamp_millis_opt: None,
         };
         Ok(workbench)
     }
@@ -352,6 +353,7 @@ struct IndexingWorkbench {
     other_indexed_split_opt: Option<IndexedSplitBuilder>,
 
     checkpoint_delta: IndexCheckpointDelta,
+    earliest_arrival_timestamp_millis_opt: Option<u64>,
     publish_lock: PublishLock,
     publish_token_opt: Option<PublishToken>,
     // On workbench creation, we fetch from the metastore the last delete task opstamp.
@@ -633,6 +635,7 @@ impl Indexer {
             indexed_splits,
             other_indexed_split_opt,
             checkpoint_delta,
+            earliest_arrival_timestamp_millis_opt,
             publish_lock,
             publish_token_opt,
             batch_parent_span,
@@ -682,6 +685,7 @@ impl Indexer {
             &self.index_serializer_mailbox,
             IndexedSplitBatchBuilder {
                 splits,
+                earliest_arrival_timestamp_millis_opt: earliest_arrival_timestamp_millis_opt,
                 checkpoint_delta_opt: Some(checkpoint_delta),
                 publish_lock,
                 publish_token_opt,

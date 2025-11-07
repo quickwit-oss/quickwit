@@ -129,6 +129,7 @@ impl Handler<SplitsUpdate> for Publisher {
             new_splits,
             replaced_split_ids,
             checkpoint_delta_opt,
+            earliest_arrival_timestamp_millis_opt,
             publish_lock,
             publish_token_opt,
             ..
@@ -154,6 +155,12 @@ impl Handler<SplitsUpdate> for Publisher {
             ctx.protect_future(self.metastore.publish_splits(publish_splits_request))
                 .await
                 .context("failed to publish splits")?;
+            if let Some(earliest_arrival_timestamp_millis) = earliest_arrival_timestamp_millis_opt {
+                info!(
+                    earliest_arrival_timestamp_millis=?earliest_arrival_timestamp_millis,
+                    "earliest arrival timestamp millis"
+                );
+            }
         } else {
             // TODO: Remove the junk right away?
             info!(

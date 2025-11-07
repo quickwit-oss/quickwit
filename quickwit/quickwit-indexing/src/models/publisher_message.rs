@@ -28,6 +28,7 @@ pub struct SplitsUpdate {
     pub new_splits: Vec<SplitMetadata>,
     pub replaced_split_ids: Vec<String>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    pub earliest_arrival_timestamp_millis_opt: Option<u64>,
     pub publish_lock: PublishLock,
     pub publish_token_opt: Option<PublishToken>,
     /// A [`MergeTask`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`

@@ -149,6 +149,7 @@ impl Handler<MergeScratch> for MergeExecutor {
                 IndexedSplitBatch {
                     splits: vec![indexed_split],
                     checkpoint_delta_opt: Default::default(),
+                    earliest_arrival_timestamp_millis_opt: None,
                     publish_lock: PublishLock::default(),
                     publish_token_opt: None,
                     batch_parent_span: merge_task.merge_parent_span.clone(),

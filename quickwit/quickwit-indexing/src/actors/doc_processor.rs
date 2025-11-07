@@ -583,6 +583,7 @@ impl Handler<RawDocBatch> for DocProcessor {
             processed_docs,
             raw_doc_batch.checkpoint_delta,
             raw_doc_batch.force_commit,
+            raw_doc_batch.earliest_arrival_timestamp_millis_opt,
         );
         ctx.send_message(&self.indexer_mailbox, processed_doc_batch)
             .await?;
