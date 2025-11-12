@@ -1,0 +1,79 @@
+endpoint: cloudprem/api/v1/search
+params:
+  query: ""
+  from_ts: 1762360556481
+  to_ts: 1762361456481
+expected:
+  metadata:
+    count: 4
+---
+endpoint: cloudprem/api/v1/search
+params:
+  query: "status:error"
+  from_ts: 1762360556481
+  to_ts: 1762361456481
+expected:
+  metadata:
+    count: 2
+---
+method: POST
+endpoint: cloudprem/api/v1/aggregate
+headers:
+  Content-Type: application/json
+data: |
+  {
+    "query": "",
+    "compute": [
+      {
+        "timeseries": {
+          "metric": "count",
+          "output": "count:count",
+          "aggregation": "count",
+          "interval": 120000
+        }
+      }
+    ],
+    "time": {
+      "from_ts": 1762360556481,
+      "to_ts": 1762361456481
+    },
+    "groupBy": [
+      {
+        "field": {
+          "id": "status",
+          "output": "status",
+          "sort": {
+            "metric": {
+              "id": "count:count",
+              "order": "desc"
+            }
+          },
+          "limit": 10
+        }
+      }
+    ]
+  }
+expected:
+  series:
+  - query_index: 0
+    group_tags:
+    - status:error
+  - query_index: 0
+    group_tags:
+    - status:info
+  times:
+  - 1762360440000.0
+  - 1762360560000.0
+  - 1762360680000.0
+  - 1762360800000.0
+  - 1762360920000.0
+  - 1762361040000.0
+  - 1762361160000.0
+  - 1762361280000.0
+  - 1762361400000.0
+  values:
+  - [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+  - [2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  from_date: 1762360556481
+  to_date: 1762361456481
+  interval: 120000

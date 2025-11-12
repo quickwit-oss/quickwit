@@ -24,7 +24,34 @@ data: |
     {
       "message": "Test log message",
       "status": "INFO",
-      "timestamp": 1740411608806,
+      "timestamp": 1762360556600,
+      "hostname": "test-host",
+      "service": "service123",
+      "ddsource": "rust",
+      "ddtags": "env:dev,region:us-east"
+    },
+    {
+      "message": "Test log message",
+      "status": "INFO",
+      "timestamp": 1762360556700,
+      "hostname": "test-host",
+      "service": "service123",
+      "ddsource": "rust",
+      "ddtags": "env:dev,region:us-east"
+    },
+    {
+      "message": "Error message",
+      "status": "ERROR",
+      "timestamp": 1762360556600,
+      "hostname": "test-host",
+      "service": "service123",
+      "ddsource": "rust",
+      "ddtags": "env:dev,region:us-east"
+    },
+    {
+      "message": "Other error message",
+      "status": "ERROR",
+      "timestamp": 1762361446281,
       "hostname": "test-host",
       "service": "service123",
       "ddsource": "rust",
