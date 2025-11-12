@@ -543,4 +543,21 @@ mod tests {
         });
         assert_eq!(term_ast, expected_ast);
     }
+
+    #[test]
+    fn test_range_remap_random_draw() {
+        let ast = build_range_query_helper(
+            "random_draw".to_string(),
+            Bound::Unbounded,
+            Bound::Excluded(JsonLiteral::Number(Number::from_f64(0.125).unwrap())),
+        )
+        .unwrap();
+
+        let expected_ast = QueryAst::Range(RangeQuery {
+            field: "tiebreaker".to_string(),
+            lower_bound: Bound::Unbounded,
+            upper_bound: Bound::Excluded(JsonLiteral::Number(Number::from(-1610612736))),
+        });
+        assert_eq!(ast, expected_ast);
+    }
 }
