@@ -17,11 +17,14 @@ use crate::query_ast::{
 };
 use crate::{InvalidQuery, JsonLiteral};
 
-const EVP_WES_FIELD: &str = "*";
-const QW_WES_FIELD: &str = "all";
-const QW_MESSAGE_FIELD: &str = "message";
-const QW_ERROR_FIELD: &str = "error";
 const EVP_DEFAULT_FIELD: &str = "_default_";
+const EVP_RANDOM_DRAW: &str = "random_draw";
+const EVP_WES_FIELD: &str = "*";
+
+const QW_ERROR_FIELD: &str = "error";
+const QW_MESSAGE_FIELD: &str = "message";
+const QW_TIEBREAKER: &str = "tiebreaker";
+const QW_WES_FIELD: &str = "all";
 
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
     // TODO this can be cleaner once we upgrade to prost 0.12+
@@ -143,6 +146,40 @@ fn build_range_query_helper(
             field_name: field,
             value_type,
         });
+    } else if field == EVP_RANDOM_DRAW {
+        fn map_bound(bound: Bound<JsonLiteral>) -> Option<Bound<JsonLiteral>> {
+            let map_literal = |literal: JsonLiteral| {
+                let JsonLiteral::Number(num) = literal else {
+                    return None;
+                };
+                // this maps [0, 1) to [i32::MIN, i32::MAX)
+                // we ceil so that low enough probability still allow for a non-empty range
+                let int = num
+                    .as_f64()?
+                    .mul_add(2.0f64.powi(32) - 1.0, -2.0f64.powi(31))
+                    .ceil() as i64;
+
+                Some(JsonLiteral::Number(int.into()))
+            };
+            let new_bound = match bound {
+                Bound::Included(lit) => Bound::Included(map_literal(lit)?),
+                Bound::Excluded(lit) => Bound::Excluded(map_literal(lit)?),
+                Bound::Unbounded => Bound::Unbounded,
+            };
+            Some(new_bound)
+        }
+
+        let (Some(remapped_lower_bound), Some(remapped_upper_bound)) =
+            (map_bound(lower_bound), map_bound(upper_bound))
+        else {
+            return Ok(QueryAst::MatchNone);
+        };
+        return Ok(RangeQuery {
+            field: QW_TIEBREAKER.to_string(),
+            lower_bound: remapped_lower_bound,
+            upper_bound: remapped_upper_bound,
+        }
+        .into());
     }
     Ok(RangeQuery {
         field,
