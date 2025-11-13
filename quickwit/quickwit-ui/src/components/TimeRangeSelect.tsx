@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, { useEffect, useMemo, useState } from "react";
+import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
 import {
   Box,
   Button,
@@ -25,13 +25,12 @@ import {
   TextField,
   TextFieldProps,
 } from "@mui/material";
-import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
-import { Dayjs, default as dayjs } from 'dayjs';
-import relativeTime from "dayjs/plugin/relativeTime"
-import utc from "dayjs/plugin/utc"
-import { DateTimePicker } from '@mui/x-date-pickers';
-import { AdapterDayjs, } from '@mui/x-date-pickers/AdapterDayjs';
-import { LocalizationProvider } from '@mui/x-date-pickers';
+import { DateTimePicker, LocalizationProvider } from "@mui/x-date-pickers";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import { Dayjs, default as dayjs } from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import utc from "dayjs/plugin/utc";
+import React, { useEffect, useMemo, useState } from "react";
 import { DATE_TIME_WITH_SECONDS_FORMAT } from "../utils/models";
 
 dayjs.extend(relativeTime);
@@ -48,14 +47,14 @@ const TIME_RANGE_CHOICES = [
 ];
 
 type TimeRange = {
-  startTimestamp: number | null,
-  endTimestamp: number | null,
-}
+  startTimestamp: number | null;
+  endTimestamp: number | null;
+};
 
 export interface TimeRangeSelectProps {
   timeRange: TimeRange;
   disabled?: boolean;
-  onUpdate(newTimeRange:TimeRange): void;
+  onUpdate(newTimeRange: TimeRange): void;
 }
 
 interface TimeRangeSelectState {
@@ -65,8 +64,12 @@ interface TimeRangeSelectState {
 }
 
 export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
-  const getInitialState = () => {return {width: 220, anchor: null, customDatesPanelOpen: false}};
-  const initialState = useMemo(() => {return getInitialState(); }, []);
+  const getInitialState = () => {
+    return { width: 220, anchor: null, customDatesPanelOpen: false };
+  };
+  const initialState = useMemo(() => {
+    return getInitialState();
+  }, []);
   const [state, setState] = useState<TimeRangeSelectState>(initialState);
 
   const handleOpenClick = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -83,13 +86,15 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
 
   useEffect(() => {
     setState(initialState);
-  }, [props.disabled, initialState])
+  }, [props.disabled, initialState]);
 
   const handleClose = () => {
     setState(initialState);
   };
 
-  const handleTimeRangeChoiceClick = (secondsBeforeNow: number | string | undefined) => {
+  const handleTimeRangeChoiceClick = (
+    secondsBeforeNow: number | string | undefined,
+  ) => {
     if (secondsBeforeNow === undefined) {
       return;
     }
@@ -97,18 +102,18 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
     secondsBeforeNow = +secondsBeforeNow;
     setState(initialState);
     const startTimestamp = Math.trunc(Date.now() / 1000) - secondsBeforeNow;
-    props.onUpdate({startTimestamp, endTimestamp:null})
+    props.onUpdate({ startTimestamp, endTimestamp: null });
   };
 
   const handleReset = () => {
-    props.onUpdate({startTimestamp:null, endTimestamp:null})
+    props.onUpdate({ startTimestamp: null, endTimestamp: null });
   };
 
   const open = Boolean(state.anchor);
   const id = open ? "time-range-select-popover" : undefined;
 
   return (
-    <Box sx={{padding: '10px'}}>
+    <Box sx={{ padding: "10px" }}>
       <Button
         variant="contained"
         disableElevation
@@ -116,7 +121,10 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
         startIcon={<AccessTime />}
         disabled={props.disabled}
       >
-        <DateTimeRangeLabel startTimestamp={props.timeRange.startTimestamp} endTimestamp={props.timeRange.endTimestamp} />
+        <DateTimeRangeLabel
+          startTimestamp={props.timeRange.startTimestamp}
+          endTimestamp={props.timeRange.endTimestamp}
+        />
       </Button>
       <Popover
         id={id}
@@ -144,32 +152,41 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
             <Box flexGrow={1} borderRight={1} borderColor="grey.300">
               <List disablePadding>
                 {TIME_RANGE_CHOICES.map((value, idx) => {
-                  return  <ListItem
-                    key={idx}
-                    button
-                    onClick={() => handleTimeRangeChoiceClick(value[1])}
+                  return (
+                    <ListItem
+                      key={idx}
+                      button
+                      onClick={() => handleTimeRangeChoiceClick(value[1])}
                     >
-                    <ListItemText primary={value[0]} />
-                  </ListItem>
+                      <ListItemText primary={value[0]} />
+                    </ListItem>
+                  );
                 })}
                 <ListItem button onClick={handleReset}>
                   <ListItemText primary="Reset" />
                 </ListItem>
                 <ListItem button onClick={handleOpenCustomDatesPanelClick}>
-                  <ListItemIcon sx={{alignItems: "left", minWidth: 'inherit', paddingRight: '8px'}}>
+                  <ListItemIcon
+                    sx={{
+                      alignItems: "left",
+                      minWidth: "inherit",
+                      paddingRight: "8px",
+                    }}
+                  >
                     <DateRange />
                   </ListItemIcon>
-                  <ListItemText primary="Custom dates" sx={{ paddingRight: '16px' }} />
-                  <ListItemIcon sx={{ minWidth: 'inherit' }}>
+                  <ListItemText
+                    primary="Custom dates"
+                    sx={{ paddingRight: "16px" }}
+                  />
+                  <ListItemIcon sx={{ minWidth: "inherit" }}>
                     <ChevronRight />
                   </ListItemIcon>
                 </ListItem>
               </List>
             </Box>
             {state.anchor !== null && state.customDatesPanelOpen && (
-              <CustomDatesPanel
-                { ...props }
-              />
+              <CustomDatesPanel {...props} />
             )}
           </Box>
         </Box>
@@ -183,25 +200,38 @@ function CustomDatesPanel(props: TimeRangeSelectProps): JSX.Element {
   const [endDate, setEndDate] = useState<Dayjs | null>(null);
 
   useEffect(() => {
-    setStartDate(props.timeRange.startTimestamp ? convertTimestampSecsIntoDateUtc(props.timeRange.startTimestamp) : null);
-    setEndDate(props.timeRange.endTimestamp ? convertTimestampSecsIntoDateUtc(props.timeRange.endTimestamp) : null);
+    setStartDate(
+      props.timeRange.startTimestamp
+        ? convertTimestampSecsIntoDateUtc(props.timeRange.startTimestamp)
+        : null,
+    );
+    setEndDate(
+      props.timeRange.endTimestamp
+        ? convertTimestampSecsIntoDateUtc(props.timeRange.endTimestamp)
+        : null,
+    );
   }, [props.timeRange.startTimestamp, props.timeRange.endTimestamp]);
   const handleReset = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setStartDate(null);
-    setEndDate(null)
-    props.onUpdate({startTimestamp:null, endTimestamp:null});
+    setEndDate(null);
+    props.onUpdate({ startTimestamp: null, endTimestamp: null });
   };
   const handleApply = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     const startTimestamp = startDate ? startDate.valueOf() / 1000 : null;
     const endTimestamp = endDate ? endDate.valueOf() / 1000 : null;
-    props.onUpdate({startTimestamp, endTimestamp});
+    props.onUpdate({ startTimestamp, endTimestamp });
   };
 
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Box display="flex" flexDirection="column" p={2} sx={{ minWidth: '300px'}}>
+      <Box
+        display="flex"
+        flexDirection="column"
+        p={2}
+        sx={{ minWidth: "300px" }}
+      >
         <Box flexGrow={1}>
           <Box pb={1.5}>
             <DateTimePicker
@@ -211,9 +241,17 @@ function CustomDatesPanel(props: TimeRangeSelectProps): JSX.Element {
               onChange={(newValue: null | Dayjs) => {
                 // By default, newValue is a datetime defined on the local time zone and for now we consider
                 // input/output only in UTC.
-                setStartDate(newValue ? dayjs(newValue.valueOf() + newValue.utcOffset() * 60 * 1000).utc() : null);
+                setStartDate(
+                  newValue
+                    ? dayjs(
+                        newValue.valueOf() + newValue.utcOffset() * 60 * 1000,
+                      ).utc()
+                    : null,
+                );
               }}
-              renderInput={(props: TextFieldProps) => <TextField {...props} sx={{width: '100%'}} />}
+              renderInput={(props: TextFieldProps) => (
+                <TextField {...props} sx={{ width: "100%" }} />
+              )}
             />
           </Box>
           <Box>
@@ -224,9 +262,17 @@ function CustomDatesPanel(props: TimeRangeSelectProps): JSX.Element {
               onChange={(newValue: null | Dayjs) => {
                 // By default, newValue is a datetime defined on the local time zone and for now we consider
                 // input/output only in UTC.
-                setEndDate(newValue ? dayjs(newValue.valueOf() + newValue.utcOffset() * 60 * 1000).utc() : null);
+                setEndDate(
+                  newValue
+                    ? dayjs(
+                        newValue.valueOf() + newValue.utcOffset() * 60 * 1000,
+                      ).utc()
+                    : null,
+                );
               }}
-              renderInput={(props: TextFieldProps) => <TextField {...props} sx={{width: '100%'}} />}
+              renderInput={(props: TextFieldProps) => (
+                <TextField {...props} sx={{ width: "100%" }} />
+              )}
             />
           </Box>
         </Box>
@@ -236,7 +282,7 @@ function CustomDatesPanel(props: TimeRangeSelectProps): JSX.Element {
             color="primary"
             onClick={handleReset}
             disableElevation
-            style={{marginRight: 10}}
+            style={{ marginRight: 10 }}
           >
             Reset
           </Button>
@@ -262,20 +308,39 @@ interface DateTimeRangeLabelProps {
 function DateTimeRangeLabel(props: DateTimeRangeLabelProps): JSX.Element {
   function Label() {
     if (props.startTimestamp !== null && props.endTimestamp !== null) {
-      return <>
-        {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)} -{" "}
-        {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)}
-      </>
+      return (
+        <>
+          {convertTimestampSecsIntoDateUtc(props.startTimestamp).format(
+            DATE_TIME_WITH_SECONDS_FORMAT,
+          )}{" "}
+          -{" "}
+          {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(
+            DATE_TIME_WITH_SECONDS_FORMAT,
+          )}
+        </>
+      );
     } else if (props.startTimestamp !== null && props.endTimestamp === null) {
-      return <>Since {convertTimestampSecsIntoDateUtc(props.startTimestamp).fromNow(true)}</>
+      return (
+        <>
+          Since{" "}
+          {convertTimestampSecsIntoDateUtc(props.startTimestamp).fromNow(true)}
+        </>
+      );
     } else if (props.startTimestamp == null && props.endTimestamp != null) {
-      return <>Before {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(DATE_TIME_WITH_SECONDS_FORMAT)}</>
+      return (
+        <>
+          Before{" "}
+          {convertTimestampSecsIntoDateUtc(props.endTimestamp).format(
+            DATE_TIME_WITH_SECONDS_FORMAT,
+          )}
+        </>
+      );
     }
-    return <>No date range</>
+    return <>No date range</>;
   }
 
   return (
-    <span style={{textTransform: "none"}}>
+    <span style={{ textTransform: "none" }}>
       <Label />
     </span>
   );

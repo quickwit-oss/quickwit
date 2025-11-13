@@ -1,1 +1,1 @@
-export const LineChart =  ({ children }) => children;
+export const LineChart = ({ children }) => children;

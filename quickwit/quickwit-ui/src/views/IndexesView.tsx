@@ -12,19 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Box, Typography } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
-import IndexesTable from '../components/IndexesTable';
-import { Client } from '../services/client';
-import Loader from '../components/Loader';
-import { IndexMetadata, ResponseError } from '../utils/models';
-import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
-import ApiUrlFooter from '../components/ApiUrlFooter';
-import ErrorResponseDisplay from '../components/ResponseErrorDisplay';
+import { Box, Typography } from "@mui/material";
+import { useEffect, useMemo, useState } from "react";
+import ApiUrlFooter from "../components/ApiUrlFooter";
+import IndexesTable from "../components/IndexesTable";
+import {
+  FullBoxContainer,
+  QBreadcrumbs,
+  ViewUnderAppBarBox,
+} from "../components/LayoutUtils";
+import Loader from "../components/Loader";
+import ErrorResponseDisplay from "../components/ResponseErrorDisplay";
+import { Client } from "../services/client";
+import { IndexMetadata, ResponseError } from "../utils/models";
 
 function IndexesView() {
   const [loading, setLoading] = useState(false);
-  const [responseError, setResponseError] = useState<ResponseError | null>(null);
+  const [responseError, setResponseError] = useState<ResponseError | null>(
+    null,
+  );
   const [indexesMetadata, setIndexesMetadata] = useState<IndexMetadata[]>();
   const quickwitClient = useMemo(() => new Client(), []);
 
@@ -36,14 +42,14 @@ function IndexesView() {
       return <Loader />;
     }
     if (indexesMetadata.length > 0) {
-      return <FullBoxContainer sx={{ px: 0 }}>
+      return (
+        <FullBoxContainer sx={{ px: 0 }}>
           <IndexesTable indexesMetadata={indexesMetadata} />
         </FullBoxContainer>
+      );
     }
-    return <Box>
-        You have no index registered in your metastore.
-      </Box>
-  }
+    return <Box>You have no index registered in your metastore.</Box>;
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -56,7 +62,7 @@ function IndexesView() {
       (error) => {
         setLoading(false);
         setResponseError(error);
-      }
+      },
     );
   }, [quickwitClient]);
 
@@ -66,9 +72,9 @@ function IndexesView() {
         <QBreadcrumbs aria-label="breadcrumb">
           <Typography color="text.primary">Indexes</Typography>
         </QBreadcrumbs>
-        { renderFetchIndexesResult() }
+        {renderFetchIndexesResult()}
       </FullBoxContainer>
-      { ApiUrlFooter('api/v1/indexes') }
+      {ApiUrlFooter("api/v1/indexes")}
     </ViewUnderAppBarBox>
   );
 }
