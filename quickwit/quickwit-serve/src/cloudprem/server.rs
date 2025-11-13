@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, LazyLock};
 
 use quickwit_common::tower::BoxFutureInfaillible;
-use quickwit_config::CloudPremConfig;
+use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::cloudprem::CloudPremServiceClient;
 use quickwit_proto::tonic::transport::Server;
@@ -24,11 +24,13 @@ pub(crate) static DISABLE_CERTIFICATE_VERIFICATION: LazyLock<bool> = LazyLock::n
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_cloudprem_server(
     tcp_listener: TcpListener,
-    cloudprem_config: CloudPremConfig,
+    node_config: NodeConfig,
     services: Arc<QuickwitServices>,
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
+    let cluster_name = node_config.cluster_id.clone();
+    let cloudprem_config = node_config.cloudprem_config.clone();
     let mut enabled_grpc_services = BTreeSet::new();
     let mut file_descriptor_sets = Vec::new();
     let grpc_config = cloudprem_config.grpc_config;
@@ -95,6 +97,7 @@ pub(crate) async fn start_cloudprem_server(
                 datadog_config
                     .dd_api_key
                     .expect("API key should be set when reverse connection is enabled"),
+                cluster_name,
                 cloudprem_service_client.clone(),
                 services.metastore_client.clone(),
             ));

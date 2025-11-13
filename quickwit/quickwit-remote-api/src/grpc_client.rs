@@ -95,7 +95,12 @@ impl CloudPremRootSearchService {
             CloudPremServiceClient::new(adapter)
         };
 
-        cloudprem_client.ping(PingRequest { org_id: 0 }).await?;
+        cloudprem_client
+            .ping(PingRequest {
+                org_id: 0,
+                scope: Default::default(),
+            })
+            .await?;
 
         Ok(CloudPremRootSearchService(cloudprem_client))
     }

@@ -113,6 +113,7 @@ async fn single_websocket(
     dd_api_key: &str,
     service: CloudPremServiceClient,
     cluster_remote_uid: String,
+    cluster_name: String,
 ) -> Result<Never, TungsteniteError> {
     let mut pending_requests = JoinSet::new();
     let (sender, mut receiver) = channel(5);
@@ -132,6 +133,7 @@ async fn single_websocket(
         response: Some(any_response::Response::ClusterIdentify(ClusterIdentify {
             org_id: 0,
             cluster_remote_uid,
+            name: cluster_name,
         })),
     };
     let cluster_identify_ws = Message::binary(cluster_identify.encode_to_vec());
@@ -219,6 +221,7 @@ fn format_err(err: &TungsteniteError) -> String {
 pub(crate) async fn maintain_websocket(
     target_domain: String,
     dd_api_key: String,
+    cluster_name: String,
     service: CloudPremServiceClient,
     metastore: MetastoreServiceClient,
 ) {
@@ -279,6 +282,7 @@ pub(crate) async fn maintain_websocket(
             &dd_api_key,
             service.clone(),
             cluster_remote_uid.clone(),
+            cluster_name.clone(),
         )
         .await;
 
