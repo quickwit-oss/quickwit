@@ -26,8 +26,12 @@ import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import { Discord } from "@styled-icons/fa-brands/Discord";
 import { useEffect, useMemo, useState } from "react";
-import { ReactComponent as Logo } from "../assets/img/quickwit-logo.svg";
+import logo_url from "../assets/img/quickwit-logo.svg";
 import { Client } from "../services/client";
+
+const Logo = (props: React.ComponentProps<"img">) => (
+  <img {...props} src={logo_url} />
+);
 
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
   zIndex: theme.zIndex.drawer + 1,

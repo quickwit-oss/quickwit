@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { Box, keyframes, styled } from "@mui/material";
-import { ReactComponent as Logo } from "../assets/img/logo.svg";
+import logo_url from "../assets/img/logo.svg";
 
 const spin = keyframes`
 from {
@@ -23,6 +23,10 @@ to {
   transform: rotate(360deg);
 }
 `;
+
+const Logo = (props: React.ComponentProps<"img">) => (
+  <img {...props} src={logo_url} />
+);
 
 const SpinningLogo = styled(Logo)`
 height: 10vmin;
