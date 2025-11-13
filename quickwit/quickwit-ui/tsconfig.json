@@ -21,5 +21,5 @@
     "jsx": "react-jsx",
     "types": ["vite/client"]
   },
-  "include": ["src", "typings", "tests", "tests/integration/index.test.ts"]
+  "exclude": ["build"]
 }

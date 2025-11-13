@@ -17,19 +17,21 @@ import { Box, Button, styled, Typography } from "@mui/material";
 import { QUICKWIT_LIGHT_GREY } from "../utils/theme";
 
 const Footer = styled(Box)`
-display: flex;
-height: 25px;
-padding: 0px 5px;
-position: absolute;
-bottom: 0px;
-font-size: 0.90em;
-background-color: ${QUICKWIT_LIGHT_GREY};
-opacity: 0.7;
+  display: flex;
+  height: 25px;
+  padding: 0px 5px;
+  position: absolute;
+  bottom: 0px;
+  font-size: 0.9em;
+  background-color: ${QUICKWIT_LIGHT_GREY};
+  opacity: 0.7;
 `;
 
 export default function ApiUrlFooter(url: string) {
   const urlMaxLength = 80;
   const origin =
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
     process.env.NODE_ENV === "development"
       ? "http://localhost:7280"
       : window.location.origin;
