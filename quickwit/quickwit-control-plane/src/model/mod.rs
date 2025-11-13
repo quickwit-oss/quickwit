@@ -160,7 +160,7 @@ impl ControlPlaneModel {
         self.index_table.get(index_uid)
     }
 
-    pub fn source_metadata(&self, source_uid: &SourceUid) -> Option<&SourceConfig> {
+    pub(crate) fn source_metadata(&self, source_uid: &SourceUid) -> Option<&SourceConfig> {
         self.index_metadata(&source_uid.index_uid)?
             .sources
             .get(&source_uid.source_id)
