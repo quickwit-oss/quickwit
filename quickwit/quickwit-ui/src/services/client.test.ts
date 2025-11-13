@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { describe, expect, it, jest } from "@jest/globals";
 import { SearchRequest } from "../utils/models";
 import { Client } from "./client";
 
 describe("Client unit test", () => {
   it("Should construct correct search URL", async () => {
     // Mocking the fetch function to simulate network requests
-    const mockFetch = jest.fn(() =>
+    const mockFetch = jest.fn((_url: string, _options?: unknown) =>
       Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
     );
     (global as any).fetch = mockFetch; // eslint-disable-line @typescript-eslint/no-explicit-any
