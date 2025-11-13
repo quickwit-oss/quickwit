@@ -38,6 +38,8 @@ jobs:
               yarn --cwd quickwit-ui cypress run
           - name: Lint
             command: yarn --cwd quickwit-ui lint
+          - name: Check formatting
+            command: yarn --cwd quickwit-ui check-formatting
           - name: Unit Test
             command: yarn --cwd quickwit-ui test
     services:
