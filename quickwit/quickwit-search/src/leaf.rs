@@ -1177,7 +1177,7 @@ impl CanSplitDoBetter {
 
 /// Searches multiple splits, potentially in multiple indexes, sitting on different storages and
 /// having different doc mappings.
-#[instrument(skip_all, fields(index = ?leaf_search_request.search_request.as_ref().unwrap().index_id_patterns))]
+#[instrument(skip_all, fields(index = ?PrettySample::new(&leaf_search_request.search_request.as_ref().unwrap().index_id_patterns, 5)))]
 pub async fn multi_index_leaf_search(
     searcher_context: Arc<SearcherContext>,
     leaf_search_request: LeafSearchRequest,
