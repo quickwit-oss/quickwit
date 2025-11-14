@@ -70,7 +70,7 @@ jobs:
               - .github/workflows/ci.yml
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
-        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # master
+        uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331 # master
         with:
           toolchain: stable
       - name: Setup cache
@@ -125,13 +125,13 @@ jobs:
         run: sudo apt-get -y install protobuf-compiler
       - name: Setup nightly Rust Toolchain (for rustfmt)
         if: steps.modified.outputs.rust_src == 'true'
-        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # master
+        uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331 # master
         with:
           toolchain: nightly
           components: rustfmt
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
-        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # master
+        uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331 # master
         with:
           toolchain: stable
       - name: Setup cache
@@ -175,7 +175,7 @@ jobs:
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # master
+        uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331 # master
         with:
           toolchain: stable
 
