@@ -24,9 +24,9 @@ use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
-    Event as QwEvent, Link as QwLink, OTEL_TRACES_INDEX_ID, Span as QwSpan, SpanFingerprint,
-    SpanId, SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId,
-    extract_otel_traces_index_id_patterns_from_metadata,
+    extract_otel_traces_index_id_patterns_from_metadata, Event as QwEvent, Link as QwLink,
+    Span as QwSpan, SpanFingerprint, SpanId, SpanKind as QwSpanKind, SpanStatus as QwSpanStatus,
+    TraceId, OTEL_TRACES_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -40,19 +40,19 @@ use quickwit_proto::jaeger::storage::v1::{
 };
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::search::{CountHits, ListTermsRequest, SearchRequest};
-use quickwit_query::BooleanOperand;
 use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery, UserInputQuery};
+use quickwit_query::BooleanOperand;
 use quickwit_search::{FindTraceIdsCollector, SearchService};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use tantivy::collector::Collector;
-use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 use tracing::field::Empty;
-use tracing::{Span as RuntimeSpan, debug, error, instrument, warn};
+use tracing::{debug, error, instrument, warn, Span as RuntimeSpan};
 
 use crate::metrics::JAEGER_SERVICE_METRICS;
 
@@ -70,6 +70,7 @@ type SpanStream = ReceiverStream<Result<SpansResponseChunk, Status>>;
 #[derive(Clone)]
 pub struct JaegerService {
     search_service: Arc<dyn SearchService>,
+    lookback_period_traces_secs: i64,
     lookback_period_secs: i64,
     max_trace_duration_secs: i64,
     max_fetch_spans: u64,
@@ -80,6 +81,7 @@ impl JaegerService {
         Self {
             search_service,
             lookback_period_secs: config.lookback_period().as_secs() as i64,
+            lookback_period_traces_secs: config.lookback_period_traces().as_secs() as i64,
             max_trace_duration_secs: config.max_trace_duration().as_secs() as i64,
             max_fetch_spans: config.max_fetch_spans.get(),
         }
@@ -226,7 +228,7 @@ impl JaegerService {
         let trace_id = TraceId::try_from(request.trace_id)
             .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let end = OffsetDateTime::now_utc().unix_timestamp();
-        let start = end - self.lookback_period_secs;
+        let start = end - self.lookback_period_traces_secs;
         let search_window = start..=end;
         let response = self
             .stream_spans(
@@ -1113,7 +1115,9 @@ fn collect_trace_ids(
 
 #[allow(clippy::result_large_err)]
 fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
-where T: Deserialize<'a> {
+where
+    T: Deserialize<'a>,
+{
     match serde_json::from_str(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {
@@ -1127,7 +1131,9 @@ where T: Deserialize<'a> {
 
 #[allow(clippy::result_large_err)]
 fn postcard_deserialize<'a, T>(json: &'a [u8], label: &'static str) -> Result<T, Status>
-where T: Deserialize<'a> {
+where
+    T: Deserialize<'a>,
+{
     match postcard::from_bytes(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {
@@ -1141,9 +1147,9 @@ where T: Deserialize<'a> {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_opentelemetry::otlp::{OTEL_TRACES_INDEX_ID_PATTERN, OtelSignal};
+    use quickwit_opentelemetry::otlp::{OtelSignal, OTEL_TRACES_INDEX_ID_PATTERN};
     use quickwit_proto::jaeger::api_v2::ValueType;
-    use quickwit_search::{MockSearchService, QuickwitAggregations, encode_term_for_test};
+    use quickwit_search::{encode_term_for_test, MockSearchService, QuickwitAggregations};
     use serde_json::json;
 
     use super::*;
@@ -1209,13 +1215,11 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    TermQuery {
-                        field: "service_name".to_string(),
-                        value: service_name.to_string(),
-                    }
-                    .into()
-                ]
+                vec![TermQuery {
+                    field: "service_name".to_string(),
+                    value: service_name.to_string(),
+                }
+                .into()]
             );
         }
         {
@@ -1267,13 +1271,11 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    TermQuery {
-                        field: "span_kind".to_string(),
-                        value: "3".to_string(),
-                    }
-                    .into()
-                ]
+                vec![TermQuery {
+                    field: "span_kind".to_string(),
+                    value: "3".to_string(),
+                }
+                .into()]
             );
         }
         {
@@ -1296,13 +1298,11 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    TermQuery {
-                        field: "span_name".to_string(),
-                        value: span_name.to_string(),
-                    }
-                    .into()
-                ]
+                vec![TermQuery {
+                    field: "span_name".to_string(),
+                    value: span_name.to_string(),
+                }
+                .into()]
             );
         }
         {
@@ -1325,13 +1325,11 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    TermQuery {
-                        field: "span_status.code".to_string(),
-                        value: "error".to_string(),
-                    }
-                    .into(),
-                ],
+                vec![TermQuery {
+                    field: "span_status.code".to_string(),
+                    value: "error".to_string(),
+                }
+                .into(),],
             );
         }
         {
@@ -1354,13 +1352,11 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    TermQuery {
-                        field: "span_status.code".to_string(),
-                        value: "error".to_string(),
-                    }
-                    .into(),
-                ],
+                vec![TermQuery {
+                    field: "span_status.code".to_string(),
+                    value: "error".to_string(),
+                }
+                .into(),],
             );
         }
         {
@@ -1384,29 +1380,27 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    BoolQuery {
-                        should: vec![
-                            TermQuery {
-                                field: "resource_attributes.foo".to_string(),
-                                value: tag_value.to_string(),
-                            }
-                            .into(),
-                            TermQuery {
-                                field: "span_attributes.foo".to_string(),
-                                value: tag_value.to_string(),
-                            }
-                            .into(),
-                            TermQuery {
-                                field: "events.event_attributes.foo".to_string(),
-                                value: tag_value.to_string(),
-                            }
-                            .into(),
-                        ],
-                        ..Default::default()
-                    }
-                    .into()
-                ]
+                vec![BoolQuery {
+                    should: vec![
+                        TermQuery {
+                            field: "resource_attributes.foo".to_string(),
+                            value: tag_value.to_string(),
+                        }
+                        .into(),
+                        TermQuery {
+                            field: "span_attributes.foo".to_string(),
+                            value: tag_value.to_string(),
+                        }
+                        .into(),
+                        TermQuery {
+                            field: "events.event_attributes.foo".to_string(),
+                            value: tag_value.to_string(),
+                        }
+                        .into(),
+                    ],
+                    ..Default::default()
+                }
+                .into()]
             );
         }
         {
@@ -1430,13 +1424,11 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    TermQuery {
-                        field: "events.event_name".to_string(),
-                        value: event_name.to_string(),
-                    }
-                    .into()
-                ]
+                vec![TermQuery {
+                    field: "events.event_name".to_string(),
+                    value: event_name.to_string(),
+                }
+                .into()]
             );
         }
         {
@@ -1583,14 +1575,12 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    RangeQuery {
-                        field: "span_start_timestamp_nanos".to_string(),
-                        lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
-                        upper_bound: Bound::Unbounded
-                    }
-                    .into()
-                ]
+                vec![RangeQuery {
+                    field: "span_start_timestamp_nanos".to_string(),
+                    lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
+                    upper_bound: Bound::Unbounded
+                }
+                .into()]
             );
         }
         {
@@ -1613,14 +1603,12 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    RangeQuery {
-                        field: "span_start_timestamp_nanos".to_string(),
-                        lower_bound: Bound::Unbounded,
-                        upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
-                    }
-                    .into()
-                ]
+                vec![RangeQuery {
+                    field: "span_start_timestamp_nanos".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                }
+                .into()]
             );
         }
         {
@@ -1643,14 +1631,12 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    RangeQuery {
-                        field: "span_start_timestamp_nanos".to_string(),
-                        lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
-                        upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
-                    }
-                    .into()
-                ]
+                vec![RangeQuery {
+                    field: "span_start_timestamp_nanos".to_string(),
+                    lower_bound: Bound::Included("1970-01-01T00:00:03Z".to_string().into()),
+                    upper_bound: Bound::Included("1970-01-01T00:00:33Z".to_string().into()),
+                }
+                .into()]
             );
         }
         {
@@ -1673,14 +1659,12 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    RangeQuery {
-                        field: "span_duration_millis".to_string(),
-                        lower_bound: Bound::Included(7u64.into()),
-                        upper_bound: Bound::Unbounded
-                    }
-                    .into()
-                ]
+                vec![RangeQuery {
+                    field: "span_duration_millis".to_string(),
+                    lower_bound: Bound::Included(7u64.into()),
+                    upper_bound: Bound::Unbounded
+                }
+                .into()]
             );
         }
         {
@@ -1703,14 +1687,12 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    RangeQuery {
-                        field: "span_duration_millis".to_string(),
-                        lower_bound: Bound::Unbounded,
-                        upper_bound: Bound::Included(77u64.into()),
-                    }
-                    .into()
-                ]
+                vec![RangeQuery {
+                    field: "span_duration_millis".to_string(),
+                    lower_bound: Bound::Unbounded,
+                    upper_bound: Bound::Included(77u64.into()),
+                }
+                .into()]
             );
         }
         {
@@ -1733,14 +1715,12 @@ mod tests {
                     min_span_duration_secs,
                     max_span_duration_secs
                 )),
-                vec![
-                    RangeQuery {
-                        field: "span_duration_millis".to_string(),
-                        lower_bound: Bound::Included(7u64.into()),
-                        upper_bound: Bound::Included(77u64.into()),
-                    }
-                    .into()
-                ]
+                vec![RangeQuery {
+                    field: "span_duration_millis".to_string(),
+                    lower_bound: Bound::Included(7u64.into()),
+                    upper_bound: Bound::Included(77u64.into()),
+                }
+                .into()]
             );
         }
         {
