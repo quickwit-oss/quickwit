@@ -171,7 +171,7 @@ export class Client {
     request: SearchRequest,
     timestamp_field: string | null,
   ): any {
-    let aggregation = undefined;
+    let aggregation: any;
     if (request.aggregationConfig.metric) {
       const metric = request.aggregationConfig.metric;
       aggregation = {
@@ -185,7 +185,7 @@ export class Client {
     if (request.aggregationConfig.histogram && timestamp_field) {
       const histogram = request.aggregationConfig.histogram;
       const interval = histogram.interval;
-      let extended_bounds;
+      let extended_bounds: any;
       if (request.startTimestamp && request.endTimestamp) {
         extended_bounds = {
           min: request.startTimestamp,

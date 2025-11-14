@@ -44,6 +44,7 @@ function ListItemLink(props: ListItemLinkProps) {
       React.forwardRef<HTMLAnchorElement, Omit<RouterLinkProps, "to">>(
         function Link(itemProps, ref) {
           return (
+            // biome-ignore lint/a11y/useValidAriaRole: remove the role
             <RouterLink to={to} ref={ref} {...itemProps} role={undefined} />
           );
         },

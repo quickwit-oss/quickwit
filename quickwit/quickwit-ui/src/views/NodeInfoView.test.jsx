@@ -20,7 +20,6 @@ import { Client } from "../services/client";
 import NodeInfoView from "./NodeInfoView";
 
 jest.mock("../services/client");
-const mockedUsedNavigate = jest.fn();
 jest.mock("react-router-dom", () => ({
   ...jest.requireActual("react-router-dom"),
   useParams: () => ({

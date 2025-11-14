@@ -29,12 +29,9 @@ const Footer = styled(Box)`
 
 export default function ApiUrlFooter(url: string) {
   const urlMaxLength = 80;
-  const origin =
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    process.env.NODE_ENV === "development"
-      ? "http://localhost:7280"
-      : window.location.origin;
+  const origin = import.meta.env.PROD
+    ? "http://localhost:7280"
+    : window.location.origin;
   const completeUrl = `${origin}/${url}`;
   const isTooLong = completeUrl.length > urlMaxLength;
   // TODO show generated aggregation
