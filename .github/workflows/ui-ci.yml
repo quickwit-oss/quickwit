@@ -72,7 +72,7 @@ jobs:
           cache: "yarn"
           cache-dependency-path: quickwit/quickwit-ui/yarn.lock
       - name: Setup stable Rust Toolchain
-        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # master
+        uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331 # master
         with:
           toolchain: stable
       - name: Install JS dependencies
