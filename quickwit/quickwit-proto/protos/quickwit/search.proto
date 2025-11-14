@@ -243,6 +243,10 @@ message SearchRequest {
   optional PartialHit search_after = 16;
 
   CountHits count_hits = 17;
+
+  // When an exact index_id is provided (not a pattern), the query fails if that
+  // index is missing and this is false.
+  bool ignore_missing_indexes = 18;
 }
 
 enum CountHits {

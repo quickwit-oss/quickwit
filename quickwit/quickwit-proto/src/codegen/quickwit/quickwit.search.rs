@@ -181,6 +181,10 @@ pub struct SearchRequest {
     pub search_after: ::core::option::Option<PartialHit>,
     #[prost(enumeration = "CountHits", tag = "17")]
     pub count_hits: i32,
+    /// When an exact index_id is provided (not a pattern), the query fails if that
+    /// index is missing and this is false.
+    #[prost(bool, tag = "18")]
+    pub ignore_missing_indexes: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]

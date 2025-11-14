@@ -366,6 +366,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // request is simplified after initial query, and we cache the hit count, so we don't need
         // to recompute it afterward.
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
+        ignore_missing_indexes: req.ignore_missing_indexes,
     })
 }
 
@@ -1156,7 +1157,12 @@ async fn plan_splits_for_root_search(
         .deserialize_indexes_metadata()
         .await?;
 
-    check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
+    if !search_request.ignore_missing_indexes {
+        check_all_index_metadata_found(
+            &indexes_metadata[..],
+            &search_request.index_id_patterns[..],
+        )?;
+    }
 
     if indexes_metadata.is_empty() {
         return Ok((Vec::new(), HashMap::default()));
@@ -1243,7 +1249,12 @@ pub async fn search_plan(
         .deserialize_indexes_metadata()
         .await?;
 
-    check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
+    if !search_request.ignore_missing_indexes {
+        check_all_index_metadata_found(
+            &indexes_metadata[..],
+            &search_request.index_id_patterns[..],
+        )?;
+    }
     if indexes_metadata.is_empty() {
         return Ok(SearchPlanResponse {
             result: serde_json::to_string(&SearchPlanResponseRest {
