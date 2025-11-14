@@ -1,0 +1,27 @@
+endpoint: "idontexist/_search"
+params:
+  q: "*"
+status_code: 404
+---
+endpoint: "idontexist/_search"
+params:
+  q: "*"
+  ignore_unavailable: "true"
+expected:
+  hits:
+    total:
+      value: 0
+---
+endpoint: "gharchive-*,idontexist/_search"
+params:
+  q: "*"
+status_code: 404
+---
+endpoint: "gharchive-*,idontexist/_search"
+params:
+  q: "*"
+  ignore_unavailable: "true"
+expected:
+  hits:
+    total:
+      value: 4

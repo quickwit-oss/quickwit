@@ -677,9 +677,14 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + 
     let index_uri_4 = format!("ram:///indexes/{index_id_4}");
     let index_config_4 = IndexConfig::for_test(&index_id_4, &index_uri_4);
 
+    let index_id_5 = format!("my-exact-index-{index_id_fragment}-5");
+    let index_uri_5 = format!("ram:///indexes/{index_id_5}");
+    let index_config_5 = IndexConfig::for_test(&index_id_5, &index_uri_5);
+
     let index_id_patterns = vec![
         format!("prefix-*-{index_id_fragment}-suffix-*"),
         format!("prefix*{index_id_fragment}*suffix-*"),
+        format!("my-exact-index-{index_id_fragment}-5"),
     ];
     let indexes_count = metastore
         .list_indexes_metadata(ListIndexesMetadataRequest { index_id_patterns })
@@ -715,8 +720,17 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + 
         .unwrap()
         .index_uid()
         .clone();
+    let index_uid_5 = metastore
+        .create_index(CreateIndexRequest::try_from_index_config(&index_config_5).unwrap())
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
 
-    let index_id_patterns = vec![format!("prefix-*-{index_id_fragment}-suffix-*")];
+    let index_id_patterns = vec![
+        format!("prefix-*-{index_id_fragment}-suffix-*"),
+        format!("my-exact-index-{index_id_fragment}-5"),
+    ];
     let indexes_count = metastore
         .list_indexes_metadata(ListIndexesMetadataRequest { index_id_patterns })
         .await
@@ -725,12 +739,13 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreServiceExt + 
         .await
         .unwrap()
         .len();
-    assert_eq!(indexes_count, 2);
+    assert_eq!(indexes_count, 3);
 
     cleanup_index(&mut metastore, index_uid_1).await;
     cleanup_index(&mut metastore, index_uid_2).await;
     cleanup_index(&mut metastore, index_uid_3).await;
     cleanup_index(&mut metastore, index_uid_4).await;
+    cleanup_index(&mut metastore, index_uid_5).await;
 }
 
 pub async fn test_metastore_delete_index<

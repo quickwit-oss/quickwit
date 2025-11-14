@@ -358,6 +358,7 @@ fn build_request_for_es_api(
 
     let max_hits = search_params.size.or(search_body.size).unwrap_or(10);
     let start_offset = search_params.from.or(search_body.from).unwrap_or(0);
+    let ignore_missing_indexes = search_params.ignore_unavailable.unwrap_or(false);
     let count_hits = match search_params
         .track_total_hits
         .or(search_body.track_total_hits)
@@ -410,6 +411,7 @@ fn build_request_for_es_api(
             scroll_ttl_secs,
             search_after,
             count_hits,
+            ignore_missing_indexes,
         },
         has_doc_id_field,
     ))
@@ -814,26 +816,28 @@ async fn es_compat_index_multi_search(
     let mut payload_lines = str_lines(str_payload);
 
     while let Some(line) = payload_lines.next() {
-        let request_header = serde_json::from_str::<MultiSearchHeader>(line).map_err(|err| {
-            SearchError::InvalidArgument(format!(
-                "failed to parse request header `{}...`: {}",
-                truncate_str(line, 20),
-                err
-            ))
-        })?;
-        if request_header.index.is_empty() {
+        let mut request_header =
+            serde_json::from_str::<MultiSearchHeader>(line).map_err(|err| {
+                SearchError::InvalidArgument(format!(
+                    "failed to parse request header `{}...`: {}",
+                    truncate_str(line, 20),
+                    err
+                ))
+            })?;
+        request_header.apply_query_param_defaults(&multi_search_params);
+        if request_header.indexes.is_empty() {
             return Err(ElasticsearchError::from(SearchError::InvalidArgument(
                 "`_msearch` request header must define at least one index".to_string(),
             )));
         }
-        for index in &request_header.index {
+        for index in &request_header.indexes {
             validate_index_id_pattern(index, true).map_err(|err| {
                 SearchError::InvalidArgument(format!(
                     "request header contains an invalid index: {err}"
                 ))
             })?;
         }
-        let index_ids_patterns = request_header.index.clone();
+        let index_ids_patterns = request_header.indexes.clone();
         let search_body = payload_lines
             .next()
             .ok_or_else(|| {
