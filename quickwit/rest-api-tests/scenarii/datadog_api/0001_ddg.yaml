@@ -36,3 +36,12 @@ data: |
     }
   ]
 status_code: 200
+---
+# Accept plain/text
+method: POST
+endpoint: /api/v2/logs
+headers:
+  Content-Type: application/json
+data: "some text"
+status_code: 200
+
