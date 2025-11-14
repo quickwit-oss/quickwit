@@ -160,6 +160,7 @@ pub async fn test_metastore_update_ingest_settings<
 
     let ingest_settings = IngestSettings {
         min_shards: NonZeroUsize::new(12).unwrap(),
+        ..Default::default()
     };
     let index_update_request = UpdateIndexRequest::try_from_updates(
         index_uid.clone(),

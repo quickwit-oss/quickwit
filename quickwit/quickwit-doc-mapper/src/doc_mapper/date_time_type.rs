@@ -13,12 +13,11 @@
 // limitations under the License.
 
 use indexmap::IndexSet;
+use quickwit_common::true_fn;
 use quickwit_datetime::{DateTimeInputFormat, DateTimeOutputFormat, TantivyDateTime};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{DateTimePrecision, OwnedValue as TantivyValue};
-
-use super::default_as_true;
 
 /// A struct holding DateTime field options.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -41,10 +40,10 @@ pub struct QuickwitDateTimeOptions {
     #[serde(alias = "precision")]
     pub fast_precision: DateTimePrecision,
 
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub indexed: bool,
 
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub stored: bool,
 
     #[serde(default)]

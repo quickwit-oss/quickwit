@@ -48,11 +48,6 @@ pub(crate) use tokenizer_entry::{
 };
 pub use tokenizer_entry::{TokenizerConfig, TokenizerEntry, analyze_text};
 
-/// Function used with serde to initialize boolean value at true if there is no value in json.
-fn default_as_true() -> bool {
-    true
-}
-
 pub type Partition = u64;
 
 /// An alias for serde_json's object type.
