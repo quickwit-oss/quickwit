@@ -825,19 +825,19 @@ async fn es_compat_index_multi_search(
                 ))
             })?;
         request_header.apply_query_param_defaults(&multi_search_params);
-        if request_header.index.is_empty() {
+        if request_header.indexes.is_empty() {
             return Err(ElasticsearchError::from(SearchError::InvalidArgument(
                 "`_msearch` request header must define at least one index".to_string(),
             )));
         }
-        for index in &request_header.index {
+        for index in &request_header.indexes {
             validate_index_id_pattern(index, true).map_err(|err| {
                 SearchError::InvalidArgument(format!(
                     "request header contains an invalid index: {err}"
                 ))
             })?;
         }
-        let index_ids_patterns = request_header.index.clone();
+        let index_ids_patterns = request_header.indexes.clone();
         let search_body = payload_lines
             .next()
             .ok_or_else(|| {

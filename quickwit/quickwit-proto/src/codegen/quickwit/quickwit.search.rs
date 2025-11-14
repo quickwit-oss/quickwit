@@ -181,8 +181,8 @@ pub struct SearchRequest {
     pub search_after: ::core::option::Option<PartialHit>,
     #[prost(enumeration = "CountHits", tag = "17")]
     pub count_hits: i32,
-    /// When an exact index_id is provided (not a pattern), the query fails if that
-    /// index is missing and this is false.
+    /// When an exact index ID is provided (not a pattern), the query fails only if
+    /// that index is not found and this parameter is set to `false`.
     #[prost(bool, tag = "18")]
     pub ignore_missing_indexes: bool,
 }

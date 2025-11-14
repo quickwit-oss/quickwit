@@ -51,9 +51,10 @@ pub struct MultiSearchQueryParams {
     pub ignore_throttled: Option<bool>,
     #[serde(default)]
     pub ignore_unavailable: Option<bool>,
+    /// List of indexes to search.
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
-    #[serde(default)]
-    pub index: Vec<String>,
+    #[serde(default, rename = "index")]
+    pub indexes: Vec<String>,
     #[serde(default)]
     pub max_concurrent_searches: Option<u64>,
     #[serde(default)]
@@ -94,8 +95,8 @@ pub struct MultiSearchHeader {
     #[serde(default)]
     pub ignore_unavailable: Option<bool>,
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
-    #[serde(default)]
-    pub index: Vec<String>,
+    #[serde(default, rename = "index")]
+    pub indexes: Vec<String>,
     #[serde(default)]
     pub preference: Option<String>,
     #[serde(default)]
@@ -115,8 +116,8 @@ impl MultiSearchHeader {
         if self.ignore_unavailable.is_none() {
             self.ignore_unavailable = defaults.ignore_unavailable;
         }
-        if self.index.is_empty() {
-            self.index = defaults.index.clone();
+        if self.indexes.is_empty() {
+            self.indexes = defaults.indexes.clone();
         }
         if self.routing.is_none() {
             self.routing = defaults.routing.clone();
