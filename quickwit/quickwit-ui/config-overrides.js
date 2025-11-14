@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin');
+const MonacoWebpackPlugin = require("monaco-editor-webpack-plugin");
 
 module.exports = function override(config, env) {
-  config.plugins.push(new MonacoWebpackPlugin({
-    languages: ['json']
-  }));
+  config.plugins.push(
+    new MonacoWebpackPlugin({
+      languages: ["json"],
+    }),
+  );
   return config;
-}
-
+};

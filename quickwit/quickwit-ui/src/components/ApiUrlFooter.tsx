@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Box, styled, Typography, Button } from '@mui/material';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { QUICKWIT_LIGHT_GREY } from '../utils/theme';
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import { Box, Button, styled, Typography } from "@mui/material";
+import { QUICKWIT_LIGHT_GREY } from "../utils/theme";
 
 const Footer = styled(Box)`
 display: flex;
@@ -25,30 +25,43 @@ bottom: 0px;
 font-size: 0.90em;
 background-color: ${QUICKWIT_LIGHT_GREY};
 opacity: 0.7;
-`
+`;
 
 export default function ApiUrlFooter(url: string) {
   const urlMaxLength = 80;
-  const origin = process.env.NODE_ENV === 'development' ? 'http://localhost:7280' : window.location.origin;
+  const origin =
+    process.env.NODE_ENV === "development"
+      ? "http://localhost:7280"
+      : window.location.origin;
   const completeUrl = `${origin}/${url}`;
   const isTooLong = completeUrl.length > urlMaxLength;
   // TODO show generated aggregation
-  return <Footer>
-    <Typography sx={{ padding: '4px 5px', fontSize: '0.95em'}}>
-      API URL:
-    </Typography>
-    <Button
-      sx={{ fontSize: '0.93em', textTransform: 'inherit', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'clip' }}
-      onClick={() => {
-        if(window.isSecureContext){
-          navigator.clipboard.writeText(completeUrl);
-        } else {
-          window.open(completeUrl, '_blank');
-        }
-      }}
-      endIcon={<ContentCopyIcon />}
-      size="small">
-        {completeUrl.substring(0, urlMaxLength)}{isTooLong && "..."}
-    </Button>
-  </Footer>
+  return (
+    <Footer>
+      <Typography sx={{ padding: "4px 5px", fontSize: "0.95em" }}>
+        API URL:
+      </Typography>
+      <Button
+        sx={{
+          fontSize: "0.93em",
+          textTransform: "inherit",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "clip",
+        }}
+        onClick={() => {
+          if (window.isSecureContext) {
+            navigator.clipboard.writeText(completeUrl);
+          } else {
+            window.open(completeUrl, "_blank");
+          }
+        }}
+        endIcon={<ContentCopyIcon />}
+        size="small"
+      >
+        {completeUrl.substring(0, urlMaxLength)}
+        {isTooLong && "..."}
+      </Button>
+    </Footer>
+  );
 }

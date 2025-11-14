@@ -12,21 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Typography } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
-import ApiUrlFooter from '../components/ApiUrlFooter';
-import { JsonEditor } from '../components/JsonEditor';
-import { ViewUnderAppBarBox, FullBoxContainer, QBreadcrumbs } from '../components/LayoutUtils';
-import Loader from '../components/Loader';
-import ErrorResponseDisplay from '../components/ResponseErrorDisplay';
-import { Client } from '../services/client';
-import { Cluster, ResponseError } from '../utils/models';
-
+import { Typography } from "@mui/material";
+import { useEffect, useMemo, useState } from "react";
+import ApiUrlFooter from "../components/ApiUrlFooter";
+import { JsonEditor } from "../components/JsonEditor";
+import {
+  FullBoxContainer,
+  QBreadcrumbs,
+  ViewUnderAppBarBox,
+} from "../components/LayoutUtils";
+import Loader from "../components/Loader";
+import ErrorResponseDisplay from "../components/ResponseErrorDisplay";
+import { Client } from "../services/client";
+import { Cluster, ResponseError } from "../utils/models";
 
 function ClusterView() {
   const [loading, setLoading] = useState(false);
   const [cluster, setCluster] = useState<null | Cluster>(null);
-  const [responseError, setResponseError] = useState<ResponseError | null>(null);
+  const [responseError, setResponseError] = useState<ResponseError | null>(
+    null,
+  );
   const quickwitClient = useMemo(() => new Client(), []);
 
   useEffect(() => {
@@ -40,7 +45,7 @@ function ClusterView() {
       (error) => {
         setLoading(false);
         setResponseError(error);
-      }
+      },
     );
   }, [quickwitClient]);
 
@@ -51,8 +56,8 @@ function ClusterView() {
     if (loading || cluster == null) {
       return <Loader />;
     }
-    return <JsonEditor content={cluster} resizeOnMount={false} />
-  }
+    return <JsonEditor content={cluster} resizeOnMount={false} />;
+  };
 
   return (
     <ViewUnderAppBarBox>
@@ -60,11 +65,9 @@ function ClusterView() {
         <QBreadcrumbs aria-label="breadcrumb">
           <Typography color="text.primary">Cluster</Typography>
         </QBreadcrumbs>
-        <FullBoxContainer sx={{ px: 0 }}>
-          { renderResult() }
-        </FullBoxContainer>
+        <FullBoxContainer sx={{ px: 0 }}>{renderResult()}</FullBoxContainer>
       </FullBoxContainer>
-      { ApiUrlFooter('api/v1/cluster') }
+      {ApiUrlFooter("api/v1/cluster")}
     </ViewUnderAppBarBox>
   );
 }

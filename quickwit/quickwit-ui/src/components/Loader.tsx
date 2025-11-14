@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Box, styled, keyframes } from '@mui/material';
-import { ReactComponent as Logo } from '../assets/img/logo.svg';
+import { Box, keyframes, styled } from "@mui/material";
+import { ReactComponent as Logo } from "../assets/img/logo.svg";
 
 const spin = keyframes`
 from {
@@ -22,22 +22,24 @@ from {
 to {
   transform: rotate(360deg);
 }
-`
+`;
 
 const SpinningLogo = styled(Logo)`
 height: 10vmin;
 pointer-events: none;
 fill: #CBD1DD;
 animation: ${spin} infinite 5s linear;
-`
+`;
 
 export default function Loader() {
-  return <Box
-    display="flex"
-    justifyContent="center"
-    alignItems="center"
-    minHeight="40vh"
+  return (
+    <Box
+      display="flex"
+      justifyContent="center"
+      alignItems="center"
+      minHeight="40vh"
     >
-    <SpinningLogo></SpinningLogo>
-  </Box>
+      <SpinningLogo></SpinningLogo>
+    </Box>
+  );
 }
