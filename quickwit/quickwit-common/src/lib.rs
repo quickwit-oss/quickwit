@@ -65,6 +65,18 @@ pub use socket_addr_legacy_hash::SocketAddrLegacyHash;
 pub use stream_utils::{BoxStream, ServiceStream};
 use tracing::{error, info};
 
+/// Returns true at compile time. This function is mostly used with serde to initialize boolean
+/// fields to true.
+pub const fn true_fn() -> bool {
+    true
+}
+
+/// Returns whether the given boolean value is true. This function is mostly used with serde to skip
+/// serializing boolean fields with `skip_serializing_if = "is_true"` when the value is true.
+pub fn is_true(value: &bool) -> bool {
+    *value
+}
+
 pub fn chunk_range(range: Range<usize>, chunk_size: usize) -> impl Iterator<Item = Range<usize>> {
     range.clone().step_by(chunk_size).map(move |block_start| {
         let block_end = (block_start + chunk_size).min(range.end);

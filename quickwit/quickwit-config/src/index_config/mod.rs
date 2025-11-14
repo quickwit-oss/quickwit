@@ -26,6 +26,7 @@ use chrono::Utc;
 use cron::Schedule;
 use humantime::parse_duration;
 use quickwit_common::uri::Uri;
+use quickwit_common::{is_true, true_fn};
 use quickwit_doc_mapper::{DocMapper, DocMapperBuilder, DocMapping};
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
@@ -170,6 +171,16 @@ pub struct IngestSettings {
     #[schema(default = 1, value_type = usize)]
     #[serde(default = "IngestSettings::default_min_shards")]
     pub min_shards: NonZeroUsize,
+    /// Whether to validate documents against the current doc mapping during ingestion.
+    /// Defaults to true. When false, documents will be written directly to the WAL without
+    /// validation, but might still be rejected during indexing when applying the doc mapping
+    /// in the doc processor, in that case the documents are dropped and a warning is logged.
+    ///
+    /// Note that when a source has a VRL transform configured, documents are not validated against
+    /// the doc mapping during ingestion either.
+    #[schema(default = true, value_type = bool)]
+    #[serde(default = "true_fn", skip_serializing_if = "is_true")]
+    pub validate_docs: bool,
 }
 
 impl IngestSettings {
@@ -182,6 +193,7 @@ impl Default for IngestSettings {
     fn default() -> Self {
         Self {
             min_shards: Self::default_min_shards(),
+            validate_docs: true,
         }
     }
 }
@@ -481,6 +493,7 @@ impl crate::TestableForRegression for IndexConfig {
         };
         let ingest_settings = IngestSettings {
             min_shards: NonZeroUsize::new(12).unwrap(),
+            validate_docs: true,
         };
         let search_settings = SearchSettings {
             default_search_fields: vec!["message".to_string()],
@@ -942,18 +955,30 @@ mod tests {
 
     #[test]
     fn test_ingest_settings_serde() {
-        let ingest_settings = IngestSettings {
+        let settings = IngestSettings {
             min_shards: NonZeroUsize::MIN,
+            validate_docs: false,
         };
-        let ingest_settings_yaml = serde_yaml::to_string(&ingest_settings).unwrap();
-        let ingest_settings_roundtrip: IngestSettings =
-            serde_yaml::from_str(&ingest_settings_yaml).unwrap();
-        assert_eq!(ingest_settings, ingest_settings_roundtrip);
+        let settings_yaml = serde_yaml::to_string(&settings).unwrap();
+        assert!(settings_yaml.contains("validate_docs"));
 
-        let ingest_settings_yaml = r#"
+        let expected_settings: IngestSettings = serde_yaml::from_str(&settings_yaml).unwrap();
+        assert_eq!(settings, expected_settings);
+
+        let settings = IngestSettings {
+            min_shards: NonZeroUsize::MIN,
+            validate_docs: true,
+        };
+        let settings_yaml = serde_yaml::to_string(&settings).unwrap();
+        assert!(!settings_yaml.contains("validate_docs"));
+
+        let expected_settings: IngestSettings = serde_yaml::from_str(&settings_yaml).unwrap();
+        assert_eq!(settings, expected_settings);
+
+        let settings_yaml = r#"
             min_shards: 0
         "#;
-        let error = serde_yaml::from_str::<IngestSettings>(ingest_settings_yaml).unwrap_err();
+        let error = serde_yaml::from_str::<IngestSettings>(settings_yaml).unwrap_err();
         assert!(error.to_string().contains("expected a nonzero"));
     }
 }
