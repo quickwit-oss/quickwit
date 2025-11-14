@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { Box, keyframes, styled } from "@mui/material";
-import logo_url from "../assets/img/logo.svg";
+import loadinIcongUrl from "../assets/img/quickwit-logo-monochrome.svg";
 
 const spin = keyframes`
 from {
@@ -24,15 +24,15 @@ to {
 }
 `;
 
-const Logo = (props: React.ComponentProps<"img">) => (
-  <img {...props} src={logo_url} />
+const LoadingIcon = (props: React.ComponentProps<"img">) => (
+  <img {...props} src={loadinIcongUrl} alt="loading icon" />
 );
 
-const SpinningLogo = styled(Logo)`
-height: 10vmin;
-pointer-events: none;
-fill: #CBD1DD;
-animation: ${spin} infinite 5s linear;
+const SpinningLoadingIcon = styled(LoadingIcon)`
+  height: 10vmin;
+  pointer-events: none;
+  fill: #cbd1dd;
+  animation: ${spin} infinite 5s linear;
 `;
 
 export default function Loader() {
@@ -43,7 +43,7 @@ export default function Loader() {
       alignItems="center"
       minHeight="40vh"
     >
-      <SpinningLogo></SpinningLogo>
+      <SpinningLoadingIcon></SpinningLoadingIcon>
     </Box>
   );
 }

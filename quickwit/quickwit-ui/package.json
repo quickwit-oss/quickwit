@@ -24,14 +24,10 @@
     "@types/react": "17.0.65",
     "@types/react-dom": "17.0.18",
     "@types/swagger-ui-react": "4.18.2",
-    "@typescript-eslint/eslint-plugin": "6.8.0",
-    "@typescript-eslint/parser": "6.8.0",
     "babel-jest": "30.2.0",
     "babel-preset-react-app": "10.1.0",
     "cypress": "13.3.2",
     "dayjs": "1.11.7",
-    "eslint": "8.3.0",
-    "eslint-config-react-app": "7.0.1",
     "jest": "30.2.0",
     "jest-environment-jsdom": "30.2.0",
     "jest-transform-stub": "2.0.0",
@@ -57,16 +53,9 @@
     "build": "vite build --outDir build",
     "test": "jest",
     "postbuild": "cp .gitignore_for_build_directory build/.gitignore",
-    "lint": "eslint . --ext .ts",
-    "check-formatting": "biome check",
+    "lint": "biome check",
     "format": "biome check --write",
     "type": "tsc",
     "e2e-test": "cypress run"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
   }
 }

@@ -30,7 +30,6 @@ const Footer = styled(Box)`
 export default function ApiUrlFooter(url: string) {
   const urlMaxLength = 80;
   const origin =
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     process.env.NODE_ENV === "development"
       ? "http://localhost:7280"

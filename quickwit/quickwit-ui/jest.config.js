@@ -1,4 +1,3 @@
-// eslint-disable-next-line no-undef
 module.exports = {
   setupFiles: ["react-app-polyfill/jsdom"], // polyfill jsdom api (such as fetch)
 

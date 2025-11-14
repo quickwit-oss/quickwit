@@ -45,7 +45,6 @@ export function QueryEditor(props: SearchComponentProps) {
       : props.searchRequest.query;
   let resize: () => void;
 
-  /* eslint-disable  @typescript-eslint/no-explicit-any */
   function handleEditorDidMount(editor: any, monaco: any) {
     monacoRef.current = monaco;
     editor.addAction({

@@ -22,7 +22,7 @@ describe("Client unit test", () => {
     const mockFetch = jest.fn((_url: string, _options?: unknown) =>
       Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
     );
-    (global as any).fetch = mockFetch; // eslint-disable-line @typescript-eslint/no-explicit-any
+    (global as any).fetch = mockFetch;
 
     const searchRequest: SearchRequest = {
       indexId: "my-new-fresh-index-id",

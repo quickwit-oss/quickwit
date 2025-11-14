@@ -13,14 +13,12 @@
 // limitations under the License.
 
 import { render, screen, waitFor } from "@testing-library/react";
-import { unmountComponentAtNode } from "react-dom";
 import { act } from "react-dom/test-utils";
 import { BrowserRouter } from "react-router-dom";
 import { Client } from "../services/client";
 import IndexView from "./IndexView";
 
 jest.mock("../services/client");
-const mockedUsedNavigate = jest.fn();
 jest.mock("react-router-dom", () => ({
   ...jest.requireActual("react-router-dom"),
   useParams: () => ({

@@ -23,18 +23,20 @@ import { Index } from "../utils/models";
 dayjs.extend(utc);
 
 const ItemContainer = styled.div`
-padding: 10px;
-display: flex;
-flex-direction: column;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
 `;
 const Row = styled.div`
-padding: 5px;
-display: flex;
-flex-direction: row;
-&:nth-of-type(odd){ background: rgba(0,0,0,0.05) }
+  padding: 5px;
+  display: flex;
+  flex-direction: row;
+  &:nth-of-type(odd) {
+    background: rgba(0, 0, 0, 0.05);
+  }
 `;
 const RowKey = styled.div`
-width: 350px;
+  width: 350px;
 `;
 const IndexRow: FC<{ title: string; children: ReactNode }> = ({
   title,
@@ -49,13 +51,13 @@ const IndexRow: FC<{ title: string; children: ReactNode }> = ({
 export function IndexSummary({ index }: { index: Index }) {
   const all_splits = index.splits;
   const published_splits = all_splits.filter(
-    (split) => split.split_state == "Published",
+    (split) => split.split_state === "Published",
   );
   const num_of_staged_splits = all_splits.filter(
-    (split) => split.split_state == "Staged",
+    (split) => split.split_state === "Staged",
   ).length;
   const num_of_marked_for_delete_splits = all_splits.filter(
-    (split) => split.split_state == "MarkedForDeletion",
+    (split) => split.split_state === "MarkedForDeletion",
   ).length;
   const total_num_docs = published_splits
     .map((split) => split.num_docs)

@@ -47,7 +47,6 @@ export function JsonEditor({
     [resizeOnMount],
   );
 
-  /* eslint-disable  @typescript-eslint/no-explicit-any */
   function beforeMount(monaco: any) {
     monaco.editor.defineTheme("quickwit-light", EDITOR_THEME);
   }
