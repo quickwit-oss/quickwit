@@ -5,5 +5,21 @@
     "indentStyle": "space",
     "includes": ["**", "!**/build"]
   },
-  "linter": { "enabled": false }
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": "off",
+      "complexity": "off",
+      "correctness": {
+        "useExhaustiveDependencies": "warn"
+      },
+      "suspicious": {
+        "useIterableCallbackReturn": "off",
+        "noExplicitAny": "off",
+        "noArrayIndexKey": "warn"
+      }
+    },
+    "includes": ["**", "!**/build"]
+  }
 }

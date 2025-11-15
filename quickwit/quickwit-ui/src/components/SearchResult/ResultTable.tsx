@@ -13,12 +13,7 @@
 // limitations under the License.
 
 import { Box, styled, Table, TableBody, TableContainer } from "@mui/material";
-import {
-  Field as Field,
-  getAllFields,
-  Index,
-  SearchResponse,
-} from "../../utils/models";
+import { Field, getAllFields, Index, SearchResponse } from "../../utils/models";
 import { Row } from "./Row";
 
 const TableBox = styled(Box)`

@@ -32,7 +32,7 @@ const IndexesTable = ({
   indexesMetadata,
 }: Readonly<{ indexesMetadata: IndexMetadata[] }>) => {
   const navigate = useNavigate();
-  const handleClick = function (indexId: string) {
+  const handleClick = (indexId: string) => {
     navigate(`/indexes/${indexId}`);
   };
 

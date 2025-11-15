@@ -152,7 +152,7 @@ export const createIndexCompletionProvider = (indexMetadata: IndexMetadata) => {
             label: field.json_path,
             kind: CompletionItemKind.Field,
             insertText:
-              field.field_mapping.type == "json"
+              field.field_mapping.type === "json"
                 ? field.json_path + "."
                 : field.json_path + ":",
             range: range,

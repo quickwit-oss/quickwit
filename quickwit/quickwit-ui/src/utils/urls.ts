@@ -29,14 +29,14 @@ export function parseSearchUrl(historySearch: string): SearchRequest {
   const searchParams = new URLSearchParams(historySearch);
   const startTimestampString = searchParams.get("start_timestamp");
   let startTimestamp = null;
-  const startTimeStampParsedInt = parseInt(startTimestampString || "");
-  if (!isNaN(startTimeStampParsedInt)) {
+  const startTimeStampParsedInt = parseInt(startTimestampString || "", 10);
+  if (!Number.isNaN(startTimeStampParsedInt)) {
     startTimestamp = startTimeStampParsedInt;
   }
   let endTimestamp = null;
   const endTimestampString = searchParams.get("end_timestamp");
-  const endTimestampParsedInt = parseInt(endTimestampString || "");
-  if (!isNaN(endTimestampParsedInt)) {
+  const endTimestampParsedInt = parseInt(endTimestampString || "", 10);
+  if (!Number.isNaN(endTimestampParsedInt)) {
     endTimestamp = endTimestampParsedInt;
   }
   let indexId = null;
