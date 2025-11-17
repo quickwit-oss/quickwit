@@ -19,12 +19,12 @@ use std::collections::BTreeMap;
 use anyhow::Context;
 use colored::Colorize;
 use opentelemetry::global;
-use quickwit_cli::busy_detector;
 use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::logger::setup_logging_and_tracing;
+use quickwit_cli::{busy_detector, load_node_config};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
 use tracing::error;
@@ -101,8 +101,28 @@ async fn main_impl() -> anyhow::Result<()> {
     start_jemalloc_metrics_loop();
 
     let build_info = BuildInfo::get();
-    let env_filter_reload_fn =
-        setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
+
+    // we need this value very early to use it in otel, but this is so early we haven't setup
+    // logging yet. What we do is read the config, and if it fails, provide a default value.
+    // Except for race conditions, an error will get logged the 2nd time the config is read,
+    // inside the command. In case of race condition, we just don't know the node id for tracing
+    // purpose
+    let node_id = {
+        async || {
+            let config_uri = command.config_uri()?;
+            let config = load_node_config(config_uri).await.ok()?;
+            Some(config.node_id.take())
+        }
+    }()
+    .await
+    .unwrap_or_else(|| "unknown".to_string());
+
+    let env_filter_reload_fn = setup_logging_and_tracing(
+        command.default_log_level(),
+        ansi_colors,
+        build_info,
+        node_id,
+    )?;
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");

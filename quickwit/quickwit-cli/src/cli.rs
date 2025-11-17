@@ -14,6 +14,7 @@
 
 use anyhow::{Context, bail};
 use clap::{Arg, ArgAction, ArgMatches, Command, arg};
+use quickwit_common::uri::Uri;
 use quickwit_serve::EnvFilterReloadFn;
 use tracing::Level;
 
@@ -93,6 +94,16 @@ impl CliCommand {
             CliCommand::Source(subcommand) => subcommand.execute().await,
             CliCommand::Split(subcommand) => subcommand.execute().await,
             CliCommand::Tool(subcommand) => subcommand.execute().await,
+        }
+    }
+
+    pub fn config_uri(&self) -> Option<&Uri> {
+        match self {
+            CliCommand::Run(run) => Some(&run.config_uri),
+            CliCommand::Index(_) => None,
+            CliCommand::Source(_) => None,
+            CliCommand::Split(_) => None,
+            CliCommand::Tool(tools) => tools.config_uri(),
         }
     }
 }
