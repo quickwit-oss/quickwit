@@ -17,11 +17,14 @@ use crate::query_ast::{
 };
 use crate::{InvalidQuery, JsonLiteral};
 
-const EVP_WES_FIELD: &str = "*";
-const QW_WES_FIELD: &str = "all";
-const QW_MESSAGE_FIELD: &str = "message";
-const QW_ERROR_FIELD: &str = "error";
 const EVP_DEFAULT_FIELD: &str = "_default_";
+const EVP_RANDOM_DRAW: &str = "random_draw";
+const EVP_WES_FIELD: &str = "*";
+
+const QW_ERROR_FIELD: &str = "error";
+const QW_MESSAGE_FIELD: &str = "message";
+const QW_TIEBREAKER: &str = "tiebreaker";
+const QW_WES_FIELD: &str = "all";
 
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
     // TODO this can be cleaner once we upgrade to prost 0.12+
@@ -143,6 +146,19 @@ fn build_range_query_helper(
             field_name: field,
             value_type,
         });
+    } else if field == EVP_RANDOM_DRAW {
+        let (Some(remapped_lower_bound), Some(remapped_upper_bound)) = (
+            map_bound_randomdraw_to_tiebreaker(lower_bound),
+            map_bound_randomdraw_to_tiebreaker(upper_bound),
+        ) else {
+            return Ok(QueryAst::MatchNone);
+        };
+        return Ok(RangeQuery {
+            field: QW_TIEBREAKER.to_string(),
+            lower_bound: remapped_lower_bound,
+            upper_bound: remapped_upper_bound,
+        }
+        .into());
     }
     Ok(RangeQuery {
         field,
@@ -150,6 +166,28 @@ fn build_range_query_helper(
         upper_bound,
     }
     .into())
+}
+
+fn map_bound_randomdraw_to_tiebreaker(bound: Bound<JsonLiteral>) -> Option<Bound<JsonLiteral>> {
+    let map_literal = |literal: JsonLiteral| {
+        let JsonLiteral::Number(num) = literal else {
+            return None;
+        };
+        // this maps [0, 1) to [i32::MIN, i32::MAX)
+        // we ceil so that low enough probability still allow for a non-empty range
+        let int = num
+            .as_f64()?
+            .mul_add(2.0f64.powi(32) - 1.0, -2.0f64.powi(31))
+            .ceil() as i64;
+
+        Some(JsonLiteral::Number(int.into()))
+    };
+    let new_bound = match bound {
+        Bound::Included(lit) => Bound::Included(map_literal(lit)?),
+        Bound::Excluded(lit) => Bound::Excluded(map_literal(lit)?),
+        Bound::Unbounded => Bound::Unbounded,
+    };
+    Some(new_bound)
 }
 
 fn build_range_query(range_query: AttributeRangeQueryNode) -> Result<QueryAst, InvalidQuery> {
@@ -505,5 +543,50 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(term_ast, expected_ast);
+    }
+
+    #[test]
+    fn test_range_remap_random_draw() {
+        let ast = build_range_query_helper(
+            "random_draw".to_string(),
+            Bound::Unbounded,
+            Bound::Excluded(JsonLiteral::Number(Number::from_f64(0.125).unwrap())),
+        )
+        .unwrap();
+
+        let expected_ast = QueryAst::Range(RangeQuery {
+            field: "tiebreaker".to_string(),
+            lower_bound: Bound::Unbounded,
+            upper_bound: Bound::Excluded(JsonLiteral::Number(Number::from(-1610612736))),
+        });
+        assert_eq!(ast, expected_ast);
+
+        let zero_percent_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
+            JsonLiteral::Number(Number::from_f64(0.0).unwrap()),
+        ))
+        .unwrap();
+        assert_eq!(
+            zero_percent_bound,
+            Bound::Excluded(JsonLiteral::Number(Number::from(i32::MIN)))
+        );
+
+        let everything_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
+            JsonLiteral::Number(Number::from_f64(1.0).unwrap()),
+        ))
+        .unwrap();
+        assert_eq!(
+            everything_bound,
+            Bound::Excluded(JsonLiteral::Number(Number::from(i32::MAX)))
+        );
+
+        // anything more than zero, we want to return at least some result
+        let non_zero_percent_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
+            JsonLiteral::Number(Number::from_f64(f64::EPSILON).unwrap()),
+        ))
+        .unwrap();
+        assert_eq!(
+            non_zero_percent_bound,
+            Bound::Excluded(JsonLiteral::Number(Number::from(i32::MIN + 1)))
+        );
     }
 }

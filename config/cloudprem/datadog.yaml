@@ -31,7 +31,9 @@ search_settings:
 # TODO Check following field names:
 # tiebreaker(i64): used to differentiate logs with the same timestamp, which are stored only as ms. QW stores timestamp as ns. https://datadoghq.atlassian.net/wiki/spaces/LB/pages/1885536545/FAQ#I-sent-events-in-the-same-millisecond-but-with-a-timestamp-attribute-with-different-nanoseconds.-All-the-events-are-mixed-up-in-the-explorer.-How-to-explain-this%3F
 # host_id(u64): A number for the host_id. How is it generated? Is is required?
-# random_draw(f64), source_fragment_id(string), trace_id_low(string)
+# random_draw(f64): a random float between 0 and 1 used for subsampling. In Pomsky, this is a virtual field (absent from doc mappings) remapped at query time to the tiebreaker
+# source_fragment_id(string): a fragment is the Husky equivalent to a split. this might be the initial split for a document?
+# trace_id_low(string): the low 64 bit of a trace_id, seemingly to help migrating from 64b trace ids to 128b
 
 doc_mapping:
   # CAUTION: Update this UID (this is actually an ULID) when you modify the doc mapping.
