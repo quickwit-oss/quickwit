@@ -34,8 +34,8 @@ fn build_list_request(query: &QueryNode) -> ListRequest {
         query: Some(any_query),
         num_events_to_fetch: 100,
         should_compute_count: true,
-        columns: Vec::new(), // ?
-        // TODO check in staging what is sent
+        columns: Vec::new(),
+        fetch_only_requested_columns: false,
         sort: vec![
             SortKv {
                 ascending: false,
@@ -50,6 +50,7 @@ fn build_list_request(query: &QueryNode) -> ListRequest {
         ],
         search_after: None,
         org_id: 2,
+        scope: Default::default(),
     }
 }
 
@@ -67,6 +68,7 @@ fn build_aggregation_request(
             aggregation: Some(aggregation),
         }),
         org_id: 2,
+        scope: Default::default(),
     }
 }
 
@@ -300,6 +302,7 @@ async fn test_fetch_one() {
             event_tracker: Some(source_event_tracker.clone()),
             restriction_query: None,
             org_id: 2,
+            scope: Default::default(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))
@@ -315,6 +318,7 @@ async fn test_fetch_one() {
             event_tracker: Some(source_event_tracker),
             restriction_query: None,
             org_id: 2,
+            scope: Default::default(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))
@@ -344,6 +348,7 @@ async fn test_fetch_one_unknown_id() {
         }),
         restriction_query: None,
         org_id: 2,
+        scope: Default::default(),
     };
     let fetch_res = client
         .fetch_one(authenticated_request(fetch_request))
@@ -385,6 +390,7 @@ async fn test_fetch_one_restriction() {
                 .encode_to_vec(),
             }),
             org_id: 2,
+            scope: Default::default(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))
@@ -403,6 +409,7 @@ async fn test_fetch_one_restriction() {
                 .encode_to_vec(),
             }),
             org_id: 2,
+            scope: Default::default(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))

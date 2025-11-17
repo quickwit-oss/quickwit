@@ -456,7 +456,6 @@ pub async fn serve_quickwit(
     let ingester_pool = IngesterPool::default();
     let universe = Universe::new();
     let grpc_config = node_config.grpc_config.clone();
-    let cloudprem_config = node_config.cloudprem_config.clone();
 
     // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
     let metastore_server_opt: Option<MetastoreServiceClient> =
@@ -771,7 +770,7 @@ pub async fn serve_quickwit(
     });
     let cloudprem_server = cloudprem::start_cloudprem_server(
         tcp_listener_resolver.resolve(cloudprem_listen_addr).await?,
-        cloudprem_config,
+        node_config.clone(),
         quickwit_services.clone(),
         cloudprem_readiness_trigger,
         cloudprem_shutdown_signal,
