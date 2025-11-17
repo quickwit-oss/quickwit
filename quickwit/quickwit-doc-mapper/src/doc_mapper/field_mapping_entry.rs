@@ -18,6 +18,7 @@ use std::convert::TryFrom;
 use anyhow::bail;
 use base64::prelude::{BASE64_STANDARD, Engine};
 use once_cell::sync::Lazy;
+use quickwit_common::true_fn;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -26,8 +27,8 @@ use tantivy::schema::{
     TextOptions, Type,
 };
 
+use super::FieldMappingType;
 use super::date_time_type::QuickwitDateTimeOptions;
-use super::{FieldMappingType, default_as_true};
 use crate::doc_mapper::field_mapping_type::QuickwitFieldType;
 use crate::{Cardinality, QW_RESERVED_FIELD_NAMES};
 
@@ -85,13 +86,13 @@ pub struct QuickwitNumericOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub stored: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub indexed: bool,
     #[serde(default)]
     pub fast: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub coerce: bool,
     #[serde(default)]
     pub output_format: NumericOutputFormat,
@@ -116,9 +117,9 @@ pub struct QuickwitBoolOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub stored: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub indexed: bool,
     #[serde(default)]
     pub fast: bool,
@@ -144,10 +145,10 @@ pub struct QuickwitBytesOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     /// If true, the field will be stored in the doc store.
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub stored: bool,
     /// If true, the field will be indexed.
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub indexed: bool,
     /// If true, the field will be stored in columnar format.
     #[serde(default)]
@@ -245,9 +246,9 @@ pub struct QuickwitIpAddrOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub stored: bool,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub indexed: bool,
     #[serde(default)]
     pub fast: bool,
@@ -433,7 +434,7 @@ pub struct QuickwitTextOptions {
         deserializer = TextIndexingOptions::from_parts_text,
         serializer = TextIndexingOptions::to_parts_text,
         fields = (
-            #[serde(default = "default_as_true")]
+            #[serde(default = "true_fn")]
             pub indexed: bool,
             #[serde(default)]
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -447,7 +448,7 @@ pub struct QuickwitTextOptions {
         ),
     )]
     pub indexing_options: Option<TextIndexingOptions>,
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub stored: bool,
     #[serde(default)]
     pub fast: FastFieldOptions,
@@ -577,7 +578,7 @@ pub struct QuickwitJsonOptions {
         serializer = TextIndexingOptions::to_parts_json,
         fields = (
             /// If true, all of the element in the json object will be indexed.
-            #[serde(default = "default_as_true")]
+            #[serde(default = "true_fn")]
             pub indexed: bool,
             /// Sets the tokenize that should be used with the text fields in the
             /// json object.
@@ -597,10 +598,10 @@ pub struct QuickwitJsonOptions {
     /// Options for indexing text in a Json field.
     pub indexing_options: Option<TextIndexingOptions>,
     /// If true, the field will be stored in the doc store.
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub stored: bool,
     /// If true, the '.' in json keys will be expanded.
-    #[serde(default = "default_as_true")]
+    #[serde(default = "true_fn")]
     pub expand_dots: bool,
     /// If true, the json object will be stored in columnar format.
     #[serde(default)]
