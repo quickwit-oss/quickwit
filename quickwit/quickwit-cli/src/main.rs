@@ -95,9 +95,6 @@ async fn main_impl() -> anyhow::Result<()> {
         .install_default()
         .expect("rustls crypto ring default provider installation should not fail");
 
-    #[cfg(feature = "jemalloc")]
-    quickwit_cli::jemalloc::start_jemalloc_metrics_loop();
-
     let build_info = BuildInfo::get();
     let env_filter_reload_fn =
         setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
