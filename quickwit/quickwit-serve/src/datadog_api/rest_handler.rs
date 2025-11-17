@@ -165,8 +165,29 @@ async fn datadog_ingest_logs(
         // TODO: We could just validate + get the byte bounds of each object instead of the more
         // expensive serde_json rountrip.
         // e.g. Vec<RawValue> + validation
-        let mut messages: Vec<DatadogLogMsg> =
-            serde_json::from_slice(&body.content).map_err(DatadogApiError::InvalidPayload)?;
+
+        let mut messages = match serde_json::from_slice::<Vec<DatadogLogMsg>>(&body.content) {
+            Ok(messages) => messages,
+            Err(_) => {
+                // If JSON parsing fails, treat as plain text
+                let text = String::from_utf8(body.content.to_vec()).map_err(|utf8_err| {
+                    DatadogApiError::InvalidPayload(serde_json::Error::io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("payload is not valid UTF-8: {}", utf8_err),
+                    )))
+                })?;
+                // TODO: Try to parse text as JSON object
+                vec![DatadogLogMsg {
+                    message: text.into(),
+                    status: None,
+                    timestamp: None,
+                    hostname: None,
+                    service: None,
+                    ddsource: None,
+                    ddtags: Vec::new(),
+                }]
+            }
+        };
 
         // Apply URL parameter overrides to each message, if present.
         if query.service.is_some()
@@ -365,21 +386,6 @@ mod tests {
             .reply(&handler)
             .await;
         assert_eq!(response.status(), 200);
-    }
-
-    #[tokio::test]
-    async fn test_datadog_ingest_logs_invalid_payload() {
-        let ingest_router = IngestRouterServiceClient::mocked();
-        let handler = datadog_logs(ingest_router);
-
-        let response = warp::test::request()
-            .path("/api/v2/logs")
-            .method("POST")
-            .header("content-type", "application/json")
-            .body("invalid payload")
-            .reply(&handler)
-            .await;
-        assert_eq!(response.status(), 400);
     }
 
     #[tokio::test]
