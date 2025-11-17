@@ -147,31 +147,10 @@ fn build_range_query_helper(
             value_type,
         });
     } else if field == EVP_RANDOM_DRAW {
-        fn map_bound(bound: Bound<JsonLiteral>) -> Option<Bound<JsonLiteral>> {
-            let map_literal = |literal: JsonLiteral| {
-                let JsonLiteral::Number(num) = literal else {
-                    return None;
-                };
-                // this maps [0, 1) to [i32::MIN, i32::MAX)
-                // we ceil so that low enough probability still allow for a non-empty range
-                let int = num
-                    .as_f64()?
-                    .mul_add(2.0f64.powi(32) - 1.0, -2.0f64.powi(31))
-                    .ceil() as i64;
-
-                Some(JsonLiteral::Number(int.into()))
-            };
-            let new_bound = match bound {
-                Bound::Included(lit) => Bound::Included(map_literal(lit)?),
-                Bound::Excluded(lit) => Bound::Excluded(map_literal(lit)?),
-                Bound::Unbounded => Bound::Unbounded,
-            };
-            Some(new_bound)
-        }
-
-        let (Some(remapped_lower_bound), Some(remapped_upper_bound)) =
-            (map_bound(lower_bound), map_bound(upper_bound))
-        else {
+        let (Some(remapped_lower_bound), Some(remapped_upper_bound)) = (
+            map_bound_randomdraw_to_tiebreaker(lower_bound),
+            map_bound_randomdraw_to_tiebreaker(upper_bound),
+        ) else {
             return Ok(QueryAst::MatchNone);
         };
         return Ok(RangeQuery {
@@ -187,6 +166,28 @@ fn build_range_query_helper(
         upper_bound,
     }
     .into())
+}
+
+fn map_bound_randomdraw_to_tiebreaker(bound: Bound<JsonLiteral>) -> Option<Bound<JsonLiteral>> {
+    let map_literal = |literal: JsonLiteral| {
+        let JsonLiteral::Number(num) = literal else {
+            return None;
+        };
+        // this maps [0, 1) to [i32::MIN, i32::MAX)
+        // we ceil so that low enough probability still allow for a non-empty range
+        let int = num
+            .as_f64()?
+            .mul_add(2.0f64.powi(32) - 1.0, -2.0f64.powi(31))
+            .ceil() as i64;
+
+        Some(JsonLiteral::Number(int.into()))
+    };
+    let new_bound = match bound {
+        Bound::Included(lit) => Bound::Included(map_literal(lit)?),
+        Bound::Excluded(lit) => Bound::Excluded(map_literal(lit)?),
+        Bound::Unbounded => Bound::Unbounded,
+    };
+    Some(new_bound)
 }
 
 fn build_range_query(range_query: AttributeRangeQueryNode) -> Result<QueryAst, InvalidQuery> {
@@ -559,5 +560,33 @@ mod tests {
             upper_bound: Bound::Excluded(JsonLiteral::Number(Number::from(-1610612736))),
         });
         assert_eq!(ast, expected_ast);
+
+        let zero_percent_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
+            JsonLiteral::Number(Number::from_f64(0.0).unwrap()),
+        ))
+        .unwrap();
+        assert_eq!(
+            zero_percent_bound,
+            Bound::Excluded(JsonLiteral::Number(Number::from(i32::MIN)))
+        );
+
+        let everything_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
+            JsonLiteral::Number(Number::from_f64(1.0).unwrap()),
+        ))
+        .unwrap();
+        assert_eq!(
+            everything_bound,
+            Bound::Excluded(JsonLiteral::Number(Number::from(i32::MAX)))
+        );
+
+        // anything more than zero, we want to return at least some result
+        let non_zero_percent_bound = map_bound_randomdraw_to_tiebreaker(Bound::Excluded(
+            JsonLiteral::Number(Number::from_f64(f64::EPSILON).unwrap()),
+        ))
+        .unwrap();
+        assert_eq!(
+            non_zero_percent_bound,
+            Bound::Excluded(JsonLiteral::Number(Number::from(i32::MIN + 1)))
+        );
     }
 }
