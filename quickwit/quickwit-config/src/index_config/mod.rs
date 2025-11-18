@@ -14,6 +14,7 @@
 
 pub(crate) mod serialize;
 
+use std::collections::HashSet;
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
@@ -565,11 +566,67 @@ pub(super) fn validate_index_config(
     Ok(())
 }
 
+/// Returns the updated doc mapping and a boolean indicating whether a mutation occurred.
+///
+/// The logic goes as follows:
+/// 1. If the new doc mapping is the same as the current doc mapping, ignoring their UIDs, returns
+///    the current doc mapping and `false`, indicating that no mutation occurred.
+/// 2. If the new doc mapping is different from the current doc mapping, verifies the following
+///    constraints before returning the new doc mapping and `true`, indicating that a mutation
+///    occurred:
+///    - The doc mapping UID should differ from the current one
+///    - The timestamp field should remain the same
+///    - The tokenizers should be a superset of the current tokenizers
+///    - A doc mapper can be built from the new doc mapping
+pub fn prepare_doc_mapping_update(
+    mut new_doc_mapping: DocMapping,
+    current_doc_mapping: &DocMapping,
+    search_settings: &SearchSettings,
+) -> anyhow::Result<(DocMapping, bool)> {
+    // Save the new doc mapping UID in a temporary variable and override it with the current doc
+    // mapping UID to compare the two doc mappings, ignoring their UIDs.
+    let new_doc_mapping_uid = new_doc_mapping.doc_mapping_uid;
+    new_doc_mapping.doc_mapping_uid = current_doc_mapping.doc_mapping_uid;
+
+    if new_doc_mapping == *current_doc_mapping {
+        return Ok((new_doc_mapping, false));
+    }
+    // Restore the new doc mapping UID.
+    new_doc_mapping.doc_mapping_uid = new_doc_mapping_uid;
+
+    ensure!(
+        new_doc_mapping.doc_mapping_uid != current_doc_mapping.doc_mapping_uid,
+        "new doc mapping UID should differ from the current one, current UID `{}`, new UID `{}`",
+        current_doc_mapping.doc_mapping_uid,
+        new_doc_mapping.doc_mapping_uid,
+    );
+    let new_timestamp_field = new_doc_mapping.timestamp_field.as_deref();
+    let current_timestamp_field = current_doc_mapping.timestamp_field.as_deref();
+    ensure!(
+        new_timestamp_field == current_timestamp_field,
+        "updating timestamp field is not allowed, current timestamp field `{}`, new timestamp \
+         field `{}`",
+        current_timestamp_field.unwrap_or("none"),
+        new_timestamp_field.unwrap_or("none"),
+    );
+    // TODO: Unsure this constraint is required, should we relax it?
+    let new_tokenizers: HashSet<_> = new_doc_mapping.tokenizers.iter().collect();
+    let current_tokenizers: HashSet<_> = current_doc_mapping.tokenizers.iter().collect();
+    ensure!(
+        new_tokenizers.is_superset(&current_tokenizers),
+        "updating tokenizers is allowed only if adding new tokenizers, current tokenizers \
+         `{current_tokenizers:?}`, new tokenizers `{new_tokenizers:?}`",
+    );
+    build_doc_mapper(&new_doc_mapping, search_settings).context("invalid doc mapping")?;
+    Ok((new_doc_mapping, true))
+}
+
 #[cfg(test)]
 mod tests {
 
     use cron::TimeUnitSpec;
-    use quickwit_doc_mapper::ModeType;
+    use quickwit_doc_mapper::{Mode, ModeType, TokenizerEntry};
+    use quickwit_proto::types::DocMappingUid;
 
     use super::*;
     use crate::ConfigFormat;
@@ -980,5 +1037,97 @@ mod tests {
         "#;
         let error = serde_yaml::from_str::<IngestSettings>(settings_yaml).unwrap_err();
         assert!(error.to_string().contains("expected a nonzero"));
+    }
+
+    #[test]
+    fn test_prepare_doc_mapping_update() {
+        let current_index_config = IndexConfig::for_test("test-index", "s3://test-index");
+        let mut current_doc_mapping = current_index_config.doc_mapping;
+        let search_settings = current_index_config.search_settings;
+
+        let tokenizer_json = r#"
+            {
+                "name": "breton-tokenizer",
+                "type": "regex",
+                "pattern": "crêpes*"
+            }
+            "#;
+        let tokenizer: TokenizerEntry = serde_json::from_str(tokenizer_json).unwrap();
+
+        current_doc_mapping.tokenizers.push(tokenizer.clone());
+
+        // The new doc mapping should have a different doc mapping UID.
+        let mut new_doc_mapping = current_doc_mapping.clone();
+        new_doc_mapping.store_source = false; // This is set to `true` for the current doc mapping.
+        let error =
+            prepare_doc_mapping_update(new_doc_mapping, &current_doc_mapping, &search_settings)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("doc mapping UID should differ"));
+
+        // The new doc mapping should not change the timestamp field.
+        let mut new_doc_mapping = current_doc_mapping.clone();
+        new_doc_mapping.doc_mapping_uid = DocMappingUid::random();
+        new_doc_mapping.timestamp_field = Some("ts".to_string()); // This is set to `timestamp` for the current doc mapping.
+        let error =
+            prepare_doc_mapping_update(new_doc_mapping, &current_doc_mapping, &search_settings)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("timestamp field"));
+
+        // The new doc mapping should not remove the timestamp field.
+        let mut new_doc_mapping = current_doc_mapping.clone();
+        new_doc_mapping.doc_mapping_uid = DocMappingUid::random();
+        new_doc_mapping.timestamp_field = None;
+        let error =
+            prepare_doc_mapping_update(new_doc_mapping, &current_doc_mapping, &search_settings)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("timestamp field"));
+
+        // The new doc mapping should not remove tokenizers.
+        let mut new_doc_mapping = current_doc_mapping.clone();
+        new_doc_mapping.doc_mapping_uid = DocMappingUid::random();
+        new_doc_mapping.tokenizers.clear();
+        let error =
+            prepare_doc_mapping_update(new_doc_mapping, &current_doc_mapping, &search_settings)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("tokenizers"));
+
+        // The new doc mapping should be "buildable" into a doc mapper.
+        let mut new_doc_mapping = current_doc_mapping.clone();
+        new_doc_mapping.doc_mapping_uid = DocMappingUid::random();
+        new_doc_mapping.tokenizers.push(tokenizer);
+        let error =
+            prepare_doc_mapping_update(new_doc_mapping, &current_doc_mapping, &search_settings)
+                .unwrap_err()
+                .source()
+                .unwrap()
+                .to_string();
+        assert!(error.contains("duplicated custom tokenizer"));
+
+        let mut new_doc_mapping = current_doc_mapping.clone();
+        new_doc_mapping.doc_mapping_uid = DocMappingUid::random();
+        let (updated_doc_mapping, mutation_occurred) =
+            prepare_doc_mapping_update(new_doc_mapping, &current_doc_mapping, &search_settings)
+                .unwrap();
+        assert!(!mutation_occurred);
+        assert_eq!(
+            updated_doc_mapping.doc_mapping_uid,
+            current_doc_mapping.doc_mapping_uid
+        );
+        assert_eq!(updated_doc_mapping, current_doc_mapping);
+
+        let mut new_doc_mapping = current_doc_mapping.clone();
+        let new_doc_mapping_uid = DocMappingUid::random();
+        new_doc_mapping.doc_mapping_uid = new_doc_mapping_uid;
+        new_doc_mapping.mode = Mode::Strict;
+        let (updated_doc_mapping, mutation_occurred) =
+            prepare_doc_mapping_update(new_doc_mapping, &current_doc_mapping, &search_settings)
+                .unwrap();
+        assert!(mutation_occurred);
+        assert_eq!(updated_doc_mapping.doc_mapping_uid, new_doc_mapping_uid);
+        assert_eq!(updated_doc_mapping.mode, Mode::Strict);
     }
 }
