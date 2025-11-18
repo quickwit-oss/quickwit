@@ -73,4 +73,13 @@ data: |
       "text": "Test log message"
     }]
 status_code: 200
+---
+# Accept any header
+method: POST
+endpoint: /api/v2/logs
+headers:
+  Content-Type: header? nono, we accept everything
+data: |
+    "accept this header, mkay?"
+status_code: 200
 

@@ -84,10 +84,6 @@ pub(crate) fn datadog_logs_filter()
         .unify();
     path_filter
         .and(warp::post())
-        .and(warp::header::exact_ignore_case(
-            "content-type",
-            "application/json",
-        ))
         .and(get_body_bytes())
         .and(warp::query::<DatadogLogsQueryParams>())
 }
@@ -96,7 +92,7 @@ pub(crate) fn datadog_logs_filter()
     post,
     tag = "Datadog Logs",
     path = "/api/v2/logs",
-    request_body(content = String, description = "Datadog Log JSON message", content_type = "application/json"),
+    request_body(content = String, description = "Datadog Log JSON message or a String"),
     responses(
         (status = 200, description = "Successfully exported logs.", body = bool),
     ),
@@ -151,10 +147,9 @@ fn try_parse_datadog_log_messages(body: &Body) -> Result<Vec<DatadogLogMsg>, Dat
         return Ok(messages);
     }
 
-    // Try to parse it as a Vec of JSON objects (maps)
-    if let Ok(messages_json) = serde_json::from_slice::<
-        Vec<serde_json::Map<std::string::String, serde_json::Value>>,
-    >(&body.content)
+    // Try to parse it as a Vec of JSON objects
+    if let Ok(messages_json) =
+        serde_json::from_slice::<Vec<serde_json::Map<String, serde_json::Value>>>(&body.content)
     {
         let mut messages: Vec<DatadogLogMsg> = Vec::with_capacity(messages_json.len());
         for message_json in messages_json {
@@ -178,9 +173,8 @@ fn try_parse_datadog_log_messages(body: &Body) -> Result<Vec<DatadogLogMsg>, Dat
     }
 
     // try to parse it as a single JSON object (map)
-    if let Ok(message_json) = serde_json::from_slice::<
-        serde_json::Map<std::string::String, serde_json::Value>,
-    >(&body.content)
+    if let Ok(message_json) =
+        serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&body.content)
     {
         let message: DatadogLogMsg = DatadogLogMsg {
             message: MessageValue::Obj(message_json),
@@ -229,10 +223,6 @@ async fn datadog_ingest_logs(
         return Ok(());
     }
     let doc_batch_fut = quickwit_common::thread_pool::run_cpu_intensive(move || {
-        // TODO: We could just validate + get the byte bounds of each object instead of the more
-        // expensive serde_json rountrip.
-        // e.g. Vec<RawValue> + validation
-
         let mut messages = try_parse_datadog_log_messages(&body)?;
         // Apply URL parameter overrides to each message, if present.
         if query.service.is_some()
