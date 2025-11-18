@@ -14,7 +14,7 @@
 
 use std::time::Instant;
 
-use pomchi::DatadogLogMsg;
+use pomchi::{DatadogLogMsg, MessageValue};
 use quickwit_common::dd_metrics::DD_INGEST_METRICS;
 use quickwit_common::rate_limited_error;
 use quickwit_config::INGEST_V2_SOURCE_ID;
@@ -84,10 +84,6 @@ pub(crate) fn datadog_logs_filter()
         .unify();
     path_filter
         .and(warp::post())
-        .and(warp::header::exact_ignore_case(
-            "content-type",
-            "application/json",
-        ))
         .and(get_body_bytes())
         .and(warp::query::<DatadogLogsQueryParams>())
 }
@@ -96,7 +92,7 @@ pub(crate) fn datadog_logs_filter()
     post,
     tag = "Datadog Logs",
     path = "/api/v2/logs",
-    request_body(content = String, description = "Datadog Log JSON message", content_type = "application/json"),
+    request_body(content = String, description = "Datadog Log JSON message or a String"),
     responses(
         (status = 200, description = "Successfully exported logs.", body = bool),
     ),
@@ -145,6 +141,71 @@ impl ServiceError for DatadogApiError {
     }
 }
 
+fn try_parse_datadog_log_messages(body: &Body) -> Result<Vec<DatadogLogMsg>, DatadogApiError> {
+    // Try to parse it as vec of DatadogLogMsg
+    if let Ok(messages) = serde_json::from_slice::<Vec<DatadogLogMsg>>(&body.content) {
+        return Ok(messages);
+    }
+
+    // Try to parse it as a Vec of JSON objects
+    if let Ok(messages_json) =
+        serde_json::from_slice::<Vec<serde_json::Map<String, serde_json::Value>>>(&body.content)
+    {
+        let mut messages: Vec<DatadogLogMsg> = Vec::with_capacity(messages_json.len());
+        for message_json in messages_json {
+            let message: DatadogLogMsg = DatadogLogMsg {
+                message: MessageValue::Obj(message_json),
+                status: None,
+                timestamp: None,
+                hostname: None,
+                service: None,
+                ddsource: None,
+                ddtags: Vec::new(),
+            };
+            messages.push(message);
+        }
+        return Ok(messages);
+    }
+
+    // try to parse it as a single DatadogLogMsg
+    if let Ok(message) = serde_json::from_slice::<DatadogLogMsg>(&body.content) {
+        return Ok(vec![message]);
+    }
+
+    // try to parse it as a single JSON object (map)
+    if let Ok(message_json) =
+        serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(&body.content)
+    {
+        let message: DatadogLogMsg = DatadogLogMsg {
+            message: MessageValue::Obj(message_json),
+            status: None,
+            timestamp: None,
+            hostname: None,
+            service: None,
+            ddsource: None,
+            ddtags: Vec::new(),
+        };
+        return Ok(vec![message]);
+    }
+
+    // Fallback: If JSON parsing fails, treat as plain text
+    let text = String::from_utf8(body.content.to_vec()).map_err(|utf8_err| {
+        DatadogApiError::InvalidPayload(serde_json::Error::io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("payload is not valid UTF-8: {}", utf8_err),
+        )))
+    })?;
+    Ok(vec![DatadogLogMsg {
+        message: text.into(),
+        status: None,
+        timestamp: None,
+        hostname: None,
+        service: None,
+        ddsource: None,
+        ddtags: Vec::new(),
+    }])
+}
+
 async fn datadog_ingest_logs(
     ingest_router: IngestRouterServiceClient,
     index_id: IndexId,
@@ -162,33 +223,7 @@ async fn datadog_ingest_logs(
         return Ok(());
     }
     let doc_batch_fut = quickwit_common::thread_pool::run_cpu_intensive(move || {
-        // TODO: We could just validate + get the byte bounds of each object instead of the more
-        // expensive serde_json rountrip.
-        // e.g. Vec<RawValue> + validation
-
-        let mut messages = match serde_json::from_slice::<Vec<DatadogLogMsg>>(&body.content) {
-            Ok(messages) => messages,
-            Err(_) => {
-                // If JSON parsing fails, treat as plain text
-                let text = String::from_utf8(body.content.to_vec()).map_err(|utf8_err| {
-                    DatadogApiError::InvalidPayload(serde_json::Error::io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("payload is not valid UTF-8: {}", utf8_err),
-                    )))
-                })?;
-                // TODO: Try to parse text as JSON object
-                vec![DatadogLogMsg {
-                    message: text.into(),
-                    status: None,
-                    timestamp: None,
-                    hostname: None,
-                    service: None,
-                    ddsource: None,
-                    ddtags: Vec::new(),
-                }]
-            }
-        };
-
+        let mut messages = try_parse_datadog_log_messages(&body)?;
         // Apply URL parameter overrides to each message, if present.
         if query.service.is_some()
             || query.hostname.is_some()

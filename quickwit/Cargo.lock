@@ -6341,7 +6341,7 @@ dependencies = [
 [[package]]
 name = "pomchi"
 version = "0.1.0"
-source = "git+ssh://git@github.com/DataDog/PomChi.git?rev=b94e8c9#b94e8c9af12fd4146955b0b8ea2c5a02fd18cb83"
+source = "git+ssh://git@github.com/DataDog/PomChi.git?rev=f7dd3f6#f7dd3f6edb595b60e8542215f39871aaad2dffe4"
 dependencies = [
  "bytes",
  "chrono",
