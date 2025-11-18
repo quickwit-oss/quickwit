@@ -44,4 +44,33 @@ headers:
   Content-Type: application/json
 data: "some text"
 status_code: 200
+---
+# Accept single object
+method: POST
+endpoint: /api/v2/logs
+headers:
+  Content-Type: application/json
+data: |
+    {
+      "message": "Test log message",
+      "status": "INFO",
+      "timestamp": 1740411608806,
+      "hostname": "test-host",
+      "service": "service123",
+      "ddsource": "rust",
+      "ddtags": "env:dev,region:us-east"
+    }
+status_code: 200
+---
+# Accept json array without message field
+method: POST
+endpoint: /api/v2/logs
+headers:
+  Content-Type: application/json
+data: |
+    [{
+      "service": "service123",
+      "text": "Test log message"
+    }]
+status_code: 200
 
