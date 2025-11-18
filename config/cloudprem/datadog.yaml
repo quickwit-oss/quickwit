@@ -3,6 +3,9 @@ version: 0.9
 
 index_id: datadog
 
+ingest_settings:
+  validate_docs: false
+
 indexing_settings:
   commit_timeout_secs: 30
 
