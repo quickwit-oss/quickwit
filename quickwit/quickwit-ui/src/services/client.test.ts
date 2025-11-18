@@ -12,39 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { SearchRequest } from '../utils/models';
-import { Client } from './client';
+import { SearchRequest } from "../utils/models";
+import { Client } from "./client";
 
-describe('Client unit test', () => {
-    it('Should construct correct search URL', async () => {
-        // Mocking the fetch function to simulate network requests
-        const mockFetch = jest.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }));
-        (global as any).fetch = mockFetch; // eslint-disable-line @typescript-eslint/no-explicit-any
+describe("Client unit test", () => {
+  it("Should construct correct search URL", async () => {
+    // Mocking the fetch function to simulate network requests
+    const mockFetch = jest.fn(() =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    );
+    (global as any).fetch = mockFetch; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-        const searchRequest: SearchRequest = {
-            indexId: 'my-new-fresh-index-id',
-            query: 'severity_error:ERROR',
-            startTimestamp: 100,
-            endTimestamp: 200,
-            maxHits: 20,
-            sortByField: {
-              field_name: 'timestamp',
-              order: 'Desc',
-            },
-            aggregation: false,
-            aggregationConfig: {
-              metric: null,
-              term: null,
-              histogram: null,
-            },
-        };
+    const searchRequest: SearchRequest = {
+      indexId: "my-new-fresh-index-id",
+      query: "severity_error:ERROR",
+      startTimestamp: 100,
+      endTimestamp: 200,
+      maxHits: 20,
+      sortByField: {
+        field_name: "timestamp",
+        order: "Desc",
+      },
+      aggregation: false,
+      aggregationConfig: {
+        metric: null,
+        term: null,
+        histogram: null,
+      },
+    };
 
-        const client = new Client();
-        expect(client.buildSearchBody(searchRequest, null)).toBe('{"query":"severity_error:ERROR","max_hits":20,"start_timestamp":100,"end_timestamp":200,"sort_by_field":"+timestamp"}');
+    const client = new Client();
+    expect(client.buildSearchBody(searchRequest, null)).toBe(
+      '{"query":"severity_error:ERROR","max_hits":20,"start_timestamp":100,"end_timestamp":200,"sort_by_field":"+timestamp"}',
+    );
 
-        await client.search(searchRequest, null);
-        const expectedUrl = `${client.apiRoot()}my-new-fresh-index-id/search`;
-        expect(mockFetch).toHaveBeenCalledTimes(1);
-        expect(mockFetch).toHaveBeenCalledWith(expectedUrl, expect.any(Object));
-    });
+    await client.search(searchRequest, null);
+    const expectedUrl = `${client.apiRoot()}my-new-fresh-index-id/search`;
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockFetch).toHaveBeenCalledWith(expectedUrl, expect.any(Object));
+  });
 });

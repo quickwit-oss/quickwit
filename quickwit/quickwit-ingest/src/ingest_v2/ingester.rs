@@ -514,7 +514,7 @@ impl Ingester {
                     continue;
                 }
                 let doc_mapper = shard.doc_mapper_opt.clone().expect("shard should be open");
-                let validate_shard = shard.validate;
+                let validate_docs = shard.validate_docs;
                 let follower_id_opt = shard.follower_id_opt().cloned();
                 let from_position_exclusive = shard.replication_position_inclusive.clone();
 
@@ -570,7 +570,7 @@ impl Ingester {
                 // Total number of bytes (valid and invalid documents)
                 let original_batch_num_bytes = doc_batch.num_bytes() as u64;
 
-                let (valid_doc_batch, parse_failures) = if validate_shard {
+                let (valid_doc_batch, parse_failures) = if validate_docs {
                     validate_doc_batch(doc_batch, doc_mapper).await?
                 } else {
                     (doc_batch, Vec::new())

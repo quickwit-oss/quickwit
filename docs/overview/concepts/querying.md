@@ -3,11 +3,6 @@ title: Querying
 sidebar_position: 2
 ---
 
-Quickwit provides two endpoints with full-text search queries identified by the `query` parameter:
-
-- A search endpoint that returns a [JSON](../../reference/rest-api.md)
-- A search stream endpoint that returns a stream of the requested [field values](../../reference/rest-api.md)
-
 A search query received by a searcher will be executed using a map-reduce approach following these steps:
 
 1. The Searcher identifies relevant splits based on the request’s [timestamp interval](#time-sharding) and [tags](#tag-pruning).
@@ -89,10 +84,6 @@ When using `hash_mod` with a tuple of key like in `hash_mod((tenant_id,app_id), 
 For instance, if tenant\_1,app\_1 and tenant\_2,app\_2 are both sent to partition one, but tenant\_1,app\_2 is sent to partition two, a query for tenant\_1,app\_2 will
 still search inside the 1st partition as it will be tagged with tenant\_1,tenant\_2,app\_1 and app\_2. You should therefore prefer a partition key such as
 `hash_mod(tenant_id, 10),hash_mod(app_id, 5)` which will generate as many splits, but with better tags.
-
-### Search stream query limits
-
-Search stream queries can take a huge amount of RAM. Quickwit limits the number of concurrent search streams per split to 100 by default. You can adjust this limit by setting the value of the searcher configuration property called `max_num_concurrent_split_streams` in the configuration file.
 
 ### Caching
 

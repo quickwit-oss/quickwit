@@ -14,7 +14,7 @@
 
 import { Box, Breadcrumbs, styled } from "@mui/material";
 
-export const APP_BAR_HEIGHT_PX = '48px';
+export const APP_BAR_HEIGHT_PX = "48px";
 export const ViewUnderAppBarBox = styled(Box)`
 display: flex;
 flex-direction: column;
@@ -31,4 +31,4 @@ padding: 16px 24px;
 `;
 export const QBreadcrumbs = styled(Breadcrumbs)`
 padding-bottom: 8px;
-`
+`;

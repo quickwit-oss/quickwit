@@ -52,7 +52,7 @@ pub(super) struct IngesterShard {
     pub doc_mapper_opt: Option<Arc<DocMapper>>,
     /// Whether to validate documents in this shard. True if no preprocessing (VRL) will happen
     /// before indexing.
-    pub validate: bool,
+    pub validate_docs: bool,
     pub shard_status_tx: watch::Sender<ShardStatus>,
     pub shard_status_rx: watch::Receiver<ShardStatus>,
     /// Instant at which the shard was last written to.
@@ -67,7 +67,7 @@ impl IngesterShard {
         truncation_position_inclusive: Position,
         doc_mapper: Arc<DocMapper>,
         now: Instant,
-        validate: bool,
+        validate_docs: bool,
     ) -> Self {
         let shard_status = (shard_state, replication_position_inclusive.clone());
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
@@ -78,7 +78,7 @@ impl IngesterShard {
             truncation_position_inclusive,
             is_advertisable: false,
             doc_mapper_opt: Some(doc_mapper),
-            validate,
+            validate_docs,
             shard_status_tx,
             shard_status_rx,
             last_write_instant: now,
@@ -103,7 +103,7 @@ impl IngesterShard {
             // anyway.
             is_advertisable: false,
             doc_mapper_opt: None,
-            validate: false,
+            validate_docs: false,
             shard_status_tx,
             shard_status_rx,
             last_write_instant: now,
@@ -116,7 +116,7 @@ impl IngesterShard {
         truncation_position_inclusive: Position,
         doc_mapper_opt: Option<Arc<DocMapper>>,
         now: Instant,
-        validate: bool,
+        validate_docs: bool,
     ) -> Self {
         let shard_status = (shard_state, replication_position_inclusive.clone());
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
@@ -127,7 +127,7 @@ impl IngesterShard {
             truncation_position_inclusive,
             is_advertisable: false,
             doc_mapper_opt,
-            validate,
+            validate_docs,
             shard_status_tx,
             shard_status_rx,
             last_write_instant: now,

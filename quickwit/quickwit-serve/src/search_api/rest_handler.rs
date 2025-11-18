@@ -264,6 +264,7 @@ pub fn search_request_from_api_request(
         scroll_ttl_secs: None,
         search_after: None,
         count_hits: search_request.count_all.into(),
+        ignore_missing_indexes: false,
     };
     Ok(search_request)
 }

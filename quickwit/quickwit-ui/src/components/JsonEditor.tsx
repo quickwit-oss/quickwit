@@ -12,47 +12,55 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import MonacoEditor from 'react-monaco-editor';
 import { useCallback } from "react";
+import MonacoEditor from "react-monaco-editor";
 import { EDITOR_THEME } from "../utils/theme";
 
-export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOnMount: boolean}) {
+export function JsonEditor({
+  content,
+  resizeOnMount,
+}: {
+  content: unknown;
+  resizeOnMount: boolean;
+}) {
   // Setting editor height based on lines height and count to stretch and fit its content.
-  const onMount = useCallback((editor) => {
-    if (!resizeOnMount) {
-      return;
-    }
-    const editorElement = editor.getDomNode();
+  const onMount = useCallback(
+    (editor) => {
+      if (!resizeOnMount) {
+        return;
+      }
+      const editorElement = editor.getDomNode();
 
-    if (!editorElement) {
-      return;
-    }
+      if (!editorElement) {
+        return;
+      }
 
-    // Weirdly enough, we have to wait a few ms to get the right height
-    // from `editor.getContentHeight()`. If not, we sometimes end up with
-    // a height > 7000px... and I don't know why.
-    setTimeout(() => {
-      const height = Math.min(800, editor.getContentHeight());
-      editorElement.style.height = `${height}px`;
-      editor.layout();
-    }, 10);
-
-  }, [resizeOnMount]);
+      // Weirdly enough, we have to wait a few ms to get the right height
+      // from `editor.getContentHeight()`. If not, we sometimes end up with
+      // a height > 7000px... and I don't know why.
+      setTimeout(() => {
+        const height = Math.min(800, editor.getContentHeight());
+        editorElement.style.height = `${height}px`;
+        editor.layout();
+      }, 10);
+    },
+    [resizeOnMount],
+  );
 
   /* eslint-disable  @typescript-eslint/no-explicit-any */
   function beforeMount(monaco: any) {
-    monaco.editor.defineTheme('quickwit-light', EDITOR_THEME);
+    monaco.editor.defineTheme("quickwit-light", EDITOR_THEME);
   }
 
   return (
     <MonacoEditor
-      language='json'
+      language="json"
       value={JSON.stringify(content, null, 2)}
       editorWillMount={beforeMount}
       editorDidMount={onMount}
       options={{
         readOnly: true,
-        fontFamily: 'monospace',
+        fontFamily: "monospace",
         overviewRulerBorder: false,
         overviewRulerLanes: 0,
         minimap: {
@@ -66,10 +74,10 @@ export function JsonEditor({content, resizeOnMount}: {content: unknown, resizeOn
         fixedOverflowWidgets: true,
         scrollBeyondLastLine: false,
         automaticLayout: true,
-        wordWrap: 'on',
-        wrappingIndent: 'deepIndent',
+        wordWrap: "on",
+        wrappingIndent: "deepIndent",
       }}
-      theme='quickwit-light'
+      theme="quickwit-light"
     />
-  )
+  );
 }

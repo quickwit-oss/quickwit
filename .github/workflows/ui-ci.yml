@@ -17,17 +17,14 @@ on:
 env:
   CP_ENABLE_REVERSE_CONNECTION: false
 
-permissions:
-  contents: read
-
 jobs:
   tests:
     name: ${{ matrix.task.name }}
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: read
       id-token: write
-      actions: write
     strategy:
       fail-fast: false
       matrix:
@@ -35,7 +32,6 @@ jobs:
           - name: Cypress run
             command: |
               sudo apt-get -y install protobuf-compiler
-              rustup show active-toolchain || rustup toolchain install
               CI=false yarn --cwd quickwit-ui build
               RUSTFLAGS="--cfg tokio_unstable" cargo build --features=postgres
               mkdir qwdata
@@ -43,6 +39,8 @@ jobs:
               yarn --cwd quickwit-ui cypress run
           - name: Lint
             command: yarn --cwd quickwit-ui lint
+          - name: Check formatting
+            command: yarn --cwd quickwit-ui check-formatting
           - name: Unit Test
             command: yarn --cwd quickwit-ui test
     services:
@@ -69,6 +67,7 @@ jobs:
       QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
       - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
         id: octo-sts
         with:
@@ -82,13 +81,16 @@ jobs:
           echo "::add-mask::${GH_TOKEN}"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
+
       - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
         with:
           node-version: 20
           cache: "yarn"
           cache-dependency-path: quickwit/quickwit-ui/yarn.lock
-      - name: Install rustup
-        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
+      - name: Setup stable Rust Toolchain
+        uses: dtolnay/rust-toolchain@6d653acede28d24f02e3cd41383119e8b1b35921 # master
+        with:
+          toolchain: stable
       - name: Install JS dependencies
         run: yarn --cwd quickwit-ui install
         working-directory: ./quickwit

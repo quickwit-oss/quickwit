@@ -37,9 +37,9 @@ const MAX_GET_KV_ATTEMPTS: usize = 6;
 /// We attempt to store our KVs on two nodes.
 const TARGET_NUM_REPLICATION: usize = 2;
 
-/// Client that executes placed requests (Request, `SearchServiceClient`) and provides
-/// retry policies for `FetchDocsRequest`, `LeafSearchRequest` and `LeafSearchStreamRequest`
-/// to retry on other `SearchServiceClient`.
+/// Client that executes placed requests (Request, `SearchServiceClient`) and
+/// provides retry policies for `FetchDocsRequest` and `LeafSearchRequest` to
+/// retry on other `SearchServiceClient`.
 #[derive(Clone)]
 pub struct ClusterClient {
     pub(crate) search_job_placer: SearchJobPlacer,

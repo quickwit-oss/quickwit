@@ -366,6 +366,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // request is simplified after initial query, and we cache the hit count, so we don't need
         // to recompute it afterward.
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
+        ignore_missing_indexes: req.ignore_missing_indexes,
     })
 }
 
@@ -1156,7 +1157,12 @@ async fn plan_splits_for_root_search(
         .deserialize_indexes_metadata()
         .await?;
 
-    check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
+    if !search_request.ignore_missing_indexes {
+        check_all_index_metadata_found(
+            &indexes_metadata[..],
+            &search_request.index_id_patterns[..],
+        )?;
+    }
 
     if indexes_metadata.is_empty() {
         return Ok((Vec::new(), HashMap::default()));
@@ -1243,7 +1249,12 @@ pub async fn search_plan(
         .deserialize_indexes_metadata()
         .await?;
 
-    check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
+    if !search_request.ignore_missing_indexes {
+        check_all_index_metadata_found(
+            &indexes_metadata[..],
+            &search_request.index_id_patterns[..],
+        )?;
+    }
     if indexes_metadata.is_empty() {
         return Ok(SearchPlanResponse {
             result: serde_json::to_string(&SearchPlanResponseRest {
@@ -3241,6 +3252,102 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_root_search_missing_index() -> anyhow::Result<()> {
+        let mut mock_metastore = MockMetastoreService::new();
+        let index_metadata = IndexMetadata::for_test("test-index1", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_index_ids_query| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone(),
+                ]))
+            });
+        mock_metastore
+            .expect_list_splits()
+            .returning(move |_list_splits_request| {
+                let splits = vec![
+                    MockSplitBuilder::new("split1")
+                        .with_index_uid(&index_uid)
+                        .build(),
+                ];
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
+            });
+        let mock_metastore_client = MetastoreServiceClient::from_mock(mock_metastore);
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service.expect_leaf_search().returning(
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
+                    num_hits: 3,
+                    partial_hits: vec![
+                        mock_partial_hit("split1", 3, 1),
+                        mock_partial_hit("split1", 2, 2),
+                        mock_partial_hit("split1", 1, 3),
+                    ],
+                    failed_splits: Vec::new(),
+                    num_attempted_splits: 1,
+                    ..Default::default()
+                })
+            },
+        );
+        mock_search_service.expect_fetch_docs().returning(
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
+                    hits: get_doc_for_fetch_req(fetch_docs_req),
+                })
+            },
+        );
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
+
+        let searcher_context = SearcherContext::for_test();
+
+        // search with ignore_missing_indexes=true succeeds
+        let search_request = quickwit_proto::search::SearchRequest {
+            index_id_patterns: vec!["test-index1".to_string(), "test-index2".to_string()],
+            query_ast: qast_json_helper("test", &["body"]),
+            max_hits: 10,
+            ignore_missing_indexes: true,
+            ..Default::default()
+        };
+        let search_response = root_search(
+            &searcher_context,
+            search_request,
+            mock_metastore_client.clone(),
+            &cluster_client,
+        )
+        .await
+        .unwrap();
+        assert_eq!(search_response.num_hits, 3);
+        assert_eq!(search_response.hits.len(), 3);
+
+        // search with ignore_missing_indexes=false fails
+        let search_request = quickwit_proto::search::SearchRequest {
+            index_id_patterns: vec!["test-index1".to_string(), "test-index2".to_string()],
+            query_ast: qast_json_helper("test", &["body"]),
+            max_hits: 10,
+            ignore_missing_indexes: false,
+            ..Default::default()
+        };
+        let search_error = root_search(
+            &searcher_context,
+            search_request,
+            mock_metastore_client,
+            &cluster_client,
+        )
+        .await
+        .unwrap_err();
+        if let SearchError::IndexesNotFound { index_ids } = search_error {
+            assert_eq!(index_ids, vec!["test-index2".to_string()]);
+        } else {
+            panic!("unexpected error type: {search_error}");
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_root_search_multiple_splits_retry_on_other_node() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
@@ -4109,6 +4216,69 @@ mod tests {
                 },
             }
         );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_search_plan_missing_index() -> anyhow::Result<()> {
+        let mut mock_metastore = MockMetastoreService::new();
+        let index_metadata = IndexMetadata::for_test("test-index1", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_index_ids_query| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone(),
+                ]))
+            });
+        mock_metastore
+            .expect_list_splits()
+            .returning(move |_filter| {
+                let splits = vec![
+                    MockSplitBuilder::new("split1")
+                        .with_index_uid(&index_uid)
+                        .build(),
+                    MockSplitBuilder::new("split2")
+                        .with_index_uid(&index_uid)
+                        .build(),
+                ];
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
+            });
+        let mock_metastore_service = MetastoreServiceClient::from_mock(mock_metastore);
+
+        // plan with ignore_missing_indexes=true succeeds
+        search_plan(
+            quickwit_proto::search::SearchRequest {
+                index_id_patterns: vec!["test-index1".to_string(), "test-index2".to_string()],
+                query_ast: qast_json_helper("test-query", &["body"]),
+                max_hits: 10,
+                ignore_missing_indexes: true,
+                ..Default::default()
+            },
+            mock_metastore_service.clone(),
+        )
+        .await
+        .unwrap();
+
+        // plan with ignore_missing_indexes=false fails
+        let search_error = search_plan(
+            quickwit_proto::search::SearchRequest {
+                index_id_patterns: vec!["test-index1".to_string(), "test-index2".to_string()],
+                query_ast: qast_json_helper("test-query", &["body"]),
+                max_hits: 10,
+                ignore_missing_indexes: false,
+                ..Default::default()
+            },
+            mock_metastore_service.clone(),
+        )
+        .await
+        .unwrap_err();
+        if let SearchError::IndexesNotFound { index_ids } = search_error {
+            assert_eq!(index_ids, vec!["test-index2".to_string()]);
+        } else {
+            panic!("unexpected error type: {search_error}");
+        }
         Ok(())
     }
 

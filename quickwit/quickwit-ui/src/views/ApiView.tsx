@@ -12,19 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import "swagger-ui-react/swagger-ui.css"
-import SwaggerUI from 'swagger-ui-react'
-import { ViewUnderAppBarBox, FullBoxContainer } from '../components/LayoutUtils';
+import "swagger-ui-react/swagger-ui.css";
+import SwaggerUI from "swagger-ui-react";
+import {
+  FullBoxContainer,
+  ViewUnderAppBarBox,
+} from "../components/LayoutUtils";
 
 function ApiView() {
-    return <ViewUnderAppBarBox>
+  return (
+    <ViewUnderAppBarBox>
       <FullBoxContainer>
         <SwaggerUI
-        layout="BaseLayout"
-        defaultModelsExpandDepth={-1}
-        url="/openapi.json"/>
+          layout="BaseLayout"
+          defaultModelsExpandDepth={-1}
+          url="/openapi.json"
+        />
       </FullBoxContainer>
     </ViewUnderAppBarBox>
+  );
 }
 
 export default ApiView;

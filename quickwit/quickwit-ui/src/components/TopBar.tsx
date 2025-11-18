@@ -12,21 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import AppBar from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
-import GitHubIcon from '@mui/icons-material/GitHub';
-import { Box, IconButton, Link, styled, SvgIcon, Tooltip, Typography } from '@mui/material';
-import { Discord } from '@styled-icons/fa-brands/Discord';
-import { ReactComponent as Logo } from '../assets/img/quickwit-logo.svg';
-import { Client } from '../services/client';
-import { useEffect, useMemo, useState } from 'react';
+import GitHubIcon from "@mui/icons-material/GitHub";
+import {
+  Box,
+  IconButton,
+  Link,
+  SvgIcon,
+  styled,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import AppBar from "@mui/material/AppBar";
+import Toolbar from "@mui/material/Toolbar";
+import { Discord } from "@styled-icons/fa-brands/Discord";
+import { useEffect, useMemo, useState } from "react";
+import { ReactComponent as Logo } from "../assets/img/quickwit-logo.svg";
+import { Client } from "../services/client";
 
-const StyledAppBar = styled(AppBar)(({ theme })=>({
+const StyledAppBar = styled(AppBar)(({ theme }) => ({
   zIndex: theme.zIndex.drawer + 1,
 }));
 
 // Update the Button's color prop options
-declare module '@mui/material/AppBar' {
+declare module "@mui/material/AppBar" {
   interface AppBarPropsColorOverrides {
     neutral: true;
   }
@@ -37,24 +45,30 @@ const TopBar = () => {
   const quickwitClient = useMemo(() => new Client(), []);
 
   useEffect(() => {
-    quickwitClient.cluster().then(cluster => {
+    quickwitClient.cluster().then((cluster) => {
       setClusterId(cluster.cluster_id);
     });
-  }, [])
+  }, []);
 
   return (
     <StyledAppBar position="fixed" elevation={0} color="neutral">
       <Toolbar variant="dense">
-        <Box sx={{ flexGrow: 1, p: 0, m: 0, display: 'flex', alignItems: 'center' }}>
-          <Logo height='25px'></Logo>
+        <Box
+          sx={{
+            flexGrow: 1,
+            p: 0,
+            m: 0,
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <Logo height="25px"></Logo>
           <Tooltip title="Cluster ID" placement="right">
-            <Typography mx={2}>
-              {clusterId}
-            </Typography>
+            <Typography mx={2}>{clusterId}</Typography>
           </Tooltip>
         </Box>
         <Link href="https://quickwit.io/docs" target="_blank" sx={{ px: 2 }}>
-            Docs
+          Docs
         </Link>
         <Link href="https://discord.gg/rpRRTezWhW" target="_blank">
           <IconButton size="large">

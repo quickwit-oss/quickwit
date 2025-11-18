@@ -134,6 +134,7 @@ impl CloudPremService for CloudPremServiceImpl {
             scroll_ttl_secs: None,
             search_after,
             count_hits: count_hits.into(),
+            ignore_missing_indexes: false,
         };
 
         let response = self
@@ -216,6 +217,7 @@ impl CloudPremService for CloudPremServiceImpl {
             scroll_ttl_secs: None,
             search_after: None,
             count_hits: CountHits::Underestimate.into(),
+            ignore_missing_indexes: false,
         };
 
         let search_response: SearchResponse =
@@ -295,6 +297,7 @@ impl CloudPremService for CloudPremServiceImpl {
             scroll_ttl_secs: None,
             search_after: None,
             count_hits: CountHits::Underestimate.into(),
+            ignore_missing_indexes: false,
         };
 
         let response = self

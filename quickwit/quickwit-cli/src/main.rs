@@ -126,7 +126,6 @@ fn about_text() -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
     use std::str::FromStr;
     use std::time::Duration;
 
@@ -676,7 +675,7 @@ mod tests {
                 split_id,
                 target_dir,
                 ..
-            })) if &index_id == "wikipedia" && &split_id == "ABC" && target_dir == PathBuf::from("datadir")
+            })) if &index_id == "wikipedia" && &split_id == "ABC" && target_dir == *"datadir"
         ));
         Ok(())
     }

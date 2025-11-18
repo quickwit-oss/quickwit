@@ -104,3 +104,25 @@ expected:
               $expect: "len(val) == 1" # Contains only 'actor'
               actor:
                 id: 5688
+---
+# test missing index
+endpoint: "_msearch"
+method: POST
+ndjson:
+  - {"index":"idontexist"}
+  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0}
+expected:
+  responses:
+    - status: 404
+---
+endpoint: "_msearch"
+method: POST
+ndjson:
+  - {"index":"idontexist", "ignore_unavailable": true}
+  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0}
+expected:
+  responses:
+    - hits:
+        total:
+          value: 0
+      status: 200

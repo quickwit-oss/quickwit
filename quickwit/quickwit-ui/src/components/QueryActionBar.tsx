@@ -12,57 +12,63 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Box, Button, Tabs, Tab } from "@mui/material";
-import { TimeRangeSelect } from './TimeRangeSelect';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import { Box, Button, Tab, Tabs } from "@mui/material";
 import { SearchComponentProps } from "../utils/SearchComponentProps";
+import { TimeRangeSelect } from "./TimeRangeSelect";
 
 export function QueryEditorActionBar(props: SearchComponentProps) {
-  const timestamp_field_name = props.index?.metadata.index_config.doc_mapping.timestamp_field;
+  const timestamp_field_name =
+    props.index?.metadata.index_config.doc_mapping.timestamp_field;
   const shouldDisplayTimeRangeSelect = timestamp_field_name ?? false;
 
   const handleChange = (_event: React.SyntheticEvent, newTab: number) => {
-    const updatedSearchRequest = {...props.searchRequest, aggregation: newTab != 0};
+    const updatedSearchRequest = {
+      ...props.searchRequest,
+      aggregation: newTab != 0,
+    };
     props.onSearchRequestUpdate(updatedSearchRequest);
-    props.runSearch(updatedSearchRequest)
+    props.runSearch(updatedSearchRequest);
   };
 
   return (
-    <Box sx={{ display: 'flex'}}>
-      <Box sx={{ flexGrow: 0, padding: '10px' }}>
+    <Box sx={{ display: "flex" }}>
+      <Box sx={{ flexGrow: 0, padding: "10px" }}>
         <Button
           onClick={() => props.runSearch(props.searchRequest)}
           variant="contained"
           startIcon={<PlayArrowIcon />}
           disableElevation
-          sx={{ flexGrow: 1}}
-          disabled={props.queryRunning || !props.searchRequest.indexId}>
+          sx={{ flexGrow: 1 }}
+          disabled={props.queryRunning || !props.searchRequest.indexId}
+        >
           Run
         </Button>
       </Box>
       <Box sx={{ flexGrow: 0 }}>
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', flexGrow: 1}}>
-          <Tabs value={Number(props.searchRequest.aggregation)} onChange={handleChange}>
-            <Tab label="Search"/>
-            <Tab label="Aggregation"/>
+        <Box sx={{ borderBottom: 1, borderColor: "divider", flexGrow: 1 }}>
+          <Tabs
+            value={Number(props.searchRequest.aggregation)}
+            onChange={handleChange}
+          >
+            <Tab label="Search" />
+            <Tab label="Aggregation" />
           </Tabs>
         </Box>
       </Box>
-      <Box sx={{ flexGrow: 1 }}>
-      </Box>
-      { shouldDisplayTimeRangeSelect && <TimeRangeSelect
+      <Box sx={{ flexGrow: 1 }}></Box>
+      {shouldDisplayTimeRangeSelect && (
+        <TimeRangeSelect
           timeRange={{
-            startTimestamp:props.searchRequest.startTimestamp,
-            endTimestamp:props.searchRequest.endTimestamp
+            startTimestamp: props.searchRequest.startTimestamp,
+            endTimestamp: props.searchRequest.endTimestamp,
           }}
-          onUpdate={
-            (timeRange)=>{
-              props.runSearch({...props.searchRequest, ...timeRange});
-            }
-          }
+          onUpdate={(timeRange) => {
+            props.runSearch({ ...props.searchRequest, ...timeRange });
+          }}
           disabled={props.queryRunning || !props.searchRequest.indexId}
-       />
-      }
+        />
+      )}
     </Box>
-  )
+  );
 }

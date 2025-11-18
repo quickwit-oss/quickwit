@@ -15,26 +15,27 @@
 import styled from "@emotion/styled";
 import { Paper } from "@mui/material";
 import dayjs from "dayjs";
-import utc from "dayjs/plugin/utc"
+import utc from "dayjs/plugin/utc";
 import { FC, ReactNode } from "react";
 import NumberFormat from "react-number-format";
 import { Index } from "../utils/models";
+
 dayjs.extend(utc);
 
 const ItemContainer = styled.div`
 padding: 10px;
 display: flex;
 flex-direction: column;
-`
+`;
 const Row = styled.div`
 padding: 5px;
 display: flex;
 flex-direction: row;
 &:nth-of-type(odd){ background: rgba(0,0,0,0.05) }
-`
+`;
 const RowKey = styled.div`
 width: 350px;
-`
+`;
 const IndexRow: FC<{ title: string; children: ReactNode }> = ({
   title,
   children,
@@ -47,24 +48,30 @@ const IndexRow: FC<{ title: string; children: ReactNode }> = ({
 
 export function IndexSummary({ index }: { index: Index }) {
   const all_splits = index.splits;
-  const published_splits = all_splits.filter(split => split.split_state == "Published");
-  const num_of_staged_splits = all_splits.filter(split => split.split_state == "Staged").length;
-  const num_of_marked_for_delete_splits = all_splits.filter(split => split.split_state == "MarkedForDeletion").length;
+  const published_splits = all_splits.filter(
+    (split) => split.split_state == "Published",
+  );
+  const num_of_staged_splits = all_splits.filter(
+    (split) => split.split_state == "Staged",
+  ).length;
+  const num_of_marked_for_delete_splits = all_splits.filter(
+    (split) => split.split_state == "MarkedForDeletion",
+  ).length;
   const total_num_docs = published_splits
-    .map(split => split.num_docs)
+    .map((split) => split.num_docs)
     .reduce((sum, current) => sum + current, 0);
   const total_num_bytes = published_splits
-    .map(split => {
-      return split.footer_offsets.end
+    .map((split) => {
+      return split.footer_offsets.end;
     })
     .reduce((sum, current) => sum + current, 0);
   const total_uncompressed_num_bytes = published_splits
-    .map(split => {
-      return split.uncompressed_docs_size_in_bytes
+    .map((split) => {
+      return split.uncompressed_docs_size_in_bytes;
     })
     .reduce((sum, current) => sum + current, 0);
   return (
-    <Paper variant="outlined" >
+    <Paper variant="outlined">
       <ItemContainer>
         <IndexRow title="Created at:">
           {dayjs
@@ -72,7 +79,9 @@ export function IndexSummary({ index }: { index: Index }) {
             .utc()
             .format("YYYY/MM/DD HH:mm")}
         </IndexRow>
-        <IndexRow title="URI:">{index.metadata.index_config.index_uri}</IndexRow>
+        <IndexRow title="URI:">
+          {index.metadata.index_config.index_uri}
+        </IndexRow>
         <IndexRow title="Number of published documents:">
           <NumberFormat
             value={total_num_docs}
@@ -89,7 +98,9 @@ export function IndexSummary({ index }: { index: Index }) {
             decimalScale={2}
           />
         </IndexRow>
-        <IndexRow title="Number of published splits:">{published_splits.length}</IndexRow>
+        <IndexRow title="Number of published splits:">
+          {published_splits.length}
+        </IndexRow>
         <IndexRow title="Size of published splits:">
           <NumberFormat
             value={total_num_bytes / 1000000}
@@ -99,9 +110,13 @@ export function IndexSummary({ index }: { index: Index }) {
             decimalScale={2}
           />
         </IndexRow>
-        <IndexRow title="Number of staged splits:">{num_of_staged_splits}</IndexRow>
-        <IndexRow title="Number of splits marked for deletion:">{num_of_marked_for_delete_splits}</IndexRow>
+        <IndexRow title="Number of staged splits:">
+          {num_of_staged_splits}
+        </IndexRow>
+        <IndexRow title="Number of splits marked for deletion:">
+          {num_of_marked_for_delete_splits}
+        </IndexRow>
       </ItemContainer>
     </Paper>
-  )
+  );
 }

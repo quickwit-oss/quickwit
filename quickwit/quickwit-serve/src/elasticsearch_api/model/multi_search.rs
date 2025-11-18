@@ -25,6 +25,7 @@ use crate::simple_list::{from_simple_list, to_simple_list};
 
 // Multi search doc: https://www.elastic.co/guide/en/elasticsearch/reference/current/search-multi-search.html
 
+#[serde_as]
 #[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -50,6 +51,10 @@ pub struct MultiSearchQueryParams {
     pub ignore_throttled: Option<bool>,
     #[serde(default)]
     pub ignore_unavailable: Option<bool>,
+    /// List of indexes to search.
+    #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
+    #[serde(default, rename = "index")]
+    pub indexes: Vec<String>,
     #[serde(default)]
     pub max_concurrent_searches: Option<u64>,
     #[serde(default)]
@@ -90,14 +95,34 @@ pub struct MultiSearchHeader {
     #[serde(default)]
     pub ignore_unavailable: Option<bool>,
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
-    #[serde(default)]
-    pub index: Vec<String>,
+    #[serde(default, rename = "index")]
+    pub indexes: Vec<String>,
     #[serde(default)]
     pub preference: Option<String>,
     #[serde(default)]
     pub request_cache: Option<bool>,
     #[serde(default)]
     pub routing: Option<Vec<String>>,
+}
+
+impl MultiSearchHeader {
+    pub fn apply_query_param_defaults(&mut self, defaults: &MultiSearchQueryParams) {
+        if self.allow_no_indices.is_none() {
+            self.allow_no_indices = defaults.allow_no_indices;
+        }
+        if self.expand_wildcards.is_none() {
+            self.expand_wildcards = defaults.expand_wildcards.clone();
+        }
+        if self.ignore_unavailable.is_none() {
+            self.ignore_unavailable = defaults.ignore_unavailable;
+        }
+        if self.indexes.is_empty() {
+            self.indexes = defaults.indexes.clone();
+        }
+        if self.routing.is_none() {
+            self.routing = defaults.routing.clone();
+        }
+    }
 }
 
 #[derive(Serialize)]

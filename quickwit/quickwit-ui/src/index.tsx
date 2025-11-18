@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React from 'react';
-import ReactDOM from 'react-dom';
-import './index.css';
-import App from './views/App';
-import reportWebVitals from './reportWebVitals';
-import { BrowserRouter } from 'react-router-dom';
+import React from "react";
+import ReactDOM from "react-dom";
+import "./index.css";
+import { BrowserRouter } from "react-router-dom";
+import reportWebVitals from "./reportWebVitals";
+import App from "./views/App";
 
 ReactDOM.render(
   <React.StrictMode>
@@ -25,7 +25,7 @@ ReactDOM.render(
       <App />
     </BrowserRouter>
   </React.StrictMode>,
-  document.getElementById('root')
+  document.getElementById("root"),
 );
 
 // If you want to start measuring performance in your app, pass a function

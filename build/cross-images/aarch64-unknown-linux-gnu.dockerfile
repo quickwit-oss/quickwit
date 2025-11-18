@@ -1,4 +1,4 @@
-FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.4
+FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:0.2.4@sha256:3356619b020614effd22e83cec41236e69f17ce581ffe35e252898b0c693b4e2
 
 ARG PBC_URL="https://github.com/protocolbuffers/protobuf/releases/download/v21.5/protoc-21.5-linux-x86_64.zip"
 

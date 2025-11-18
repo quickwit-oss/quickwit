@@ -12,19 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from "@mui/material";
-import dayjs from 'dayjs';
-import utc from "dayjs/plugin/utc"
-import { IndexMetadata } from "../utils/models";
+import {
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+} from "@mui/material";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
 import { useNavigate } from "react-router-dom";
+import { IndexMetadata } from "../utils/models";
+
 dayjs.extend(utc);
 
-
-const IndexesTable = ({ indexesMetadata }: Readonly<{indexesMetadata: IndexMetadata[]}>) => {
+const IndexesTable = ({
+  indexesMetadata,
+}: Readonly<{ indexesMetadata: IndexMetadata[] }>) => {
   const navigate = useNavigate();
-  const handleClick = function(indexId: string) {
+  const handleClick = function (indexId: string) {
     navigate(`/indexes/${indexId}`);
-  }
+  };
 
   return (
     <TableContainer component={Paper}>
@@ -41,16 +51,28 @@ const IndexesTable = ({ indexesMetadata }: Readonly<{indexesMetadata: IndexMetad
           {indexesMetadata.map((indexMetadata) => (
             <TableRow
               key={indexMetadata.index_config.index_id}
-              sx={{ '&:last-child td, &:last-child th': { border: 0 }, cursor: "pointer"}}
+              sx={{
+                "&:last-child td, &:last-child th": { border: 0 },
+                cursor: "pointer",
+              }}
               hover={true}
               onClick={() => handleClick(indexMetadata.index_config.index_id)}
             >
               <TableCell component="th" scope="row">
                 {indexMetadata.index_config.index_id}
               </TableCell>
-              <TableCell align="left">{indexMetadata.index_config.index_uri}</TableCell>
-              <TableCell align="left">{ dayjs.unix(indexMetadata.create_timestamp).utc().format("YYYY/MM/DD HH:mm") }</TableCell>
-              <TableCell align="left">{ indexMetadata.sources?.length || 'None'}</TableCell>
+              <TableCell align="left">
+                {indexMetadata.index_config.index_uri}
+              </TableCell>
+              <TableCell align="left">
+                {dayjs
+                  .unix(indexMetadata.create_timestamp)
+                  .utc()
+                  .format("YYYY/MM/DD HH:mm")}
+              </TableCell>
+              <TableCell align="left">
+                {indexMetadata.sources?.length || "None"}
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>

@@ -789,11 +789,13 @@ impl IngestController {
             let index_metadata = model
                 .index_metadata(&source_uid.index_uid)
                 .expect("index should exist");
-            let validate_docs = model
+            let has_transform = model
                 .source_metadata(source_uid)
                 .expect("source should exist")
                 .transform_config
-                .is_none();
+                .is_some();
+            let validate_docs =
+                index_metadata.index_config.ingest_settings.validate_docs && !has_transform;
             let doc_mapping = &index_metadata.index_config.doc_mapping;
             let doc_mapping_uid = doc_mapping.doc_mapping_uid;
             let doc_mapping_json = serde_utils::to_json_str(doc_mapping)?;

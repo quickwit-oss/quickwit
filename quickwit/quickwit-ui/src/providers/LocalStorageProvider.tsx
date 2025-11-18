@@ -12,8 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { createContext, PropsWithChildren, useContext, useEffect, useState } from "react"
-import { EMPTY_SEARCH_REQUEST, SearchRequest } from "../utils/models"
+import {
+  createContext,
+  PropsWithChildren,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import { EMPTY_SEARCH_REQUEST, SearchRequest } from "../utils/models";
 
 type Props = Record<string, unknown>;
 
@@ -25,7 +31,7 @@ type ContextProps = {
 const defaultValues = {
   lastSearchRequest: EMPTY_SEARCH_REQUEST,
   updateLastSearchRequest: () => undefined,
-}
+};
 
 function parseSearchRequest(value: string | null): SearchRequest {
   if (value === null) {
@@ -39,17 +45,23 @@ export const LocalStorageContext = createContext<ContextProps>(defaultValues);
 export const LocalStorageProvider = ({
   children,
 }: PropsWithChildren<Props>) => {
-  const [lastSearchRequest, setLastSearchRequest] = useState<SearchRequest>(EMPTY_SEARCH_REQUEST);
+  const [lastSearchRequest, setLastSearchRequest] =
+    useState<SearchRequest>(EMPTY_SEARCH_REQUEST);
 
   useEffect(() => {
-    if (localStorage.getItem('lastSearchRequest') !== null) {
-      const lastSearchRequest = parseSearchRequest(localStorage.getItem('lastSearchRequest'));
+    if (localStorage.getItem("lastSearchRequest") !== null) {
+      const lastSearchRequest = parseSearchRequest(
+        localStorage.getItem("lastSearchRequest"),
+      );
       setLastSearchRequest(lastSearchRequest);
     }
   }, []);
 
   useEffect(() => {
-      localStorage.setItem('lastSearchRequest', JSON.stringify(lastSearchRequest));
+    localStorage.setItem(
+      "lastSearchRequest",
+      JSON.stringify(lastSearchRequest),
+    );
   }, [lastSearchRequest]);
 
   function updateLastSearchRequest(searchRequest: SearchRequest) {
@@ -61,13 +73,13 @@ export const LocalStorageProvider = ({
       value={{
         lastSearchRequest,
         updateLastSearchRequest,
-        }}
+      }}
     >
       {children}
     </LocalStorageContext.Provider>
-  )
-}
+  );
+};
 
 export const useLocalStorage = () => {
-  return useContext(LocalStorageContext)
-}
+  return useContext(LocalStorageContext);
+};
