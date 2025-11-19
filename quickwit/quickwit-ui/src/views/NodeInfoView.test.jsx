@@ -12,20 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { screen } from "@testing-library/dom";
-import { waitFor } from "@testing-library/react";
-import { render, unmountComponentAtNode } from "react-dom";
-import { act } from "react-dom/test-utils";
+import { render, screen, waitFor } from "@testing-library/react";
+import { act } from "react";
 import { Client } from "../services/client";
 import NodeInfoView from "./NodeInfoView";
 
 jest.mock("../services/client");
-jest.mock("react-router-dom", () => ({
-  ...jest.requireActual("react-router-dom"),
-  useParams: () => ({
-    indexId: "my-new-fresh-index-id",
-  }),
-}));
 
 let container = null;
 beforeEach(() => {
@@ -36,7 +28,6 @@ beforeEach(() => {
 
 afterEach(() => {
   // cleanup on exiting
-  unmountComponentAtNode(container);
   container.remove();
   container = null;
 });

@@ -1,5 +1,8 @@
 module.exports = {
-  setupFiles: ["react-app-polyfill/jsdom"], // polyfill jsdom api (such as fetch)
+  setupFiles: [
+    "react-app-polyfill/jsdom", // polyfill jsdom api (such as fetch)
+    "<rootDir>/jest/setup.js", // polyfill textEncode
+  ],
 
   setupFilesAfterEnv: ["@testing-library/jest-dom"],
 
@@ -11,17 +14,17 @@ module.exports = {
       "babel-jest",
       {
         presets: [["babel-preset-react-app", { runtime: "automatic" }]],
+        plugins: [
+          ["babel-plugin-transform-assets", { extensions: ["svg", "woff2"] }],
+        ],
         babelrc: false,
         configFile: false,
       },
     ],
-
-    // transform asset files
-    "^(?!.*\\.(js|jsx|mjs|cjs|ts|tsx|css|json)$)": "jest-transform-stub",
   },
 
   moduleNameMapper: {
-    "monaco-editor": "<rootDir>/mocks/monacoMock.js",
+    "@monaco-editor/react": "<rootDir>/mocks/monacoMock.js",
     "swagger-ui-react": "<rootDir>/mocks/swaggerUIMock.js",
     "@mui/x-charts": "<rootDir>/mocks/x-charts.js",
   },

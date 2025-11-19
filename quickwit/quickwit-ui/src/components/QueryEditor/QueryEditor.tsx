@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { Editor } from "@monaco-editor/react";
 import { Box } from "@mui/material";
 import * as monacoEditor from "monaco-editor/esm/vs/editor/editor.api";
-import { useEffect, useRef, useState } from "react";
-import { Editor } from "@monaco-editor/react";
+import React, { useEffect, useRef, useState } from "react";
 import { SearchComponentProps } from "../../utils/SearchComponentProps";
 import { EDITOR_THEME } from "../../utils/theme";
 import {
@@ -23,7 +23,6 @@ import {
   LANGUAGE_CONFIG,
   LanguageFeatures,
 } from "./config";
-import React from "react";
 
 const QUICKWIT_EDITOR_THEME_ID = "quickwit-light";
 

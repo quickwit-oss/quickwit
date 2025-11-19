@@ -12,9 +12,10 @@
       "style": "off",
       "complexity": "off",
       "correctness": {
-        "useExhaustiveDependencies": "warn"
+        "useExhaustiveDependencies": "off"
       },
       "suspicious": {
+        "noTsIgnore": "off",
         "useIterableCallbackReturn": "off",
         "noExplicitAny": "off",
         "noArrayIndexKey": "off"

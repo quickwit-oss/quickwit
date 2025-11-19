@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { BeforeMount, Editor, OnMount } from "@monaco-editor/react";
 import { useCallback } from "react";
 import { EDITOR_THEME } from "../utils/theme";
-import { Editor, OnMount } from "@monaco-editor/react";
 
 export function JsonEditor({
   content,
@@ -47,9 +47,9 @@ export function JsonEditor({
     [resizeOnMount],
   );
 
-  function beforeMount(monaco: any) {
+  const beforeMount: BeforeMount = (monaco) => {
     monaco.editor.defineTheme("quickwit-light", EDITOR_THEME);
-  }
+  };
 
   return (
     <Editor

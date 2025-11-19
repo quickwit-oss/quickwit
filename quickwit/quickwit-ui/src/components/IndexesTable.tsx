@@ -23,7 +23,7 @@ import {
 } from "@mui/material";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { IndexMetadata } from "../utils/models";
 
 dayjs.extend(utc);

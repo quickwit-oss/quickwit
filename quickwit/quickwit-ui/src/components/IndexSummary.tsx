@@ -17,7 +17,7 @@ import { Paper } from "@mui/material";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import { FC, ReactNode } from "react";
-import NumberFormat from "react-number-format";
+import { NumericFormat } from "react-number-format";
 import { Index } from "../utils/models";
 
 dayjs.extend(utc);
@@ -85,14 +85,14 @@ export function IndexSummary({ index }: { index: Index }) {
           {index.metadata.index_config.index_uri}
         </IndexRow>
         <IndexRow title="Number of published documents:">
-          <NumberFormat
+          <NumericFormat
             value={total_num_docs}
             displayType={"text"}
             thousandSeparator={true}
           />
         </IndexRow>
         <IndexRow title="Size of published documents (uncompressed):">
-          <NumberFormat
+          <NumericFormat
             value={total_uncompressed_num_bytes / 1000000}
             displayType={"text"}
             thousandSeparator={true}
@@ -104,7 +104,7 @@ export function IndexSummary({ index }: { index: Index }) {
           {published_splits.length}
         </IndexRow>
         <IndexRow title="Size of published splits:">
-          <NumberFormat
+          <NumericFormat
             value={total_num_bytes / 1000000}
             displayType={"text"}
             thousandSeparator={true}
