@@ -296,7 +296,10 @@ impl CloudPremService for CloudPremServiceImpl {
             sort_fields: Vec::new(),
             scroll_ttl_secs: None,
             search_after: None,
-            count_hits: CountHits::Underestimate.into(),
+            // we can't really optimise about count in an aggregation request, and we may need the
+            // count if the aggregation was in fact a COUNT(*) (which is omited from
+            // aggregation ast)
+            count_hits: CountHits::CountAll.into(),
             ignore_missing_indexes: false,
         };
 
@@ -318,6 +321,7 @@ impl CloudPremService for CloudPremServiceImpl {
         let cloudprem_aggregation_result = quickwit_query::cloudprem::aggregation_result_to_proto(
             quickwit_aggregation_result,
             &evp_aggregation_ast,
+            response.num_hits,
         )?;
         tracing::trace!("aggregation result: {cloudprem_aggregation_result:?}");
 
