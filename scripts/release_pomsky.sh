@@ -12,7 +12,7 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "Aborting."
     exit 1
 fi
-git fetch origin
+git fetch origin main
 git reset --hard origin/main
 git pull origin main
 
