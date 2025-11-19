@@ -3,8 +3,6 @@
   "version": "0.8.0",
   "license": "Apache-2.0",
   "private": true,
-  "proxy": "http://127.0.0.1:7280",
-  "homepage": "/ui/",
   "dependencies": {
     "@biomejs/biome": "2.3.5",
     "@emotion/react": "11.11.1",
@@ -35,6 +33,7 @@
     "styled-icons": "10.47.0",
     "swagger-ui-react": "5.9.0",
     "typescript": "4.9.5",
+    "vite": "7.2.2",
     "web-vitals": "2.1.4"
   },
   "resolutions": {
@@ -42,8 +41,8 @@
     "@types/react-dom": "17.0.18"
   },
   "scripts": {
-    "start": "react-app-rewired start",
-    "build": "react-app-rewired build",
+    "start": "vite",
+    "build": "vite build --outDir build",
     "test": "react-app-rewired test",
     "eject": "react-app-rewired eject",
     "postbuild": "cp .gitignore_for_build_directory build/.gitignore",

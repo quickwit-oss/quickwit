@@ -21,7 +21,7 @@ import App from "./views/App";
 
 ReactDOM.render(
   <React.StrictMode>
-    <BrowserRouter basename="/ui">
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <App />
     </BrowserRouter>
   </React.StrictMode>,
