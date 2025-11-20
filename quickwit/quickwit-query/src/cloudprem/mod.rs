@@ -18,3 +18,7 @@ fn unsupported_query_error(feature: &str) -> InvalidQuery {
         "unsupported feature in CloudPrem: {feature}"
     ))
 }
+
+fn internal_error(msg: &str) -> InvalidQuery {
+    InvalidQuery::Other(anyhow::anyhow!("internal error: {msg}"))
+}
