@@ -1270,4 +1270,149 @@ mod tests {
         // That's n(n+1)/2 where n = 12.
         assert_eq!(total_val, &agg_value::Value::Uint64Value(12 * 13 / 2));
     }
+
+    #[test]
+    fn test_aggregation_multiple_metrics() {
+        // This aggregation has been extracted from the table widget request.
+        let child = quickwit_proto::cloudprem::aggregation::Aggregation::Computes(Computes {
+            aggregation: vec![
+                Aggregation {
+                    aggregation: Some(
+                        quickwit_proto::cloudprem::aggregation::Aggregation::MetricCompute(
+                            MetricCompute {
+                                expression: Some(ExpressionNode {
+                                    calc_node: Some(Any {
+                                        type_url: "type.googleapis.com/calcfieldspb.CalcNode"
+                                            .to_string(),
+                                        value: vec![18u8, 7, 10, 5, 99, 111, 117, 110, 116],
+                                    }),
+                                }),
+                                id: "count:count".to_string(),
+                                r#type: "COUNT".to_string(),
+                            },
+                        ),
+                    ),
+                },
+                Aggregation {
+                    aggregation: Some(
+                        quickwit_proto::cloudprem::aggregation::Aggregation::MetricCompute(
+                            MetricCompute {
+                                expression: Some(ExpressionNode {
+                                    calc_node: Some(Any {
+                                        type_url: "type.googleapis.com/calcfieldspb.CalcNode"
+                                            .to_string(),
+                                        value: vec![18u8, 7, 10, 5, b'v', b'a', b'l', b'u', b'e'],
+                                    }),
+                                }),
+                                id: "avg:avg".to_string(),
+                                r#type: "AVG".to_string(),
+                            },
+                        ),
+                    ),
+                },
+            ],
+            time_grouping: vec![],
+        });
+
+        let attribute_group_by = AttributeGroupBy {
+            include: None,
+            expression: Some(ExpressionNode {
+                calc_node: Some(Any {
+                    type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
+                    value: vec![18, 6, 10, 4, 104, 111, 115, 116],
+                }),
+            }),
+            limit: 2,
+            sort: Some(SortByExprAndAgg {
+                ascending: false,
+                expr_and_agg: Some(ExprAndAgg {
+                    expr: Some(ExpressionNode {
+                        calc_node: Some(Any {
+                            type_url: "type.googleapis.com/calcfieldspb.CalcNode".to_string(),
+                            value: vec![18u8, 7, 10, 5, 99, 111, 117, 110, 116],
+                        }),
+                    }),
+                    agg_function: "count".to_string(),
+                }),
+                r#type: SortType::Metric as i32,
+            }),
+            missing: None,
+            total: None,
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+        };
+
+        let agg_inner = quickwit_proto::cloudprem::aggregation::Aggregation::AttributeGroupBy(
+            Box::new(attribute_group_by),
+        );
+        let agg = Aggregation {
+            aggregation: Some(agg_inner),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let tantivy_aggs_ast_json = serde_json::to_value(&tantivy_aggs_ast).unwrap();
+
+        assert_eq!(
+            tantivy_aggs_ast_json,
+            serde_json::json!(
+                {
+                   "host":{
+                      "terms":{
+                         "field":"host",
+                         "size": 2,
+                      },
+                      "aggs": {
+                         "avg:avg": {
+                            "avg": {
+                               "field": "value",
+                               "missing": null
+                            }
+                         }
+                      }
+                   }
+                }
+            )
+        );
+
+        let mut schema_builder = Schema::builder();
+        let host_field = schema_builder.add_text_field("host", FAST);
+        let value_field = schema_builder.add_u64_field("value", FAST);
+        let schema = schema_builder.build();
+        let index = tantivy::IndexBuilder::new()
+            .schema(schema)
+            .create_in_ram()
+            .unwrap();
+
+        let mut index_writer = index.writer_with_num_threads(1, 20_000_000).unwrap();
+        for count in 1..13 {
+            let mut doc = tantivy::TantivyDocument::default();
+            doc.add_text(host_field, format!("host_{count}"));
+            doc.add_u64(value_field, count);
+            for _ in 0..count {
+                index_writer.add_document(doc.clone()).unwrap();
+            }
+        }
+        index_writer.commit().unwrap();
+        let searcher = index.reader().unwrap().searcher();
+        let aggregation_collector =
+            AggregationCollector::from_aggs(tantivy_aggs_ast, Default::default());
+        let aggregation_results = searcher.search(&AllQuery, &aggregation_collector).unwrap();
+
+        let evp_agg_results =
+            super::aggregation_result_to_proto(aggregation_results.into(), &agg, 10).unwrap();
+
+        assert_eq!(evp_agg_results[0].key, vec!["host_12".to_string()]);
+        let count = evp_agg_results[0].value[0].value.as_ref().unwrap();
+        assert_eq!(count, &agg_value::Value::Uint64Value(12));
+        let avg_value = evp_agg_results[0].value[1].value.as_ref().unwrap();
+        // TODO fix when we support mergeable averages
+        assert_eq!(
+            avg_value,
+            &agg_value::Value::AvgValue(Avg {
+                sum: 12.0,
+                count: 1
+            })
+        );
+    }
 }
