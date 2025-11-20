@@ -15,7 +15,7 @@
 import { Box } from "@mui/material";
 import * as monacoEditor from "monaco-editor/esm/vs/editor/editor.api";
 import { useEffect, useRef, useState } from "react";
-import MonacoEditor from "react-monaco-editor";
+import { Editor } from "@monaco-editor/react";
 import { SearchComponentProps } from "../../utils/SearchComponentProps";
 import { EDITOR_THEME } from "../../utils/theme";
 import {
@@ -23,6 +23,7 @@ import {
   LANGUAGE_CONFIG,
   LanguageFeatures,
 } from "./config";
+import React from "react";
 
 const QUICKWIT_EDITOR_THEME_ID = "quickwit-light";
 
@@ -67,9 +68,9 @@ export function QueryEditor(props: SearchComponentProps) {
     window.addEventListener("resize", resize);
   }
 
-  function handleEditorWillUnmount() {
-    window.removeEventListener("resize", resize);
-  }
+  React.useEffect(() => {
+    return () => window.removeEventListener("resize", resize);
+  });
 
   useEffect(() => {
     const updatedLanguageId = getLanguageId(props.searchRequest.indexId);
@@ -125,10 +126,9 @@ export function QueryEditor(props: SearchComponentProps) {
 
   return (
     <Box sx={{ height: "100px", py: 1 }}>
-      <MonacoEditor
-        editorWillMount={handleEditorWillMount}
-        editorDidMount={handleEditorDidMount}
-        editorWillUnmount={handleEditorWillUnmount}
+      <Editor
+        beforeMount={handleEditorWillMount}
+        onMount={handleEditorDidMount}
         onChange={handleEditorChange}
         language={languageId}
         value={defaultValue}

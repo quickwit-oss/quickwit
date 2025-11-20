@@ -13,8 +13,8 @@
 // limitations under the License.
 
 import { useCallback } from "react";
-import MonacoEditor from "react-monaco-editor";
 import { EDITOR_THEME } from "../utils/theme";
+import { Editor, OnMount } from "@monaco-editor/react";
 
 export function JsonEditor({
   content,
@@ -24,7 +24,7 @@ export function JsonEditor({
   resizeOnMount: boolean;
 }) {
   // Setting editor height based on lines height and count to stretch and fit its content.
-  const onMount = useCallback(
+  const onMount: OnMount = useCallback(
     (editor) => {
       if (!resizeOnMount) {
         return;
@@ -53,11 +53,11 @@ export function JsonEditor({
   }
 
   return (
-    <MonacoEditor
+    <Editor
       language="json"
       value={JSON.stringify(content, null, 2)}
-      editorWillMount={beforeMount}
-      editorDidMount={onMount}
+      beforeMount={beforeMount}
+      onMount={onMount}
       options={{
         readOnly: true,
         fontFamily: "monospace",
