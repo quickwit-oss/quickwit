@@ -189,6 +189,9 @@ impl From<TantivyBucketResult> for BucketResult {
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
             },
+            TantivyBucketResult::Filter(_filter_bucket_result) => {
+                unimplemented!("filter aggregation is not yet supported in quickwit")
+            }
         }
     }
 }
