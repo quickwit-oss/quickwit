@@ -575,7 +575,7 @@ impl MetastoreService for FileBackedMetastore {
                     ingest_settings,
                     search_settings,
                     retention_policy_opt,
-                );
+                )?;
                 let index_metadata = index.metadata().clone();
 
                 if mutation_occurred {

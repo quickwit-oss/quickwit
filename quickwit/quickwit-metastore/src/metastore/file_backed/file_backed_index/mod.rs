@@ -221,7 +221,7 @@ impl FileBackedIndex {
         ingest_settings: IngestSettings,
         search_settings: SearchSettings,
         retention_policy_opt: Option<RetentionPolicy>,
-    ) -> bool {
+    ) -> MetastoreResult<bool> {
         self.metadata.update_index_config(
             doc_mapping,
             indexing_settings,
