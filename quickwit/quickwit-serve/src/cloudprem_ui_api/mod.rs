@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_query::JsonLiteral;
+use quickwit_query::aggregations::AggregationResults;
 use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, query_ast_from_user_text};
 use quickwit_search::{SearchError, SearchService};
 use warp::reject::Rejection;
@@ -27,9 +28,11 @@ use warp::{Filter, Reply};
 use crate::rest::recover_fn;
 
 mod aggregate;
+mod facet_info;
 mod search;
 
 pub(crate) use aggregate::aggregate_handler;
+pub(crate) use facet_info::facet_info_handler;
 pub(crate) use search::search_handler;
 
 type CloudPremUiResult<T> = std::result::Result<T, CloudPremUiError>;
@@ -64,6 +67,14 @@ enum SortOrder {
     Asc,
     #[serde(alias = "DESC", alias = "descending")]
     Desc,
+}
+
+#[derive(serde::Deserialize, Debug, Clone, Copy, PartialEq)]
+struct Timeframe {
+    #[serde(rename = "from_ts")]
+    from_timestamp_inclusive_millis: i64,
+    #[serde(rename = "to_ts")]
+    to_timestamp_exclusive_millis: i64,
 }
 
 fn try_into_query_ast(
@@ -110,11 +121,25 @@ fn try_into_query_ast(
     Ok(query_ast)
 }
 
+fn try_into_aggregation_results(
+    aggregation_postcard: Option<Vec<u8>>,
+) -> CloudPremUiResult<AggregationResults> {
+    let aggregation_postcard_bytes: Vec<u8> = aggregation_postcard.ok_or_else(|| {
+        CloudPremUiError::Internal("request generated no aggregation result".to_string().into())
+    })?;
+    let aggregation_result: AggregationResults = postcard::from_bytes(&aggregation_postcard_bytes)
+        .map_err(|err| {
+            CloudPremUiError::Internal(format!("failed to deserialize agg result: {err}").into())
+        })?;
+    Ok(aggregation_result)
+}
+
 pub(crate) fn cloudprem_ui_api_handlers(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     aggregate_handler(search_service.clone())
-        .or(search_handler(search_service))
+        .or(search_handler(search_service.clone()))
+        .or(facet_info_handler(search_service))
         .recover(recover_fn)
         .boxed()
 }

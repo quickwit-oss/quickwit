@@ -19,9 +19,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use quickwit_proto::search::{CountHits, SearchRequest, SearchResponse};
-use quickwit_query::aggregations::{
-    AggregationResult, AggregationResults, BucketEntries, BucketResult, Key,
-};
+use quickwit_query::aggregations::{AggregationResult, BucketEntries, BucketResult, Key};
 use quickwit_search::SearchService;
 use tantivy::aggregation::agg_req::{
     Aggregation as TantivyAggregation, AggregationVariants as TantivyAggregationVariants,
@@ -33,7 +31,10 @@ use tracing::debug;
 use warp::Filter;
 use warp::reject::Rejection;
 
-use super::{CloudPremUiError, CloudPremUiResult, SortOrder, try_into_query_ast};
+use super::{
+    CloudPremUiError, CloudPremUiResult, SortOrder, Timeframe, try_into_aggregation_results,
+    try_into_query_ast,
+};
 use crate::cloudprem::CLOUDPREM_INDEX_ID_PATTERN;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{BodyFormat, with_arg};
@@ -60,14 +61,6 @@ struct TimeseriesAggregation {
     output: String,
     #[serde(rename = "interval")]
     interval_millis: u64,
-}
-
-#[derive(serde::Deserialize, Debug, Clone, Copy, PartialEq)]
-struct Timeframe {
-    #[serde(rename = "from_ts")]
-    from_timestamp_inclusive_millis: i64,
-    #[serde(rename = "to_ts")]
-    to_timestamp_exclusive_millis: i64,
 }
 
 #[derive(serde::Deserialize, Debug, PartialEq)]
@@ -326,19 +319,6 @@ impl AggregateResponse {
     }
 }
 
-fn try_into_aggregation_results(
-    aggregation_postcard: Option<Vec<u8>>,
-) -> CloudPremUiResult<AggregationResults> {
-    let aggregation_postcard_bytes: Vec<u8> = aggregation_postcard.ok_or_else(|| {
-        CloudPremUiError::Internal("request generated no aggregation result".to_string().into())
-    })?;
-    let aggregation_result: AggregationResults = postcard::from_bytes(&aggregation_postcard_bytes)
-        .map_err(|err| {
-            CloudPremUiError::Internal(format!("failed to deserialize agg result: {err}").into())
-        })?;
-    Ok(aggregation_result)
-}
-
 pub(crate) fn aggregate_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -383,7 +363,7 @@ async fn cloudprem_ui_aggregate(
 mod tests {
     use std::sync::Arc;
 
-    use quickwit_query::aggregations::BucketEntry;
+    use quickwit_query::aggregations::{AggregationResults, BucketEntry};
     use quickwit_search::MockSearchService;
 
     use super::*;
