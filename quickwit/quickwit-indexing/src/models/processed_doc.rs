@@ -23,6 +23,7 @@ pub struct ProcessedDoc {
     pub timestamp_opt: Option<DateTime>,
     pub partition: u64,
     pub num_bytes: usize,
+    pub arrival_timestamp_secs_opt: Option<u64>,
 }
 
 impl fmt::Debug for ProcessedDoc {

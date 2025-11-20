@@ -14,8 +14,8 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
-    new_gauge_vec,
+    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, linear_buckets,
+    new_counter, new_counter_vec, new_gauge, new_gauge_vec, new_histogram, new_histogram_vec,
 };
 
 pub struct IndexerMetrics {
@@ -31,6 +31,7 @@ pub struct IndexerMetrics {
     // We use a lazy counter, as most users do not use Kafka.
     #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub kafka_rebalance_total: Lazy<IntCounter>,
+    pub indexing_lag_seconds: Histogram,
 }
 
 impl Default for IndexerMetrics {
@@ -106,6 +107,13 @@ impl Default for IndexerMetrics {
                     &[],
                 )
             }),
+            indexing_lag_seconds: new_histogram(
+                "indexing_lag_seconds",
+                "FIXME",
+                "indexing",
+                linear_buckets(0.0, 5.0, 120)
+                    .expect("buckets should have a width and count greater than 0"),
+            ),
         }
     }
 }

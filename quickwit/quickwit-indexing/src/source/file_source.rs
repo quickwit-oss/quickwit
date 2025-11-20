@@ -87,7 +87,7 @@ impl Source for FileSource {
                     .read_batch(ctx.progress(), self.source_type)
                     .await?;
                 *num_bytes_processed += batch_builder.num_bytes;
-                *num_lines_processed += batch_builder.docs.len() as u64;
+                *num_lines_processed += batch_builder.raw_docs.len() as u64;
                 doc_processor_mailbox
                     .send_message(batch_builder.build())
                     .await?;
@@ -388,7 +388,7 @@ mod tests {
         );
         let indexer_messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert_eq!(
-            indexer_messages[0].docs[0],
+            indexer_messages[0].raw_docs[0].doc,
             Bytes::from_static(b"0000002\n")
         );
     }

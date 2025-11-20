@@ -197,7 +197,7 @@ impl ObjectUriBatchReader {
                 .await?
             {
                 new_offset = record.next_offset as usize;
-                batch_builder.add_doc(record.doc);
+                batch_builder.add_doc(record.doc, None);
                 if record.is_last {
                     self.is_eof = true;
                     break;
@@ -475,7 +475,7 @@ mod tests {
                 .read_batch(&progress, SourceType::Unspecified)
                 .await
                 .unwrap();
-            parsed_lines += batch.docs.len();
+            parsed_lines += batch.raw_docs.len();
             parsed_batches += 1;
             checkpoint_delta.extend(batch.checkpoint_delta).unwrap();
         }

@@ -260,7 +260,7 @@ impl QueueCoordinator {
                 .batch_reader
                 .read_batch(ctx.progress(), self.source_type)
                 .await?;
-            self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
+            self.observable_state.num_lines_processed += batch_builder.raw_docs.len() as u64;
             self.observable_state.num_bytes_processed += batch_builder.num_bytes;
             doc_processor_mailbox
                 .send_message(batch_builder.build())
@@ -428,7 +428,7 @@ mod tests {
         let partition_id = PreProcessedPayload::ObjectUri(test_uri.clone()).partition_id();
         let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id")]).await;
         assert_eq!(batches.len(), 1);
-        assert_eq!(batches[0].docs.len(), 10);
+        assert_eq!(batches[0].raw_docs.len(), 10);
         assert!(coordinator.local_state.is_awaiting_commit(&partition_id));
     }
 
@@ -442,7 +442,10 @@ mod tests {
         let test_uri = Uri::from_str(dummy_doc_file.path().to_str().unwrap()).unwrap();
         let batches = process_messages(&mut coordinator, queue, &[(&test_uri, "ack-id")]).await;
         assert_eq!(batches.len(), 2);
-        assert_eq!(batches.iter().map(|b| b.docs.len()).sum::<usize>(), lines);
+        assert_eq!(
+            batches.iter().map(|b| b.raw_docs.len()).sum::<usize>(),
+            lines
+        );
     }
 
     #[tokio::test]
@@ -461,7 +464,7 @@ mod tests {
         )
         .await;
         // could be generated in 1 or 2 batches, it doesn't matter
-        assert_eq!(batches.iter().map(|b| b.docs.len()).sum::<usize>(), 20);
+        assert_eq!(batches.iter().map(|b| b.raw_docs.len()).sum::<usize>(), 20);
     }
 
     #[tokio::test]
@@ -478,7 +481,7 @@ mod tests {
         )
         .await;
         assert_eq!(batches.len(), 1);
-        assert_eq!(batches.iter().map(|b| b.docs.len()).sum::<usize>(), 10);
+        assert_eq!(batches.iter().map(|b| b.raw_docs.len()).sum::<usize>(), 10);
     }
 
     #[tokio::test]
@@ -559,7 +562,7 @@ mod tests {
         )
         .await;
         assert_eq!(batches.len(), 2);
-        assert_eq!(batches.iter().map(|b| b.docs.len()).sum::<usize>(), 18);
+        assert_eq!(batches.iter().map(|b| b.raw_docs.len()).sum::<usize>(), 18);
         assert!(coordinator.local_state.is_awaiting_commit(&partition_id_1));
         assert!(coordinator.local_state.is_awaiting_commit(&partition_id_2));
     }
@@ -578,7 +581,7 @@ mod tests {
         let batches_2 = process_messages(&mut coord_2, queue, &[(&test_uri, "ack2")]).await;
 
         assert_eq!(batches_1.len(), 1);
-        assert_eq!(batches_1[0].docs.len(), 10);
+        assert_eq!(batches_1[0].raw_docs.len(), 10);
         assert!(coord_1.local_state.is_awaiting_commit(&partition_id));
         // proc_2 learns from shared state that the message is likely still
         // being processed and skips it
