@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
 use anyhow::Context;
@@ -68,7 +67,7 @@ pub fn to_tantivy_aggregation(
         }
     }
 
-    let mut tantivy_aggregations = TantivyAggregations::new();
+    let mut tantivy_aggregations = TantivyAggregations::default();
 
     for (agg_key, aggregation) in tantivy_aggregations_per_key {
         match tantivy_aggregations.entry(agg_key) {
@@ -271,7 +270,7 @@ fn handle_metric_compute(
     let tantivy_agg = TantivyAggregation {
         // TODO can we get a into() from *Aggregation to AggregationVariants instead?
         agg,
-        sub_aggregation: HashMap::new(),
+        sub_aggregation: Default::default(),
     };
 
     Ok(Some((metric_compute.id, tantivy_agg)))
@@ -677,8 +676,6 @@ mod test_helpers {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use prost_types::Any;
     use quickwit_proto::cloudprem::aggregation::Aggregation as AggregationEnum;
     use quickwit_proto::cloudprem::sort_by_expr_and_agg::SortType;
@@ -785,7 +782,7 @@ mod tests {
                     size: Some(50),
                     ..Default::default()
                 }),
-                sub_aggregation: HashMap::new(),
+                sub_aggregation: Default::default(),
             },
         )]
         .into_iter()
@@ -888,7 +885,7 @@ mod tests {
                             extended_bounds: None,
                             keyed: false,
                         }),
-                        sub_aggregation: HashMap::new(),
+                        sub_aggregation: Default::default(),
                     },
                 )]
                 .into_iter()

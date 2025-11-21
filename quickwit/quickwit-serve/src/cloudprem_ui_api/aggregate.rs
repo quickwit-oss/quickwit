@@ -14,7 +14,6 @@
 
 //! This module implements the aggregate endpoint for the CloudPrem UI.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -32,8 +31,8 @@ use warp::Filter;
 use warp::reject::Rejection;
 
 use super::{
-    CloudPremUiError, CloudPremUiResult, SortOrder, Timeframe, try_into_aggregation_results,
-    try_into_query_ast,
+    CloudPremUiError, CloudPremUiResult, SortOrder, TantivyAggregationMap, Timeframe,
+    try_into_aggregation_results, try_into_query_ast,
 };
 use crate::cloudprem::CLOUDPREM_INDEX_ID_PATTERN;
 use crate::rest_api_response::into_rest_api_response;
@@ -159,8 +158,8 @@ fn try_into_tantivy_aggregations(
     aggregations: Aggregations,
     group_by_exps: Vec<GroupByExp>,
     timeframe: Timeframe,
-) -> CloudPremUiResult<HashMap<String, TantivyAggregation>> {
-    let mut tantivy_aggregations: HashMap<String, TantivyAggregation> = HashMap::new();
+) -> CloudPremUiResult<TantivyAggregationMap> {
+    let mut tantivy_aggregations = TantivyAggregationMap::default();
     let histogram_bounds = HistogramBounds {
         min: timeframe.from_timestamp_inclusive_millis as f64,
         max: timeframe.to_timestamp_exclusive_millis as f64,
@@ -179,7 +178,7 @@ fn try_into_tantivy_aggregations(
                     sub_aggregation: tantivy_aggregations,
                 };
                 tantivy_aggregations =
-                    HashMap::from([(timeseries_aggregation.output, aggregation)]);
+                    std::iter::once((timeseries_aggregation.output, aggregation)).collect();
             }
         };
     }
@@ -199,7 +198,7 @@ fn try_into_tantivy_aggregations(
                     agg: TantivyAggregationVariants::Terms(terms_aggregation),
                     sub_aggregation: tantivy_aggregations,
                 };
-                tantivy_aggregations = HashMap::from([(field.output, aggregation)]);
+                tantivy_aggregations = std::iter::once((field.output, aggregation)).collect();
             }
         };
     }

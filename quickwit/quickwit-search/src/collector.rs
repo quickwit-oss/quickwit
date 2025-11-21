@@ -27,10 +27,11 @@ use quickwit_proto::types::SplitId;
 use serde::Deserialize;
 use tantivy::aggregation::agg_req::{Aggregations, get_fast_field_names};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
-use tantivy::aggregation::{AggregationLimitsGuard, AggregationSegmentCollector};
+use tantivy::aggregation::{AggContextParams, AggregationLimitsGuard, AggregationSegmentCollector};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::columnar::{ColumnType, MonotonicallyMappableToU64};
 use tantivy::fastfield::Column;
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
@@ -715,7 +716,7 @@ pub(crate) struct QuickwitCollector {
     pub max_hits: usize,
     pub sort_by: SortByPair,
     pub aggregation: Option<QuickwitAggregations>,
-    pub aggregation_limits: AggregationLimitsGuard,
+    pub agg_context_params: AggContextParams,
     search_after: Option<PartialHit>,
 }
 
@@ -785,7 +786,7 @@ impl Collector for QuickwitCollector {
                         aggs,
                         segment_reader,
                         segment_ord,
-                        &self.aggregation_limits,
+                        &self.agg_context_params,
                     )?,
                 ),
             ),
@@ -1033,7 +1034,7 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair
 pub(crate) fn make_collector_for_split(
     split_id: SplitId,
     search_request: &SearchRequest,
-    aggregation_limits: AggregationLimitsGuard,
+    agg_context_params: AggContextParams,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
@@ -1046,7 +1047,7 @@ pub(crate) fn make_collector_for_split(
         max_hits: search_request.max_hits as usize,
         sort_by,
         aggregation,
-        aggregation_limits,
+        agg_context_params,
         search_after: search_request.search_after.clone(),
     })
 }
@@ -1054,8 +1055,15 @@ pub(crate) fn make_collector_for_split(
 /// Builds a QuickwitCollector that's only useful for merging fruits.
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
-    aggregation_limits: &AggregationLimitsGuard,
+    agg_limits: AggregationLimitsGuard,
 ) -> crate::Result<QuickwitCollector> {
+    // Note: at this point the tokenizer manager is not used anymore by aggregations (filter query),
+    // so we can create an empty one. So if it will ever be used, it would panic.
+    let agg_context_params = AggContextParams {
+        limits: agg_limits,
+        tokenizers: TokenizerManager::new(),
+    };
+
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
         None => None,
@@ -1067,7 +1075,7 @@ pub(crate) fn make_merge_collector(
         max_hits: search_request.max_hits as usize,
         sort_by,
         aggregation,
-        aggregation_limits: aggregation_limits.clone(),
+        agg_context_params,
         search_after: search_request.search_after.clone(),
     })
 }
@@ -1748,7 +1756,7 @@ mod tests {
         request: &SearchRequest,
         results: Vec<LeafSearchResponse>,
     ) -> LeafSearchResponse {
-        let collector = make_merge_collector(request, &Default::default()).unwrap();
+        let collector = make_merge_collector(request, Default::default()).unwrap();
         let mut incremental_collector = IncrementalCollector::new(collector.clone());
 
         let result = collector

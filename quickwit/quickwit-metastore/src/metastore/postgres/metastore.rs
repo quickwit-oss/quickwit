@@ -431,7 +431,7 @@ impl MetastoreService for PostgresqlMetastore {
                     ingest_settings,
                     search_settings,
                     retention_policy_opt,
-                );
+                )?;
                 Ok(MutationOccurred::from(mutation_occurred))
             })
             .await

@@ -35,8 +35,8 @@ use quickwit_storage::{
     BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SplitCache, Storage,
     StorageResolver, TimeoutAndRetryStorage, wrap_storage_with_cache,
 };
-use tantivy::aggregation::AggregationLimitsGuard;
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
+use tantivy::aggregation::{AggContextParams, AggregationLimitsGuard};
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
@@ -489,8 +489,12 @@ async fn leaf_search_single_split(
         .try_into()?;
     let searcher = reader.searcher();
 
+    let agg_context_params = AggContextParams {
+        limits: aggregations_limits,
+        tokenizers: doc_mapper.tokenizer_manager().tantivy_manager().clone(),
+    };
     let mut collector =
-        make_collector_for_split(split_id.clone(), &search_request, aggregations_limits)?;
+        make_collector_for_split(split_id.clone(), &search_request, agg_context_params)?;
 
     let split_schema = index.schema();
     let (query, mut warmup_info) = doc_mapper.query(split_schema.clone(), &query_ast, false)?;
@@ -1226,7 +1230,7 @@ pub async fn multi_index_leaf_search(
         try_join_all(leaf_request_tasks),
     )
     .await??;
-    let merge_collector = make_merge_collector(&search_request, &aggregation_limits)?;
+    let merge_collector = make_merge_collector(&search_request, aggregation_limits)?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
     for result in leaf_responses {
         match result {
@@ -1310,7 +1314,7 @@ pub async fn single_doc_mapping_leaf_search(
     let mut leaf_search_single_split_join_handles: Vec<(String, tokio::task::JoinHandle<()>)> =
         Vec::with_capacity(split_with_req.len());
 
-    let merge_collector = make_merge_collector(&request, &aggregations_limits)?;
+    let merge_collector = make_merge_collector(&request, aggregations_limits.clone())?;
     let incremental_merge_collector = IncrementalCollector::new(merge_collector);
     let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
 

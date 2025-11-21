@@ -30,8 +30,8 @@ use warp::Filter;
 use warp::reject::Rejection;
 
 use super::{
-    CloudPremUiError, CloudPremUiResult, Timeframe, try_into_aggregation_results,
-    try_into_query_ast,
+    CloudPremUiError, CloudPremUiResult, TantivyAggregationMap, Timeframe,
+    try_into_aggregation_results, try_into_query_ast,
 };
 use crate::cloudprem::CLOUDPREM_INDEX_ID_PATTERN;
 use crate::rest_api_response::into_rest_api_response;
@@ -93,7 +93,7 @@ fn try_into_tantivy_aggregations(
     };
     let aggregation = TantivyAggregation {
         agg: TantivyAggregationVariants::Terms(terms_aggregation),
-        sub_aggregation: HashMap::new(),
+        sub_aggregation: TantivyAggregationMap::default(),
     };
     let tantivy_aggregations = HashMap::from([(group, aggregation)]);
     Ok(tantivy_aggregations)
@@ -214,7 +214,7 @@ mod tests {
             "time": {
                 "from_ts": 1763503244491,
                 "to_ts": 1763504144491
-            }        
+            }
         }
         "#;
 
@@ -316,7 +316,7 @@ mod tests {
             "time": {
                 "from_ts": 1763503244491,
                 "to_ts": 1763504144491
-            }         
+            }
         }
         "#;
 

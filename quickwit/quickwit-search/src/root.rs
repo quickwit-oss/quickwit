@@ -751,9 +751,8 @@ pub(crate) async fn search_partial_hits_phase(
             try_join_all(leaf_request_tasks).await?
         };
 
-    // Creates a collector which merges responses into one
     let merge_collector =
-        make_merge_collector(search_request, &searcher_context.get_aggregation_limits())?;
+        make_merge_collector(search_request, searcher_context.get_aggregation_limits())?;
 
     // Merging is a cpu-bound task.
     // It should be executed by Tokio's blocking threads.
@@ -1287,7 +1286,7 @@ pub async fn search_plan(
         &request_metadata.query_ast_resolved,
         true,
     )?;
-    let merge_collector = make_merge_collector(&search_request, &Default::default())?;
+    let merge_collector = make_merge_collector(&search_request, Default::default())?;
     warmup_info.merge(merge_collector.warmup_info());
     warmup_info.simplify();
 

@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashSet;
-
 use anyhow::{Context, ensure};
 use quickwit_common::uri::Uri;
-use quickwit_doc_mapper::DocMapperBuilder;
 use quickwit_proto::types::{DocMappingUid, IndexId};
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -24,7 +21,7 @@ use tracing::info;
 use super::{IngestSettings, validate_index_config};
 use crate::{
     ConfigFormat, DocMapping, IndexConfig, IndexingSettings, RetentionPolicy, SearchSettings,
-    validate_identifier,
+    prepare_doc_mapping_update, validate_identifier,
 };
 
 /// Alias for the latest serialization format.
@@ -92,63 +89,12 @@ pub fn load_index_config_update(
         current_index_config.index_uri,
         new_index_config.index_uri
     );
-
-    // verify the new mapping is coherent
-    let doc_mapper_builder = DocMapperBuilder {
-        doc_mapping: new_index_config.doc_mapping.clone(),
-        default_search_fields: new_index_config
-            .search_settings
-            .default_search_fields
-            .clone(),
-        legacy_type_tag: None,
-    };
-    doc_mapper_builder
-        .try_build()
-        .context("invalid mapping update")?;
-
-    {
-        let new_mapping_uid = new_index_config.doc_mapping.doc_mapping_uid;
-        // we verify whether they are equal ignoring the mapping uid as it is generated at random:
-        // we don't want to record a mapping change when nothing really happened.
-        new_index_config.doc_mapping.doc_mapping_uid =
-            current_index_config.doc_mapping.doc_mapping_uid;
-        if new_index_config.doc_mapping != current_index_config.doc_mapping {
-            new_index_config.doc_mapping.doc_mapping_uid = new_mapping_uid;
-            ensure!(
-                current_index_config.doc_mapping.doc_mapping_uid
-                    != new_index_config.doc_mapping.doc_mapping_uid,
-                "`doc_mapping_doc_mapping_uid` must change when the doc mapping is updated",
-            );
-            ensure!(
-                current_index_config.doc_mapping.timestamp_field
-                    == new_index_config.doc_mapping.timestamp_field,
-                "`doc_mapping.timestamp_field` cannot be updated, current value {}, new expected \
-                 value {}",
-                current_index_config
-                    .doc_mapping
-                    .timestamp_field
-                    .as_deref()
-                    .unwrap_or("<none>"),
-                new_index_config
-                    .doc_mapping
-                    .timestamp_field
-                    .as_deref()
-                    .unwrap_or("<none>"),
-            );
-            // TODO: i'm not sure this is necessary, we can relax this requirement once we know
-            // for sure
-            let current_tokenizers: HashSet<_> =
-                current_index_config.doc_mapping.tokenizers.iter().collect();
-            let new_tokenizers: HashSet<_> =
-                new_index_config.doc_mapping.tokenizers.iter().collect();
-            ensure!(
-                new_tokenizers.is_superset(&current_tokenizers),
-                "`.doc_mapping.tokenizers` must be a superset of previously available tokenizers"
-            );
-        } else {
-            // the docmapping is unchanged, keep the old uid
-        }
-    }
+    let (updated_doc_mapping, _mutation_occurred) = prepare_doc_mapping_update(
+        new_index_config.doc_mapping,
+        &current_index_config.doc_mapping,
+        &new_index_config.search_settings,
+    )?;
+    new_index_config.doc_mapping = updated_doc_mapping;
 
     Ok(new_index_config)
 }

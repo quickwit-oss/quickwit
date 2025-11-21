@@ -34,6 +34,7 @@ mod search;
 pub(crate) use aggregate::aggregate_handler;
 pub(crate) use facet_info::facet_info_handler;
 pub(crate) use search::search_handler;
+use tantivy::aggregation::agg_req::Aggregations as TantivyAggregationMap;
 
 type CloudPremUiResult<T> = std::result::Result<T, CloudPremUiError>;
 

@@ -1438,13 +1438,13 @@ async fn create_or_update_datadog_index(
             return Ok(());
         }
     };
-    let mut mutation_occurred = current_index_metadata.update_index_config(
+    let mut mutation_occurred: bool = current_index_metadata.update_index_config(
         desired_index_config.doc_mapping,
         desired_index_config.indexing_settings,
         desired_index_config.ingest_settings,
         desired_index_config.search_settings,
         desired_index_config.retention_policy_opt,
-    );
+    )?;
     mutation_occurred |= patch_index_config(&mut current_index_metadata.index_config);
 
     if !mutation_occurred {
