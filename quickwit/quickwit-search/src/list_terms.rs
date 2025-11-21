@@ -34,6 +34,7 @@ use tantivy::{ReloadPolicy, Term};
 use tracing::{debug, error, info, instrument};
 
 use crate::leaf::open_index_with_caches;
+use crate::metrics::queue_label;
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::search_permit_provider::compute_initial_memory_allocation;
 use crate::{ClusterClient, SearchError, SearchJob, SearcherContext, resolve_index_patterns};
@@ -215,7 +216,7 @@ async fn leaf_list_terms_single_split(
     let cache =
         ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
     let (index, _) =
-        open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
+        open_index_with_caches(searcher_context, storage, &split, None, Some(cache), false).await?;
     let split_schema = index.schema();
     let reader = index
         .reader_builder()
@@ -348,6 +349,7 @@ pub async fn leaf_list_terms(
                 crate::SEARCH_METRICS.leaf_list_terms_splits_total.inc();
                 let timer = crate::SEARCH_METRICS
                     .leaf_search_split_duration_secs
+                    .with_label_values([queue_label(false)])
                     .start_timer();
                 let leaf_search_single_split_res = leaf_list_terms_single_split(
                     &searcher_context_clone,

@@ -1026,7 +1026,6 @@ async fn setup_searcher(
     .await?;
     let search_service_clone = search_service.clone();
     let max_message_size = node_config.grpc_config.max_message_size;
-    let request_timeout = node_config.searcher_config.request_timeout();
     let searcher_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let search_service_clone = search_service_clone.clone();
         Box::pin(async move {
@@ -1046,7 +1045,8 @@ async fn setup_searcher(
                             SearchServiceClient::from_service(search_service_clone, grpc_addr);
                         Some(Change::Insert(grpc_addr, search_client))
                     } else {
-                        let timeout_channel = Timeout::new(node.channel(), request_timeout);
+                        // Set a very high timeout just to be sure that we cleanup at some point.
+                        let timeout_channel = Timeout::new(node.channel(), Duration::from_mins(30));
                         let search_client = create_search_client_from_channel(
                             grpc_addr,
                             timeout_channel,

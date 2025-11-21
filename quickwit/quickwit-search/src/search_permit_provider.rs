@@ -24,6 +24,8 @@ use quickwit_proto::search::SplitIdAndFooterOffsets;
 use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
 
+use crate::metrics::SearchTaskMetrics;
+
 /// Distributor of permits to perform split search operation.
 ///
 /// Requests are served in order. Each permit initially reserves a slot for the
@@ -78,7 +80,11 @@ pub fn compute_initial_memory_allocation(
 }
 
 impl SearchPermitProvider {
-    pub fn new(num_download_slots: usize, memory_budget: ByteSize) -> Self {
+    pub fn new(
+        num_download_slots: usize,
+        memory_budget: ByteSize,
+        metrics: SearchTaskMetrics,
+    ) -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
         #[cfg(test)]
         let (state_sender, state_receiver) = watch::channel(false);
@@ -91,6 +97,7 @@ impl SearchPermitProvider {
             total_memory_allocated: 0u64,
             #[cfg(test)]
             stopped: state_sender,
+            metrics,
         };
         tokio::spawn(actor.run());
         Self {
@@ -126,6 +133,7 @@ impl SearchPermitProvider {
 }
 
 struct SearchPermitActor {
+    metrics: SearchTaskMetrics,
     msg_receiver: mpsc::UnboundedReceiver<SearchPermitMessage>,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     num_warmup_slots_available: usize,
@@ -208,12 +216,11 @@ impl SearchPermitActor {
     }
 
     fn assign_available_permits(&mut self) {
+        let ongoing_tasks_metric = self.metrics.ongoing_tasks;
         while let Some((permit_requester_tx, next_permit_size)) =
             self.pop_next_request_if_serviceable()
         {
-            let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
-                &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
-            );
+            let mut ongoing_gauge_guard = GaugeGuard::from_gauge(ongoing_tasks_metric);
             ongoing_gauge_guard.add(1);
             self.total_memory_allocated += next_permit_size;
             self.num_warmup_slots_available -= 1;
@@ -228,8 +235,8 @@ impl SearchPermitActor {
                 // created SearchPermit which releases the resources
                 .ok();
         }
-        crate::SEARCH_METRICS
-            .leaf_search_single_split_tasks_pending
+        self.metrics
+            .pending_tasks
             .set(self.permits_requests.len() as i64);
     }
 }
@@ -311,10 +318,15 @@ mod tests {
     use tokio::task::JoinSet;
 
     use super::*;
+    use crate::metrics::SEARCH_METRICS;
+
+    fn test_metrics() -> SearchTaskMetrics {
+        SEARCH_METRICS.search_task_metrics()
+    }
 
     #[tokio::test]
     async fn test_search_permit_order() {
-        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100), test_metrics());
         let mut all_futures = Vec::new();
         let first_batch_of_permits = permit_provider
             .get_permits(repeat_n(ByteSize::mb(10), 10))
@@ -364,7 +376,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_permit_early_drops() {
-        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100), test_metrics());
         let permit_fut1 = permit_provider
             .get_permits(vec![ByteSize::mb(10)])
             .await
@@ -405,7 +417,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_budget() {
-        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
+        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100), test_metrics());
         let mut permit_futs = permit_provider
             .get_permits(repeat_n(ByteSize::mb(10), 14))
             .await;
@@ -435,7 +447,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_warmup_slot() {
-        let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100));
+        let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100), test_metrics());
         let mut permit_futs = permit_provider
             .get_permits(repeat_n(ByteSize::mb(1), 16))
             .await;

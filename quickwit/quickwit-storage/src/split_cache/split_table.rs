@@ -244,27 +244,28 @@ impl SplitTable {
     /// If the file is already on the disk cache, return `Some(num_bytes)`.
     /// If the file is not in cache, return `None`, and register the file in the candidate for
     /// download list.
-    pub fn touch(&mut self, split_ulid: Ulid, storage_uri: &Uri) -> Option<u64> {
+    pub fn touch(&mut self, split_ulid: Ulid, storage_uri: &Uri, read_only: bool) -> Option<u64> {
         let timestamp = compute_timestamp(self.origin_time);
         let status = self.mutate_split(split_ulid, |old_split_info| {
             if let Some(mut split_info) = old_split_info {
                 split_info.split_key.last_accessed = timestamp;
-                split_info
+                Some(split_info)
+            } else if read_only {
+                None
             } else {
-                SplitInfo {
-                    split_key: SplitKey {
-                        split_ulid,
-                        last_accessed: timestamp,
-                    },
-                    status: Status::Candidate(CandidateSplit {
-                        storage_uri: storage_uri.clone(),
-                        split_ulid,
-                        living_token: Arc::new(()),
-                    }),
-                }
+                let split_key = SplitKey {
+                    split_ulid,
+                    last_accessed: timestamp,
+                };
+                let status = Status::Candidate(CandidateSplit {
+                    storage_uri: storage_uri.clone(),
+                    split_ulid,
+                    living_token: Arc::new(()),
+                });
+                Some(SplitInfo { split_key, status })
             }
         });
-        if let Status::OnDisk { num_bytes } = status {
+        if let Some(Status::OnDisk { num_bytes }) = status {
             Some(num_bytes)
         } else {
             None
@@ -278,13 +279,13 @@ impl SplitTable {
     fn mutate_split(
         &mut self,
         split_ulid: Ulid,
-        mutate_fn: impl FnOnce(Option<SplitInfo>) -> SplitInfo,
-    ) -> Status {
+        mutate_fn: impl FnOnce(Option<SplitInfo>) -> Option<SplitInfo>,
+    ) -> Option<Status> {
         let split_info_opt = self.remove(split_ulid);
-        let new_split: SplitInfo = mutate_fn(split_info_opt);
+        let new_split: SplitInfo = mutate_fn(split_info_opt)?;
         let new_status = new_split.status.clone();
         self.insert(new_split);
-        new_status
+        Some(new_status)
     }
 
     fn change_split_status(&mut self, split_ulid: Ulid, status: Status) {
@@ -292,15 +293,15 @@ impl SplitTable {
         self.mutate_split(split_ulid, move |split_info_opt| {
             if let Some(mut split_info) = split_info_opt {
                 split_info.status = status;
-                split_info
+                Some(split_info)
             } else {
-                SplitInfo {
+                Some(SplitInfo {
                     split_key: SplitKey {
                         last_accessed: compute_timestamp(start_time),
                         split_ulid,
                     },
                     status,
-                }
+                })
             }
         });
     }
@@ -309,20 +310,19 @@ impl SplitTable {
         let origin_time = self.origin_time;
         self.mutate_split(split_ulid, move |split_info_opt| {
             if let Some(split_info) = split_info_opt {
-                return split_info;
+                return Some(split_info);
             }
-            SplitInfo {
-                split_key: SplitKey {
-                    last_accessed: compute_timestamp(origin_time)
-                        .saturating_sub(NEWLY_REPORTED_SPLIT_LAST_TIME.as_micros() as u64),
-                    split_ulid,
-                },
-                status: Status::Candidate(CandidateSplit {
-                    storage_uri,
-                    split_ulid,
-                    living_token: Arc::new(()),
-                }),
-            }
+            let split_key = SplitKey {
+                split_ulid,
+                last_accessed: compute_timestamp(origin_time)
+                    .saturating_sub(NEWLY_REPORTED_SPLIT_LAST_TIME.as_micros() as u64),
+            };
+            let status = Status::Candidate(CandidateSplit {
+                storage_uri,
+                split_ulid,
+                living_token: Arc::new(()),
+            });
+            Some(SplitInfo { split_key, status })
         });
     }
 
@@ -510,7 +510,7 @@ mod tests {
         let ulid2 = ulids[1];
         split_table.report(ulid1, Uri::for_test(TEST_STORAGE_URI));
         split_table.report(ulid2, Uri::for_test(TEST_STORAGE_URI));
-        let num_bytes_opt = split_table.touch(ulid1, &Uri::for_test("s3://test1/"));
+        let num_bytes_opt = split_table.touch(ulid1, &Uri::for_test("s3://test1/"), false);
         assert!(num_bytes_opt.is_none());
         let candidate = split_table.best_candidate().unwrap();
         assert_eq!(candidate.split_ulid, ulid1);
@@ -536,7 +536,7 @@ mod tests {
         split_table.register_as_downloaded(ulid1, 10_000_000);
         assert_eq!(split_table.num_bytes(), 10_000_000);
         assert_eq!(
-            split_table.touch(ulid1, &Uri::for_test(TEST_STORAGE_URI)),
+            split_table.touch(ulid1, &Uri::for_test(TEST_STORAGE_URI), false),
             Some(10_000_000)
         );
         let ulid2 = Ulid::new();
