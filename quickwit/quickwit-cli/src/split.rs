@@ -100,6 +100,18 @@ pub fn build_split_command() -> Command {
                         .required(false),
                 ])
             )
+        .subcommand(
+            Command::new("add")
+                .about("Adds a split file to an existing index.")
+                .args(&[
+                    arg!(--index <INDEX_ID> "Target index ID")
+                        .display_order(1)
+                        .required(true),
+                    arg!(--split <SPLIT_URI> "URI of the split file to add")
+                        .display_order(2)
+                        .required(true),
+                ])
+            )
         .arg_required_else_help(true)
 }
 
@@ -156,11 +168,19 @@ pub struct DescribeSplitArgs {
     pub verbose: bool,
 }
 
+#[derive(Debug, Eq, PartialEq)]
+pub struct AddSplitArgs {
+    pub client_args: ClientArgs,
+    pub index_id: IndexId,
+    pub split_uri: String,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SplitCliCommand {
     List(ListSplitArgs),
     MarkForDeletion(MarkForDeletionArgs),
     Describe(DescribeSplitArgs),
+    Add(AddSplitArgs),
 }
 
 impl SplitCliCommand {
@@ -172,6 +192,7 @@ impl SplitCliCommand {
             "describe" => Self::parse_describe_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "mark-for-deletion" => Self::parse_mark_for_deletion_args(submatches),
+            "add" => Self::parse_add_args(submatches),
             _ => bail!("unknown split subcommand `{subcommand}`"),
         }
     }
@@ -275,11 +296,28 @@ impl SplitCliCommand {
         }))
     }
 
+    fn parse_add_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
+        let client_args = ClientArgs::parse(&mut matches)?;
+        let index_id = matches
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
+        let split_uri = matches
+            .remove_one::<String>("split")
+            .expect("`split` should be a required arg.");
+
+        Ok(Self::Add(AddSplitArgs {
+            client_args,
+            index_id,
+            split_uri,
+        }))
+    }
+
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
             Self::List(args) => list_split_cli(args).await,
             Self::MarkForDeletion(args) => mark_splits_for_deletion_cli(args).await,
             Self::Describe(args) => describe_split_cli(args).await,
+            Self::Add(args) => add_split_cli(args).await,
         }
     }
 }
@@ -385,6 +423,27 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
     //     let hotcache_table = make_table("Files in Hotcache", hotcache_files.into_iter(), false);
     //     println!("{hotcache_table}");
     // }
+    Ok(())
+}
+
+async fn add_split_cli(args: AddSplitArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "add-split");
+    println!("❯ Adding split to index...");
+    
+    let qw_client = args.client_args.client();
+    
+    // Call the REST API to add the split
+    qw_client
+        .splits(&args.index_id)
+        .add(args.split_uri)
+        .await
+        .context("failed to add split")?;
+    
+    println!(
+        "{} Split successfully added to index.",
+        "✔".color(GREEN_COLOR)
+    );
+    
     Ok(())
 }
 
@@ -630,5 +689,32 @@ mod tests {
             parse_split_state("Marked").unwrap(),
             SplitState::MarkedForDeletion
         );
+    }
+
+    #[test]
+    fn test_parse_add_split_args() -> anyhow::Result<()> {
+        let app = build_cli().no_binary_name(true);
+        let matches = app.try_get_matches_from(vec![
+            "split",
+            "add",
+            "--endpoint",
+            "https://quickwit-cluster.io",
+            "--index",
+            "wikipedia",
+            "--split",
+            "s3://my-bucket/splits/wikipedia-split-001.split",
+        ])?;
+        let command = CliCommand::parse_cli_args(matches)?;
+        assert!(matches!(
+            command,
+            CliCommand::Split(SplitCliCommand::Add(AddSplitArgs {
+                client_args,
+                index_id,
+                split_uri,
+            })) if client_args.cluster_endpoint.to_string() == "https://quickwit-cluster.io/"
+                && index_id == "wikipedia"
+                && split_uri == "s3://my-bucket/splits/wikipedia-split-001.split"
+        ));
+        Ok(())
     }
 }
