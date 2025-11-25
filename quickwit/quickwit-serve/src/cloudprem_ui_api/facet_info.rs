@@ -266,7 +266,7 @@ mod tests {
                 assert_eq!(search_request.max_hits, 0);
                 assert_eq!(
                     search_request.query_ast,
-                    r#"{"type":"bool","must":[{"type":"user_input","user_text":"","default_fields":["message","error"],"default_operator":"And","lenient":false},{"type":"range","field":"timestamp","lower_bound":{"Included":1763503244491},"upper_bound":{"Excluded":1763504144491}}]}"#
+                    r#"{"type":"bool","must":[{"type":"bool"},{"type":"range","field":"timestamp","lower_bound":{"Included":1763503244491},"upper_bound":{"Excluded":1763504144491}}]}"#
                 );
                 assert_eq!(
                     search_request.aggregation_request,

@@ -251,7 +251,7 @@ mod tests {
                 assert_eq!(search_request.max_hits, 100);
                 assert_eq!(
                     search_request.query_ast,
-                    r#"{"type":"bool","must":[{"type":"user_input","user_text":"error","default_fields":["message","error"],"default_operator":"And","lenient":false},{"type":"range","field":"timestamp","lower_bound":{"Included":1759325269270},"upper_bound":{"Excluded":1759326169270}}]}"#
+                    r#"{"type":"bool","must":[{"type":"bool","should":[{"type":"full_text","field":"message","text":"error","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false},{"type":"full_text","field":"error","text":"error","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false}]},{"type":"range","field":"timestamp","lower_bound":{"Included":1759325269270},"upper_bound":{"Excluded":1759326169270}}]}"#
                 );
                 assert_eq!(search_request.search_after, None);
                 Ok(search_response.clone())
@@ -327,7 +327,7 @@ mod tests {
                 assert_eq!(search_request.max_hits, 1);
                 assert_eq!(
                     search_request.query_ast,
-                    r#"{"type":"bool","must":[{"type":"user_input","user_text":"error","default_fields":["message","error"],"default_operator":"And","lenient":false},{"type":"range","field":"timestamp","lower_bound":{"Included":1759325269270},"upper_bound":{"Excluded":1759326169270}}]}"#
+                    r#"{"type":"bool","must":[{"type":"bool","should":[{"type":"full_text","field":"message","text":"error","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false},{"type":"full_text","field":"error","text":"error","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false}]},{"type":"range","field":"timestamp","lower_bound":{"Included":1759325269270},"upper_bound":{"Excluded":1759326169270}}]}"#
                 );
                 assert_eq!(
                     search_request.search_after,

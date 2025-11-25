@@ -535,7 +535,7 @@ mod tests {
                 assert_eq!(search_request.max_hits, 0);
                 assert_eq!(
                     search_request.query_ast,
-                    r#"{"type":"bool","must":[{"type":"user_input","user_text":"service:quickwit","default_fields":["message","error"],"default_operator":"And","lenient":false},{"type":"range","field":"timestamp","lower_bound":{"Included":1759395985200},"upper_bound":{"Excluded":1759396885200}}]}"#
+                    r#"{"type":"bool","must":[{"type":"full_text","field":"service","text":"quickwit","params":{"mode":{"type":"phrase_fallback_to_intersection"}},"lenient":false},{"type":"range","field":"timestamp","lower_bound":{"Included":1759395985200},"upper_bound":{"Excluded":1759396885200}}]}"#
                 );
                 assert_eq!(
                     search_request.aggregation_request,
