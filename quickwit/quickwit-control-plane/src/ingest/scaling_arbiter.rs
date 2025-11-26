@@ -129,6 +129,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 0,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 0.0,
                     avg_long_term_ingestion_rate: 0.0,
                 },
@@ -140,6 +141,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 5.0,
                     avg_long_term_ingestion_rate: 6.0,
                 },
@@ -151,6 +153,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 8.1,
                     avg_long_term_ingestion_rate: 8.1,
                 },
@@ -162,6 +165,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 8.1,
                     avg_long_term_ingestion_rate: 8.1,
                 },
@@ -173,6 +177,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 3.0,
                     avg_long_term_ingestion_rate: 1.5,
                 },
@@ -184,6 +189,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 3.0,
                     avg_long_term_ingestion_rate: 1.5,
                 },
@@ -195,6 +201,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 8.0,
                     avg_long_term_ingestion_rate: 3.0,
                 },
@@ -213,6 +220,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 0,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 0.0,
                     avg_long_term_ingestion_rate: 0.0,
                 },
@@ -224,6 +232,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 5.0,
                     avg_long_term_ingestion_rate: 6.0,
                 },
@@ -235,6 +244,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 8.1,
                     avg_long_term_ingestion_rate: 8.1,
                 },
@@ -246,6 +256,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 8.1,
                     avg_long_term_ingestion_rate: 8.1,
                 },
@@ -257,6 +268,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 3.0,
                     avg_long_term_ingestion_rate: 1.5,
                 },
@@ -268,6 +280,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 3.0,
                     avg_long_term_ingestion_rate: 1.5,
                 },
@@ -279,6 +292,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 1,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 8.0,
                     avg_long_term_ingestion_rate: 3.1,
                 },
@@ -291,6 +305,7 @@ mod tests {
             scaling_arbiter.should_scale(
                 ShardStats {
                     num_open_shards: 2,
+                    num_closed_shards: 0,
                     avg_short_term_ingestion_rate: 8.1,
                     avg_long_term_ingestion_rate: 5.,
                 },
@@ -308,6 +323,7 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 0,
+            num_closed_shards: 0,
             avg_short_term_ingestion_rate: 0.,
             avg_long_term_ingestion_rate: 0.,
         };
@@ -322,6 +338,7 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 1,
+            num_closed_shards: 0,
             avg_short_term_ingestion_rate: 5.0,
             avg_long_term_ingestion_rate: 6.1,
         };
@@ -336,6 +353,7 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 2,
+            num_closed_shards: 0,
             avg_short_term_ingestion_rate: 5.0,
             avg_long_term_ingestion_rate: 1.1,
         };
@@ -350,6 +368,7 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 2,
+            num_closed_shards: 0,
             avg_short_term_ingestion_rate: 5.0,
             avg_long_term_ingestion_rate: 6.1,
         };
@@ -364,6 +383,7 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 5,
+            num_closed_shards: 0,
             avg_short_term_ingestion_rate: 5.0,
             avg_long_term_ingestion_rate: 1.1,
         };
@@ -384,6 +404,7 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 0,
+            num_closed_shards: 0,
             avg_short_term_ingestion_rate: 0.0,
             avg_long_term_ingestion_rate: 0.0,
         };
@@ -393,6 +414,7 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 1,
+            num_closed_shards: 0,
             avg_short_term_ingestion_rate: 0.0,
             avg_long_term_ingestion_rate: 0.0,
         };
@@ -408,6 +430,7 @@ mod tests {
 
         let shard_stats = ShardStats {
             num_open_shards: 1,
+            num_closed_shards: 0,
             avg_short_term_ingestion_rate: 5.0,
             avg_long_term_ingestion_rate: 1.0,
         };

@@ -109,6 +109,17 @@ impl Debug for Position {
     }
 }
 
+impl Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Beginning => write!(f, "beginning"),
+            Self::Offset(offset) => write!(f, "{offset}"),
+            Self::Eof(Some(offset)) => write!(f, "{EOF_PREFIX}{offset}"),
+            Self::Eof(None) => write!(f, "eof"),
+        }
+    }
+}
+
 impl Position {
     pub fn offset(offset: impl Into<Offset>) -> Self {
         Self::Offset(offset.into())
@@ -178,17 +189,6 @@ impl Position {
     }
 }
 
-impl Display for Position {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Beginning => write!(f, "{BEGINNING}"),
-            Self::Offset(offset) => write!(f, "{offset}"),
-            Self::Eof(Some(offset)) => write!(f, "{EOF_PREFIX}{offset}"),
-            Self::Eof(None) => write!(f, "{EOF_PREFIX}"),
-        }
-    }
-}
-
 impl From<ByteString> for Position {
     fn from(position: ByteString) -> Self {
         match &position[..] {
@@ -211,7 +211,12 @@ impl From<String> for Position {
 
 impl Serialize for Position {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.collect_str(self)
+        match self {
+            Self::Beginning => serializer.serialize_str(BEGINNING),
+            Self::Offset(offset) => serializer.serialize_str(&offset.to_string()),
+            Self::Eof(Some(offset)) => serializer.serialize_str(&format!("{EOF_PREFIX}{offset}")),
+            Self::Eof(None) => serializer.serialize_str(EOF_PREFIX),
+        }
     }
 }
 
