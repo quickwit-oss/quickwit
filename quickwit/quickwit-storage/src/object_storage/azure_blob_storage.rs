@@ -17,7 +17,10 @@ use std::num::NonZeroU32;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::{fmt, io};
+
+use super::s3_compatible_storage::{OBJECT_STORAGE_REQUEST_COUNT, OBJECT_STORAGE_BYTES_FETCHED};
 
 use async_trait::async_trait;
 use azure_core::error::ErrorKind;
@@ -470,6 +473,10 @@ impl Storage for AzureBlobStorage {
 
     #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
+        // 📊 Track object storage request statistics for tantivy4java
+        let range_size = range.end - range.start;
+        OBJECT_STORAGE_REQUEST_COUNT.fetch_add(1, Ordering::Relaxed);
+        OBJECT_STORAGE_BYTES_FETCHED.fetch_add(range_size as u64, Ordering::Relaxed);
 
         let result = self.get_to_vec(path, Some(range.clone())).await;
 

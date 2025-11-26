@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::task::{Context, Poll};
 use std::{fmt, io};
 use quickwit_common::tantivy4java_debug;
@@ -59,6 +60,29 @@ static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
     let num_permits: usize = quickwit_common::get_from_env("QW_S3_MAX_CONCURRENCY", 10_000usize);
     Semaphore::new(num_permits)
 });
+
+/// Global counter for object storage get_slice requests - used by tantivy4java for accurate statistics
+/// This counter is shared across S3 and Azure storage implementations
+pub static OBJECT_STORAGE_REQUEST_COUNT: AtomicU64 = AtomicU64::new(0);
+/// Global counter for total bytes fetched via object storage get_slice
+pub static OBJECT_STORAGE_BYTES_FETCHED: AtomicU64 = AtomicU64::new(0);
+
+/// Get the total number of object storage get_slice requests made since startup or last reset
+/// This includes both S3 and Azure requests
+pub fn get_object_storage_request_count() -> u64 {
+    OBJECT_STORAGE_REQUEST_COUNT.load(Ordering::Relaxed)
+}
+
+/// Get the total bytes fetched via object storage get_slice since startup or last reset
+pub fn get_object_storage_bytes_fetched() -> u64 {
+    OBJECT_STORAGE_BYTES_FETCHED.load(Ordering::Relaxed)
+}
+
+/// Reset the object storage request statistics (useful for per-operation tracking)
+pub fn reset_object_storage_request_stats() {
+    OBJECT_STORAGE_REQUEST_COUNT.store(0, Ordering::Relaxed);
+    OBJECT_STORAGE_BYTES_FETCHED.store(0, Ordering::Relaxed);
+}
 
 /// Wrap the async read handle together with a permit to keep the permit alive
 /// until the handle is dropped
@@ -852,6 +876,11 @@ impl Storage for S3CompatibleObjectStorage {
         // let thread_id = std::thread::current().id();
         let key = self.key(path);
         let range_size = range.end - range.start;
+
+        // 📊 Track object storage request statistics for tantivy4java
+        OBJECT_STORAGE_REQUEST_COUNT.fetch_add(1, Ordering::Relaxed);
+        OBJECT_STORAGE_BYTES_FETCHED.fetch_add(range_size as u64, Ordering::Relaxed);
+
         tantivy4java_debug!("QUICKWIT DEBUG: ===== S3 GET_SLICE REQUEST =====");
         tantivy4java_debug!("QUICKWIT DEBUG: get_slice path: '{}'", path.display());
         tantivy4java_debug!("QUICKWIT DEBUG: get_slice range: {} to {} ({} bytes)", range.start, range.end, range_size);
