@@ -68,3 +68,6 @@ build-ui:
 
 rm-postgres:
 	rm -fr /tmp/quickwit/services/postgres
+
+update-licenses:
+	 dd-rust-license-tool --config license-tool.toml write
