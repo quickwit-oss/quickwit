@@ -16,6 +16,10 @@ mod error;
 
 mod s3_compatible_storage;
 pub use self::s3_compatible_storage::S3CompatibleObjectStorage;
+pub use self::s3_compatible_storage::{
+    OBJECT_STORAGE_REQUEST_COUNT, OBJECT_STORAGE_BYTES_FETCHED,
+    get_object_storage_request_count, get_object_storage_bytes_fetched, reset_object_storage_request_stats,
+};
 pub use self::s3_compatible_storage_resolver::S3CompatibleObjectStorageFactory;
 
 mod policy;
