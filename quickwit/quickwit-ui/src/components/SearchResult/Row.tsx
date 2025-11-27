@@ -83,7 +83,14 @@ function DisplayTimestampValue(row: RawDoc, timestampField: Field | null) {
   }
   return (
     <TableCell sx={{ verticalAlign: "top", padding: "4px" }}>
-      <Box sx={{ maxHeight: "115px", width: "90px", display: "inline-block" }}>
+      <Box
+        sx={{
+          maxHeight: "115px",
+          width: "90px",
+          display: "inline-block",
+          wordBreak: "break-word",
+        }}
+      >
         {formatDateTime(
           field_value,
           timestampField.field_mapping.output_format,
