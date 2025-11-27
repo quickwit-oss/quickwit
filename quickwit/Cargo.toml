@@ -167,7 +167,7 @@ pnet = { version = "0.33", features = ["std"] }
 postcard = { version = "1.1", features = [
   "use-std",
 ], default-features = false }
-pprof = { version = "0.13", features = ["flamegraph"] }
+pprof = { version = "0.14", features = ["flamegraph"] }
 predicates = "3"
 prettyplease = "0.2"
 proc-macro2 = "1.0"
