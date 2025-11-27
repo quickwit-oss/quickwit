@@ -25,7 +25,7 @@ use crate::rest::recover_fn;
 
 /// Regular expression to identify which path should serve an asset file.
 /// If not matched, the server serves the `index.html` file.
-const PATH_PATTERN: &str = r"(^static|\.(png|json|txt|ico|js|map)$)";
+const PATH_PATTERN: &str = r"(^static|\.(png|json|txt|ico|js|map|css|woff2|ttf)$)";
 
 const UI_INDEX_FILE_NAME: &str = "index.html";
 

@@ -12,17 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { screen } from "@testing-library/dom";
-import { waitFor } from "@testing-library/react";
-import { render, unmountComponentAtNode } from "react-dom";
-import { act } from "react-dom/test-utils";
+import { render, screen, waitFor } from "@testing-library/react";
+import { act } from "react";
 import { Client } from "../services/client";
 import SearchView from "./SearchView";
 
 jest.mock("../services/client");
 const mockedUsedNavigate = jest.fn();
-jest.mock("react-router-dom", () => ({
-  ...jest.requireActual("react-router-dom"),
+jest.mock("react-router", () => ({
+  ...jest.requireActual("react-router"),
   useLocation: () => ({
     pathname: "/search",
     search:
@@ -40,7 +38,6 @@ beforeEach(() => {
 
 afterEach(() => {
   // cleanup on exiting
-  unmountComponentAtNode(container);
   container.remove();
   container = null;
 });

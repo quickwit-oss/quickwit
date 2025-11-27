@@ -14,7 +14,6 @@
 
 import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
-import { CurveType } from "@mui/x-charts/models/seriesType/line";
 import {
   extractAggregationResults,
   HistogramResult,
@@ -38,7 +37,7 @@ export function AggregationResult({
 }) {
   const result = extractAggregationResults(searchResponse.aggregations);
   if (isHistogram(result)) {
-    const xAxis = [
+    const xAxis: React.ComponentProps<typeof LineChart>["xAxis"] = [
       {
         data: result.timestamps,
         valueFormatter: (date: number) => {
@@ -46,14 +45,14 @@ export function AggregationResult({
         },
       },
     ];
-    const series = result.data.map((line) => {
-      const curve: CurveType = "monotoneX";
-      return {
-        curve,
-        label: line.name,
-        data: line.value,
-      };
-    });
+    const series: React.ComponentProps<typeof LineChart>["series"] =
+      result.data.map((line) => {
+        return {
+          curve: "monotoneX",
+          label: line.name,
+          data: line.value,
+        };
+      });
     // we don't customize colors because we would need a full palette.
     return <LineChart xAxis={xAxis} series={series} yAxis={[{ min: 0 }]} />;
   } else if (isTerm(result)) {

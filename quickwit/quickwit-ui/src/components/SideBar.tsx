@@ -12,9 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ListSubheader, styled, Typography } from "@mui/material";
+import {
+  ListItemButton,
+  ListSubheader,
+  styled,
+  Typography,
+} from "@mui/material";
 import List from "@mui/material/List";
-import ListItem from "@mui/material/ListItem";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
 import { Database } from "@styled-icons/feather/Database";
@@ -22,10 +26,7 @@ import { Settings } from "@styled-icons/feather/Settings";
 import { GroupWork } from "@styled-icons/material-outlined/GroupWork";
 import { CodeSSlash } from "@styled-icons/remix-line/CodeSSlash";
 import * as React from "react";
-import {
-  Link as RouterLink,
-  LinkProps as RouterLinkProps,
-} from "react-router-dom";
+import { Link as RouterLink, LinkProps as RouterLinkProps } from "react-router";
 import { useLocalStorage } from "../providers/LocalStorageProvider";
 import { toUrlSearchRequestParams } from "../utils/urls";
 import { APP_BAR_HEIGHT_PX } from "./LayoutUtils";
@@ -44,6 +45,7 @@ function ListItemLink(props: ListItemLinkProps) {
       React.forwardRef<HTMLAnchorElement, Omit<RouterLinkProps, "to">>(
         function Link(itemProps, ref) {
           return (
+            // biome-ignore lint/a11y/useValidAriaRole: remove the role
             <RouterLink to={to} ref={ref} {...itemProps} role={undefined} />
           );
         },
@@ -52,12 +54,12 @@ function ListItemLink(props: ListItemLinkProps) {
   );
 
   return (
-    <ListItem button component={renderLink}>
+    <ListItemButton component={renderLink}>
       {icon ? (
         <ListItemIcon sx={{ minWidth: "40px" }}>{icon}</ListItemIcon>
       ) : null}
       <ListItemText primary={primary} />
-    </ListItem>
+    </ListItemButton>
   );
 }
 
