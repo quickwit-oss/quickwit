@@ -45,12 +45,12 @@ use tokio::task::JoinError;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
+use crate::metrics::SplitSearchOutcomeCounters;
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
 use crate::service::{SearcherContext, deserialize_doc_mapper};
 use crate::{QuickwitAggregations, SearchError};
 
-#[instrument(skip_all)]
 async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
@@ -88,7 +88,6 @@ async fn get_split_footer_from_cache_or_fetch(
 
 /// Returns hotcache_bytes and the split directory (`BundleStorage`) with cache layer:
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
-#[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
 pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
@@ -143,7 +142,6 @@ fn configure_storage_retries(
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the
 /// returned `Index` if no `ByteRangeCache` is provided).
-#[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
@@ -434,25 +432,28 @@ fn compute_index_size(hot_directory: &HotDirectory) -> ByteSize {
 /// Apply a leaf search on a single split.
 #[allow(clippy::too_many_arguments)]
 async fn leaf_search_single_split(
-    searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
+    ctx: Arc<LeafSearchContext>,
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
-    doc_mapper: Arc<DocMapper>,
-    split_filter: Arc<RwLock<CanSplitDoBetter>>,
     aggregations_limits: AggregationLimitsGuard,
     search_permit: &mut SearchPermit,
-) -> crate::Result<LeafSearchResponse> {
+) -> crate::Result<Option<LeafSearchResponse>> {
+    let mut leaf_search_state_guard =
+        SplitSearchStateGuard::new(ctx.split_outcome_counters.clone());
+
     rewrite_request(
         &mut search_request,
         &split,
-        doc_mapper.timestamp_field_name(),
+        ctx.doc_mapper.timestamp_field_name(),
     );
-    if let Some(cached_answer) = searcher_context
+    if let Some(cached_answer) = ctx
+        .searcher_context
         .leaf_search_cache
         .get(split.clone(), search_request.clone())
     {
-        return Ok(cached_answer);
+        leaf_search_state_guard.set_state(SplitSearchState::CacheHit);
+        return Ok(Some(cached_answer));
     }
 
     let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
@@ -463,17 +464,18 @@ async fn leaf_search_single_split(
     // split can't have better results.
     //
     if is_metadata_count_request_with_ast(&query_ast, &search_request) {
-        return Ok(get_leaf_resp_from_count(split.num_docs));
+        leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmUp);
+        return Ok(Some(get_leaf_resp_from_count(split.num_docs)));
     }
 
     let split_id = split.split_id.to_string();
     let byte_range_cache =
         ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
     let (index, hot_directory) = open_index_with_caches(
-        searcher_context,
+        &*ctx.searcher_context,
         storage,
         &split,
-        Some(doc_mapper.tokenizer_manager()),
+        Some(ctx.doc_mapper.tokenizer_manager()),
         Some(byte_range_cache.clone()),
     )
     .await?;
@@ -491,19 +493,22 @@ async fn leaf_search_single_split(
 
     let agg_context_params = AggContextParams {
         limits: aggregations_limits,
-        tokenizers: doc_mapper.tokenizer_manager().tantivy_manager().clone(),
+        tokenizers: ctx.doc_mapper.tokenizer_manager().tantivy_manager().clone(),
     };
     let mut collector =
         make_collector_for_split(split_id.clone(), &search_request, agg_context_params)?;
 
     let split_schema = index.schema();
-    let (query, mut warmup_info) = doc_mapper.query(split_schema.clone(), &query_ast, false)?;
+    let (query, mut warmup_info) = ctx
+        .doc_mapper
+        .query(split_schema.clone(), &query_ast, false)?;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
     warmup_info.simplify();
 
     let warmup_start = Instant::now();
+    leaf_search_state_guard.set_state(SplitSearchState::WarmUp);
     warmup(&searcher, &warmup_info).await?;
     let warmup_end = Instant::now();
     let warmup_duration: Duration = warmup_end.duration_since(warmup_start);
@@ -525,20 +530,28 @@ async fn leaf_search_single_split(
 
     let span = info_span!("tantivy_search");
 
-    let (search_request, leaf_search_response) = {
-        let split = split.clone();
+    let split_clone = split.clone();
 
+    let ctx_clone = ctx.clone();
+    leaf_search_state_guard.set_state(SplitSearchState::CpuQueue);
+    let search_request_and_result: Option<(SearchRequest, LeafSearchResponse)> =
         crate::search_thread_pool()
             .run_cpu_intensive(move || {
+                leaf_search_state_guard.set_state(SplitSearchState::Cpu);
                 let cpu_start = Instant::now();
                 let cpu_thread_pool_wait_microsecs = cpu_start.duration_since(warmup_end);
                 let _span_guard = span.enter();
                 // Our search execution has been scheduled, let's check if we can improve the
                 // request based on the results of the preceding searches
-                check_optimize_search_request(&mut search_request, &split, &split_filter);
-                collector.update_search_param(&search_request);
+                let Some(simplified_search_request) =
+                    simplify_search_request(search_request, &split_clone, &ctx_clone.split_filter)
+                else {
+                    leaf_search_state_guard.set_state(SplitSearchState::PrunedAfterWarmup);
+                    return Ok(None);
+                };
+                collector.update_search_param(&simplified_search_request);
                 let mut leaf_search_response: LeafSearchResponse =
-                    if is_metadata_count_request_with_ast(&query_ast, &search_request) {
+                    if is_metadata_count_request_with_ast(&query_ast, &simplified_search_request) {
                         get_leaf_resp_from_count(searcher.num_docs())
                     } else if collector.is_count_only() {
                         let count = query.count(&searcher)? as u64;
@@ -554,18 +567,28 @@ async fn leaf_search_single_split(
                     cpu_thread_pool_wait_microsecs: cpu_thread_pool_wait_microsecs.as_micros()
                         as u64,
                 });
-                Result::<_, TantivyError>::Ok((search_request, leaf_search_response))
+                leaf_search_state_guard.set_state(SplitSearchState::Success);
+                Result::<_, TantivyError>::Ok(Some((
+                    simplified_search_request,
+                    leaf_search_response,
+                )))
             })
             .await
             .map_err(|_| {
                 crate::SearchError::Internal(format!("leaf search panicked. split={split_id}"))
-            })??
-    };
+            })??;
 
-    searcher_context
-        .leaf_search_cache
-        .put(split, search_request, leaf_search_response.clone());
-    Ok(leaf_search_response)
+    // Let's cache this result in the partial result cache.
+    if let Some((leaf_search_req, leaf_search_resp)) = search_request_and_result {
+        ctx.searcher_context.leaf_search_cache.put(
+            split,
+            leaf_search_req,
+            leaf_search_resp.clone(),
+        );
+        Ok(Some(leaf_search_resp))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Rewrite a request removing parts which incur additional download or computation with no
@@ -1255,17 +1278,39 @@ pub async fn multi_index_leaf_search(
 }
 
 /// Optimizes the search_request based on CanSplitDoBetter
-/// Returns true if the split can return better results
-fn check_optimize_search_request(
-    search_request: &mut SearchRequest,
+/// Returns None if the search request does nothing can be skipped.
+#[must_use]
+fn simplify_search_request(
+    mut search_request: SearchRequest,
     split: &SplitIdAndFooterOffsets,
-    split_filter: &Arc<RwLock<CanSplitDoBetter>>,
-) -> bool {
-    let can_be_better = split_filter.read().unwrap().can_be_better(split);
-    if !can_be_better {
-        disable_search_request_hits(search_request);
+    split_filter_lock: &Arc<RwLock<CanSplitDoBetter>>,
+) -> Option<SearchRequest> {
+    let can_be_better: bool;
+    let is_trace_req: bool;
+    {
+        let split_filter_guard = split_filter_lock.read().unwrap();
+        can_be_better = split_filter_guard.can_be_better(split);
+        // The info is originally from the search_request.aggregation as a string (yes we need to
+        // clean this eventually). We don't want to parse it again, so we use the
+        // split_filter variant to get that info.
+        is_trace_req = matches!(
+            &*split_filter_guard,
+            &CanSplitDoBetter::FindTraceIdsAggregation(_)
+        );
     }
-    can_be_better
+    if !can_be_better {
+        disable_search_request_hits(&mut search_request);
+    }
+    if search_request.max_hits > 0 {
+        return Some(search_request);
+    }
+    if search_request.aggregation_request.is_some() && !is_trace_req {
+        return Some(search_request);
+    }
+    if search_request.count_hits() == CountHits::CountAll {
+        return Some(search_request);
+    }
+    None
 }
 
 /// Alter the search request so it does not return any docs.
@@ -1283,7 +1328,6 @@ fn disable_search_request_hits(search_request: &mut SearchRequest) {
 /// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
-#[instrument(skip_all, fields(index = ?request.index_id_patterns))]
 pub async fn single_doc_mapping_leaf_search(
     searcher_context: Arc<SearcherContext>,
     request: Arc<SearchRequest>,
@@ -1294,20 +1338,10 @@ pub async fn single_doc_mapping_leaf_search(
 ) -> Result<LeafSearchResponse, SearchError> {
     let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
     let num_splits = splits.len();
-    let current_span = tracing::Span::current();
-    current_span.record("num_docs", num_docs);
-    current_span.record("num_splits", num_splits);
-
     info!(num_docs, num_splits, split_offsets = ?PrettySample::new(&splits, 5));
 
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     let split_with_req = split_filter.optimize(request.clone(), splits)?;
-
-    // if client wants full count, or we are doing an aggregation, we want to run every splits.
-    // However if the aggregation is the tracing aggregation, we don't actually need all splits.
-    let run_all_splits = request.count_hits() == CountHits::CountAll
-        || (request.aggregation_request.is_some()
-            && !matches!(split_filter, CanSplitDoBetter::FindTraceIdsAggregation(_)));
 
     let split_filter = Arc::new(RwLock::new(split_filter));
 
@@ -1333,29 +1367,35 @@ pub async fn single_doc_mapping_leaf_search(
         .get_permits(permit_sizes)
         .await;
 
-    for ((split, mut request), permit_fut) in
+    let leaf_search_context = Arc::new(LeafSearchContext {
+        searcher_context: searcher_context.clone(),
+        split_outcome_counters: Arc::new(SplitSearchOutcomeCounters::new_unregistered()),
+        incremental_merge_collector: incremental_merge_collector.clone(),
+        doc_mapper: doc_mapper.clone(),
+        split_filter: split_filter.clone(),
+    });
+
+    for ((split, search_request), permit_fut) in
         split_with_req.into_iter().zip(permit_futures.into_iter())
     {
         let leaf_split_search_permit = permit_fut
             .instrument(info_span!("waiting_for_leaf_search_split_semaphore"))
             .await;
 
-        let can_be_better = check_optimize_search_request(&mut request, &split, &split_filter);
-        if !can_be_better && !run_all_splits {
+        let Some(simplified_search_request) =
+            simplify_search_request(search_request, &split, &split_filter)
+        else {
             continue;
-        }
+        };
 
         leaf_search_single_split_join_handles.push((
             split.split_id.clone(),
             tokio::spawn(
                 leaf_search_single_split_wrapper(
-                    request,
-                    searcher_context.clone(),
+                    simplified_search_request,
+                    leaf_search_context.clone(),
                     index_storage.clone(),
-                    doc_mapper.clone(),
                     split,
-                    split_filter.clone(),
-                    incremental_merge_collector.clone(),
                     leaf_split_search_permit,
                     aggregations_limits.clone(),
                 )
@@ -1385,6 +1425,8 @@ pub async fn single_doc_mapping_leaf_search(
         }
     }
 
+    info!(split_outcome_counters=%leaf_search_context.split_outcome_counters, "leaf split search finished");
+
     // we can't use unwrap_or_clone because mutexes aren't Clone
     let mut incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
         Ok(filter_merger) => filter_merger.into_inner().unwrap(),
@@ -1409,46 +1451,102 @@ pub async fn single_doc_mapping_leaf_search(
     Ok(leaf_search_response_reresult??)
 }
 
+#[derive(Copy, Clone)]
+enum SplitSearchState {
+    Start,
+    CacheHit,
+    PrunedBeforeWarmUp,
+    WarmUp,
+    PrunedAfterWarmup,
+    CpuQueue,
+    Cpu,
+    Success,
+}
+
+impl SplitSearchState {
+    pub fn inc(self, counters: &SplitSearchOutcomeCounters) {
+        match self {
+            SplitSearchState::Start => counters.cancel_before_warmup.inc(),
+            SplitSearchState::CacheHit => counters.cache_hit.inc(),
+            SplitSearchState::PrunedBeforeWarmUp => counters.pruned_before_warmup.inc(),
+            SplitSearchState::WarmUp => counters.cancel_warmup.inc(),
+            SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.inc(),
+            SplitSearchState::CpuQueue => counters.cancel_cpu_queue.inc(),
+            SplitSearchState::Cpu => counters.cancel_cpu.inc(),
+            SplitSearchState::Success => counters.success.inc(),
+        }
+    }
+}
+
+impl Drop for SplitSearchStateGuard {
+    fn drop(&mut self) {
+        self.state
+            .inc(&crate::metrics::SEARCH_METRICS.split_search_outcome_total);
+        self.state.inc(&self.local_split_search_outcome_counters);
+    }
+}
+
+struct SplitSearchStateGuard {
+    state: SplitSearchState,
+    local_split_search_outcome_counters: Arc<SplitSearchOutcomeCounters>,
+}
+
+impl SplitSearchStateGuard {
+    pub fn new(local_split_search_outcome_counters: Arc<SplitSearchOutcomeCounters>) -> Self {
+        SplitSearchStateGuard {
+            state: SplitSearchState::Start,
+            local_split_search_outcome_counters: local_split_search_outcome_counters.clone(),
+        }
+    }
+
+    pub fn set_state(&mut self, state: SplitSearchState) {
+        self.state = state;
+    }
+}
+
+struct LeafSearchContext {
+    searcher_context: Arc<SearcherContext>,
+    split_outcome_counters: Arc<SplitSearchOutcomeCounters>,
+    incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
+    doc_mapper: Arc<DocMapper>,
+    split_filter: Arc<RwLock<CanSplitDoBetter>>,
+}
+
 #[allow(clippy::too_many_arguments)]
 #[instrument(skip_all, fields(split_id = split.split_id, num_docs = split.num_docs))]
 async fn leaf_search_single_split_wrapper(
     request: SearchRequest,
-    searcher_context: Arc<SearcherContext>,
+    ctx: Arc<LeafSearchContext>,
     index_storage: Arc<dyn Storage>,
-    doc_mapper: Arc<DocMapper>,
     split: SplitIdAndFooterOffsets,
-    split_filter: Arc<RwLock<CanSplitDoBetter>>,
-    incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
     mut search_permit: SearchPermit,
     aggregations_limits: AggregationLimitsGuard,
 ) {
-    crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
     let timer = crate::SEARCH_METRICS
         .leaf_search_split_duration_secs
         .start_timer();
-    let leaf_search_single_split_res = leaf_search_single_split(
-        &searcher_context,
-        request,
-        index_storage,
-        split.clone(),
-        doc_mapper,
-        split_filter.clone(),
-        aggregations_limits,
-        &mut search_permit,
-    )
-    .await;
+    let leaf_search_single_split_opt_res: crate::Result<Option<LeafSearchResponse>> =
+        leaf_search_single_split(
+            request,
+            ctx.clone(),
+            index_storage,
+            split.clone(),
+            aggregations_limits,
+            &mut search_permit,
+        )
+        .await;
 
     // Explicitly drop the permit for readability.
     // This should always happen after the ephemeral search cache is dropped.
     std::mem::drop(search_permit);
 
-    if leaf_search_single_split_res.is_ok() {
+    if leaf_search_single_split_opt_res.is_ok() {
         timer.observe_duration();
     }
 
-    let mut locked_incremental_merge_collector = incremental_merge_collector.lock().unwrap();
-    match leaf_search_single_split_res {
-        Ok(split_search_res) => {
+    let mut locked_incremental_merge_collector = ctx.incremental_merge_collector.lock().unwrap();
+    match leaf_search_single_split_opt_res {
+        Ok(Some(split_search_res)) => {
             if let Err(err) = locked_incremental_merge_collector.add_result(split_search_res) {
                 locked_incremental_merge_collector.add_failed_split(SplitSearchError {
                     split_id: split.split_id.clone(),
@@ -1457,6 +1555,7 @@ async fn leaf_search_single_split_wrapper(
                 });
             }
         }
+        Ok(None) => {}
         Err(err) => locked_incremental_merge_collector.add_failed_split(SplitSearchError {
             split_id: split.split_id.clone(),
             error: format!("{err}"),
@@ -1466,7 +1565,7 @@ async fn leaf_search_single_split_wrapper(
     if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
         // TODO: we could use the RWLock instead and read the value instead of updating it
         // unconditionally.
-        split_filter
+        ctx.split_filter
             .write()
             .unwrap()
             .record_new_worst_hit(last_hit.as_ref());

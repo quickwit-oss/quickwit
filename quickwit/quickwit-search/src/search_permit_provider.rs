@@ -38,7 +38,6 @@ pub struct SearchPermitProvider {
     actor_stopped: watch::Receiver<bool>,
 }
 
-#[derive(Debug)]
 pub enum SearchPermitMessage {
     Request {
         permit_sender: oneshot::Sender<Vec<SearchPermitFuture>>,
@@ -235,7 +234,6 @@ impl SearchPermitActor {
     }
 }
 
-#[derive(Debug)]
 pub struct SearchPermit {
     _ongoing_gauge_guard: GaugeGuard<'static>,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
@@ -288,7 +286,6 @@ impl Drop for SearchPermit {
     }
 }
 
-#[derive(Debug)]
 pub struct SearchPermitFuture(oneshot::Receiver<SearchPermit>);
 
 impl Future for SearchPermitFuture {
