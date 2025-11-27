@@ -17,11 +17,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{Context, bail};
+use anyhow::{bail, Context};
 use bytesize::ByteSize;
 use http::HeaderMap;
 use quickwit_common::fs::get_disk_size;
-use quickwit_common::net::{Host, find_private_ip, get_short_hostname};
+use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
 use quickwit_proto::types::NodeId;
@@ -35,8 +35,8 @@ use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
-    ConfigFormat, IndexerConfig, IngestApiConfig, JaegerConfig, MetastoreConfigs, NodeConfig,
-    SearcherConfig, TlsConfig, validate_identifier, validate_node_id,
+    validate_identifier, validate_node_id, ConfigFormat, IndexerConfig, IngestApiConfig,
+    JaegerConfig, MetastoreConfigs, NodeConfig, SearcherConfig, TlsConfig,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
@@ -679,6 +679,7 @@ mod tests {
             JaegerConfig {
                 enable_endpoint: true,
                 lookback_period_hours: NonZeroU64::new(24).unwrap(),
+                lookback_period_traces_hours: NonZeroU64::new(24).unwrap(),
                 max_trace_duration_secs: NonZeroU64::new(600).unwrap(),
                 max_fetch_spans: NonZeroU64::new(1_000).unwrap(),
             }
@@ -718,10 +719,8 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(
-            format!("{parsing_error:?}")
-                .contains("unknown field `max_num_concurrent_split_searches_with_typo`")
-        );
+        assert!(format!("{parsing_error:?}")
+            .contains("unknown field `max_num_concurrent_split_searches_with_typo`"));
     }
 
     #[tokio::test]
@@ -1058,15 +1057,13 @@ mod tests {
             node_id: 1
             metastore_uri: ''
         "#;
-            assert!(
-                load_node_config_with_env(
-                    ConfigFormat::Yaml,
-                    config_yaml.as_bytes(),
-                    &Default::default()
-                )
-                .await
-                .is_err()
-            );
+            assert!(load_node_config_with_env(
+                ConfigFormat::Yaml,
+                config_yaml.as_bytes(),
+                &Default::default()
+            )
+            .await
+            .is_err());
         }
         {
             let config_yaml = r#"
@@ -1075,15 +1072,13 @@ mod tests {
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
         "#;
-            assert!(
-                load_node_config_with_env(
-                    ConfigFormat::Yaml,
-                    config_yaml.as_bytes(),
-                    &Default::default()
-                )
-                .await
-                .is_err()
-            );
+            assert!(load_node_config_with_env(
+                ConfigFormat::Yaml,
+                config_yaml.as_bytes(),
+                &Default::default()
+            )
+            .await
+            .is_err());
         }
     }
 
@@ -1163,11 +1158,9 @@ mod tests {
             max_trace_duration_secs: 0
         "#;
         let error = serde_yaml::from_str::<JaegerConfig>(jaeger_config_yaml).unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains("max_trace_duration_secs: invalid value: integer `0`")
-        )
+        assert!(error
+            .to_string()
+            .contains("max_trace_duration_secs: invalid value: integer `0`"))
     }
 
     #[tokio::test]
