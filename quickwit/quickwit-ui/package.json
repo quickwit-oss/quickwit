@@ -26,13 +26,12 @@
     "@types/react-dom": "19.2.3",
     "@types/swagger-ui-react": "5.18.0",
     "babel-jest": "30.2.0",
-    "babel-plugin-transform-assets": "1.0.2",
+    "@dr.pogodin/babel-plugin-transform-assets": "1.2.5",
     "babel-preset-react-app": "10.1.0",
     "cypress": "13.3.2",
     "dayjs": "1.11.7",
     "jest": "30.2.0",
     "jest-environment-jsdom": "30.2.0",
-    "jest-transform-stub": "2.0.0",
     "monaco-editor": "0.54.0",
     "react": "19.2.0",
     "react-app-polyfill": "3.0.0",
@@ -40,7 +39,6 @@
     "react-monaco-editor": "0.59.0",
     "react-number-format": "5.4.4",
     "react-router": "7.9.6",
-    "react-router-dom": "6.6.1",
     "styled-components": "6.1.19",
     "styled-icons": "10.47.1",
     "swagger-ui-react": "5.30.2",
@@ -50,7 +48,9 @@
   },
   "resolutions": {
     "@types/react": "19.2.6",
-    "@types/react-dom": "19.2.3"
+    "@types/react-dom": "19.2.3",
+    "dompurify": "3.2.4",
+    "glob": "11.1.0"
   },
   "scripts": {
     "start": "vite",

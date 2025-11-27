@@ -15,7 +15,10 @@ module.exports = {
       {
         presets: [["babel-preset-react-app", { runtime: "automatic" }]],
         plugins: [
-          ["babel-plugin-transform-assets", { extensions: ["svg", "woff2"] }],
+          [
+            "@dr.pogodin/babel-plugin-transform-assets",
+            { extensions: ["svg", "woff2"] },
+          ],
         ],
         babelrc: false,
         configFile: false,
