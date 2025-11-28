@@ -2,7 +2,7 @@ endpoint: "_msearch"
 method: POST
 ndjson:
   - {"index":"gharchive"}
-  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0}
+  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0, "track_total_hits": true}
 expected:
   responses:
     - hits:
@@ -16,7 +16,7 @@ params:
   extra_filters: "type:PushEvent,actor.login:jadonk"
 ndjson:
   - {"index":"gharchive"}
-  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0}
+  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0, "track_total_hits": true}
 expected:
   responses:
     - hits:
@@ -110,7 +110,7 @@ endpoint: "_msearch"
 method: POST
 ndjson:
   - {"index":"idontexist"}
-  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0}
+  - {"query" : {"match" : { "type": "PushEvent"}}, "size": 0, "track_total_hits": true}
 expected:
   responses:
     - status: 404

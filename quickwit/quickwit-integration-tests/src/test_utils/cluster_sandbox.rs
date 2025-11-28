@@ -176,10 +176,7 @@ pub struct ResolvedClusterConfig {
 impl ResolvedClusterConfig {
     /// Start a cluster using this config and waits for the nodes to be ready
     pub async fn start(self) -> ClusterSandbox {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("rustls crypto ring default provider installation should not fail");
-
+        quickwit_cli::install_default_crypto_ring_provider();
         let mut node_shutdown_handles = Vec::new();
         let runtimes_config = RuntimesConfig::light_for_tests();
         let storage_resolver = StorageResolver::unconfigured();

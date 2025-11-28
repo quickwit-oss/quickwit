@@ -40,6 +40,26 @@ pub struct IntCounterVec<const N: usize> {
 }
 
 impl<const N: usize> IntCounterVec<N> {
+    pub fn new(
+        name: &str,
+        help: &str,
+        subsystem: &str,
+        const_labels: &[(&str, &str)],
+        label_names: [&str; N],
+    ) -> IntCounterVec<N> {
+        let owned_const_labels: HashMap<String, String> = const_labels
+            .iter()
+            .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
+            .collect();
+        let counter_opts = Opts::new(name, help)
+            .namespace("quickwit")
+            .subsystem(subsystem)
+            .const_labels(owned_const_labels);
+        let underlying = PrometheusIntCounterVec::new(counter_opts, &label_names)
+            .expect("failed to create counter vec");
+        IntCounterVec { underlying }
+    }
+
     pub fn with_label_values(&self, label_values: [&str; N]) -> IntCounter {
         self.underlying.with_label_values(&label_values)
     }
@@ -92,21 +112,10 @@ pub fn new_counter_vec<const N: usize>(
     const_labels: &[(&str, &str)],
     label_names: [&str; N],
 ) -> IntCounterVec<N> {
-    let owned_const_labels: HashMap<String, String> = const_labels
-        .iter()
-        .map(|(label_name, label_value)| (label_name.to_string(), label_value.to_string()))
-        .collect();
-    let counter_opts = Opts::new(name, help)
-        .namespace("quickwit")
-        .subsystem(subsystem)
-        .const_labels(owned_const_labels);
-    let underlying = PrometheusIntCounterVec::new(counter_opts, &label_names)
-        .expect("failed to create counter vec");
-
-    let collector = Box::new(underlying.clone());
+    let int_counter_vec = IntCounterVec::new(name, help, subsystem, const_labels, label_names);
+    let collector = Box::new(int_counter_vec.underlying.clone());
     prometheus::register(collector).expect("failed to register counter vec");
-
-    IntCounterVec { underlying }
+    int_counter_vec
 }
 
 pub fn new_float_gauge(
