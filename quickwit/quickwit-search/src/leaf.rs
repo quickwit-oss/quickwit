@@ -45,6 +45,7 @@ use tokio::task::JoinError;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
+use crate::join_vec::{JoinVec, TryJoinVec};
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
 use crate::service::{SearcherContext, deserialize_doc_mapper};
@@ -1179,8 +1180,7 @@ pub async fn multi_index_leaf_search(
     //
     // It is a little bit tricky how to handle which is now the incremental_merge_collector, one
     // per index, e.g. when to merge results and how to avoid lock contention.
-    let mut leaf_request_tasks = Vec::new();
-
+    let mut try_join_vec = TryJoinVec::new();
     for leaf_search_request_ref in leaf_search_request.leaf_requests.into_iter() {
         let index_uri = quickwit_common::uri::Uri::from_str(
             leaf_search_request
@@ -1203,7 +1203,7 @@ pub async fn multi_index_leaf_search(
             })?
             .clone();
 
-        let leaf_request_future = tokio::spawn({
+        try_join_vec.spawn({
             let storage_resolver = storage_resolver.clone();
             let searcher_context = searcher_context.clone();
             let search_request = search_request.clone();
@@ -1218,33 +1218,17 @@ pub async fn multi_index_leaf_search(
                     doc_mapper,
                     aggregation_limits,
                 )
+                .in_current_span()
                 .await
             }
-            .in_current_span()
         });
-        leaf_request_tasks.push(leaf_request_future);
     }
 
-    let leaf_responses: Vec<crate::Result<LeafSearchResponse>> = tokio::time::timeout(
-        searcher_context.searcher_config.request_timeout(),
-        try_join_all(leaf_request_tasks),
-    )
-    .await??;
+    let leaf_responses: Vec<LeafSearchResponse> = try_join_vec.try_join_all().await?;
     let merge_collector = make_merge_collector(&search_request, aggregation_limits)?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
     for result in leaf_responses {
-        match result {
-            Ok(result) => {
-                incremental_merge_collector.add_result(result)?;
-            }
-            Err(err) => {
-                incremental_merge_collector.add_failed_split(SplitSearchError {
-                    split_id: "unknown".to_string(),
-                    error: format!("{err}"),
-                    retryable_error: true,
-                });
-            }
-        }
+        incremental_merge_collector.add_result(result)?;
     }
 
     crate::search_thread_pool()
@@ -1311,9 +1295,6 @@ pub async fn single_doc_mapping_leaf_search(
 
     let split_filter = Arc::new(RwLock::new(split_filter));
 
-    let mut leaf_search_single_split_join_handles: Vec<(String, tokio::task::JoinHandle<()>)> =
-        Vec::with_capacity(split_with_req.len());
-
     let merge_collector = make_merge_collector(&request, aggregations_limits.clone())?;
     let incremental_merge_collector = IncrementalCollector::new(merge_collector);
     let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
@@ -1333,6 +1314,7 @@ pub async fn single_doc_mapping_leaf_search(
         .get_permits(permit_sizes)
         .await;
 
+    let mut join_vec = JoinVec::new_with_capacity(split_with_req.len());
     for ((split, mut request), permit_fut) in
         split_with_req.into_iter().zip(permit_futures.into_iter())
     {
@@ -1344,34 +1326,31 @@ pub async fn single_doc_mapping_leaf_search(
         if !can_be_better && !run_all_splits {
             continue;
         }
-
-        leaf_search_single_split_join_handles.push((
+        join_vec.spawn(
             split.split_id.clone(),
-            tokio::spawn(
-                leaf_search_single_split_wrapper(
-                    request,
-                    searcher_context.clone(),
-                    index_storage.clone(),
-                    doc_mapper.clone(),
-                    split,
-                    split_filter.clone(),
-                    incremental_merge_collector.clone(),
-                    leaf_split_search_permit,
-                    aggregations_limits.clone(),
-                )
-                .in_current_span(),
-            ),
-        ));
+            leaf_search_single_split_wrapper(
+                request,
+                searcher_context.clone(),
+                index_storage.clone(),
+                doc_mapper.clone(),
+                split,
+                split_filter.clone(),
+                incremental_merge_collector.clone(),
+                leaf_split_search_permit,
+                aggregations_limits.clone(),
+            )
+            .in_current_span(),
+        );
     }
 
     // TODO we could cancel running splits when !run_all_splits and the running split can no
     // longer give better results after some other split answered.
     let mut split_search_join_errors: Vec<(String, JoinError)> = Vec::new();
 
-    // There is no need to use `join_all`, as these are spawned tasks.
-    for (split, leaf_search_join_handle) in leaf_search_single_split_join_handles {
+    let leaf_search_single_split_join_handles = join_vec.join_all().await;
+    for (split, leaf_search_join_result) in leaf_search_single_split_join_handles {
         // splits that did not panic were already added to the collector
-        if let Err(join_error) = leaf_search_join_handle.await {
+        if let Err(join_error) = leaf_search_join_result {
             if join_error.is_cancelled() {
                 // An explicit task cancellation is not an error.
                 continue;
