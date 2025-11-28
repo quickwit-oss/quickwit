@@ -464,7 +464,7 @@ async fn leaf_search_single_split(
     // split can't have better results.
     //
     if is_metadata_count_request_with_ast(&query_ast, &search_request) {
-        leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmUp);
+        leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmup);
         return Ok(Some(get_leaf_resp_from_count(split.num_docs)));
     }
 
@@ -1320,6 +1320,7 @@ fn disable_search_request_hits(search_request: &mut SearchRequest) {
     search_request.max_hits = 0;
     search_request.start_offset = 0;
     search_request.sort_fields.clear();
+    search_request.search_after = None;
 }
 
 /// Searches multiple splits for a specific index and a single doc mapping
@@ -1385,6 +1386,9 @@ pub async fn single_doc_mapping_leaf_search(
         let Some(simplified_search_request) =
             simplify_search_request(search_request, &split, &split_filter)
         else {
+            let mut leaf_search_state_guard =
+                SplitSearchStateGuard::new(leaf_search_context.split_outcome_counters.clone());
+            leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmup);
             continue;
         };
 
@@ -1455,7 +1459,7 @@ pub async fn single_doc_mapping_leaf_search(
 enum SplitSearchState {
     Start,
     CacheHit,
-    PrunedBeforeWarmUp,
+    PrunedBeforeWarmup,
     WarmUp,
     PrunedAfterWarmup,
     CpuQueue,
@@ -1468,7 +1472,7 @@ impl SplitSearchState {
         match self {
             SplitSearchState::Start => counters.cancel_before_warmup.inc(),
             SplitSearchState::CacheHit => counters.cache_hit.inc(),
-            SplitSearchState::PrunedBeforeWarmUp => counters.pruned_before_warmup.inc(),
+            SplitSearchState::PrunedBeforeWarmup => counters.pruned_before_warmup.inc(),
             SplitSearchState::WarmUp => counters.cancel_warmup.inc(),
             SplitSearchState::PrunedAfterWarmup => counters.pruned_after_warmup.inc(),
             SplitSearchState::CpuQueue => counters.cancel_cpu_queue.inc(),

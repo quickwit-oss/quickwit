@@ -418,14 +418,14 @@ mod tests {
             .await;
         // the next permit is blocked by the memory budget
         let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
-        try_get(next_blocked_permit_fut).await.unwrap_err();
+        try_get(next_blocked_permit_fut).await.err().unwrap();
         // if we drop one of the permits, we can get a new one
         permits.drain(0..1);
         let next_permit_fut = remaining_permit_futs.next().unwrap();
         let _new_permit = try_get(next_permit_fut).await.unwrap();
         // the next permit is blocked again by the memory budget
         let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
-        try_get(next_blocked_permit_fut).await.unwrap_err();
+        try_get(next_blocked_permit_fut).await.err().unwrap();
         // by setting a more accurate memory usage after a completed warmup, we can get more permits
         permits[0].update_memory_usage(ByteSize::mb(4));
         permits[1].update_memory_usage(ByteSize::mb(6));
@@ -448,14 +448,14 @@ mod tests {
             .await;
         // the next permit is blocked by the warmup slots
         let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
-        try_get(next_blocked_permit_fut).await.unwrap_err();
+        try_get(next_blocked_permit_fut).await.err().unwrap();
         // if we drop one of the permits, we can get a new one
         permits.drain(0..1);
         let next_permit_fut = remaining_permit_futs.next().unwrap();
         permits.push(try_get(next_permit_fut).await.unwrap());
         // the next permit is blocked again by the warmup slots
         let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
-        try_get(next_blocked_permit_fut).await.unwrap_err();
+        try_get(next_blocked_permit_fut).await.err().unwrap();
         // we can explicitly free the warmup slot on a permit
         permits[0].free_warmup_slot();
         let next_permit_fut = remaining_permit_futs.next().unwrap();
@@ -463,7 +463,7 @@ mod tests {
         // dropping that same permit does not free up another slot
         permits.drain(0..1);
         let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
-        try_get(next_blocked_permit_fut).await.unwrap_err();
+        try_get(next_blocked_permit_fut).await.err().unwrap();
         // but dropping a permit for which the slot wasn't explicitly free does free up a slot
         permits.drain(0..1);
         let next_blocked_permit_fut = remaining_permit_futs.next().unwrap();
