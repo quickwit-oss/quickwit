@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { describe, expect, it } from "@jest/globals";
 import { render, screen } from "@testing-library/react";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter } from "react-router";
 import App from "./views/App";
 
-describe("App", function () {
-  it("Should display side bar links", function () {
+describe("App", () => {
+  it("Should display side bar links", () => {
     render(
       <BrowserRouter>
         <App />

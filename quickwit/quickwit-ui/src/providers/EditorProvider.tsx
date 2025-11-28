@@ -22,7 +22,7 @@ import {
 } from "react";
 
 type ContextProps = {
-  editorRef: MutableRefObject<any | null> | null;
+  editorRef: MutableRefObject<unknown | null> | null;
   monacoRef: MutableRefObject<typeof monacoEditor | null> | null;
 };
 
@@ -33,8 +33,8 @@ const defaultValues = {
 
 const EditorContext = createContext<ContextProps>(defaultValues);
 
-export const EditorProvider = ({ children }: PropsWithChildren<{}>) => {
-  const editorRef = useRef<any | null>(null);
+export const EditorProvider = ({ children }: PropsWithChildren<unknown>) => {
+  const editorRef = useRef<unknown | null>(null);
   const monacoRef = useRef<typeof monacoEditor | null>(null);
 
   return (

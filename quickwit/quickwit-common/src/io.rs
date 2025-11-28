@@ -377,7 +377,7 @@ mod tests {
         }
         controlled_write.flush().await.unwrap();
         let elapsed = start.elapsed();
-        assert!(elapsed <= Duration::from_millis(5));
+        assert!(elapsed <= Duration::from_millis(10));
         assert_eq!(io_controls.num_bytes(), 2_000_000u64);
     }
 

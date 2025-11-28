@@ -345,7 +345,7 @@ pub async fn leaf_list_terms(
             async move {
                 let leaf_split_search_permit = search_permit_recv.await;
                 // TODO dedicated counter and timer?
-                crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
+                crate::SEARCH_METRICS.leaf_list_terms_splits_total.inc();
                 let timer = crate::SEARCH_METRICS
                     .leaf_search_split_duration_secs
                     .start_timer();

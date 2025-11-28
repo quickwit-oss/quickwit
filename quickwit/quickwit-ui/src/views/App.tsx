@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { CssBaseline, ThemeProvider } from "@mui/material";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router";
 import { FullBoxContainer } from "../components/LayoutUtils";
 import SideBar from "../components/SideBar";
 import TopBar from "../components/TopBar";

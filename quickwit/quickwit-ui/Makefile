@@ -4,7 +4,7 @@ build:
 	yarn build
 
 install:
-	yarn install
+	yarn install --frozen-lockfile
 
 start:
 	yarn start

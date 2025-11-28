@@ -18,19 +18,17 @@ import {
   Button,
   Divider,
   List,
-  ListItem,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Popover,
-  TextField,
-  TextFieldProps,
 } from "@mui/material";
 import { DateTimePicker, LocalizationProvider } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import { Dayjs, default as dayjs } from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import utc from "dayjs/plugin/utc";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { JSX, useEffect, useMemo, useState } from "react";
 import { DATE_TIME_WITH_SECONDS_FORMAT } from "../utils/models";
 
 dayjs.extend(relativeTime);
@@ -153,19 +151,18 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
               <List disablePadding>
                 {TIME_RANGE_CHOICES.map((value, idx) => {
                   return (
-                    <ListItem
+                    <ListItemButton
                       key={idx}
-                      button
                       onClick={() => handleTimeRangeChoiceClick(value[1])}
                     >
                       <ListItemText primary={value[0]} />
-                    </ListItem>
+                    </ListItemButton>
                   );
                 })}
-                <ListItem button onClick={handleReset}>
+                <ListItemButton onClick={handleReset}>
                   <ListItemText primary="Reset" />
-                </ListItem>
-                <ListItem button onClick={handleOpenCustomDatesPanelClick}>
+                </ListItemButton>
+                <ListItemButton onClick={handleOpenCustomDatesPanelClick}>
                   <ListItemIcon
                     sx={{
                       alignItems: "left",
@@ -182,7 +179,7 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
                   <ListItemIcon sx={{ minWidth: "inherit" }}>
                     <ChevronRight />
                   </ListItemIcon>
-                </ListItem>
+                </ListItemButton>
               </List>
             </Box>
             {state.anchor !== null && state.customDatesPanelOpen && (
@@ -237,7 +234,7 @@ function CustomDatesPanel(props: TimeRangeSelectProps): JSX.Element {
             <DateTimePicker
               label="Start Date"
               value={startDate}
-              inputFormat={DATE_TIME_WITH_SECONDS_FORMAT}
+              format={DATE_TIME_WITH_SECONDS_FORMAT}
               onChange={(newValue: null | Dayjs) => {
                 // By default, newValue is a datetime defined on the local time zone and for now we consider
                 // input/output only in UTC.
@@ -249,16 +246,14 @@ function CustomDatesPanel(props: TimeRangeSelectProps): JSX.Element {
                     : null,
                 );
               }}
-              renderInput={(props: TextFieldProps) => (
-                <TextField {...props} sx={{ width: "100%" }} />
-              )}
+              slotProps={{ textField: { sx: { width: "100%" } } }}
             />
           </Box>
           <Box>
             <DateTimePicker
               label="End Date"
               value={endDate}
-              inputFormat={DATE_TIME_WITH_SECONDS_FORMAT}
+              format={DATE_TIME_WITH_SECONDS_FORMAT}
               onChange={(newValue: null | Dayjs) => {
                 // By default, newValue is a datetime defined on the local time zone and for now we consider
                 // input/output only in UTC.
@@ -270,9 +265,7 @@ function CustomDatesPanel(props: TimeRangeSelectProps): JSX.Element {
                     : null,
                 );
               }}
-              renderInput={(props: TextFieldProps) => (
-                <TextField {...props} sx={{ width: "100%" }} />
-              )}
+              slotProps={{ textField: { sx: { width: "100%" } } }}
             />
           </Box>
         </Box>

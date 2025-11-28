@@ -5,6 +5,7 @@ endpoint: "fast_only/_search"
 params:
   size: 0
 json:
+  track_total_hits: true
   query:
     term:
       fast_text: "abc-123"
@@ -20,6 +21,7 @@ endpoint: "fast_only/_search"
 params:
   size: 0
 json:
+  track_total_hits: true
   query:
     term:
       fast_text: "zzz"
@@ -36,6 +38,7 @@ endpoint: "fast_only/_search"
 params:
   size: 0
 json:
+  track_total_hits: true
   query:
     terms:
       fast_text:
@@ -54,6 +57,7 @@ endpoint: "fast_only/_search"
 params:
   size: 0
 json:
+  track_total_hits: true
   query:
     terms:
       fast_text:
@@ -72,6 +76,7 @@ endpoint: "fast_only/_search"
 params:
   size: 0
 json:
+  track_total_hits: true
   query:
     term:
       obj.nested_text: "abc-123"
@@ -88,6 +93,7 @@ endpoint: "fast_only/_search"
 params:
   size: 0
 json:
+  track_total_hits: true
   query:
     term:
       obj.nested_text: "zzz"
@@ -104,6 +110,7 @@ endpoint: "fast_only/_search"
 params:
   size: 0
 json:
+  track_total_hits: true
   query:
     terms:
       obj.nested_text:
@@ -122,6 +129,7 @@ endpoint: "fast_only/_search"
 params:
   size: 0
 json:
+  track_total_hits: true
   query:
     terms:
       obj.nested_text:

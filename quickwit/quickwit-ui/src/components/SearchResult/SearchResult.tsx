@@ -14,7 +14,7 @@
 
 import { Box, Typography } from "@mui/material";
 import { useMemo } from "react";
-import NumberFormat from "react-number-format";
+import { NumericFormat } from "react-number-format";
 import { Index, ResponseError, SearchResponse } from "../../utils/models";
 import Loader from "../Loader";
 import ErrorResponseDisplay from "../ResponseErrorDisplay";
@@ -25,13 +25,13 @@ function HitCount({ searchResponse }: { searchResponse: SearchResponse }) {
   return (
     <Box>
       <Typography variant="body2" color="textSecondary">
-        <NumberFormat
+        <NumericFormat
           displayType="text"
           value={searchResponse.num_hits}
           thousandSeparator=","
         />{" "}
         hits found in&nbsp;
-        <NumberFormat
+        <NumericFormat
           decimalScale={2}
           displayType="text"
           value={searchResponse.elapsed_time_micros / 1000000}

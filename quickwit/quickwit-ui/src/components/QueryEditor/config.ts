@@ -45,7 +45,6 @@ export const LANGUAGE_CONFIG = {
 };
 
 // TODO: clean language features as I (fmassot) did not dig into it yet.
-/* eslint-disable  @typescript-eslint/no-explicit-any */
 export function LanguageFeatures(): any {
   return {
     defaultToken: "invalid",
@@ -152,7 +151,7 @@ export const createIndexCompletionProvider = (indexMetadata: IndexMetadata) => {
             label: field.json_path,
             kind: CompletionItemKind.Field,
             insertText:
-              field.field_mapping.type == "json"
+              field.field_mapping.type === "json"
                 ? field.json_path + "."
                 : field.json_path + ":",
             range: range,

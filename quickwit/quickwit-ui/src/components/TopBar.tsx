@@ -26,8 +26,12 @@ import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
 import { Discord } from "@styled-icons/fa-brands/Discord";
 import { useEffect, useMemo, useState } from "react";
-import { ReactComponent as Logo } from "../assets/img/quickwit-logo.svg";
+import quickwitLogoUrl from "../assets/img/quickwit-logo-with-title.svg";
 import { Client } from "../services/client";
+
+const Logo = (props: React.ComponentProps<"img">) => (
+  <img {...props} src={quickwitLogoUrl} alt="quickwit logo" />
+);
 
 const StyledAppBar = styled(AppBar)(({ theme }) => ({
   zIndex: theme.zIndex.drawer + 1,
@@ -48,7 +52,7 @@ const TopBar = () => {
     quickwitClient.cluster().then((cluster) => {
       setClusterId(cluster.cluster_id);
     });
-  }, []);
+  }, [quickwitClient]);
 
   return (
     <StyledAppBar position="fixed" elevation={0} color="neutral">
