@@ -14,9 +14,16 @@
 
 use serde::Deserialize;
 
-use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
+use crate::elastic_query_dsl::{ConvertibleToQueryAst, StringOrStructForSerialization};
 use crate::query_ast::{QueryAst, WildcardQuery as AstWildcardQuery};
+
+#[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
+#[serde(from = "OneFieldMap<StringOrStructForSerialization<WildcardQueryParams>>")]
+pub(crate) struct WildcardQuery {
+    pub(crate) field: String,
+    pub(crate) params: WildcardQueryParams,
+}
 
 #[derive(Deserialize, Debug, Default, Eq, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
@@ -24,16 +31,32 @@ pub struct WildcardQueryParams {
     value: String,
 }
 
-pub type WildcardQuery = OneFieldMap<WildcardQueryParams>;
-
 impl ConvertibleToQueryAst for WildcardQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         Ok(AstWildcardQuery {
             field: self.field,
-            value: self.value.value,
+            value: self.params.value,
             lenient: true,
         }
         .into())
+    }
+}
+
+impl From<OneFieldMap<StringOrStructForSerialization<WildcardQueryParams>>> for WildcardQuery {
+    fn from(
+        match_query_params: OneFieldMap<StringOrStructForSerialization<WildcardQueryParams>>,
+    ) -> Self {
+        let OneFieldMap { field, value } = match_query_params;
+        WildcardQuery {
+            field,
+            params: value.inner,
+        }
+    }
+}
+
+impl From<String> for WildcardQueryParams {
+    fn from(value: String) -> WildcardQueryParams {
+        WildcardQueryParams { value }
     }
 }
 

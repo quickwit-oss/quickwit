@@ -17,3 +17,12 @@ expected:
   hits:
     total:
       value: 10
+---
+json:
+  query:
+    prefix:
+      actor.login: jado
+expected:
+  hits:
+    total:
+      value: 2

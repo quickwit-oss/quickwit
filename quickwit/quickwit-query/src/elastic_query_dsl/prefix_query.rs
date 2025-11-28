@@ -14,9 +14,16 @@
 
 use serde::Deserialize;
 
-use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
+use crate::elastic_query_dsl::{ConvertibleToQueryAst, StringOrStructForSerialization};
 use crate::query_ast::{QueryAst, WildcardQuery as AstWildcardQuery};
+
+#[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
+#[serde(from = "OneFieldMap<StringOrStructForSerialization<PrefixQueryParams>>")]
+pub(crate) struct PrefixQuery {
+    pub(crate) field: String,
+    pub(crate) params: PrefixQueryParams,
+}
 
 #[derive(Deserialize, Debug, Default, Eq, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
@@ -24,13 +31,11 @@ pub struct PrefixQueryParams {
     value: String,
 }
 
-pub type PrefixQuery = OneFieldMap<PrefixQueryParams>;
-
 impl ConvertibleToQueryAst for PrefixQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         let wildcard = format!(
             "{}*",
-            self.value
+            self.params
                 .value
                 .replace("\\", "\\\\")
                 .replace("*", "\\*")
@@ -42,6 +47,24 @@ impl ConvertibleToQueryAst for PrefixQuery {
             lenient: true,
         }
         .into())
+    }
+}
+
+impl From<OneFieldMap<StringOrStructForSerialization<PrefixQueryParams>>> for PrefixQuery {
+    fn from(
+        match_query_params: OneFieldMap<StringOrStructForSerialization<PrefixQueryParams>>,
+    ) -> Self {
+        let OneFieldMap { field, value } = match_query_params;
+        PrefixQuery {
+            field,
+            params: value.inner,
+        }
+    }
+}
+
+impl From<String> for PrefixQueryParams {
+    fn from(value: String) -> PrefixQueryParams {
+        PrefixQueryParams { value }
     }
 }
 

@@ -17,3 +17,12 @@ expected:
   hits:
     total:
       value: 2
+---
+json:
+  query:
+    wildcard:
+      actor.login: jad?nk
+expected:
+  hits:
+    total:
+      value: 2
