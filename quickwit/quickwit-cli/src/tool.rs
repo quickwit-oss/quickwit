@@ -394,6 +394,16 @@ impl ToolCliCommand {
             Self::ExtractSplit(args) => extract_split_cli(args).await,
         }
     }
+
+    pub fn config_uri(&self) -> Option<&Uri> {
+        match self {
+            Self::GarbageCollect(args) => Some(&args.config_uri),
+            Self::LocalIngest(args) => Some(&args.config_uri),
+            Self::LocalSearch(args) => Some(&args.config_uri),
+            Self::Merge(args) => Some(&args.config_uri),
+            Self::ExtractSplit(args) => Some(&args.config_uri),
+        }
+    }
 }
 
 pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<()> {

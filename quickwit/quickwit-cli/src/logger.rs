@@ -56,6 +56,7 @@ pub fn setup_logging_and_tracing(
     level: Level,
     ansi_colors: bool,
     build_info: &BuildInfo,
+    node_name: String,
 ) -> anyhow::Result<EnvFilterReloadFn> {
     #[cfg(feature = "tokio-console")]
     {
@@ -112,6 +113,7 @@ pub fn setup_logging_and_tracing(
             .with_resource(Resource::new([
                 KeyValue::new("service.name", "quickwit"),
                 KeyValue::new("service.version", build_info.version.clone()),
+                KeyValue::new("service.node", node_name),
             ]))
             .build();
         let tracer = provider.tracer("quickwit");
