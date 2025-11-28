@@ -140,8 +140,8 @@ fn configure_storage_retries(
 /// Opens a `tantivy::Index` for the given split with several cache layers:
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
-/// - An ephemeral unbounded cache directory (whose lifetime is tied to the
-/// returned `Index` if no `ByteRangeCache` is provided).
+/// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
+///   `ByteRangeCache` is provided).
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
@@ -472,7 +472,7 @@ async fn leaf_search_single_split(
     let byte_range_cache =
         ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
     let (index, hot_directory) = open_index_with_caches(
-        &*ctx.searcher_context,
+        &ctx.searcher_context,
         storage,
         &split,
         Some(ctx.doc_mapper.tokenizer_manager()),
