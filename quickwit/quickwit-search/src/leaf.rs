@@ -1301,10 +1301,13 @@ fn simplify_search_request(
     if !can_be_better {
         disable_search_request_hits(&mut search_request);
     }
+    if is_trace_req {
+        return Some(search_request);
+    }
     if search_request.max_hits > 0 {
         return Some(search_request);
     }
-    if search_request.aggregation_request.is_some() && !is_trace_req {
+    if search_request.aggregation_request.is_some() {
         return Some(search_request);
     }
     if search_request.count_hits() == CountHits::CountAll {
