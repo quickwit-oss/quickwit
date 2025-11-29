@@ -48,7 +48,7 @@ impl StdinBatchReader {
                 .protect_future(self.reader.read_line(&mut buf))
                 .await?;
             if bytes_read > 0 {
-                batch_builder.add_doc(buf.into());
+                batch_builder.add_doc(buf.into(), None);
             } else {
                 self.is_eof = true;
                 break;
@@ -84,7 +84,7 @@ impl Source for StdinSource {
     ) -> Result<Duration, ActorExitStatus> {
         let batch_builder = self.reader.read_batch(ctx.progress()).await?;
         self.num_bytes_processed += batch_builder.num_bytes;
-        self.num_lines_processed += batch_builder.docs.len() as u64;
+        self.num_lines_processed += batch_builder.raw_docs.len() as u64;
         doc_processor_mailbox
             .send_message(batch_builder.build())
             .await?;
