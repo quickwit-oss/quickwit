@@ -1,0 +1,28 @@
+json:
+  query:
+    prefix:
+      actor.login:
+        value: jado
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    prefix:
+      actor.login:
+        value: j
+expected:
+  hits:
+    total:
+      value: 10
+---
+json:
+  query:
+    prefix:
+      actor.login: jado
+expected:
+  hits:
+    total:
+      value: 2

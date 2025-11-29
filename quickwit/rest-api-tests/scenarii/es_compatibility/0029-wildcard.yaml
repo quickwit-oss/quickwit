@@ -1,0 +1,28 @@
+json:
+  query:
+    wildcard:
+      actor.login:
+        value: jad?nk
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    wildcard:
+      actor.login:
+        value: j*nk
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    wildcard:
+      actor.login: jad?nk
+expected:
+  hits:
+    total:
+      value: 2

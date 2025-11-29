@@ -256,6 +256,48 @@ mod tests {
     }
 
     #[test]
+    fn test_wildcard_query_to_regex_on_escaped_text() {
+        let query = WildcardQuery {
+            field: "text_field".to_string(),
+            value: "MyString Wh1ch\\?a.nOrMal Tokenizer would\\*cut".to_string(),
+            lenient: false,
+        };
+
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        for tokenizer in ["raw", "whitespace"] {
+            let mut schema_builder = TantivySchema::builder();
+            let text_options = TextOptions::default()
+                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+            schema_builder.add_text_field("text_field", text_options);
+            let schema = schema_builder.build();
+
+            let (_field, path, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+            assert_eq!(regex, "MyString Wh1ch\\?a\\.nOrMal Tokenizer would\\*cut");
+            assert!(path.is_none());
+        }
+
+        for tokenizer in [
+            "raw_lowercase",
+            "lowercase",
+            "default",
+            "en_stem",
+            "chinese_compatible",
+            "source_code_default",
+            "source_code_with_hex",
+        ] {
+            let mut schema_builder = TantivySchema::builder();
+            let text_options = TextOptions::default()
+                .set_indexing_options(TextFieldIndexing::default().set_tokenizer(tokenizer));
+            schema_builder.add_text_field("text_field", text_options);
+            let schema = schema_builder.build();
+
+            let (_field, path, regex) = query.to_regex(&schema, &tokenizer_manager).unwrap();
+            assert_eq!(regex, "mystring wh1ch\\?a\\.normal tokenizer would\\*cut");
+            assert!(path.is_none());
+        }
+    }
+
+    #[test]
     fn test_wildcard_query_to_regex_on_json() {
         let query = WildcardQuery {
             // this volontarily contains uppercase and regex-unsafe char to make sure we properly
