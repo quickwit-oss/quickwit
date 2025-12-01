@@ -85,7 +85,7 @@ fn fire_and_forget(
 ) {
     tokio::spawn(async move {
         if let Err(_timeout_elapsed) = tokio::time::timeout(FIRE_AND_FORGET_TIMEOUT, fut).await {
-            error!(operation=%operation, "timeout elapsed");
+            error!(%operation, "timeout elapsed");
         }
     });
 }
@@ -1019,7 +1019,6 @@ impl IngestController {
             debug!("no ingester available");
             return Vec::new();
         }
-
         let mut per_leader_open_shards: HashMap<&str, Vec<&ShardEntry>> = HashMap::new();
 
         for shard in model.all_shards() {
@@ -1031,11 +1030,11 @@ impl IngestController {
                     .push(shard);
             }
         }
-
         // We tolerate an ingester with 10% more shards than the average.
         // Let's first identify the list of shards we want to "move".
         let num_open_shards_per_leader_threshold =
             (num_open_shards * 11).div_ceil(10 * num_ingesters);
+
         let mut shards_to_move: Vec<Shard> = Vec::new();
 
         let mut rng = thread_rng();
@@ -1051,7 +1050,19 @@ impl IngestController {
                 );
             }
         }
+        let num_shards_to_rebalance = shards_to_move.len();
 
+        if num_shards_to_rebalance == 0 {
+            info!("no shards to rebalance");
+        } else {
+            info!(
+                num_open_shards,
+                num_available_ingesters = num_ingesters,
+                rebalance_threshold = num_open_shards_per_leader_threshold,
+                num_shards_to_rebalance,
+                "rebalancing shards"
+            );
+        }
         shards_to_move
     }
 
@@ -1068,40 +1079,60 @@ impl IngestController {
         progress: &Progress,
     ) -> MetastoreResult<Option<JoinHandle<()>>> {
         let Ok(rebalance_guard) = self.rebalance_lock.clone().try_lock_owned() else {
+            info!("skipping rebalance: another rebalance is already in progress");
             return Ok(None);
         };
         self.stats.num_rebalance_shards_ops += 1;
 
         let shards_to_move: Vec<Shard> = self.rebalance_compute_shards_to_move(model);
+
+        crate::metrics::CONTROL_PLANE_METRICS
+            .rebalance_shards
+            .set(shards_to_move.len() as i64);
+
         if shards_to_move.is_empty() {
             return Ok(None);
         }
+        let mut per_source_num_shards_to_open: HashMap<SourceUid, usize> = HashMap::new();
 
-        let num_shards_to_move = shards_to_move.len();
-        info!("rebalancing {} shards", num_shards_to_move);
-
-        let mut new_shards_source_uids: HashMap<SourceUid, usize> = HashMap::new();
         for shard in &shards_to_move {
-            *new_shards_source_uids
+            *per_source_num_shards_to_open
                 .entry(shard.source_uid())
                 .or_default() += 1;
         }
 
-        let mut successfully_source_uids: HashMap<SourceUid, usize> = self
-            .try_open_shards(new_shards_source_uids, model, &Default::default(), progress)
-            .await?;
+        let mut per_source_num_opened_shards: HashMap<SourceUid, usize> = self
+            .try_open_shards(
+                per_source_num_shards_to_open,
+                model,
+                &Default::default(),
+                progress,
+            )
+            .await
+            .inspect_err(|error| {
+                error!(%error, "failed to open shards during rebalance");
+                crate::metrics::CONTROL_PLANE_METRICS
+                    .rebalance_shards
+                    .set(0);
+            })?;
 
-        for source_uid in successfully_source_uids.keys() {
+        let num_opened_shards: usize = per_source_num_opened_shards.values().sum();
+
+        crate::metrics::CONTROL_PLANE_METRICS
+            .rebalance_shards
+            .set(num_opened_shards as i64);
+
+        for source_uid in per_source_num_opened_shards.keys() {
             // We temporarily disable the ability the scale down the number of shards for
             // the source to avoid closing the shards we just opened.
             model.drain_scaling_permits(source_uid, ScalingMode::Down);
         }
 
         // Let's close one of the shard to move for every successfully newly opened shards.
-        let mut shards_to_close = Vec::new();
+        let mut shards_to_close = Vec::with_capacity(shards_to_move.len());
         for shard in shards_to_move {
             let source_uid = shard.source_uid();
-            let Some(num_open_shards) = successfully_source_uids.get_mut(&source_uid) else {
+            let Some(num_open_shards) = per_source_num_opened_shards.get_mut(&source_uid) else {
                 continue;
             };
             if *num_open_shards == 0 {

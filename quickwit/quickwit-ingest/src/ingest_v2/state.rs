@@ -336,14 +336,14 @@ impl DerefMut for FullyLockedIngesterState<'_> {
 impl FullyLockedIngesterState<'_> {
     /// Deletes the shard identified by `queue_id` from the ingester state. It removes the
     /// mrecordlog queue first and then removes the associated in-memory shard and rate trackers.
-    pub async fn delete_shard(&mut self, queue_id: &QueueId) {
+    pub async fn delete_shard(&mut self, queue_id: &QueueId, initiator: &'static str) {
         match self.mrecordlog.delete_queue(queue_id).await {
             Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => {
                 self.rate_trackers.remove(queue_id);
 
                 // Log only if the shard was actually removed.
                 if let Some(shard) = self.shards.remove(queue_id) {
-                    info!("deleted shard `{queue_id}`");
+                    info!("deleted shard `{queue_id}` initiated via `{initiator}`");
 
                     if let Some(doc_mapper) = shard.doc_mapper_opt {
                         // At this point, we hold the lock so we can safely check the strong count.
@@ -371,6 +371,7 @@ impl FullyLockedIngesterState<'_> {
         &mut self,
         queue_id: &QueueId,
         truncate_up_to_position_inclusive: Position,
+        initiator: &'static str,
     ) {
         // TODO: Replace with if-let-chains when stabilized.
         let Some(truncate_up_to_offset_inclusive) = truncate_up_to_position_inclusive.as_u64()
@@ -389,7 +390,10 @@ impl FullyLockedIngesterState<'_> {
             .await
         {
             Ok(_) => {
-                info!("truncated shard `{queue_id}` at {truncate_up_to_position_inclusive}");
+                info!(
+                    "truncated shard `{queue_id}` at {truncate_up_to_position_inclusive} \
+                     initiated via `{initiator}`"
+                );
                 shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
             }
             Err(TruncateError::MissingQueue(_)) => {
@@ -410,12 +414,18 @@ impl FullyLockedIngesterState<'_> {
         info!("resetting shards");
         for shard_ids in &advise_reset_shards_response.shards_to_delete {
             for queue_id in shard_ids.queue_ids() {
-                self.delete_shard(&queue_id).await;
+                self.delete_shard(&queue_id, "control-plane-reset-shards-rpc")
+                    .await;
             }
         }
         for shard_id_positions in &advise_reset_shards_response.shards_to_truncate {
             for (queue_id, publish_position) in shard_id_positions.queue_id_positions() {
-                self.truncate_shard(&queue_id, publish_position).await;
+                self.truncate_shard(
+                    &queue_id,
+                    publish_position,
+                    "control-plane-reset-shards-rpc",
+                )
+                .await;
             }
         }
     }
