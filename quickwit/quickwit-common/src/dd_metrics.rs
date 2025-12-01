@@ -187,9 +187,9 @@ mod tests {
         let snapshotter = recorder.snapshotter();
         metrics::with_local_recorder(&recorder, move || {
             let histograms = DDHistograms::new("test.histogram", "label", &["value1", "value2"]);
-            histograms.get("value1").record(1.0);
-            histograms.get("value2").record(2.0);
-            histograms.get("value3").record(3.0);
+            histograms.get("value1").record(1.0f64);
+            histograms.get("value2").record(2.0f64);
+            histograms.get("value3").record(3.0f64);
 
             let snapshot = snapshot_as_map_for_test(snapshotter.snapshot());
             assert_eq!(snapshot.len(), 3);
@@ -197,19 +197,19 @@ mod tests {
                 snapshot
                     .get("Histogram:Key(test.histogram, [label = value1])")
                     .unwrap(),
-                &DebugValue::Histogram(vec![OrderedFloat::from(1.0)])
+                &DebugValue::Histogram(vec![OrderedFloat::from(1.0f64)])
             );
             assert_eq!(
                 snapshot
                     .get("Histogram:Key(test.histogram, [label = value2])")
                     .unwrap(),
-                &DebugValue::Histogram(vec![OrderedFloat::from(2.0)])
+                &DebugValue::Histogram(vec![OrderedFloat::from(2.0f64)])
             );
             assert_eq!(
                 snapshot
                     .get("Histogram:Key(test.histogram, [label = other])")
                     .unwrap(),
-                &DebugValue::Histogram(vec![OrderedFloat::from(3.0)])
+                &DebugValue::Histogram(vec![OrderedFloat::from(3.0f64)])
             );
         });
     }

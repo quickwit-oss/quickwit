@@ -69,7 +69,7 @@ jemalloc-profiled = [
 binggan = { workspace = true }
 hyper-util = { workspace = true }
 metrics-util = "0.20"
-ordered-float = "4.6"
+ordered-float = "5.1"
 proptest = { workspace = true }
 serde_json = { workspace = true }
 serial_test = { workspace = true }

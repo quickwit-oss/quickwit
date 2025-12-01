@@ -7047,7 +7047,7 @@ dependencies = [
  "metrics",
  "metrics-util",
  "once_cell",
- "ordered-float 4.6.0",
+ "ordered-float 5.1.0",
  "pin-project",
  "pnet",
  "prometheus",
