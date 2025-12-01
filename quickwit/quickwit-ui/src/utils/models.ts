@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/* eslint-disable  @typescript-eslint/no-explicit-any */
 export type RawDoc = Record<string, any>;
 
 export type FieldMapping = {
@@ -151,7 +150,7 @@ export function extractAggregationResults(
   } else if ("term_agg" in aggregation) {
     // we have a term aggregation, but maybe there is an histogram inside
     const term_buckets = aggregation.term_agg.buckets;
-    if (term_buckets.length == 0) {
+    if (term_buckets.length === 0) {
       return null;
     }
     if (term_buckets.length > 0 && "histo_agg" in term_buckets[0]) {

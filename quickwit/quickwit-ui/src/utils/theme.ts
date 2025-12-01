@@ -115,7 +115,7 @@ export const theme = createTheme({
 });
 
 export const EDITOR_THEME = {
-  base: "vs",
+  base: "vs" as const,
   inherit: true,
   rules: [
     { token: "comment", foreground: "#1F232A", fontStyle: "italic" },

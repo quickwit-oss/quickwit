@@ -22,7 +22,7 @@ use opentelemetry::global;
 use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
 use quickwit_cli::logger::setup_logging_and_tracing;
-use quickwit_cli::{busy_detector, start_metrics_loops};
+use quickwit_cli::{busy_detector, install_default_crypto_ring_provider, start_metrics_loops};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
 use tracing::error;
@@ -91,9 +91,7 @@ async fn main_impl() -> anyhow::Result<()> {
         }
     };
 
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("rustls crypto ring default provider installation should not fail");
+    install_default_crypto_ring_provider();
 
     let build_info = BuildInfo::get();
     let env_filter_reload_fn =

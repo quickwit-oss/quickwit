@@ -16,7 +16,7 @@ import { TabContext, TabList, TabPanel } from "@mui/lab";
 import { Box, styled, Tab, Typography } from "@mui/material";
 import Link, { LinkProps } from "@mui/material/Link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link as RouterLink, useParams } from "react-router-dom";
+import { Link as RouterLink, useParams } from "react-router";
 import ApiUrlFooter from "../components/ApiUrlFooter";
 import { IndexSummary } from "../components/IndexSummary";
 import { JsonEditor } from "../components/JsonEditor";
@@ -34,9 +34,9 @@ export type ErrorResult = {
 };
 
 const CustomTabPanel = styled(TabPanel)`
-padding-left: 0;
-padding-right: 0;
-height: 100%;
+  padding-left: 0;
+  padding-right: 0;
+  height: 100%;
 `;
 
 // NOTE : https://mui.com/material-ui/react-breadcrumbs/#integration-with-react-router

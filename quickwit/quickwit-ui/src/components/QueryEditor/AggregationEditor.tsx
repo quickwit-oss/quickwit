@@ -49,7 +49,7 @@ export function MetricKind(props: SearchComponentProps) {
   const handleTypeChange = (event: SelectChangeEvent) => {
     const value = event.target.value;
     const updatedMetric =
-      value != "count" ? { ...metricRef.current!, type: value } : null;
+      value !== "count" ? { ...metricRef.current!, type: value } : null;
     const updatedAggregation = {
       ...props.searchRequest.aggregationConfig,
       metric: updatedMetric,
@@ -261,7 +261,7 @@ export function AggregationKind(props: SearchComponentProps) {
     let addHistogram = true;
     let addTerm = true;
     for (let i = 0; i < agg.length; i++) {
-      if (i == pos) continue;
+      if (i === pos) continue;
       if (getAggregationKind(agg[i]) === "histogram") addHistogram = false;
       if (getAggregationKind(agg[i]) === "term") addTerm = false;
     }

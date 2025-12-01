@@ -53,7 +53,6 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
-
 FROM registry.ddbuild.io/images/base/gbi-ubuntu_2204:latest AS quickwit
 
 LABEL org.opencontainers.image.title="Datadog CloudPrem"

@@ -491,7 +491,8 @@ async fn es_compat_index_count(
     search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchCountResponse, ElasticsearchError> {
-    let search_params: SearchQueryParams = search_params.into();
+    let mut search_params: SearchQueryParams = search_params.into();
+    search_params.track_total_hits = Some(TrackTotalHits::Track(true));
     let (search_request, _append_shard_doc) =
         build_request_for_es_api(index_id_patterns, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router";
 import ApiUrlFooter from "../components/ApiUrlFooter";
 import { IndexSideBar } from "../components/IndexSideBar";
 import {
@@ -64,7 +64,7 @@ function SearchView() {
   const location = useLocation();
   const navigate = useNavigate();
   const [index, setIndex] = useState<null | Index>(null);
-  const prevIndexIdRef = useRef<string | null>();
+  const prevIndexIdRef = useRef<string | null>(null);
   const [searchResponse, setSearchResponse] = useState<null | SearchResponse>(
     null,
   );

@@ -27,15 +27,14 @@ import { Client } from "../services/client";
 import { QuickwitBuildInfo } from "../utils/models";
 
 const CustomTabPanel = styled(TabPanel)`
-padding-left: 0;
-padding-right: 0;
-height: 100%;
+  padding-left: 0;
+  padding-right: 0;
+  height: 100%;
 `;
 
 function NodeInfoView() {
   const [loadingCounter, setLoadingCounter] = useState(2);
   const [nodeId, setNodeId] = useState<string>("");
-  // eslint-disable-next-line
   const [nodeConfig, setNodeConfig] = useState<null | Record<string, any>>(
     null,
   );
