@@ -41,6 +41,7 @@ impl From<String> for TermQueryParams {
         TermQueryParams {
             value: query,
             boost: None,
+            case_insensitive: false,
         }
     }
 }
@@ -54,7 +55,9 @@ enum TermValue {
 }
 
 fn deserialize_term_value<'de, D>(deserializer: D) -> Result<String, D::Error>
-where D: Deserializer<'de> {
+where
+    D: Deserializer<'de>,
+{
     let term_value = TermValue::deserialize(deserializer)?;
     match term_value {
         TermValue::I64(i64) => Ok(i64.to_string()),
@@ -70,6 +73,8 @@ pub struct TermQueryParams {
     pub value: String,
     #[serde(default)]
     pub boost: Option<NotNaNf32>,
+    #[serde(default)]
+    case_insensitive: bool,
 }
 
 pub fn term_query_from_field_value(field: impl ToString, value: impl ToString) -> TermQuery {
@@ -78,6 +83,7 @@ pub fn term_query_from_field_value(field: impl ToString, value: impl ToString) -
         value: TermQueryParams {
             value: value.to_string(),
             boost: None,
+            case_insensitive: false,
         },
     }
 }
@@ -90,7 +96,20 @@ impl From<TermQuery> for ElasticQueryDslInner {
 
 impl ConvertibleToQueryAst for TermQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
-        let TermQueryParams { value, boost } = self.value;
+        let TermQueryParams {
+            value,
+            boost,
+            case_insensitive,
+        } = self.value;
+        if case_insensitive {
+            let ci_value = format!("(?i){}", regex::escape(&value));
+            let term_ast: QueryAst = query_ast::RegexQuery {
+                field: self.field,
+                regex: ci_value,
+            }
+            .into();
+            return Ok(term_ast.boost(boost));
+        }
         let term_ast: QueryAst = query_ast::TermQuery {
             field: self.field,
             value,

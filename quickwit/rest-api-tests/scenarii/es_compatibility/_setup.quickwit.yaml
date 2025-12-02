@@ -43,6 +43,7 @@ json:
                 type: text
                 fast: true
                 indexed: true
+                tokenizer: raw
         - name: public
           type: bool
           fast: false
