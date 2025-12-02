@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - name: Install Ubuntu packages
         run: sudo apt-get -y install protobuf-compiler
-      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v.6.0.0
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v.6.1.0
         with:
           python-version: '3.11'
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
@@ -74,7 +74,7 @@ jobs:
         with:
           toolchain: stable
       - name: Setup cache
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         if: steps.modified.outputs.rust_src == 'true'
         with:
           workspaces: "./quickwit -> target"
@@ -136,7 +136,7 @@ jobs:
           toolchain: stable
       - name: Setup cache
         if: steps.modified.outputs.rust_src == 'true'
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           workspaces: "./quickwit -> target"
       - name: Install cargo deny

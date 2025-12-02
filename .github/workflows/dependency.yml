@@ -16,7 +16,7 @@ jobs:
       - name: "Checkout Repository"
         uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - name: "Dependency Review"
-        uses: actions/dependency-review-action@125b99508212ce1cc3076ad60f6bd63bf6d88a66 # v4.8.1
+        uses: actions/dependency-review-action@774d14bf50b7a2e2460f9f49e25c52503ecab125 # v4.8.1
         with:
           # This is an minor vuln on the rsa crate, used for
           # google storage.
