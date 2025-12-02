@@ -29,6 +29,8 @@ pub(crate) struct PrefixQuery {
 #[serde(deny_unknown_fields)]
 pub struct PrefixQueryParams {
     value: String,
+    #[serde(default)]
+    case_insensitive: bool,
 }
 
 impl ConvertibleToQueryAst for PrefixQuery {
@@ -45,6 +47,7 @@ impl ConvertibleToQueryAst for PrefixQuery {
             field: self.field,
             value: wildcard,
             lenient: true,
+            case_insensitive: self.params.case_insensitive,
         }
         .into())
     }
@@ -64,7 +67,10 @@ impl From<OneFieldMap<StringOrStructForSerialization<PrefixQueryParams>>> for Pr
 
 impl From<String> for PrefixQueryParams {
     fn from(value: String) -> PrefixQueryParams {
-        PrefixQueryParams { value }
+        PrefixQueryParams {
+            value,
+            case_insensitive: false,
+        }
     }
 }
 

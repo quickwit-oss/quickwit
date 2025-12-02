@@ -293,6 +293,7 @@ fn convert_user_input_literal(
                     field: field_name,
                     value: phrase.clone(),
                     lenient,
+                    case_insensitive: false,
                 }
                 .into()
             } else {

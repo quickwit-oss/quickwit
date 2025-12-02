@@ -32,6 +32,8 @@ pub struct WildcardQueryParams {
     value: String,
     #[serde(default)]
     pub boost: Option<NotNaNf32>,
+    #[serde(default)]
+    case_insensitive: bool,
 }
 
 impl ConvertibleToQueryAst for WildcardQuery {
@@ -40,6 +42,7 @@ impl ConvertibleToQueryAst for WildcardQuery {
             field: self.field,
             value: self.params.value,
             lenient: true,
+            case_insensitive: self.params.case_insensitive,
         }
         .into();
         Ok(wildcard_ast.boost(self.params.boost))
@@ -60,7 +63,11 @@ impl From<OneFieldMap<StringOrStructForSerialization<WildcardQueryParams>>> for 
 
 impl From<String> for WildcardQueryParams {
     fn from(value: String) -> WildcardQueryParams {
-        WildcardQueryParams { value, boost: None }
+        WildcardQueryParams {
+            value,
+            boost: None,
+            case_insensitive: false,
+        }
     }
 }
 
