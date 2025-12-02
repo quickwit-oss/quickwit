@@ -14,6 +14,7 @@
 
 use serde::Deserialize;
 
+use crate::NotNaNf32;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::{ConvertibleToQueryAst, StringOrStructForSerialization};
 use crate::query_ast::{QueryAst, WildcardQuery as AstWildcardQuery};
@@ -29,16 +30,19 @@ pub(crate) struct WildcardQuery {
 #[serde(deny_unknown_fields)]
 pub struct WildcardQueryParams {
     value: String,
+    #[serde(default)]
+    pub boost: Option<NotNaNf32>,
 }
 
 impl ConvertibleToQueryAst for WildcardQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
-        Ok(AstWildcardQuery {
+        let wildcard_ast: QueryAst = AstWildcardQuery {
             field: self.field,
             value: self.params.value,
             lenient: true,
         }
-        .into())
+        .into();
+        Ok(wildcard_ast.boost(self.params.boost))
     }
 }
 
@@ -56,7 +60,7 @@ impl From<OneFieldMap<StringOrStructForSerialization<WildcardQueryParams>>> for 
 
 impl From<String> for WildcardQueryParams {
     fn from(value: String) -> WildcardQueryParams {
-        WildcardQueryParams { value }
+        WildcardQueryParams { value, boost: None }
     }
 }
 
@@ -78,6 +82,31 @@ mod tests {
             assert_eq!(wildcard.field, "user_name");
             assert_eq!(wildcard.value, "john*");
             assert!(wildcard.lenient);
+        } else {
+            panic!("Expected QueryAst::Wildcard");
+        }
+    }
+
+    #[test]
+    fn test_boosted_wildcard_query_convert_to_query_ast() {
+        let wildcard_query_json = r#"{
+            "user_name": {
+                "value": "john*",
+                "boost": 2.0
+            }
+        }"#;
+        let wildcard_query: WildcardQuery = serde_json::from_str(wildcard_query_json).unwrap();
+        let query_ast = wildcard_query.convert_to_query_ast().unwrap();
+
+        if let QueryAst::Boost { underlying, boost } = query_ast {
+            if let QueryAst::Wildcard(wildcard) = *underlying {
+                assert_eq!(wildcard.field, "user_name");
+                assert_eq!(wildcard.value, "john*");
+                assert!(wildcard.lenient);
+            } else {
+                panic!("Expected underlying QueryAst::Wildcard");
+            }
+            assert_eq!(boost, NotNaNf32::try_from(2.0).unwrap());
         } else {
             panic!("Expected QueryAst::Wildcard");
         }

@@ -37,9 +37,9 @@ impl ConvertibleToQueryAst for PrefixQuery {
             "{}*",
             self.params
                 .value
-                .replace("\\", "\\\\")
-                .replace("*", "\\*")
-                .replace("?", "\\?")
+                .replace(r"\", r"\\")
+                .replace("*", r"\*")
+                .replace("?", r"\?")
         );
         Ok(AstWildcardQuery {
             field: self.field,
@@ -103,7 +103,7 @@ mod tests {
 
         if let QueryAst::Wildcard(prefix) = query_ast {
             assert_eq!(prefix.field, "user_name");
-            assert_eq!(prefix.value, "a\\\\dm\\?n\\**");
+            assert_eq!(prefix.value, r"a\\dm\?n\**");
             assert!(prefix.lenient);
         } else {
             panic!("Expected QueryAst::Prefix, got {:?}", query_ast);
