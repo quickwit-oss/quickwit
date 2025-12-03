@@ -14,6 +14,8 @@
 
 // See https://prometheus.io/docs/practices/naming/
 
+use std::fmt;
+
 use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
@@ -22,6 +24,86 @@ use quickwit_common::metrics::{
     new_histogram_vec,
 };
 
+fn print_if_not_null(
+    field_name: &'static str,
+    counter: &IntCounter,
+    f: &mut fmt::Formatter,
+) -> fmt::Result {
+    let val = counter.get();
+    if val > 0 {
+        write!(f, "{}={} ", field_name, val)?;
+    }
+    Ok(())
+}
+
+pub struct SplitSearchOutcomeCounters {
+    pub cancel_before_warmup: IntCounter,
+    pub cache_hit: IntCounter,
+    pub pruned_before_warmup: IntCounter,
+    pub cancel_warmup: IntCounter,
+    pub pruned_after_warmup: IntCounter,
+    pub cancel_cpu_queue: IntCounter,
+    pub cancel_cpu: IntCounter,
+    pub success: IntCounter,
+}
+
+impl fmt::Display for SplitSearchOutcomeCounters {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        print_if_not_null("cancel_before_warmup", &self.cancel_before_warmup, f)?;
+        print_if_not_null("cache_hit", &self.cache_hit, f)?;
+        print_if_not_null("pruned_before_warmup", &self.pruned_before_warmup, f)?;
+        print_if_not_null("cancel_warmup", &self.cancel_warmup, f)?;
+        print_if_not_null("pruned_after_warmup", &self.pruned_after_warmup, f)?;
+        print_if_not_null("cancel_cpu_queue", &self.cancel_cpu_queue, f)?;
+        print_if_not_null("cancel_cpu", &self.cancel_cpu, f)?;
+        print_if_not_null("success", &self.success, f)?;
+        Ok(())
+    }
+}
+
+impl SplitSearchOutcomeCounters {
+    /// Create a new SplitSearchOutcomeCounters instance, registered in prometheus.
+    pub fn new_registered() -> Self {
+        let search_split_outcome_vec = new_counter_vec(
+            "split_search_outcome",
+            "Count the state in which each leaf search split ended",
+            "search",
+            &[],
+            ["category"],
+        );
+        Self::new_from_counter_vec(search_split_outcome_vec)
+    }
+
+    /// Create a new SplitSearchOutcomeCounters instance, but this one won't be reported to
+    /// prometheus.
+    pub fn new_unregistered() -> Self {
+        let search_split_outcome_vec = IntCounterVec::new(
+            "split_search_outcome",
+            "Count the state in which each leaf search split ended",
+            "search",
+            &[],
+            ["category"],
+        );
+        Self::new_from_counter_vec(search_split_outcome_vec)
+    }
+
+    pub fn new_from_counter_vec(search_split_outcome_vec: IntCounterVec<1>) -> Self {
+        SplitSearchOutcomeCounters {
+            cancel_before_warmup: search_split_outcome_vec
+                .with_label_values(["cancel_before_warmup"]),
+            cache_hit: search_split_outcome_vec.with_label_values(["cache_hit"]),
+            pruned_before_warmup: search_split_outcome_vec
+                .with_label_values(["pruned_before_warmup"]),
+            cancel_warmup: search_split_outcome_vec.with_label_values(["cancel_warmup"]),
+            pruned_after_warmup: search_split_outcome_vec
+                .with_label_values(["pruned_after_warmup"]),
+            cancel_cpu_queue: search_split_outcome_vec.with_label_values(["cancel_cpu_queue"]),
+            cancel_cpu: search_split_outcome_vec.with_label_values(["cancel_cpu"]),
+            success: search_split_outcome_vec.with_label_values(["success"]),
+        }
+    }
+}
+
 pub struct SearchMetrics {
     pub root_search_requests_total: IntCounterVec<1>,
     pub root_search_request_duration_seconds: HistogramVec<1>,
@@ -29,7 +111,8 @@ pub struct SearchMetrics {
     pub leaf_search_requests_total: IntCounterVec<1>,
     pub leaf_search_request_duration_seconds: HistogramVec<1>,
     pub leaf_search_targeted_splits: HistogramVec<1>,
-    pub leaf_searches_splits_total: IntCounter,
+    pub leaf_list_terms_splits_total: IntCounter,
+    pub split_search_outcome_total: SplitSearchOutcomeCounters,
     pub leaf_search_split_duration_secs: Histogram,
     pub job_assigned_total: IntCounterVec<1>,
     pub leaf_search_single_split_tasks_pending: IntGauge,
@@ -123,12 +206,15 @@ impl Default for SearchMetrics {
                 ["status"],
                 targeted_splits_buckets,
             ),
-            leaf_searches_splits_total: new_counter(
-                "leaf_searches_splits_total",
-                "Number of leaf searches (count of splits) started.",
+
+            leaf_list_terms_splits_total: new_counter(
+                "leaf_list_terms_splits_total",
+                "Number of list terms splits total",
                 "search",
                 &[],
             ),
+            split_search_outcome_total: SplitSearchOutcomeCounters::new_registered(),
+
             leaf_search_split_duration_secs: new_histogram(
                 "leaf_search_split_duration_secs",
                 "Number of seconds required to run a leaf search over a single split. The timer \

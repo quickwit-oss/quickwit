@@ -45,7 +45,7 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tracing::{debug, info_span, instrument};
+use tracing::{debug, info, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
@@ -784,7 +784,12 @@ pub(crate) async fn search_partial_hits_phase(
         )
     {
         // We log at most 5 times per minute.
-        quickwit_common::rate_limited_info!(limit_per_min=5, split_num_docs=resource_stats.split_num_docs, %search_request.query_ast, short_lived_cached_num_bytes=resource_stats.short_lived_cache_num_bytes, query=%search_request.query_ast, "memory intensive query");
+        quickwit_common::rate_limited_info!(
+            limit_per_min = 5,
+            split_num_docs = resource_stats.split_num_docs,
+            short_lived_cached_num_bytes = resource_stats.short_lived_cache_num_bytes,
+            "memory intensive query"
+        );
     }
 
     if !leaf_search_response.failed_splits.is_empty() {
@@ -958,7 +963,6 @@ fn get_sort_field_datetime_format(
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
-#[instrument(skip_all, fields(num_splits=%split_metadatas.len()))]
 async fn root_search_aux(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -1207,9 +1211,18 @@ pub async fn root_search(
 
     let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
     let num_splits = split_metadatas.len();
-    let current_span = tracing::Span::current();
-    current_span.record("num_docs", num_docs);
-    current_span.record("num_splits", num_splits);
+
+    // It would have been nice to add those in the context of the trace span,
+    // but with our current logging setting, it makes logs too verbose.
+    info!(
+        query_ast = search_request.query_ast.as_str(),
+        agg = search_request.aggregation_request(),
+        start_ts = ?(search_request.start_timestamp()..search_request.end_timestamp()),
+        count_required = search_request.count_hits().as_str_name(),
+        num_docs = num_docs,
+        num_splits = num_splits,
+        "root_search"
+    );
 
     let mut search_response_result = RootSearchMetricsFuture {
         start: start_instant,

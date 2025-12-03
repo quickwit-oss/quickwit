@@ -16,6 +16,7 @@
 
 use std::collections::HashSet;
 use std::str::FromStr;
+use std::sync::OnceLock;
 
 use anyhow::Context;
 use clap::{Arg, ArgMatches, arg};
@@ -105,6 +106,17 @@ fn client_args() -> Vec<Arg> {
             .default_value("0")
             .display_order(4),
     ]
+}
+
+pub fn install_default_crypto_ring_provider() {
+    static CALL_ONLY_ONCE: OnceLock<Result<(), ()>> = OnceLock::new();
+    CALL_ONLY_ONCE
+        .get_or_init(|| {
+            rustls::crypto::ring::default_provider()
+                .install_default()
+                .map_err(|_| ())
+        })
+        .expect("rustls crypto ring default provider installation should not fail");
 }
 
 #[derive(Debug, Eq, PartialEq)]
