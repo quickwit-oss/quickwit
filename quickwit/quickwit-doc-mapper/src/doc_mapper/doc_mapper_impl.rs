@@ -19,7 +19,7 @@ use anyhow::{Context, bail};
 use fnv::FnvHashSet;
 use quickwit_proto::types::DocMappingUid;
 use quickwit_query::create_default_quickwit_tokenizer_manager;
-use quickwit_query::query_ast::QueryAst;
+use quickwit_query::query_ast::{BuildTantivyAstContext, QueryAst};
 use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
@@ -641,10 +641,12 @@ impl DocMapper {
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
         build_query(
             query_ast,
-            split_schema,
-            self.tokenizer_manager(),
-            &self.default_search_field_names[..],
-            with_validation,
+            &BuildTantivyAstContext {
+                schema: &split_schema,
+                tokenizer_manager: self.tokenizer_manager(),
+                search_fields: &self.default_search_field_names[..],
+                with_validation,
+            },
         )
     }
 

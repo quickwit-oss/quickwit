@@ -16,8 +16,8 @@ use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
 use crate::query_ast::{
-    BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, RegexQuery, TermQuery,
-    TermSetQuery, WildcardQuery,
+    BoolQuery, CacheNode, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, RegexQuery,
+    TermQuery, TermSetQuery, WildcardQuery,
 };
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -41,6 +41,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::FieldPresence(exists) => self.visit_exists(exists),
             QueryAst::Wildcard(wildcard) => self.visit_wildcard(wildcard),
             QueryAst::Regex(regex) => self.visit_regex(regex),
+            QueryAst::Cache(cache_node) => self.visit_cache_node(cache_node),
         }
     }
 
@@ -111,6 +112,10 @@ pub trait QueryAstVisitor<'a> {
     fn visit_regex(&mut self, _regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
         Ok(())
     }
+
+    fn visit_cache_node(&mut self, _cache_node: &'a CacheNode) -> Result<(), Self::Err> {
+        Ok(())
+    }
 }
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -134,6 +139,7 @@ pub trait QueryAstTransformer {
             QueryAst::FieldPresence(exists) => self.transform_exists(exists),
             QueryAst::Wildcard(wildcard) => self.transform_wildcard(wildcard),
             QueryAst::Regex(regex) => self.transform_regex(regex),
+            QueryAst::Cache(cache_node) => self.transform_cache_node(cache_node),
         }
     }
 
@@ -235,5 +241,12 @@ pub trait QueryAstTransformer {
 
     fn transform_regex(&mut self, regex_query: RegexQuery) -> Result<Option<QueryAst>, Self::Err> {
         Ok(Some(QueryAst::Regex(regex_query)))
+    }
+
+    fn transform_cache_node(
+        &mut self,
+        cache_node: CacheNode,
+    ) -> Result<Option<QueryAst>, Self::Err> {
+        Ok(Some(QueryAst::Cache(cache_node)))
     }
 }

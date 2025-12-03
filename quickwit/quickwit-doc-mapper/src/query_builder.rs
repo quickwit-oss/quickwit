@@ -17,8 +17,8 @@ use std::convert::Infallible;
 use std::ops::Bound;
 
 use quickwit_query::query_ast::{
-    FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery,
-    RegexQuery, TermSetQuery, WildcardQuery,
+    BuildTantivyAstContext, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst,
+    QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
@@ -155,10 +155,7 @@ impl<'a, 'f> QueryAstVisitor<'a> for ExistsQueryFastFields<'f> {
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
     query_ast: &QueryAst,
-    schema: Schema,
-    tokenizer_manager: &TokenizerManager,
-    search_fields: &[String],
-    with_validation: bool,
+    context: &BuildTantivyAstContext,
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
     let mut fast_fields: HashSet<FastFieldWarmupInfo> = HashSet::new();
 
@@ -177,31 +174,30 @@ pub(crate) fn build_query(
 
     let Ok(_) = TermSearchOnColumnar {
         fields: &mut fast_fields,
-        schema: schema.clone(),
+        schema: context.schema.clone(),
     }
     .visit(query_ast);
 
     let Ok(_) = ExistsQueryFastFields {
         fields: &mut fast_fields,
-        schema: schema.clone(),
+        schema: context.schema.clone(),
     }
     .visit(query_ast);
 
-    let query = query_ast.build_tantivy_query(
-        &schema,
-        tokenizer_manager,
-        search_fields,
-        with_validation,
-    )?;
+    let query = query_ast.build_tantivy_query(context)?;
 
-    let term_set_query_fields = extract_term_set_query_fields(query_ast, &schema)?;
+    let term_set_query_fields = extract_term_set_query_fields(query_ast, context.schema)?;
     let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
-        extract_prefix_term_ranges_and_automaton(query_ast, &schema, tokenizer_manager)?;
+        extract_prefix_term_ranges_and_automaton(
+            query_ast,
+            context.schema,
+            context.tokenizer_manager,
+        )?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
     query.query_terms(&mut |term, need_position| {
         let field = term.field();
-        if !schema.get_field_entry(field).is_indexed() {
+        if !context.schema.get_field_entry(field).is_indexed() {
             return;
         }
         *terms_grouped_by_field
@@ -506,13 +502,7 @@ mod test {
             .parse_user_query(&[])
             .map_err(|err| err.to_string())?;
         let schema = make_schema(dynamic_mode);
-        let query_result = build_query(
-            &query_ast,
-            schema,
-            &create_default_quickwit_tokenizer_manager(),
-            &[],
-            true,
-        );
+        let query_result = build_query(&query_ast, quickwit_query::test_context!(schema));
         query_result
             .map(|query| format!("{query:?}"))
             .map_err(|err| err.to_string())
@@ -888,10 +878,7 @@ mod test {
 
         let (_, warmup_info) = build_query(
             &query_with_set,
-            make_schema(true),
-            &create_default_quickwit_tokenizer_manager(),
-            &[],
-            true,
+            quickwit_query::test_context!(make_schema(true)),
         )
         .unwrap();
         assert_eq!(warmup_info.term_dict_fields.len(), 1);
@@ -903,10 +890,7 @@ mod test {
 
         let (_, warmup_info) = build_query(
             &query_without_set,
-            make_schema(true),
-            &create_default_quickwit_tokenizer_manager(),
-            &[],
-            true,
+            quickwit_query::test_context!(make_schema(true)),
         )
         .unwrap();
         assert!(warmup_info.term_dict_fields.is_empty());
