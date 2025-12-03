@@ -13,9 +13,8 @@
 // limitations under the License.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::OnceLock;
+use std::sync::{LazyLock, OnceLock};
 
-use once_cell::sync::Lazy;
 use prometheus::{Gauge, HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{
     Histogram, HistogramTimer, HistogramVec as PrometheusHistogramVec, IntCounter,
@@ -438,16 +437,17 @@ impl InFlightDataGauges {
     }
 }
 
-/// This function returns `index_name` or projects it to `<any>` if per-index metrics are disabled.
-pub fn index_label(index_name: &str) -> &str {
-    static PER_INDEX_METRICS_ENABLED: OnceLock<bool> = OnceLock::new();
-    let per_index_metrics_enabled: bool = *PER_INDEX_METRICS_ENABLED
-        .get_or_init(|| !crate::get_bool_from_env("QW_DISABLE_PER_INDEX_METRICS", false));
-    if per_index_metrics_enabled {
-        index_name
+/// This function returns `index_id` as is if per-index metrics are enabled, or projects it to
+/// `"__any__"` otherwise.
+pub fn index_label(index_id: &str) -> &str {
+    static PER_INDEX_METRICS_ENABLED: LazyLock<bool> =
+        LazyLock::new(|| !crate::get_bool_from_env("QW_DISABLE_PER_INDEX_METRICS", false));
+
+    if *PER_INDEX_METRICS_ENABLED {
+        index_id
     } else {
         "__any__"
     }
 }
 
-pub static MEMORY_METRICS: Lazy<MemoryMetrics> = Lazy::new(MemoryMetrics::default);
+pub static MEMORY_METRICS: LazyLock<MemoryMetrics> = LazyLock::new(MemoryMetrics::default);

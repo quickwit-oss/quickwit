@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Formatter;
 use std::num::NonZeroUsize;
@@ -22,6 +22,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
+use itertools::Itertools;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox,
     Supervisor, Universe, WeakMailbox,
@@ -29,6 +30,7 @@ use quickwit_actors::{
 use quickwit_cluster::{
     ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory, ClusterNode,
 };
+use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
 use quickwit_common::{Progress, shared_consts};
@@ -52,7 +54,7 @@ use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, Source
 use serde::Serialize;
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::watch;
-use tracing::{debug, error, info};
+use tracing::{Level, debug, enabled, error, info};
 
 use crate::IndexerPool;
 use crate::cooldown_map::{CooldownMap, CooldownStatus};
@@ -219,6 +221,7 @@ impl Actor for ControlPlane {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         crate::metrics::CONTROL_PLANE_METRICS.restart_total.inc();
+
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
             .await
@@ -312,7 +315,12 @@ impl ControlPlane {
         shard_ids: &[ShardId],
         progress: &Progress,
     ) -> anyhow::Result<()> {
-        info!(shard_ids=?shard_ids, source_uid=?source_uid, "deleting shards");
+        debug!(
+            index_uid=%source_uid.index_uid,
+            source_id=%source_uid.source_id,
+            shard_ids=%shard_ids.pretty_display(),
+            "deleting shards"
+        );
         let delete_shards_request = DeleteShardsRequest {
             index_uid: Some(source_uid.index_uid.clone()),
             source_id: source_uid.source_id.clone(),
@@ -329,7 +337,15 @@ impl ControlPlane {
             .protect_future(self.metastore.delete_shards(delete_shards_request))
             .await
             .context("failed to delete shards from metastore")?;
+
         self.model.delete_shards(source_uid, shard_ids);
+
+        info!(
+            index_uid=%source_uid.index_uid,
+            source_id=%source_uid.source_id,
+            shard_ids=%shard_ids.pretty_display(),
+            "deleted shards"
+        );
         Ok(())
     }
 
@@ -351,30 +367,33 @@ impl ControlPlane {
             })
             .unwrap_or_default();
 
-        let mut per_index_shards_json: HashMap<IndexUid, Vec<JsonValue>> = HashMap::new();
+        let mut per_index_and_leader_shards_json: BTreeMap<
+            IndexUid,
+            BTreeMap<String, Vec<JsonValue>>,
+        > = BTreeMap::new();
 
         for (source_uid, shard_entries) in self.model.all_shards_with_source() {
-            let index_uid = source_uid.index_uid.clone();
-            let source_id = source_uid.source_id.clone();
-            let shards_json = shard_entries.map(|shard_entry| {
-                json!({
-                    "index_uid": index_uid,
-                    "source_id": source_id,
-                    "shard_id": shard_entry.shard_id.clone(),
+            for shard_entry in shard_entries {
+                let shard_json = json!({
+                    "index_uid": source_uid.index_uid,
+                    "source_id": source_uid.source_id,
+                    "shard_id": shard_entry.shard_id,
                     "shard_state": shard_entry.shard_state().as_json_str_name(),
-                    "leader_id": shard_entry.leader_id.clone(),
-                    "follower_id": shard_entry.follower_id.clone(),
+                    "leader_id": shard_entry.leader_id,
+                    "follower_id": shard_entry.follower_id,
                     "publish_position_inclusive": shard_entry.publish_position_inclusive(),
-                })
-            });
-            per_index_shards_json
-                .entry(index_uid.clone())
-                .or_default()
-                .extend(shards_json);
+                });
+                per_index_and_leader_shards_json
+                    .entry(source_uid.index_uid.clone())
+                    .or_default()
+                    .entry(shard_entry.leader_id.clone())
+                    .or_default()
+                    .push(shard_json);
+            }
         }
         json!({
             "physical_indexing_plan": physical_indexing_plan,
-            "shard_table": per_index_shards_json,
+            "shard_table": per_index_and_leader_shards_json,
         })
     }
 
@@ -422,7 +441,21 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         shard_positions_update: ShardPositionsUpdate,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        debug!(shard_positions_update=?shard_positions_update, "shard positions update");
+        if enabled!(Level::DEBUG) {
+            let pretty_positions: Vec<String> = shard_positions_update
+                .updated_shard_positions
+                .iter()
+                .map(|(shard_id, position)| format!("{shard_id}:{}", position.pretty_display()))
+                .sorted()
+                .collect();
+
+            debug!(
+                index_uid=%shard_positions_update.source_uid.index_uid,
+                source_id=%shard_positions_update.source_uid.source_id,
+                positions=%pretty_positions.as_slice().pretty_display(),
+                "received shard positions update"
+            );
+        }
         let Some(shard_entries) = self
             .model
             .get_shards_for_source_mut(&shard_positions_update.source_uid)
@@ -438,7 +471,13 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
                     Some(shard.publish_position_inclusive().max(position.clone()));
                 if position.is_eof() {
                     // identify shards that have reached EOF but have not yet been removed.
-                    info!(shard_id=%shard_id, position=?position, "received eof shard via gossip");
+                    info!(
+                        index_uid=%shard_positions_update.source_uid.index_uid,
+                        source_id=%shard_positions_update.source_uid.source_id,
+                        %shard_id,
+                        position=%position.pretty_display(),
+                        "received shard eof via gossip"
+                    );
                     shard_ids_to_close.push(shard_id);
                 }
             }
@@ -534,6 +573,8 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
         reply: impl FnOnce(Self::Reply) + Send + Sync + 'static,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        debug!("creating index");
+
         let response = match ctx
             .protect_future(self.metastore.create_index(request))
             .await
@@ -551,6 +592,8 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
                 return Err(ActorExitStatus::from(anyhow::anyhow!(serde_error)));
             }
         };
+        let index_uid = index_metadata.index_uid.clone();
+
         // Now, create index can also add sources to support creating indexes automatically from
         // index and source config templates.
         let should_rebuild_plan = !index_metadata.sources.is_empty();
@@ -565,6 +608,7 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
         } else {
             reply(Ok(response));
         }
+        info!(%index_uid, "created index");
         Ok(())
     }
 }
@@ -630,8 +674,6 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         {
             return convert_metastore_error(metastore_error);
         };
-        info!(%index_uid, "deleted index");
-
         let ingester_needing_resync: BTreeSet<NodeId> = self
             .model
             .list_shards_for_index(&index_uid)
@@ -648,6 +690,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         // the metastore. We should update the state of the control plane.
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
 
+        info!(%index_uid, "deleted index");
         let response = EmptyResponse {};
         Ok(Ok(response))
     }
@@ -669,6 +712,7 @@ impl Handler<AddSourceRequest> for ControlPlane {
             match serde_utils::from_json_str(&request.source_config_json) {
                 Ok(source_config) => source_config,
                 Err(error) => {
+                    error!(%error, "failed to deserialize source config");
                     return Ok(Err(ControlPlaneError::from(error)));
                 }
             };
@@ -707,6 +751,7 @@ impl Handler<UpdateSourceRequest> for ControlPlane {
             match serde_utils::from_json_str(&request.source_config_json) {
                 Ok(source_config) => source_config,
                 Err(error) => {
+                    error!(%error, "failed to deserialize source config");
                     return Ok(Err(ControlPlaneError::from(error)));
                 }
             };
@@ -723,12 +768,11 @@ impl Handler<UpdateSourceRequest> for ControlPlane {
             .update_source(&index_uid, source_config)
             .context("failed to add source")?;
 
-        info!(%index_uid, source_id, "updated source");
-
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
 
+        info!(%index_uid, source_id, "updated source");
         let response = EmptyResponse {};
         Ok(Ok(response))
     }
@@ -756,7 +800,6 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-        info!(%index_uid, source_id, enabled=enable, "toggled source");
 
         let mutation_occurred = self
             .model
@@ -766,7 +809,9 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         if mutation_occurred {
             let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
         }
-        Ok(Ok(EmptyResponse {}))
+        info!(%index_uid, source_id, enabled=enable, "toggled source");
+        let response = EmptyResponse {};
+        Ok(Ok(response))
     }
 }
 
@@ -783,6 +828,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
     ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid().clone();
         let source_id = request.source_id.clone();
+        debug!(%index_uid, source_id, "deleting source");
 
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
@@ -815,10 +861,14 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             .sync_with_ingesters(&ingesters_needing_resync, &self.model);
 
         self.model.delete_source(&source_uid);
-
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
-        let response = EmptyResponse {};
 
+        info!(
+            index_uid=%source_uid.index_uid,
+            source_id=%source_uid.source_id,
+            "deleted source"
+        );
+        let response = EmptyResponse {};
         Ok(Ok(response))
     }
 }
@@ -851,7 +901,8 @@ impl Handler<PruneShardsRequest> for ControlPlane {
             return convert_metastore_error(metastore_error);
         };
         // Return ok regardless of whether the call was successful or debounced
-        Ok(Ok(EmptyResponse {}))
+        let response = EmptyResponse {};
+        Ok(Ok(response))
     }
 }
 
@@ -956,7 +1007,7 @@ impl EventSubscriber<LocalShardsUpdate> for ControlPlaneEventSubscriber {
                 .send_message(local_shards_update)
                 .await
         {
-            error!(error=%error, "failed to forward local shards update to control plane");
+            error!(%error, "failed to forward local shards update to control plane");
         }
     }
 }
@@ -969,7 +1020,7 @@ impl EventSubscriber<ShardPositionsUpdate> for ControlPlaneEventSubscriber {
                 .send_message(shard_positions_update)
                 .await
         {
-            error!(error=%error, "failed to forward shard positions update to control plane");
+            error!(%error, "failed to forward shard positions update to control plane");
         }
     }
 }
@@ -1058,10 +1109,9 @@ impl Handler<RebalanceShardsCallback> for ControlPlane {
         message: RebalanceShardsCallback,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        info!(
-            "closing {} shards after rebalance",
-            message.closed_shards.len()
-        );
+        let num_closed_shards = message.closed_shards.len();
+        debug!("closing {num_closed_shards} shards after rebalance");
+
         for closed_shard in message.closed_shards {
             let shard_id = closed_shard.shard_id().clone();
             let source_uid = SourceUid {
@@ -1097,14 +1147,14 @@ async fn watcher_indexers(
                 if node.enabled_services().contains(&QuickwitService::Indexer)
                     && let Err(error) = mailbox.send_message(IndexerJoined(node)).await
                 {
-                    error!(error=%error, "failed to forward `IndexerJoined` event to control plane");
+                    error!(%error, "failed to forward `IndexerJoined` event to control plane");
                 }
             }
             ClusterChange::Remove(node) => {
                 if node.enabled_services().contains(&QuickwitService::Indexer)
                     && let Err(error) = mailbox.send_message(IndexerLeft(node)).await
                 {
-                    error!(error=%error, "failed to forward `IndexerLeft` event to control plane");
+                    error!(%error, "failed to forward `IndexerLeft` event to control plane");
                 }
             }
             ClusterChange::Update(_) => {
@@ -1755,14 +1805,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_shard_on_eof() {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
-        let node_id = NodeId::new("control-plane-node".to_string());
+        let node_id = NodeId::new("test-control-plane".to_string());
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
-            node_id: NodeId::new("indexer-node-1".to_string()),
+            node_id: NodeId::new("test-indexer".to_string()),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -1808,7 +1857,7 @@ mod tests {
             index_uid: Some(index_0.index_uid.clone()),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
             shard_id: Some(ShardId::from(17)),
-            leader_id: "test_node".to_string(),
+            leader_id: "test-ingester".to_string(),
             publish_position_inclusive: Some(Position::Beginning),
             ..Default::default()
         };
@@ -1861,14 +1910,14 @@ mod tests {
             .unwrap();
         let indexing_tasks = last_applied_physical_plan
             .indexing_tasks_per_indexer()
-            .get("indexer-node-1")
+            .get("test-indexer")
             .unwrap();
         assert_eq!(indexing_tasks.len(), 1);
         assert_eq!(indexing_tasks[0].shard_ids, [ShardId::from(17)]);
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard =
-            &control_plane_debug_info["shard_table"]["test-index-0:00000000000000000000000000"][0];
+        let shard = &control_plane_debug_info["shard_table"]
+            ["test-index-0:00000000000000000000000000"]["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000017");
         assert_eq!(shard["publish_position_inclusive"], "00000000000000001000");
 
@@ -1892,7 +1941,7 @@ mod tests {
             .unwrap();
         let indexing_tasks = last_applied_physical_plan
             .indexing_tasks_per_indexer()
-            .get("indexer-node-1")
+            .get("test-indexer")
             .unwrap();
         assert!(indexing_tasks.is_empty());
 
@@ -1909,12 +1958,12 @@ mod tests {
     #[tokio::test]
     async fn test_fill_shard_table_position_from_metastore_on_startup() {
         let universe = Universe::with_accelerated_time();
-        let node_id = NodeId::new("control-plane-node".to_string());
+        let node_id = NodeId::new("test-control-plane".to_string());
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
-            node_id: NodeId::new("indexer-node-1".to_string()),
+            node_id: NodeId::new("test-indexer".to_string()),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -1943,7 +1992,7 @@ mod tests {
             index_uid: Some(index_metadata.index_uid.clone()),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
             shard_id: Some(ShardId::from(17)),
-            leader_id: "test_node".to_string(),
+            leader_id: "test-ingester".to_string(),
             publish_position_inclusive: Some(Position::Offset(1234u64.into())),
             ..Default::default()
         };
@@ -1975,8 +2024,8 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
         );
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard =
-            &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"][0];
+        let shard = &control_plane_debug_info["shard_table"]
+            ["test-index:00000000000000000000000000"]["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000017");
         assert_eq!(shard["publish_position_inclusive"], "00000000000000001234");
 
@@ -1987,12 +2036,12 @@ mod tests {
     async fn test_delete_non_existing_shard() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("control-plane-node".to_string());
+        let node_id = NodeId::new("test-control-plane".to_string());
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
         let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
         let indexer_node_info = IndexerNodeInfo {
-            node_id: NodeId::new("indexer-node-1".to_string()),
+            node_id: NodeId::new("test-indexer".to_string()),
             generation_id: 0,
             client,
             indexing_tasks: Vec::new(),
@@ -2080,7 +2129,7 @@ mod tests {
     async fn test_delete_index() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("control-plane-node".to_string());
+        let node_id = NodeId::new("test-control-plane".to_string());
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -2194,7 +2243,7 @@ mod tests {
     async fn test_delete_source() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::default();
-        let node_id = NodeId::new("control-plane-node".to_string());
+        let node_id = NodeId::new("test-control-plane".to_string());
         let indexer_pool = IndexerPool::default();
 
         let ingester_pool = IngesterPool::default();
@@ -2610,8 +2659,8 @@ mod tests {
         control_plane_mailbox.ask(callback).await.unwrap();
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard =
-            &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"][0];
+        let shard = &control_plane_debug_info["shard_table"]
+            ["test-index:00000000000000000000000000"]["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000000");
         assert_eq!(shard["shard_state"], "closed");
 
@@ -2749,8 +2798,8 @@ mod tests {
             control_plane_debug_info["physical_indexing_plan"][0]["node_id"],
             "test-ingester"
         );
-        let shard =
-            &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"][0];
+        let shard = &control_plane_debug_info["shard_table"]
+            ["test-index:00000000000000000000000000"]["test-ingester"][0];
         assert_eq!(shard["index_uid"], "test-index:00000000000000000000000000");
         assert_eq!(shard["source_id"], INGEST_V2_SOURCE_ID);
         assert_eq!(shard["shard_id"], "00000000000000000000");
@@ -2759,7 +2808,7 @@ mod tests {
         assert_eq!(shard["follower_id"], JsonValue::Null);
         assert_eq!(
             shard["publish_position_inclusive"],
-            Position::Beginning.to_string()
+            json!(Position::Beginning)
         );
 
         universe.assert_quit().await;
