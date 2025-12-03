@@ -55,9 +55,7 @@ enum TermValue {
 }
 
 fn deserialize_term_value<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let term_value = TermValue::deserialize(deserializer)?;
     match term_value {
         TermValue::I64(i64) => Ok(i64.to_string()),
