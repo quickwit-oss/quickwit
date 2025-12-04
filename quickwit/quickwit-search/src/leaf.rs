@@ -499,9 +499,9 @@ async fn leaf_search_single_split(
         make_collector_for_split(split_id.clone(), &search_request, agg_context_params)?;
 
     let split_schema = index.schema();
-    let (query, mut warmup_info) = ctx
-        .doc_mapper
-        .query(split_schema.clone(), &query_ast, false)?;
+    let (query, mut warmup_info) =
+        ctx.doc_mapper
+            .query(split_schema.clone(), query_ast.clone(), false)?;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);

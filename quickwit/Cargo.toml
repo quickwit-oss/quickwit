@@ -353,6 +353,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "618e3bd", d
   "zstd-compression",
   "columnar-zstd-compression",
 ] }
+tantivy-common = { git = "https://github.com/quickwit-oss/tantivy/", rev = "25d44fcec8"}
 tantivy-fst = "0.5"
 
 # This is actually not used directly the goal is to fix the version

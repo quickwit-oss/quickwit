@@ -636,11 +636,11 @@ impl DocMapper {
     pub fn query(
         &self,
         split_schema: Schema,
-        query_ast: &QueryAst,
+        query_ast: QueryAst,
         with_validation: bool,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
         build_query(
-            query_ast,
+            &query_ast,
             &BuildTantivyAstContext {
                 schema: &split_schema,
                 tokenizer_manager: self.tokenizer_manager(),
@@ -2070,7 +2070,7 @@ mod tests {
             .parse_user_query(doc_mapper.default_search_fields())
             .map_err(|err| err.to_string())?;
         let (query, _) = doc_mapper
-            .query(doc_mapper.schema(), &query_ast, true)
+            .query(doc_mapper.schema(), query_ast, true)
             .map_err(|err| err.to_string())?;
         Ok(format!("{query:?}"))
     }

@@ -113,8 +113,8 @@ pub trait QueryAstVisitor<'a> {
         Ok(())
     }
 
-    fn visit_cache_node(&mut self, _cache_node: &'a CacheNode) -> Result<(), Self::Err> {
-        Ok(())
+    fn visit_cache_node(&mut self, cache_node: &'a CacheNode) -> Result<(), Self::Err> {
+        self.visit(&cache_node.inner)
     }
 }
 
@@ -247,6 +247,13 @@ pub trait QueryAstTransformer {
         &mut self,
         cache_node: CacheNode,
     ) -> Result<Option<QueryAst>, Self::Err> {
-        Ok(Some(QueryAst::Cache(cache_node)))
+        self.transform(*cache_node.inner).map(|maybe_ast| {
+            maybe_ast.map(|inner| {
+                QueryAst::Cache(CacheNode {
+                    inner: Box::new(inner),
+                    state: Default::default(),
+                })
+            })
+        })
     }
 }

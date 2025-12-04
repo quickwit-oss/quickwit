@@ -372,7 +372,7 @@ mod tests {
         // without validation
         assert_eq!(
             range_query
-                .build_tantivy_ast_call(test_context!(schema),)
+                .build_tantivy_ast_call(test_context!(schema, validation = false),)
                 .unwrap()
                 .const_predicate(),
             Some(MatchAllOrNone::MatchNone)

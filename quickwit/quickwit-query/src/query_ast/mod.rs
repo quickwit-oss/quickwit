@@ -122,6 +122,10 @@ impl QueryAst {
                 let inner = cache_node.inner.parse_user_query(default_search_fields)?;
                 Ok(CacheNode {
                     inner: Box::new(inner),
+                    // inner got modified, the result is supposed to be equivalent, but to be safe,
+                    // lets reinitialize the cache in practice this function
+                    // shouldn't ever be called after cache was resolved
+                    state: cache_node::CacheState::Uninitialized,
                 }
                 .into())
             }
@@ -171,6 +175,14 @@ macro_rules! test_context {
             tokenizer_manager: &$crate::create_default_quickwit_tokenizer_manager(),
             search_fields: &[],
             with_validation: true,
+        }
+    };
+    ($schema:expr, validation=$validation:expr) => {
+        &$crate::query_ast::BuildTantivyAstContext {
+            schema: &$schema,
+            tokenizer_manager: &$crate::create_default_quickwit_tokenizer_manager(),
+            search_fields: &[],
+            with_validation: $validation,
         }
     };
 }

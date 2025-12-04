@@ -23,6 +23,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 tantivy = { workspace = true }
+tantivy-common = { workspace = true }
 tantivy-fst = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
