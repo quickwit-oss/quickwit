@@ -17,6 +17,7 @@ docker-build:
 		--build-arg QW_COMMIT_DATE=$(QW_COMMIT_DATE) \
 		--build-arg QW_COMMIT_HASH=$(QW_COMMIT_HASH) \
 		--build-arg QW_COMMIT_TAGS=$(QW_COMMIT_TAGS) \
+		--build-arg CI_JOB_TOKEN=$(shell ddtool auth gitlab token) \
 		-t quickwit/quickwit:$(IMAGE_TAG) .
 
 # Usage:

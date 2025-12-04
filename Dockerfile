@@ -15,6 +15,7 @@ ARG CARGO_PROFILE=release
 ARG QW_COMMIT_DATE
 ARG QW_COMMIT_HASH
 ARG QW_COMMIT_TAGS
+# it's dangerous to expose tokens in ARGs like this, but this is an intermediate build container, so its arguments are not stored in the final image
 ARG CI_JOB_TOKEN
 
 ENV QW_COMMIT_DATE=$QW_COMMIT_DATE
