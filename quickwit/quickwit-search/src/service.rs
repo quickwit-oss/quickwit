@@ -186,7 +186,7 @@ impl SearchService for SearchServiceImpl {
             .map(|req| req.split_offsets.len())
             .sum::<usize>();
 
-        LeafSearchMetricsFuture {
+        let tracked_future = LeafSearchMetricsFuture {
             tracked: multi_index_leaf_search(
                 self.searcher_context.clone(),
                 leaf_search_request,
@@ -195,8 +195,9 @@ impl SearchService for SearchServiceImpl {
             start: Instant::now(),
             targeted_splits: num_splits,
             status: None,
-        }
-        .await
+        };
+        let timeout = self.searcher_context.searcher_config.request_timeout();
+        tokio::time::timeout(timeout, tracked_future).await?
     }
 
     async fn fetch_docs(
