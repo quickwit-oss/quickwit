@@ -1646,6 +1646,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(deprecated)]
 fn collect_str_terms(response: LeafListTermsResponse) -> Vec<String> {
     response
         .terms
