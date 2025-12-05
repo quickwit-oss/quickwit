@@ -375,6 +375,7 @@ expected:
   aggregations:
     response_stats:
       sum_of_squares: 55300.0
+---
 # Test term aggs number precision
 method: [GET]
 engines:
@@ -393,3 +394,86 @@ expected:
       buckets:
       - doc_count: 1 
         key: 1769070189829214200
+--- 
+# Test composite aggregation
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  size: 0
+  aggs:
+    host_name_composite:
+      composite:
+        size: 5
+        sources:
+          - host:
+              terms:
+                field: "host"
+                missing_bucket: true
+          - name:
+              terms:
+                field: "name"
+          - response:
+              histogram:
+                field: "response"
+                interval: 50
+expected:
+  aggregations:
+    host_name_composite:
+      buckets:
+        - key: { "host": null, "name": "Bernhard", "response": 100.0 }
+          doc_count: 1
+        - key: { "host": null, "name": "Fritz", "response": 0.0 }
+          doc_count: 2
+        - key: { "host": "192.168.0.1", "name": "Fred", "response": 100.0 }
+          doc_count: 1
+        - key: { "host": "192.168.0.1", "name": "Fritz", "response": 0.0 }
+          doc_count: 1
+        - key: { "host": "192.168.0.10", "name": "Albert", "response": 100.0 }
+          doc_count: 1
+      after_key:
+        host: "192.168.0.10"
+        name: "Albert"
+        response: 100.0
+
+---
+# Test composite aggregation paging
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  size: 0
+  aggs:
+    host_name_composite:
+      composite:
+        size: 5
+        sources:
+          - host:
+              terms:
+                field: "host"
+                missing_bucket: true
+          - name:
+              terms:
+                field: "name"
+          - response:
+              histogram:
+                field: "response"
+                interval: 50
+        after:
+          host: "192.168.0.10"
+          name: "Albert"
+          response: 100.0
+expected:
+  aggregations:
+    host_name_composite:
+      buckets:
+        - key: { "host": "192.168.0.10", "name": "Holger", "response": 0.0 }
+          doc_count: 1
+        # Horst is missing because his response field is missing
+        - key: { "host": "192.168.0.10", "name": "Werner", "response": 0.0 }
+          doc_count: 1
+        - key: { "host": "192.168.0.11", "name": "Manfred", "response": 100.0 }
+          doc_count: 1
+---
