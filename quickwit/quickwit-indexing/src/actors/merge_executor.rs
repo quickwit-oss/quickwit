@@ -839,7 +839,8 @@ mod tests {
             let documents_left = searcher
                 .search(
                     &tantivy::query::AllQuery,
-                    &tantivy::collector::TopDocs::with_limit(result_docs.len() + 1),
+                    &tantivy::collector::TopDocs::with_limit(result_docs.len() + 1)
+                        .order_by_score(),
                 )?
                 .into_iter()
                 .map(|(_, doc_address)| {

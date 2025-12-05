@@ -263,20 +263,32 @@ fn extract_term_set_query_fields(
     Ok(visitor.term_dict_fields_to_warm_up)
 }
 
+/// Converts a `prefix` term into the equivalent term range.
+///
+/// The resulting range is `[prefix, next_prefix)`, that is:
+/// - start bound: `Included(prefix)`
+/// - end bound: `Excluded(next lexicographic term after the prefix)`
+///
+/// "abc"    -> start: "abc", end: "abd" (excluded)
+/// "ab\xFF" -> start: "ab\xFF", end: "ac" (excluded)
+/// "\xFF\xFF" -> start: "\xFF\xFF", end: Unbounded
 fn prefix_term_to_range(prefix: Term) -> (Bound<Term>, Bound<Term>) {
-    let mut end_bound = prefix.serialized_term().to_vec();
-    while !end_bound.is_empty() {
-        let last_byte = end_bound.last_mut().unwrap();
+    // Start from the given prefix and try to find the successor
+    let mut end_bound = prefix.clone();
+    let mut end_bound_value_bytes = prefix.serialized_value_bytes().to_vec();
+    while !end_bound_value_bytes.is_empty() {
+        let last_byte = end_bound_value_bytes.last_mut().unwrap();
         if *last_byte != u8::MAX {
             *last_byte += 1;
-            return (
-                Bound::Included(prefix),
-                Bound::Excluded(Term::wrap(end_bound)),
-            );
+            // The last non-`u8::MAX` byte incremented
+            // gives us the exclusive upper bound.
+            end_bound.set_bytes(&end_bound_value_bytes);
+            return (Bound::Included(prefix), Bound::Excluded(end_bound));
         }
-        end_bound.pop();
+        // pop u8::MAX byte and try next
+        end_bound_value_bytes.pop();
     }
-    // prefix is something like [255, 255, ..]
+    // All bytes were `u8::MAX`: there is no successor, so the upper bound is unbounded.
     (Bound::Included(prefix), Bound::Unbounded)
 }
 
