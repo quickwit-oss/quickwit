@@ -24,6 +24,7 @@ import {
 import Loader from "../components/Loader";
 import ErrorResponseDisplay from "../components/ResponseErrorDisplay";
 import { Client } from "../services/client";
+import { useJsonSchema } from "../services/jsonShema";
 import { Cluster, ResponseError } from "../utils/models";
 
 function ClusterView() {
@@ -56,8 +57,17 @@ function ClusterView() {
     if (loading || cluster == null) {
       return <Loader />;
     }
-    return <JsonEditor content={cluster} resizeOnMount={false} />;
+    return (
+      <JsonEditor
+        jsonSchema={jsonSchema}
+        content={cluster}
+        resizeOnMount={false}
+      />
+    );
   };
+
+  const jsonSchema =
+    useJsonSchema("#/components/schemas/ClusterSnapshot") ?? undefined;
 
   return (
     <ViewUnderAppBarBox>

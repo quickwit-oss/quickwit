@@ -27,6 +27,7 @@ import {
 } from "../components/LayoutUtils";
 import Loader from "../components/Loader";
 import { Client } from "../services/client";
+import { useJsonSchema } from "../services/jsonShema";
 import { Index } from "../utils/models";
 
 export type ErrorResult = {
@@ -53,13 +54,17 @@ function IndexView() {
   const { indexId } = useParams();
   const [loading, setLoading] = useState(false);
   const [, setLoadingError] = useState<ErrorResult | null>(null);
-  const [tabIndex, setTabIndex] = useState("1");
+  const [tab, setTab] = useState<
+    | "summary"
+    | "sources"
+    | "doc-mapping"
+    | "indexing-settings"
+    | "search-settings"
+    | "retention-settings"
+    | "splits"
+  >("summary");
   const [index, setIndex] = useState<Index>();
   const quickwitClient = useMemo(() => new Client(), []);
-
-  const handleTabIndexChange = (_: React.SyntheticEvent, newValue: string) => {
-    setTabIndex(newValue);
-  };
 
   const fetchIndex = useCallback(() => {
     setLoading(true);
@@ -94,53 +99,41 @@ function IndexView() {
             height: "calc(100% - 48px)",
           }}
         >
-          <TabContext value={tabIndex}>
+          <TabContext value={tab}>
             <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-              <TabList onChange={handleTabIndexChange} aria-label="Index tabs">
-                <Tab label="Summary" value="1" />
-                <Tab label="Sources" value="2" />
-                <Tab label="Doc Mapping" value="3" />
-                <Tab label="Indexing settings" value="4" />
-                <Tab label="Search settings" value="5" />
-                <Tab label="Retention settings" value="6" />
-                <Tab label="Splits" value="7" />
+              <TabList
+                onChange={(_, newTab) => setTab(newTab)}
+                aria-label="Index tabs"
+              >
+                <Tab label="Summary" value="summary" />
+                <Tab label="Sources" value="sources" />
+                <Tab label="Doc Mapping" value="doc-mapping" />
+                <Tab label="Indexing settings" value="indexing-settings" />
+                <Tab label="Search settings" value="search-settings" />
+                <Tab label="Retention settings" value="retention-settings" />
+                <Tab label="Splits" value="splits" />
               </TabList>
             </Box>
-            <CustomTabPanel value="1">
-              <IndexSummary index={index} />
+            <CustomTabPanel value="summary">
+              <SummaryTab index={index} />
             </CustomTabPanel>
-            <CustomTabPanel value="2">
-              <JsonEditor
-                content={index.metadata.sources}
-                resizeOnMount={false}
-              />
+            <CustomTabPanel value="sources">
+              <SourcesTab index={index} />
             </CustomTabPanel>
-            <CustomTabPanel value="3">
-              <JsonEditor
-                content={index.metadata.index_config.doc_mapping}
-                resizeOnMount={false}
-              />
+            <CustomTabPanel value="doc-mapping">
+              <DocMappingTab index={index} />
             </CustomTabPanel>
-            <CustomTabPanel value="4">
-              <JsonEditor
-                content={index.metadata.index_config.indexing_settings}
-                resizeOnMount={false}
-              />
+            <CustomTabPanel value="indexing-settings">
+              <IndexingSettingsTab index={index} />
             </CustomTabPanel>
-            <CustomTabPanel value="5">
-              <JsonEditor
-                content={index.metadata.index_config.search_settings}
-                resizeOnMount={false}
-              />
+            <CustomTabPanel value="search-settings">
+              <SearchSettingsTab index={index} />
             </CustomTabPanel>
-            <CustomTabPanel value="6">
-              <JsonEditor
-                content={index.metadata.index_config.retention || {}}
-                resizeOnMount={false}
-              />
+            <CustomTabPanel value="retention-settings">
+              <RetentionSettingsTab index={index} />
             </CustomTabPanel>
-            <CustomTabPanel value="7">
-              <JsonEditor content={index.splits} resizeOnMount={false} />
+            <CustomTabPanel value="splits">
+              <SplitsTab index={index} />
             </CustomTabPanel>
           </TabContext>
         </Box>
@@ -169,3 +162,93 @@ function IndexView() {
 }
 
 export default IndexView;
+
+function SummaryTab({ index }: { index: Index }) {
+  return <IndexSummary index={index} />;
+}
+
+function SourcesTab({ index }: { index: Index }) {
+  const jsonSchema =
+    useJsonSchema(
+      "#/components/schemas/IndexMetadataV0_8/properties/sources",
+    ) ?? undefined;
+
+  return (
+    <JsonEditor
+      content={index.metadata.sources}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+    />
+  );
+}
+
+function DocMappingTab({ index }: { index: Index }) {
+  const jsonSchema =
+    useJsonSchema("#/components/schemas/DocMapping") ?? undefined;
+  return (
+    <JsonEditor
+      content={index.metadata.index_config.doc_mapping}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+    />
+  );
+}
+
+function IndexingSettingsTab({ index }: { index: Index }) {
+  const jsonSchema =
+    useJsonSchema("#/components/schemas/IndexingSettings") ?? undefined;
+
+  return (
+    <JsonEditor
+      content={index.metadata.index_config.indexing_settings}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+    />
+  );
+}
+
+function SearchSettingsTab({ index }: { index: Index }) {
+  const jsonSchema =
+    useJsonSchema("#/components/schemas/SearchSettings") ?? undefined;
+
+  return (
+    <JsonEditor
+      content={index.metadata.index_config.search_settings}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+    />
+  );
+}
+
+function RetentionSettingsTab({ index }: { index: Index }) {
+  const jsonSchema =
+    useJsonSchema("#/components/schemas/RetentionPolicy") ?? undefined;
+
+  return (
+    <JsonEditor
+      content={index.metadata.index_config.retention || {}}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+    />
+  );
+}
+
+function SplitsTab({ index }: { index: Index }) {
+  const splitShema = useJsonSchema("#/components/schemas/Split");
+  const jsonSchema =
+    (splitShema && {
+      ...splitShema,
+      $ref: undefined,
+      type: "array",
+      items: { $ref: "#/components/schemas/Split" },
+    }) ??
+    undefined;
+
+  return (
+    <JsonEditor
+      content={index.splits}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+    />
+  );
+}
