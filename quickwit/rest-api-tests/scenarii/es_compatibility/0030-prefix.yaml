@@ -26,3 +26,25 @@ expected:
   hits:
     total:
       value: 2
+---
+json:
+  query:
+    prefix:
+      repo.name:
+        value: RUST
+        case_insensitive: true
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    prefix:
+      repo.name:
+        value: RUST
+        case_insensitive: false
+expected:
+  hits:
+    total:
+      value: 0
