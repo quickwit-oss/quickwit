@@ -217,14 +217,15 @@ fn assert_enforce_nodes_cpu_capacity_post_condition(
 // We go through the sources in decreasing order of their load,
 // in two passes.
 //
-// In the first pass, we have a look at
-// the nodes with which there is an affinity.
-//
-// If one of them has room for all of the shards, then we assign all
-// of the shards to it.
+// In the first pass, we have a look at the nodes with which there is an
+// affinity.
 //
 // In the second pass, we just put as many shards as possible on the node
 // with the highest available capacity.
+//
+// Each time node is considered for placing shards of a given source, we place
+// as many of them as possible, but without exceeding the current node capacity
+// and the maximum capacity of 3 indexing pipelines.
 //
 // If this algorithm fails to place all remaining shards, we inflate
 // the node capacities by 20% in the scheduling problem and start from the beginning.
