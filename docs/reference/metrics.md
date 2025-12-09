@@ -68,9 +68,9 @@ Examples of operation names: `create_index`, `index_metadata`, `delete_index`, `
 
 | Namespace | Metric Name | Description | Type |
 | --------- | ----------- | ----------- | ---- |
-| `quickwit_search` | `leaf_searches_splits_total` | Number of leaf searches (count of splits) started | `counter` |
+| `quickwit_search` | `split_search_outcome` | Count of split search outcomes by category | `counter` |
 | `quickwit_search` | `leaf_search_split_duration_secs` | Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained | `histogram` |
-| `quickwit_search` | `active_search_threads_count` | Number of threads in use in the CPU thread pool | `gauge` |
+| `quickwit_search` | `leaf_list_terms_splits_total` | Number of list terms splits total | `counter` |
 
 ## Storage Metrics
 
