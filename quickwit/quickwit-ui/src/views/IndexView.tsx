@@ -15,8 +15,8 @@
 import { TabContext, TabList, TabPanel } from "@mui/lab";
 import { Box, styled, Tab, Typography } from "@mui/material";
 import Link, { LinkProps } from "@mui/material/Link";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link as RouterLink, useParams } from "react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link as RouterLink, useParams, useSearchParams } from "react-router";
 import ApiUrlFooter from "../components/ApiUrlFooter";
 import { IndexSummary } from "../components/IndexSummary";
 import { JsonEditor } from "../components/JsonEditor";
@@ -54,15 +54,30 @@ function IndexView() {
   const { indexId } = useParams();
   const [loading, setLoading] = useState(false);
   const [, setLoadingError] = useState<ErrorResult | null>(null);
-  const [tab, setTab] = useState<
-    | "summary"
-    | "sources"
-    | "doc-mapping"
-    | "indexing-settings"
-    | "search-settings"
-    | "retention-settings"
-    | "splits"
-  >("summary");
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const validTabs = [
+    "summary",
+    "sources",
+    "doc-mapping",
+    "indexing-settings",
+    "search-settings",
+    "retention-settings",
+    "splits",
+  ] as const;
+
+  type TabValue = (typeof validTabs)[number];
+
+  const isValidTab = (value: string | null): value is TabValue => {
+    return validTabs.includes(value as TabValue);
+  };
+
+  const tabFromUrl = searchParams.get("tab");
+  const tab = isValidTab(tabFromUrl) ? tabFromUrl : "summary";
+
+  const setTab = (newTab: TabValue) => {
+    setSearchParams({ tab: newTab });
+  };
   const [index, setIndex] = useState<Index>();
   const quickwitClient = useMemo(() => new Client(), []);
 
