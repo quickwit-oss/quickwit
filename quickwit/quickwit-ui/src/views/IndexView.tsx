@@ -20,6 +20,7 @@ import { Link as RouterLink, useParams, useSearchParams } from "react-router";
 import ApiUrlFooter from "../components/ApiUrlFooter";
 import { IndexSummary } from "../components/IndexSummary";
 import { JsonEditor } from "../components/JsonEditor";
+import { JsonEditorEditable } from "../components/JsonEditorEditable";
 import {
   FullBoxContainer,
   QBreadcrumbs,
@@ -28,11 +29,7 @@ import {
 import Loader from "../components/Loader";
 import { Client } from "../services/client";
 import { useJsonSchema } from "../services/jsonShema";
-import { Index } from "../utils/models";
-
-export type ErrorResult = {
-  error: string;
-};
+import { Index, IndexMetadata } from "../utils/models";
 
 const CustomTabPanel = styled(TabPanel)`
   padding-left: 0;
@@ -52,8 +49,7 @@ function LinkRouter(props: LinkRouterProps) {
 
 function IndexView() {
   const { indexId } = useParams();
-  const [loading, setLoading] = useState(false);
-  const [, setLoadingError] = useState<ErrorResult | null>(null);
+  const { loading, updating, index, updateIndexConfig } = useIndex(indexId);
   const [searchParams, setSearchParams] = useSearchParams();
 
   const validTabs = [
@@ -78,28 +74,6 @@ function IndexView() {
   const setTab = (newTab: TabValue) => {
     setSearchParams({ tab: newTab });
   };
-  const [index, setIndex] = useState<Index>();
-  const quickwitClient = useMemo(() => new Client(), []);
-
-  const fetchIndex = useCallback(() => {
-    setLoading(true);
-    if (indexId === undefined) {
-      console.warn("`indexId` should always be set.");
-      return;
-    } else {
-      quickwitClient.getIndex(indexId).then(
-        (fetchedIndex) => {
-          setLoadingError(null);
-          setLoading(false);
-          setIndex(fetchedIndex);
-        },
-        (error) => {
-          setLoading(false);
-          setLoadingError({ error: error });
-        },
-      );
-    }
-  }, [indexId, quickwitClient]);
 
   const renderFetchIndexResult = () => {
     if (loading || index === undefined) {
@@ -139,13 +113,25 @@ function IndexView() {
               <DocMappingTab index={index} />
             </CustomTabPanel>
             <CustomTabPanel value="indexing-settings">
-              <IndexingSettingsTab index={index} />
+              <IndexingSettingsTab
+                index={index}
+                updateIndexConfig={updateIndexConfig}
+                updating={updating}
+              />
             </CustomTabPanel>
             <CustomTabPanel value="search-settings">
-              <SearchSettingsTab index={index} />
+              <SearchSettingsTab
+                index={index}
+                updateIndexConfig={updateIndexConfig}
+                updating={updating}
+              />
             </CustomTabPanel>
             <CustomTabPanel value="retention-settings">
-              <RetentionSettingsTab index={index} />
+              <RetentionSettingsTab
+                index={index}
+                updateIndexConfig={updateIndexConfig}
+                updating={updating}
+              />
             </CustomTabPanel>
             <CustomTabPanel value="splits">
               <SplitsTab index={index} />
@@ -155,10 +141,6 @@ function IndexView() {
       );
     }
   };
-
-  useEffect(() => {
-    fetchIndex();
-  }, [fetchIndex]);
 
   return (
     <ViewUnderAppBarBox>
@@ -209,41 +191,107 @@ function DocMappingTab({ index }: { index: Index }) {
   );
 }
 
-function IndexingSettingsTab({ index }: { index: Index }) {
+function IndexingSettingsTab({
+  index,
+  updateIndexConfig,
+  updating,
+}: {
+  index: Index;
+  updateIndexConfig: (indexConfig: IndexMetadata["index_config"]) => void;
+  updating: boolean;
+}) {
   const jsonSchema =
     useJsonSchema("#/components/schemas/IndexingSettings") ?? undefined;
 
+  const initialValue = index.metadata.index_config.indexing_settings;
+  const [edited, setEdited] = useState<any | null>(null);
+  const pristine =
+    edited === null || JSON.stringify(edited) === JSON.stringify(initialValue);
+
   return (
-    <JsonEditor
-      content={index.metadata.index_config.indexing_settings}
+    <JsonEditorEditable
+      content={initialValue}
       resizeOnMount={false}
       jsonSchema={jsonSchema}
+      onContentEdited={setEdited}
+      onSave={() =>
+        updateIndexConfig({
+          ...index.metadata.index_config,
+          indexing_settings: edited,
+        } as IndexMetadata["index_config"])
+      }
+      pristine={pristine}
+      saving={updating}
     />
   );
 }
 
-function SearchSettingsTab({ index }: { index: Index }) {
+function SearchSettingsTab({
+  index,
+  updateIndexConfig,
+  updating,
+}: {
+  index: Index;
+  updateIndexConfig: (indexConfig: IndexMetadata["index_config"]) => void;
+  updating: boolean;
+}) {
   const jsonSchema =
     useJsonSchema("#/components/schemas/SearchSettings") ?? undefined;
 
+  const initialValue = index.metadata.index_config.search_settings;
+  const [edited, setEdited] = useState<any | null>(null);
+  const pristine =
+    edited === null || JSON.stringify(edited) === JSON.stringify(initialValue);
+
   return (
-    <JsonEditor
-      content={index.metadata.index_config.search_settings}
+    <JsonEditorEditable
+      content={initialValue}
       resizeOnMount={false}
       jsonSchema={jsonSchema}
+      onContentEdited={setEdited}
+      onSave={() =>
+        updateIndexConfig({
+          ...index.metadata.index_config,
+          search_settings: edited,
+        } as IndexMetadata["index_config"])
+      }
+      pristine={pristine}
+      saving={updating}
     />
   );
 }
 
-function RetentionSettingsTab({ index }: { index: Index }) {
+function RetentionSettingsTab({
+  index,
+  updateIndexConfig,
+  updating,
+}: {
+  index: Index;
+  updateIndexConfig: (indexConfig: IndexMetadata["index_config"]) => void;
+  updating: boolean;
+}) {
   const jsonSchema =
     useJsonSchema("#/components/schemas/RetentionPolicy") ?? undefined;
 
+  const initialValue = index.metadata.index_config.retention || {};
+  const [edited, setEdited] = useState<any | null>(null);
+  const pristine =
+    edited === null || JSON.stringify(edited) === JSON.stringify(initialValue);
+
   return (
-    <JsonEditor
-      content={index.metadata.index_config.retention || {}}
+    <JsonEditorEditable
+      content={initialValue}
       resizeOnMount={false}
       jsonSchema={jsonSchema}
+      onContentEdited={setEdited}
+      onSave={() =>
+        updateIndexConfig({
+          ...index.metadata.index_config,
+          retention: edited,
+        } as IndexMetadata["index_config"])
+      }
+      pristine={pristine}
+      saving={updating}
     />
   );
 }
@@ -267,3 +315,59 @@ function SplitsTab({ index }: { index: Index }) {
     />
   );
 }
+
+/**
+ * Fetches and manages index data
+ */
+const useIndex = (indexId: string | undefined) => {
+  const quickwitClient = useMemo(() => new Client(), []);
+
+  const onError = useMemo(
+    () => (err: unknown) => alert((err as any)?.message ?? err?.toString()),
+    [],
+  );
+
+  const [index, setIndex] = useState<Index>();
+  const [updating, setUpdating] = useState(false);
+
+  useEffect(() => {
+    if (!indexId) return;
+
+    const abortController = new AbortController();
+
+    quickwitClient
+      .getIndex(indexId)
+      .then((index) => {
+        if (!abortController.signal.aborted) setIndex(index);
+      })
+      .catch(onError);
+
+    return () => abortController.abort();
+  }, [indexId, quickwitClient, onError]);
+
+  const updateIndexConfig = useCallback(
+    (indexConfig: IndexMetadata["index_config"]) => {
+      setUpdating(true);
+
+      quickwitClient
+        .updateIndexConfig(indexConfig.index_id, indexConfig)
+        .then((metadata) => {
+          setIndex((i) =>
+            i?.metadata.index_config.index_id === metadata.index_config.index_id
+              ? { ...i, metadata }
+              : i,
+          );
+        })
+        .catch(onError)
+        .finally(() => setUpdating(false));
+    },
+    [quickwitClient, onError],
+  );
+
+  if (!indexId) return { loading: false, index: undefined };
+
+  if (index?.metadata.index_config.index_id !== indexId)
+    return { loading: true };
+
+  return { loading: false, updating, index: index, updateIndexConfig };
+};

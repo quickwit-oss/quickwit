@@ -18,12 +18,16 @@ import { EDITOR_THEME } from "../utils/theme";
 
 export function JsonEditor({
   content,
+  readOnly = true,
   resizeOnMount,
   jsonSchema,
+  onContentEdited,
 }: {
   content: unknown;
+  readOnly?: boolean;
   resizeOnMount: boolean;
   jsonSchema?: object;
+  onContentEdited?: (value: unknown) => void;
 }) {
   const monaco = useMonaco();
   const arbitraryFilename = "inmemory://" + useId();
@@ -77,10 +81,15 @@ export function JsonEditor({
       path={arbitraryFilename}
       language="json"
       value={JSON.stringify(content, null, 2)}
+      onChange={(value) => {
+        try {
+          if (value) onContentEdited?.(JSON.parse(value));
+        } catch (err) {}
+      }}
       beforeMount={beforeMount}
       onMount={onMount}
       options={{
-        readOnly: true,
+        readOnly: readOnly,
         fontFamily: "monospace",
         overviewRulerBorder: false,
         overviewRulerLanes: 0,
