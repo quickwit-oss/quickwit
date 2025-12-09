@@ -1202,7 +1202,7 @@ pub async fn multi_index_leaf_search(
     //
     // It is a little bit tricky how to handle which is now the incremental_merge_collector, one
     // per index, e.g. when to merge results and how to avoid lock contention.
-    let mut join_set = JoinSet::new();
+    let mut leaf_request_futures = JoinSet::new();
     for leaf_search_request_ref in leaf_search_request.leaf_requests.into_iter() {
         let index_uri = quickwit_common::uri::Uri::from_str(
             leaf_search_request
@@ -1225,7 +1225,7 @@ pub async fn multi_index_leaf_search(
             })?
             .clone();
 
-        join_set.spawn({
+        leaf_request_futures.spawn({
             let storage_resolver = storage_resolver.clone();
             let searcher_context = searcher_context.clone();
             let search_request = search_request.clone();
@@ -1248,8 +1248,8 @@ pub async fn multi_index_leaf_search(
 
     let merge_collector = make_merge_collector(&search_request, aggregation_limits)?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
-    while let Some(result) = join_set.join_next().await {
-        incremental_merge_collector.add_result(result??)?;
+    while let Some(leaf_response_join_result) = leaf_request_futures.join_next().await {
+        incremental_merge_collector.add_result(leaf_response_join_result??)?;
     }
 
     crate::search_thread_pool()
@@ -1358,7 +1358,7 @@ pub async fn single_doc_mapping_leaf_search(
         split_filter: split_filter.clone(),
     });
 
-    let mut join_set = JoinSet::new();
+    let mut split_search_futures = JoinSet::new();
     let mut split_with_task_id = Vec::with_capacity(split_with_req.len());
     for ((split, search_request), permit_fut) in
         split_with_req.into_iter().zip(permit_futures.into_iter())
@@ -1376,7 +1376,7 @@ pub async fn single_doc_mapping_leaf_search(
             continue;
         };
         let split_id = split.split_id.clone();
-        let handle = join_set.spawn(
+        let handle = split_search_futures.spawn(
             leaf_search_single_split_wrapper(
                 simplified_search_request,
                 leaf_search_context.clone(),
@@ -1394,7 +1394,7 @@ pub async fn single_doc_mapping_leaf_search(
     // longer give better results after some other split answered.
     let mut split_search_join_errors: Vec<(String, JoinError)> = Vec::new();
 
-    while let Some(leaf_search_join_result) = join_set.join_next().await {
+    while let Some(leaf_search_join_result) = split_search_futures.join_next().await {
         // splits that did not panic were already added to the collector
         if let Err(join_error) = leaf_search_join_result {
             if join_error.is_cancelled() {
