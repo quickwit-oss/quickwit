@@ -51,6 +51,9 @@ pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
         Duration::from_secs(30)
     };
 
+/// That's 80% of a pipeline capacity
+const MAX_LOAD_PER_PIPELINE: CpuCapacity = CpuCapacity::from_cpu_millis(3_200);
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct IndexingSchedulerState {
     pub num_applied_physical_indexing_plan: usize,
@@ -257,8 +260,12 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                     source_uid,
                     source_type: SourceToScheduleType::NonSharded {
                         num_pipelines: source_config.num_pipelines.get() as u32,
-                        // FIXME
-                        load_per_pipeline: NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis())
+                        // FIXME:
+                        // - implementing adaptative load contains the risk of generating
+                        //   rebalancing storms for sources like Kafka
+                        // - this is coupled with the scheduling logic that misses the notion of
+                        //   pipeline
+                        load_per_pipeline: NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis())
                             .unwrap(),
                     },
                     params_fingerprint,
