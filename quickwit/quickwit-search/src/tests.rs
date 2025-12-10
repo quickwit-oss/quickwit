@@ -1058,6 +1058,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         splits_offsets,
         test_sandbox.doc_mapper(),
         agg_limits,
+        false,
     )
     .await
     .unwrap();

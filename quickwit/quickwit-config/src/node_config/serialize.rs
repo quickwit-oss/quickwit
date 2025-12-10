@@ -672,6 +672,13 @@ mod tests {
                 }),
                 warmup_memory_budget: ByteSize::gb(100),
                 warmup_single_split_initial_allocation: ByteSize::gb(1),
+
+                secondary_max_num_concurrent_split_searches: 50,
+                secondary_warmup_memory_budget: ByteSize::gb(50),
+                // Splits per leaf search above which the secondary queue is used. If not set, the
+                // secondary queue is never used.
+                secondary_targeted_split_count_threshold: None,
+                secondary_request_timeout_secs: NonZeroU64::new(30).unwrap(),
             }
         );
         assert_eq!(
