@@ -71,3 +71,7 @@ rm-postgres:
 
 update-licenses:
 	 dd-rust-license-tool --config license-tool.toml write
+
+.PHONY: load-cloudprem-ui
+load-cloudprem-ui:
+	cd cloudprem-ui && $(MAKE) load-cloudprem-ui

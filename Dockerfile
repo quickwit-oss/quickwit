@@ -7,6 +7,17 @@ WORKDIR /quickwit/quickwit-ui
 RUN touch .gitignore_for_build_directory \
     && NODE_ENV=production make install build
 
+FROM node:20@sha256:8cdc6b9b711af0711cc6139955cc1331fab5e0a995afd3260c52736fbc338059 AS cloudprem-ui-loader
+COPY quickwit/cloudprem-ui /quickwit/cloudprem-ui
+WORKDIR /quickwit/cloudprem-ui
+
+ARG CLOUDPREM_UI_ENV=prod
+ARG CLOUDPREM_UI_VERSION=0.1.0
+ENV CLOUDPREM_UI_ENV=$CLOUDPREM_UI_ENV
+ENV CLOUDPREM_UI_VERSION=$CLOUDPREM_UI_VERSION
+
+RUN touch .gitignore_for_build_directory \
+    && make load-cloudprem-ui
 
 FROM rust:bookworm@sha256:b5efaabfd787a695d2e46b37d3d9c54040e11f4c10bc2e714bbadbfcc0cd6c39 AS bin-builder
 
@@ -38,6 +49,7 @@ COPY quickwit /quickwit
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
 COPY config/cloudprem/datadog.yaml /config/cloudprem/datadog.yaml
 COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
+COPY --from=cloudprem-ui-loader /quickwit/cloudprem-ui/cloudprem_ui_build /quickwit/cloudprem-ui/cloudprem_ui_build
 
 WORKDIR /quickwit
 

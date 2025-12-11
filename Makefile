@@ -2,6 +2,9 @@ DOCKER_SERVICES ?= all
 
 QUICKWIT_SRC = quickwit
 
+CLOUDPREM_UI_ENV ?= staging
+CLOUDPREM_UI_VERSION ?= 0.1.0
+
 help:
 	@grep '^[^\.#[:space:]].*:' Makefile
 
@@ -18,6 +21,8 @@ docker-build:
 		--build-arg QW_COMMIT_HASH=$(QW_COMMIT_HASH) \
 		--build-arg QW_COMMIT_TAGS=$(QW_COMMIT_TAGS) \
 		--build-arg CI_JOB_TOKEN=$(shell ddtool auth gitlab token) \
+		--build-arg CLOUDPREM_UI_ENV=$(CLOUDPREM_UI_ENV) \
+		--build-arg CLOUDPREM_UI_VERSION=$(CLOUDPREM_UI_VERSION) \
 		-t quickwit/quickwit:$(IMAGE_TAG) .
 
 # Usage:
@@ -105,3 +110,7 @@ build-rustdoc:
 .PHONY: build-ui
 build-ui:
 	$(MAKE) -C $(QUICKWIT_SRC) build-ui
+
+.PHONY: load-cloudprem-ui
+load-cloudprem-ui:
+	$(MAKE) -C $(QUICKWIT_SRC) load-cloudprem-ui

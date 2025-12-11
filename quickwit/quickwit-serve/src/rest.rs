@@ -37,6 +37,7 @@ use warp::hyper::{Method, StatusCode, http};
 use warp::{Filter, Rejection, Reply, redirect};
 
 use crate::cloudprem_ui_api::cloudprem_ui_api_handlers;
+use crate::cloudprem_ui_handler::cloudprem_ui_handler;
 use crate::cluster_api::cluster_handler;
 use crate::datadog_api::datadog_api_handlers;
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
@@ -181,7 +182,7 @@ pub(crate) async fn start_rest_server(
 
     let redirect_root_to_ui_route = warp::path::end()
         .and(warp::get())
-        .map(|| redirect(http::Uri::from_static("/ui/search")))
+        .map(|| redirect(http::Uri::from_static("/logs")))
         .recover(recover_fn)
         .boxed();
 
@@ -205,6 +206,7 @@ pub(crate) async fn start_rest_server(
         .or(api_doc)
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
+        .or(cloudprem_ui_handler())
         .or(health_check_routes)
         .or(metrics_routes)
         .or(developer_routes)
