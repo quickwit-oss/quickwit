@@ -67,6 +67,11 @@ pub struct SplitAttrs {
 
     // Number of merge operation the split has been through so far.
     pub num_merge_ops: usize,
+
+    /// Earliest arrival timestamp (in milliseconds since the Unix epoch) of all documents in the
+    /// split. In other words: `min(doc.arrival_timestamp_millis for doc in split)`.
+    /// This is used to track ingestion and indexing lag.
+    pub min_arrival_timestamp_secs_opt: Option<u64>,
 }
 
 impl fmt::Debug for SplitAttrs {
@@ -125,6 +130,7 @@ pub fn create_split_metadata(
         footer_offsets,
         delete_opstamp: split_attrs.delete_opstamp,
         num_merge_ops: split_attrs.num_merge_ops,
+        min_arrival_timestamp_secs_opt: split_attrs.min_arrival_timestamp_secs_opt,
     }
 }
 
