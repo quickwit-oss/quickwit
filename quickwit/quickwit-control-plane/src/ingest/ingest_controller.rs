@@ -23,6 +23,7 @@ use std::time::Duration;
 use fnv::FnvHashSet;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
+use itertools::{Itertools, MinMaxResult};
 use quickwit_actors::Mailbox;
 use quickwit_common::Progress;
 use quickwit_common::pretty::PrettySample;
@@ -81,7 +82,7 @@ const FIRE_AND_FORGET_TIMEOUT: Duration = Duration::from_secs(3);
 /// All errors are ignored, and not even logged.
 fn fire_and_forget(
     fut: impl Future<Output = ()> + Send + 'static,
-    operation: impl std::fmt::Display + Send + Sync + 'static,
+    operation: impl std::fmt::Display + Send + 'static,
 ) {
     tokio::spawn(async move {
         if let Err(_timeout_elapsed) = tokio::time::timeout(FIRE_AND_FORGET_TIMEOUT, fut).await {
@@ -1008,18 +1009,22 @@ impl IngestController {
     /// If we are missing some ingesters, their shards should still be in the model, but they should
     /// be missing from the ingester pool.
     ///
-    /// As a result `num_open_shards_per_leader_threshold` should be inflated.
+    /// As a result `target_num_open_shards_per_leader` should be inflated.
     ///
     /// TODO this implementation does not consider replica.
     fn rebalance_compute_shards_to_move(&self, model: &ControlPlaneModel) -> Vec<Shard> {
-        let num_ingesters = self.ingester_pool.len();
-        let mut num_open_shards: usize = 0;
+        let ingester_ids: Vec<NodeId> = self.ingester_pool.keys();
+        let num_ingesters = ingester_ids.len();
 
         if num_ingesters == 0 {
-            debug!("no ingester available");
+            debug!("no ingesters available");
             return Vec::new();
         }
-        let mut per_leader_open_shards: HashMap<&str, Vec<&ShardEntry>> = HashMap::new();
+        if num_ingesters < 2 {
+            return Vec::new();
+        }
+        let mut num_open_shards: usize = 0;
+        let mut per_leader_open_shards: HashMap<&str, Vec<&Shard>> = HashMap::new();
 
         for shard in model.all_shards() {
             if shard.is_open() {
@@ -1027,40 +1032,60 @@ impl IngestController {
                 per_leader_open_shards
                     .entry(&shard.leader_id)
                     .or_default()
-                    .push(shard);
+                    .push(&shard.shard);
             }
         }
-        // We tolerate an ingester with 10% more shards than the average.
-        // Let's first identify the list of shards we want to "move".
-        let num_open_shards_per_leader_threshold =
-            (num_open_shards * 11).div_ceil(10 * num_ingesters);
+        for ingester_id in &ingester_ids {
+            per_leader_open_shards
+                .entry(ingester_id.as_str())
+                .or_default();
+        }
+        let target_num_open_shards_per_leader = num_open_shards as f32 / num_ingesters as f32;
+        let max_num_open_shards_per_leader =
+            f32::ceil(target_num_open_shards_per_leader * 1.1) as usize;
+        let min_num_open_shards_per_leader =
+            f32::floor(target_num_open_shards_per_leader * 0.9) as usize;
+
+        let mut rng = thread_rng();
+        let mut per_leader_open_shard_shuffled: Vec<Vec<&Shard>> = per_leader_open_shards
+            .into_values()
+            .map(|mut shards| {
+                shards.shuffle(&mut rng);
+                shards
+            })
+            .collect();
 
         let mut shards_to_move: Vec<Shard> = Vec::new();
 
-        let mut rng = thread_rng();
-        for open_shards in per_leader_open_shards.values() {
-            if let Some(num_shards_to_move) = open_shards
-                .len()
-                .checked_sub(num_open_shards_per_leader_threshold)
+        loop {
+            let MinMaxResult::MinMax(min_shards, max_shards) = per_leader_open_shard_shuffled
+                .iter_mut()
+                .minmax_by_key(|shards| shards.len())
+            else {
+                break;
+            };
+            if min_shards.len() < min_num_open_shards_per_leader
+                || max_shards.len() > max_num_open_shards_per_leader
             {
-                shards_to_move.extend(
-                    open_shards[..]
-                        .choose_multiple(&mut rng, num_shards_to_move)
-                        .map(|shard_entry| shard_entry.shard.clone()),
-                );
+                let shard = max_shards.pop().expect("shards should not be empty");
+                shards_to_move.push(shard.clone());
+                min_shards.push(shard);
+            } else {
+                break;
             }
         }
-        let num_shards_to_rebalance = shards_to_move.len();
+        let num_shards_to_move = shards_to_move.len();
 
-        if num_shards_to_rebalance == 0 {
+        if num_shards_to_move == 0 {
             info!("no shards to rebalance");
         } else {
             info!(
                 num_open_shards,
                 num_available_ingesters = num_ingesters,
-                rebalance_threshold = num_open_shards_per_leader_threshold,
-                num_shards_to_rebalance,
-                "rebalancing shards"
+                min_shards_threshold = min_num_open_shards_per_leader,
+                max_shards_threshold = max_num_open_shards_per_leader,
+                num_shards_to_move,
+                "rebalancing {num_shards_to_move} shards"
             );
         }
         shards_to_move
