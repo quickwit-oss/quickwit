@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use crate::not_nan_f32::NotNaNf32;
+use crate::query_ast::cache_node::CacheState;
 use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
 use crate::query_ast::{
@@ -114,7 +115,16 @@ pub trait QueryAstVisitor<'a> {
     }
 
     fn visit_cache_node(&mut self, cache_node: &'a CacheNode) -> Result<(), Self::Err> {
-        self.visit(&cache_node.inner)
+        // this goes a bit again how the rest of the default Visitor behave. The rational is that in
+        // practice, on a cache hit, we don't want to do anything with that node.
+        // On unitialized cache, any kind of data extract could make sense (extracing tags or
+        // timestamp bounds) On cache miss, we still want to know what we need for warmup.
+        // But on cache hit, it's too late to do optimisation based on tags and timestamps, and we
+        // don't want to warmup anything.
+        if !matches!(cache_node.state, CacheState::CacheHit(_)) {
+            self.visit(&cache_node.inner)?
+        }
+        Ok(())
     }
 }
 
@@ -247,13 +257,17 @@ pub trait QueryAstTransformer {
         &mut self,
         cache_node: CacheNode,
     ) -> Result<Option<QueryAst>, Self::Err> {
-        self.transform(*cache_node.inner).map(|maybe_ast| {
-            maybe_ast.map(|inner| {
-                QueryAst::Cache(CacheNode {
-                    inner: Box::new(inner),
-                    state: Default::default(),
+        if !matches!(cache_node.state, CacheState::CacheHit(_)) {
+            self.transform(*cache_node.inner).map(|maybe_ast| {
+                maybe_ast.map(|inner| {
+                    QueryAst::Cache(CacheNode {
+                        inner: Box::new(inner),
+                        state: Default::default(),
+                    })
                 })
             })
-        })
+        } else {
+            Ok(Some(cache_node.into()))
+        }
     }
 }

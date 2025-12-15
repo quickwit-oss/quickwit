@@ -661,6 +661,7 @@ mod tests {
                 fast_field_cache_capacity: ByteSize::gb(10),
                 split_footer_cache_capacity: ByteSize::gb(1),
                 partial_request_cache_capacity: ByteSize::mb(64),
+                predicate_cache_capacity: ByteSize::mb(128),
                 max_num_concurrent_split_searches: 150,
                 _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,

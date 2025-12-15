@@ -34,7 +34,7 @@ use quickwit_storage::{
 use tantivy::aggregation::AggregationLimitsGuard;
 
 use crate::leaf::multi_index_leaf_search;
-use crate::leaf_cache::LeafSearchCache;
+use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
@@ -405,8 +405,10 @@ pub struct SearcherContext {
     pub search_permit_provider: SearchPermitProvider,
     /// Split footer cache.
     pub split_footer_cache: MemorySizedCache<String>,
-    /// Recent sub-query cache.
+    /// Per-split and per-query cache.
     pub leaf_search_cache: LeafSearchCache,
+    /// Per-split and per-predicate cache.
+    pub predicate_cache: Arc<PredicateCacheImpl>,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SplitCache>>,
     /// List fields cache. Caches the list fields response for a given split.
@@ -446,6 +448,8 @@ impl SearcherContext {
         let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
         let leaf_search_cache =
             LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
+        let predicate_cache =
+            PredicateCacheImpl::new(searcher_config.predicate_cache_capacity.as_u64() as usize);
         let list_fields_cache =
             ListFieldsCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
         let aggregation_limit = AggregationLimitsGuard::new(
@@ -456,6 +460,7 @@ impl SearcherContext {
         Self {
             searcher_config,
             fast_fields_cache: storage_long_term_cache,
+            predicate_cache: predicate_cache.into(),
             search_permit_provider: leaf_search_split_semaphore,
             split_footer_cache: global_split_footer_cache,
             leaf_search_cache,

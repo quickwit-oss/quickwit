@@ -13,6 +13,7 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 base64 = { workspace = true }
+bitpacking = { workspace = true }
 hex = { workspace = true }
 lindera-core = { workspace = true, optional = true }
 lindera-dictionary = { workspace = true, optional = true }
@@ -23,7 +24,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 tantivy = { workspace = true }
-tantivy-common = { workspace = true }
 tantivy-fst = { workspace = true }
 time = { workspace = true }
 thiserror = { workspace = true }
@@ -32,6 +32,7 @@ whichlang = { workspace = true, optional = true }
 
 quickwit-common = { workspace = true }
 quickwit-datetime = { workspace = true }
+quickwit-proto = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

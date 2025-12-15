@@ -15,10 +15,11 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::ops::Bound;
+use std::sync::Arc;
 
 use quickwit_query::query_ast::{
     BuildTantivyAstContext, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst,
-    QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
+    QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{InvalidQuery, find_field_or_hit_dynamic};
@@ -154,14 +155,24 @@ impl<'a, 'f> QueryAstVisitor<'a> for ExistsQueryFastFields<'f> {
 
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
-    query_ast: &QueryAst,
+    query_ast: QueryAst,
     context: &BuildTantivyAstContext,
+    cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
     let mut fast_fields: HashSet<FastFieldWarmupInfo> = HashSet::new();
 
+    let query_ast = if let Some((cache, split_id)) = cache_context {
+        let Ok(query_ast) =
+            quickwit_query::query_ast::CachePreIgniter { cache, split_id }.transform(query_ast);
+        // this transformer isn't supposed to ever remove a node
+        query_ast.unwrap_or(QueryAst::MatchAll)
+    } else {
+        query_ast
+    };
+
     let mut range_query_fields = RangeQueryFields::default();
     // This cannot fail. The error type is Infallible.
-    let Ok(_) = range_query_fields.visit(query_ast);
+    let Ok(_) = range_query_fields.visit(&query_ast);
     let range_query_fast_fields =
         range_query_fields
             .range_query_field_names
@@ -176,20 +187,20 @@ pub(crate) fn build_query(
         fields: &mut fast_fields,
         schema: context.schema.clone(),
     }
-    .visit(query_ast);
+    .visit(&query_ast);
 
     let Ok(_) = ExistsQueryFastFields {
         fields: &mut fast_fields,
         schema: context.schema.clone(),
     }
-    .visit(query_ast);
+    .visit(&query_ast);
 
     let query = query_ast.build_tantivy_query(context)?;
 
-    let term_set_query_fields = extract_term_set_query_fields(query_ast, context.schema)?;
+    let term_set_query_fields = extract_term_set_query_fields(&query_ast, context.schema)?;
     let (term_ranges_grouped_by_field, automatons_grouped_by_field) =
         extract_prefix_term_ranges_and_automaton(
-            query_ast,
+            &query_ast,
             context.schema,
             context.tokenizer_manager,
         )?;
@@ -502,7 +513,7 @@ mod test {
             .parse_user_query(&[])
             .map_err(|err| err.to_string())?;
         let schema = make_schema(dynamic_mode);
-        let query_result = build_query(&query_ast, quickwit_query::test_context!(schema));
+        let query_result = build_query(query_ast, quickwit_query::test_context!(schema), None);
         query_result
             .map(|query| format!("{query:?}"))
             .map_err(|err| err.to_string())
@@ -877,8 +888,9 @@ mod test {
             .unwrap();
 
         let (_, warmup_info) = build_query(
-            &query_with_set,
+            query_with_set,
             quickwit_query::test_context!(make_schema(true)),
+            None,
         )
         .unwrap();
         assert_eq!(warmup_info.term_dict_fields.len(), 1);
@@ -889,8 +901,9 @@ mod test {
         );
 
         let (_, warmup_info) = build_query(
-            &query_without_set,
+            query_without_set,
             quickwit_query::test_context!(make_schema(true)),
+            None,
         )
         .unwrap();
         assert!(warmup_info.term_dict_fields.is_empty());

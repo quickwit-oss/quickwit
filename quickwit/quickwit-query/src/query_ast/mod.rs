@@ -34,7 +34,7 @@ mod visitor;
 mod wildcard_query;
 
 pub use bool_query::BoolQuery;
-pub use cache_node::CacheNode;
+pub use cache_node::{CacheNode, CachePreIgniter, HitSet, PredicateCache};
 pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
