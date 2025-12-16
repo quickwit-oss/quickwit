@@ -21,7 +21,7 @@ use tantivy::Term;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 
 use super::{BuildTantivyAst, QueryAst};
-use crate::query_ast::{AutomatonQuery, JsonPathPrefix, TantivyQueryAst};
+use crate::query_ast::{AutomatonQuery, BuildTantivyAstContext, JsonPathPrefix, TantivyQueryAst};
 use crate::tokenizers::TokenizerManager;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
@@ -183,12 +183,9 @@ impl WildcardQuery {
 impl BuildTantivyAst for WildcardQuery {
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        _search_fields: &[String],
-        _with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (field, path, regex) = match self.to_regex(schema, tokenizer_manager) {
+        let (field, path, regex) = match self.to_regex(context.schema, context.tokenizer_manager) {
             Ok(res) => res,
             Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
                 return Ok(TantivyQueryAst::match_none());

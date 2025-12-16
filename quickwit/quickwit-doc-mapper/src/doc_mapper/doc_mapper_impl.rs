@@ -14,12 +14,13 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use fnv::FnvHashSet;
 use quickwit_proto::types::DocMappingUid;
 use quickwit_query::create_default_quickwit_tokenizer_manager;
-use quickwit_query::query_ast::QueryAst;
+use quickwit_query::query_ast::{BuildTantivyAstContext, QueryAst};
 use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
@@ -636,15 +637,19 @@ impl DocMapper {
     pub fn query(
         &self,
         split_schema: Schema,
-        query_ast: &QueryAst,
+        query_ast: QueryAst,
         with_validation: bool,
+        cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
         build_query(
             query_ast,
-            split_schema,
-            self.tokenizer_manager(),
-            &self.default_search_field_names[..],
-            with_validation,
+            &BuildTantivyAstContext {
+                schema: &split_schema,
+                tokenizer_manager: self.tokenizer_manager(),
+                search_fields: &self.default_search_field_names[..],
+                with_validation,
+            },
+            cache_context,
         )
     }
 
@@ -2068,7 +2073,7 @@ mod tests {
             .parse_user_query(doc_mapper.default_search_fields())
             .map_err(|err| err.to_string())?;
         let (query, _) = doc_mapper
-            .query(doc_mapper.schema(), &query_ast, true)
+            .query(doc_mapper.schema(), query_ast, true, None)
             .map_err(|err| err.to_string())?;
         Ok(format!("{query:?}"))
     }

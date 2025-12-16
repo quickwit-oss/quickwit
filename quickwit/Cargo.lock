@@ -7355,6 +7355,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
+ "bitpacking",
  "criterion",
  "hex",
  "lindera-core",
@@ -7364,6 +7365,7 @@ dependencies = [
  "proptest",
  "quickwit-common",
  "quickwit-datetime",
+ "quickwit-proto",
  "regex",
  "rustc-hash",
  "serde",
@@ -7373,6 +7375,7 @@ dependencies = [
  "tantivy-fst",
  "thiserror 2.0.17",
  "time",
+ "tracing",
  "whichlang",
 ]
 

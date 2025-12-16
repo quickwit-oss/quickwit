@@ -24,6 +24,7 @@ use quickwit_common::metrics::{
 pub struct StorageMetrics {
     pub shortlived_cache: CacheMetrics,
     pub partial_request_cache: CacheMetrics,
+    pub predicate_cache: CacheMetrics,
     pub fd_cache_metrics: CacheMetrics,
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
@@ -92,6 +93,7 @@ impl Default for StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
             partial_request_cache: CacheMetrics::for_component("partial_request"),
+            predicate_cache: CacheMetrics::for_component("predicate"),
             searcher_split_cache: CacheMetrics::for_component("searcher_split"),
             shortlived_cache: CacheMetrics::for_component("shortlived"),
             split_footer_cache: CacheMetrics::for_component("splitfooter"),

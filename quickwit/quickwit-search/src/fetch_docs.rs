@@ -304,7 +304,7 @@ async fn create_fields_snippet_generator(
     let schema = searcher.schema();
     let query_ast_resolved = serde_json::from_str(&snippet_request.query_ast_resolved)
         .context("failed to deserialize QueryAst")?;
-    let (query, _) = doc_mapper.query(schema.clone(), &query_ast_resolved, false)?;
+    let (query, _) = doc_mapper.query(schema.clone(), query_ast_resolved, false, None)?;
     let mut snippet_generators = HashMap::new();
     for field_name in &snippet_request.snippet_fields {
         let field = schema.get_field(field_name)?;
