@@ -24,6 +24,7 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
+use quickwit_query::cloudprem::sanitize_metric_id_aggregations;
 use quickwit_query::query_ast::{BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use quickwit_search::SearchService;
 use serde_json::Value as JsonValue;
@@ -264,9 +265,11 @@ impl CloudPremService for CloudPremServiceImpl {
             .inspect_err(|e| warn!("failed to query map ast: {e}"))?;
         debug!("converted query ast: {query_ast:?}");
 
-        let Some(evp_aggregation_ast) = request.aggregation else {
+        let Some(mut evp_aggregation_ast) = request.aggregation else {
             return Err(CloudPremError::Internal("missing aggregation".to_string()));
         };
+
+        sanitize_metric_id_aggregations(&mut evp_aggregation_ast);
 
         // TODO we can use ExtractTimestampRange to get some decent timestamp from the request
         // this is all a hack to somewhat support calendar invervals though

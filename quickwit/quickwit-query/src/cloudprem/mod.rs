@@ -1,7 +1,9 @@
 mod aggregation;
 mod query;
 
-pub use aggregation::{aggregation_result_to_proto, to_tantivy_aggregation};
+pub use aggregation::{
+    aggregation_result_to_proto, sanitize_metric_id_aggregations, to_tantivy_aggregation,
+};
 pub use query::{parse_query, to_quickwit_query};
 
 use crate::InvalidQuery;

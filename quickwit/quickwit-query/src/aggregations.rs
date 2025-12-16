@@ -18,7 +18,7 @@ use tantivy::aggregation::Key as TantivyKey;
 use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
     BucketEntries as TantivyBucketEntries, BucketEntry as TantivyBucketEntry,
-    BucketResult as TantivyBucketResult, MetricResult as TantivyMetricResult,
+    BucketResult as TantivyBucketResult, FilterBucketResult, MetricResult as TantivyMetricResult,
     RangeBucketEntry as TantivyRangeBucketEntry,
 };
 use tantivy::aggregation::metric::{
@@ -169,6 +169,10 @@ pub enum BucketResult {
         /// The upper bound error for the doc count of each term.
         doc_count_error_upper_bound: Option<u64>,
     },
+    Filter {
+        doc_count: u64,
+        sub_aggregation: AggregationResults,
+    },
 }
 
 impl From<TantivyBucketResult> for BucketResult {
@@ -189,9 +193,10 @@ impl From<TantivyBucketResult> for BucketResult {
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
             },
-            TantivyBucketResult::Filter(_filter_bucket_result) => {
-                unimplemented!("filter aggregation is not yet supported in quickwit")
-            }
+            TantivyBucketResult::Filter(filter_bucket_result) => BucketResult::Filter {
+                doc_count: filter_bucket_result.doc_count,
+                sub_aggregation: filter_bucket_result.sub_aggregations.into(),
+            },
         }
     }
 }
@@ -214,6 +219,13 @@ impl From<BucketResult> for TantivyBucketResult {
                 sum_other_doc_count,
                 doc_count_error_upper_bound,
             },
+            BucketResult::Filter {
+                doc_count,
+                sub_aggregation,
+            } => TantivyBucketResult::Filter(FilterBucketResult {
+                doc_count,
+                sub_aggregations: sub_aggregation.into(),
+            }),
         }
     }
 }

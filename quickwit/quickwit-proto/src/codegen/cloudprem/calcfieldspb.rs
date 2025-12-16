@@ -35,6 +35,16 @@ pub mod calc_node {
             BoolValue(bool),
         }
     }
+    impl ::prost::Name for Literal {
+        const NAME: &'static str = "Literal";
+        const PACKAGE: &'static str = "calcfieldspb";
+        fn full_name() -> ::prost::alloc::string::String {
+            "calcfieldspb.CalcNode.Literal".into()
+        }
+        fn type_url() -> ::prost::alloc::string::String {
+            "/calcfieldspb.CalcNode.Literal".into()
+        }
+    }
     /// Field reference. Can be a calculated field (like '#foo') or a regular field
     /// (like 'service' or '@duration').
     #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -43,6 +53,16 @@ pub mod calc_node {
         /// Includes the leading '#' or '@' (if any).
         #[prost(string, tag = "1")]
         pub field_name: ::prost::alloc::string::String,
+    }
+    impl ::prost::Name for FieldRef {
+        const NAME: &'static str = "FieldRef";
+        const PACKAGE: &'static str = "calcfieldspb";
+        fn full_name() -> ::prost::alloc::string::String {
+            "calcfieldspb.CalcNode.FieldRef".into()
+        }
+        fn type_url() -> ::prost::alloc::string::String {
+            "/calcfieldspb.CalcNode.FieldRef".into()
+        }
     }
     /// Function call. Besides regular functions like 'lower' or 'concat', this
     /// includes binary operators like '+' and '==' as well as unary operators like
@@ -395,6 +415,16 @@ pub mod calc_node {
             }
         }
     }
+    impl ::prost::Name for FuncCall {
+        const NAME: &'static str = "FuncCall";
+        const PACKAGE: &'static str = "calcfieldspb";
+        fn full_name() -> ::prost::alloc::string::String {
+            "calcfieldspb.CalcNode.FuncCall".into()
+        }
+        fn type_url() -> ::prost::alloc::string::String {
+            "/calcfieldspb.CalcNode.FuncCall".into()
+        }
+    }
     /// A node in the AST.
     #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
     #[serde(rename_all = "snake_case")]
@@ -408,6 +438,16 @@ pub mod calc_node {
         FuncCall(FuncCall),
     }
 }
+impl ::prost::Name for CalcNode {
+    const NAME: &'static str = "CalcNode";
+    const PACKAGE: &'static str = "calcfieldspb";
+    fn full_name() -> ::prost::alloc::string::String {
+        "calcfieldspb.CalcNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "type.googleapis.com/calcfieldspb.CalcNode".into()
+    }
+}
 /// Represents a calculated field: defined by a name and an AST.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -418,6 +458,16 @@ pub struct CalcField {
     #[prost(message, optional, tag = "2")]
     pub calc_node: ::core::option::Option<CalcNode>,
 }
+impl ::prost::Name for CalcField {
+    const NAME: &'static str = "CalcField";
+    const PACKAGE: &'static str = "calcfieldspb";
+    fn full_name() -> ::prost::alloc::string::String {
+        "calcfieldspb.CalcField".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/calcfieldspb.CalcField".into()
+    }
+}
 /// Represents a list of calculated fields. Duplicate definitions and circular
 /// dependencies are not allowed.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -425,4 +475,14 @@ pub struct CalcField {
 pub struct CalcFields {
     #[prost(message, repeated, tag = "1")]
     pub calc_field: ::prost::alloc::vec::Vec<CalcField>,
+}
+impl ::prost::Name for CalcFields {
+    const NAME: &'static str = "CalcFields";
+    const PACKAGE: &'static str = "calcfieldspb";
+    fn full_name() -> ::prost::alloc::string::String {
+        "calcfieldspb.CalcFields".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/calcfieldspb.CalcFields".into()
+    }
 }

@@ -46,6 +46,16 @@ pub mod query_node {
         Search(super::AttributeSearchQueryNode),
     }
 }
+impl ::prost::Name for QueryNode {
+    const NAME: &'static str = "QueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.QueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.QueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Value {
@@ -66,17 +76,57 @@ pub mod value {
         Double(f64),
     }
 }
+impl ::prost::Name for Value {
+    const NAME: &'static str = "Value";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.Value".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.Value".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct MatchAllQueryNode {}
+impl ::prost::Name for MatchAllQueryNode {
+    const NAME: &'static str = "MatchAllQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.MatchAllQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.MatchAllQueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct MatchNoneQueryNode {}
+impl ::prost::Name for MatchNoneQueryNode {
+    const NAME: &'static str = "MatchNoneQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.MatchNoneQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.MatchNoneQueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NotQueryNode {
     #[prost(message, optional, boxed, tag = "1")]
     pub inner: ::core::option::Option<::prost::alloc::boxed::Box<QueryNode>>,
+}
+impl ::prost::Name for NotQueryNode {
+    const NAME: &'static str = "NotQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.NotQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.NotQueryNode".into()
+    }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -88,6 +138,16 @@ pub struct BooleanQueryNode {
     #[prost(bool, tag = "3")]
     pub should_cache: bool,
 }
+impl ::prost::Name for BooleanQueryNode {
+    const NAME: &'static str = "BooleanQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.BooleanQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.BooleanQueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AttributeTermQueryNode {
@@ -96,6 +156,16 @@ pub struct AttributeTermQueryNode {
     #[prost(message, optional, tag = "2")]
     pub value: ::core::option::Option<Value>,
 }
+impl ::prost::Name for AttributeTermQueryNode {
+    const NAME: &'static str = "AttributeTermQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeTermQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeTermQueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AttributeTermInQueryNode {
@@ -103,6 +173,16 @@ pub struct AttributeTermInQueryNode {
     pub attribute: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub values: ::prost::alloc::vec::Vec<Value>,
+}
+impl ::prost::Name for AttributeTermInQueryNode {
+    const NAME: &'static str = "AttributeTermInQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeTermInQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeTermInQueryNode".into()
+    }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -118,6 +198,16 @@ pub struct AttributeRangeQueryNode {
     #[prost(bool, tag = "5")]
     pub upper_inclusive: bool,
 }
+impl ::prost::Name for AttributeRangeQueryNode {
+    const NAME: &'static str = "AttributeRangeQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeRangeQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeRangeQueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AttributeCidrQueryNode {
@@ -125,6 +215,16 @@ pub struct AttributeCidrQueryNode {
     pub attribute: ::prost::alloc::string::String,
     #[prost(string, repeated, tag = "2")]
     pub masks: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+impl ::prost::Name for AttributeCidrQueryNode {
+    const NAME: &'static str = "AttributeCidrQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeCidrQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeCidrQueryNode".into()
+    }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -143,6 +243,16 @@ pub struct AttributeSearchQueryNode {
     #[prost(message, optional, tag = "6")]
     pub structured_text: ::core::option::Option<WildcardPattern>,
 }
+impl ::prost::Name for AttributeSearchQueryNode {
+    const NAME: &'static str = "AttributeSearchQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeSearchQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeSearchQueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AttributeComparisonQueryNode {
@@ -153,17 +263,47 @@ pub struct AttributeComparisonQueryNode {
     #[prost(enumeration = "ComparisonOperator", tag = "3")]
     pub operator: i32,
 }
+impl ::prost::Name for AttributeComparisonQueryNode {
+    const NAME: &'static str = "AttributeComparisonQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeComparisonQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeComparisonQueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AttributeExistQueryNode {
     #[prost(string, tag = "1")]
     pub attribute: ::prost::alloc::string::String,
 }
+impl ::prost::Name for AttributeExistQueryNode {
+    const NAME: &'static str = "AttributeExistQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeExistQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeExistQueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AttributeMissingQueryNode {
     #[prost(string, tag = "1")]
     pub attribute: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AttributeMissingQueryNode {
+    const NAME: &'static str = "AttributeMissingQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeMissingQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeMissingQueryNode".into()
+    }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -172,6 +312,16 @@ pub struct AttributePrefixQueryNode {
     pub attribute: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub prefix: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AttributePrefixQueryNode {
+    const NAME: &'static str = "AttributePrefixQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributePrefixQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributePrefixQueryNode".into()
+    }
 }
 ///
 /// Piece of a wildcard pattern.
@@ -193,6 +343,16 @@ pub struct WildcardToken {
     #[prost(string, tag = "3")]
     pub literal: ::prost::alloc::string::String,
 }
+impl ::prost::Name for WildcardToken {
+    const NAME: &'static str = "WildcardToken";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.WildcardToken".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.WildcardToken".into()
+    }
+}
 ///
 /// Parsed pattern, which could be used to generate a regex.
 ///
@@ -210,6 +370,16 @@ pub struct WildcardPattern {
     #[prost(message, repeated, tag = "1")]
     pub tokens: ::prost::alloc::vec::Vec<WildcardToken>,
 }
+impl ::prost::Name for WildcardPattern {
+    const NAME: &'static str = "WildcardPattern";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.WildcardPattern".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.WildcardPattern".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AttributeWildcardQueryNode {
@@ -223,6 +393,16 @@ pub struct AttributeWildcardQueryNode {
     #[prost(message, optional, tag = "3")]
     pub pattern: ::core::option::Option<WildcardPattern>,
 }
+impl ::prost::Name for AttributeWildcardQueryNode {
+    const NAME: &'static str = "AttributeWildcardQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeWildcardQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeWildcardQueryNode".into()
+    }
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AttributeQuotedQueryNode {
@@ -230,6 +410,16 @@ pub struct AttributeQuotedQueryNode {
     pub attribute: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub text: ::prost::alloc::string::String,
+}
+impl ::prost::Name for AttributeQuotedQueryNode {
+    const NAME: &'static str = "AttributeQuotedQueryNode";
+    const PACKAGE: &'static str = "queryparser_proto";
+    fn full_name() -> ::prost::alloc::string::String {
+        "queryparser_proto.AttributeQuotedQueryNode".into()
+    }
+    fn type_url() -> ::prost::alloc::string::String {
+        "/queryparser_proto.AttributeQuotedQueryNode".into()
+    }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

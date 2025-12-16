@@ -217,7 +217,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run()
         .unwrap();
 
+    let mut cloudprem_other = prost_build::Config::default();
+    cloudprem_other.enable_type_names();
+    cloudprem_other.type_name_domain(["CalcNode"], "type.googleapis.com");
     Codegen::builder()
+        .with_prost_config(cloudprem_other)
         .with_protos(&[
             "protos/cloudprem/queryparser.proto",
             "protos/cloudprem/calc_fields.proto",
