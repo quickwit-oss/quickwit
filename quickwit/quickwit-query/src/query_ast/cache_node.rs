@@ -201,7 +201,6 @@ impl CacheEntry {
 
 #[derive(Debug, Clone)]
 pub struct HitSet {
-    // TODO we could make this an OwnedBytes to save on memcpy
     buffer: OwnedBytes,
     buffer_pos: usize,
     previous_last_val: Option<u32>,
