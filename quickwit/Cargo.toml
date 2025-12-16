@@ -173,7 +173,7 @@ pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "f7dd3f6" }
 postcard = { version = "1.0.4", features = [
   "use-std",
 ], default-features = false }
-pprof = { version = "0.13", features = ["flamegraph"] }
+pprof = { version = "0.14", features = ["flamegraph"] }
 predicates = "3"
 prettyplease = "0.2"
 proc-macro2 = "1.0"
@@ -357,7 +357,7 @@ quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "25d44fcec8", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "618e3bd", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
@@ -260,24 +261,6 @@ async fn test_slop_queries() {
     test_sandbox.assert_quit().await;
 }
 
-// TODO remove me once `Iterator::is_sorted_by_key` is stabilized.
-fn is_reverse_sorted<E, I: Iterator<Item = E>>(mut it: I) -> bool
-where E: Ord {
-    let mut previous_el = if let Some(first_el) = it.next() {
-        first_el
-    } else {
-        // The empty list is sorted!
-        return true;
-    };
-    for next_el in it {
-        if next_el > previous_el {
-            return false;
-        }
-        previous_el = next_el;
-    }
-    true
-}
-
 #[tokio::test]
 async fn test_single_node_several_splits() -> anyhow::Result<()> {
     let index_id = "single-node-several-splits";
@@ -325,7 +308,7 @@ async fn test_single_node_several_splits() -> anyhow::Result<()> {
             .as_ref()
             .map(|partial_hit| (partial_hit.split_id.as_str(), partial_hit.doc_id as i32))
     });
-    assert!(is_reverse_sorted(hit_keys));
+    assert!(hit_keys.is_sorted_by(|left, right| left.cmp(right) == Ordering::Greater));
     assert!(single_node_result.elapsed_time_micros > 10);
     assert!(single_node_result.elapsed_time_micros < 1_000_000);
     test_sandbox.assert_quit().await;
@@ -1646,11 +1629,12 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(deprecated)]
 fn collect_str_terms(response: LeafListTermsResponse) -> Vec<String> {
     response
         .terms
         .into_iter()
-        .map(|term| Term::wrap(term).value().as_str().unwrap().to_string())
+        .map(|term| Term::wrap(&term).value().as_str().unwrap().to_string())
         .collect()
 }
 

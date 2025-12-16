@@ -216,7 +216,6 @@ impl ControlPlaneModel {
         };
         let fp_changed = !index_model.index_config.equals_fingerprint(&index_config);
         index_model.index_config = index_config;
-        self.update_metrics();
         Ok(fp_changed)
     }
 
@@ -377,18 +376,34 @@ impl ControlPlaneModel {
         source_uid: &SourceUid,
         shard_infos: &ShardInfos,
     ) -> ShardStats {
+        debug!(
+            index_uid=%source_uid.index_uid,
+            source_id=%source_uid.source_id,
+            "updating shards"
+        );
         self.shard_table.update_shards(source_uid, shard_infos)
     }
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
     /// `Closed`.
     pub fn close_shards(&mut self, source_uid: &SourceUid, shard_ids: &[ShardId]) -> Vec<ShardId> {
+        debug!(
+            index_uid=%source_uid.index_uid,
+            source_id=%source_uid.source_id,
+            shard_ids=%shard_ids.pretty_display(),
+            "closing shards"
+        );
         self.shard_table.close_shards(source_uid, shard_ids)
     }
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
     pub fn delete_shards(&mut self, source_uid: &SourceUid, shard_ids: &[ShardId]) {
-        info!(source_uid=%source_uid, shard_ids=?shard_ids, "removing shards from model");
+        debug!(
+            index_uid=%source_uid.index_uid,
+            source_id=%source_uid.source_id,
+            shard_ids=%shard_ids.pretty_display(),
+            "deleting shards"
+        );
         self.shard_table.delete_shards(source_uid, shard_ids);
     }
 

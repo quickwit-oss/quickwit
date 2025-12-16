@@ -18,6 +18,7 @@ use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
 use fnv::{FnvHashMap, FnvHashSet};
+use quickwit_common::metrics::index_label;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::ConstantRate;
 use quickwit_ingest::{RateMibPerSec, ShardInfo, ShardInfos};
@@ -102,11 +103,37 @@ impl ShardTableEntry {
         self.shard_entries.is_empty()
     }
 
-    fn num_open_shards(&self) -> usize {
-        self.shard_entries
-            .values()
-            .filter(|shard_entry| shard_entry.is_open())
-            .count()
+    fn shards_stats(&self) -> ShardStats {
+        let mut num_open_shards = 0;
+        let mut num_closed_shards = 0;
+        let mut short_term_ingestion_rate_sum = 0;
+        let mut long_term_ingestion_rate_sum = 0;
+
+        for shard_entry in self.shard_entries.values() {
+            if shard_entry.is_open() {
+                num_open_shards += 1;
+                short_term_ingestion_rate_sum += shard_entry.short_term_ingestion_rate.0 as usize;
+                long_term_ingestion_rate_sum += shard_entry.long_term_ingestion_rate.0 as usize;
+            } else if shard_entry.is_closed() {
+                num_closed_shards += 1;
+            }
+        }
+        let avg_short_term_ingestion_rate = if num_open_shards > 0 {
+            short_term_ingestion_rate_sum as f32 / num_open_shards as f32
+        } else {
+            0.0
+        };
+        let avg_long_term_ingestion_rate = if num_open_shards > 0 {
+            long_term_ingestion_rate_sum as f32 / num_open_shards as f32
+        } else {
+            0.0
+        };
+        ShardStats {
+            num_open_shards,
+            num_closed_shards,
+            avg_short_term_ingestion_rate,
+            avg_long_term_ingestion_rate,
+        }
     }
 }
 
@@ -138,7 +165,7 @@ impl<'a> ShardLocations<'a> {
 // A table that keeps track of the existing shards for each index and source,
 // and for each ingester, the list of shards it is supposed to host.
 //
-// (All mutable methods must maintain the two consistent)
+// (All mutable methods must maintain these two invariants.)
 #[derive(Debug, Default)]
 pub(crate) struct ShardTable {
     table_entries: FnvHashMap<SourceUid, ShardTableEntry>,
@@ -424,18 +451,45 @@ impl ShardTable {
     }
 
     pub fn update_shard_metrics_for_source_uid(&self, source_uid: &SourceUid) {
-        let num_open_shards: usize =
-            if let Some(shard_table_entry) = self.table_entries.get(source_uid) {
-                shard_table_entry.num_open_shards()
-            } else {
-                0
-            };
-        let index_label =
-            quickwit_common::metrics::index_label(source_uid.index_uid.index_id.as_str());
+        let Some(table_entry) = self.table_entries.get(source_uid) else {
+            return;
+        };
+        let index_id = source_uid.index_uid.index_id.as_str();
+        let index_label = index_label(index_id);
+
+        // If `index_label(index_id)` returns `index_id`, then per-index metrics are enabled and we
+        // can update the metrics for this specific index.
+        if index_label == index_id {
+            let shard_stats = table_entry.shards_stats();
+            crate::metrics::CONTROL_PLANE_METRICS
+                .open_shards
+                .with_label_values([index_label])
+                .set(shard_stats.num_open_shards as i64);
+            crate::metrics::CONTROL_PLANE_METRICS
+                .closed_shards
+                .with_label_values([index_label])
+                .set(shard_stats.num_closed_shards as i64);
+            return;
+        }
+        // Per-index metrics are disabled, so we update the metrics for all sources.
+        let mut num_open_shards = 0;
+        let mut num_closed_shards = 0;
+
+        for shard_entry in self.all_shards() {
+            if shard_entry.is_open() {
+                num_open_shards += 1;
+            } else if shard_entry.is_closed() {
+                num_closed_shards += 1;
+            }
+        }
         crate::metrics::CONTROL_PLANE_METRICS
-            .open_shards_total
+            .open_shards
             .with_label_values([index_label])
             .set(num_open_shards as i64);
+        crate::metrics::CONTROL_PLANE_METRICS
+            .closed_shards
+            .with_label_values([index_label])
+            .set(num_closed_shards as i64);
     }
 
     pub fn update_shards(
@@ -443,71 +497,51 @@ impl ShardTable {
         source_uid: &SourceUid,
         shard_infos: &ShardInfos,
     ) -> ShardStats {
-        let mut num_open_shards = 0;
-        let mut short_term_ingestion_rate_sum = RateMibPerSec::default();
-        let mut long_term_ingestion_rate_sum = RateMibPerSec::default();
+        let Some(table_entry) = self.table_entries.get_mut(source_uid) else {
+            return ShardStats::default();
+        };
+        for shard_info in shard_infos {
+            let ShardInfo {
+                shard_id,
+                shard_state,
+                short_term_ingestion_rate,
+                long_term_ingestion_rate,
+            } = shard_info;
 
-        if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
-            for shard_info in shard_infos {
-                let ShardInfo {
-                    shard_id,
-                    shard_state,
-                    short_term_ingestion_rate,
-                    long_term_ingestion_rate,
-                } = shard_info;
-
-                if let Some(shard_entry) = table_entry.shard_entries.get_mut(shard_id) {
-                    shard_entry.short_term_ingestion_rate = *short_term_ingestion_rate;
-                    shard_entry.long_term_ingestion_rate = *long_term_ingestion_rate;
-                    // `ShardInfos` are broadcasted via Chitchat and eventually consistent. As a
-                    // result, we can only trust the `Closed` state, which is final.
-                    if shard_state.is_closed() {
-                        shard_entry.set_shard_state(ShardState::Closed);
-                    }
-                }
-            }
-            for shard_entry in table_entry.shard_entries.values() {
-                if shard_entry.is_open() {
-                    num_open_shards += 1;
-                    short_term_ingestion_rate_sum += shard_entry.short_term_ingestion_rate;
-                    long_term_ingestion_rate_sum += shard_entry.long_term_ingestion_rate;
+            if let Some(shard_entry) = table_entry.shard_entries.get_mut(shard_id) {
+                shard_entry.short_term_ingestion_rate = *short_term_ingestion_rate;
+                shard_entry.long_term_ingestion_rate = *long_term_ingestion_rate;
+                // `ShardInfos` are broadcasted via Chitchat and eventually consistent. As a
+                // result, we can only trust the `Closed` state, which is final.
+                if shard_state.is_closed() {
+                    shard_entry.set_shard_state(ShardState::Closed);
                 }
             }
         }
-        let avg_short_term_ingestion_rate = if num_open_shards > 0 {
-            short_term_ingestion_rate_sum.0 as f32 / num_open_shards as f32
-        } else {
-            0.0
-        };
-
-        let avg_long_term_ingestion_rate = if num_open_shards > 0 {
-            long_term_ingestion_rate_sum.0 as f32 / num_open_shards as f32
-        } else {
-            0.0
-        };
-
-        ShardStats {
-            num_open_shards,
-            avg_short_term_ingestion_rate,
-            avg_long_term_ingestion_rate,
-        }
+        table_entry.shards_stats()
     }
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
     /// `Closed`.
     pub fn close_shards(&mut self, source_uid: &SourceUid, shard_ids: &[ShardId]) -> Vec<ShardId> {
+        let Some(table_entry) = self.table_entries.get_mut(source_uid) else {
+            return Vec::new();
+        };
         let mut closed_shard_ids = Vec::new();
 
-        if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
-            for shard_id in shard_ids {
-                if let Some(shard_entry) = table_entry.shard_entries.get_mut(shard_id) {
-                    if !shard_entry.is_closed() {
-                        shard_entry.set_shard_state(ShardState::Closed);
-                        closed_shard_ids.push(shard_id.clone());
-                    }
-                } else {
-                    info!(shard=%shard_id, "ignoring attempt to close shard: it is unknown (probably because it has been deleted)");
+        for shard_id in shard_ids {
+            if let Some(shard_entry) = table_entry.shard_entries.get_mut(shard_id) {
+                if !shard_entry.is_closed() {
+                    shard_entry.set_shard_state(ShardState::Closed);
+                    closed_shard_ids.push(shard_id.clone());
                 }
+            } else {
+                info!(
+                    index_id=%source_uid.index_uid.index_id,
+                    source_id=%source_uid.source_id,
+                    %shard_id,
+                    "ignoring attempt to close shard: it is unknown (probably because it has been deleted)"
+                );
             }
         }
         self.update_shard_metrics_for_source_uid(source_uid);
@@ -516,14 +550,15 @@ impl ShardTable {
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
     pub fn delete_shards(&mut self, source_uid: &SourceUid, shard_ids: &[ShardId]) {
+        let Some(table_entry) = self.table_entries.get_mut(source_uid) else {
+            return;
+        };
         let mut shard_entries_to_remove: Vec<ShardEntry> = Vec::new();
-        if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
-            for shard_id in shard_ids {
-                if let Some(shard_entry) = table_entry.shard_entries.remove(shard_id) {
-                    shard_entries_to_remove.push(shard_entry);
-                } else {
-                    warn!(shard=%shard_id, "deleting a non-existing shard");
-                }
+        for shard_id in shard_ids {
+            if let Some(shard_entry) = table_entry.shard_entries.remove(shard_id) {
+                shard_entries_to_remove.push(shard_entry);
+            } else {
+                warn!(shard=%shard_id, "deleting a non-existing shard");
             }
         }
         for shard_entry in shard_entries_to_remove {
@@ -533,8 +568,8 @@ impl ShardTable {
                 &mut self.ingester_shards,
             );
         }
-        self.update_shard_metrics_for_source_uid(source_uid);
         self.check_invariant();
+        self.update_shard_metrics_for_source_uid(source_uid);
     }
 
     pub fn acquire_scaling_permits(
@@ -574,9 +609,10 @@ impl ShardTable {
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ShardStats {
     pub num_open_shards: usize,
-    /// Average short-term ingestion rate (MiB/s) per open shard
+    pub num_closed_shards: usize,
+    /// Average short-term ingestion rate (MiB/s) over all open shards.
     pub avg_short_term_ingestion_rate: f32,
-    /// Average long-term ingestion rate (MiB/s) per open shard
+    /// Average long-term ingestion rate (MiB/s) over all open shards.
     pub avg_long_term_ingestion_rate: f32,
 }
 

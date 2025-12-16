@@ -1,0 +1,50 @@
+json:
+  query:
+    prefix:
+      actor.login:
+        value: jado
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    prefix:
+      actor.login:
+        value: j
+expected:
+  hits:
+    total:
+      value: 10
+---
+json:
+  query:
+    prefix:
+      actor.login: jado
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    prefix:
+      repo.name:
+        value: RUST
+        case_insensitive: true
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    prefix:
+      repo.name:
+        value: RUST
+        case_insensitive: false
+expected:
+  hits:
+    total:
+      value: 0

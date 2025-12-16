@@ -695,10 +695,11 @@ When working on text, it is recommended to only use `term` queries on fields con
 
 #### Supported Parameters
 
-| Variable | Type     | Description                                                                  | Default |
-| -------- | -------- | ---------------------------------------------------------------------------- | ------- |
-| `value`  | String   | Term value. This is the string representation of a token after tokenization. | -       |
-| `boost`  | `Number` | Multiplier boost for score computation                                       | 1.0     |
+| Variable           | Type    | Description                                                                  | Default |
+| ------------------ | ------- | ---------------------------------------------------------------------------- | ------- |
+| `value`            | String  | Term value. This is the string representation of a token after tokenization. | -       |
+| `boost`            | Number  | Multiplier boost for score computation                                       | 1.0     |
+| `case_insensitive` | Boolean | Allows ASCII case insensitive matching of the value.                         | false   |
 
 
 
@@ -740,6 +741,91 @@ Query matching only documents containing a non-null value for a given field.
 | Variable | Type   | Description                                             | Default |
 | -------- | ------ | ------------------------------------------------------- | ------- |
 | `field`  | String | Only documents with a value for field will be returned. | -       |
+
+### `prefix`
+
+[Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-prefix-query.html)
+
+Returns documents that contain a specific prefix in a provided field.
+
+#### Example
+
+```json
+{
+  "query": {
+    "prefix": {
+      "author.login" {
+        "value": "adm",
+      }
+    }
+  }
+}
+```
+
+#### Supported Parameters
+
+| Variable           | Type    | Description                                          | Default |
+| ------------------ | ------- | ---------------------------------------------------- | ------- |
+| `value`            | String  | Beginning characters of terms you wish to find.      | -       |
+| `case_insensitive` | Boolean | Allows ASCII case insensitive matching of the value. | false   |
+
+### `wildcard`
+
+[Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-wildcard-query.html)
+
+Returns documents that contain terms matching a wildcard pattern:
+* `?` replaces one and only one term character
+* `*` replaces any number of term characters or an empty string
+
+#### Example
+
+```json
+{
+  "query": {
+    "wildcard": {
+      "author.login" {
+        "value": "adm?n*",
+      }
+    }
+  }
+}
+```
+
+#### Supported Parameters
+
+| Variable           | Type    | Description                                          | Default |
+| ------------------ | ------- | ---------------------------------------------------- | ------- |
+| `value`            | String  | Wildcard pattern for terms you wish to find.         | -       |
+| `boost`            | Number  | Multiplier boost for score computation.              | 1.0     |
+| `case_insensitive` | Boolean | Allows ASCII case insensitive matching of the value. | false   |
+
+
+### `regexp`
+
+[Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-regexp-query.html)
+
+Returns documents that contain terms matching a regular expression.
+
+#### Example
+
+```json
+{
+  "query": {
+    "regexp": {
+      "author.login" {
+        "value": "adm.*n",
+      }
+    }
+  }
+}
+```
+
+#### Supported Parameters
+
+| Variable           | Type    | Description                                          | Default |
+| ------------------ | ------- | ---------------------------------------------------- | ------- |
+| `value`            | String  | Wildcard pattern for terms you wish to find.         | -       |
+| `case_insensitive` | Boolean | Allows ASCII case insensitive matching of the value. | false   |
 
 
 ### About the `lenient` argument

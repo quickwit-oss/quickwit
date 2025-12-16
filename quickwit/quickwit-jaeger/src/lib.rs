@@ -562,6 +562,7 @@ impl SpanReaderPlugin for JaegerService {
     }
 }
 
+#[allow(deprecated)]
 fn extract_term(term_bytes: &[u8]) -> String {
     tantivy::Term::wrap(term_bytes)
         .value()

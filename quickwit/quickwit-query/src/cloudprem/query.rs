@@ -256,6 +256,7 @@ fn build_wildcard_query(wildcard_query: AttributeWildcardQueryNode) -> QueryAst 
                 field,
                 value: string_wildcard.clone(),
                 lenient: false,
+                case_insensitive: false,
             }
             .into()
         })

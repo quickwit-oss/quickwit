@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
@@ -995,10 +995,10 @@ impl Ingester {
             let truncate_up_to_position_inclusive = subrequest.truncate_up_to_position_inclusive();
 
             if truncate_up_to_position_inclusive.is_eof() {
-                state_guard.delete_shard(&queue_id).await;
+                state_guard.delete_shard(&queue_id, "indexer-rpc").await;
             } else {
                 state_guard
-                    .truncate_shard(&queue_id, truncate_up_to_position_inclusive)
+                    .truncate_shard(&queue_id, truncate_up_to_position_inclusive, "indexer-rpc")
                     .await;
             }
         }
@@ -1054,12 +1054,12 @@ impl Ingester {
             Err(_) => {
                 return json!({
                     "status": "initializing",
-                    "shards": [],
+                    "shards": {},
                     "mrecordlog": {},
                 });
             }
         };
-        let mut per_index_shards_json: HashMap<IndexUid, Vec<JsonValue>> = HashMap::new();
+        let mut per_index_shards_json: BTreeMap<IndexUid, Vec<JsonValue>> = BTreeMap::new();
 
         for (queue_id, shard) in &state_guard.shards {
             let Some((index_uid, source_id, shard_id)) = split_queue_id(queue_id) else {
@@ -1179,7 +1179,9 @@ impl IngesterService for Ingester {
             .collect();
         info!(queues=?remove_queue_ids, "removing queues");
         for queue_id in remove_queue_ids {
-            state_guard.delete_shard(&queue_id).await;
+            state_guard
+                .delete_shard(&queue_id, "control-plane-retain-shards-rpc")
+                .await;
         }
         self.check_decommissioning_status(&mut state_guard);
         Ok(RetainShardsResponse {})
@@ -1226,9 +1228,11 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
         for (shard_id, shard_position) in shard_positions_update.updated_shard_positions {
             let queue_id = queue_id(&index_uid, &source_id, &shard_id);
             if shard_position.is_eof() {
-                state_guard.delete_shard(&queue_id).await;
+                state_guard.delete_shard(&queue_id, "indexer-gossip").await;
             } else if !shard_position.is_beginning() {
-                state_guard.truncate_shard(&queue_id, shard_position).await;
+                state_guard
+                    .truncate_shard(&queue_id, shard_position, "indexer-gossip")
+                    .await;
             }
         }
     }

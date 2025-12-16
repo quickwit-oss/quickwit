@@ -1,0 +1,50 @@
+json:
+  query:
+    wildcard:
+      actor.login:
+        value: jad?nk
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    wildcard:
+      actor.login:
+        value: j*nk
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    wildcard:
+      actor.login: jad?nk
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    wildcard:
+      repo.name:
+        value: RUS*
+        case_insensitive: true
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    wildcard:
+      repo.name:
+        value: RUS*
+        case_insensitive: false
+expected:
+  hits:
+    total:
+      value: 0

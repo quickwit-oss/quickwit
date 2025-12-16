@@ -18,6 +18,7 @@ use std::{fmt, mem};
 use bytes::{Bytes, BytesMut};
 use bytestring::ByteString;
 use prost::{self, DecodeError};
+use quickwit_common::pretty::PrettyDisplay;
 use serde::{Deserialize, Serialize};
 
 const BEGINNING: &str = "";
@@ -109,6 +110,37 @@ impl Debug for Position {
     }
 }
 
+// Caution: This is also the serialization format for chitchat and serde. Modify with care.
+impl Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Beginning => write!(f, "{BEGINNING}"),
+            Self::Offset(offset) => write!(f, "{offset}"),
+            Self::Eof(Some(offset)) => write!(f, "{EOF_PREFIX}{offset}"),
+            Self::Eof(None) => write!(f, "{EOF_PREFIX}"),
+        }
+    }
+}
+
+struct PositionPrettyDisplay<'a>(&'a Position);
+
+impl fmt::Display for PositionPrettyDisplay<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0 {
+            Position::Beginning => write!(f, "beginning"),
+            Position::Offset(offset) => write!(f, "{offset}"),
+            Position::Eof(Some(offset)) => write!(f, "eof({offset})"),
+            Position::Eof(None) => write!(f, "eof"),
+        }
+    }
+}
+
+impl PrettyDisplay for Position {
+    fn pretty_display(&self) -> impl fmt::Display {
+        PositionPrettyDisplay(self)
+    }
+}
+
 impl Position {
     pub fn offset(offset: impl Into<Offset>) -> Self {
         Self::Offset(offset.into())
@@ -174,17 +206,6 @@ impl Position {
                 bytes.freeze()
             }
             Self::Eof(None) => Bytes::from_static(EOF_PREFIX.as_bytes()),
-        }
-    }
-}
-
-impl Display for Position {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Beginning => write!(f, "{BEGINNING}"),
-            Self::Offset(offset) => write!(f, "{offset}"),
-            Self::Eof(Some(offset)) => write!(f, "{EOF_PREFIX}{offset}"),
-            Self::Eof(None) => write!(f, "{EOF_PREFIX}"),
         }
     }
 }

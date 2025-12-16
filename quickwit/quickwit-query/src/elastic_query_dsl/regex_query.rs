@@ -22,16 +22,22 @@ use crate::query_ast::{QueryAst, RegexQuery as AstRegexQuery};
 #[serde(deny_unknown_fields)]
 pub struct RegexQueryParams {
     value: String,
-    // we could probably add case_insensitive
+    #[serde(default)]
+    case_insensitive: bool,
 }
 
 pub type RegexQuery = OneFieldMap<RegexQueryParams>;
 
 impl ConvertibleToQueryAst for RegexQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
+        let regex = if self.value.case_insensitive {
+            format!("(?i){}", self.value.value)
+        } else {
+            self.value.value.clone()
+        };
         Ok(AstRegexQuery {
             field: self.field,
-            regex: self.value.value,
+            regex,
         }
         .into())
     }
