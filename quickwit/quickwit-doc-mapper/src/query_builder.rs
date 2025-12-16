@@ -17,6 +17,7 @@ use std::convert::Infallible;
 use std::ops::Bound;
 use std::sync::Arc;
 
+use quickwit_proto::types::SplitId;
 use quickwit_query::query_ast::{
     BuildTantivyAstContext, FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst,
     QueryAstTransformer, QueryAstVisitor, RangeQuery, RegexQuery, TermSetQuery, WildcardQuery,
@@ -157,13 +158,13 @@ impl<'a, 'f> QueryAstVisitor<'a> for ExistsQueryFastFields<'f> {
 pub(crate) fn build_query(
     query_ast: QueryAst,
     context: &BuildTantivyAstContext,
-    cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
+    cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, SplitId)>,
 ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
     let mut fast_fields: HashSet<FastFieldWarmupInfo> = HashSet::new();
 
     let query_ast = if let Some((cache, split_id)) = cache_context {
-        let Ok(query_ast) =
-            quickwit_query::query_ast::CachePreIgniter { cache, split_id }.transform(query_ast);
+        let Ok(query_ast) = quickwit_query::query_ast::PredicateCacheInjector { cache, split_id }
+            .transform(query_ast);
         // this transformer isn't supposed to ever remove a node
         query_ast.unwrap_or(QueryAst::MatchAll)
     } else {
@@ -426,8 +427,8 @@ mod test {
 
     use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
     use quickwit_query::query_ast::{
-        FullTextMode, FullTextParams, PhrasePrefixQuery, QueryAstVisitor, UserInputQuery,
-        query_ast_from_user_text,
+        BuildTantivyAstContext, FullTextMode, FullTextParams, PhrasePrefixQuery, QueryAstVisitor,
+        UserInputQuery, query_ast_from_user_text,
     };
     use quickwit_query::{
         BooleanOperand, MatchAllOrNone, create_default_quickwit_tokenizer_manager,
@@ -513,7 +514,7 @@ mod test {
             .parse_user_query(&[])
             .map_err(|err| err.to_string())?;
         let schema = make_schema(dynamic_mode);
-        let query_result = build_query(query_ast, quickwit_query::test_context!(schema), None);
+        let query_result = build_query(query_ast, &BuildTantivyAstContext::for_test(&schema), None);
         query_result
             .map(|query| format!("{query:?}"))
             .map_err(|err| err.to_string())
@@ -887,12 +888,10 @@ mod test {
             .parse_user_query(&[])
             .unwrap();
 
-        let (_, warmup_info) = build_query(
-            query_with_set,
-            quickwit_query::test_context!(make_schema(true)),
-            None,
-        )
-        .unwrap();
+        let schema = make_schema(true);
+        let context = BuildTantivyAstContext::for_test(&schema);
+
+        let (_, warmup_info) = build_query(query_with_set, &context, None).unwrap();
         assert_eq!(warmup_info.term_dict_fields.len(), 1);
         assert!(
             warmup_info
@@ -900,12 +899,7 @@ mod test {
                 .contains(&tantivy::schema::Field::from_field_id(2))
         );
 
-        let (_, warmup_info) = build_query(
-            query_without_set,
-            quickwit_query::test_context!(make_schema(true)),
-            None,
-        )
-        .unwrap();
+        let (_, warmup_info) = build_query(query_without_set, &context, None).unwrap();
         assert!(warmup_info.term_dict_fields.is_empty());
     }
 

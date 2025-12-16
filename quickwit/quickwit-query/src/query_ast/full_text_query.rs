@@ -305,7 +305,7 @@ mod tests {
 
     use crate::BooleanOperand;
     use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
-    use crate::query_ast::{BuildTantivyAst, FullTextMode, FullTextQuery, test_context};
+    use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext, FullTextMode, FullTextQuery};
 
     #[test]
     fn test_zero_terms() {
@@ -323,7 +323,7 @@ mod tests {
         schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
         let ast: TantivyQueryAst = full_text_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         assert_eq!(ast.const_predicate(), Some(crate::MatchAllOrNone::MatchAll));
     }
@@ -344,7 +344,7 @@ mod tests {
         schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
         let ast: TantivyQueryAst = full_text_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = ast.as_leaf().unwrap();
         assert_eq!(
@@ -370,7 +370,7 @@ mod tests {
         schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
         let ast: TantivyQueryAst = full_text_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = ast.as_leaf().unwrap();
         assert_eq!(
@@ -395,7 +395,7 @@ mod tests {
         schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
         let ast: TantivyQueryAst = full_text_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let bool_query = ast.as_bool_query().unwrap();
         assert_eq!(bool_query.must.len(), 2);

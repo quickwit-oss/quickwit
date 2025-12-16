@@ -857,7 +857,7 @@ mod tests {
             field: "multilang".to_string(),
             value: "JPN:す".to_string(),
         });
-        let (query, _) = doc_mapper.query(schema, &query_ast, false).unwrap();
+        let (query, _) = doc_mapper.query(schema, query_ast, false, None).unwrap();
         assert_eq!(
             format!("{query:?}"),
             r#"TermQuery(Term(field=2, type=Str, "JPN:す"))"#

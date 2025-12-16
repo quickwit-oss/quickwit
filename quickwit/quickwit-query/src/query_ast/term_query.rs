@@ -118,7 +118,7 @@ impl From<TermQuery> for HashMap<String, TermQueryValue> {
 mod tests {
     use tantivy::schema::{INDEXED, Schema};
 
-    use crate::query_ast::{BuildTantivyAst, TermQuery, test_context};
+    use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext, TermQuery};
 
     #[test]
     fn test_term_query_with_ipaddr_ipv4() {
@@ -130,7 +130,7 @@ mod tests {
         schema_builder.add_ip_addr_field("ip", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -149,7 +149,7 @@ mod tests {
         schema_builder.add_ip_addr_field("ip", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -168,7 +168,7 @@ mod tests {
         schema_builder.add_bytes_field("bytes", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -187,7 +187,7 @@ mod tests {
         schema_builder.add_bytes_field("bytes", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -206,7 +206,7 @@ mod tests {
         schema_builder.add_date_field("timestamp", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         // The date should have been truncated to seconds precision.

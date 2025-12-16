@@ -288,7 +288,7 @@ mod tests {
     use tantivy::schema::{DateOptions, DateTimePrecision, FAST, STORED, Schema, TEXT};
 
     use super::RangeQuery;
-    use crate::query_ast::{BuildTantivyAst, test_context};
+    use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext};
     use crate::{InvalidQuery, JsonLiteral, MatchAllOrNone};
 
     fn make_schema(dynamic_mode: bool) -> Schema {
@@ -321,7 +321,7 @@ mod tests {
             upper_bound: Bound::Included(upper_value),
         };
         let tantivy_ast = range_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap()
             .simplify();
         let leaf = tantivy_ast.as_leaf().unwrap();
@@ -364,7 +364,7 @@ mod tests {
         };
         // with validation
         let invalid_query: InvalidQuery = range_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap_err();
         assert!(
             matches!(invalid_query, InvalidQuery::FieldDoesNotExist { full_path } if full_path == "missing_field.toto")
@@ -372,7 +372,9 @@ mod tests {
         // without validation
         assert_eq!(
             range_query
-                .build_tantivy_ast_call(test_context!(schema, validation = false),)
+                .build_tantivy_ast_call(
+                    &BuildTantivyAstContext::for_test(&schema).without_validation()
+                )
                 .unwrap()
                 .const_predicate(),
             Some(MatchAllOrNone::MatchNone)
@@ -388,7 +390,7 @@ mod tests {
         };
         let schema = make_schema(true);
         let tantivy_ast = range_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         assert_eq!(
             format!("{tantivy_ast:?}"),
@@ -411,7 +413,7 @@ mod tests {
         };
         let schema = make_schema(false);
         let err = range_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap_err();
         assert!(matches!(err, InvalidQuery::SchemaError { .. }));
     }

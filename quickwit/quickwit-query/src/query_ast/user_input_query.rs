@@ -318,8 +318,8 @@ fn convert_user_input_literal(
 #[cfg(test)]
 mod tests {
     use crate::query_ast::{
-        BoolQuery, BuildTantivyAst, FullTextMode, FullTextQuery, QueryAst, UserInputQuery,
-        test_context,
+        BoolQuery, BuildTantivyAst, BuildTantivyAstContext, FullTextMode, FullTextQuery, QueryAst,
+        UserInputQuery,
     };
     use crate::{BooleanOperand, InvalidQuery};
 
@@ -334,13 +334,13 @@ mod tests {
         let schema = tantivy::schema::Schema::builder().build();
         {
             let invalid_query = user_input_query
-                .build_tantivy_ast_call(test_context!(schema))
+                .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
                 .unwrap_err();
             assert!(matches!(invalid_query, InvalidQuery::UserQueryNotParsed));
         }
         {
             let invalid_query = user_input_query
-                .build_tantivy_ast_call(test_context!(schema))
+                .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
                 .unwrap_err();
             assert!(matches!(invalid_query, InvalidQuery::UserQueryNotParsed));
         }

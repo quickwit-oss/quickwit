@@ -34,7 +34,7 @@ mod visitor;
 mod wildcard_query;
 
 pub use bool_query::BoolQuery;
-pub use cache_node::{CacheNode, CachePreIgniter, HitSet, PredicateCache};
+pub use cache_node::{CacheNode, HitSet, PredicateCache, PredicateCacheInjector};
 pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
@@ -166,27 +166,27 @@ pub struct BuildTantivyAstContext<'a> {
     pub with_validation: bool,
 }
 
-/// Shorthand to build a context from a schema in tests.
-#[macro_export]
-macro_rules! test_context {
-    ($schema:expr) => {
-        &$crate::query_ast::BuildTantivyAstContext {
-            schema: &$schema,
-            tokenizer_manager: &$crate::create_default_quickwit_tokenizer_manager(),
+impl<'a> BuildTantivyAstContext<'a> {
+    pub fn for_test(schema: &'a TantivySchema) -> Self {
+        use once_cell::sync::Lazy;
+
+        // we do that to have a TokenizerManager with a long enough lifetime
+        static DEFAULT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
+            Lazy::new(crate::create_default_quickwit_tokenizer_manager);
+
+        BuildTantivyAstContext {
+            schema,
+            tokenizer_manager: &DEFAULT_TOKENIZER_MANAGER,
             search_fields: &[],
             with_validation: true,
         }
-    };
-    ($schema:expr, validation=$validation:expr) => {
-        &$crate::query_ast::BuildTantivyAstContext {
-            schema: &$schema,
-            tokenizer_manager: &$crate::create_default_quickwit_tokenizer_manager(),
-            search_fields: &[],
-            with_validation: $validation,
-        }
-    };
+    }
+
+    pub fn without_validation(mut self) -> Self {
+        self.with_validation = false;
+        self
+    }
 }
-pub use test_context;
 
 trait BuildTantivyAst {
     /// Transforms a query Ast node into a TantivyQueryAst.
@@ -226,7 +226,7 @@ impl BuildTantivyAst for QueryAst {
             QueryAst::MatchAll => Ok(TantivyQueryAst::match_all()),
             QueryAst::MatchNone => Ok(TantivyQueryAst::match_none()),
             QueryAst::Boost { boost, underlying } => {
-                let underlying = underlying.build_tantivy_ast_call(context)?;
+                let underlying = underlying.build_tantivy_ast_call(context)?.simplify();
                 let boost_query = TantivyBoostQuery::new(underlying.into(), (*boost).into());
                 Ok(boost_query.into())
             }
@@ -316,7 +316,8 @@ pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<Stri
 mod tests {
     use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
     use crate::query_ast::{
-        BoolQuery, BuildTantivyAst, QueryAst, UserInputQuery, query_ast_from_user_text,
+        BoolQuery, BuildTantivyAst, BuildTantivyAstContext, QueryAst, UserInputQuery,
+        query_ast_from_user_text,
     };
     use crate::{BooleanOperand, InvalidQuery};
 
@@ -331,7 +332,7 @@ mod tests {
         .into();
         let schema = tantivy::schema::Schema::builder().build();
         let build_tantivy_ast_err: InvalidQuery = query_ast
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap_err();
         assert!(matches!(
             build_tantivy_ast_err,
@@ -351,7 +352,7 @@ mod tests {
         let query_ast_with_parsed_user_query: QueryAst = query_ast.parse_user_query(&[]).unwrap();
         let schema = tantivy::schema::Schema::builder().build();
         let tantivy_query_ast = query_ast_with_parsed_user_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         assert_eq!(&tantivy_query_ast, &TantivyQueryAst::match_all(),);
     }
@@ -374,7 +375,7 @@ mod tests {
             bool_query_ast.parse_user_query(&[]).unwrap();
         let schema = tantivy::schema::Schema::builder().build();
         let tantivy_query_ast = query_ast_with_parsed_user_query
-            .build_tantivy_ast_call(test_context!(schema))
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let tantivy_query_ast_simplified = tantivy_query_ast.simplify();
         // This does not get more simplified than this, because we need the boost 0 score.

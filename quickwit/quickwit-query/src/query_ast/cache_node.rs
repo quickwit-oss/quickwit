@@ -206,9 +206,10 @@ pub struct HitSet {
     previous_last_val: Option<u32>,
     current_block: [u32; BitPacker1x::BLOCK_LEN],
     block_pos: usize,
-    finished: bool,
     boost: Score,
 }
+
+const INCOMPLETE_BLOCK_MARKER: u8 = 0x80;
 
 impl HitSet {
     #[cfg(test)]
@@ -229,7 +230,6 @@ impl HitSet {
             // we set this to block_len minus 1 so we can call advance() once to initialize
             // everything
             block_pos: BitPacker1x::BLOCK_LEN - 1,
-            finished: false,
             boost: 1.0,
         };
         this.advance();
@@ -242,57 +242,60 @@ impl HitSet {
     pub fn into_buffer(self) -> OwnedBytes {
         self.buffer
     }
+
+    fn load_new_block(&mut self) {
+        let Some(num_bits) = self.buffer.get(self.buffer_pos) else {
+            // we ended iteration: simply fill the current_block full of TERMINATED
+            self.current_block = [tantivy::TERMINATED; 32];
+            return;
+        };
+        self.buffer_pos += 1;
+        if *num_bits == INCOMPLETE_BLOCK_MARKER {
+            // final block, decode as many ids as possible
+            let mut i = 0;
+            for chunk in self.buffer[self.buffer_pos..].as_chunks().0 {
+                self.current_block[i] = u32::from_ne_bytes(*chunk);
+                i += 1;
+            }
+            // pad with TERMINATED
+            while i < BitPacker1x::BLOCK_LEN {
+                self.current_block[i] = tantivy::TERMINATED;
+                i += 1;
+            }
+            self.buffer_pos = self.buffer.len();
+        } else {
+            self.buffer_pos += BitPacker1x.decompress_strictly_sorted(
+                self.previous_last_val,
+                &self.buffer[self.buffer_pos..],
+                &mut self.current_block,
+                *num_bits,
+            );
+            self.previous_last_val = self.current_block.last().copied();
+        }
+    }
 }
 
 impl DocSet for HitSet {
     fn advance(&mut self) -> DocId {
-        if self.block_pos == BitPacker1x::BLOCK_LEN - 1 {
-            self.block_pos = 0;
-            let Some(num_bits) = self.buffer.get(self.buffer_pos) else {
-                self.finished = true;
-                return self.doc();
-            };
-            self.buffer_pos += 1;
-            if *num_bits == 0x80 {
-                // final block, decode as many ids as possible
-                let mut i = 0;
-                for chunk in self.buffer[self.buffer_pos..].as_chunks().0 {
-                    self.current_block[i] = u32::from_le_bytes(*chunk);
-                    i += 1;
-                }
-                while i < BitPacker1x::BLOCK_LEN {
-                    self.current_block[i] = tantivy::TERMINATED;
-                    i += 1;
-                }
-                self.buffer_pos = self.buffer.len();
-            } else {
-                self.buffer_pos += BitPacker1x.decompress_strictly_sorted(
-                    self.previous_last_val,
-                    &self.buffer[self.buffer_pos..],
-                    &mut self.current_block,
-                    *num_bits,
-                );
-                self.previous_last_val = self.current_block.last().copied();
-            }
-        } else {
-            self.block_pos += 1;
+        self.block_pos += 1;
+        if let Some(doc_id) = self.current_block.get(self.block_pos) {
+            return *doc_id;
         }
-        self.doc()
+        self.load_new_block();
+        self.block_pos = 0;
+        self.current_block[0]
     }
 
     // fn seek(&mut self, target: DocId) -> DocId {
     // }
 
+    #[inline(always)]
     fn doc(&self) -> DocId {
-        if self.finished {
-            tantivy::TERMINATED
-        } else {
-            self.current_block[self.block_pos]
-        }
+        self.current_block[self.block_pos]
     }
 
     fn size_hint(&self) -> u32 {
-        u32::from_le_bytes(self.buffer[0..4].try_into().unwrap())
+        u32::from_ne_bytes(self.buffer[0..4].try_into().unwrap())
     }
 }
 
@@ -332,7 +335,7 @@ impl HitSetBuilder {
             BitPacker1x.num_bits_strictly_sorted(self.previous_last_val, &self.current_block);
         self.buffer.push(num_bits);
         let current_buffer_pos = self.buffer.len();
-        let new_end = current_buffer_pos + BitPacker1x::BLOCK_LEN / 8 * num_bits as usize;
+        let new_end = current_buffer_pos + (BitPacker1x::BLOCK_LEN * num_bits as usize) / 8;
         self.buffer.resize(new_end, 0);
         BitPacker1x.compress_strictly_sorted(
             self.previous_last_val,
@@ -353,13 +356,13 @@ impl HitSetBuilder {
 
     pub fn build(mut self) -> HitSet {
         if self.in_block_pos() != 0 {
-            self.buffer.push(0x80);
+            self.buffer.push(INCOMPLETE_BLOCK_MARKER);
             for elem in &self.current_block[..self.in_block_pos()] {
-                self.buffer.extend_from_slice(&elem.to_le_bytes());
+                self.buffer.extend_from_slice(&elem.to_ne_bytes());
             }
         }
         // write back the count of items
-        self.buffer[0..4].copy_from_slice(&self.count.to_le_bytes());
+        self.buffer[0..4].copy_from_slice(&self.count.to_ne_bytes());
         HitSet::from_buffer(OwnedBytes::new(self.buffer))
     }
 }
@@ -446,12 +449,17 @@ impl Weight for CacheFillerWeight {
     }
 }
 
-pub struct CachePreIgniter {
+/// A transformer that goes through a QueryAst, and change the state of all CacheNodes
+/// to Hit/Miss based on the provided cache.
+///
+/// This must be called for any CacheNode inside a QueryAst to do anything (though not calling
+/// it isn't an error, it just means no cache will be used).
+pub struct PredicateCacheInjector {
     pub cache: Arc<dyn PredicateCache>,
     pub split_id: String,
 }
 
-impl crate::query_ast::QueryAstTransformer for CachePreIgniter {
+impl crate::query_ast::QueryAstTransformer for PredicateCacheInjector {
     type Err = std::convert::Infallible;
 
     fn transform_cache_node(
@@ -487,8 +495,9 @@ mod tests {
     use tantivy::schema::{Schema, TEXT};
 
     use super::*;
-    use crate::query_ast::{QueryAstTransformer, QueryAstVisitor, TermQuery};
-    use crate::test_context;
+    use crate::query_ast::{
+        BuildTantivyAstContext, QueryAstTransformer, QueryAstVisitor, TermQuery,
+    };
 
     impl PredicateCache for Mutex<HashMap<(SplitId, String), (SegmentId, HitSet)>> {
         fn get(&self, split_id: SplitId, query_ast_json: String) -> Option<(SegmentId, HitSet)> {
@@ -566,7 +575,7 @@ mod tests {
         }
         .into();
         let tantivy_term_query: Box<dyn TantivyQuery> = term_query
-            .build_tantivy_ast_impl(test_context!(schema))
+            .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
             .unwrap()
             .into();
 
@@ -576,7 +585,7 @@ mod tests {
                 state: CacheState::Uninitialized,
             };
             let uninit_cache_query: Box<dyn TantivyQuery> = ast
-                .build_tantivy_ast_impl(test_context!(schema))
+                .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
                 .unwrap()
                 .into();
             assert_eq!(
@@ -596,7 +605,7 @@ mod tests {
                 state: CacheState::CacheHit(cache_entry),
             };
             let cache_hit_query: Box<dyn TantivyQuery> = ast
-                .build_tantivy_ast_impl(test_context!(schema))
+                .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
                 .unwrap()
                 .into();
 
@@ -611,11 +620,11 @@ mod tests {
                 query: "{}".to_string(),
             };
             let ast = CacheNode {
-                inner: Box::new(term_query.clone().into()),
+                inner: Box::new(term_query.clone()),
                 state: CacheState::CacheMiss(cache_filler),
             };
             let cache_miss_query: Box<dyn TantivyQuery> = ast
-                .build_tantivy_ast_impl(test_context!(schema))
+                .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
                 .unwrap()
                 .into();
 
@@ -689,7 +698,7 @@ mod tests {
                 query: "{}".to_string(),
             };
             let ast = CacheNode {
-                inner: Box::new(term_query.clone().into()),
+                inner: Box::new(term_query.clone()),
                 state: CacheState::CacheMiss(cache_filler),
             }
             .into();
@@ -725,7 +734,7 @@ mod tests {
         );
 
         {
-            let mut pre_igniter = CachePreIgniter {
+            let mut pre_igniter = PredicateCacheInjector {
                 cache: cache.clone(),
                 split_id: "split_1".to_string(),
             };
@@ -740,7 +749,7 @@ mod tests {
         }
 
         {
-            let mut pre_igniter = CachePreIgniter {
+            let mut pre_igniter = PredicateCacheInjector {
                 cache: cache.clone(),
                 split_id: "split_2".to_string(),
             };
@@ -799,7 +808,7 @@ mod tests {
             state: CacheState::CacheHit(cache_entry),
         };
         let cache_hit_query: Box<dyn TantivyQuery> = ast
-            .build_tantivy_ast_impl(test_context!(schema))
+            .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
             .unwrap()
             .into();
 
@@ -843,7 +852,7 @@ mod tests {
             state: CacheState::CacheMiss(cache_filler),
         };
         let cache_hit_query: Box<dyn TantivyQuery> = ast
-            .build_tantivy_ast_impl(test_context!(schema))
+            .build_tantivy_ast_impl(&BuildTantivyAstContext::for_test(&schema))
             .unwrap()
             .into();
 

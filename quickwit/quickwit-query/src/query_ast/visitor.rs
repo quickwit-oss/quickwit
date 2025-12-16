@@ -257,17 +257,16 @@ pub trait QueryAstTransformer {
         &mut self,
         cache_node: CacheNode,
     ) -> Result<Option<QueryAst>, Self::Err> {
-        if !matches!(cache_node.state, CacheState::CacheHit(_)) {
-            self.transform(*cache_node.inner).map(|maybe_ast| {
-                maybe_ast.map(|inner| {
-                    QueryAst::Cache(CacheNode {
-                        inner: Box::new(inner),
-                        state: Default::default(),
-                    })
+        if matches!(cache_node.state, CacheState::CacheHit(_)) {
+            return Ok(Some(cache_node.into()));
+        }
+        self.transform(*cache_node.inner).map(|maybe_ast| {
+            maybe_ast.map(|inner| {
+                QueryAst::Cache(CacheNode {
+                    inner: Box::new(inner),
+                    state: Default::default(),
                 })
             })
-        } else {
-            Ok(Some(cache_node.into()))
-        }
+        })
     }
 }
