@@ -120,6 +120,19 @@ impl QueryAst {
             }
             QueryAst::Cache(cache_node) => {
                 let inner = cache_node.inner.parse_user_query(default_search_fields)?;
+                let uninitialized =
+                    matches!(cache_node.state, cache_node::CacheState::Uninitialized);
+                debug_assert!(
+                    uninitialized,
+                    "QueryAst::parse_user_query called on initialized CacheNode, this is probably \
+                     a misstake"
+                );
+                if !uninitialized {
+                    tracing::warn!(
+                        "QueryAst::parse_user_query called on initialized CacheNode, cache \
+                         discarded"
+                    );
+                }
                 Ok(CacheNode {
                     inner: Box::new(inner),
                     // inner got modified, the result is supposed to be equivalent, but to be safe,

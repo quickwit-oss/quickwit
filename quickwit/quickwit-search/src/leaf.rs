@@ -616,6 +616,8 @@ fn rewrite_request(
         remove_redundant_timestamp_range(search_request, split, timestamp_field);
     }
     rewrite_aggregation(search_request);
+    // we add a top level cache node when search_after is set, this won't help for this query (which
+    // is the 2nd in its series), but should speedup every other request that comes after
     if search_request.search_after.is_some() {
         add_top_cache_node(search_request)
     }

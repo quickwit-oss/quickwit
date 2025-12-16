@@ -325,7 +325,7 @@ impl Default for SearcherConfig {
             fast_field_cache_capacity: ByteSize::gb(1),
             split_footer_cache_capacity: ByteSize::mb(500),
             partial_request_cache_capacity: ByteSize::mb(64),
-            predicate_cache_capacity: ByteSize::mb(128),
+            predicate_cache_capacity: ByteSize::mb(256),
             max_num_concurrent_split_searches: 100,
             _max_num_concurrent_split_streams: None,
             aggregation_memory_limit: ByteSize::mb(500),
