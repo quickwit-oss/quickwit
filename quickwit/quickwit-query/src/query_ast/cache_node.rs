@@ -112,7 +112,7 @@ impl BuildTantivyAst for CacheNode {
                     .simplify()
                     .into();
                 Ok(CacheFillerQuery {
-                    inner_query: Arc::new(tantivy_query),
+                    inner_query: Box::new(tantivy_query),
                     cache_filler: cache_filler.clone(),
                 }
                 .into())
@@ -387,10 +387,19 @@ impl CacheFiller {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CacheFillerQuery {
-    inner_query: Arc<dyn Query>,
+    inner_query: Box<dyn Query>,
     cache_filler: CacheFiller,
+}
+
+impl Clone for CacheFillerQuery {
+    fn clone(&self) -> Self {
+        Self {
+            inner_query: self.inner_query.box_clone(),
+            cache_filler: self.cache_filler.clone(),
+        }
+    }
 }
 
 impl Query for CacheFillerQuery {
