@@ -39,6 +39,7 @@ use quickwit_storage::{
 };
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::aggregation::{AggContextParams, AggregationLimitsGuard};
+use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
@@ -500,15 +501,21 @@ async fn leaf_search_single_split(
     let mut collector =
         make_collector_for_split(split_id.clone(), &search_request, agg_context_params)?;
 
+    let predicate_cache = if collector.requires_scoring() {
+        // at the moment the predicate cache doesn't support scoring
+        None
+    } else {
+        Some((
+            ctx.searcher_context.predicate_cache.clone() as _,
+            split.split_id.clone(),
+        ))
+    };
     let split_schema = index.schema();
     let (query, mut warmup_info) = ctx.doc_mapper.query(
         split_schema.clone(),
         query_ast.clone(),
         false,
-        Some((
-            ctx.searcher_context.predicate_cache.clone(),
-            split.split_id.clone(),
-        )),
+        predicate_cache,
     )?;
 
     let collector_warmup_info = collector.warmup_info();
