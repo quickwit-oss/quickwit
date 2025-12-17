@@ -1,10 +1,22 @@
+load("@com_datadoghq_cnab_tools//rules/artifact:artifact.bzl", "artifact_reference")
 load("@com_datadoghq_cnab_tools//rules:cli_defaults.bzl", "REGISTRY")
 load("@com_datadoghq_cnab_tools//rules:workflow.bzl", "cnab_workflow", "cnab_installation")
 load("@com_datadoghq_datacenter_config//rules:helm.bzl", "dd_helm_cnab", "dd_helm_cnab_installation")
 
+artifact_reference(
+    name = "pomsky_image",
+    registry = REGISTRY,
+    repository = "pomsky",
+    tag = "edge",
+    digest="$(image_digest)", # --define image_digest=$(crane digest registry.ddbuild.io/pomsky:edge)
+)
+
 dd_helm_cnab(
     name = "pomsky",
     chart = "@pomsky_helm_charts//charts/quickwit:chart",
+    pushed_images = {
+        "pomsky_image": "pomsky",
+    },
     registry = REGISTRY,
     repository = "pomsky",
     service_catalog_file = ":service.datadog.yaml",
