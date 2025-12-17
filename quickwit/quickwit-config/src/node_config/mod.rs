@@ -269,6 +269,7 @@ pub struct SearcherConfig {
     pub partial_request_cache_capacity: ByteSize,
     pub predicate_cache_capacity: ByteSize,
     pub max_num_concurrent_split_searches: usize,
+    pub max_splits_per_search: Option<usize>,
     // Deprecated: stream search requests are no longer supported.
     #[serde(alias = "max_num_concurrent_split_streams", default, skip_serializing)]
     pub _max_num_concurrent_split_streams: Option<serde::de::IgnoredAny>,
@@ -327,6 +328,7 @@ impl Default for SearcherConfig {
             partial_request_cache_capacity: ByteSize::mb(64),
             predicate_cache_capacity: ByteSize::mb(256),
             max_num_concurrent_split_searches: 100,
+            max_splits_per_search: None,
             _max_num_concurrent_split_streams: None,
             aggregation_memory_limit: ByteSize::mb(500),
             aggregation_bucket_limit: 65000,
