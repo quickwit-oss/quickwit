@@ -78,21 +78,29 @@ fn negate(ast: QueryAst) -> QueryAst {
 }
 
 // Returns a query ast that match all of the `asts` passed as arguments.
-fn intersection(asts: Vec<QueryAst>) -> QueryAst {
-    BoolQuery {
-        must: asts,
-        ..BoolQuery::default()
+fn intersection(mut asts: Vec<QueryAst>) -> QueryAst {
+    if asts.len() == 1 {
+        asts.pop().unwrap()
+    } else {
+        BoolQuery {
+            must: asts,
+            ..BoolQuery::default()
+        }
+        .into()
     }
-    .into()
 }
 
 // Returns a query ast that match any of `asts` passed as arguments.
-fn union(asts: Vec<QueryAst>) -> QueryAst {
-    BoolQuery {
-        should: asts,
-        ..BoolQuery::default()
+fn union(mut asts: Vec<QueryAst>) -> QueryAst {
+    if asts.len() == 1 {
+        asts.pop().unwrap()
+    } else {
+        BoolQuery {
+            should: asts,
+            ..BoolQuery::default()
+        }
+        .into()
     }
-    .into()
 }
 
 fn build_term_query(
@@ -359,12 +367,17 @@ pub fn to_quickwit_query(cloudprem_query: QueryNode) -> Result<QueryAst, Invalid
                 .into_iter()
                 .map(to_quickwit_query)
                 .collect::<Result<Vec<_>, _>>()?;
-            match operator {
+            let ast = match operator {
                 BooleanOperator::And => intersection(clauses),
                 BooleanOperator::Or => union(clauses),
                 BooleanOperator::InvalidBooleanOperator => {
                     return Err(missing_required("boolean.operator"));
                 }
+            };
+            if boolean.should_cache {
+                crate::query_ast::CacheNode::new(ast).into()
+            } else {
+                ast
             }
         }
         // TODO verify terms are already splited when we receive them

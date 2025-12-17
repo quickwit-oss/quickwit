@@ -623,20 +623,8 @@ fn rewrite_request(
         remove_redundant_timestamp_range(search_request, split, timestamp_field);
     }
     rewrite_aggregation(search_request);
-    // we add a top level cache node when search_after is set, this won't help for this query (which
-    // is the 2nd in its series), but should speedup every other request that comes after
-    if search_request.search_after.is_some() {
-        add_top_cache_node(search_request)
-    }
-}
 
-fn add_top_cache_node(search_request: &mut SearchRequest) {
-    let Ok(query_ast) = serde_json::from_str(search_request.query_ast.as_str()) else {
-        // an error will get raised a bit after anyway
-        return;
-    };
-    let new_ast: QueryAst = CacheNode::new(query_ast).into();
-    search_request.query_ast = serde_json::to_string(&new_ast).unwrap();
+    add_cache_nodes(search_request, timestamp_field);
 }
 
 /// Rewrite aggregation to make them easier to cache
@@ -963,6 +951,161 @@ impl QueryAstTransformer for RemoveTimestampRange<'_> {
         // doesn't require loading a fastfield
         Ok(Some(QueryAst::Term(term_query)))
     }
+}
+
+fn match_pagination(bool_query: &BoolQuery, search_request: &SearchRequest) -> bool {
+    // is it pagination-shapped
+    if search_request.sort_fields.is_empty() {
+        // no sorting means no pagination possible
+        return false;
+    }
+    if !(bool_query.must.is_empty()
+        && bool_query.filter.is_empty()
+        && bool_query.must_not.is_empty())
+    {
+        return false;
+    }
+    if bool_query.should.len() != search_request.sort_fields.len() {
+        return false;
+    }
+
+    // does it contain a range over the 1st sorting field
+
+    {
+        // TODO we could also accept Bool{must[Range{field=sort[0]}]}
+        let Some(QueryAst::Range(range_sub_query)) = bool_query
+            .should
+            .iter()
+            .find(|query_ast| matches!(query_ast, QueryAst::Range(_)))
+        else {
+            return false;
+        };
+        if range_sub_query.field != search_request.sort_fields[0].field_name {
+            return false;
+        }
+        if (range_sub_query.lower_bound == Bound::Unbounded)
+            == (range_sub_query.upper_bound == Bound::Unbounded)
+        {
+            // pagination is unbounded on exactly one side
+            return false;
+        }
+        // if we have a single sort field, we're good
+        if search_request.sort_fields.len() == 1 {
+            return true;
+        }
+    }
+
+    // does it contain a range over the 2st sorting field when 1st field is equal to some value
+    {
+        let Some(QueryAst::Bool(bool_sub_query)) = bool_query
+            .should
+            .iter()
+            .find(|query_ast| matches!(query_ast, QueryAst::Bool(b) if b.must.len() == 2))
+        else {
+            return false;
+        };
+        // check we have a range on the 2nd sort field
+        let Some(QueryAst::Range(range_sub_query)) = bool_sub_query
+            .must
+            .iter()
+            .find(|query_ast| matches!(query_ast, QueryAst::Range(_)))
+        else {
+            return false;
+        };
+        if range_sub_query.field != search_request.sort_fields[1].field_name {
+            return false;
+        }
+        if (range_sub_query.lower_bound == Bound::Unbounded)
+            == (range_sub_query.upper_bound == Bound::Unbounded)
+        {
+            // pagination is unbounded on one side
+            return false;
+        }
+
+        // and we must be equal to the 1st one
+        let Some(maybe_point_query) = bool_sub_query
+            .must
+            .iter()
+            .find(|query_ast| !matches!(query_ast, QueryAst::Range(_)))
+        else {
+            return false;
+        };
+        let field = match maybe_point_query {
+            QueryAst::Term(term) => &term.field,
+            QueryAst::FullText(full_text) => &full_text.field,
+            // it's actually hard to detect a range matching a single value in the general case, so
+            // just detect it's bounded and on the right field
+            QueryAst::Range(range)
+                if range.lower_bound != Bound::Unbounded
+                    && range.upper_bound != Bound::Unbounded =>
+            {
+                &range.field
+            }
+            _ => return false,
+        };
+        if *field != search_request.sort_fields[0].field_name {
+            return false;
+        }
+
+        if search_request.sort_fields.len() == 2 {
+            return true;
+        }
+    }
+    // we don't support more sort fields at the moment
+    false
+}
+
+// Add cache nodes in places where it sounds like they might be useful
+// TODO don't add cache in trivial queries
+fn add_cache_nodes(search_request: &mut SearchRequest, timestamp_field: Option<&str>) {
+    let Ok(query_ast) = serde_json::from_str(search_request.query_ast.as_str()) else {
+        // an error will get raised a bit after anyway
+        return;
+    };
+    let QueryAst::Bool(mut bool_query) = query_ast else {
+        return; // on a query that simple, predicate caching is likely not that important
+    };
+
+    // we extract field presence (emited alongside aggregations), and timestamps.
+    // TODO we could filter field presence only for fields being aggregated
+    // TODO detect search-after like statements
+    let filter = |query_ast: &mut QueryAst| match query_ast {
+        QueryAst::FieldPresence(_) => true,
+        QueryAst::Range(range) => timestamp_field
+            .map(|ts_field| ts_field == range.field)
+            .unwrap_or(false),
+        QueryAst::Bool(bool_query) => match_pagination(bool_query, search_request),
+        QueryAst::Cache(_) => true, // no point in double-caching
+        _ => false,
+    };
+
+    let mut musts: Vec<_> = bool_query.must.extract_if(.., filter).collect();
+    let filters: Vec<_> = bool_query.filter.extract_if(.., filter).collect();
+    let some_filters_removed = !musts.is_empty() || !filters.is_empty();
+
+    // if we removed all must/filters, but there are some should, push a MatchAll. The actual
+    // filtering from what we removed will be done one layer higher
+    if bool_query.must.is_empty()
+        && bool_query.filter.is_empty()
+        && !bool_query.should.is_empty()
+        && some_filters_removed
+    {
+        bool_query.must.push(QueryAst::MatchAll);
+    }
+    let cached_query = CacheNode::new(bool_query.into()).into();
+    let new_ast = if some_filters_removed {
+        musts.push(cached_query);
+        BoolQuery {
+            must: musts,
+            filter: filters,
+            ..Default::default()
+        }
+        .into()
+    } else {
+        cached_query
+    };
+
+    search_request.query_ast = serde_json::to_string(&new_ast).unwrap();
 }
 
 /// Checks if request is a simple all query.
@@ -1614,6 +1757,10 @@ mod tests {
 
     use bytes::BufMut;
     use quickwit_directories::write_hotcache;
+    use quickwit_proto::search::SortField;
+    use quickwit_query::query_ast::{
+        FieldPresenceQuery, FullTextMode, FullTextParams, FullTextQuery,
+    };
     use rand::{Rng, thread_rng};
     use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
@@ -2150,5 +2297,343 @@ mod tests {
 
         assert!(directory_size_larger > directory_size_smaller + 100);
         assert!(larger_size > smaller_size + 100);
+    }
+
+    #[test]
+    fn test_dd_predicate_cache_node_insertion() {
+        // we add cache nodes
+        {
+            let ast: QueryAst = BoolQuery {
+                must: vec![
+                    TermQuery {
+                        field: "field1".to_string(),
+                        value: "value1".to_string(),
+                    }
+                    .into(),
+                    TermQuery {
+                        field: "field2".to_string(),
+                        value: "value2".to_string(),
+                    }
+                    .into(),
+                ],
+                ..BoolQuery::default()
+            }
+            .into();
+            let mut req = SearchRequest {
+                query_ast: serde_json::to_string(&ast).unwrap(),
+                ..SearchRequest::default()
+            };
+            add_cache_nodes(&mut req, None);
+            let result_ast: QueryAst = serde_json::from_str(&req.query_ast).unwrap();
+            let expected_ast: QueryAst = CacheNode::new(ast).into();
+            assert_eq!(result_ast, expected_ast);
+        }
+
+        // we don't re-cache nodes already cached
+        {
+            let ast: QueryAst = BoolQuery {
+                must: vec![
+                    TermQuery {
+                        field: "field1".to_string(),
+                        value: "value1".to_string(),
+                    }
+                    .into(),
+                    TermQuery {
+                        field: "field2".to_string(),
+                        value: "value2".to_string(),
+                    }
+                    .into(),
+                    CacheNode::new(
+                        TermQuery {
+                            field: "field3".to_string(),
+                            value: "value3".to_string(),
+                        }
+                        .into(),
+                    )
+                    .into(),
+                ],
+                ..BoolQuery::default()
+            }
+            .into();
+            let cached_sub_ast = CacheNode::new(
+                BoolQuery {
+                    must: vec![
+                        TermQuery {
+                            field: "field1".to_string(),
+                            value: "value1".to_string(),
+                        }
+                        .into(),
+                        TermQuery {
+                            field: "field2".to_string(),
+                            value: "value2".to_string(),
+                        }
+                        .into(),
+                    ],
+                    ..BoolQuery::default()
+                }
+                .into(),
+            );
+            let expected_ast: QueryAst = BoolQuery {
+                must: vec![
+                    CacheNode::new(
+                        TermQuery {
+                            field: "field3".to_string(),
+                            value: "value3".to_string(),
+                        }
+                        .into(),
+                    )
+                    .into(),
+                    cached_sub_ast.into(),
+                ],
+                ..BoolQuery::default()
+            }
+            .into();
+
+            let mut req = SearchRequest {
+                query_ast: serde_json::to_string(&ast).unwrap(),
+                ..SearchRequest::default()
+            };
+            add_cache_nodes(&mut req, None);
+            let result_ast: QueryAst = serde_json::from_str(&req.query_ast).unwrap();
+            assert_eq!(result_ast, expected_ast);
+        }
+
+        // don't cache field presence (emited alongside aggregations)
+        {
+            let ast: QueryAst = BoolQuery {
+                must: vec![
+                    TermQuery {
+                        field: "field1".to_string(),
+                        value: "value1".to_string(),
+                    }
+                    .into(),
+                    TermQuery {
+                        field: "field2".to_string(),
+                        value: "value2".to_string(),
+                    }
+                    .into(),
+                    FieldPresenceQuery {
+                        field: "field3".to_string(),
+                    }
+                    .into(),
+                    FieldPresenceQuery {
+                        field: "field4".to_string(),
+                    }
+                    .into(),
+                ],
+                ..BoolQuery::default()
+            }
+            .into();
+            let cached_sub_ast = CacheNode::new(
+                BoolQuery {
+                    must: vec![
+                        TermQuery {
+                            field: "field1".to_string(),
+                            value: "value1".to_string(),
+                        }
+                        .into(),
+                        TermQuery {
+                            field: "field2".to_string(),
+                            value: "value2".to_string(),
+                        }
+                        .into(),
+                    ],
+                    ..BoolQuery::default()
+                }
+                .into(),
+            );
+            let expected_ast: QueryAst = BoolQuery {
+                must: vec![
+                    FieldPresenceQuery {
+                        field: "field3".to_string(),
+                    }
+                    .into(),
+                    FieldPresenceQuery {
+                        field: "field4".to_string(),
+                    }
+                    .into(),
+                    cached_sub_ast.into(),
+                ],
+                ..BoolQuery::default()
+            }
+            .into();
+
+            let mut req = SearchRequest {
+                query_ast: serde_json::to_string(&ast).unwrap(),
+                ..SearchRequest::default()
+            };
+            add_cache_nodes(&mut req, None);
+            let result_ast: QueryAst = serde_json::from_str(&req.query_ast).unwrap();
+            assert_eq!(result_ast, expected_ast);
+        }
+
+        // ignore range on timestamp field
+        {
+            let ast: QueryAst = BoolQuery {
+                must: vec![
+                    TermQuery {
+                        field: "field1".to_string(),
+                        value: "value1".to_string(),
+                    }
+                    .into(),
+                    RangeQuery {
+                        field: "timestamp".to_string(),
+                        lower_bound: Bound::Unbounded,
+                        upper_bound: Bound::Unbounded,
+                    }
+                    .into(),
+                    RangeQuery {
+                        field: "not_timestamp".to_string(),
+                        lower_bound: Bound::Unbounded,
+                        upper_bound: Bound::Unbounded,
+                    }
+                    .into(),
+                ],
+                ..BoolQuery::default()
+            }
+            .into();
+            let cached_sub_ast = CacheNode::new(
+                BoolQuery {
+                    must: vec![
+                        TermQuery {
+                            field: "field1".to_string(),
+                            value: "value1".to_string(),
+                        }
+                        .into(),
+                        RangeQuery {
+                            field: "not_timestamp".to_string(),
+                            lower_bound: Bound::Unbounded,
+                            upper_bound: Bound::Unbounded,
+                        }
+                        .into(),
+                    ],
+                    ..BoolQuery::default()
+                }
+                .into(),
+            );
+            let expected_ast: QueryAst = BoolQuery {
+                must: vec![
+                    RangeQuery {
+                        field: "timestamp".to_string(),
+                        lower_bound: Bound::Unbounded,
+                        upper_bound: Bound::Unbounded,
+                    }
+                    .into(),
+                    cached_sub_ast.into(),
+                ],
+                ..BoolQuery::default()
+            }
+            .into();
+
+            let mut req = SearchRequest {
+                query_ast: serde_json::to_string(&ast).unwrap(),
+                ..SearchRequest::default()
+            };
+            add_cache_nodes(&mut req, Some("timestamp"));
+            let result_ast: QueryAst = serde_json::from_str(&req.query_ast).unwrap();
+            assert_eq!(result_ast, expected_ast);
+        }
+
+        // we ignore in-ast search after
+        {
+            let search_after_like: QueryAst = BoolQuery {
+                should: vec![
+                    RangeQuery {
+                        field: "timestamp".to_string(),
+                        lower_bound: Bound::Unbounded,
+                        upper_bound: Bound::Excluded("2025-12-16T00:46:53.328Z".to_string().into()),
+                    }
+                    .into(),
+                    BoolQuery {
+                        must: vec![
+                            FullTextQuery {
+                                field: "timestamp".to_string(),
+                                text: "2025-12-16T00:46:53.328Z".to_string(),
+                                params: FullTextParams {
+                                    tokenizer: None,
+                                    mode: FullTextMode::Bool {
+                                        operator: Default::default(),
+                                    },
+                                    zero_terms_query: Default::default(),
+                                },
+                                lenient: false,
+                            }
+                            .into(),
+                            RangeQuery {
+                                field: "tiebreaker".to_string(),
+                                lower_bound: Bound::Unbounded,
+                                upper_bound: Bound::Excluded((-408075230i64).into()),
+                            }
+                            .into(),
+                        ],
+                        ..BoolQuery::default()
+                    }
+                    .into(),
+                ],
+                ..BoolQuery::default()
+            }
+            .into();
+
+            let ast: QueryAst = BoolQuery {
+                must: vec![
+                    TermQuery {
+                        field: "field1".to_string(),
+                        value: "value1".to_string(),
+                    }
+                    .into(),
+                    TermQuery {
+                        field: "field2".to_string(),
+                        value: "value2".to_string(),
+                    }
+                    .into(),
+                    search_after_like.clone(),
+                ],
+                ..BoolQuery::default()
+            }
+            .into();
+            let cached_sub_ast = CacheNode::new(
+                BoolQuery {
+                    must: vec![
+                        TermQuery {
+                            field: "field1".to_string(),
+                            value: "value1".to_string(),
+                        }
+                        .into(),
+                        TermQuery {
+                            field: "field2".to_string(),
+                            value: "value2".to_string(),
+                        }
+                        .into(),
+                    ],
+                    ..BoolQuery::default()
+                }
+                .into(),
+            );
+            let expected_ast: QueryAst = BoolQuery {
+                must: vec![search_after_like, cached_sub_ast.into()],
+                ..BoolQuery::default()
+            }
+            .into();
+
+            let mut req = SearchRequest {
+                query_ast: serde_json::to_string(&ast).unwrap(),
+                sort_fields: vec![
+                    SortField {
+                        field_name: "timestamp".to_string(),
+                        sort_order: SortOrder::Asc as i32,
+                        sort_datetime_format: None,
+                    },
+                    SortField {
+                        field_name: "tiebreaker".to_string(),
+                        sort_order: SortOrder::Asc as i32,
+                        sort_datetime_format: None,
+                    },
+                ],
+                ..SearchRequest::default()
+            };
+            add_cache_nodes(&mut req, None);
+            let result_ast: QueryAst = serde_json::from_str(&req.query_ast).unwrap();
+            assert_eq!(result_ast, expected_ast);
+        }
     }
 }
