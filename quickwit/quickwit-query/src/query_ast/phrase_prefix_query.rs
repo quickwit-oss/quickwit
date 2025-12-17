@@ -18,7 +18,7 @@ use tantivy::query::PhrasePrefixQuery as TantivyPhrasePrefixQuery;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
-use crate::query_ast::{BuildTantivyAst, FullTextParams, QueryAst};
+use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext, FullTextParams, QueryAst};
 use crate::tokenizers::TokenizerManager;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
@@ -112,12 +112,9 @@ impl From<PhrasePrefixQuery> for QueryAst {
 impl BuildTantivyAst for PhrasePrefixQuery {
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        _search_fields: &[String],
-        _with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (_, terms) = match self.get_terms(schema, tokenizer_manager) {
+        let (_, terms) = match self.get_terms(context.schema, context.tokenizer_manager) {
             Ok(res) => res,
             Err(InvalidQuery::FieldDoesNotExist { .. }) if self.lenient => {
                 return Ok(TantivyQueryAst::match_none());

@@ -13,15 +13,12 @@
 // limitations under the License.
 
 use serde::{Deserialize, Serialize};
-use tantivy::schema::Schema as TantivySchema;
 
-use super::{BuildTantivyAst, TantivyQueryAst};
+use super::{BuildTantivyAst, BuildTantivyAstContext, TantivyQueryAst};
 use crate::InvalidQuery;
 use crate::query_ast::QueryAst;
-use crate::tokenizers::TokenizerManager;
 
 /// # Unsupported features
-/// - minimum_should_match
 /// - named queries
 ///
 /// Edge cases of BooleanQuery are not obvious,
@@ -56,49 +53,26 @@ impl From<BoolQuery> for QueryAst {
 impl BuildTantivyAst for BoolQuery {
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        search_fields: &[String],
-        with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         let mut boolean_query = super::tantivy_query_ast::TantivyBoolQuery {
             minimum_should_match: self.minimum_should_match,
             ..Default::default()
         };
         for must in &self.must {
-            let must_leaf = must.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            )?;
+            let must_leaf = must.build_tantivy_ast_call(context)?;
             boolean_query.must.push(must_leaf);
         }
         for must_not in &self.must_not {
-            let must_not_leaf = must_not.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            )?;
+            let must_not_leaf = must_not.build_tantivy_ast_call(context)?;
             boolean_query.must_not.push(must_not_leaf);
         }
         for should in &self.should {
-            let should_leaf = should.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            )?;
+            let should_leaf = should.build_tantivy_ast_call(context)?;
             boolean_query.should.push(should_leaf);
         }
         for filter in &self.filter {
-            let filter_leaf = filter.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            )?;
+            let filter_leaf = filter.build_tantivy_ast_call(context)?;
             boolean_query.filter.push(filter_leaf);
         }
         Ok(TantivyQueryAst::Bool(boolean_query))

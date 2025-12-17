@@ -173,7 +173,7 @@ pub async fn post_delete_request(
     let query_ast: QueryAst = serde_json::from_str(&delete_search_request.query_ast)
         .map_err(|err| JanitorError::InvalidDeleteQuery(err.to_string()))?;
     doc_mapper
-        .query(doc_mapper.schema(), &query_ast, true)
+        .query(doc_mapper.schema(), query_ast, true, None)
         .map_err(|error| JanitorError::InvalidDeleteQuery(error.to_string()))?;
     let delete_task = metastore.create_delete_task(delete_query).await?;
     Ok(delete_task)
