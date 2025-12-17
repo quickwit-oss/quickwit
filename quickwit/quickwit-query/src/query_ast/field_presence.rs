@@ -21,8 +21,7 @@ use tantivy::schema::{Field, FieldEntry, IndexRecordOption, Schema as TantivySch
 use super::tantivy_query_ast::TantivyBoolQuery;
 use super::utils::{DYNAMIC_FIELD_NAME, find_subfields};
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
-use crate::query_ast::{BuildTantivyAst, QueryAst};
-use crate::tokenizers::TokenizerManager;
+use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext, QueryAst};
 use crate::{BooleanOperand, InvalidQuery, find_field_or_hit_dynamic};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -121,15 +120,17 @@ impl FieldPresenceQuery {
 impl BuildTantivyAst for FieldPresenceQuery {
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        _tokenizer_manager: &TokenizerManager,
-        _search_fields: &[String],
-        _with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let field_presence_field = schema.get_field(FIELD_PRESENCE_FIELD_NAME).map_err(|_| {
-            InvalidQuery::SchemaError("field presence is not available for this split".to_string())
-        })?;
-        let fields = self.find_field_and_subfields(schema);
+        let field_presence_field = context
+            .schema
+            .get_field(FIELD_PRESENCE_FIELD_NAME)
+            .map_err(|_| {
+                InvalidQuery::SchemaError(
+                    "field presence is not available for this split".to_string(),
+                )
+            })?;
+        let fields = self.find_field_and_subfields(context.schema);
         if fields.is_empty() {
             // the schema is not dynamic and no subfields are defined
             return Err(InvalidQuery::FieldDoesNotExist {

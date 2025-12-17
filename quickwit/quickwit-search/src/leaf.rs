@@ -29,7 +29,9 @@ use quickwit_proto::search::{
     CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
     SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
-use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
+use quickwit_query::query_ast::{
+    BoolQuery, CacheNode, QueryAst, QueryAstTransformer, RangeQuery, TermQuery,
+};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SplitCache, Storage,
@@ -499,9 +501,15 @@ async fn leaf_search_single_split(
         make_collector_for_split(split_id.clone(), &search_request, agg_context_params)?;
 
     let split_schema = index.schema();
-    let (query, mut warmup_info) = ctx
-        .doc_mapper
-        .query(split_schema.clone(), &query_ast, false)?;
+    let (query, mut warmup_info) = ctx.doc_mapper.query(
+        split_schema.clone(),
+        query_ast.clone(),
+        false,
+        Some((
+            ctx.searcher_context.predicate_cache.clone(),
+            split.split_id.clone(),
+        )),
+    )?;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
@@ -608,6 +616,20 @@ fn rewrite_request(
         remove_redundant_timestamp_range(search_request, split, timestamp_field);
     }
     rewrite_aggregation(search_request);
+    // we add a top level cache node when search_after is set, this won't help for this query (which
+    // is the 2nd in its series), but should speedup every other request that comes after
+    if search_request.search_after.is_some() {
+        add_top_cache_node(search_request)
+    }
+}
+
+fn add_top_cache_node(search_request: &mut SearchRequest) {
+    let Ok(query_ast) = serde_json::from_str(search_request.query_ast.as_str()) else {
+        // an error will get raised a bit after anyway
+        return;
+    };
+    let new_ast: QueryAst = CacheNode::new(query_ast).into();
+    search_request.query_ast = serde_json::to_string(&new_ast).unwrap();
 }
 
 /// Rewrite aggregation to make them easier to cache

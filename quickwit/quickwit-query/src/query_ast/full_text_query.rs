@@ -27,7 +27,7 @@ use tantivy::tokenizer::{TextAnalyzer, TokenStream};
 
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::query_ast::utils::full_text_query;
-use crate::query_ast::{BuildTantivyAst, QueryAst};
+use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext, QueryAst};
 use crate::tokenizers::TokenizerManager;
 use crate::{BooleanOperand, InvalidQuery, MatchAllOrNone, find_field_or_hit_dynamic};
 
@@ -235,17 +235,14 @@ impl From<FullTextQuery> for QueryAst {
 impl BuildTantivyAst for FullTextQuery {
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        _search_fields: &[String],
-        _with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         full_text_query(
             &self.field,
             &self.text,
             &self.params,
-            schema,
-            tokenizer_manager,
+            context.schema,
+            context.tokenizer_manager,
             self.lenient,
         )
     }
@@ -306,9 +303,9 @@ impl FullTextQuery {
 mod tests {
     use tantivy::schema::{Schema, TEXT};
 
+    use crate::BooleanOperand;
     use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
-    use crate::query_ast::{BuildTantivyAst, FullTextMode, FullTextQuery};
-    use crate::{BooleanOperand, create_default_quickwit_tokenizer_manager};
+    use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext, FullTextMode, FullTextQuery};
 
     #[test]
     fn test_zero_terms() {
@@ -326,12 +323,7 @@ mod tests {
         schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
         let ast: TantivyQueryAst = full_text_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         assert_eq!(ast.const_predicate(), Some(crate::MatchAllOrNone::MatchAll));
     }
@@ -352,12 +344,7 @@ mod tests {
         schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
         let ast: TantivyQueryAst = full_text_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = ast.as_leaf().unwrap();
         assert_eq!(
@@ -383,12 +370,7 @@ mod tests {
         schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
         let ast: TantivyQueryAst = full_text_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = ast.as_leaf().unwrap();
         assert_eq!(
@@ -413,12 +395,7 @@ mod tests {
         schema_builder.add_text_field("body", TEXT);
         let schema = schema_builder.build();
         let ast: TantivyQueryAst = full_text_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let bool_query = ast.as_bool_query().unwrap();
         assert_eq!(bool_query.must.len(), 2);
