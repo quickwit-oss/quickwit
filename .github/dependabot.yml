@@ -13,12 +13,14 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
+
   # Docker dependencies
   - package-ecosystem: docker
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+
   # GitHub Actions
   - package-ecosystem: github-actions
     directory: "/"
@@ -29,6 +31,7 @@ updates:
         patterns:
           - "*"
     open-pull-requests-limit: 10
+
   # NPM dependencies
   - package-ecosystem: npm
     directory: "/"
@@ -38,4 +41,4 @@ updates:
       npm-dependencies:
         patterns:
           - "*"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 10
