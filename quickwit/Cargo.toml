@@ -116,8 +116,8 @@ futures-util = { version = "0.3", default-features = false }
 glob = "0.3"
 google-cloud-auth = "0.12"
 google-cloud-gax = "0.15"
-google-cloud-googleapis = { version = "0.10", features = ["pubsub"] }
-google-cloud-pubsub = "0.18"
+google-cloud-googleapis = { version = "0.16", features = ["pubsub"] }
+google-cloud-pubsub = "0.30"
 heck = "0.5"
 hex = "0.4"
 home = "0.5"
