@@ -1249,7 +1249,20 @@ pub async fn multi_index_leaf_search(
     let merge_collector = make_merge_collector(&search_request, aggregation_limits)?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
     while let Some(leaf_response_join_result) = leaf_request_futures.join_next().await {
-        incremental_merge_collector.add_result(leaf_response_join_result??)?;
+        // abort the search on join errors
+        let leaf_response_result = leaf_response_join_result?;
+        match leaf_response_result {
+            Ok(leaf_response) => {
+                incremental_merge_collector.add_result(leaf_response)?;
+            }
+            Err(err) => {
+                incremental_merge_collector.add_failed_split(SplitSearchError {
+                    split_id: "unknown".to_string(),
+                    error: format!("{err}"),
+                    retryable_error: true,
+                });
+            }
+        }
     }
 
     crate::search_thread_pool()
