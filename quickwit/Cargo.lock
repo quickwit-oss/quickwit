@@ -7644,6 +7644,7 @@ dependencies = [
  "bytesize",
  "fnv",
  "futures",
+ "http 1.4.0",
  "http-body-util",
  "hyper 1.8.1",
  "lru 0.16.2",

@@ -30,7 +30,29 @@ mod gcp_storage_test_suite {
 
     pub async fn sign_gcs_request(req: &mut reqwest::Request) -> anyhow::Result<()> {
         let signer = reqsign::google::default_signer("storage");
-        signer.sign(req).await?;
+        
+        // Create http::Request and extract parts for signing
+        let http_req = http::Request::builder()
+            .method(req.method())
+            .uri(req.url().as_str())
+            .version(http::Version::HTTP_11)
+            .body(())?;
+        
+        let (mut parts, _body) = http_req.into_parts();
+        
+        // Copy headers from reqwest request
+        parts.headers = req.headers().clone();
+        
+        // Sign the request parts
+        signer.sign(&mut parts, None).await?;
+        
+        // Update the original request with signed headers
+        let headers = req.headers_mut();
+        headers.clear();
+        for (key, value) in &parts.headers {
+            headers.insert(key.clone(), value.clone());
+        }
+        
         Ok(())
     }
 
