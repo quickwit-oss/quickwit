@@ -224,7 +224,6 @@ indexmap,https://github.com/bluss/indexmap,Apache-2.0 OR MIT,The indexmap Author
 indexmap,https://github.com/indexmap-rs/indexmap,Apache-2.0 OR MIT,The indexmap Authors
 indicatif,https://github.com/console-rs/indicatif,MIT,The indicatif Authors
 inout,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
-instant,https://github.com/sebcrozet/instant,BSD-3-Clause,sebcrozet <developer@crozet.re>
 inventory,https://github.com/dtolnay/inventory,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 ipnet,https://github.com/krisprice/ipnet,MIT OR Apache-2.0,Kris Price <kris@krisprice.nz>
 ipnetwork,https://github.com/achanda/ipnetwork,MIT OR Apache-2.0,"Abhishek Chanda <abhishek.becs@gmail.com>, Linus Färnstrand <faern@faern.net>"
@@ -315,9 +314,7 @@ ownedbytes,https://github.com/quickwit-oss/tantivy,MIT,"Paul Masurel <paul@quick
 p256,https://github.com/RustCrypto/elliptic-curves/tree/master/p256,Apache-2.0 OR MIT,RustCrypto Developers
 page_size,https://github.com/Elzair/page_size_rs,MIT OR Apache-2.0,Philip Woods <elzairthesorcerer@gmail.com>
 papergrid,https://github.com/zhiburt/tabled,MIT,Maxim Zhiburt <zhiburt@gmail.com>
-parking_lot,https://github.com/Amanieu/parking_lot,Apache-2.0 OR MIT,Amanieu d'Antras <amanieu@gmail.com>
 parking_lot,https://github.com/Amanieu/parking_lot,MIT OR Apache-2.0,Amanieu d'Antras <amanieu@gmail.com>
-parking_lot_core,https://github.com/Amanieu/parking_lot,Apache-2.0 OR MIT,Amanieu d'Antras <amanieu@gmail.com>
 parking_lot_core,https://github.com/Amanieu/parking_lot,MIT OR Apache-2.0,Amanieu d'Antras <amanieu@gmail.com>
 password-hash,https://github.com/RustCrypto/traits/tree/master/password-hash,MIT OR Apache-2.0,RustCrypto Developers
 pbkdf2,https://github.com/RustCrypto/password-hashes/tree/master/pbkdf2,MIT OR Apache-2.0,RustCrypto Developers
@@ -365,6 +362,7 @@ prost-build,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danbu
 prost-derive,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
 prost-types,https://github.com/tokio-rs/prost,Apache-2.0,"Dan Burkert <dan@danburkert.com>, Lucio Franco <luciofranco14@gmail.com>, Casper Meijn <casper@meijn.net>, Tokio Contributors <team@tokio.rs>"
 protobuf,https://github.com/stepancheg/rust-protobuf,MIT,Stepan Koltsov <stepan.koltsov@gmail.com>
+protobuf-support,https://github.com/stepancheg/rust-protobuf,MIT,Stepan Koltsov <stepan.koltsov@gmail.com>
 quanta,https://github.com/metrics-rs/quanta,MIT,Toby Lawrence <toby@nuclearfurnace.com>
 quick-error,http://github.com/tailhook/quick-error,MIT OR Apache-2.0,"Paul Colomiets <paul@colomiets.name>, Colin Kiegel <kiegel@gmx.de>"
 quinn,https://github.com/quinn-rs/quinn,MIT OR Apache-2.0,The quinn Authors
@@ -549,7 +547,7 @@ wasm-bindgen-futures,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/cr
 wasm-bindgen-macro,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro,MIT OR Apache-2.0,The wasm-bindgen Developers
 wasm-bindgen-macro-support,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro-support,MIT OR Apache-2.0,The wasm-bindgen Developers
 wasm-bindgen-shared,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared,MIT OR Apache-2.0,The wasm-bindgen Developers
-wasm-timer,https://github.com/tomaka/wasm-timer,MIT,Pierre Krieger <pierre.krieger1708@gmail.com>
+wasmtimer,https://github.com/whizsid/wasmtimer-rs,MIT,"WhizSid <whizsid@aol.com>, Pierre Krieger <pierre.krieger1708@gmail.com>"
 web-sys,https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/web-sys,MIT OR Apache-2.0,The wasm-bindgen Developers
 web-time,https://github.com/daxpedda/web-time,MIT OR Apache-2.0,The web-time Authors
 webpki-roots,https://github.com/rustls/webpki-roots,CDLA-Permissive-2.0,The webpki-roots Authors
