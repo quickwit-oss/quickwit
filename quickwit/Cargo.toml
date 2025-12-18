@@ -98,15 +98,15 @@ chrono = { version = "0.4", default-features = false, features = [
 ] }
 clap = { version = "4.5", features = ["env", "string"] }
 coarsetime = "0.1"
-colored = "2.2"
+colored = "3.0"
 console-subscriber = "0.1"
 criterion = { version = "0.8", features = ["async_tokio"] }
 cron = "0.12"
-dialoguer = "0.10"
+dialoguer = "0.12"
 dotenvy = "0.15"
 dyn-clone = "1.0"
 enum-iterator = "1.5"
-env_logger = "0.10"
+env_logger = "0.11"
 fail = "0.5"
 flate2 = "1.1"
 flume = "0.11"
@@ -131,7 +131,7 @@ hyper = { version = "1.8", features = ["client", "http1", "http2", "server"] }
 hyper-rustls = "0.27"
 hyper-util = { version = "0.1", features = ["full"] }
 indexmap = { version = "2.12", features = ["serde"] }
-indicatif = "0.17"
+indicatif = "0.18"
 itertools = "0.14"
 json_comments = "0.2"
 libz-sys = "1.1"
