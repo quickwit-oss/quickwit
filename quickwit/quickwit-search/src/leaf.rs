@@ -1372,7 +1372,7 @@ pub async fn single_doc_mapping_leaf_search(
     });
 
     let mut split_search_futures = JoinSet::new();
-    let mut split_with_task_id = Vec::with_capacity(split_with_req.len());
+    let mut task_id_to_split_id_map = HashMap::with_capacity(split_with_req.len());
     for ((split, search_request), permit_fut) in
         split_with_req.into_iter().zip(permit_futures.into_iter())
     {
@@ -1400,7 +1400,7 @@ pub async fn single_doc_mapping_leaf_search(
             )
             .in_current_span(),
         );
-        split_with_task_id.push((split_id, handle.id()));
+        task_id_to_split_id_map.insert(handle.id(), split_id);
     }
 
     // TODO we could cancel running splits when !run_all_splits and the running split can no
@@ -1414,17 +1414,13 @@ pub async fn single_doc_mapping_leaf_search(
                 // An explicit task cancellation is not an error.
                 continue;
             }
-            let position = split_with_task_id
-                .iter()
-                .position(|(_, task_id)| *task_id == join_error.id())
-                .unwrap();
-            let (split, _) = split_with_task_id.remove(position);
+            let split_id = task_id_to_split_id_map.get(&join_error.id()).unwrap();
             if join_error.is_panic() {
-                error!(split=%split, "leaf search task panicked");
+                error!(split=%split_id, "leaf search task panicked");
             } else {
-                error!(split=%split, "please report: leaf search was not cancelled, and could not extract panic. this should never happen");
+                error!(split=%split_id, "please report: leaf search was not cancelled, and could not extract panic. this should never happen");
             }
-            split_search_join_errors.push((split, join_error));
+            split_search_join_errors.push((split_id.clone(), join_error));
         }
     }
 
