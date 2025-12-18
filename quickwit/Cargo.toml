@@ -316,7 +316,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
 ] }
 
 opendal = { version = "0.55", default-features = false }
-reqsign = { version = "0.18", default-features = false }
+reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
 quickwit-actors = { path = "quickwit-actors" }
 quickwit-aws = { path = "quickwit-aws" }
