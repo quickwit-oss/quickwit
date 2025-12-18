@@ -25,20 +25,12 @@ mod gcp_storage_test_suite {
     use quickwit_common::setup_logging_for_tests;
     use quickwit_common::uri::Uri;
     use quickwit_storage::test_config_helpers::{
-        DummyTokenLoader, LOCAL_GCP_EMULATOR_ENDPOINT, new_emulated_google_cloud_storage,
+        LOCAL_GCP_EMULATOR_ENDPOINT, new_emulated_google_cloud_storage,
     };
-    use reqsign::GoogleTokenLoad;
 
-    pub async fn sign_gcs_request(req: &mut reqwest::Request) -> anyhow::Result<()> {
-        let client = reqwest::Client::new();
-        let token = DummyTokenLoader
-            .load(client.clone())
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Failed to obtain authentication token"))?;
-
-        let signer = reqsign::GoogleSigner::new("storage");
-        signer.sign(req, &token)?;
-
+    pub async fn sign_gcs_request(_req: &mut reqwest::Request) -> anyhow::Result<()> {
+        // For testing purposes, we'll skip signing since we're using the local emulator
+        // The emulated GCS server doesn't require proper authentication
         Ok(())
     }
 

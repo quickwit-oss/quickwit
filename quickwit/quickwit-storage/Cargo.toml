@@ -87,7 +87,7 @@ integration-testsuite = [
   "azure_storage_blobs/azurite_workaround",
   "gcs",                                    # Stands for Google cloud storage.
   "dep:reqsign",
-  "reqsign/services-google",
+  "reqsign/google",
   "dep:reqwest",
 ]
 testsuite = ["mockall"]

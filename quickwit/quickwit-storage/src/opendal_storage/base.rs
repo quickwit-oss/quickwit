@@ -169,7 +169,7 @@ impl Storage for OpendalStorage {
         {
             let storage_info = self.op.info();
             if storage_info.name().starts_with("sample-bucket")
-                && storage_info.scheme() == opendal::Scheme::Gcs
+                && storage_info.scheme() == "gcs"
             {
                 let mut bulk_error = BulkDeleteError::default();
                 for (index, path) in paths.iter().enumerate() {
