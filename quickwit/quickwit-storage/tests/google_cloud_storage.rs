@@ -28,11 +28,6 @@ mod gcp_storage_test_suite {
         LOCAL_GCP_EMULATOR_ENDPOINT, new_emulated_google_cloud_storage,
     };
 
-    pub async fn sign_gcs_request(_req: &mut reqwest::Request) -> anyhow::Result<()> {
-        // For testing purposes, we'll skip signing since we're using the local emulator
-        // The emulated GCS server doesn't require proper authentication
-        Ok(())
-    }
 
     async fn create_gcs_bucket(bucket_name: &str) -> anyhow::Result<()> {
         let client = reqwest::Client::new();
@@ -45,7 +40,7 @@ mod gcp_storage_test_suite {
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .build()?;
 
-        sign_gcs_request(&mut request).await?;
+        // Skip signing for local emulator - it doesn't require authentication
 
         let response = client.execute(request).await?;
 
