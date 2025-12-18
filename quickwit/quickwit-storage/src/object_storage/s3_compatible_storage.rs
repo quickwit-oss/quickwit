@@ -256,7 +256,7 @@ async fn compute_md5<T: AsyncRead + std::marker::Unpin>(mut read: T) -> io::Resu
         let read_len = read.read(&mut buf).await?;
         checksum.consume(&buf[..read_len]);
         if read_len == 0 {
-            return Ok(checksum.compute());
+            return Ok(checksum.finalize());
         }
     }
 }
