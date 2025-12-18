@@ -101,15 +101,15 @@ coarsetime = "0.1"
 colored = "3.0"
 console-subscriber = "0.1"
 criterion = { version = "0.8", features = ["async_tokio"] }
-cron = "0.12"
+cron = "0.15"
 dialoguer = "0.12"
 dotenvy = "0.15"
 dyn-clone = "1.0"
-enum-iterator = "1.5"
+enum-iterator = "2.3"
 env_logger = "0.11"
 fail = "0.5"
 flate2 = "1.1"
-flume = "0.11"
+flume = "0.12"
 fnv = "1"
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false }
@@ -121,7 +121,7 @@ google-cloud-pubsub = "0.18"
 heck = "0.5"
 hex = "0.4"
 home = "0.5"
-hostname = "0.3"
+hostname = "0.4"
 http = "1.4"
 http-body = "1.0"
 http-body-util = "0.1"
@@ -145,9 +145,9 @@ lindera-tokenizer = { version = "0.27", features = [
   "ko-dic-compress",
   "ko-dic",
 ] }
-lru = "0.13"
+lru = "0.16"
 matches = "0.1"
-md5 = "0.7"
+md5 = "0.8"
 mime_guess = "2.0"
 mockall = "0.14"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
@@ -203,7 +203,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 reqwest-middleware = "0.4"
 reqwest-retry = "0.7"
-rust-embed = "6.8"
+rust-embed = "8.9"
 rustc-hash = "2.1"
 rustls = "0.23"
 rustls-pemfile = "2.2"
@@ -230,7 +230,7 @@ sqlx = { version = "0.8", features = [
 ] }
 syn = { version = "2.0", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "1"
-sysinfo = "0.33"
+sysinfo = "0.37"
 tabled = { version = "0.14", features = ["color"] }
 tempfile = "3"
 thiserror = "2"
@@ -243,7 +243,7 @@ tokio-metrics = { version = "0.3", features = ["rt"] }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
-toml = "0.7"
+toml = "0.9"
 tonic = { version = "0.13", features = [
   "_tls-any",
   "gzip",
