@@ -15,7 +15,7 @@ pub struct GetOrCreateOpenShardsRequest {
     pub unavailable_leaders: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetOrCreateOpenShardsSubrequest {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
@@ -45,7 +45,7 @@ pub struct GetOrCreateOpenShardsSuccess {
     pub open_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetOrCreateOpenShardsFailure {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
@@ -125,55 +125,55 @@ use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
-    /// Creates a new index.
+    ///Creates a new index.
     async fn create_index(
         &self,
         request: super::metastore::CreateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::CreateIndexResponse>;
-    /// Updates an index.
+    ///Updates an index.
     async fn update_index(
         &self,
         request: super::metastore::UpdateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<
         super::metastore::IndexMetadataResponse,
     >;
-    /// Deletes an index.
+    ///Deletes an index.
     async fn delete_index(
         &self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
-    /// Adds a source to an index.
+    ///Adds a source to an index.
     async fn add_source(
         &self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
-    /// Update a source.
+    ///Update a source.
     async fn update_source(
         &self,
         request: super::metastore::UpdateSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
-    /// Enables or disables a source.
+    ///Enables or disables a source.
     async fn toggle_source(
         &self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
-    /// Removes a source from an index.
+    ///Removes a source from an index.
     async fn delete_source(
         &self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
-    /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
-    /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
+    ///Returns the list of open shards for one or several sources. If the control plane is not able to find any
+    ///for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
     async fn get_or_create_open_shards(
         &self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse>;
-    /// Asks the control plane whether the shards listed in the request should be deleted or truncated.
+    ///Asks the control plane whether the shards listed in the request should be deleted or truncated.
     async fn advise_reset_shards(
         &self,
         request: AdviseResetShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<AdviseResetShardsResponse>;
-    /// Performs a debounced shard pruning request to the metastore.
+    ///Performs a debounced shard pruning request to the metastore.
     async fn prune_shards(
         &self,
         request: super::metastore::PruneShardsRequest,
@@ -2157,7 +2157,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/CreateIndex",
             );
@@ -2187,7 +2187,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/UpdateIndex",
             );
@@ -2217,7 +2217,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/DeleteIndex",
             );
@@ -2247,7 +2247,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/AddSource",
             );
@@ -2279,7 +2279,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/UpdateSource",
             );
@@ -2311,7 +2311,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/ToggleSource",
             );
@@ -2343,7 +2343,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/DeleteSource",
             );
@@ -2374,7 +2374,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/GetOrCreateOpenShards",
             );
@@ -2404,7 +2404,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/AdviseResetShards",
             );
@@ -2434,7 +2434,7 @@ pub mod control_plane_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.control_plane.ControlPlaneService/PruneShards",
             );
@@ -2659,7 +2659,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = CreateIndexSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2711,7 +2711,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = UpdateIndexSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2763,7 +2763,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteIndexSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2812,7 +2812,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = AddSourceSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2864,7 +2864,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = UpdateSourceSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2916,7 +2916,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ToggleSourceSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2968,7 +2968,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteSourceSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -3019,7 +3019,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetOrCreateOpenShardsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -3068,7 +3068,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = AdviseResetShardsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -3120,7 +3120,7 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = PruneShardsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,

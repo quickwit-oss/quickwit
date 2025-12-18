@@ -174,11 +174,11 @@ prettyplease = "0.2"
 proc-macro2 = "1.0"
 prometheus = { version = "0.14", features = ["process"] }
 proptest = "1"
-prost = { version = "0.13", default-features = false, features = [
-  "prost-derive",
+prost = { version = "0.14", default-features = false, features = [
+  "derive",
 ] }
-prost-build = "0.13"
-prost-types = "0.13"
+prost-build = "0.14"
+prost-types = "0.14"
 pulsar = { version = "6.6", default-features = false, features = [
   "auth-oauth2",
   "compression",
@@ -244,15 +244,17 @@ tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.9"
-tonic = { version = "0.13", features = [
+tonic = { version = "0.14", features = [
   "_tls-any",
   "gzip",
   "tls-native-roots",
   "zstd",
 ] }
-tonic-build = "0.13"
-tonic-health = "0.13"
-tonic-reflection = "0.13"
+tonic-build = "0.14"
+tonic-health = "0.14"
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+tonic-reflection = "0.14"
 tower = { version = "0.5", features = [
   "balance",
   "buffer",

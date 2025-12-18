@@ -138,7 +138,7 @@ impl QuickwitServiceGenerator {
     ) -> Self {
         let inner = Box::new(WithSuffixServiceGenerator::new(
             "Grpc",
-            tonic_build::configure().service_generator(),
+            tonic_prost_build::configure().service_generator(),
         ));
         Self {
             result_type_path,
