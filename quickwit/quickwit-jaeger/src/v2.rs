@@ -621,24 +621,19 @@ pub(crate) fn convert_v2_attributes_to_v1_tags(
     attributes
         .into_iter()
         .filter_map(|kv| {
-            kv.value.and_then(|v| {
-                v.value.and_then(|value| {
-                    let string_value = match value {
-                        quickwit_proto::jaeger::storage::v2::any_value::Value::StringValue(s) => s,
-                        quickwit_proto::jaeger::storage::v2::any_value::Value::IntValue(i) => {
-                            i.to_string()
-                        }
-                        quickwit_proto::jaeger::storage::v2::any_value::Value::DoubleValue(d) => {
-                            d.to_string()
-                        }
-                        quickwit_proto::jaeger::storage::v2::any_value::Value::BoolValue(b) => {
-                            b.to_string()
-                        }
-                        _ => return None,
-                    };
-                    Some((kv.key, string_value))
-                })
-            })
+            let value = kv.value?.value?;
+            let string_value = match value {
+                quickwit_proto::jaeger::storage::v2::any_value::Value::StringValue(s) => s,
+                quickwit_proto::jaeger::storage::v2::any_value::Value::IntValue(i) => i.to_string(),
+                quickwit_proto::jaeger::storage::v2::any_value::Value::DoubleValue(d) => {
+                    d.to_string()
+                }
+                quickwit_proto::jaeger::storage::v2::any_value::Value::BoolValue(b) => {
+                    b.to_string()
+                }
+                _ => return None,
+            };
+            Some((kv.key, string_value))
         })
         .collect()
 }
