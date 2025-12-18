@@ -164,7 +164,7 @@ opentelemetry-otlp = "0.27"
 ouroboros = "0.18"
 percent-encoding = "2.3"
 pin-project = "1.1"
-pnet = { version = "0.33", features = ["std"] }
+pnet = { version = "0.35", features = ["std"] }
 postcard = { version = "1.1", features = [
   "use-std",
 ], default-features = false }
@@ -172,7 +172,7 @@ pprof = { version = "0.15", features = ["flamegraph"] }
 predicates = "3"
 prettyplease = "0.2"
 proc-macro2 = "1.0"
-prometheus = { version = "0.13", features = ["process"] }
+prometheus = { version = "0.14", features = ["process"] }
 proptest = "1"
 prost = { version = "0.13", default-features = false, features = [
   "prost-derive",
@@ -202,7 +202,7 @@ reqwest = { version = "0.12", default-features = false, features = [
   "rustls-tls",
 ] }
 reqwest-middleware = "0.4"
-reqwest-retry = "0.7"
+reqwest-retry = "0.8"
 rust-embed = "8.9"
 rustc-hash = "2.1"
 rustls = "0.23"
@@ -239,7 +239,7 @@ tikv-jemalloc-ctl = "0.5"
 tikv-jemallocator = "0.5"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
 tokio = { version = "1.48", features = ["full"] }
-tokio-metrics = { version = "0.3", features = ["rt"] }
+tokio-metrics = { version = "0.4", features = ["rt"] }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
@@ -280,7 +280,7 @@ ulid = "1.2"
 username = "0.2"
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 uuid = { version = "1.19", features = ["v4", "serde"] }
-vrl = { version = "0.27", default-features = false, features = [
+vrl = { version = "0.29", default-features = false, features = [
   "compiler",
   "diagnostic",
   "stdlib",
@@ -315,7 +315,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
-opendal = { version = "0.53", default-features = false }
+opendal = { version = "0.55", default-features = false }
 reqsign = { version = "0.16", default-features = false }
 
 quickwit-actors = { path = "quickwit-actors" }
