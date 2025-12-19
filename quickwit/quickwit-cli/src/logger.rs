@@ -97,24 +97,25 @@ pub fn setup_logging_and_tracing(
             .with_http()
             .build()
             .context("failed to initialize OpenTelemetry OTLP exporter")?;
-        let batch_processor =
-            trace::BatchSpanProcessor::builder(otlp_exporter)
-                .with_batch_config(
-                    BatchConfigBuilder::default()
-                        // Quickwit can generate a lot of spans, especially in debug mode, and the
-                        // default queue size of 2048 is too small.
-                        .with_max_queue_size(32_768)
-                        .build(),
-                )
-                .build();
+        let batch_processor = trace::BatchSpanProcessor::builder(otlp_exporter)
+            .with_batch_config(
+                BatchConfigBuilder::default()
+                    // Quickwit can generate a lot of spans, especially in debug mode, and the
+                    // default queue size of 2048 is too small.
+                    .with_max_queue_size(32_768)
+                    .build(),
+            )
+            .build();
         let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_span_processor(batch_processor)
-            .with_resource(Resource::builder_empty()
-                .with_attributes([
-                    KeyValue::new("service.name", "quickwit"),
-                    KeyValue::new("service.version", build_info.version.clone()),
-                ])
-                .build())
+            .with_resource(
+                Resource::builder_empty()
+                    .with_attributes([
+                        KeyValue::new("service.name", "quickwit"),
+                        KeyValue::new("service.version", build_info.version.clone()),
+                    ])
+                    .build(),
+            )
             .build();
         let tracer = provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
