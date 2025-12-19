@@ -94,11 +94,11 @@ pub fn setup_logging_and_tracing(
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
         let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
-            .with_tonic()
+            .with_http()
             .build()
             .context("failed to initialize OpenTelemetry OTLP exporter")?;
         let batch_processor =
-            trace::BatchSpanProcessor::builder(otlp_exporter, opentelemetry_sdk::runtime::Tokio)
+            trace::BatchSpanProcessor::builder(otlp_exporter)
                 .with_batch_config(
                     BatchConfigBuilder::default()
                         // Quickwit can generate a lot of spans, especially in debug mode, and the
@@ -107,12 +107,14 @@ pub fn setup_logging_and_tracing(
                         .build(),
                 )
                 .build();
-        let provider = opentelemetry_sdk::trace::TracerProvider::builder()
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_span_processor(batch_processor)
-            .with_resource(Resource::new([
-                KeyValue::new("service.name", "quickwit"),
-                KeyValue::new("service.version", build_info.version.clone()),
-            ]))
+            .with_resource(Resource::builder_empty()
+                .with_attributes([
+                    KeyValue::new("service.name", "quickwit"),
+                    KeyValue::new("service.version", build_info.version.clone()),
+                ])
+                .build())
             .build();
         let tracer = provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
