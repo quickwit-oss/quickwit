@@ -14,6 +14,7 @@
 
 #![allow(clippy::derive_partial_eq_without_eq)]
 #![allow(clippy::disallowed_methods)]
+#![allow(clippy::doc_lazy_continuation)]
 #![allow(rustdoc::invalid_html_tags)]
 
 use std::cmp::Ordering;

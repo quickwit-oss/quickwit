@@ -147,7 +147,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .extern_path(".quickwit.ingest.Position", "crate::types::Position")
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
-        .type_attribute("Shard", "#[derive(Eq)]")
         .field_attribute(
             "Shard.follower_id",
             "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
@@ -190,33 +189,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .file_descriptor_set_path("src/codegen/quickwit/search_descriptor.bin")
         .protoc_arg("--experimental_allow_proto3_optional");
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
         .type_attribute(
             ".",
             "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
         )
-        .type_attribute("PartialHit", "#[derive(Eq, Hash)]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
-        .type_attribute("SearchRequest", "#[derive(Eq, Hash)]")
-        .type_attribute("ListFieldSerialized", "#[derive(Eq)]")
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
-        .type_attribute("SortField", "#[derive(Eq, Hash)]")
+        .type_attribute("SearchRequest", "#[derive(Hash, Eq)]")
+        .type_attribute("PartialHit", "#[derive(Hash, Eq)]")
         .out_dir("src/codegen/quickwit")
-        .compile_protos_with_config(prost_config, &["protos/quickwit/search.proto"], &["protos"])?;
+        .compile_with_config(
+            prost_config,
+            &[std::path::PathBuf::from("protos/quickwit/search.proto")],
+            &[std::path::PathBuf::from("protos")],
+        )?;
 
     // Jaeger proto
     let protos = find_protos("protos/third-party/jaeger");
 
     let mut prost_config = prost_build::Config::default();
-    prost_config.type_attribute("Operation", "#[derive(Eq, Ord, PartialOrd)]");
+    prost_config.type_attribute("Operation", "#[derive(Ord, PartialOrd)]");
 
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .out_dir("src/codegen/jaeger")
-        .compile_protos_with_config(
+        .compile_with_config(
             prost_config,
             &protos,
-            &["protos/third-party/jaeger", "protos/third-party"],
+            &[
+                std::path::PathBuf::from("protos/third-party/jaeger"),
+                std::path::PathBuf::from("protos/third-party"),
+            ],
         )?;
 
     // OTEL proto
@@ -224,7 +228,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
 
     let protos = find_protos("protos/third-party/opentelemetry");
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
         .type_attribute("StatusCode", r#"#[serde(rename_all = "snake_case")]"#)
         .type_attribute(
@@ -232,7 +236,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             r#"#[derive(utoipa::ToSchema)]"#,
         )
         .out_dir("src/codegen/opentelemetry")
-        .compile_protos_with_config(prost_config, &protos, &["protos/third-party"])?;
+        .compile_with_config(
+            prost_config,
+            &protos,
+            &[std::path::PathBuf::from("protos/third-party")],
+        )?;
     Ok(())
 }
 
