@@ -185,8 +185,8 @@ pulsar = { version = "6.6", default-features = false, features = [
   "tokio-runtime",
 ] }
 quote = "1.0"
-rand = "0.8"
-rand_distr = "0.4"
+rand = "0.9"
+rand_distr = "0.5"
 rayon = "1.11"
 rdkafka = { version = "0.38", default-features = false, features = [
   "cmake-build",
