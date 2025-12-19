@@ -61,6 +61,8 @@ pub struct GetOrCreateOpenShardsFailure {
 pub struct AdviseResetShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub shard_ids: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
+    #[prost(string, tag = "2")]
+    pub ingester_id: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]

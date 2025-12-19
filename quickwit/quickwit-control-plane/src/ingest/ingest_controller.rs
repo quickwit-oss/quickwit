@@ -925,7 +925,10 @@ impl IngestController {
         request: AdviseResetShardsRequest,
         model: &ControlPlaneModel,
     ) -> AdviseResetShardsResponse {
-        info!("advise reset shards");
+        info!(
+            "received advise reset shards request from `{}`",
+            request.ingester_id
+        );
         debug!(shard_ids=?summarize_shard_ids(&request.shard_ids), "advise reset shards");
 
         let mut shards_to_delete: Vec<ShardIds> = Vec::new();
@@ -1011,7 +1014,7 @@ impl IngestController {
         progress: &Progress,
     ) -> MetastoreResult<Option<JoinHandle<()>>> {
         let Ok(rebalance_guard) = self.rebalance_lock.clone().try_lock_owned() else {
-            info!("skipping rebalance: another rebalance is already in progress");
+            debug!("skipping rebalance: another rebalance is already in progress");
             return Ok(None);
         };
         self.stats.num_rebalance_shards_ops += 1;
@@ -1178,7 +1181,7 @@ impl IngestController {
         let num_shards_to_rebalance = shards_to_rebalance.len();
 
         if num_shards_to_rebalance == 0 {
-            info!("no shards to rebalance");
+            debug!("no shards to rebalance");
         } else {
             info!(
                 num_open_shards,
@@ -3046,6 +3049,7 @@ mod tests {
         model.insert_shards(&index_uid, &source_id_00, shards);
 
         let advise_reset_shards_request = AdviseResetShardsRequest {
+            ingester_id: "test-ingester".to_string(),
             shard_ids: vec![
                 ShardIds {
                     index_uid: Some(index_uid.clone()),
