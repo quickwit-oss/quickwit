@@ -1698,9 +1698,9 @@ mod tests {
 
         // Stage splits in multiple threads
         let mut handles = Vec::new();
-        let mut random_generator = rand::thread_rng();
+        let mut random_generator = rand::rng();
         for i in 1..=20 {
-            let sleep_duration = Duration::from_millis(random_generator.gen_range(0..=200));
+            let sleep_duration = Duration::from_millis(random_generator.random_range(0..=200));
             let metastore = metastore.clone();
             let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
             let handle = tokio::spawn({

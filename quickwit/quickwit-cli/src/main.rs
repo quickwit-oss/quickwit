@@ -18,7 +18,6 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use colored::Colorize;
-use opentelemetry::global;
 use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
@@ -114,7 +113,6 @@ async fn main_impl() -> anyhow::Result<()> {
         0
     };
 
-    global::shutdown_tracer_provider();
     std::process::exit(return_code)
 }
 
