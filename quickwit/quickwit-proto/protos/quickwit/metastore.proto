@@ -107,6 +107,9 @@ service MetastoreService {
   // Deletes an index
   rpc DeleteIndex(DeleteIndexRequest) returns (EmptyResponse);
 
+  // Returns a list of size info for each index.
+  rpc ListIndexSizeInfo(ListIndexSizeInfoRequest) returns (ListIndexSizeInfoResponse);
+
   // Streams splits from index.
   rpc ListSplits(ListSplitsRequest) returns (stream ListSplitsResponse);
 
@@ -284,6 +287,19 @@ enum IndexMetadataFailureReason {
   INDEX_METADATA_FAILURE_REASON_UNSPECIFIED = 0;
   INDEX_METADATA_FAILURE_REASON_NOT_FOUND = 1;
   INDEX_METADATA_FAILURE_REASON_INTERNAL = 2;
+}
+
+message ListIndexSizeInfoRequest {}
+
+message ListIndexSizeInfoResponse {
+  // list of IndexSizeInfo. each one has the index id, the number of splits and the total size.
+  repeated IndexSizeInfo index_sizes = 1;
+}
+
+message IndexSizeInfo {
+  string index_id = 1;
+  int64 num_splits = 2;
+  int64 total_size = 3;
 }
 
 message ListSplitsRequest {

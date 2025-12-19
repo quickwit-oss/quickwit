@@ -178,6 +178,7 @@ macro_rules! metastore_test_suite {
             //  - indexes_metadata
             //  - list_indexes
             //  - delete_index
+            //  - list_index_size_info
 
             #[tokio::test]
             #[serial_test::file_serial]
@@ -278,6 +279,20 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_delete_index() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::index::test_metastore_delete_index::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_index_size_info() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::index::test_metastore_list_index_size_info::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_index_size_info_no_publish() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::index::test_metastore_list_index_size_info_no_publish::<$metastore_type>().await;
             }
 
             // Split API tests

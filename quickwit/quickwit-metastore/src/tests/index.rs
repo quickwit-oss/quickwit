@@ -21,6 +21,7 @@
 //  - delete_index
 
 use std::num::NonZeroUsize;
+use std::time::Duration;
 
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
@@ -31,18 +32,19 @@ use quickwit_config::{
 use quickwit_doc_mapper::{Cardinality, FieldMappingEntry, FieldMappingType, QuickwitJsonOptions};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataFailure,
-    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataSubrequest,
-    IndexesMetadataRequest, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
-    StageSplitsRequest, UpdateIndexRequest,
+    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataSubrequest, IndexSizeInfo,
+    IndexesMetadataRequest, ListIndexSizeInfoRequest, ListIndexesMetadataRequest, MetastoreError,
+    MetastoreService, PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
 };
 use quickwit_proto::types::{DocMappingUid, IndexUid};
+use time::OffsetDateTime;
 
 use super::DefaultForTest;
-use crate::tests::cleanup_index;
+use crate::tests::{cleanup_index, to_btree_set};
 use crate::{
     CreateIndexRequestExt, IndexMetadataResponseExt, IndexesMetadataResponseExt,
-    ListIndexesMetadataResponseExt, MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt,
-    UpdateIndexRequestExt,
+    ListIndexesMetadataResponseExt, MetastoreServiceExt, SplitMaturity, SplitMetadata,
+    StageSplitsRequestExt, UpdateIndexRequestExt,
 };
 
 pub async fn test_metastore_create_index<
@@ -825,4 +827,241 @@ pub async fn test_metastore_delete_index<
     // assert_eq!(splits.len(), 1)
 
     cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_list_index_size_info<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
+    let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+
+    let index_id_1 = append_random_suffix("test-list-index-sizes");
+    let index_uid_1 = IndexUid::new_with_random_ulid(&index_id_1);
+    let index_uri_1 = format!("ram:///indexes/{index_id_1}");
+    let index_config_1 = IndexConfig::for_test(&index_id_1, &index_uri_1);
+
+    let index_id_2 = append_random_suffix("test-list-index-sizes");
+    let index_uid_2 = IndexUid::new_with_random_ulid(&index_id_2);
+    let index_uri_2 = format!("ram:///indexes/{index_id_2}");
+    let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
+
+    let split_id_1 = format!("{index_id_1}--split-1");
+    let split_metadata_1 = SplitMetadata {
+        split_id: split_id_1.clone(),
+        index_uid: index_uid_1.clone(),
+        time_range: Some(0..=99),
+        create_timestamp: current_timestamp,
+        maturity: SplitMaturity::Immature {
+            maturation_period: Duration::from_secs(0),
+        },
+        tags: to_btree_set(&["tag!", "tag:foo", "$tag!", "$tag:bar"]),
+        delete_opstamp: 3,
+        footer_offsets: 0..2048,
+        uncompressed_docs_size_in_bytes: 2048,
+        num_docs: 100,
+        ..Default::default()
+    };
+
+    let split_id_2 = format!("{index_id_1}--split-2");
+    let split_metadata_2 = SplitMetadata {
+        split_id: split_id_2.clone(),
+        index_uid: index_uid_1.clone(),
+        time_range: Some(100..=199),
+        create_timestamp: current_timestamp,
+        maturity: SplitMaturity::Immature {
+            maturation_period: Duration::from_secs(10),
+        },
+        tags: to_btree_set(&["tag!", "$tag!", "$tag:bar"]),
+        delete_opstamp: 1,
+        footer_offsets: 0..2048,
+        uncompressed_docs_size_in_bytes: 2048,
+        num_docs: 100,
+        ..Default::default()
+    };
+
+    let split_id_3 = format!("{index_id_1}--split-3");
+    let split_metadata_3 = SplitMetadata {
+        split_id: split_id_3.clone(),
+        index_uid: index_uid_2.clone(),
+        time_range: Some(200..=299),
+        create_timestamp: current_timestamp,
+        maturity: SplitMaturity::Immature {
+            maturation_period: Duration::from_secs(20),
+        },
+        tags: to_btree_set(&["tag!", "tag:foo", "tag:baz", "$tag!"]),
+        delete_opstamp: 5,
+        footer_offsets: 0..1000,
+        uncompressed_docs_size_in_bytes: 1000,
+        num_docs: 100,
+        ..Default::default()
+    };
+
+    {
+        // add split-1 and split-2 to index-1
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config_1).unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+
+        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+            index_uid.clone(),
+            vec![split_metadata_1.clone(), split_metadata_2.clone()],
+        )
+        .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            staged_split_ids: vec![split_id_1.clone(), split_id_2.clone()],
+            ..Default::default()
+        };
+        metastore
+            .publish_splits(publish_splits_request)
+            .await
+            .unwrap();
+    }
+    {
+        // add split-3 to index-2
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config_2).unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+
+        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+            index_uid.clone(),
+            vec![split_metadata_3.clone()],
+        )
+        .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            staged_split_ids: vec![split_id_3.clone()],
+            ..Default::default()
+        };
+        metastore
+            .publish_splits(publish_splits_request)
+            .await
+            .unwrap();
+    }
+
+    let response = metastore
+        .list_index_size_info(ListIndexSizeInfoRequest {})
+        .await
+        .unwrap();
+
+    // we use the same postgres db for all tests. we need to filter out the indexes that don't
+    // belong to this test
+    let indexes = response
+        .index_sizes
+        .iter()
+        .filter(|index_size| index_size.index_id == index_id_1 || index_size.index_id == index_id_2)
+        .collect::<Vec<&IndexSizeInfo>>();
+
+    assert_eq!(indexes.len(), 2);
+
+    let index_1 = indexes
+        .iter()
+        .find(|index| index.index_id == index_id_1)
+        .expect("Should find index 1");
+    assert_eq!(index_1.num_splits, 2);
+    assert_eq!(index_1.total_size, 4096);
+
+    let index_2 = indexes
+        .iter()
+        .find(|index| index.index_id == index_id_2)
+        .expect("Should find index 2");
+    assert_eq!(index_2.num_splits, 1);
+    assert_eq!(index_2.total_size, 1000);
+}
+
+pub async fn test_metastore_list_index_size_info_no_publish<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
+    let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+
+    let index_id = append_random_suffix("test-list-index-sizes");
+    let index_uid = IndexUid::new_with_random_ulid(&index_id);
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+    let split_id_1 = format!("{index_id}--split-1");
+    let split_metadata_1 = SplitMetadata {
+        split_id: split_id_1.clone(),
+        index_uid: index_uid.clone(),
+        time_range: Some(0..=99),
+        create_timestamp: current_timestamp,
+        maturity: SplitMaturity::Immature {
+            maturation_period: Duration::from_secs(0),
+        },
+        tags: to_btree_set(&["tag!", "tag:foo", "$tag!", "$tag:bar"]),
+        delete_opstamp: 3,
+        footer_offsets: 0..2048,
+        uncompressed_docs_size_in_bytes: 2048,
+        num_docs: 100,
+        ..Default::default()
+    };
+
+    let split_id_2 = format!("{index_id}--split-2");
+    let split_metadata_2 = SplitMetadata {
+        split_id: split_id_2.clone(),
+        index_uid: index_uid.clone(),
+        time_range: Some(100..=199),
+        create_timestamp: current_timestamp,
+        maturity: SplitMaturity::Immature {
+            maturation_period: Duration::from_secs(10),
+        },
+        tags: to_btree_set(&["tag!", "$tag!", "$tag:bar"]),
+        delete_opstamp: 1,
+        footer_offsets: 0..2048,
+        uncompressed_docs_size_in_bytes: 2048,
+        num_docs: 100,
+        ..Default::default()
+    };
+
+    {
+        // add split-1 and split-2 to index-1
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+
+        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+            index_uid.clone(),
+            vec![split_metadata_1.clone(), split_metadata_2.clone()],
+        )
+        .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+    }
+
+    let response = metastore
+        .list_index_size_info(ListIndexSizeInfoRequest {})
+        .await
+        .unwrap();
+    // we use the same postgres db for all tests. we need to filter out the indexes that don't
+    // belong to this test
+    let indexes = response
+        .index_sizes
+        .iter()
+        .filter(|index_size| index_size.index_id == index_id)
+        .collect::<Vec<&IndexSizeInfo>>();
+
+    assert_eq!(indexes.len(), 1);
+    assert_eq!(indexes[0].num_splits, 0);
+    assert_eq!(indexes[0].total_size, 0);
 }

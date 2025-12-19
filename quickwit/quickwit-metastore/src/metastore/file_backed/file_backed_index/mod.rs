@@ -30,8 +30,9 @@ use quickwit_config::{
 };
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse,
-    MetastoreError, MetastoreResult, OpenShardSubrequest, OpenShardSubresponse, PruneShardsRequest,
+    DeleteShardsResponse, DeleteTask, EntityKind, IndexSizeInfo, ListShardsSubrequest,
+    ListShardsSubresponse, MetastoreError, MetastoreResult, OpenShardSubrequest,
+    OpenShardSubresponse, PruneShardsRequest,
 };
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -495,6 +496,25 @@ impl FileBackedIndex {
             );
         }
         Ok(())
+    }
+
+    /// Gets IndexSizeInfo { index_id, num_splits, total_size } for this index
+    /// Only counts splits that are in published state
+    pub(crate) fn get_size(&self) -> MetastoreResult<IndexSizeInfo> {
+        let splits: Vec<&Split> = self
+            .splits
+            .values()
+            .filter(|split| split.split_state == SplitState::Published)
+            .collect();
+        let total_size = splits
+            .iter()
+            .map(|split| split.split_metadata.footer_offsets.end as i64)
+            .sum();
+        Ok(IndexSizeInfo {
+            index_id: self.index_id().to_string(),
+            num_splits: splits.len() as i64,
+            total_size,
+        })
     }
 
     /// Adds a source.

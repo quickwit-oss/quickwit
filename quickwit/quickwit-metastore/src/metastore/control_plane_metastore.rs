@@ -26,13 +26,14 @@ use quickwit_proto::metastore::{
     GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataRequest, IndexesMetadataResponse,
     LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexTemplatesRequest, ListIndexTemplatesResponse,
-    ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse,
-    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    ListDeleteTasksResponse, ListIndexSizeInfoRequest, ListIndexSizeInfoResponse,
+    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
+    MetastoreService, MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest,
+    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 
 /// A [`MetastoreService`] implementation that proxies some requests to the control plane so it can
@@ -160,6 +161,13 @@ impl MetastoreService for ControlPlaneMetastore {
         request: ListSplitsRequest,
     ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         self.metastore.list_splits(request).await
+    }
+
+    async fn list_index_size_info(
+        &self,
+        request: ListIndexSizeInfoRequest,
+    ) -> MetastoreResult<ListIndexSizeInfoResponse> {
+        self.metastore.list_index_size_info(request).await
     }
 
     async fn list_stale_splits(

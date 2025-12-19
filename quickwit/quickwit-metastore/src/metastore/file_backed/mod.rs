@@ -49,14 +49,14 @@ use quickwit_proto::metastore::{
     IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
     IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
-    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
-    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
-    serde_utils,
+    ListIndexSizeInfoRequest, ListIndexSizeInfoResponse, ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
+    MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
+    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -807,6 +807,44 @@ impl MetastoreService for FileBackedMetastore {
             .collect();
         let splits_responses_stream = Box::pin(futures::stream::iter(splits_responses));
         Ok(ServiceStream::new(splits_responses_stream))
+    }
+
+    async fn list_index_size_info(
+        &self,
+        _request: ListIndexSizeInfoRequest,
+    ) -> MetastoreResult<ListIndexSizeInfoResponse> {
+        // searching across all indexes
+        let index_id_incarnation_id_opts: Vec<(IndexId, Option<Ulid>)> = {
+            let inner_rlock_guard = self.state.read().await;
+            inner_rlock_guard
+                .indexes
+                .iter()
+                .filter_map(|(index_id, index_state)| match index_state {
+                    LazyIndexStatus::Active(_) => Some(index_id),
+                    _ => None,
+                })
+                .map(|index_id| (index_id.clone(), None))
+                .collect()
+        };
+
+        let mut index_sizes = Vec::new();
+        for (index_id, incarnation_id_opt) in index_id_incarnation_id_opts {
+            match self
+                .read_any(&index_id, incarnation_id_opt, |index| index.get_size())
+                .await
+            {
+                Ok(index_size) => {
+                    index_sizes.push(index_size);
+                }
+                Err(MetastoreError::NotFound(_)) => {
+                    // If the index does not exist, we just skip it.
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(ListIndexSizeInfoResponse { index_sizes })
     }
 
     async fn list_stale_splits(

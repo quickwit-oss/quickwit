@@ -34,8 +34,9 @@ use quickwit_proto::metastore::{
     FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
     GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    IndexSizeInfo, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
+    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
+    ListDeleteTasksResponse, ListIndexSizeInfoRequest, ListIndexSizeInfoResponse,
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
     ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
@@ -902,6 +903,35 @@ impl MetastoreService for PostgresqlMetastore {
                 });
         let service_stream = ServiceStream::new(Box::pin(split_stream));
         Ok(service_stream)
+    }
+
+    async fn list_index_size_info(
+        &self,
+        _request: ListIndexSizeInfoRequest,
+    ) -> MetastoreResult<ListIndexSizeInfoResponse> {
+        let sql = "SELECT
+            i.index_uid,
+            COUNT(split_id) AS num_splits,
+            COALESCE(SUM(s.split_size_bytes)::BIGINT, 0) AS total_size
+        FROM indexes i
+        LEFT JOIN splits s ON s.index_uid = i.index_uid AND s.split_state = 'Published'
+        GROUP BY i.index_uid";
+
+        let rows: Vec<(String, i64, i64)> =
+            sqlx::query_as(sql).fetch_all(&self.connection_pool).await?;
+
+        let mut index_sizes = Vec::new();
+        for (index_uid, num_splits, total_size) in rows {
+            let delimiter = index_uid.find(':').unwrap_or(0);
+            let index_id = index_uid[..delimiter].to_string();
+            index_sizes.push(IndexSizeInfo {
+                index_id,
+                num_splits,
+                total_size,
+            });
+        }
+
+        Ok(ListIndexSizeInfoResponse { index_sizes })
     }
 
     #[instrument(skip(self))]
