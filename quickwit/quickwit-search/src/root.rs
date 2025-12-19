@@ -1230,6 +1230,21 @@ pub async fn root_search(
         "root_search"
     );
 
+    if let Some(max_total_split_searches) = searcher_context.searcher_config.max_splits_per_search
+        && max_total_split_searches < num_splits
+    {
+        tracing::error!(
+            num_splits,
+            max_total_split_searches,
+            index=?search_request.index_id_patterns,
+            query=%search_request.query_ast,
+            "max total splits exceeded"
+        );
+        return Err(SearchError::InvalidArgument(format!(
+            "Number of targeted splits {num_splits} exceeds the limit {max_total_split_searches}"
+        )));
+    }
+
     let mut search_response_result = RootSearchMetricsFuture {
         start: start_instant,
         tracked: root_search_aux(
@@ -5233,6 +5248,57 @@ mod tests {
         assert_eq!(search_response.num_hits, 1);
         assert_eq!(search_response.hits.len(), 1);
         assert_eq!(search_response.failed_splits.len(), 1);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_root_search_too_many_splits() -> anyhow::Result<()> {
+        let search_request = quickwit_proto::search::SearchRequest {
+            index_id_patterns: vec!["test-index".to_string()],
+            query_ast: qast_json_helper("test", &["body"]),
+            max_hits: 10,
+            ..Default::default()
+        };
+        let mut mock_metastore = MockMetastoreService::new();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_index_ids_query| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_metadata.clone(),
+                ]))
+            });
+        mock_metastore
+            .expect_list_splits()
+            .returning(move |_filter| {
+                let splits = vec![
+                    MockSplitBuilder::new("split1")
+                        .with_index_uid(&index_uid)
+                        .build(),
+                    MockSplitBuilder::new("split2")
+                        .with_index_uid(&index_uid)
+                        .build(),
+                ];
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
+            });
+        let mock_search_service = MockSearchService::new();
+        let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer.clone());
+
+        let mut searcher_context = SearcherContext::for_test();
+        searcher_context.searcher_config.max_splits_per_search = Some(1);
+        let search_error = root_search(
+            &searcher_context,
+            search_request,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            &cluster_client,
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(search_error, SearchError::InvalidArgument { .. }));
         Ok(())
     }
 }
