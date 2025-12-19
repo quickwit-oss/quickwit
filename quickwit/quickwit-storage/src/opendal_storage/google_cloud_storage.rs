@@ -58,21 +58,6 @@ pub mod test_config_helpers {
     /// URL of the local GCP emulator.
     pub const LOCAL_GCP_EMULATOR_ENDPOINT: &str = "http://127.0.0.1:4443";
 
-    /// reqsign::GoogleTokenLoad implementation for testing.
-    #[derive(Debug)]
-    pub struct DummyTokenLoader;
-
-    #[async_trait]
-    impl reqsign::GoogleTokenLoad for DummyTokenLoader {
-        async fn load(&self, _: reqwest::Client) -> anyhow::Result<Option<reqsign::GoogleToken>> {
-            Ok(Some(reqsign::GoogleToken::new(
-                "dummy",
-                86400,
-                "https://www.googleapis.com/auth/devstorage.full_control",
-            )))
-        }
-    }
-
     /// Creates a storage connecting to a local emulated google cloud storage.
     pub fn new_emulated_google_cloud_storage(
         uri: &Uri,
@@ -82,8 +67,7 @@ pub mod test_config_helpers {
         let cfg = opendal::services::Gcs::default()
             .bucket(&bucket)
             .root(&root.to_string_lossy())
-            .endpoint(LOCAL_GCP_EMULATOR_ENDPOINT)
-            .customized_token_loader(Box::new(DummyTokenLoader));
+            .endpoint(LOCAL_GCP_EMULATOR_ENDPOINT);
         let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
         Ok(store)
     }

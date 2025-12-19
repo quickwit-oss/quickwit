@@ -25,19 +25,33 @@ mod gcp_storage_test_suite {
     use quickwit_common::setup_logging_for_tests;
     use quickwit_common::uri::Uri;
     use quickwit_storage::test_config_helpers::{
-        DummyTokenLoader, LOCAL_GCP_EMULATOR_ENDPOINT, new_emulated_google_cloud_storage,
+        LOCAL_GCP_EMULATOR_ENDPOINT, new_emulated_google_cloud_storage,
     };
-    use reqsign::GoogleTokenLoad;
 
     pub async fn sign_gcs_request(req: &mut reqwest::Request) -> anyhow::Result<()> {
-        let client = reqwest::Client::new();
-        let token = DummyTokenLoader
-            .load(client.clone())
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Failed to obtain authentication token"))?;
+        let signer = reqsign::google::default_signer("storage");
 
-        let signer = reqsign::GoogleSigner::new("storage");
-        signer.sign(req, &token)?;
+        // Create http::Request and extract parts for signing
+        let http_req = http::Request::builder()
+            .method(req.method())
+            .uri(req.url().as_str())
+            .version(http::Version::HTTP_11)
+            .body(())?;
+
+        let (mut parts, _body) = http_req.into_parts();
+
+        // Copy headers from reqwest request
+        parts.headers = req.headers().clone();
+
+        // Sign the request parts
+        signer.sign(&mut parts, None).await?;
+
+        // Update the original request with signed headers
+        let headers = req.headers_mut();
+        headers.clear();
+        for (key, value) in &parts.headers {
+            headers.insert(key.clone(), value.clone());
+        }
 
         Ok(())
     }

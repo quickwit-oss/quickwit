@@ -58,6 +58,7 @@ reqsign = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
+http = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 tokio = { workspace = true }
@@ -87,7 +88,7 @@ integration-testsuite = [
   "azure_storage_blobs/azurite_workaround",
   "gcs",                                    # Stands for Google cloud storage.
   "dep:reqsign",
-  "reqsign/services-google",
+  "reqsign/google",
   "dep:reqwest",
 ]
 testsuite = ["mockall"]
