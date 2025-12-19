@@ -58,7 +58,6 @@ pub mod test_config_helpers {
     /// URL of the local GCP emulator.
     pub const LOCAL_GCP_EMULATOR_ENDPOINT: &str = "http://127.0.0.1:4443";
 
-
     /// Creates a storage connecting to a local emulated google cloud storage.
     pub fn new_emulated_google_cloud_storage(
         uri: &Uri,
@@ -68,8 +67,7 @@ pub mod test_config_helpers {
         let cfg = opendal::services::Gcs::default()
             .bucket(&bucket)
             .root(&root.to_string_lossy())
-            .endpoint(LOCAL_GCP_EMULATOR_ENDPOINT)
-;
+            .endpoint(LOCAL_GCP_EMULATOR_ENDPOINT);
         let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
         Ok(store)
     }
