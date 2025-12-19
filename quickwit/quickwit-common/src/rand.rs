@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use rand::Rng;
-use rand::distributions::Alphanumeric;
+use rand_distr::Alphanumeric;
 
 /// Appends a random suffix composed of a hyphen and five random alphanumeric characters.
 pub fn append_random_suffix(string: &str) -> String {
-    let rng = rand::thread_rng();
+    let rng = rand::rng();
     let mut randomized_string = String::with_capacity(string.len() + 6);
     randomized_string.push_str(string);
     randomized_string.push('-');

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use rand::distributions::Alphanumeric;
+use rand_distr::Alphanumeric;
 use rand::prelude::*;
 
 const ADJECTIVES: &[&str] = &[
@@ -84,8 +84,8 @@ const ADJECTIVES: &[&str] = &[
 
 /// Returns a randomly generated id
 pub fn new_coolid(name: &str) -> String {
-    let mut rng = rand::thread_rng();
-    let adjective = ADJECTIVES[rng.gen_range(0..ADJECTIVES.len())];
+    let mut rng = rand::rng();
+    let adjective = ADJECTIVES[rng.random_range(0..ADJECTIVES.len())];
     let slug: String = rng
         .sample_iter(&Alphanumeric)
         .take(4)

@@ -17,10 +17,10 @@ use std::{env, fmt};
 
 use anyhow::Context;
 use opentelemetry::trace::TracerProvider;
-use opentelemetry::{KeyValue, global};
+use opentelemetry::global;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::BatchConfigBuilder;
-use opentelemetry_sdk::{Resource, trace};
+use opentelemetry_sdk::trace;
 use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use time::format_description::BorrowedFormatItem;
@@ -55,7 +55,7 @@ type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscrib
 pub fn setup_logging_and_tracing(
     level: Level,
     ansi_colors: bool,
-    build_info: &BuildInfo,
+    _build_info: &BuildInfo,
 ) -> anyhow::Result<EnvFilterReloadFn> {
     #[cfg(feature = "tokio-console")]
     {
@@ -94,11 +94,11 @@ pub fn setup_logging_and_tracing(
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
         let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
-            .with_tonic()
+            .with_http()
             .build()
             .context("failed to initialize OpenTelemetry OTLP exporter")?;
         let batch_processor =
-            trace::BatchSpanProcessor::builder(otlp_exporter, opentelemetry_sdk::runtime::Tokio)
+            trace::BatchSpanProcessor::builder(otlp_exporter)
                 .with_batch_config(
                     BatchConfigBuilder::default()
                         // Quickwit can generate a lot of spans, especially in debug mode, and the
@@ -107,12 +107,8 @@ pub fn setup_logging_and_tracing(
                         .build(),
                 )
                 .build();
-        let provider = opentelemetry_sdk::trace::TracerProvider::builder()
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_span_processor(batch_processor)
-            .with_resource(Resource::new([
-                KeyValue::new("service.name", "quickwit"),
-                KeyValue::new("service.version", build_info.version.clone()),
-            ]))
             .build();
         let tracer = provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
