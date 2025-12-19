@@ -200,7 +200,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("SearchRequest", "#[derive(Hash, Eq)]")
         .type_attribute("PartialHit", "#[derive(Hash, Eq)]")
         .out_dir("src/codegen/quickwit")
-        .compile_with_config(prost_config, &[std::path::PathBuf::from("protos/quickwit/search.proto")], &[std::path::PathBuf::from("protos")])?;
+        .compile_with_config(
+            prost_config,
+            &[std::path::PathBuf::from("protos/quickwit/search.proto")],
+            &[std::path::PathBuf::from("protos")],
+        )?;
 
     // Jaeger proto
     let protos = find_protos("protos/third-party/jaeger");
@@ -213,7 +217,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .compile_with_config(
             prost_config,
             &protos,
-            &[std::path::PathBuf::from("protos/third-party/jaeger"), std::path::PathBuf::from("protos/third-party")],
+            &[
+                std::path::PathBuf::from("protos/third-party/jaeger"),
+                std::path::PathBuf::from("protos/third-party"),
+            ],
         )?;
 
     // OTEL proto
@@ -229,7 +236,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             r#"#[derive(utoipa::ToSchema)]"#,
         )
         .out_dir("src/codegen/opentelemetry")
-        .compile_with_config(prost_config, &protos, &[std::path::PathBuf::from("protos/third-party")])?;
+        .compile_with_config(
+            prost_config,
+            &protos,
+            &[std::path::PathBuf::from("protos/third-party")],
+        )?;
     Ok(())
 }
 
