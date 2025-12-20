@@ -342,4 +342,5 @@ mod tests {
         validate_index_id_pattern("-abc", true).unwrap();
         validate_index_id_pattern("-abc", false).unwrap_err();
     }
+
 }
