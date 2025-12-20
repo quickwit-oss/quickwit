@@ -39,7 +39,7 @@ use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortBy};
 use quickwit_storage::{StorageResolver, load_file};
 use tabled::settings::object::{FirstRow, Rows, Segment};
 use tabled::settings::panel::Footer;
-use tabled::settings::{Alignment, Disable, Format, Modify, Panel, Rotate, Style};
+use tabled::settings::{Alignment, Remove, Format, Modify, Panel, Rotate, Style};
 use tabled::{Table, Tabled};
 use tracing::{Level, debug};
 
@@ -799,7 +799,7 @@ impl IndexStats {
         Table::builder(tables.into_iter().map(|table| table.to_string()))
             .build()
             .with(Modify::new(Segment::all()).with(Alignment::center_vertical()))
-            .with(Disable::row(FirstRow))
+            .with(Remove::row(FirstRow))
             .with(Style::empty())
             .to_string()
     }
@@ -849,7 +849,7 @@ impl DescriptiveStats {
 
         table
             .with(Style::empty())
-            .with(Disable::row(FirstRow))
+            .with(Remove::row(FirstRow))
             // We separate tables with a newline already, this is to separate quantile part of the
             // table further away from the next table.
             .with(Footer::new("\n"));
