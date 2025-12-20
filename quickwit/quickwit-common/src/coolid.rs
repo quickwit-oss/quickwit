@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use rand_distr::Alphanumeric;
 use rand::prelude::*;
+use rand_distr::Alphanumeric;
 
 const ADJECTIVES: &[&str] = &[
     "aged",

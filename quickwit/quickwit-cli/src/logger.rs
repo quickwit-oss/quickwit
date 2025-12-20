@@ -16,11 +16,11 @@ use std::sync::Arc;
 use std::{env, fmt};
 
 use anyhow::Context;
-use opentelemetry::trace::TracerProvider;
 use opentelemetry::global;
+use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::trace::BatchConfigBuilder;
 use opentelemetry_sdk::trace;
+use opentelemetry_sdk::trace::BatchConfigBuilder;
 use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use time::format_description::BorrowedFormatItem;
@@ -97,16 +97,15 @@ pub fn setup_logging_and_tracing(
             .with_http()
             .build()
             .context("failed to initialize OpenTelemetry OTLP exporter")?;
-        let batch_processor =
-            trace::BatchSpanProcessor::builder(otlp_exporter)
-                .with_batch_config(
-                    BatchConfigBuilder::default()
-                        // Quickwit can generate a lot of spans, especially in debug mode, and the
-                        // default queue size of 2048 is too small.
-                        .with_max_queue_size(32_768)
-                        .build(),
-                )
-                .build();
+        let batch_processor = trace::BatchSpanProcessor::builder(otlp_exporter)
+            .with_batch_config(
+                BatchConfigBuilder::default()
+                    // Quickwit can generate a lot of spans, especially in debug mode, and the
+                    // default queue size of 2048 is too small.
+                    .with_max_queue_size(32_768)
+                    .build(),
+            )
+            .build();
         let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_span_processor(batch_processor)
             .build();
