@@ -1604,7 +1604,13 @@ mod tests {
         assert_eq!(observation.num_running_merge_pipelines, 0);
         universe.sleep(SUPERVISE_LOOP_INTERVAL).await;
         // Check that the merge pipeline is also shut down as they are no more indexing pipeilne on
-        // the index.
+        // the index. We need to wait for the actual merge pipeline actor to exit, not just for the
+        // indexing service to remove it from its tracking.
+        let mut attempts = 0;
+        while universe.get_one::<MergePipeline>().is_some() && attempts < 50 {
+            universe.sleep(Duration::from_millis(100)).await;
+            attempts += 1;
+        }
         assert!(universe.get_one::<MergePipeline>().is_none());
         // It may or may not panic
         universe.quit().await;
