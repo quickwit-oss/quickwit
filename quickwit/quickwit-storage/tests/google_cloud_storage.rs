@@ -40,7 +40,7 @@ mod gcp_storage_test_suite {
         // For now, let's fall back to manual header approach until we find the right API
         req.headers_mut().insert(
             reqwest::header::AUTHORIZATION,
-            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))?
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))?,
         );
 
         Ok(())
