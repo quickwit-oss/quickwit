@@ -108,7 +108,7 @@ service MetastoreService {
   rpc DeleteIndex(DeleteIndexRequest) returns (EmptyResponse);
 
   // Returns a list of size info for each index.
-  rpc ListIndexSizeInfo(ListIndexSizeInfoRequest) returns (ListIndexSizeInfoResponse);
+  rpc ListIndexStats(ListIndexStatsRequest) returns (ListIndexStatsResponse);
 
   // Streams splits from index.
   rpc ListSplits(ListSplitsRequest) returns (stream ListSplitsResponse);
@@ -289,17 +289,22 @@ enum IndexMetadataFailureReason {
   INDEX_METADATA_FAILURE_REASON_INTERNAL = 2;
 }
 
-message ListIndexSizeInfoRequest {}
-
-message ListIndexSizeInfoResponse {
-  // list of IndexSizeInfo. each one has the index id, the number of splits and the total size.
-  repeated IndexSizeInfo index_sizes = 1;
+message ListIndexStatsRequest {
+  // List of patterns an index should match or not match to get considered
+  // An index must match at least one positive pattern (a pattern not starting
+  // with a '-'), and no negative pattern (a pattern starting with a '-').
+  repeated string index_id_patterns = 2;
 }
 
-message IndexSizeInfo {
-  string index_id = 1;
+message ListIndexStatsResponse {
+  // list of IndexStats. each one has the index id, the number of splits and the total size.
+  repeated IndexStats index_stats = 1;
+}
+
+message IndexStats {
+  quickwit.common.IndexUid index_uid = 1;
   int64 num_splits = 2;
-  int64 total_size = 3;
+  int64 total_size_bytes = 3;
 }
 
 message ListSplitsRequest {

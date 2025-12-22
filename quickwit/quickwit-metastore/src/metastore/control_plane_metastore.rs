@@ -26,7 +26,7 @@ use quickwit_proto::metastore::{
     GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataRequest, IndexesMetadataResponse,
     LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexSizeInfoRequest, ListIndexSizeInfoResponse,
+    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
     ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
     ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
@@ -163,11 +163,11 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.list_splits(request).await
     }
 
-    async fn list_index_size_info(
+    async fn list_index_stats(
         &self,
-        request: ListIndexSizeInfoRequest,
-    ) -> MetastoreResult<ListIndexSizeInfoResponse> {
-        self.metastore.list_index_size_info(request).await
+        request: ListIndexStatsRequest,
+    ) -> MetastoreResult<ListIndexStatsResponse> {
+        self.metastore.list_index_stats(request).await
     }
 
     async fn list_stale_splits(

@@ -117,24 +117,30 @@ pub struct IndexMetadataFailure {
     pub reason: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ListIndexSizeInfoRequest {}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListIndexStatsRequest {
+    /// List of patterns an index should match or not match to get considered
+    /// An index must match at least one positive pattern (a pattern not starting
+    /// with a '-'), and no negative pattern (a pattern starting with a '-').
+    #[prost(string, repeated, tag = "2")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListIndexSizeInfoResponse {
-    /// list of IndexSizeInfo. each one has the index id, the number of splits and the total size.
+pub struct ListIndexStatsResponse {
+    /// list of IndexStats. each one has the index id, the number of splits and the total size.
     #[prost(message, repeated, tag = "1")]
-    pub index_sizes: ::prost::alloc::vec::Vec<IndexSizeInfo>,
+    pub index_stats: ::prost::alloc::vec::Vec<IndexStats>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct IndexSizeInfo {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+pub struct IndexStats {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(int64, tag = "2")]
     pub num_splits: i64,
     #[prost(int64, tag = "3")]
-    pub total_size: i64,
+    pub total_size_bytes: i64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -647,9 +653,9 @@ impl RpcName for DeleteIndexRequest {
         "delete_index"
     }
 }
-impl RpcName for ListIndexSizeInfoRequest {
+impl RpcName for ListIndexStatsRequest {
     fn rpc_name() -> &'static str {
-        "list_index_size_info"
+        "list_index_stats"
     }
 }
 impl RpcName for ListSplitsRequest {
@@ -822,10 +828,10 @@ pub trait MetastoreService: std::fmt::Debug + Send + Sync + 'static {
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
     ///Returns a list of size info for each index.
-    async fn list_index_size_info(
+    async fn list_index_stats(
         &self,
-        request: ListIndexSizeInfoRequest,
-    ) -> crate::metastore::MetastoreResult<ListIndexSizeInfoResponse>;
+        request: ListIndexStatsRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexStatsResponse>;
     ///Streams splits from index.
     async fn list_splits(
         &self,
@@ -1115,11 +1121,11 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.delete_index(request).await
     }
-    async fn list_index_size_info(
+    async fn list_index_stats(
         &self,
-        request: ListIndexSizeInfoRequest,
-    ) -> crate::metastore::MetastoreResult<ListIndexSizeInfoResponse> {
-        self.inner.0.list_index_size_info(request).await
+        request: ListIndexStatsRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexStatsResponse> {
+        self.inner.0.list_index_stats(request).await
     }
     async fn list_splits(
         &self,
@@ -1329,11 +1335,11 @@ pub mod mock_metastore_service {
         ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
             self.inner.lock().await.delete_index(request).await
         }
-        async fn list_index_size_info(
+        async fn list_index_stats(
             &self,
-            request: super::ListIndexSizeInfoRequest,
-        ) -> crate::metastore::MetastoreResult<super::ListIndexSizeInfoResponse> {
-            self.inner.lock().await.list_index_size_info(request).await
+            request: super::ListIndexStatsRequest,
+        ) -> crate::metastore::MetastoreResult<super::ListIndexStatsResponse> {
+            self.inner.lock().await.list_index_stats(request).await
         }
         async fn list_splits(
             &self,
@@ -1602,8 +1608,8 @@ impl tower::Service<DeleteIndexRequest> for InnerMetastoreServiceClient {
         Box::pin(fut)
     }
 }
-impl tower::Service<ListIndexSizeInfoRequest> for InnerMetastoreServiceClient {
-    type Response = ListIndexSizeInfoResponse;
+impl tower::Service<ListIndexStatsRequest> for InnerMetastoreServiceClient {
+    type Response = ListIndexStatsResponse;
     type Error = crate::metastore::MetastoreError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -1612,9 +1618,9 @@ impl tower::Service<ListIndexSizeInfoRequest> for InnerMetastoreServiceClient {
     ) -> std::task::Poll<Result<(), Self::Error>> {
         std::task::Poll::Ready(Ok(()))
     }
-    fn call(&mut self, request: ListIndexSizeInfoRequest) -> Self::Future {
+    fn call(&mut self, request: ListIndexStatsRequest) -> Self::Future {
         let svc = self.clone();
-        let fut = async move { svc.0.list_index_size_info(request).await };
+        let fut = async move { svc.0.list_index_stats(request).await };
         Box::pin(fut)
     }
 }
@@ -2069,9 +2075,9 @@ struct MetastoreServiceTowerServiceStack {
         EmptyResponse,
         crate::metastore::MetastoreError,
     >,
-    list_index_size_info_svc: quickwit_common::tower::BoxService<
-        ListIndexSizeInfoRequest,
-        ListIndexSizeInfoResponse,
+    list_index_stats_svc: quickwit_common::tower::BoxService<
+        ListIndexStatsRequest,
+        ListIndexStatsResponse,
         crate::metastore::MetastoreError,
     >,
     list_splits_svc: quickwit_common::tower::BoxService<
@@ -2243,11 +2249,11 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.delete_index_svc.clone().ready().await?.call(request).await
     }
-    async fn list_index_size_info(
+    async fn list_index_stats(
         &self,
-        request: ListIndexSizeInfoRequest,
-    ) -> crate::metastore::MetastoreResult<ListIndexSizeInfoResponse> {
-        self.list_index_size_info_svc.clone().ready().await?.call(request).await
+        request: ListIndexStatsRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexStatsResponse> {
+        self.list_index_stats_svc.clone().ready().await?.call(request).await
     }
     async fn list_splits(
         &self,
@@ -2472,14 +2478,14 @@ type DeleteIndexLayer = quickwit_common::tower::BoxLayer<
     EmptyResponse,
     crate::metastore::MetastoreError,
 >;
-type ListIndexSizeInfoLayer = quickwit_common::tower::BoxLayer<
+type ListIndexStatsLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
-        ListIndexSizeInfoRequest,
-        ListIndexSizeInfoResponse,
+        ListIndexStatsRequest,
+        ListIndexStatsResponse,
         crate::metastore::MetastoreError,
     >,
-    ListIndexSizeInfoRequest,
-    ListIndexSizeInfoResponse,
+    ListIndexStatsRequest,
+    ListIndexStatsResponse,
     crate::metastore::MetastoreError,
 >;
 type ListSplitsLayer = quickwit_common::tower::BoxLayer<
@@ -2750,7 +2756,7 @@ pub struct MetastoreServiceTowerLayerStack {
     indexes_metadata_layers: Vec<IndexesMetadataLayer>,
     list_indexes_metadata_layers: Vec<ListIndexesMetadataLayer>,
     delete_index_layers: Vec<DeleteIndexLayer>,
-    list_index_size_info_layers: Vec<ListIndexSizeInfoLayer>,
+    list_index_stats_layers: Vec<ListIndexStatsLayer>,
     list_splits_layers: Vec<ListSplitsLayer>,
     stage_splits_layers: Vec<StageSplitsLayer>,
     publish_splits_layers: Vec<PublishSplitsLayer>,
@@ -2935,29 +2941,29 @@ impl MetastoreServiceTowerLayerStack {
         >>::Service as tower::Service<DeleteIndexRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    ListIndexSizeInfoRequest,
-                    ListIndexSizeInfoResponse,
+                    ListIndexStatsRequest,
+                    ListIndexStatsResponse,
                     crate::metastore::MetastoreError,
                 >,
             > + Clone + Send + Sync + 'static,
         <L as tower::Layer<
             quickwit_common::tower::BoxService<
-                ListIndexSizeInfoRequest,
-                ListIndexSizeInfoResponse,
+                ListIndexStatsRequest,
+                ListIndexStatsResponse,
                 crate::metastore::MetastoreError,
             >,
         >>::Service: tower::Service<
-                ListIndexSizeInfoRequest,
-                Response = ListIndexSizeInfoResponse,
+                ListIndexStatsRequest,
+                Response = ListIndexStatsResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
         <<L as tower::Layer<
             quickwit_common::tower::BoxService<
-                ListIndexSizeInfoRequest,
-                ListIndexSizeInfoResponse,
+                ListIndexStatsRequest,
+                ListIndexStatsResponse,
                 crate::metastore::MetastoreError,
             >,
-        >>::Service as tower::Service<ListIndexSizeInfoRequest>>::Future: Send + 'static,
+        >>::Service as tower::Service<ListIndexStatsRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     ListSplitsRequest,
@@ -3637,7 +3643,7 @@ impl MetastoreServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.delete_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.list_index_size_info_layers
+        self.list_index_stats_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.list_splits_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -3810,24 +3816,23 @@ impl MetastoreServiceTowerLayerStack {
         self.delete_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn stack_list_index_size_info_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_list_index_stats_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
-                    ListIndexSizeInfoRequest,
-                    ListIndexSizeInfoResponse,
+                    ListIndexStatsRequest,
+                    ListIndexStatsResponse,
                     crate::metastore::MetastoreError,
                 >,
             > + Send + Sync + 'static,
         L::Service: tower::Service<
-                ListIndexSizeInfoRequest,
-                Response = ListIndexSizeInfoResponse,
+                ListIndexStatsRequest,
+                Response = ListIndexStatsResponse,
                 Error = crate::metastore::MetastoreError,
             > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<ListIndexSizeInfoRequest>>::Future: Send + 'static,
+        <L::Service as tower::Service<ListIndexStatsRequest>>::Future: Send + 'static,
     {
-        self.list_index_size_info_layers
-            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self.list_index_stats_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_list_splits_layer<L>(mut self, layer: L) -> Self
@@ -4459,8 +4464,8 @@ impl MetastoreServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
-        let list_index_size_info_svc = self
-            .list_index_size_info_layers
+        let list_index_stats_svc = self
+            .list_index_stats_layers
             .into_iter()
             .rev()
             .fold(
@@ -4683,7 +4688,7 @@ impl MetastoreServiceTowerLayerStack {
             indexes_metadata_svc,
             list_indexes_metadata_svc,
             delete_index_svc,
-            list_index_size_info_svc,
+            list_index_stats_svc,
             list_splits_svc,
             stage_splits_svc,
             publish_splits_svc,
@@ -4826,13 +4831,10 @@ where
             Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
         >
         + tower::Service<
-            ListIndexSizeInfoRequest,
-            Response = ListIndexSizeInfoResponse,
+            ListIndexStatsRequest,
+            Response = ListIndexStatsResponse,
             Error = crate::metastore::MetastoreError,
-            Future = BoxFuture<
-                ListIndexSizeInfoResponse,
-                crate::metastore::MetastoreError,
-            >,
+            Future = BoxFuture<ListIndexStatsResponse, crate::metastore::MetastoreError>,
         >
         + tower::Service<
             ListSplitsRequest,
@@ -5048,10 +5050,10 @@ where
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.clone().call(request).await
     }
-    async fn list_index_size_info(
+    async fn list_index_stats(
         &self,
-        request: ListIndexSizeInfoRequest,
-    ) -> crate::metastore::MetastoreResult<ListIndexSizeInfoResponse> {
+        request: ListIndexStatsRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexStatsResponse> {
         self.clone().call(request).await
     }
     async fn list_splits(
@@ -5341,18 +5343,18 @@ where
                 DeleteIndexRequest::rpc_name(),
             ))
     }
-    async fn list_index_size_info(
+    async fn list_index_stats(
         &self,
-        request: ListIndexSizeInfoRequest,
-    ) -> crate::metastore::MetastoreResult<ListIndexSizeInfoResponse> {
+        request: ListIndexStatsRequest,
+    ) -> crate::metastore::MetastoreResult<ListIndexStatsResponse> {
         self.inner
             .clone()
-            .list_index_size_info(request)
+            .list_index_stats(request)
             .await
             .map(|response| response.into_inner())
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
-                ListIndexSizeInfoRequest::rpc_name(),
+                ListIndexStatsRequest::rpc_name(),
             ))
     }
     async fn list_splits(
@@ -5826,13 +5828,13 @@ for MetastoreServiceGrpcServerAdapter {
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
     }
-    async fn list_index_size_info(
+    async fn list_index_stats(
         &self,
-        request: tonic::Request<ListIndexSizeInfoRequest>,
-    ) -> Result<tonic::Response<ListIndexSizeInfoResponse>, tonic::Status> {
+        request: tonic::Request<ListIndexStatsRequest>,
+    ) -> Result<tonic::Response<ListIndexStatsResponse>, tonic::Status> {
         self.inner
             .0
-            .list_index_size_info(request.into_inner())
+            .list_index_stats(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -6446,11 +6448,11 @@ pub mod metastore_service_grpc_client {
             self.inner.unary(req, path, codec).await
         }
         /// Returns a list of size info for each index.
-        pub async fn list_index_size_info(
+        pub async fn list_index_stats(
             &mut self,
-            request: impl tonic::IntoRequest<super::ListIndexSizeInfoRequest>,
+            request: impl tonic::IntoRequest<super::ListIndexStatsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ListIndexSizeInfoResponse>,
+            tonic::Response<super::ListIndexStatsResponse>,
             tonic::Status,
         > {
             self.inner
@@ -6463,14 +6465,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/ListIndexSizeInfo",
+                "/quickwit.metastore.MetastoreService/ListIndexStats",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "ListIndexSizeInfo",
+                        "ListIndexStats",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -7275,11 +7277,11 @@ pub mod metastore_service_grpc_server {
             request: tonic::Request<super::DeleteIndexRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Returns a list of size info for each index.
-        async fn list_index_size_info(
+        async fn list_index_stats(
             &self,
-            request: tonic::Request<super::ListIndexSizeInfoRequest>,
+            request: tonic::Request<super::ListIndexStatsRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::ListIndexSizeInfoResponse>,
+            tonic::Response<super::ListIndexStatsResponse>,
             tonic::Status,
         >;
         /// Server streaming response type for the ListSplits method.
@@ -7881,25 +7883,25 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/ListIndexSizeInfo" => {
+                "/quickwit.metastore.MetastoreService/ListIndexStats" => {
                     #[allow(non_camel_case_types)]
-                    struct ListIndexSizeInfoSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct ListIndexStatsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
-                    > tonic::server::UnaryService<super::ListIndexSizeInfoRequest>
-                    for ListIndexSizeInfoSvc<T> {
-                        type Response = super::ListIndexSizeInfoResponse;
+                    > tonic::server::UnaryService<super::ListIndexStatsRequest>
+                    for ListIndexStatsSvc<T> {
+                        type Response = super::ListIndexStatsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ListIndexSizeInfoRequest>,
+                            request: tonic::Request<super::ListIndexStatsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as MetastoreServiceGrpc>::list_index_size_info(
+                                <T as MetastoreServiceGrpc>::list_index_stats(
                                         &inner,
                                         request,
                                     )
@@ -7914,7 +7916,7 @@ pub mod metastore_service_grpc_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = ListIndexSizeInfoSvc(inner);
+                        let method = ListIndexStatsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

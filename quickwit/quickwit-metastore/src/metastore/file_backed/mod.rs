@@ -49,7 +49,7 @@ use quickwit_proto::metastore::{
     IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
     IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
-    ListIndexSizeInfoRequest, ListIndexSizeInfoResponse, ListIndexTemplatesRequest,
+    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
     ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
     ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
@@ -809,32 +809,35 @@ impl MetastoreService for FileBackedMetastore {
         Ok(ServiceStream::new(splits_responses_stream))
     }
 
-    async fn list_index_size_info(
+    async fn list_index_stats(
         &self,
-        _request: ListIndexSizeInfoRequest,
-    ) -> MetastoreResult<ListIndexSizeInfoResponse> {
-        // searching across all indexes
+        request: ListIndexStatsRequest,
+    ) -> MetastoreResult<ListIndexStatsResponse> {
+        let index_id_matcher =
+            IndexIdMatcher::try_from_index_id_patterns(&request.index_id_patterns)?;
         let index_id_incarnation_id_opts: Vec<(IndexId, Option<Ulid>)> = {
             let inner_rlock_guard = self.state.read().await;
             inner_rlock_guard
                 .indexes
                 .iter()
                 .filter_map(|(index_id, index_state)| match index_state {
-                    LazyIndexStatus::Active(_) => Some(index_id),
+                    LazyIndexStatus::Active(_) if index_id_matcher.is_match(index_id) => {
+                        Some(index_id)
+                    }
                     _ => None,
                 })
                 .map(|index_id| (index_id.clone(), None))
                 .collect()
         };
 
-        let mut index_sizes = Vec::new();
+        let mut index_stats = Vec::new();
         for (index_id, incarnation_id_opt) in index_id_incarnation_id_opts {
             match self
-                .read_any(&index_id, incarnation_id_opt, |index| index.get_size())
+                .read_any(&index_id, incarnation_id_opt, |index| index.get_stats())
                 .await
             {
-                Ok(index_size) => {
-                    index_sizes.push(index_size);
+                Ok(stats) => {
+                    index_stats.push(stats);
                 }
                 Err(MetastoreError::NotFound(_)) => {
                     // If the index does not exist, we just skip it.
@@ -844,7 +847,7 @@ impl MetastoreService for FileBackedMetastore {
             }
         }
 
-        Ok(ListIndexSizeInfoResponse { index_sizes })
+        Ok(ListIndexStatsResponse { index_stats })
     }
 
     async fn list_stale_splits(

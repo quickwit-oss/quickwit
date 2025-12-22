@@ -30,7 +30,7 @@ use quickwit_config::{
 };
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteTask, EntityKind, IndexSizeInfo, ListShardsSubrequest,
+    DeleteShardsResponse, DeleteTask, EntityKind, IndexStats, ListShardsSubrequest,
     ListShardsSubresponse, MetastoreError, MetastoreResult, OpenShardSubrequest,
     OpenShardSubresponse, PruneShardsRequest,
 };
@@ -498,22 +498,24 @@ impl FileBackedIndex {
         Ok(())
     }
 
-    /// Gets IndexSizeInfo { index_id, num_splits, total_size } for this index
+    /// Gets IndexStats { index_uid, num_splits, total_size_bytes } for this index
     /// Only counts splits that are in published state
-    pub(crate) fn get_size(&self) -> MetastoreResult<IndexSizeInfo> {
-        let splits: Vec<&Split> = self
+    pub(crate) fn get_stats(&self) -> MetastoreResult<IndexStats> {
+        let (num_splits, total_size_bytes) = self
             .splits
             .values()
             .filter(|split| split.split_state == SplitState::Published)
-            .collect();
-        let total_size = splits
-            .iter()
-            .map(|split| split.split_metadata.footer_offsets.end as i64)
-            .sum();
-        Ok(IndexSizeInfo {
-            index_id: self.index_id().to_string(),
-            num_splits: splits.len() as i64,
-            total_size,
+            .fold((0, 0), |(count, size), split| {
+                (
+                    count + 1,
+                    size + split.split_metadata.footer_offsets.end as i64,
+                )
+            });
+
+        Ok(IndexStats {
+            index_uid: Some(self.index_uid().clone()),
+            num_splits,
+            total_size_bytes,
         })
     }
 

@@ -283,16 +283,16 @@ macro_rules! metastore_test_suite {
 
             #[tokio::test]
             #[serial_test::file_serial]
-            async fn test_metastore_list_index_size_info() {
+            async fn test_metastore_list_index_stats() {
                 let _ = tracing_subscriber::fmt::try_init();
-                $crate::tests::index::test_metastore_list_index_size_info::<$metastore_type>().await;
+                $crate::tests::index::test_metastore_list_index_stats::<$metastore_type>().await;
             }
 
             #[tokio::test]
             #[serial_test::file_serial]
-            async fn test_metastore_list_index_size_info_no_publish() {
+            async fn test_metastore_list_index_stats_no_publish() {
                 let _ = tracing_subscriber::fmt::try_init();
-                $crate::tests::index::test_metastore_list_index_size_info_no_publish::<$metastore_type>().await;
+                $crate::tests::index::test_metastore_list_index_stats_no_publish::<$metastore_type>().await;
             }
 
             // Split API tests

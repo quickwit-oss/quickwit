@@ -32,8 +32,8 @@ use quickwit_config::{
 use quickwit_doc_mapper::{Cardinality, FieldMappingEntry, FieldMappingType, QuickwitJsonOptions};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataFailure,
-    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataSubrequest, IndexSizeInfo,
-    IndexesMetadataRequest, ListIndexSizeInfoRequest, ListIndexesMetadataRequest, MetastoreError,
+    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataSubrequest, IndexStats,
+    IndexesMetadataRequest, ListIndexStatsRequest, ListIndexesMetadataRequest, MetastoreError,
     MetastoreService, PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
 };
 use quickwit_proto::types::{DocMappingUid, IndexUid};
@@ -829,19 +829,19 @@ pub async fn test_metastore_delete_index<
     cleanup_index(&mut metastore, index_uid).await;
 }
 
-pub async fn test_metastore_list_index_size_info<
+pub async fn test_metastore_list_index_stats<
     MetastoreToTest: MetastoreServiceExt + DefaultForTest,
 >() {
     let metastore = MetastoreToTest::default_for_test().await;
 
     let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-    let index_id_1 = append_random_suffix("test-list-index-sizes");
+    let index_id_1 = append_random_suffix("test-list-index-stats");
     let index_uid_1 = IndexUid::new_with_random_ulid(&index_id_1);
     let index_uri_1 = format!("ram:///indexes/{index_id_1}");
     let index_config_1 = IndexConfig::for_test(&index_id_1, &index_uri_1);
 
-    let index_id_2 = append_random_suffix("test-list-index-sizes");
+    let index_id_2 = append_random_suffix("test-list-index-stats");
     let index_uid_2 = IndexUid::new_with_random_ulid(&index_id_2);
     let index_uri_2 = format!("ram:///indexes/{index_id_2}");
     let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
@@ -897,101 +897,101 @@ pub async fn test_metastore_list_index_size_info<
         ..Default::default()
     };
 
-    {
-        // add split-1 and split-2 to index-1
-        let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config_1).unwrap();
-        let index_uid: IndexUid = metastore
-            .create_index(create_index_request)
-            .await
-            .unwrap()
-            .index_uid()
-            .clone();
+    // add split-1 and split-2 to index-1
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config_1).unwrap();
+    let index_uid_1: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
 
-        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
-            index_uid.clone(),
-            vec![split_metadata_1.clone(), split_metadata_2.clone()],
-        )
-        .unwrap();
-        metastore.stage_splits(stage_splits_request).await.unwrap();
+    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+        index_uid_1.clone(),
+        vec![split_metadata_1.clone(), split_metadata_2.clone()],
+    )
+    .unwrap();
+    metastore.stage_splits(stage_splits_request).await.unwrap();
 
-        let publish_splits_request = PublishSplitsRequest {
-            index_uid: Some(index_uid.clone()),
-            staged_split_ids: vec![split_id_1.clone(), split_id_2.clone()],
-            ..Default::default()
-        };
-        metastore
-            .publish_splits(publish_splits_request)
-            .await
-            .unwrap();
-    }
-    {
-        // add split-3 to index-2
-        let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config_2).unwrap();
-        let index_uid: IndexUid = metastore
-            .create_index(create_index_request)
-            .await
-            .unwrap()
-            .index_uid()
-            .clone();
-
-        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
-            index_uid.clone(),
-            vec![split_metadata_3.clone()],
-        )
-        .unwrap();
-        metastore.stage_splits(stage_splits_request).await.unwrap();
-
-        let publish_splits_request = PublishSplitsRequest {
-            index_uid: Some(index_uid.clone()),
-            staged_split_ids: vec![split_id_3.clone()],
-            ..Default::default()
-        };
-        metastore
-            .publish_splits(publish_splits_request)
-            .await
-            .unwrap();
-    }
-
-    let response = metastore
-        .list_index_size_info(ListIndexSizeInfoRequest {})
+    let publish_splits_request = PublishSplitsRequest {
+        index_uid: Some(index_uid_1.clone()),
+        staged_split_ids: vec![split_id_1.clone(), split_id_2.clone()],
+        ..Default::default()
+    };
+    metastore
+        .publish_splits(publish_splits_request)
         .await
         .unwrap();
 
-    // we use the same postgres db for all tests. we need to filter out the indexes that don't
-    // belong to this test
+    // add split-3 to index-2
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config_2).unwrap();
+    let index_uid_2: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+        index_uid_2.clone(),
+        vec![split_metadata_3.clone()],
+    )
+    .unwrap();
+    metastore.stage_splits(stage_splits_request).await.unwrap();
+
+    let publish_splits_request = PublishSplitsRequest {
+        index_uid: Some(index_uid_2.clone()),
+        staged_split_ids: vec![split_id_3.clone()],
+        ..Default::default()
+    };
+    metastore
+        .publish_splits(publish_splits_request)
+        .await
+        .unwrap();
+
+    let response = metastore
+        .list_index_stats(ListIndexStatsRequest {
+            index_id_patterns: vec!["test-list-index-stats*".to_string()],
+        })
+        .await
+        .unwrap();
+
+    // we use the same postgres db for multiple executions of this test. we need to filter out the
+    // indexes that don't belong to the current execution
     let indexes = response
-        .index_sizes
+        .index_stats
         .iter()
-        .filter(|index_size| index_size.index_id == index_id_1 || index_size.index_id == index_id_2)
-        .collect::<Vec<&IndexSizeInfo>>();
+        .filter(|stats| {
+            stats.index_uid == Some(index_uid_1.clone())
+                || stats.index_uid == Some(index_uid_2.clone())
+        })
+        .collect::<Vec<&IndexStats>>();
 
     assert_eq!(indexes.len(), 2);
 
     let index_1 = indexes
         .iter()
-        .find(|index| index.index_id == index_id_1)
+        .find(|index| index.index_uid == Some(index_uid_1.clone()))
         .expect("Should find index 1");
     assert_eq!(index_1.num_splits, 2);
-    assert_eq!(index_1.total_size, 4096);
+    assert_eq!(index_1.total_size_bytes, 4096);
 
     let index_2 = indexes
         .iter()
-        .find(|index| index.index_id == index_id_2)
+        .find(|index| index.index_uid == Some(index_uid_2.clone()))
         .expect("Should find index 2");
     assert_eq!(index_2.num_splits, 1);
-    assert_eq!(index_2.total_size, 1000);
+    assert_eq!(index_2.total_size_bytes, 1000);
 }
 
-pub async fn test_metastore_list_index_size_info_no_publish<
+pub async fn test_metastore_list_index_stats_no_publish<
     MetastoreToTest: MetastoreServiceExt + DefaultForTest,
 >() {
     let metastore = MetastoreToTest::default_for_test().await;
 
     let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-    let index_id = append_random_suffix("test-list-index-sizes");
+    let index_id = append_random_suffix("test-list-index-stats");
     let index_uid = IndexUid::new_with_random_ulid(&index_id);
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(&index_id, &index_uri);
@@ -1030,38 +1030,37 @@ pub async fn test_metastore_list_index_size_info_no_publish<
         ..Default::default()
     };
 
-    {
-        // add split-1 and split-2 to index-1
-        let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-        let index_uid: IndexUid = metastore
-            .create_index(create_index_request)
-            .await
-            .unwrap()
-            .index_uid()
-            .clone();
+    // add split-1 and split-2 to index-1
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
 
-        let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
-            index_uid.clone(),
-            vec![split_metadata_1.clone(), split_metadata_2.clone()],
-        )
-        .unwrap();
-        metastore.stage_splits(stage_splits_request).await.unwrap();
-    }
+    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+        index_uid.clone(),
+        vec![split_metadata_1.clone(), split_metadata_2.clone()],
+    )
+    .unwrap();
+    metastore.stage_splits(stage_splits_request).await.unwrap();
 
     let response = metastore
-        .list_index_size_info(ListIndexSizeInfoRequest {})
+        .list_index_stats(ListIndexStatsRequest {
+            index_id_patterns: vec!["test-list-index-stats*".to_string()],
+        })
         .await
         .unwrap();
-    // we use the same postgres db for all tests. we need to filter out the indexes that don't
-    // belong to this test
-    let indexes = response
-        .index_sizes
-        .iter()
-        .filter(|index_size| index_size.index_id == index_id)
-        .collect::<Vec<&IndexSizeInfo>>();
 
-    assert_eq!(indexes.len(), 1);
-    assert_eq!(indexes[0].num_splits, 0);
-    assert_eq!(indexes[0].total_size, 0);
+    // we use the same postgres db for multiple executions of this test. we need to filter out the
+    // indexes that don't belong to the current execution
+    let index_stats = response
+        .index_stats
+        .iter()
+        .filter(|stats| stats.index_uid == Some(index_uid.clone()))
+        .collect::<Vec<&IndexStats>>();
+    assert_eq!(index_stats.len(), 1);
+    assert_eq!(index_stats[0].num_splits, 0);
+    assert_eq!(index_stats[0].total_size_bytes, 0);
 }

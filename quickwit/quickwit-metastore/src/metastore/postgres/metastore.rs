@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Write};
+use std::str::FromStr;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -34,9 +35,9 @@ use quickwit_proto::metastore::{
     FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
     GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexSizeInfo, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
+    IndexStats, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
     LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexSizeInfoRequest, ListIndexSizeInfoResponse,
+    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
     ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
@@ -905,33 +906,45 @@ impl MetastoreService for PostgresqlMetastore {
         Ok(service_stream)
     }
 
-    async fn list_index_size_info(
+    async fn list_index_stats(
         &self,
-        _request: ListIndexSizeInfoRequest,
-    ) -> MetastoreResult<ListIndexSizeInfoResponse> {
-        let sql = "SELECT
-            i.index_uid,
-            COUNT(split_id) AS num_splits,
-            COALESCE(SUM(s.split_size_bytes)::BIGINT, 0) AS total_size
-        FROM indexes i
-        LEFT JOIN splits s ON s.index_uid = i.index_uid AND s.split_state = 'Published'
-        GROUP BY i.index_uid";
+        request: ListIndexStatsRequest,
+    ) -> MetastoreResult<ListIndexStatsResponse> {
+        let index_pattern_sql = build_index_id_patterns_sql_query(&request.index_id_patterns)
+            .map_err(|error| MetastoreError::Internal {
+                message: "failed to build `list_index_stats` SQL query".to_string(),
+                cause: error.to_string(),
+            })?;
+        let sql = format!(
+            "SELECT
+                i.index_uid,
+                COUNT(split_id) AS num_splits,
+                COALESCE(SUM(s.split_size_bytes)::BIGINT, 0) AS total_size_bytes
+            FROM ({index_pattern_sql}) i
+            LEFT JOIN splits s ON s.index_uid = i.index_uid AND s.split_state = 'Published'
+            GROUP BY i.index_uid"
+        );
 
-        let rows: Vec<(String, i64, i64)> =
-            sqlx::query_as(sql).fetch_all(&self.connection_pool).await?;
+        let rows: Vec<(String, i64, i64)> = sqlx::query_as(&sql)
+            .fetch_all(&self.connection_pool)
+            .await?;
 
-        let mut index_sizes = Vec::new();
-        for (index_uid, num_splits, total_size) in rows {
-            let delimiter = index_uid.find(':').unwrap_or(0);
-            let index_id = index_uid[..delimiter].to_string();
-            index_sizes.push(IndexSizeInfo {
-                index_id,
+        let mut index_stats = Vec::new();
+        for (index_uid_str, num_splits, total_size_bytes) in rows {
+            let Ok(index_uid) = IndexUid::from_str(&index_uid_str) else {
+                return Err(MetastoreError::Internal {
+                    message: "failed to parse index_uid".to_string(),
+                    cause: index_uid_str.to_string(),
+                });
+            };
+            index_stats.push(IndexStats {
+                index_uid: Some(index_uid),
                 num_splits,
-                total_size,
+                total_size_bytes,
             });
         }
 
-        Ok(ListIndexSizeInfoResponse { index_sizes })
+        Ok(ListIndexStatsResponse { index_stats })
     }
 
     #[instrument(skip(self))]
