@@ -35,9 +35,6 @@ mod gcp_storage_test_suite {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Failed to obtain authentication token"))?;
 
-        // In reqsign 0.18, we need to check if there's a way to sign with a custom token
-        // Let's try to find the equivalent of the old GoogleSigner::new().sign() pattern
-        
         // The old approach used GoogleSigner::new().sign(req, &token)
         // But it seems reqsign 0.18 changed the API structure completely
         // For now, let's fall back to manual header approach until we find the right API
