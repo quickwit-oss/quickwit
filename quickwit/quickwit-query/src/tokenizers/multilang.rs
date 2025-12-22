@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use lindera_core::mode::Mode;
-use lindera_dictionary::{DictionaryConfig, DictionaryKind, load_dictionary_from_config};
+use lindera_dictionary::{DictionaryConfig, DictionaryKind, DictionaryLoader};
 use lindera_tokenizer::token::Token as LinderaToken;
 use lindera_tokenizer::tokenizer::Tokenizer as LinderaTokenizer;
 use once_cell::sync::Lazy;
@@ -30,7 +30,7 @@ static CMN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
         kind: Some(DictionaryKind::CcCedict),
         path: None,
     };
-    let cmn_dictionary = load_dictionary_from_config(cmn_dictionary_config)
+    let cmn_dictionary = DictionaryLoader::load_dictionary_from_config(cmn_dictionary_config)
         .expect("Lindera `CcCedict` dictionary must be present");
     LinderaTokenizer::new(cmn_dictionary, None, Mode::Normal)
 });
@@ -41,8 +41,8 @@ static JPN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
         kind: Some(DictionaryKind::IPADIC),
         path: None,
     };
-    let jpn_dictionary = load_dictionary_from_config(jpn_dictionary_config)
-        .expect("Lindera `IPAD` dictionary must be present");
+    let jpn_dictionary = DictionaryLoader::load_dictionary_from_config(jpn_dictionary_config)
+        .expect("Lindera `IPADIC` dictionary must be present");
     LinderaTokenizer::new(jpn_dictionary, None, Mode::Normal)
 });
 
@@ -52,7 +52,7 @@ static KOR_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
         kind: Some(DictionaryKind::KoDic),
         path: None,
     };
-    let kor_dictionary = load_dictionary_from_config(kor_dictionary_config)
+    let kor_dictionary = DictionaryLoader::load_dictionary_from_config(kor_dictionary_config)
         .expect("Lindera `KoDic` dictionary must be present");
     LinderaTokenizer::new(kor_dictionary, None, Mode::Normal)
 });
