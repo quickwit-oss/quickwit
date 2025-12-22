@@ -60,7 +60,7 @@ pub mod test_config_helpers {
 
     /// Dummy token loader for testing with fake GCS server.
     /// This maintains compatibility with the original test behavior.
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     pub struct DummyTokenLoader;
 
     impl DummyTokenLoader {
