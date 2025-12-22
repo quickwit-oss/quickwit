@@ -59,6 +59,7 @@ pub mod test_config_helpers {
     pub const LOCAL_GCP_EMULATOR_ENDPOINT: &str = "http://127.0.0.1:4443";
 
     /// Dummy token loader for testing with fake GCS server.
+    /// This maintains compatibility with the original test behavior.
     #[derive(Debug)]
     pub struct DummyTokenLoader;
 
@@ -69,7 +70,7 @@ pub mod test_config_helpers {
         }
 
         /// Loads a dummy token for use with fake GCS server.
-        /// Returns a dummy token compatible with reqsign GoogleSigner.
+        /// Returns the same dummy token as the original implementation.
         pub async fn load(&self, _: reqwest::Client) -> anyhow::Result<Option<String>> {
             Ok(Some("dummy".to_string()))
         }
@@ -86,7 +87,6 @@ pub mod test_config_helpers {
             .root(&root.to_string_lossy())
             .endpoint(LOCAL_GCP_EMULATOR_ENDPOINT)
             .allow_anonymous() // Disable authentication for fake GCS server
-            .disable_config_load() // Disable loading credentials from environment
             .disable_vm_metadata(); // Disable GCE metadata server requests
         let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
         Ok(store)

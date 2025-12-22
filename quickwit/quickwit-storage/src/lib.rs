@@ -174,13 +174,8 @@ pub(crate) mod test_suite {
             .get_slice(Path::new("missingfile"), 0..3)
             .await
             .map_err(|err| err.kind());
-        
-        // Accept both NotFound and Io errors for fake GCS server compatibility
-        // The fake GCS server returns errors that OpenDAL maps to Io instead of NotFound
-        assert!(matches!(
-            err, 
-            Err(StorageErrorKind::NotFound) | Err(StorageErrorKind::Io)
-        ));
+
+        assert!(matches!(err, Err(StorageErrorKind::NotFound)));
         Ok(())
     }
 

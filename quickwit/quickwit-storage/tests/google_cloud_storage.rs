@@ -35,33 +35,16 @@ mod gcp_storage_test_suite {
             .await?
             .ok_or_else(|| anyhow::anyhow!("Failed to obtain authentication token"))?;
 
-        // Note: Using manual token approach since reqsign 0.18 API changed
-        let _signer = reqsign::google::default_signer("storage");
-
-        // Create http::Request and extract parts for signing
-        let http_req = http::Request::builder()
-            .method(req.method())
-            .uri(req.url().as_str())
-            .version(http::Version::HTTP_11)
-            .body(())?;
-
-        let (mut parts, _body) = http_req.into_parts();
-
-        // Copy headers from reqwest request
-        parts.headers = req.headers().clone();
-
-        // For dummy token, manually add authorization header
-        parts.headers.insert(
-            http::header::AUTHORIZATION,
-            http::HeaderValue::from_str(&format!("Bearer {}", token))?
+        // In reqsign 0.18, we need to check if there's a way to sign with a custom token
+        // Let's try to find the equivalent of the old GoogleSigner::new().sign() pattern
+        
+        // The old approach used GoogleSigner::new().sign(req, &token)
+        // But it seems reqsign 0.18 changed the API structure completely
+        // For now, let's fall back to manual header approach until we find the right API
+        req.headers_mut().insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))?
         );
-
-        // Update the original request with signed headers
-        let headers = req.headers_mut();
-        headers.clear();
-        for (key, value) in &parts.headers {
-            headers.insert(key.clone(), value.clone());
-        }
 
         Ok(())
     }
