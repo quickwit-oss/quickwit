@@ -36,7 +36,7 @@ pub(crate) use debouncer::DebouncedStorage;
 
 pub use self::metrics::STORAGE_METRICS;
 pub use self::payload::PutPayload;
-pub use self::storage::Storage;
+pub use self::storage::{SendableAsync, Storage};
 
 mod bundle_storage;
 mod error;
