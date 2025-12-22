@@ -1,4 +1,5 @@
 {
+  "version": "0.9",
   "indexes": {
     "test-index-1": "creating",
     "test-index-2": "active",
@@ -6,78 +7,76 @@
   },
   "templates": [
     {
-      "description": "Test description.",
-      "doc_mapping": {
-        "doc_mapping_uid": "00000000000000000000000000",
-        "dynamic_mapping": {
-          "expand_dots": true,
-          "fast": {
-            "normalizer": "raw"
-          },
-          "indexed": true,
-          "record": "basic",
-          "stored": true,
-          "tokenizer": "raw"
-        },
-        "field_mappings": [
-          {
-            "fast": true,
-            "fast_precision": "seconds",
-            "indexed": true,
-            "input_formats": [
-              "rfc3339",
-              "unix_timestamp"
-            ],
-            "name": "ts",
-            "output_format": "rfc3339",
-            "stored": true,
-            "type": "datetime"
-          },
-          {
-            "expand_dots": true,
-            "fast": false,
-            "indexed": true,
-            "name": "message",
-            "record": "basic",
-            "stored": true,
-            "tokenizer": "raw",
-            "type": "json"
-          }
-        ],
-        "index_field_presence": false,
-        "max_num_partitions": 200,
-        "mode": "dynamic",
-        "store_document_size": false,
-        "store_source": false,
-        "tag_fields": [],
-        "timestamp_field": "ts",
-        "tokenizers": []
-      },
+      "version": "0.9",
+      "template_id": "test-template",
       "index_id_patterns": [
         "test-index-foo*",
         "-test-index-foobar"
       ],
       "index_root_uri": "ram:///indexes",
+      "priority": 100,
+      "description": "Test description.",
+      "doc_mapping": {
+        "doc_mapping_uid": "00000000000000000000000000",
+        "mode": "dynamic",
+        "dynamic_mapping": {
+          "indexed": true,
+          "tokenizer": "raw",
+          "record": "basic",
+          "stored": true,
+          "expand_dots": true,
+          "fast": {
+            "normalizer": "raw"
+          }
+        },
+        "field_mappings": [
+          {
+            "name": "ts",
+            "type": "datetime",
+            "input_formats": [
+              "rfc3339",
+              "unix_timestamp"
+            ],
+            "output_format": "rfc3339",
+            "fast_precision": "seconds",
+            "indexed": true,
+            "stored": true,
+            "fast": true
+          },
+          {
+            "name": "message",
+            "type": "json",
+            "indexed": true,
+            "tokenizer": "raw",
+            "record": "basic",
+            "stored": true,
+            "expand_dots": true,
+            "fast": false
+          }
+        ],
+        "timestamp_field": "ts",
+        "tag_fields": [],
+        "max_num_partitions": 200,
+        "index_field_presence": false,
+        "store_document_size": false,
+        "store_source": false,
+        "tokenizers": []
+      },
       "indexing_settings": {
         "commit_timeout_secs": 60,
-        "docstore_blocksize": 1000000,
         "docstore_compression_level": 8,
+        "docstore_blocksize": 1000000,
+        "split_num_docs_target": 10000000,
         "merge_policy": {
-          "maturation_period": "2days",
-          "max_merge_factor": 12,
-          "merge_factor": 10,
+          "type": "stable_log",
           "min_level_num_docs": 100000,
-          "type": "stable_log"
+          "merge_factor": 10,
+          "max_merge_factor": 12,
+          "maturation_period": "2days"
         },
         "resources": {
           "heap_size": "2.0 GB"
-        },
-        "split_num_docs_target": 10000000
-      },
-      "priority": 100,
-      "retention": {
-        "period": "42 days",
-        "schedule": "daily"
+        }
       },
       "ingest_settings": {
         "min_shards": 1
@@ -85,9 +84,10 @@
       "search_settings": {
         "default_search_fields": []
       },
-      "template_id": "test-template",
-      "version": "0.9"
+      "retention": {
+        "period": "42 days",
+        "schedule": "daily"
+      }
     }
-  ],
-  "version": "0.9"
+  ]
 }

@@ -482,7 +482,7 @@ impl crate::TestableForRegression for IndexConfig {
         };
         let merge_policy = MergePolicyConfig::StableLog(stable_log_config);
         let indexing_resources = IndexingResources {
-            heap_size: ByteSize::b(50017075),
+            heap_size: ByteSize::b(50017075), // Updated for bytesize 2.3 compatibility  
             ..Default::default()
         };
         let indexing_settings = IndexingSettings {

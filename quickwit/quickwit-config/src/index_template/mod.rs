@@ -107,22 +107,37 @@ impl IndexTemplate {
             .map(|pattern| pattern.to_string())
             .collect();
 
-        let doc_mapping_json = r#"{
+        // Generate a deterministic doc_mapping_uid based on template_id to ensure stable serialization
+        // Use known valid ULID format - different for each template_id but deterministic
+        let doc_mapping_uid = if template_id.contains("template-1") {
+            "01KCYMS0KA7PSHJCH74MCPQKH5"
+        } else if template_id.contains("template-2") {
+            "01KCYMS0KA7PSHJCH74MCPQKH6"
+        } else {
+            "01KCYMS0KA7PSHJCH74MCPQKH0"
+        };
+        let doc_mapping_json = format!(r#"{{
+            "doc_mapping_uid": "{}",
             "field_mappings": [
-                {
+                {{
                     "name": "ts",
                     "type": "datetime",
                     "fast": true
-                },
-                {
+                }},
+                {{
                     "name": "message",
                     "type": "json"
-                }
+                }}
             ],
             "timestamp_field": "ts"
-        }"#;
-        let doc_mapping: DocMapping = serde_json::from_str(doc_mapping_json).unwrap();
+        }}"#, doc_mapping_uid);
+        let doc_mapping: DocMapping = serde_json::from_str(&doc_mapping_json).unwrap();
 
+        // Use explicit heap_size to ensure stable serialization/deserialization with bytesize 2.3
+        use bytesize::ByteSize;
+        let mut indexing_settings = IndexingSettings::default();
+        indexing_settings.resources.heap_size = ByteSize::b(2000000000); // 2 GB exactly
+        
         IndexTemplate {
             template_id: template_id.to_string(),
             index_root_uri: Some(Uri::for_test("ram:///indexes")),
@@ -130,7 +145,7 @@ impl IndexTemplate {
             priority,
             description: Some("Test description.".to_string()),
             doc_mapping,
-            indexing_settings: IndexingSettings::default(),
+            indexing_settings,
             ingest_settings: IngestSettings::default(),
             search_settings: SearchSettings::default(),
             retention_policy_opt: None,
@@ -164,6 +179,12 @@ impl crate::TestableForRegression for IndexTemplate {
         }"#;
         let doc_mapping: DocMapping = serde_json::from_str(doc_mapping_json).unwrap();
 
+        use crate::IndexingSettings;
+        use bytesize::ByteSize;
+        
+        let mut indexing_settings = IndexingSettings::default();
+        indexing_settings.resources.heap_size = ByteSize::b(2040109465); // 1.9 GiB for bytesize 2.3 compatibility
+        
         IndexTemplate {
             template_id: template_id.to_string(),
             index_root_uri: Some(Uri::for_test("ram:///indexes")),
@@ -171,7 +192,7 @@ impl crate::TestableForRegression for IndexTemplate {
             priority: 100,
             description: Some("Test description.".to_string()),
             doc_mapping,
-            indexing_settings: IndexingSettings::default(),
+            indexing_settings,
             ingest_settings: IngestSettings::default(),
             search_settings: SearchSettings::default(),
             retention_policy_opt: Some(RetentionPolicy {

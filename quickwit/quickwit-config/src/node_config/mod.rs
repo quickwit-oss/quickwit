@@ -737,7 +737,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 ingest_api_config.validate().unwrap_err().to_string(),
-                "max_queue_disk_usage must be at least 256 MiB, got `95.4 MiB`"
+                "max_queue_disk_usage must be at least 256 MiB, got `100.0 MB`"
             );
             assert_eq!(
                 ingest_api_config.grpc_compression_encoding().unwrap(),
@@ -754,8 +754,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 ingest_api_config.validate().unwrap_err().to_string(),
-                "max_queue_disk_usage (476.8 MiB) must be at least max_queue_memory_usage (572.2 \
-                 MiB)"
+                "max_queue_disk_usage (500.0 MB) must be at least max_queue_memory_usage (600.0 MB)"
             );
         }
         {
@@ -767,7 +766,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 ingest_api_config.validate().unwrap_err().to_string(),
-                "shard_throughput_limit (20.0 MiB) must be within 1mb and 20mb"
+                "shard_throughput_limit (21.0 MB) must be within 1mb and 20mb"
             );
         }
     }
