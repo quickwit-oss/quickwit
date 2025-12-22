@@ -58,6 +58,23 @@ pub mod test_config_helpers {
     /// URL of the local GCP emulator.
     pub const LOCAL_GCP_EMULATOR_ENDPOINT: &str = "http://127.0.0.1:4443";
 
+    /// Dummy token loader for testing with fake GCS server.
+    #[derive(Debug)]
+    pub struct DummyTokenLoader;
+
+    impl DummyTokenLoader {
+        /// Creates a new DummyTokenLoader instance.
+        pub fn new() -> Self {
+            Self
+        }
+
+        /// Loads a dummy token for use with fake GCS server.
+        /// Returns a dummy token compatible with reqsign GoogleSigner.
+        pub async fn load(&self, _: reqwest::Client) -> anyhow::Result<Option<String>> {
+            Ok(Some("dummy".to_string()))
+        }
+    }
+
     /// Creates a storage connecting to a local emulated google cloud storage.
     pub fn new_emulated_google_cloud_storage(
         uri: &Uri,
@@ -67,7 +84,10 @@ pub mod test_config_helpers {
         let cfg = opendal::services::Gcs::default()
             .bucket(&bucket)
             .root(&root.to_string_lossy())
-            .endpoint(LOCAL_GCP_EMULATOR_ENDPOINT);
+            .endpoint(LOCAL_GCP_EMULATOR_ENDPOINT)
+            .allow_anonymous() // Disable authentication for fake GCS server
+            .disable_config_load() // Disable loading credentials from environment
+            .disable_vm_metadata(); // Disable GCE metadata server requests
         let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
         Ok(store)
     }
