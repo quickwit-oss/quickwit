@@ -92,7 +92,7 @@ pub use crate::search_response_rest::{
 };
 pub use crate::search_stream::root_search_stream;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
-pub use crate::leaf::{leaf_search_single_split, warmup, CanSplitDoBetter, open_split_bundle};
+pub use crate::leaf::{leaf_search_single_split, warmup, CanSplitDoBetter, open_split_bundle, open_index_with_caches};
 pub use quickwit_doc_mapper::WarmupInfo;
 
 /// A pool of searcher clients identified by their gRPC socket address.
