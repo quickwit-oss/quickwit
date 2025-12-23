@@ -174,7 +174,6 @@ pub(crate) mod test_suite {
             .get_slice(Path::new("missingfile"), 0..3)
             .await
             .map_err(|err| err.kind());
-
         assert!(matches!(err, Err(StorageErrorKind::NotFound)));
         Ok(())
     }
