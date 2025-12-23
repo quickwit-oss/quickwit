@@ -4517,6 +4517,7 @@ dependencies = [
  "encoding",
  "lindera-cc-cedict-builder",
  "lindera-core",
+ "lindera-decompress",
  "once_cell",
  "zip",
 ]
@@ -4534,10 +4535,22 @@ dependencies = [
  "encoding",
  "env_logger 0.10.2",
  "glob",
+ "lindera-compress",
  "lindera-core",
  "lindera-decompress",
  "log",
  "yada",
+]
+
+[[package]]
+name = "lindera-compress"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1927b7d2bd4ffc19e07691bf8609722663c341f80260a1c636cee8f1ec420dce"
+dependencies = [
+ "anyhow",
+ "flate2",
+ "lindera-decompress",
 ]
 
 [[package]]
@@ -4600,6 +4613,7 @@ dependencies = [
  "encoding",
  "flate2",
  "lindera-core",
+ "lindera-decompress",
  "lindera-ipadic-builder",
  "once_cell",
  "tar",
@@ -4619,6 +4633,7 @@ dependencies = [
  "encoding_rs_io",
  "env_logger 0.10.2",
  "glob",
+ "lindera-compress",
  "lindera-core",
  "lindera-decompress",
  "log",
@@ -4658,6 +4673,7 @@ dependencies = [
  "encoding",
  "flate2",
  "lindera-core",
+ "lindera-decompress",
  "lindera-ko-dic-builder",
  "once_cell",
  "tar",
@@ -4676,6 +4692,7 @@ dependencies = [
  "encoding",
  "env_logger 0.10.2",
  "glob",
+ "lindera-compress",
  "lindera-core",
  "lindera-decompress",
  "log",
