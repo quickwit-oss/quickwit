@@ -445,8 +445,8 @@ mod tests {
 
         use rand::rngs::StdRng;
         use rand::{Rng, SeedableRng};
-        use rand_distr::{Distribution, LogNormal};
         use rand_distr::weighted::WeightedIndex;
+        use rand_distr::{Distribution, LogNormal};
 
         const NUM_QUEUES: usize = 100;
         const NUM_RECORDS: usize = 1_000_000;
