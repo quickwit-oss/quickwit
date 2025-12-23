@@ -25,24 +25,14 @@ mod gcp_storage_test_suite {
     use quickwit_common::setup_logging_for_tests;
     use quickwit_common::uri::Uri;
     use quickwit_storage::test_config_helpers::{
-        DummyTokenLoader, LOCAL_GCP_EMULATOR_ENDPOINT, new_emulated_google_cloud_storage,
+        LOCAL_GCP_EMULATOR_ENDPOINT, new_emulated_google_cloud_storage,
     };
 
     pub async fn sign_gcs_request(req: &mut reqwest::Request) -> anyhow::Result<()> {
-        let client = reqwest::Client::new();
-        let token = DummyTokenLoader::new()
-            .load(client.clone())
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("Failed to obtain authentication token"))?;
-
-        // The old approach used GoogleSigner::new().sign(req, &token)
-        // But it seems reqsign 0.18 changed the API structure completely
-        // For now, let's fall back to manual header approach until we find the right API
         req.headers_mut().insert(
             reqwest::header::AUTHORIZATION,
-            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))?,
+            reqwest::header::HeaderValue::from_str("Bearer dummy")?,
         );
-
         Ok(())
     }
 

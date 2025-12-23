@@ -57,25 +57,7 @@ pub mod test_config_helpers {
 
     /// URL of the local GCP emulator.
     pub const LOCAL_GCP_EMULATOR_ENDPOINT: &str = "http://127.0.0.1:4443";
-
-    /// Dummy token loader for testing with fake GCS server.
-    /// This maintains compatibility with the original test behavior.
-    #[derive(Debug, Default)]
-    pub struct DummyTokenLoader;
-
-    impl DummyTokenLoader {
-        /// Creates a new DummyTokenLoader instance.
-        pub fn new() -> Self {
-            Self
-        }
-
-        /// Loads a dummy token for use with fake GCS server.
-        /// Returns the same dummy token as the original implementation.
-        pub async fn load(&self, _: reqwest::Client) -> anyhow::Result<Option<String>> {
-            Ok(Some("dummy".to_string()))
-        }
-    }
-
+    
     /// Creates a storage connecting to a local emulated google cloud storage.
     pub fn new_emulated_google_cloud_storage(
         uri: &Uri,
