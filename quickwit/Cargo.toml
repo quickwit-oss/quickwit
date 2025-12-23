@@ -135,9 +135,9 @@ indicatif = "0.18"
 itertools = "0.14"
 json_comments = "0.2"
 libz-sys = "1.1"
-lindera-core = "0.32"
-lindera-dictionary = "0.32"
-lindera-tokenizer = { version = "0.32" }
+lindera-core = "0.27"
+lindera-dictionary = { version = "0.27", features = ["ipadic", "cc-cedict", "ko-dic"] }
+lindera-tokenizer = { version = "0.27" }
 lru = "0.16"
 matches = "0.1"
 md5 = "0.8"
