@@ -139,7 +139,7 @@ impl<T, I: Iterator<Item = T>> Iterator for OneOrIter<T, I> {
     }
 }
 
-pub(crate) fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyValue> {
+pub(crate) fn map_primitive_json_to_concatenate_value(value: JsonValue) -> Option<TantivyValue> {
     match value {
         JsonValue::Array(_) | JsonValue::Object(_) | JsonValue::Null => None,
         JsonValue::String(text) => Some(TantivyValue::Str(text)),
@@ -148,6 +148,8 @@ pub(crate) fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyV
             if let Some(val) = u64::from_json_number(&number) {
                 Some((val).into())
             } else {
+                // Don't store (silently ignore) f64 as searching on floats
+                // doesn't work well.
                 i64::from_json_number(&number).map(|val| (val).into())
             }
         }
@@ -258,7 +260,7 @@ impl LeafType {
         }
     }
 
-    fn tantivy_value_from_json(
+    fn concatenate_values_from_json(
         &self,
         json_val: JsonValue,
     ) -> Result<impl Iterator<Item = TantivyValue>, String> {
@@ -300,7 +302,7 @@ impl LeafType {
                         json_obj
                             .into_iter()
                             .flat_map(|(_key, val)| JsonValueIterator::new(val))
-                            .flat_map(map_primitive_json_to_tantivy),
+                            .flat_map(map_primitive_json_to_concatenate_value),
                     ))
                 } else {
                     Err(format!("expected object, got `{json_val}`"))
@@ -311,6 +313,8 @@ impl LeafType {
 
     fn supported_for_concat(&self) -> bool {
         use LeafType::*;
+        // note: we allow to explicitly concatenate f64 values even though
+        // searching on floats is not very reliable
         matches!(self, Text(_) | U64(_) | I64(_) | F64(_) | Bool(_) | Json(_))
         /*
             // Since concat is a JSON field, anything that JSON supports can be supported
@@ -386,7 +390,7 @@ impl MappingLeaf {
                 if !self.concatenate.is_empty() {
                     let concat_values = self
                         .typ
-                        .tantivy_value_from_json(el_json_val.clone())
+                        .concatenate_values_from_json(el_json_val.clone())
                         .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
                     for concat_value in concat_values {
                         for field in &self.concatenate {
@@ -406,7 +410,7 @@ impl MappingLeaf {
         if !self.concatenate.is_empty() {
             let concat_values = self
                 .typ
-                .tantivy_value_from_json(json_val.clone())
+                .concatenate_values_from_json(json_val.clone())
                 .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
             for concat_value in concat_values {
                 for field in &self.concatenate {
