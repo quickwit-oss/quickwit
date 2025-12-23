@@ -28,32 +28,11 @@ mod gcp_storage_test_suite {
         LOCAL_GCP_EMULATOR_ENDPOINT, new_emulated_google_cloud_storage,
     };
 
-    pub async fn sign_gcs_request(req: &mut reqwest::Request) -> anyhow::Result<()> {
-        let signer = reqsign::google::default_signer("storage");
-
-        // Create http::Request and extract parts for signing
-        let http_req = http::Request::builder()
-            .method(req.method())
-            .uri(req.url().as_str())
-            .version(http::Version::HTTP_11)
-            .body(())?;
-
-        let (mut parts, _body) = http_req.into_parts();
-
-        // Copy headers from reqwest request
-        parts.headers = req.headers().clone();
-
-        // Sign the request parts
-        signer.sign(&mut parts, None).await?;
-
-        // Update the original request with signed headers
-        let headers = req.headers_mut();
-        headers.clear();
-        for (key, value) in &parts.headers {
-            headers.insert(key.clone(), value.clone());
-        }
-
-        Ok(())
+    pub fn sign_gcs_request(req: &mut reqwest::Request) {
+        req.headers_mut().insert(
+            reqwest::header::AUTHORIZATION,
+            reqwest::header::HeaderValue::from_str("Bearer dummy").unwrap(),
+        );
     }
 
     async fn create_gcs_bucket(bucket_name: &str) -> anyhow::Result<()> {
@@ -67,7 +46,7 @@ mod gcp_storage_test_suite {
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .build()?;
 
-        sign_gcs_request(&mut request).await?;
+        sign_gcs_request(&mut request);
 
         let response = client.execute(request).await?;
 
