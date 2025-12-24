@@ -967,7 +967,8 @@ impl MetastoreService for PostgresqlMetastore {
                         total_size_bytes,
                     });
                 }
-                None => {} // if an index has no splits, split_state is null and we can keep the defaults
+                None => {} /* if an index has no splits, split_state is null and we can keep the
+                             * defaults */
                 Some(split_state) => {
                     return Err(MetastoreError::Internal {
                         message: "invalid split state".to_string(),

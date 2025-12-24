@@ -290,19 +290,16 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
 }
 
 /// A split state.
-#[derive(
-    Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, utoipa::ToSchema, prost::Enumeration,
-)]
-#[repr(i32)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, utoipa::ToSchema)]
 pub enum SplitState {
     /// The split is almost ready. Some of its files may have been uploaded in the storage.
-    Staged = 0,
+    Staged,
 
     /// The split is ready and published.
-    Published = 1,
+    Published,
 
     /// The split is marked for deletion.
-    MarkedForDeletion = 2,
+    MarkedForDeletion,
 }
 
 impl fmt::Display for SplitState {
