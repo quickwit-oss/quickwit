@@ -26,3 +26,13 @@ Two gRPC streams back the independent streams of requests and responses between 
 - When a replication request fails, the leader and follower close the shard(s) targeted by the request.
 
 - When a replication stream fails (transport error, timeout), the leader and follower close the shard(s) targeted by the stream. Then, the leader reopens a new stream if necessary.
+
+## Ingester Status
+
+Each Quickwit node, regardless of the enabled services on the node, has the notion liveness and readiness. Liveness is defined by chitchat's failure detector. Readiness is defined as live + gRPC server is up, REST server is up, metastore connectivity test succeeds, and ingester status is "ready" if the ingester service is enabled on the node (In other word if the node is an indexer). Once all those requirements are met, a node gossip it's readiness via chitchat and that's how other nodes in the cluster know that can route traffic to it. Finally, a node that is ready is also sometimes reffered to as "available".
+
+For a node that carries the ingester role, being available is required but not sufficient, and that's why it has a dedicated status. On startup the ingester status is "initializating: while it's loading it's WAL. If it fails to do so, its status will changed to "failed" and the node will never become ready and eventually will fail its readiness probe, causing k8s to restart the pod (and most likely the node will go in a crash loop, because the WAL load failing most likely comes from a WAL corruption which cannot be recover without manual intervention). Once the ingester status is "ready", the node also becomes ready and the readiness probe should succeed leading k8s to route traffic to the pod and the ingester will start serving read and write requests.
+
+## Decommissioning
+
+An ingester starts the decommissioning routine upon receiving a decommission gRPC request or a SIGINT signal. Then, the ingester sets its ingester status to "Decommissioning" and closes all its shards. It stops serviring write requests (open shard and persist requests) but can still service read requests (fetch stream request). 

@@ -45,6 +45,7 @@ use quickwit_indexing::models::{
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{CountHits, SearchResponse};
 use quickwit_proto::types::{IndexId, PipelineUid, SourceId, SplitId};
@@ -938,6 +939,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         grpc_advertise_addr: config.grpc_advertise_addr,
         indexing_cpu_capacity: CpuCapacity::zero(),
         indexing_tasks: Vec::new(),
+        ingester_status: IngesterStatus::default(),
     };
     let client_grpc_config = make_client_grpc_config(&config.grpc_config)?;
     let cluster = Cluster::join(

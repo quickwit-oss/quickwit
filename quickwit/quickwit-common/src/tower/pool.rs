@@ -119,6 +119,15 @@ where
             .collect()
     }
 
+    pub fn key_values(&self) -> Vec<(K, V)> {
+        self.pool
+            .read()
+            .expect("lock should not be poisoned")
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect()
+    }
+
     /// Returns all the key-value pairs in the pool.
     pub fn pairs(&self) -> Vec<(K, V)> {
         self.pool

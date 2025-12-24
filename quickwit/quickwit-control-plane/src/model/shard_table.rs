@@ -162,6 +162,11 @@ impl<'a> ShardLocations<'a> {
     }
 }
 
+#[derive(Debug, Default)]
+pub(crate) struct Ingester {
+    shards: FnvHashMap<SourceUid, BTreeSet<ShardId>>,
+}
+
 // A table that keeps track of the existing shards for each index and source,
 // and for each ingester, the list of shards it is supposed to host.
 //
@@ -169,7 +174,7 @@ impl<'a> ShardLocations<'a> {
 #[derive(Debug, Default)]
 pub(crate) struct ShardTable {
     table_entries: FnvHashMap<SourceUid, ShardTableEntry>,
-    ingester_shards: FnvHashMap<NodeId, FnvHashMap<SourceUid, BTreeSet<ShardId>>>,
+    ingesters: FnvHashMap<NodeId, Ingester>,
 }
 
 // Removes the shards from the ingester_shards map.
@@ -179,13 +184,13 @@ pub(crate) struct ShardTable {
 fn remove_shard_from_ingesters_internal(
     source_uid: &SourceUid,
     shard: &Shard,
-    ingester_shards: &mut FnvHashMap<NodeId, FnvHashMap<SourceUid, BTreeSet<ShardId>>>,
+    ingesters: &mut FnvHashMap<NodeId, Ingester>,
 ) {
-    for node in shard.ingesters() {
-        let ingester_shards = ingester_shards
-            .get_mut(node)
+    for ingester_id in shard.ingester_ids() {
+        let ingester = ingesters
+            .get_mut(ingester_id)
             .expect("shard table reached inconsistent state");
-        let shard_ids = ingester_shards.get_mut(source_uid).unwrap();
+        let shard_ids = ingester.shards.get_mut(source_uid).unwrap();
         let shard_was_removed = shard_ids.remove(shard.shard_id());
         if !shard_was_removed {
             error!(
@@ -201,8 +206,8 @@ impl ShardTable {
     /// All shards are considered regardless of their state (including unavailable).
     pub fn shard_locations(&self) -> ShardLocations<'_> {
         let mut shard_locations = ShardLocations::default();
-        for (ingester_id, source_shards) in &self.ingester_shards {
-            for shard_ids in source_shards.values() {
+        for (ingester_id, ingester) in &self.ingesters {
+            for shard_ids in ingester.shards.values() {
                 for shard_id in shard_ids {
                     shard_locations.add_location(shard_id, ingester_id);
                 }
@@ -224,7 +229,7 @@ impl ShardTable {
                     .map(move |shard_entry: &ShardEntry| (source_uid, &shard_entry.shard))
             });
         for (source_uid, shard) in shards_removed {
-            remove_shard_from_ingesters_internal(source_uid, shard, &mut self.ingester_shards);
+            remove_shard_from_ingesters_internal(source_uid, shard, &mut self.ingesters);
         }
         self.table_entries
             .retain(|source_uid, _| source_uid.index_uid.index_id != index_id);
@@ -245,17 +250,21 @@ impl ShardTable {
             for (shard_id, shard_entry) in &shard_table_entry.shard_entries {
                 debug_assert_eq!(shard_id, shard_entry.shard.shard_id());
                 debug_assert_eq!(&source_uid.index_uid, shard_entry.shard.index_uid());
-                for node in shard_entry.shard.ingesters() {
-                    shard_sets_in_shard_table.insert((node, source_uid, shard_id));
+                for ingester_id in shard_entry.shard.ingester_ids() {
+                    shard_sets_in_shard_table.insert((ingester_id, source_uid, shard_id));
                 }
             }
         }
-        for (node, ingester_shards) in &self.ingester_shards {
-            for (source_uid, shard_ids) in ingester_shards {
+        for (ingester_id, ingester) in &self.ingesters {
+            for (source_uid, shard_ids) in &ingester.shards {
                 for shard_id in shard_ids {
                     let shard_table_entry = self.table_entries.get(source_uid).unwrap();
                     debug_assert!(shard_table_entry.shard_entries.contains_key(shard_id));
-                    debug_assert!(shard_sets_in_shard_table.remove(&(node, source_uid, shard_id)));
+                    debug_assert!(shard_sets_in_shard_table.remove(&(
+                        ingester_id,
+                        source_uid,
+                        shard_id
+                    )));
                 }
             }
         }
@@ -265,9 +274,11 @@ impl ShardTable {
     /// leader or a follower.
     pub fn list_shards_for_node(
         &self,
-        ingester: &NodeId,
+        ingester_id: &NodeId,
     ) -> Option<&FnvHashMap<SourceUid, BTreeSet<ShardId>>> {
-        self.ingester_shards.get(ingester)
+        self.ingesters
+            .get(ingester_id)
+            .map(|ingester| &ingester.shards)
     }
 
     pub fn list_shards_for_index<'a>(
@@ -325,7 +336,7 @@ impl ShardTable {
             remove_shard_from_ingesters_internal(
                 &source_uid,
                 &shard_entry.shard,
-                &mut self.ingester_shards,
+                &mut self.ingesters,
             );
         }
         self.check_invariant();
@@ -384,9 +395,9 @@ impl ShardTable {
             }
         }
         for shard in &opened_shards {
-            for node in shard.ingesters() {
-                let ingester_shards = self.ingester_shards.entry(node.to_owned()).or_default();
-                let shard_ids = ingester_shards.entry(source_uid.clone()).or_default();
+            for ingester_id in shard.ingester_ids() {
+                let ingester = self.ingesters.entry(ingester_id.to_owned()).or_default();
+                let shard_ids = ingester.shards.entry(source_uid.clone()).or_default();
                 shard_ids.insert(shard.shard_id().clone());
             }
         }
@@ -565,7 +576,7 @@ impl ShardTable {
             remove_shard_from_ingesters_internal(
                 source_uid,
                 &shard_entry.shard,
-                &mut self.ingester_shards,
+                &mut self.ingesters,
             );
         }
         self.check_invariant();
