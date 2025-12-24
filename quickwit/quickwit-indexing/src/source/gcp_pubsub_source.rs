@@ -18,7 +18,6 @@ use std::{fmt, mem};
 use anyhow::Context;
 use async_trait::async_trait;
 use bytes::Bytes;
-use google_cloud_auth::credentials::CredentialsFile;
 use google_cloud_gax::retry::RetrySetting;
 use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
@@ -101,14 +100,12 @@ impl GcpPubSubSource {
 
         let mut client_config: ClientConfig = match source_params.credentials_file {
             Some(credentials_file) => {
-                let credentials = CredentialsFile::new_from_file(credentials_file.clone())
-                    .await
-                    .with_context(|| {
-                        format!(
-                            "failed to load GCP PubSub credentials file from `{credentials_file}`"
-                        )
-                    })?;
-                ClientConfig::default().with_credentials(credentials).await
+                // Set the GOOGLE_APPLICATION_CREDENTIALS environment variable temporarily
+                // This is unsafe but necessary for backward compatibility with the existing API
+                unsafe {
+                    std::env::set_var("GOOGLE_APPLICATION_CREDENTIALS", &credentials_file);
+                }
+                ClientConfig::default().with_auth().await
             }
             _ => ClientConfig::default().with_auth().await,
         }
