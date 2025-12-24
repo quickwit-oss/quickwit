@@ -563,7 +563,6 @@ winapi-x86_64-pc-windows-gnu,https://github.com/retep998/winapi-rs,MIT OR Apache
 windows,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-collections,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-collections Authors
 windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-core Authors
 windows-future,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-future Authors
 windows-implement,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-implement Authors
 windows-interface,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-interface Authors
