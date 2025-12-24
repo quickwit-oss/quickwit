@@ -137,10 +137,20 @@ pub struct ListIndexStatsResponse {
 pub struct IndexStats {
     #[prost(message, optional, tag = "1")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
-    #[prost(int64, tag = "2")]
-    pub num_splits: i64,
-    #[prost(int64, tag = "3")]
-    pub total_size_bytes: i64,
+    #[prost(message, optional, tag = "2")]
+    pub staged: ::core::option::Option<SplitStats>,
+    #[prost(message, optional, tag = "3")]
+    pub published: ::core::option::Option<SplitStats>,
+    #[prost(message, optional, tag = "4")]
+    pub marked_for_deletion: ::core::option::Option<SplitStats>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SplitStats {
+    #[prost(uint64, tag = "1")]
+    pub num_splits: u64,
+    #[prost(uint64, tag = "2")]
+    pub total_size_bytes: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

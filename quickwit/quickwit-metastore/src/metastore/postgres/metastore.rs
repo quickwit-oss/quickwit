@@ -43,8 +43,8 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
-    UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, SplitStats, StageSplitsRequest,
+    ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
@@ -918,33 +918,68 @@ impl MetastoreService for PostgresqlMetastore {
         let sql = format!(
             "SELECT
                 i.index_uid,
+                s.split_state,
                 COUNT(split_id) AS num_splits,
                 COALESCE(SUM(s.split_size_bytes)::BIGINT, 0) AS total_size_bytes
             FROM ({index_pattern_sql}) i
-            LEFT JOIN splits s ON s.index_uid = i.index_uid AND s.split_state = 'Published'
-            GROUP BY i.index_uid"
+            LEFT JOIN splits s ON s.index_uid = i.index_uid
+            GROUP BY i.index_uid, s.split_state"
         );
 
-        let rows: Vec<(String, i64, i64)> = sqlx::query_as(&sql)
+        let rows: Vec<(String, Option<String>, i64, i64)> = sqlx::query_as(&sql)
             .fetch_all(&self.connection_pool)
             .await?;
 
-        let mut index_stats = Vec::new();
-        for (index_uid_str, num_splits, total_size_bytes) in rows {
+        let mut index_stats = HashMap::new();
+        for (index_uid_str, split_state, num_splits, total_size_bytes) in rows {
             let Ok(index_uid) = IndexUid::from_str(&index_uid_str) else {
                 return Err(MetastoreError::Internal {
                     message: "failed to parse index_uid".to_string(),
                     cause: index_uid_str.to_string(),
                 });
             };
-            index_stats.push(IndexStats {
-                index_uid: Some(index_uid),
-                num_splits,
-                total_size_bytes,
-            });
+            let stats = index_stats
+                .entry(index_uid_str)
+                .or_insert_with(|| IndexStats {
+                    index_uid: Some(index_uid),
+                    staged: Some(SplitStats::default()),
+                    published: Some(SplitStats::default()),
+                    marked_for_deletion: Some(SplitStats::default()),
+                });
+            let num_splits = num_splits as u64;
+            let total_size_bytes = total_size_bytes as u64;
+            match split_state.as_deref() {
+                Some("Staged") => {
+                    stats.staged = Some(SplitStats {
+                        num_splits,
+                        total_size_bytes,
+                    });
+                }
+                Some("Published") => {
+                    stats.published = Some(SplitStats {
+                        num_splits,
+                        total_size_bytes,
+                    });
+                }
+                Some("MarkedForDeletion") => {
+                    stats.marked_for_deletion = Some(SplitStats {
+                        num_splits,
+                        total_size_bytes,
+                    });
+                }
+                None => {} // if an index has no splits, split_state is null and we can keep the defaults
+                Some(split_state) => {
+                    return Err(MetastoreError::Internal {
+                        message: "invalid split state".to_string(),
+                        cause: split_state.to_string(),
+                    });
+                }
+            }
         }
 
-        Ok(ListIndexStatsResponse { index_stats })
+        Ok(ListIndexStatsResponse {
+            index_stats: index_stats.into_values().collect(),
+        })
     }
 
     #[instrument(skip(self))]

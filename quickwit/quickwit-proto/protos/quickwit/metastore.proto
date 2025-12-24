@@ -303,8 +303,14 @@ message ListIndexStatsResponse {
 
 message IndexStats {
   quickwit.common.IndexUid index_uid = 1;
-  int64 num_splits = 2;
-  int64 total_size_bytes = 3;
+  SplitStats staged = 2;
+  SplitStats published = 3;
+  SplitStats marked_for_deletion = 4;
+}
+
+message SplitStats {
+  uint64 num_splits = 1;
+  uint64 total_size_bytes = 2;
 }
 
 message ListSplitsRequest {
