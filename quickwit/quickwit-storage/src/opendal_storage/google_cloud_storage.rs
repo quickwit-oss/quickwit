@@ -57,6 +57,7 @@ pub mod test_config_helpers {
 
     /// URL of the local GCP emulator.
     pub const LOCAL_GCP_EMULATOR_ENDPOINT: &str = "http://127.0.0.1:4443";
+
     /// Creates a storage connecting to a local emulated google cloud storage.
     pub fn new_emulated_google_cloud_storage(
         uri: &Uri,

@@ -93,12 +93,14 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
         select_gossip_candidates(self_chitchat_id, live_nodes_rx);
 
     if node_ids.is_empty() {
-        info!("no peer nodes to pull the cluster state from");
+        info!("no peer nodes to fetch the cluster state from");
         return;
     }
-    info!("pulling cluster state from node(s): {node_ids:?}");
-
-    for (node_id, grpc_advertise_addr) in zip(node_ids, grpc_advertise_addrs) {
+    info!(
+        "fetching cluster state from node(s): {}",
+        node_ids.as_slice().pretty_display()
+    );
+    for (node_id, grpc_advertise_addr) in zip(&node_ids, grpc_advertise_addrs) {
         let cluster_client = grpc_client_factory(grpc_advertise_addr).await;
 
         let request = FetchClusterStateRequest {
@@ -155,7 +157,11 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
             );
         }
     }
-    info!("pulled cluster state in {}", now.elapsed().pretty_display());
+    info!(
+        "fetched cluster state from node(s) {} in {}",
+        node_ids.as_slice().pretty_display(),
+        now.elapsed().pretty_display()
+    );
 }
 
 async fn wait_for_gossip_candidates(

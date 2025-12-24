@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::fmt::{Display, Formatter};
+
 use bytesize::ByteSize;
 
 use crate::types::{Position, QueueId, queue_id};
@@ -66,6 +68,12 @@ impl FetchPayload {
     }
 }
 
+impl Display for IngesterStatus {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_json_str_name())
+    }
+}
+
 impl IngesterStatus {
     pub fn as_json_str_name(&self) -> &'static str {
         match self {
@@ -76,6 +84,22 @@ impl IngesterStatus {
             Self::Decommissioned => "decommissioned",
             Self::Failed => "failed",
         }
+    }
+
+    pub fn from_json_str_name(value: &str) -> Option<Self> {
+        match value {
+            "unspecified" => Some(Self::Unspecified),
+            "initializing" => Some(Self::Initializing),
+            "ready" => Some(Self::Ready),
+            "decommissioning" => Some(Self::Decommissioning),
+            "decommissioned" => Some(Self::Decommissioned),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        *self == Self::Ready
     }
 }
 

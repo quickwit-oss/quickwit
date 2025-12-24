@@ -495,7 +495,11 @@ async fn fault_tolerant_fetch_stream(
             shard_id: Some(shard_id.clone()),
             from_position_exclusive: Some(from_position_exclusive.clone()),
         };
-        let mut fetch_stream = match ingester.open_fetch_stream(open_fetch_stream_request).await {
+        let mut fetch_stream = match ingester
+            .client
+            .open_fetch_stream(open_fetch_stream_request)
+            .await
+        {
             Ok(fetch_stream) => fetch_stream,
             Err(not_found_error @ IngestV2Error::ShardNotFound { .. }) => {
                 error!(
@@ -623,12 +627,14 @@ pub(super) mod tests {
 
     use bytes::Bytes;
     use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::ingest::ingester::{IngesterServiceClient, MockIngesterService};
+    use quickwit_proto::ingest::ingester::{
+        IngesterServiceClient, IngesterStatus, MockIngesterService,
+    };
     use quickwit_proto::types::queue_id;
     use tokio::time::timeout;
 
     use super::*;
-    use crate::MRecord;
+    use crate::{IngesterClient, MRecord};
 
     pub fn into_fetch_payload(fetch_message: FetchMessage) -> FetchPayload {
         match fetch_message.message.unwrap() {
@@ -1325,8 +1331,10 @@ pub(super) mod tests {
 
                 Ok(service_stream_1)
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
-
+        let ingester_1 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_1),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let fetch_payload = FetchPayload {
@@ -1425,8 +1433,10 @@ pub(super) mod tests {
                     "open fetch stream error".to_string(),
                 ))
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-
+        let ingester_0 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_0),
+            status: IngesterStatus::Ready,
+        };
         let mut mock_ingester_1 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
         mock_ingester_1
@@ -1440,8 +1450,10 @@ pub(super) mod tests {
 
                 Ok(service_stream_1)
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
-
+        let ingester_1 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_1),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
@@ -1540,8 +1552,10 @@ pub(super) mod tests {
 
                 Ok(service_stream_0)
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-
+        let ingester_0 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_0),
+            status: IngesterStatus::Ready,
+        };
         let mut mock_ingester_1 = MockIngesterService::new();
         let index_uid_clone = index_uid.clone();
         mock_ingester_1
@@ -1555,8 +1569,10 @@ pub(super) mod tests {
 
                 Ok(service_stream_1)
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
-
+        let ingester_1 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_1),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
@@ -1658,7 +1674,10 @@ pub(super) mod tests {
                     shard_id: ShardId::from(1),
                 })
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_0),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
 
         fault_tolerant_fetch_stream(
@@ -1746,8 +1765,10 @@ pub(super) mod tests {
 
                 Ok(service_stream_2)
             });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
-
+        let ingester = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester".into(), ingester);
 
         let fetch_payload = FetchPayload {

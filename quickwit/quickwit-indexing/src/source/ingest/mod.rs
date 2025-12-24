@@ -361,6 +361,7 @@ impl IngestSource {
                 };
                 for num_attempts in 1..=retry_params.max_attempts {
                     let Err(error) = ingester
+                        .client
                         .truncate_shards(truncate_shards_request.clone())
                         .await
                     else {
@@ -672,9 +673,11 @@ mod tests {
     use quickwit_common::metrics::MEMORY_METRICS;
     use quickwit_common::stream_utils::InFlightValue;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
+    use quickwit_ingest::IngesterClient;
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{
-        FetchMessage, IngesterServiceClient, MockIngesterService, TruncateShardsResponse,
+        FetchMessage, IngesterServiceClient, IngesterStatus, MockIngesterService,
+        TruncateShardsResponse,
     };
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
     use quickwit_proto::metastore::{AcquireShardsResponse, MockMetastoreService};
@@ -929,8 +932,11 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        let ingester_0 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_0),
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester_0);
 
         let event_broker = EventBroker::default();
 
@@ -1126,8 +1132,11 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        let ingester_0 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_0),
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester_0);
 
         let event_broker = EventBroker::default();
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
@@ -1291,8 +1300,11 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        let ingester_0 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_0),
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester_0);
 
         let event_broker = EventBroker::default();
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
@@ -1599,8 +1611,11 @@ mod tests {
                 })
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        let ingester_0 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_0),
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester_0);
 
         let event_broker = EventBroker::default();
         let source_runtime = SourceRuntime {
@@ -1699,8 +1714,11 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        let ingester_0 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_0),
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester_0);
 
         let mut mock_ingester_1 = MockIngesterService::new();
         mock_ingester_1
@@ -1726,8 +1744,11 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
-        ingester_pool.insert("test-ingester-1".into(), ingester_1.clone());
+        let ingester_1 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_1),
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let mut mock_ingester_3 = MockIngesterService::new();
         mock_ingester_3
@@ -1746,7 +1767,10 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_3 = IngesterServiceClient::from_mock(mock_ingester_3);
+        let ingester_3 = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester_3),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-3".into(), ingester_3.clone());
 
         let event_broker = EventBroker::default();

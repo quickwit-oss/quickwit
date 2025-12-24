@@ -762,6 +762,7 @@ impl Drop for ReplicationTaskHandle {
 #[cfg(test)]
 mod tests {
 
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_proto::ingest::ingester::{ReplicateSubrequest, ReplicateSuccess};
     use quickwit_proto::ingest::{DocBatchV2, Shard};
     use quickwit_proto::types::{IndexUid, ShardId, queue_id};
@@ -1037,7 +1038,11 @@ mod tests {
     async fn test_replication_task_happy_path() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1300,7 +1305,11 @@ mod tests {
     async fn test_replication_task_shard_closed() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1377,7 +1386,11 @@ mod tests {
     async fn test_replication_task_deletes_dangling_shard() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1465,7 +1478,11 @@ mod tests {
 
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
@@ -1554,7 +1571,11 @@ mod tests {
     async fn test_replication_task_resource_exhausted() {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =

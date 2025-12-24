@@ -41,7 +41,7 @@ use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
 use quickwit_common::tower::Pool;
-use quickwit_proto::ingest::ingester::IngesterServiceClient;
+use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
 use quickwit_proto::types::{DocUid, DocUidGenerator, IndexId, NodeId, SubrequestId};
@@ -55,7 +55,13 @@ use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
 pub use self::router::IngestRouter;
 
-pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;
+#[derive(Debug, Clone)]
+pub struct IngesterClient {
+    pub client: IngesterServiceClient,
+    pub status: IngesterStatus,
+}
+
+pub type IngesterPool = Pool<NodeId, IngesterClient>;
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;

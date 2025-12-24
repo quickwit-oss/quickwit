@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Formatter;
@@ -43,6 +44,7 @@ use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
@@ -95,6 +97,7 @@ pub struct ControlPlane {
     // the different ingesters.
     indexing_scheduler: IndexingScheduler,
     ingest_controller: IngestController,
+    ingester_pool: IngesterPool,
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
     prune_shard_cooldown: CooldownMap<(IndexId, SourceId)>,
@@ -180,6 +183,7 @@ impl ControlPlane {
                     cluster_change_stream_opt: Some(cluster_change_stream_factory.create()),
                     indexing_scheduler,
                     ingest_controller,
+                    ingester_pool: ingester_pool.clone(),
                     metastore: metastore.clone(),
                     model: Default::default(),
                     prune_shard_cooldown: CooldownMap::new(NonZeroUsize::new(1024).unwrap()),
@@ -350,6 +354,29 @@ impl ControlPlane {
     }
 
     fn debug_info(&self) -> JsonValue {
+        // Build the union of ingesters tracked by the model and pool.
+        let mut ingesters: BTreeMap<NodeId, JsonValue> = self
+            .ingester_pool
+            .key_values()
+            .into_iter()
+            .map(|(ingester_id, ingester)| {
+                let ingester_json = json!({
+                    "available": true,
+                    "status": ingester.status.as_json_str_name(),
+                });
+                (ingester_id, ingester_json)
+            })
+            .collect();
+
+        for ingester_id in self.ingester_pool.keys() {
+            if let Entry::Vacant(entry) = ingesters.entry(ingester_id) {
+                let ingester_json = json!({
+                    "available": false,
+                    "status": IngesterStatus::default(),
+                });
+                entry.insert(ingester_json);
+            }
+        }
         let physical_indexing_plan: Vec<JsonValue> = self
             .indexing_scheduler
             .observable_state()
@@ -392,6 +419,7 @@ impl ControlPlane {
             }
         }
         json!({
+            "ingesters": ingesters,
             "physical_indexing_plan": physical_indexing_plan,
             "shard_table": per_index_and_leader_shards_json,
         })
@@ -677,7 +705,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         let ingester_needing_resync: BTreeSet<NodeId> = self
             .model
             .list_shards_for_index(&index_uid)
-            .flat_map(|shard_entry| shard_entry.ingesters())
+            .flat_map(|shard_entry| shard_entry.ingester_ids())
             .map(|node_id_ref| node_id_ref.to_owned())
             .collect();
 
@@ -850,7 +878,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             if let Some(shard_entries) = self.model.get_shards_for_source(&source_uid) {
                 shard_entries
                     .values()
-                    .flat_map(|shard_entry| shard_entry.ingesters())
+                    .flat_map(|shard_entry| shard_entry.ingester_ids())
                     .map(|node_id_ref| node_id_ref.to_owned())
                     .collect()
             } else {
@@ -1176,6 +1204,7 @@ mod tests {
         CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, KafkaSourceParams, SourceParams,
     };
     use quickwit_indexing::IndexingService;
+    use quickwit_ingest::IngesterClient;
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
@@ -1187,8 +1216,8 @@ mod tests {
         MockIndexingService,
     };
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceClient, InitShardSuccess, InitShardsResponse, MockIngesterService,
-        RetainShardsResponse,
+        IngesterServiceClient, IngesterStatus, InitShardSuccess, InitShardsResponse,
+        MockIngesterService, RetainShardsResponse,
     };
     use quickwit_proto::ingest::{Shard, ShardPKey, ShardState};
     use quickwit_proto::metastore::{
@@ -2210,7 +2239,10 @@ mod tests {
                 assert!(&retain_shards_for_source.shard_ids.is_empty());
                 Ok(RetainShardsResponse {})
             });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("node1".into(), ingester);
 
         let cluster_config = ClusterConfig::for_test();
@@ -2256,7 +2288,10 @@ mod tests {
                 );
                 Ok(RetainShardsResponse {})
             });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("node1".into(), ingester);
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
@@ -2552,7 +2587,10 @@ mod tests {
             };
             Ok(response)
         });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert(ingester_id, ingester);
 
         let mut mock_metastore = MockMetastoreService::new();
@@ -2706,7 +2744,10 @@ mod tests {
             };
             Ok(response)
         });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterClient {
+            client: IngesterServiceClient::from_mock(mock_ingester),
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert(ingester_id, ingester);
 
         let mut mock_metastore = MockMetastoreService::new();

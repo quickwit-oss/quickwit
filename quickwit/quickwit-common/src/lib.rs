@@ -215,6 +215,19 @@ macro_rules! assert_eventually {
 }
 
 #[macro_export]
+macro_rules! assert_eq_eventually {
+    ($left:expr, $right:expr, $timeout:expr, $interval:expr) => {
+        assert_eventually!($left == $right, $timeout, $interval);
+    };
+    ($left:expr, $right:expr, $timeout:expr) => {
+        assert_eventually!($left == $right, $timeout);
+    };
+    ($left:expr, $right:expr) => {
+        assert_eventually!($left == $right);
+    };
+}
+
+#[macro_export]
 macro_rules! ignore_error_kind {
     ($kind:path, $expr:expr) => {
         match $expr {

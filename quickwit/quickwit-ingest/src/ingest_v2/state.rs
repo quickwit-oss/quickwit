@@ -20,8 +20,10 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use mrecordlog::error::{DeleteQueueError, TruncateError};
+use quickwit_cluster::Cluster;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
+use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -59,6 +61,7 @@ pub(super) struct InnerIngesterState {
     pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
     // Replication tasks running for each replication stream opened with leaders.
     pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
+    cluster: Cluster,
     status: IngesterStatus,
     status_tx: watch::Sender<IngesterStatus>,
 }
@@ -68,25 +71,34 @@ impl InnerIngesterState {
         self.status
     }
 
-    pub fn set_status(&mut self, status: IngesterStatus) {
+    pub async fn set_status(&mut self, status: IngesterStatus) {
         self.status = status;
         self.status_tx.send(status).expect("channel should be open");
+        self.cluster
+            .set_self_key_value(INGESTER_STATUS_KEY, status.as_json_str_name())
+            .await;
     }
 }
 
 impl IngesterState {
-    fn new() -> Self {
-        let status = IngesterStatus::Initializing;
+    async fn new(cluster: Cluster) -> Self {
+        let status = IngesterStatus::default();
         let (status_tx, status_rx) = watch::channel(status);
-        let inner = InnerIngesterState {
+
+        let mut inner = InnerIngesterState {
             shards: Default::default(),
             doc_mappers: Default::default(),
             rate_trackers: Default::default(),
             replication_streams: Default::default(),
             replication_tasks: Default::default(),
+            cluster,
             status,
             status_tx,
         };
+        // We call `set_status` here instead of setting it directly because it also updates the
+        // ingester status in chitchat.
+        inner.set_status(IngesterStatus::Initializing).await;
+
         let inner = Arc::new(Mutex::new(inner));
         let mrecordlog = Arc::new(RwLock::new(None));
 
@@ -97,8 +109,12 @@ impl IngesterState {
         }
     }
 
-    pub fn load(wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) -> Self {
-        let state = Self::new();
+    pub async fn load(
+        cluster: Cluster,
+        wal_dir_path: &Path,
+        rate_limiter_settings: RateLimiterSettings,
+    ) -> Self {
+        let state = Self::new(cluster).await;
         let state_clone = state.clone();
         let wal_dir_path = wal_dir_path.to_path_buf();
 
@@ -111,15 +127,12 @@ impl IngesterState {
     }
 
     #[cfg(test)]
-    pub async fn for_test() -> (tempfile::TempDir, Self) {
+    pub async fn for_test(cluster: Cluster) -> (tempfile::TempDir, Self) {
         let temp_dir = tempfile::tempdir().unwrap();
-        let mut state = IngesterState::load(temp_dir.path(), RateLimiterSettings::default());
+        let mut state =
+            IngesterState::load(cluster, temp_dir.path(), RateLimiterSettings::default()).await;
 
-        state
-            .status_rx
-            .wait_for(|status| *status == IngesterStatus::Ready)
-            .await
-            .unwrap();
+        state.wait_for_ready().await;
 
         (temp_dir, state)
     }
@@ -154,7 +167,7 @@ impl IngesterState {
             }
             Err(error) => {
                 error!("failed to open WAL: {error}");
-                inner_guard.set_status(IngesterStatus::Failed);
+                inner_guard.set_status(IngesterStatus::Failed).await;
                 return;
             }
         };
@@ -214,7 +227,7 @@ impl IngesterState {
             info!("deleted {num_deleted_shards} empty shard(s)");
         }
         mrecordlog_guard.replace(mrecordlog);
-        inner_guard.set_status(IngesterStatus::Ready);
+        inner_guard.set_status(IngesterStatus::Ready).await;
     }
 
     pub async fn wait_for_ready(&mut self) {
@@ -454,13 +467,23 @@ impl WeakIngesterState {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_config::service::QuickwitService;
     use tokio::time::timeout;
 
     use super::*;
 
     #[tokio::test]
     async fn test_ingester_state_does_not_lock_while_initializing() {
-        let state = IngesterState::new();
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let state = IngesterState::new(cluster).await;
         let inner_guard = state.inner.lock().await;
 
         assert_eq!(inner_guard.status(), IngesterStatus::Initializing);
@@ -475,9 +498,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_failed() {
-        let state = IngesterState::new();
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let state = IngesterState::new(cluster).await;
 
-        state.inner.lock().await.set_status(IngesterStatus::Failed);
+        state
+            .inner
+            .lock()
+            .await
+            .set_status(IngesterStatus::Failed)
+            .await;
 
         let error = state.lock_partially().await.unwrap_err().to_string();
         assert!(error.to_string().ends_with("failed to initialize ingester"));
@@ -488,7 +524,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_init() {
-        let mut state = IngesterState::new();
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let mut state = IngesterState::new(cluster).await;
         let temp_dir = tempfile::tempdir().unwrap();
 
         state
@@ -504,5 +548,35 @@ mod tests {
         let locked_state = state.lock_fully().await.unwrap();
         assert_eq!(locked_state.status(), IngesterStatus::Ready);
         assert_eq!(*locked_state.status_tx.borrow(), IngesterStatus::Ready);
+    }
+
+    #[tokio::test]
+    async fn test_ingester_state_set_status() {
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let state = IngesterState::new(cluster.clone()).await;
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        state
+            .init(temp_dir.path(), RateLimiterSettings::default())
+            .await;
+
+        let mut state_guard = state.lock_fully().await.unwrap();
+        state_guard.set_status(IngesterStatus::Failed).await;
+        assert_eq!(state_guard.status(), IngesterStatus::Failed);
+        assert_eq!(*state.status_rx.borrow(), IngesterStatus::Failed);
+
+        let status_json_str = cluster
+            .get_self_key_value(INGESTER_STATUS_KEY)
+            .await
+            .unwrap();
+        let status = IngesterStatus::from_json_str_name(&status_json_str).unwrap();
+        assert_eq!(status, IngesterStatus::Failed);
     }
 }

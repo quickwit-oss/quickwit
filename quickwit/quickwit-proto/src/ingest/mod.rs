@@ -63,6 +63,8 @@ pub enum IngestV2Error {
     Timeout(String),
     #[error("too many requests")]
     TooManyRequests(RateLimitingCause),
+    /// The ingester is not available, which can happen for various reasons (see README.md for more
+    /// details).
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -120,7 +122,7 @@ impl MakeLoadShedError for IngestV2Error {
 
 impl Shard {
     /// List of nodes that are storing the shard (the leader, and optionally the follower).
-    pub fn ingesters(&self) -> impl Iterator<Item = &NodeIdRef> + '_ {
+    pub fn ingester_ids(&self) -> impl Iterator<Item = &NodeIdRef> + '_ {
         [Some(&self.leader_id), self.follower_id.as_ref()]
             .into_iter()
             .flatten()

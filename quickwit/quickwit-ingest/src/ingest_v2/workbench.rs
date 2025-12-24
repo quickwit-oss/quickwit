@@ -130,11 +130,11 @@ impl IngestWorkbench {
 
     pub fn record_persist_request(&self, persist_request: &PersistRequest) {
         if let Some(publish_tracker) = &self.publish_tracker {
-            let shards = persist_request
+            let shard_ids = persist_request
                 .subrequests
                 .iter()
                 .map(|subrequest| subrequest.shard_id());
-            publish_tracker.register_requested_shards(shards);
+            publish_tracker.register_requested_shards(shard_ids);
         }
     }
 

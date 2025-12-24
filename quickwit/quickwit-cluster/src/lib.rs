@@ -36,6 +36,7 @@ use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{GrpcConfig, NodeConfig, TlsConfig};
 use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::tonic::transport::{Certificate, ClientTlsConfig, Identity};
 use time::OffsetDateTime;
 
@@ -143,6 +144,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         grpc_advertise_addr: node_config.grpc_advertise_addr,
         indexing_tasks,
         indexing_cpu_capacity,
+        ingester_status: IngesterStatus::default(),
         availability_zone: node_config.availability_zone.clone(),
     };
     let failure_detector_config = FailureDetectorConfig {
