@@ -31,7 +31,6 @@ use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
-use quickwit_common::tower::Pool;
 use quickwit_common::{ServiceStream, rate_limited_error, rate_limited_warn};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
@@ -39,13 +38,13 @@ use quickwit_proto::control_plane::{
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
-    DecommissionResponse, FetchMessage, IngesterService, IngesterServiceClient,
-    IngesterServiceStream, IngesterStatus, InitShardFailure, InitShardSuccess, InitShardsRequest,
-    InitShardsResponse, ObservationMessage, OpenFetchStreamRequest, OpenObservationStreamRequest,
-    OpenReplicationStreamRequest, OpenReplicationStreamResponse, PersistFailure,
-    PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, ReplicateFailureReason,
-    ReplicateSubrequest, RetainShardsForSource, RetainShardsRequest, RetainShardsResponse,
-    SynReplicationMessage, TruncateShardsRequest, TruncateShardsResponse,
+    DecommissionResponse, FetchMessage, IngesterService, IngesterServiceStream, IngesterStatus,
+    InitShardFailure, InitShardSuccess, InitShardsRequest, InitShardsResponse, ObservationMessage,
+    OpenFetchStreamRequest, OpenObservationStreamRequest, OpenReplicationStreamRequest,
+    OpenReplicationStreamResponse, PersistFailure, PersistFailureReason, PersistRequest,
+    PersistResponse, PersistSuccess, ReplicateFailureReason, ReplicateSubrequest,
+    RetainShardsForSource, RetainShardsRequest, RetainShardsResponse, SynReplicationMessage,
+    TruncateShardsRequest, TruncateShardsResponse,
 };
 use quickwit_proto::ingest::{
     CommitTypeV2, DocBatchV2, IngestV2Error, IngestV2Result, ParseFailure, Shard, ShardIds,
@@ -78,6 +77,7 @@ use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::report_wal_usage;
 use crate::ingest_v2::models::IngesterShardType;
+use crate::ingest_v2::spawn_broadcast_ingester_status_task;
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{FollowerId, estimate_size, with_lock_metrics};
 
@@ -133,7 +133,7 @@ impl Ingester {
     pub async fn try_new(
         cluster: Cluster,
         control_plane: ControlPlaneServiceClient,
-        ingester_pool: Pool<NodeId, IngesterServiceClient>,
+        ingester_pool: IngesterPool,
         wal_dir_path: &Path,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
@@ -143,10 +143,12 @@ impl Ingester {
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
         let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
+        let status_rx = state.status_rx.clone();
 
         let weak_state = state.weak();
-        BroadcastLocalShardsTask::spawn(cluster, weak_state.clone());
+        BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
+        spawn_broadcast_ingester_status_task(cluster, status_rx);
 
         let ingester = Self {
             self_node_id,
@@ -401,6 +403,7 @@ impl Ingester {
             IngestV2Error::Unavailable(message)
         })?;
         let mut ack_replication_stream = ingester
+            .client
             .open_replication_stream(syn_replication_stream)
             .await?;
         ack_replication_stream
@@ -1305,8 +1308,8 @@ mod tests {
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::control_plane::{AdviseResetShardsResponse, MockControlPlaneService};
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter, InitShardSubrequest,
-        PersistSubrequest, TruncateShardsSubrequest,
+        IngesterServiceClient, IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter,
+        InitShardSubrequest, PersistSubrequest, TruncateShardsSubrequest,
     };
     use quickwit_proto::ingest::{
         DocBatchV2, ParseFailureReason, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey,
@@ -1317,11 +1320,11 @@ mod tests {
     use tonic::transport::{Endpoint, Server};
 
     use super::*;
-    use crate::MRecord;
     use crate::ingest_v2::DEFAULT_IDLE_SHARD_TIMEOUT;
     use crate::ingest_v2::broadcast::ShardInfos;
     use crate::ingest_v2::doc_mapper::try_build_doc_mapper;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
+    use crate::{IngesterClient, MRecord};
 
     const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
@@ -2329,12 +2332,13 @@ mod tests {
             .with_replication()
             .build()
             .await;
-
-        leader_ctx.ingester_pool.insert(
-            follower_ctx.node_id.clone(),
-            IngesterServiceClient::new(follower.clone()),
-        );
-
+        let follower_client = IngesterClient {
+            client: IngesterServiceClient::new(follower.clone()),
+            status: IngesterStatus::Ready,
+        };
+        leader_ctx
+            .ingester_pool
+            .insert(follower_ctx.node_id.clone(), follower_client);
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
 
@@ -2538,10 +2542,13 @@ mod tests {
             MAX_GRPC_MESSAGE_SIZE,
             None,
         );
-
+        let follower_client = IngesterClient {
+            client: follower_grpc_client,
+            status: IngesterStatus::Ready,
+        };
         leader_ctx
             .ingester_pool
-            .insert(follower_ctx.node_id.clone(), follower_grpc_client);
+            .insert(follower_ctx.node_id.clone(), follower_client);
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);

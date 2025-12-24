@@ -13,23 +13,28 @@
 // limitations under the License.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::Arc;
 use std::time::Duration;
 
 use bytesize::ByteSize;
 use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
-use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
+use quickwit_common::shared_consts::{INGESTER_PRIMARY_SHARDS_PREFIX, INGESTER_STATUS_KEY};
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::{ConstantRate, Rate};
 use quickwit_proto::ingest::ShardState;
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::{NodeId, QueueId, ShardId, SourceUid, split_queue_id};
 use serde::{Deserialize, Serialize, Serializer};
+use tokio::select;
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
 use super::metrics::INGEST_V2_METRICS;
 use super::state::WeakIngesterState;
 use crate::RateMibPerSec;
+use crate::ingest_v2::state::IngesterState;
 
 const BROADCAST_INTERVAL_PERIOD: Duration = if cfg!(test) {
     Duration::from_millis(50)
@@ -156,6 +161,7 @@ pub(super) struct BroadcastLocalShardsTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
     shard_throughput_time_series_map: ShardThroughputTimeSeriesMap,
+    previous_snapshot: LocalShardsSnapshot,
 }
 
 const SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN: usize = 12;
@@ -268,17 +274,16 @@ impl BroadcastLocalShardsTask {
             cluster,
             weak_state,
             shard_throughput_time_series_map: Default::default(),
+            previous_snapshot: LocalShardsSnapshot::default(),
         };
         tokio::spawn(async move { broadcaster.run().await })
     }
 
-    async fn snapshot_local_shards(&mut self) -> Option<LocalShardsSnapshot> {
-        let state = self.weak_state.upgrade()?;
-
+    async fn snapshot_local_shards(&mut self, state: IngesterState) -> LocalShardsSnapshot {
         let Ok(mut state_guard) = state.lock_partially().await else {
-            return Some(LocalShardsSnapshot::default());
+            // This happens when the ingester is still initializing or failed to initialize.
+            return LocalShardsSnapshot::default();
         };
-
         let queue_ids: Vec<(QueueId, ShardState)> = state_guard
             .shards
             .iter()
@@ -337,10 +342,9 @@ impl BroadcastLocalShardsTask {
             .closed_shards
             .set(num_closed_shards as i64);
 
-        let snapshot = LocalShardsSnapshot {
+        LocalShardsSnapshot {
             per_source_shard_infos,
-        };
-        Some(snapshot)
+        }
     }
 
     async fn broadcast_local_shards(
@@ -369,21 +373,25 @@ impl BroadcastLocalShardsTask {
 
     async fn run(&mut self) {
         let mut interval = tokio::time::interval(BROADCAST_INTERVAL_PERIOD);
-        let mut previous_snapshot = LocalShardsSnapshot::default();
 
         loop {
             interval.tick().await;
 
-            let Some(new_snapshot) = self.snapshot_local_shards().await else {
+            let Some(state) = self.weak_state.upgrade() else {
                 // The state has been dropped, we can stop the task.
                 debug!("stopping local shards broadcast task");
                 return;
             };
-            self.broadcast_local_shards(&previous_snapshot, &new_snapshot)
-                .await;
-
-            previous_snapshot = new_snapshot;
+            self.run_once(state).await;
         }
+    }
+
+    async fn run_once(&mut self, state: IngesterState) {
+        let new_snapshot = self.snapshot_local_shards(state).await;
+
+        self.broadcast_local_shards(&self.previous_snapshot, &new_snapshot)
+            .await;
+        self.previous_snapshot = new_snapshot;
     }
 }
 
@@ -403,16 +411,19 @@ fn parse_key(key: &str) -> Option<SourceUid> {
     })
 }
 
-#[derive(Debug, Clone)]
-pub struct LocalShardsUpdate {
-    pub leader_id: NodeId,
-    pub source_uid: SourceUid,
-    pub shard_infos: ShardInfos,
+pub struct IngestListenerHandle {
+    ingester_status: ListenerHandle,
+    local_shards: ListenerHandle,
 }
 
-impl Event for LocalShardsUpdate {}
+impl IngestListenerHandle {
+    pub fn forever(self) {
+        self.ingester_status.forever();
+        self.local_shards.forever();
+    }
+}
 
-pub async fn setup_local_shards_update_listener(
+pub async fn setup_ingest_listener(
     cluster: Cluster,
     event_broker: EventBroker,
 ) -> ListenerHandle {
@@ -587,15 +598,17 @@ mod tests {
             cluster,
             weak_state,
             shard_throughput_time_series_map: Default::default(),
+            previous_snapshot: LocalShardsSnapshot::default(),
         };
-        let previous_snapshot = task.snapshot_local_shards().await.unwrap();
-        assert!(previous_snapshot.per_source_shard_infos.is_empty());
+        task.run_once(state.clone()).await;
+        assert_eq!(task.previous_status, IngesterStatus::Ready);
+        assert!(task.previous_snapshot.per_source_shard_infos.is_empty());
 
         let mut state_guard = state.lock_partially().await.unwrap();
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id_00 = queue_id(&index_uid, "test-source", &ShardId::from(0));
-        let shard_00 = IngesterShard::new_solo(
+        let mut shard_00 = IngesterShard::new_solo(
             ShardState::Open,
             Position::Beginning,
             Position::Beginning,
@@ -603,6 +616,7 @@ mod tests {
             Instant::now(),
             false,
         );
+        shard_00.is_advertisable = false; // `false` is the default value, but we set it explicitly here for readability.
         state_guard.shards.insert(queue_id_00.clone(), shard_00);
 
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -638,27 +652,47 @@ mod tests {
         }
         drop(state_guard);
 
-        let new_snapshot = task.snapshot_local_shards().await.unwrap();
-        assert_eq!(new_snapshot.per_source_shard_infos.len(), 1);
+        task.run_once(state.clone()).await;
 
-        task.broadcast_local_shards(&previous_snapshot, &new_snapshot)
-            .await;
+        let status_str = task
+            .cluster
+            .get_self_key_value(INGESTER_STATUS_KEY)
+            .await
+            .unwrap();
+        let status = IngesterStatus::from_json_str_name(&status_str).unwrap();
+        assert_eq!(status, IngesterStatus::Ready);
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let key = format!(
+        let shards_key = format!(
             "{INGESTER_PRIMARY_SHARDS_PREFIX}{}:{}",
             index_uid, "test-source"
         );
-        task.cluster.get_self_key_value(&key).await.unwrap();
+        let shards_str = task.cluster.get_self_key_value(&shards_key).await.unwrap();
+        let shards: ShardInfos = serde_json::from_str(&shards_str).unwrap();
+        assert_eq!(shards.len(), 1);
 
-        task.broadcast_local_shards(&new_snapshot, &previous_snapshot)
-            .await;
+        let shard = shards.into_iter().next().unwrap();
+        assert_eq!(shard.shard_id, ShardId::from(1));
+        assert_eq!(shard.shard_state, ShardState::Open);
+        assert_eq!(shard.short_term_ingestion_rate, RateMibPerSec(0));
+        assert_eq!(shard.long_term_ingestion_rate, RateMibPerSec(0));
 
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        state_guard = state.lock_partially().await.unwrap();
+        state_guard.set_status(IngesterStatus::Decommissioning);
+        state_guard.shards.clear();
+        drop(state_guard);
 
-        let value_opt = task.cluster.get_self_key_value(&key).await;
-        assert!(value_opt.is_none());
+        task.run_once(state.clone()).await;
+
+        let status_string = task
+            .cluster
+            .get_self_key_value(INGESTER_STATUS_KEY)
+            .await
+            .unwrap();
+        let status = IngesterStatus::from_json_str_name(&status_string).unwrap();
+        assert_eq!(status, IngesterStatus::Decommissioning);
+
+        let shards_value = task.cluster.get_self_key_value(&shards_key).await;
+        assert!(shards_value.is_none());
     }
 
     #[test]
@@ -713,15 +747,22 @@ mod tests {
             })
             .forever();
 
-        setup_local_shards_update_listener(cluster.clone(), event_broker.clone())
+        setup_ingest_listener(cluster.clone(), event_broker.clone())
             .await
             .forever();
+
+        cluster
+            .set_self_key_value(
+                INGESTER_STATUS_KEY,
+                IngesterStatus::Ready.as_json_str_name(),
+            )
+            .await;
 
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
         };
-        let key = make_key(&source_uid);
+        let shards_key = make_key(&source_uid);
         let value = serde_json::to_string(&vec![ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
@@ -730,9 +771,10 @@ mod tests {
         }])
         .unwrap();
 
-        cluster.set_self_key_value(key, value).await;
+        cluster.set_self_key_value(shards_key, value).await;
         tokio::time::sleep(Duration::from_millis(50)).await;
 
+        assert_eq!(ingester_status_update_counter.load(Ordering::Acquire), 1);
         assert_eq!(local_shards_update_counter.load(Ordering::Acquire), 1);
     }
 

@@ -497,9 +497,10 @@ impl RoutingTable {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::ingest::ingester::IngesterServiceClient;
+    use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 
     use super::*;
+    use crate::IngesterClient;
 
     #[test]
     fn test_routing_table_entry_new() {
@@ -584,8 +585,12 @@ mod tests {
         assert!(closed_shard_ids.is_empty());
         assert!(unavailable_leaders.is_empty());
 
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
-        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
+        let ingester = IngesterClient {
+            client: IngesterServiceClient::mocked(),
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
+        ingester_pool.insert("test-ingester-1".into(), ingester);
 
         let table_entry = RoutingTableEntry {
             index_uid: index_uid.clone(),
@@ -675,8 +680,12 @@ mod tests {
             .unwrap_err();
         assert_eq!(error, NextOpenShardError::NoShardsAvailable);
 
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
-        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
+        let ingester = IngesterClient {
+            client: IngesterServiceClient::mocked(),
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
+        ingester_pool.insert("test-ingester-1".into(), ingester);
 
         let table_entry = RoutingTableEntry {
             index_uid: index_uid.clone(),
@@ -795,7 +804,11 @@ mod tests {
         let source_id: SourceId = "test-source".into();
 
         let ingester_pool = IngesterPool::default();
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+        let ingester = IngesterClient {
+            client: IngesterServiceClient::mocked(),
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester);
 
         let rate_limited_shards = HashSet::from_iter([ShardId::from(1)]);
 

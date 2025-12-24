@@ -19,7 +19,9 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use chitchat::{ChitchatId, NodeState, Version};
+use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
 use tracing::{error, warn};
 
@@ -100,6 +102,10 @@ pub struct ClusterMember {
     pub indexing_tasks: Vec<IndexingTask>,
     /// Indexing cpu capacity of the node expressed in milli cpu.
     pub indexing_cpu_capacity: CpuCapacity,
+    /// Status of the ingester service running on the node. `IngesterStatus::Unspecified` if the
+    /// node is not an ingester.
+    pub ingester_status: IngesterStatus,
+    /// Whether the node is ready to serve requests.
     pub is_ready: bool,
 }
 
@@ -131,6 +137,13 @@ fn parse_indexing_cpu_capacity(node_state: &NodeState) -> CpuCapacity {
     }
 }
 
+fn parse_ingester_status(node_state: &NodeState) -> IngesterStatus {
+    node_state
+        .get(INGESTER_STATUS_KEY)
+        .and_then(IngesterStatus::from_json_str_name)
+        .unwrap_or_default()
+}
+
 // Builds a cluster member from a [`NodeState`].
 pub(crate) fn build_cluster_member(
     chitchat_id: ChitchatId,
@@ -152,6 +165,7 @@ pub(crate) fn build_cluster_member(
     let grpc_advertise_addr = node_state.grpc_advertise_addr()?;
     let indexing_tasks = parse_indexing_tasks(node_state);
     let indexing_cpu_capacity = parse_indexing_cpu_capacity(node_state);
+    let ingester_status = parse_ingester_status(node_state);
     let member = ClusterMember {
         node_id: chitchat_id.node_id.into(),
         generation_id: chitchat_id.generation_id.into(),
@@ -161,6 +175,7 @@ pub(crate) fn build_cluster_member(
         grpc_advertise_addr,
         indexing_tasks,
         indexing_cpu_capacity,
+        ingester_status,
     };
     Ok(member)
 }

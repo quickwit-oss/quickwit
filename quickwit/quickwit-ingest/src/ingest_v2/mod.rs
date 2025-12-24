@@ -36,16 +36,23 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use std::{env, fmt};
 
-pub use broadcast::{LocalShardsUpdate, ShardInfo, ShardInfos, setup_local_shards_update_listener};
+pub use broadcast::{
+    IngestListenerHandle, IngesterStatusUpdate, LocalShardsUpdate, ShardInfo, ShardInfos,
+    setup_ingest_listener,
+};
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
+use quickwit_cluster::Cluster;
+use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_common::tower::Pool;
-use quickwit_proto::ingest::ingester::IngesterServiceClient;
+use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
 use quickwit_proto::types::{DocUid, DocUidGenerator, IndexId, NodeId, SubrequestId};
 use serde::Serialize;
+use tokio::sync::watch::Receiver;
+use tokio::task::JoinHandle;
 use tracing::{error, info};
 use workbench::pending_subrequests;
 
@@ -55,7 +62,13 @@ use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
 pub use self::router::IngestRouter;
 
-pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;
+#[derive(Debug, Clone)]
+pub struct IngesterClient {
+    pub client: IngesterServiceClient,
+    pub status: IngesterStatus,
+}
+
+pub type IngesterPool = Pool<NodeId, IngesterClient>;
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;
@@ -277,6 +290,22 @@ impl AddAssign<RateMibPerSec> for RateMibPerSec {
     fn add_assign(&mut self, rhs: RateMibPerSec) {
         self.0 += rhs.0;
     }
+}
+
+fn spawn_broadcast_ingester_status_task(
+    cluster: Cluster,
+    mut status_rx: Receiver<IngesterStatus>,
+) -> JoinHandle<()> {
+    let future = async move { loop {
+            let status = *status_rx.borrow();
+            cluster.set_self_key_value(INGESTER_STATUS_KEY, status.as_json_str_name()).await;
+
+            if status_rx.changed().await.is_err() {
+                break;
+            }
+        }
+    };
+    tokio::spawn(future)
 }
 
 #[cfg(test)]
