@@ -1353,8 +1353,8 @@ async fn check_cluster_configuration(
 #[cfg(test)]
 mod tests {
     use quickwit_cluster::{ChannelTransport, ClusterNode, create_cluster_for_test};
-    use quickwit_common::ServiceStream;
     use quickwit_common::uri::Uri;
+    use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
     use quickwit_proto::indexing::IndexingTask;
@@ -1472,16 +1472,14 @@ mod tests {
 
         metastore_readiness_tx.send(true).unwrap();
         ingester_status_tx.send(IngesterStatus::Ready).unwrap();
-        tokio::time::sleep(Duration::from_millis(25)).await;
-        assert!(cluster.is_self_node_ready().await);
+        assert_eventually!(cluster.is_self_node_ready().await);
 
         let request = tonic::Request::new(HealthCheckRequest::default());
         let response = health_client.check(request).await.unwrap().into_inner();
         assert_eq!(response.status(), ServingStatus::Serving.into());
 
         metastore_readiness_tx.send(false).unwrap();
-        tokio::time::sleep(Duration::from_millis(25)).await;
-        assert!(!cluster.is_self_node_ready().await);
+        assert_eventually!(!cluster.is_self_node_ready().await);
 
         let request = tonic::Request::new(HealthCheckRequest::default());
         let response = health_client.check(request).await.unwrap().into_inner();
