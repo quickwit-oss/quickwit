@@ -34,7 +34,7 @@ test-all:
 	QW_S3_FORCE_PATH_STYLE_ACCESS=1 \
 	QW_TEST_DATABASE_URL=postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev \
 	RUST_MIN_STACK=67108864 \
-	cargo nextest run --all-features --retries 5
+	cargo nextest run --all-features --no-fail-fast --retries 5
 	cargo nextest run --test failpoints --features fail/failpoints
 
 test-failpoints:

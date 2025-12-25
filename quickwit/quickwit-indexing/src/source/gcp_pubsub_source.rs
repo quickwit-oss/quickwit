@@ -20,7 +20,6 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use google_cloud_auth::credentials::CredentialsFile;
 use google_cloud_gax::retry::RetrySetting;
-use std::fs;
 use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
@@ -102,21 +101,14 @@ impl GcpPubSubSource {
 
         let mut client_config: ClientConfig = match source_params.credentials_file {
             Some(credentials_file) => {
-                let creds_json = fs::read_to_string(credentials_file.clone())
+                let credentials = CredentialsFile::new_from_file(credentials_file.clone())
+                    .await
                     .with_context(|| {
                         format!(
-                            "failed to read GCP PubSub credentials file from `{credentials_file}`"
+                            "failed to load GCP PubSub credentials file from `{credentials_file}`"
                         )
                     })?;
-                
-                let creds: CredentialsFile = serde_json::from_str(&creds_json)
-                    .with_context(|| {
-                        format!(
-                            "failed to parse GCP PubSub credentials file from `{credentials_file}`"
-                        )
-                    })?;
-                
-                ClientConfig::default().with_credentials(creds).await
+                ClientConfig::default().with_credentials(credentials).await
             }
             _ => ClientConfig::default().with_auth().await,
         }
