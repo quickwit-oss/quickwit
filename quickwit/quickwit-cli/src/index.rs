@@ -39,7 +39,7 @@ use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortBy};
 use quickwit_storage::{StorageResolver, load_file};
 use tabled::settings::object::{FirstRow, Rows, Segment};
 use tabled::settings::panel::Footer;
-use tabled::settings::{Alignment, Remove, Format, Modify, Panel, Rotate, Style};
+use tabled::settings::{Alignment, Format, Modify, Panel, Remove, Rotate, Style};
 use tabled::{Table, Tabled};
 use tracing::{Level, debug};
 
