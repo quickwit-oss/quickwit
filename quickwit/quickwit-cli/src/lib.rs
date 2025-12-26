@@ -316,10 +316,12 @@ pub fn make_table<T: Tabled>(
     rows: impl IntoIterator<Item = T>,
     transpose: bool,
 ) -> Table {
-    let mut table = Table::new(rows);
-    if transpose {
-        table.with(Rotate::Left).with(Rotate::Bottom);
-    }
+    let mut table = if transpose {
+        let index_builder = Table::builder(rows).index();
+        index_builder.column(0).transpose().build()
+    } else {
+        Table::builder(rows).build()
+    };
 
     table
         .with(Modify::new(Rows::new(1..)).with(Alignment::left()))
