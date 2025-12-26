@@ -339,7 +339,7 @@ mod tests {
         );
 
         // not super useful, considering what join set does, but still a tiny bit more sound.
-        all_futures.shuffle(&mut rand::thread_rng());
+        all_futures.shuffle(&mut rand::rng());
 
         let mut join_set = JoinSet::new();
         for (res, fut) in all_futures {

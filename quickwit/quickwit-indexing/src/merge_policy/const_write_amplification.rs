@@ -392,7 +392,7 @@ mod tests {
                 ..Default::default()
             })
             .collect();
-        splits.shuffle(&mut rand::thread_rng());
+        splits.shuffle(&mut rand::rng());
         let operations: Vec<MergeOperation> = merge_policy.operations(&mut splits);
         assert_eq!(operations.len(), 1);
         assert_eq!(

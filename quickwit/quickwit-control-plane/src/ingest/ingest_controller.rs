@@ -46,9 +46,10 @@ use quickwit_proto::metastore::{
     OpenShardsRequest, OpenShardsResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, NodeIdRef, Position, ShardId, SourceUid};
+use rand::prelude::IndexedRandom;
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, RngCore, thread_rng};
+use rand::{Rng, RngCore, rng};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use tokio::task::JoinHandle;
@@ -101,14 +102,14 @@ fn pick_position(
     let except_pos_opt =
         except_el_opt.and_then(|except_el| els.iter().position(|el| *el == except_el));
     if let Some(except_pos) = except_pos_opt {
-        let pos = rng.gen_range(0..els.len() - 1);
+        let pos = rng.random_range(0..els.len() - 1);
         if pos >= except_pos {
             Some(pos + 1)
         } else {
             Some(pos)
         }
     } else {
-        Some(rng.gen_range(0..els.len()))
+        Some(rng.random_range(0..els.len()))
     }
 }
 
@@ -180,7 +181,7 @@ fn allocate_shards(
             .or_default()
             .push(node_id.as_ref());
     }
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut shard_allocations: Vec<(&NodeIdRef, Option<&NodeIdRef>)> =
         Vec::with_capacity(num_shards);
     for _ in 0..num_shards {
@@ -1150,7 +1151,7 @@ impl IngestController {
         let min_num_open_shards_per_leader =
             f32::floor(target_num_open_shards_per_leader * 0.9) as usize;
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut per_leader_open_shard_shuffled: Vec<Vec<&Shard>> = per_leader_open_shards
             .into_values()
             .map(|mut shards| {
@@ -1282,7 +1283,7 @@ fn find_scale_down_candidate(
     model: &ControlPlaneModel,
 ) -> Option<(NodeId, ShardId)> {
     let mut per_leader_shard_entries: HashMap<&String, Vec<&ShardEntry>> = HashMap::new();
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     for shard in model.get_shards_for_source(source_uid)?.values() {
         if shard.is_open() {
@@ -3517,7 +3518,7 @@ mod tests {
             1,
             vec![NodeIdRef::from_str("node1"), NodeIdRef::from_str("node2")],
         );
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let node = pick_one(
             &mut shard_counts,
             Some(NodeIdRef::from_str("node2")),
