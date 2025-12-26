@@ -919,7 +919,7 @@ impl MetastoreService for PostgresqlMetastore {
             "SELECT
                 i.index_uid,
                 s.split_state,
-                COUNT(split_id) AS num_splits,
+                COUNT(s.split_state) AS num_splits,
                 COALESCE(SUM(s.split_size_bytes)::BIGINT, 0) AS total_size_bytes
             FROM ({index_pattern_sql}) i
             LEFT JOIN splits s ON s.index_uid = i.index_uid

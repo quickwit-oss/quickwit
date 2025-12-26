@@ -21,7 +21,6 @@
 //  - delete_index
 
 use std::num::NonZeroUsize;
-use std::time::Duration;
 
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::merge_policy_config::{MergePolicyConfig, StableLogMergePolicyConfig};
@@ -37,14 +36,13 @@ use quickwit_proto::metastore::{
     MetastoreService, PublishSplitsRequest, SplitStats, StageSplitsRequest, UpdateIndexRequest,
 };
 use quickwit_proto::types::{DocMappingUid, IndexUid};
-use time::OffsetDateTime;
 
 use super::DefaultForTest;
-use crate::tests::{cleanup_index, to_btree_set};
+use crate::tests::cleanup_index;
 use crate::{
     CreateIndexRequestExt, IndexMetadataResponseExt, IndexesMetadataResponseExt,
-    ListIndexesMetadataResponseExt, MetastoreServiceExt, SplitMaturity, SplitMetadata,
-    StageSplitsRequestExt, UpdateIndexRequestExt,
+    ListIndexesMetadataResponseExt, MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt,
+    UpdateIndexRequestExt,
 };
 
 pub async fn test_metastore_create_index<
@@ -834,8 +832,6 @@ pub async fn test_metastore_list_index_stats<
 >() {
     let metastore = MetastoreToTest::default_for_test().await;
 
-    let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-
     let index_id_1 = append_random_suffix("test-list-index-stats");
     let index_uid_1 = IndexUid::new_with_random_ulid(&index_id_1);
     let index_uri_1 = format!("ram:///indexes/{index_id_1}");
@@ -850,16 +846,7 @@ pub async fn test_metastore_list_index_stats<
     let split_metadata_1 = SplitMetadata {
         split_id: split_id_1.clone(),
         index_uid: index_uid_1.clone(),
-        time_range: Some(0..=99),
-        create_timestamp: current_timestamp,
-        maturity: SplitMaturity::Immature {
-            maturation_period: Duration::from_secs(0),
-        },
-        tags: to_btree_set(&["tag!", "tag:foo", "$tag!", "$tag:bar"]),
-        delete_opstamp: 3,
         footer_offsets: 0..2048,
-        uncompressed_docs_size_in_bytes: 2048,
-        num_docs: 100,
         ..Default::default()
     };
 
@@ -867,16 +854,7 @@ pub async fn test_metastore_list_index_stats<
     let split_metadata_2 = SplitMetadata {
         split_id: split_id_2.clone(),
         index_uid: index_uid_1.clone(),
-        time_range: Some(100..=199),
-        create_timestamp: current_timestamp,
-        maturity: SplitMaturity::Immature {
-            maturation_period: Duration::from_secs(10),
-        },
-        tags: to_btree_set(&["tag!", "$tag!", "$tag:bar"]),
-        delete_opstamp: 1,
         footer_offsets: 0..2048,
-        uncompressed_docs_size_in_bytes: 2048,
-        num_docs: 100,
         ..Default::default()
     };
 
@@ -884,16 +862,7 @@ pub async fn test_metastore_list_index_stats<
     let split_metadata_3 = SplitMetadata {
         split_id: split_id_3.clone(),
         index_uid: index_uid_2.clone(),
-        time_range: Some(200..=299),
-        create_timestamp: current_timestamp,
-        maturity: SplitMaturity::Immature {
-            maturation_period: Duration::from_secs(20),
-        },
-        tags: to_btree_set(&["tag!", "tag:foo", "tag:baz", "$tag!"]),
-        delete_opstamp: 5,
         footer_offsets: 0..1000,
-        uncompressed_docs_size_in_bytes: 1000,
-        num_docs: 100,
         ..Default::default()
     };
 

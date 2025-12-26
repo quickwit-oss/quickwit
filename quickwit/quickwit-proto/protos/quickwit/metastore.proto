@@ -293,7 +293,7 @@ message ListIndexStatsRequest {
   // List of patterns an index should match or not match to get considered
   // An index must match at least one positive pattern (a pattern not starting
   // with a '-'), and no negative pattern (a pattern starting with a '-').
-  repeated string index_id_patterns = 2;
+  repeated string index_id_patterns = 1;
 }
 
 message ListIndexStatsResponse {

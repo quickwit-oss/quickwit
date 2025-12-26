@@ -178,7 +178,7 @@ macro_rules! metastore_test_suite {
             //  - indexes_metadata
             //  - list_indexes
             //  - delete_index
-            //  - list_index_size_info
+            //  - list_index_stats
 
             #[tokio::test]
             #[serial_test::file_serial]

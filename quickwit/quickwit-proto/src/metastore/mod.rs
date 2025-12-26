@@ -388,9 +388,9 @@ impl ListDeleteTasksRequest {
 }
 
 impl SplitStats {
-    pub fn add_split(&mut self, size: u64) {
+    pub fn add_split(&mut self, size_bytes: u64) {
         self.num_splits += 1;
-        self.total_size_bytes += size;
+        self.total_size_bytes += size_bytes;
     }
 }
 

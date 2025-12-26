@@ -793,16 +793,16 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeSet, HashMap};
 
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
     use quickwit_proto::ingest::Shard;
-    use quickwit_proto::metastore::ListShardsSubrequest;
+    use quickwit_proto::metastore::{ListShardsSubrequest, SplitStats};
     use quickwit_proto::types::{IndexUid, SourceId};
 
     use super::FileBackedIndex;
     use crate::file_backed::file_backed_index::split_query_predicate;
-    use crate::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+    use crate::{IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
 
     impl FileBackedIndex {
         pub(crate) fn insert_shards(&mut self, source_id: &SourceId, shards: Vec<Shard>) {
@@ -833,6 +833,7 @@ mod tests {
                     time_range: Some(32..=40),
                     tags: BTreeSet::from(["tag-1".to_string()]),
                     create_timestamp: 12,
+                    footer_offsets: 0..2048,
                     ..Default::default()
                 },
                 split_state: SplitState::Staged,
@@ -846,6 +847,7 @@ mod tests {
                     time_range: None,
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-3".to_string()]),
                     create_timestamp: 5,
+                    footer_offsets: 0..1024,
                     ..Default::default()
                 },
                 split_state: SplitState::MarkedForDeletion,
@@ -859,6 +861,7 @@ mod tests {
                     time_range: Some(0..=90),
                     tags: BTreeSet::from(["tag-2".to_string(), "tag-4".to_string()]),
                     create_timestamp: 64,
+                    footer_offsets: 0..512,
                     ..Default::default()
                 },
                 split_state: SplitState::Published,
@@ -972,5 +975,31 @@ mod tests {
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
+    }
+
+    #[test]
+    fn test_get_stats() {
+        let index_id = "test-index";
+        let index_metadata = IndexMetadata::for_test(index_id, "file:///qwdata/indexes/test-index");
+        let index =
+            FileBackedIndex::new(index_metadata, make_splits().into(), HashMap::new(), vec![]);
+
+        let expected_staged = Some(SplitStats {
+            num_splits: 1,
+            total_size_bytes: 2048,
+        });
+        let expected_published = Some(SplitStats {
+            num_splits: 1,
+            total_size_bytes: 512,
+        });
+        let expected_marked_for_deletion = Some(SplitStats {
+            num_splits: 1,
+            total_size_bytes: 1024,
+        });
+        let stats = index.get_stats().unwrap();
+
+        assert_eq!(stats.staged, expected_staged);
+        assert_eq!(stats.published, expected_published);
+        assert_eq!(stats.marked_for_deletion, expected_marked_for_deletion);
     }
 }
