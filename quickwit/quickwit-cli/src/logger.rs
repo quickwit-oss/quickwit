@@ -16,10 +16,10 @@ use std::sync::Arc;
 use std::{env, fmt};
 
 use anyhow::Context;
-use opentelemetry::global;
+use opentelemetry::{KeyValue, global};
 use opentelemetry::trace::TracerProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::trace;
+use opentelemetry_sdk::{Resource, trace};
 use opentelemetry_sdk::trace::BatchConfigBuilder;
 use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
@@ -55,7 +55,7 @@ type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscrib
 pub fn setup_logging_and_tracing(
     level: Level,
     ansi_colors: bool,
-    _build_info: &BuildInfo,
+    build_info: &BuildInfo,
 ) -> anyhow::Result<EnvFilterReloadFn> {
     #[cfg(feature = "tokio-console")]
     {
@@ -106,8 +106,15 @@ pub fn setup_logging_and_tracing(
                     .build(),
             )
             .build();
+
+        let resource = Resource::builder()
+            .with_service_name("quickwit") // Convenience method for service.name
+            .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
+            .build();
+
         let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_span_processor(batch_processor)
+            .with_resource(resource)
             .build();
         let tracer = provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
