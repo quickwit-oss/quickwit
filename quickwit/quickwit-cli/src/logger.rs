@@ -16,12 +16,11 @@ use std::sync::Arc;
 use std::{env, fmt};
 
 use anyhow::Context;
-use opentelemetry::{KeyValue, global};
 use opentelemetry::trace::TracerProvider;
+use opentelemetry::{KeyValue, global};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
-use opentelemetry_sdk::trace::BatchConfigBuilder;
 use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use time::format_description::BorrowedFormatItem;
