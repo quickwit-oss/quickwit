@@ -437,8 +437,7 @@ mod expression_dsl {
     fn argument(input: &str) -> IResult<&str, Argument> {
         if let Ok((input, number)) = number(input) {
             Ok((input, Argument::Number(number)))
-        } else if let Ok((input, (_, arg, _))) = (wtag("("), routing_expr, wtag(")")).parse(input)
-        {
+        } else if let Ok((input, (_, arg, _))) = (wtag("("), routing_expr, wtag(")")).parse(input) {
             Ok((input, Argument::Expression(arg)))
         } else {
             routing_sub_expr(input).map(|(input, arg)| (input, Argument::Expression(vec![arg])))
@@ -469,12 +468,14 @@ mod expression_dsl {
             } else {
                 Cow::Borrowed(s)
             }
-        }).parse(input)
+        })
+        .parse(input)
     }
 
     /// Parse a field name into a path, de-escaping where appropriate.
     pub(crate) fn parse_field_name(input: &str) -> anyhow::Result<Vec<Cow<'_, str>>> {
-        let (i, res) = separated_list0(tag("."), escaped_key).parse(input)
+        let (i, res) = separated_list0(tag("."), escaped_key)
+            .parse(input)
             .finish()
             .map_err(|e| anyhow::anyhow!("error parsing key expression: {e}"))?;
         eof::<_, ()>(i)?;
