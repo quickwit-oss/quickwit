@@ -238,8 +238,8 @@ tabled = { version = "0.20", features = ["ansi"] }
 tempfile = "3"
 thiserror = "2"
 thousands = "0.2"
-tikv-jemalloc-ctl = "0.5"
-tikv-jemallocator = "0.5"
+tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
+tikv-jemallocator = "0.6"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
 tokio = { version = "1.48", features = ["full"] }
 tokio-metrics = { version = "0.4", features = ["rt"] }
