@@ -355,8 +355,8 @@ mod expression_dsl {
     use nom::combinator::{eof, map, opt};
     use nom::error::ErrorKind;
     use nom::multi::separated_list0;
-    use nom::sequence::{delimited, tuple};
-    use nom::{AsChar, Finish, IResult, InputTakeAtPosition};
+    use nom::sequence::delimited;
+    use nom::{AsChar, Finish, IResult, Input, Parser};
 
     // this is a RoutingSubExpr in our DSL.
     #[derive(Debug, PartialEq, Eq, Clone)]
@@ -383,7 +383,7 @@ mod expression_dsl {
     // tag, but ignore leading and trailing whitespaces
     pub fn wtag<'a, Error: nom::error::ParseError<&'a str>>(
         t: &'a str,
-    ) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, Error> {
+    ) -> impl Parser<&'a str, Output = &'a str, Error = Error> {
         delimited(multispace0, tag(t), multispace0)
     }
 
@@ -401,13 +401,13 @@ mod expression_dsl {
 
     /// An entire routing expression, containing comma separated routing sub-expressions
     fn routing_expr(input: &str) -> IResult<&str, Vec<ExpressionAst>> {
-        separated_list0(wtag(","), routing_sub_expr)(input)
+        separated_list0(wtag(","), routing_sub_expr).parse(input)
     }
 
     /// A sub-part of a routing expression
     fn routing_sub_expr(input: &str) -> IResult<&str, ExpressionAst> {
         let (input, identifier) = identifier(input)?;
-        let (input, args) = opt(tuple((wtag("("), arguments, wtag(")"))))(input)?;
+        let (input, args) = opt((wtag("("), arguments, wtag(")"))).parse(input)?;
         let res = if let Some((_, args, _)) = args {
             ExpressionAst::Function {
                 name: identifier.to_owned(),
@@ -430,14 +430,14 @@ mod expression_dsl {
 
     /// Arguments for a function
     fn arguments(input: &str) -> IResult<&str, Vec<Argument>> {
-        separated_list0(wtag(","), argument)(input)
+        separated_list0(wtag(","), argument).parse(input)
     }
 
     /// A single argument for a function
     fn argument(input: &str) -> IResult<&str, Argument> {
         if let Ok((input, number)) = number(input) {
             Ok((input, Argument::Number(number)))
-        } else if let Ok((input, (_, arg, _))) = tuple((wtag("("), routing_expr, wtag(")")))(input)
+        } else if let Ok((input, (_, arg, _))) = (wtag("("), routing_expr, wtag(")")).parse(input)
         {
             Ok((input, Argument::Expression(arg)))
         } else {
@@ -469,12 +469,12 @@ mod expression_dsl {
             } else {
                 Cow::Borrowed(s)
             }
-        })(input)
+        }).parse(input)
     }
 
     /// Parse a field name into a path, de-escaping where appropriate.
     pub(crate) fn parse_field_name(input: &str) -> anyhow::Result<Vec<Cow<'_, str>>> {
-        let (i, res) = separated_list0(tag("."), escaped_key)(input)
+        let (i, res) = separated_list0(tag("."), escaped_key).parse(input)
             .finish()
             .map_err(|e| anyhow::anyhow!("error parsing key expression: {e}"))?;
         eof::<_, ()>(i)?;
