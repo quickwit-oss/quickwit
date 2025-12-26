@@ -49,6 +49,9 @@ pub mod jaeger {
         pub mod v1 {
             include!("codegen/jaeger/jaeger.storage.v1.rs");
         }
+        pub mod v2 {
+            include!("codegen/jaeger/jaeger.storage.v2.rs");
+        }
     }
 }
 
