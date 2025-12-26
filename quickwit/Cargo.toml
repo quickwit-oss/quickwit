@@ -137,6 +137,10 @@ indicatif = "0.18"
 itertools = "0.14"
 json_comments = "0.2"
 libz-sys = "1.1"
+# Lindera tokenizer 0.30+ versions (tested up to 0.32.3) are currently broken due to upstream build failures.
+# The dictionary crates attempt to download artifacts from S3 URLs that return 404 Not Found.
+# Version 0.29.0 is the latest version that builds correctly. It also explictly depends on lindera-core 0.29
+# and lindera-dictionary 0.29.
 lindera-core = "0.29"
 lindera-dictionary = "0.29"
 lindera-tokenizer = { version = "0.29", features = [
