@@ -350,6 +350,8 @@ pretty_assertions,https://github.com/rust-pretty-assertions/rust-pretty-assertio
 prettyplease,https://github.com/dtolnay/prettyplease,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 proc-macro-error,https://gitlab.com/CreepySkeleton/proc-macro-error,MIT OR Apache-2.0,CreepySkeleton <creepy-skeleton@yandex.ru>
 proc-macro-error-attr,https://gitlab.com/CreepySkeleton/proc-macro-error,MIT OR Apache-2.0,CreepySkeleton <creepy-skeleton@yandex.ru>
+proc-macro-error-attr2,https://github.com/GnomedDev/proc-macro-error-2,MIT OR Apache-2.0,"CreepySkeleton <creepy-skeleton@yandex.ru>, GnomedDev <david2005thomas@gmail.com>"
+proc-macro-error2,https://github.com/GnomedDev/proc-macro-error-2,MIT OR Apache-2.0,"CreepySkeleton <creepy-skeleton@yandex.ru>, GnomedDev <david2005thomas@gmail.com>"
 proc-macro2,https://github.com/dtolnay/proc-macro2,MIT OR Apache-2.0,"David Tolnay <dtolnay@gmail.com>, Alex Crichton <alex@alexcrichton.com>"
 proc-macro2-diagnostics,https://github.com/SergioBenitez/proc-macro2-diagnostics,MIT OR Apache-2.0,Sergio Benitez <sb@sergio.bz>
 procfs,https://github.com/eminence/procfs,MIT OR Apache-2.0,Andrew Chin <achin@eminence32.net>
@@ -472,6 +474,7 @@ tantivy-tokenizer-api,https://github.com/quickwit-oss/tantivy,MIT,The tantivy-to
 tempfile,https://github.com/Stebalien/tempfile,MIT OR Apache-2.0,"Steven Allen <steven@stebalien.com>, The Rust Project Developers, Ashley Mannix <ashleymannix@live.com.au>, Jason White <me@jasonwhite.io>"
 termcolor,https://github.com/BurntSushi/termcolor,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 termtree,https://github.com/rust-cli/termtree,MIT,The termtree Authors
+testing_table,https://github.com/zhiburt/tabled,MIT,Maxim Zhiburt <zhiburt@gmail.com>
 thiserror,https://github.com/dtolnay/thiserror,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 thiserror-impl,https://github.com/dtolnay/thiserror,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 thousands,https://github.com/tov/thousands-rs,MIT OR Apache-2.0,Jesse A. Tov <jesse.tov@gmail.com>
@@ -537,7 +540,6 @@ uuid,https://github.com/uuid-rs/uuid,Apache-2.0 OR MIT,"Ashley Mannix<ashleymann
 valuable,https://github.com/tokio-rs/valuable,MIT,The valuable Authors
 vsimd,https://github.com/Nugine/simd,MIT,The vsimd Authors
 vte,https://github.com/alacritty/vte,Apache-2.0 OR MIT,"Joe Wilm <joe@jwilm.com>, Christian Duerr <contact@christianduerr.com>"
-vte_generate_state_changes,https://github.com/alacritty/vte,Apache-2.0 OR MIT,Christian Duerr <contact@christianduerr.com>
 wait-timeout,https://github.com/alexcrichton/wait-timeout,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 walkdir,https://github.com/BurntSushi/walkdir,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 want,https://github.com/seanmonstar/want,MIT,Sean McArthur <sean@seanmonstar.com>
@@ -563,7 +565,6 @@ winapi-x86_64-pc-windows-gnu,https://github.com/retep998/winapi-rs,MIT OR Apache
 windows,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-collections,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-collections Authors
 windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-core Authors
 windows-future,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-future Authors
 windows-implement,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-implement Authors
 windows-interface,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-interface Authors

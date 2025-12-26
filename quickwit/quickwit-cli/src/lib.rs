@@ -327,7 +327,7 @@ pub fn make_table<T: Tabled>(
         .with(Modify::new(Rows::new(1..)).with(Alignment::left()))
         .with(Style::ascii())
         .with(Header::new(header))
-        .with(Modify::new(Rows::single(0)).with(Alignment::center()));
+        .with(Modify::new(Rows::new(0..1)).with(Alignment::center()));
 
     table
 }
