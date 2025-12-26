@@ -114,7 +114,9 @@ async fn main_impl() -> anyhow::Result<()> {
     };
 
     if let Some(provider) = tracer_provider {
-        provider.shutdown().context("failed to shutdown OpenTelemetry tracer provider")?;
+        provider
+            .shutdown()
+            .context("failed to shutdown OpenTelemetry tracer provider")?;
     }
 
     std::process::exit(return_code)
