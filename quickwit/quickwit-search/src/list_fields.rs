@@ -67,8 +67,13 @@ async fn get_fields_from_split(
     {
         return Ok(list_fields.fields);
     }
-    let (_, split_bundle) =
-        open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
+    let (_, split_bundle) = open_split_bundle(
+        searcher_context,
+        index_storage,
+        split_and_footer_offsets,
+        false,
+    )
+    .await?;
 
     let serialized_split_fields = split_bundle
         .get_all(Path::new(SPLIT_FIELDS_FILE_NAME))
