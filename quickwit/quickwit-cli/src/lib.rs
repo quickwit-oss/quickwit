@@ -38,7 +38,7 @@ use quickwit_storage::{StorageResolver, load_file};
 use reqwest::Url;
 use tabled::settings::object::Rows;
 use tabled::settings::panel::Header;
-use tabled::settings::{Alignment, Modify, Rotate, Style};
+use tabled::settings::{Alignment, Modify, Style};
 use tabled::{Table, Tabled};
 use tracing::info;
 
