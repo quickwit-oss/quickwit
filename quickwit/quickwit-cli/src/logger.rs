@@ -109,7 +109,7 @@ pub fn setup_logging_and_tracing(
             .build();
 
         let resource = Resource::builder()
-            .with_service_name("quickwit") // Convenience method for service.name
+            .with_service_name("quickwit")
             .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
             .build();
 
