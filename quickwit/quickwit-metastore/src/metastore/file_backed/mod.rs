@@ -815,7 +815,7 @@ impl MetastoreService for FileBackedMetastore {
     ) -> MetastoreResult<ListIndexStatsResponse> {
         let index_id_matcher =
             IndexIdMatcher::try_from_index_id_patterns(&request.index_id_patterns)?;
-        let index_id_incarnation_id_opts: Vec<(IndexId, Option<Ulid>)> = {
+        let index_ids: Vec<IndexId> = {
             let inner_rlock_guard = self.state.read().await;
             inner_rlock_guard
                 .indexes
@@ -826,19 +826,23 @@ impl MetastoreService for FileBackedMetastore {
                     }
                     _ => None,
                 })
-                .map(|index_id| (index_id.clone(), None))
+                .cloned()
                 .collect()
         };
 
+        let mut index_read_futures = FuturesUnordered::new();
+        for index_id in index_ids {
+            let index_read_future = async move {
+                self.read_any(&index_id, None, |index| index.get_stats())
+                    .await
+            };
+            index_read_futures.push(index_read_future);
+        }
+
         let mut index_stats = Vec::new();
-        for (index_id, incarnation_id_opt) in index_id_incarnation_id_opts {
-            match self
-                .read_any(&index_id, incarnation_id_opt, |index| index.get_stats())
-                .await
-            {
-                Ok(stats) => {
-                    index_stats.push(stats);
-                }
+        while let Some(index_read_result) = index_read_futures.next().await {
+            match index_read_result {
+                Ok(stats) => index_stats.push(stats),
                 Err(MetastoreError::NotFound(_)) => {
                     // If the index does not exist, we just skip it.
                     continue;
