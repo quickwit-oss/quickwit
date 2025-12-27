@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Write};
+use std::str::FromStr;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -34,15 +35,16 @@ use quickwit_proto::metastore::{
     FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
     GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    IndexStats, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
+    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
+    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
     ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
     ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
-    UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, SplitStats, StageSplitsRequest,
+    ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
@@ -902,6 +904,82 @@ impl MetastoreService for PostgresqlMetastore {
                 });
         let service_stream = ServiceStream::new(Box::pin(split_stream));
         Ok(service_stream)
+    }
+
+    async fn list_index_stats(
+        &self,
+        request: ListIndexStatsRequest,
+    ) -> MetastoreResult<ListIndexStatsResponse> {
+        let index_pattern_sql = build_index_id_patterns_sql_query(&request.index_id_patterns)
+            .map_err(|error| MetastoreError::Internal {
+                message: "failed to build `list_index_stats` SQL query".to_string(),
+                cause: error.to_string(),
+            })?;
+        let sql = format!(
+            "SELECT
+                i.index_uid,
+                s.split_state,
+                COUNT(s.split_state) AS num_splits,
+                COALESCE(SUM(s.split_size_bytes)::BIGINT, 0) AS total_size_bytes
+            FROM ({index_pattern_sql}) i
+            LEFT JOIN splits s ON s.index_uid = i.index_uid
+            GROUP BY i.index_uid, s.split_state"
+        );
+
+        let rows: Vec<(String, Option<String>, i64, i64)> = sqlx::query_as(&sql)
+            .fetch_all(&self.connection_pool)
+            .await?;
+
+        let mut index_stats = HashMap::new();
+        for (index_uid_str, split_state, num_splits, total_size_bytes) in rows {
+            let Ok(index_uid) = IndexUid::from_str(&index_uid_str) else {
+                return Err(MetastoreError::Internal {
+                    message: "failed to parse index_uid".to_string(),
+                    cause: index_uid_str.to_string(),
+                });
+            };
+            let stats = index_stats
+                .entry(index_uid_str)
+                .or_insert_with(|| IndexStats {
+                    index_uid: Some(index_uid),
+                    staged: Some(SplitStats::default()),
+                    published: Some(SplitStats::default()),
+                    marked_for_deletion: Some(SplitStats::default()),
+                });
+            let num_splits = num_splits as u64;
+            let total_size_bytes = total_size_bytes as u64;
+            match split_state.as_deref() {
+                Some("Staged") => {
+                    stats.staged = Some(SplitStats {
+                        num_splits,
+                        total_size_bytes,
+                    });
+                }
+                Some("Published") => {
+                    stats.published = Some(SplitStats {
+                        num_splits,
+                        total_size_bytes,
+                    });
+                }
+                Some("MarkedForDeletion") => {
+                    stats.marked_for_deletion = Some(SplitStats {
+                        num_splits,
+                        total_size_bytes,
+                    });
+                }
+                None => {} // if an index has no splits, we can keep the defaults
+                Some(split_state) => {
+                    return Err(MetastoreError::Internal {
+                        message: "invalid split state".to_string(),
+                        cause: split_state.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(ListIndexStatsResponse {
+            index_stats: index_stats.into_values().collect(),
+        })
     }
 
     #[instrument(skip(self))]
