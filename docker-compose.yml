@@ -121,7 +121,7 @@ services:
           KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
     healthcheck:
         # test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
-        test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "5"]
+        test: ["CMD", "ub", "kafka-ready", "-b", "localhost:9092", "1", "5"]
         start_period: 5s
         interval: 5s
         timeout: 10s
