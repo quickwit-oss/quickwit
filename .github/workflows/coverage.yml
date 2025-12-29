@@ -81,6 +81,7 @@ jobs:
           KAFKA_JMX_PORT: 9101
           KAFKA_JMX_HOSTNAME: localhost
           KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
+          KAFKA_ZOOKEEPER_CONNECTION_TIMEOUT_MS: 60000
         options: >-
           --health-cmd "cub kafka-ready -b localhost:9092 1 5"
           --health-interval 10s
@@ -161,6 +162,9 @@ jobs:
         uses: taiki-e/install-action@763e3324d4fd026c9bd284c504378585777a87d5 # v2.62.57
         with:
           tool: cargo-llvm-cov,nextest,protoc
+
+      - name: Wait for Zookeeper
+        run: timeout 120s bash -c 'until nc -z localhost 2181; do sleep 2; done'
 
       # We limit the number of jobs to 4 to avoid OOM errors when linking the binary.
       - name: Generate code coverage

@@ -740,7 +740,7 @@ mod tests {
 
 #[cfg(all(
     test,
-    any(feature = "sqs-localstack-tests", feature = "kafka-broker-tests")
+    any(feature = "sqs-localstack-tests", feature = "kafka-broker-tests", feature = "pulsar-broker-tests")
 ))]
 mod test_setup_helper {
 
