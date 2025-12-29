@@ -65,7 +65,7 @@ jobs:
           --health-retries 5
 
       kafka-broker:
-        image: confluentinc/confluent-local:${CP_VERSION:-7.4.11}
+        image: confluentinc/confluent-local:7.4.11
         ports:
           - "9092:9092"
           - "9101:9101"
