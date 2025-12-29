@@ -98,7 +98,7 @@ async fn main_impl() -> anyhow::Result<()> {
     start_jemalloc_metrics_loop();
 
     let build_info = BuildInfo::get();
-    let (env_filter_reload_fn, tracer_provider) =
+    let (env_filter_reload_fn, tracer_provider_opt) =
         setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
@@ -113,7 +113,7 @@ async fn main_impl() -> anyhow::Result<()> {
         0
     };
 
-    if let Some(provider) = tracer_provider {
+    if let Some(provider) = tracer_provider_opt {
         provider
             .shutdown()
             .context("failed to shutdown OpenTelemetry tracer provider")?;

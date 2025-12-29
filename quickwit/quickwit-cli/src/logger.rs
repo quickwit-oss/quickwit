@@ -92,7 +92,7 @@ pub fn setup_logging_and_tracing(
 
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
-    let provider = if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
+    let provider_opt = if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
         let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_http()
             .build()
@@ -136,7 +136,7 @@ pub fn setup_logging_and_tracing(
             reload_handle.reload(new_env_filter)?;
             Ok(())
         }),
-        provider,
+        provider_opt,
     ))
 }
 
