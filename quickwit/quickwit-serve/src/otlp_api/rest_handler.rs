@@ -123,7 +123,7 @@ pub(crate) fn otlp_logs_handler(
     path = "/otlp/v1/traces",
     request_body(content = String, description = "`ExportTraceServiceRequest` protobuf message", content_type = "application/x-protobuf"),
     responses(
-        (status = 200, description = "Successfully exported traces.", body = ExportTracesServiceResponse)
+        (status = 200, description = "Successfully exported traces.", body = ExportTraceServiceResponse)
     ),
 )]
 pub(crate) fn otlp_default_traces_handler(
@@ -158,7 +158,7 @@ pub(crate) fn otlp_default_traces_handler(
     path = "/{index}/otlp/v1/traces",
     request_body(content = String, description = "`ExportTraceServiceRequest` protobuf message", content_type = "application/x-protobuf"),
     responses(
-        (status = 200, description = "Successfully exported traces.", body = ExportTracesServiceResponse)
+        (status = 200, description = "Successfully exported traces.", body = ExportTraceServiceResponse)
     ),
 )]
 pub(crate) fn otlp_ingest_traces_handler(

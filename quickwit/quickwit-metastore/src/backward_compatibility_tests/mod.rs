@@ -279,13 +279,13 @@ mod tests {
         field_added_in_0_8: u16,
     }
 
-    #[derive(Serialize, Deserialize, Debug, Clone)]
+    #[derive(Serialize, Deserialize, Debug, Clone, utoipa::ToSchema)]
     struct TestEntityV0_8 {
         field_already_in_0_7: u16,
         field_added_in_0_8: u16,
     }
 
-    #[derive(Deserialize, Debug, Clone)]
+    #[derive(Deserialize, Debug, Clone, utoipa::ToSchema)]
     struct TestEntityV0_7 {
         field_already_in_0_7: u16,
     }

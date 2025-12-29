@@ -24,10 +24,12 @@ use super::model::{
 };
 use crate::Body;
 use crate::decompression::get_body_bytes;
+use crate::elasticsearch_api::model::ElasticRefresh;
 use crate::elasticsearch_api::model::{
     ElasticBulkOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
 use crate::search_api::{extract_index_id_patterns, extract_index_id_patterns_default};
+use quickwit_ingest::IngestResponse;
 
 const BODY_LENGTH_LIMIT: ByteSize = ByteSize::mib(1);
 

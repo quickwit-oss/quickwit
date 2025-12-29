@@ -108,15 +108,28 @@ fn generate_main_struct(mut input: ItemStruct) -> Result<TokenStream2, Error> {
         let proxy_ident = Ident::new(&format!("__MultiKey{}", input.ident), input.ident.span());
 
         Some(quote!(
-            impl<'__s> utoipa::ToSchema<'__s> for #main_ident {
-                fn schema() -> (
-                    &'__s str,
-                    utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
-                ) {
-                    (
-                        #main_ident_str,
-                        <#proxy_ident as utoipa::ToSchema>::schema().1,
-                    )
+            impl utoipa::PartialSchema for #main_ident {
+                fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+                    <#proxy_ident as utoipa::PartialSchema>::schema()
+                }
+            }
+
+            impl utoipa::ToSchema for #main_ident {
+                fn name() -> std::borrow::Cow<'static, str> {
+                    std::borrow::Cow::Borrowed(#main_ident_str)
+                }
+                fn schemas(schemas: &mut Vec<(String, utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>)>) {
+                    let mut proxy_schemas = Vec::new();
+                    <#proxy_ident as utoipa::ToSchema>::schemas(&mut proxy_schemas);
+                    let proxy_name = <#proxy_ident as utoipa::ToSchema>::name();
+
+                    for (name, schema) in proxy_schemas {
+                        if name == proxy_name {
+                            schemas.push((#main_ident_str.to_string(), schema));
+                        } else {
+                            schemas.push((name, schema));
+                        }
+                    }
                 }
             }
         ))

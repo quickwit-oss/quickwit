@@ -35,7 +35,7 @@ pub(super) fn build_jaeger_traces(spans: Vec<JaegerSpan>) -> anyhow::Result<Vec<
     Ok(jaeger_traces)
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct JaegerResponseBody<T> {
     pub data: T,
@@ -64,7 +64,7 @@ pub struct TracesSearchQueryParams {
 // Jaeger Model for UI
 // Source: https://github.com/jaegertracing/jaeger/blob/main/model/json/model.go#L82
 
-#[derive(Clone, Default, Debug, PartialEq, Serialize, utoipa::IntoParams)]
+#[derive(Clone, Default, Debug, PartialEq, Serialize, utoipa::IntoParams, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct JaegerTrace {
     #[serde(rename = "traceID")]
@@ -119,7 +119,7 @@ impl JaegerTrace {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct JaegerSpan {
     #[serde(rename = "traceID")]
@@ -175,7 +175,7 @@ impl TryFrom<Span> for JaegerSpan {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct JaegerSpanRef {
     #[serde(rename = "traceID")]
@@ -201,7 +201,7 @@ impl From<&SpanRef> for JaegerSpanRef {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct JaegerKeyValue {
     key: String,
     #[serde(rename = "type")]
@@ -261,7 +261,7 @@ impl From<&KeyValue> for JaegerKeyValue {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct JaegerLog {
     timestamp: i64, // microseconds since Unix epoch
     fields: Vec<JaegerKeyValue>,
@@ -280,7 +280,7 @@ impl From<&Log> for JaegerLog {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 struct JaegerProcess {
     service_name: String,

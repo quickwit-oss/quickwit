@@ -60,6 +60,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut prost_config = prost_build::Config::default();
     prost_config
         .bytes(["GetDebugInfoResponse.debug_info_json"])
+        .field_attribute(
+            "GetDebugInfoResponse.debug_info_json",
+            "#[schema(value_type = String, format = Binary)]",
+        )
         .file_descriptor_set_path("src/codegen/quickwit/developer_descriptor.bin");
 
     Codegen::builder()
@@ -100,6 +104,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "IndexesMetadataResponse.indexes_metadata_json_zstd",
             "ListIndexesMetadataResponse.indexes_metadata_json_zstd",
         ])
+        .field_attribute(
+            "IndexesMetadataResponse.indexes_metadata_json_zstd",
+            "#[schema(value_type = String, format = Binary)]",
+        )
+        .field_attribute(
+            "ListIndexesMetadataResponse.indexes_metadata_json_zstd",
+            "#[schema(value_type = String, format = Binary)]",
+        )
         .extern_path(
             ".quickwit.common.DocMappingUid",
             "crate::types::DocMappingUid",
@@ -147,6 +159,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
         .extern_path(".quickwit.ingest.Position", "crate::types::Position")
         .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
+        .field_attribute(
+            "DocBatchV2.doc_buffer",
+            "#[schema(value_type = String, format = Binary)]",
+        )
+        .field_attribute(
+            "MRecordBatch.mrecord_buffer",
+            "#[schema(value_type = String, format = Binary)]",
+        )
         .field_attribute(
             "Shard.follower_id",
             "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
@@ -233,6 +253,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("StatusCode", r#"#[serde(rename_all = "snake_case")]"#)
         .type_attribute(
             "ExportLogsServiceResponse",
+            r#"#[derive(utoipa::ToSchema)]"#,
+        )
+        .type_attribute(
+            "ExportLogsPartialSuccess",
+            r#"#[derive(utoipa::ToSchema)]"#,
+        )
+        .type_attribute(
+            "ExportTraceServiceResponse",
+            r#"#[derive(utoipa::ToSchema)]"#,
+        )
+        .type_attribute(
+            "ExportTracePartialSuccess",
             r#"#[derive(utoipa::ToSchema)]"#,
         )
         .out_dir("src/codegen/opentelemetry")

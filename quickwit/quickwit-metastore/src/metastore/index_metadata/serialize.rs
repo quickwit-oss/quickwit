@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_config::{IndexConfig, SourceConfig, VersionedIndexConfig, VersionedSourceConfig};
 use quickwit_proto::types::IndexUid;
 use serde::{self, Deserialize, Serialize};
 
@@ -24,7 +24,7 @@ use crate::split_metadata::utc_now_timestamp;
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
-pub(crate) enum VersionedIndexMetadata {
+pub enum VersionedIndexMetadata {
     #[serde(rename = "0.9")]
     // Retro compatibility.
     #[serde(alias = "0.8")]
@@ -64,7 +64,7 @@ impl From<IndexMetadata> for IndexMetadataV0_8 {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
-pub(crate) struct IndexMetadataV0_8 {
+pub struct IndexMetadataV0_8 {
     #[schema(value_type = String)]
     pub index_uid: IndexUid,
     #[schema(value_type = VersionedIndexConfig)]

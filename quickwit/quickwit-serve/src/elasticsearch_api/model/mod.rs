@@ -25,7 +25,7 @@ mod search_response;
 mod stats;
 
 pub use bulk_body::BulkAction;
-pub use bulk_query_params::ElasticBulkOptions;
+pub use bulk_query_params::{ElasticBulkOptions, ElasticRefresh};
 pub use cat_indices::{
     CatIndexQueryParams, ElasticsearchCatIndexResponse, ElasticsearchResolveIndexEntryResponse,
     ElasticsearchResolveIndexResponse,

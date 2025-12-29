@@ -27,7 +27,7 @@ use crate::types::IndexId;
 /// Index identifiers that uniquely identify not only the index, but also
 /// its incarnation allowing to distinguish between deleted and recreated indexes.
 /// It is represented as a string in index_id:incarnation_id format.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Ord, PartialOrd, Hash, utoipa::ToSchema)]
 pub struct IndexUid {
     pub index_id: IndexId,
     pub incarnation_id: Ulid,

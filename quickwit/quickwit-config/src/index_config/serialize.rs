@@ -29,7 +29,7 @@ type IndexConfigForSerialization = IndexConfigV0_8;
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
-pub(crate) enum VersionedIndexConfig {
+pub enum VersionedIndexConfig {
     // The two versions use the same format but for v0.8 and below, we need to set the
     // `doc_mapping_uid` to the nil value upon deserialization.
     #[serde(rename = "0.9")]

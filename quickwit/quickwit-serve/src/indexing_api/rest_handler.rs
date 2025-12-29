@@ -16,6 +16,7 @@ use std::convert::Infallible;
 
 use quickwit_actors::{AskError, Mailbox, Observe};
 use quickwit_indexing::actors::{IndexingService, IndexingServiceCounters};
+use quickwit_indexing::models::IndexingStatistics;
 use warp::{Filter, Rejection};
 
 use crate::format::extract_format_from_qs;

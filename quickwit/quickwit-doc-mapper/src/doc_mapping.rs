@@ -15,6 +15,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
+use crate::doc_mapper::FieldMappingEntryForSerialization;
 use quickwit_proto::types::DocMappingUid;
 use serde::{Deserialize, Serialize};
 
