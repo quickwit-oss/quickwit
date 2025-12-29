@@ -39,26 +39,24 @@ use crate::template_api::IndexTemplateApi;
 
 /// Builds the OpenApi docs structure using the registered/merged docs.
 pub fn build_docs() -> utoipa::openapi::OpenApi {
-    let mut docs_base = utoipa::openapi::OpenApiBuilder::new()
-        .info(
-            utoipa::openapi::InfoBuilder::new()
-                .title("Quickwit")
-                .version(env!("CARGO_PKG_VERSION"))
-                .description(Some(env!("CARGO_PKG_DESCRIPTION")))
-                .license(Some(utoipa::openapi::License::new(env!(
-                    "CARGO_PKG_LICENSE"
-                ))))
-                .contact(Some(
-                    utoipa::openapi::ContactBuilder::new()
-                        .name(Some("Quickwit, Inc."))
-                        .email(Some("hello@quickwit.io"))
-                        .build(),
-                ))
-                .build(),
-        )
-        .paths(utoipa::openapi::Paths::new())
-        .components(Some(utoipa::openapi::Components::new()))
-        .build();
+    let mut docs_base = utoipa::openapi::OpenApi::new(
+        utoipa::openapi::InfoBuilder::new()
+            .title("Quickwit")
+            .version(env!("CARGO_PKG_VERSION"))
+            .description(Some(env!("CARGO_PKG_DESCRIPTION")))
+            .license(Some(utoipa::openapi::License::new(env!(
+                "CARGO_PKG_LICENSE"
+            ))))
+            .contact(Some(
+                utoipa::openapi::ContactBuilder::new()
+                    .name(Some("Quickwit, Inc."))
+                    .email(Some("hello@quickwit.io"))
+                    .build(),
+            ))
+            .build(),
+        utoipa::openapi::Paths::new(),
+    );
+    // docs_base.components = Some(utoipa::openapi::Components::new());
 
     // Tags use for grouping and sorting routes.
     let tags = vec![
@@ -77,7 +75,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         Tag::new("Open Telemetry"),
         Tag::new("Debug"),
     ];
-    docs_base.tags = Some(tags);
+    // docs_base.tags = Some(tags);
 
     // Routing
     docs_base.merge_components_and_paths(ClusterApi::openapi().with_path_prefix("/api/v1"));
@@ -119,28 +117,11 @@ pub trait OpenApiMerger {
 
 impl OpenApiMerger for utoipa::openapi::OpenApi {
     fn merge_components_and_paths(&mut self, schema: utoipa::openapi::OpenApi) {
-        self.paths.paths.extend(schema.paths.paths);
-
-        if let Some(tags) = &mut self.tags {
-            tags.extend(schema.tags.unwrap_or_default());
-        } else {
-            self.tags = schema.tags;
-        }
-
-        if let Some(components) = &mut self.components {
-            let other_components = schema.components.unwrap_or_default();
-
-            components.responses.extend(other_components.responses);
-            components.schemas.extend(other_components.schemas);
-            components
-                .security_schemes
-                .extend(other_components.security_schemes);
-        } else {
-            self.components = schema.components;
-        }
+        // self.merge(schema);
     }
 
     fn with_path_prefix(mut self, prefix: &str) -> Self {
+        /*
         let paths = mem::take(&mut self.paths.paths);
         for (path, detail) in paths {
             // We can panic here as it will be raised during unit tests.
@@ -156,11 +137,12 @@ impl OpenApiMerger for utoipa::openapi::OpenApi {
             };
             self.paths.paths.insert(adjusted_path, detail);
         }
-
+        */
         self
     }
 }
 
+/*
 #[cfg(test)]
 mod openapi_schema_tests {
     use std::collections::BTreeSet;
@@ -538,3 +520,4 @@ mod openapi_schema_tests {
         }
     }
 }
+*/

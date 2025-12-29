@@ -34,6 +34,7 @@ pub struct ExportLogsServiceResponse {
     pub partial_success: ::core::option::Option<ExportLogsPartialSuccess>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
+#[derive(utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExportLogsPartialSuccess {
     /// The number of rejected log records.

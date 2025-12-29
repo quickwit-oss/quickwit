@@ -22,7 +22,7 @@ pub use ulid::Ulid;
 use super::ULID_SIZE;
 
 /// A doc UID identifies a document across segments, splits, and indexes.
-#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd, utoipa::ToSchema)]
 pub struct DocUid(Ulid);
 
 impl fmt::Debug for DocUid {

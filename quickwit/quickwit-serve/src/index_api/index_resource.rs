@@ -17,12 +17,14 @@ use std::sync::Arc;
 use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
-    ConfigFormat, NodeConfig, load_index_config_update, validate_index_id_pattern,
+    ConfigFormat, NodeConfig, VersionedIndexConfig, load_index_config_update,
+    validate_index_id_pattern,
 };
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
     ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitInfo, SplitState,
+    VersionedIndexMetadata,
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest, MetastoreError,
@@ -456,7 +458,7 @@ pub fn delete_index_handler(
     path = "/indexes/{index_id}",
     responses(
         // We return `VersionedIndexMetadata` as it's the serialized model view.
-        (status = 200, description = "Successfully deleted index.", body = [FileEntry])
+        (status = 200, description = "Successfully deleted index.", body = [SplitInfo])
     ),
     params(
         DeleteIndexQueryParam,

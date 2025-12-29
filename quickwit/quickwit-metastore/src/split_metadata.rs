@@ -52,6 +52,15 @@ impl Split {
     }
 }
 
+/// Range u64 schema.
+#[derive(utoipa::ToSchema)]
+pub struct RangeU64 {
+    /// Start.
+    pub start: u64,
+    /// End.
+    pub end: u64,
+}
+
 /// Carries immutable split metadata.
 /// This struct can deserialize older format automatically
 /// but can only serialize to the last version.
@@ -95,6 +104,7 @@ pub struct SplitMetadata {
 
     /// If a timestamp field is available, the min / max timestamp in
     /// the split, expressed in seconds.
+    #[schema(value_type = RangeInclusiveI64)]
     pub time_range: Option<RangeInclusive<i64>>,
 
     /// Timestamp for tracking when the split was created.
@@ -120,6 +130,7 @@ pub struct SplitMetadata {
     ///
     /// The footer offsets
     /// make it possible to download the footer in a single call to `.get_slice(...)`.
+    #[schema(value_type = RangeU64)]
     pub footer_offsets: Range<u64>,
 
     /// Delete opstamp.
@@ -337,9 +348,18 @@ impl FromStr for SplitState {
 
 /// `SplitMaturity` defines the maturity of a split, it is either `Mature`
 /// or `Immature` with a given maturation period.
+/// Range inclusive i64 schema.
+#[derive(utoipa::ToSchema)]
+pub struct RangeInclusiveI64 {
+    /// Start.
+    pub start: i64,
+    /// End.
+    pub end: i64,
+}
+
 /// The maturity is determined by the `MergePolicy`.
 #[serde_as]
-#[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq, PartialOrd, Ord, utoipa::ToSchema)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
 pub enum SplitMaturity {

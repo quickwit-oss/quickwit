@@ -24,7 +24,7 @@ use ulid::Ulid;
 use super::ULID_SIZE;
 
 /// A pipeline UID identifies an indexing pipeline and an indexing task.
-#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd, utoipa::ToSchema)]
 pub struct PipelineUid(Ulid);
 
 impl fmt::Debug for PipelineUid {

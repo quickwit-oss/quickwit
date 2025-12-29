@@ -43,7 +43,7 @@ mod templating;
 pub use cluster_config::ClusterConfig;
 // We export that one for backward compatibility.
 // See #2048
-use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
+pub use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
     IndexConfig, IndexingResources, IndexingSettings, IngestSettings, RetentionPolicy,
     SearchSettings, build_doc_mapper, load_index_config_from_user_config, load_index_config_update,
@@ -77,7 +77,9 @@ pub use crate::node_config::{
     KeepAliveConfig, NodeConfig, RestConfig, SearcherConfig, SplitCacheLimits,
     StorageTimeoutPolicy, TlsConfig,
 };
-use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
+pub use crate::source_config::serialize::{
+    SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig,
+};
 pub use crate::storage_config::{
     AzureStorageConfig, FileStorageConfig, GoogleCloudStorageConfig, RamStorageConfig,
     S3StorageConfig, StorageBackend, StorageBackendFlavor, StorageConfig, StorageConfigs,

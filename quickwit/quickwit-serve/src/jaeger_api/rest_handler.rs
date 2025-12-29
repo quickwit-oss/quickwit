@@ -77,7 +77,7 @@ fn jaeger_api_path_filter() -> impl Filter<Extract = (Vec<String>,), Error = Rej
     tag = "Jaeger",
     path = "/{otel-traces-index-id}/jaeger/api/services",
     responses(
-        (status = 200, description = "Successfully fetched services names.", body = JaegerResponseBody )
+        (status = 200, description = "Successfully fetched services names.", body = JaegerResponseBody<Vec<String>> )
     ),
     params(
         ("otel-traces-index-id" = String, Path, description = "The name of the index to get services for.")
@@ -98,7 +98,7 @@ pub fn jaeger_services_handler(
     tag = "Jaeger",
     path = "/{otel-traces-index-id}/jaeger/api/services/{service}/operations",
     responses(
-        (status = 200, description = "Successfully fetched operations names the given service.", body = JaegerResponseBody )
+        (status = 200, description = "Successfully fetched operations names the given service.", body = JaegerResponseBody<Vec<String>> )
     ),
     params(
         ("otel-traces-index-id" = String, Path, description = "The name of the index to get operations for."),
@@ -120,7 +120,7 @@ pub fn jaeger_service_operations_handler(
     tag = "Jaeger",
     path = "/{otel-traces-index-id}/jaeger/api/traces",
     responses(
-        (status = 200, description = "Successfully fetched traces information.", body = JaegerResponseBody )
+        (status = 200, description = "Successfully fetched traces information.", body = JaegerResponseBody<Vec<JaegerTrace>> )
     ),
     params(
         ("otel-traces-index-id" = String, Path, description = "The name of the index to get traces for."),
@@ -150,7 +150,7 @@ pub fn jaeger_traces_search_handler(
     tag = "Jaeger",
     path = "/{otel-traces-index-id}/jaeger/api/traces/{id}",
     responses(
-        (status = 200, description = "Successfully fetched traces spans for the provided trace ID.", body = JaegerResponseBody )
+        (status = 200, description = "Successfully fetched traces spans for the provided trace ID.", body = JaegerResponseBody<Vec<JaegerTrace>> )
     ),
     params(
         ("otel-traces-index-id" = String, Path, description = "The name of the index to get traces for."),

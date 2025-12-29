@@ -25,7 +25,8 @@ use ulid::Ulid;
 ///
 /// In other words, there cannot be two shards belonging to two different sources
 /// with the same shard ID.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd, utoipa::ToSchema)]
+#[schema(value_type = String)]
 pub struct ShardId(ByteString);
 
 impl ShardId {

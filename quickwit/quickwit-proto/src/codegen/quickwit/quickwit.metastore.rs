@@ -56,6 +56,7 @@ pub struct ListIndexesMetadataResponse {
     /// A JSON serialized then ZSTD compressed list of `IndexMetadata`: `Vec<IndexMetadata> | JSON | ZSTD`.
     /// We don't use `repeated` here to increase the compression rate and ratio.
     #[prost(bytes = "bytes", tag = "2")]
+    #[schema(value_type = String, format = Binary)]
     pub indexes_metadata_json_zstd: ::prost::bytes::Bytes,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -102,6 +103,7 @@ pub struct IndexesMetadataResponse {
     /// A JSON serialized then ZSTD compressed list of `IndexMetadata`: `Vec<IndexMetadata> | JSON | ZSTD`.
     /// We don't use `repeated` here to increase the compression rate and ratio.
     #[prost(bytes = "bytes", tag = "1")]
+    #[schema(value_type = String, format = Binary)]
     pub indexes_metadata_json_zstd: ::prost::bytes::Bytes,
     #[prost(message, repeated, tag = "2")]
     pub failures: ::prost::alloc::vec::Vec<IndexMetadataFailure>,

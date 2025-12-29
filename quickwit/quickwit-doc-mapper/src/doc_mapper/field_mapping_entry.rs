@@ -76,7 +76,7 @@ pub(crate) struct FieldMappingEntryForSerialization {
     #[serde(rename = "type")]
     type_id: String,
     #[serde(flatten)]
-    #[schema(value_type = HashMap<String, Object>)]
+    #[schema(value_type = HashMap<String, JsonValue>)]
     pub field_mapping_json: serde_json::Map<String, JsonValue>,
 }
 
@@ -175,7 +175,7 @@ impl Default for QuickwitBytesOptions {
 }
 
 /// Available binary formats.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum BinaryFormat {
     /// Base64 format.
@@ -232,7 +232,7 @@ impl BinaryFormat {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum NumericOutputFormat {
     #[default]
@@ -306,9 +306,10 @@ impl QuickwitTextNormalizer {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, utoipa::ToSchema)]
 pub struct TextIndexingOptions {
     pub tokenizer: QuickwitTextTokenizer,
+    #[schema(value_type = IndexRecordOptionSchema)]
     pub record: IndexRecordOption,
     pub fieldnorms: bool,
 }
