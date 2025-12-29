@@ -18,7 +18,6 @@ use std::collections::BTreeMap;
 
 use anyhow::Context;
 use colored::Colorize;
-use opentelemetry::global;
 use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
@@ -99,7 +98,7 @@ async fn main_impl() -> anyhow::Result<()> {
     start_jemalloc_metrics_loop();
 
     let build_info = BuildInfo::get();
-    let env_filter_reload_fn =
+    let (env_filter_reload_fn, tracer_provider_opt) =
         setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
@@ -114,7 +113,12 @@ async fn main_impl() -> anyhow::Result<()> {
         0
     };
 
-    global::shutdown_tracer_provider();
+    if let Some(provider) = tracer_provider_opt {
+        provider
+            .shutdown()
+            .context("failed to shutdown OpenTelemetry tracer provider")?;
+    }
+
     std::process::exit(return_code)
 }
 

@@ -43,7 +43,6 @@ use quickwit_serve::{
     ListSplitsQueryParams, RestIngestResponse, SearchRequestQueryString, serve_quickwit,
 };
 use quickwit_storage::StorageResolver;
-use rand::Rng;
 use reqwest::Url;
 use serde_json::Value;
 use tempfile::TempDir;
@@ -487,7 +486,7 @@ impl ClusterSandbox {
         let data_dir = test_conf
             .0
             .data_dir_path
-            .join(rand::thread_rng().r#gen::<u64>().to_string());
+            .join(rand::random::<u64>().to_string());
         tokio::fs::create_dir(&data_dir).await?;
         let node_config = format!(
             r#"

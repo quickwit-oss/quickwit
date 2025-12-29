@@ -106,7 +106,7 @@ impl RetryParams {
         let capped_delay_ms = delay_ms.min(self.max_delay.as_millis() as u64);
         let half_delay_ms = capped_delay_ms.div_ceil(2);
         let jitter_range = half_delay_ms..capped_delay_ms + 1;
-        let jittered_delay_ms = rand::thread_rng().gen_range(jitter_range);
+        let jittered_delay_ms = rand::rng().random_range(jitter_range);
         Duration::from_millis(jittered_delay_ms)
     }
 

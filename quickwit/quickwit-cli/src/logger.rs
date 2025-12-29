@@ -19,7 +19,7 @@ use anyhow::Context;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{KeyValue, global};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
-use opentelemetry_sdk::trace::BatchConfigBuilder;
+use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
 use quickwit_common::{get_bool_from_env, get_from_env_opt};
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
@@ -56,12 +56,12 @@ pub fn setup_logging_and_tracing(
     level: Level,
     ansi_colors: bool,
     build_info: &BuildInfo,
-) -> anyhow::Result<EnvFilterReloadFn> {
+) -> anyhow::Result<(EnvFilterReloadFn, Option<SdkTracerProvider>)> {
     #[cfg(feature = "tokio-console")]
     {
         if get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
             console_subscriber::init();
-            return Ok(quickwit_serve::do_nothing_env_filter_reload_fn());
+            return Ok((quickwit_serve::do_nothing_env_filter_reload_fn(), None));
         }
     }
     global::set_text_map_propagator(TraceContextPropagator::new());
@@ -92,27 +92,29 @@ pub fn setup_logging_and_tracing(
 
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
-    if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
+    let provider_opt = if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
         let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
-            .with_tonic()
+            .with_http()
             .build()
             .context("failed to initialize OpenTelemetry OTLP exporter")?;
-        let batch_processor =
-            trace::BatchSpanProcessor::builder(otlp_exporter, opentelemetry_sdk::runtime::Tokio)
-                .with_batch_config(
-                    BatchConfigBuilder::default()
-                        // Quickwit can generate a lot of spans, especially in debug mode, and the
-                        // default queue size of 2048 is too small.
-                        .with_max_queue_size(32_768)
-                        .build(),
-                )
-                .build();
-        let provider = opentelemetry_sdk::trace::TracerProvider::builder()
+        let batch_processor = trace::BatchSpanProcessor::builder(otlp_exporter)
+            .with_batch_config(
+                BatchConfigBuilder::default()
+                    // Quickwit can generate a lot of spans, especially in debug mode, and the
+                    // default queue size of 2048 is too small.
+                    .with_max_queue_size(32_768)
+                    .build(),
+            )
+            .build();
+
+        let resource = Resource::builder()
+            .with_service_name("quickwit")
+            .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
+            .build();
+
+        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_span_processor(batch_processor)
-            .with_resource(Resource::new([
-                KeyValue::new("service.name", "quickwit"),
-                KeyValue::new("service.version", build_info.version.clone()),
-            ]))
+            .with_resource(resource)
             .build();
         let tracer = provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
@@ -120,17 +122,22 @@ pub fn setup_logging_and_tracing(
             .with(telemetry_layer)
             .try_init()
             .context("failed to register tracing subscriber")?;
+        Some(provider)
     } else {
         registry
             .try_init()
             .context("failed to register tracing subscriber")?;
-    }
+        None
+    };
 
-    Ok(Arc::new(move |env_filter_def: &str| {
-        let new_env_filter = EnvFilter::try_new(env_filter_def)?;
-        reload_handle.reload(new_env_filter)?;
-        Ok(())
-    }))
+    Ok((
+        Arc::new(move |env_filter_def: &str| {
+            let new_env_filter = EnvFilter::try_new(env_filter_def)?;
+            reload_handle.reload(new_env_filter)?;
+            Ok(())
+        }),
+        provider_opt,
+    ))
 }
 
 /// We do not rely on the RFC3339 implementation, because it has a nanosecond precision.
