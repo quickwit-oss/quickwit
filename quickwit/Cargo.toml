@@ -79,7 +79,7 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 anyhow = "1"
-arc-swap = "1.7"
+arc-swap = "1.8"
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
@@ -99,7 +99,7 @@ chrono = { version = "0.4", default-features = false, features = [
 clap = { version = "4.5", features = ["env", "string"] }
 coarsetime = "0.1"
 colored = "3.0"
-console-subscriber = "0.1"
+console-subscriber = "0.5"
 criterion = { version = "0.8", features = ["async_tokio"] }
 cron = "0.15"
 dialoguer = "0.12"
@@ -114,10 +114,12 @@ fnv = "1"
 futures = "0.3"
 futures-util = { version = "0.3", default-features = false }
 glob = "0.3"
-google-cloud-auth = "0.12"
-google-cloud-gax = "0.15"
-google-cloud-googleapis = { version = "0.10", features = ["pubsub"] }
-google-cloud-pubsub = "0.18"
+# We can't directly update google-cloud-auth to 1.3 and google-cloud-gax to 1.4, because the latest version
+# of google-cloud-pubsub is "0.30" which explicitly depends on: google-cloud-auth ^0.17 and google-cloud-gax ^0.19.
+google-cloud-auth = "0.17.2"
+google-cloud-gax = "0.19.2"
+google-cloud-googleapis = { version = "0.16", features = ["pubsub"] }
+google-cloud-pubsub = "0.30"
 heck = "0.5"
 hex = "0.4"
 home = "0.5"
@@ -231,7 +233,7 @@ sqlx = { version = "0.8", features = [
 syn = { version = "2.0", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "1"
 sysinfo = { version = "0.37", default-features = false, features = ["disk"] }
-tabled = { version = "0.14", features = ["color"] }
+tabled = { version = "0.20", features = ["ansi"] }
 tempfile = "3"
 thiserror = "2"
 thousands = "0.2"
