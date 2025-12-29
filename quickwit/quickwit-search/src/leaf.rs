@@ -1614,7 +1614,7 @@ mod tests {
 
     use bytes::BufMut;
     use quickwit_directories::write_hotcache;
-    use rand::{Rng, thread_rng};
+    use rand::Rng;
     use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
     use tantivy::schema::{
@@ -2096,7 +2096,7 @@ mod tests {
 
         // We use random bytes so that the store can't compress them
         let mut payload = vec![0u8; 1024];
-        thread_rng().fill(&mut payload[..]);
+        rand::rng().fill(&mut payload[..]);
 
         let (hotcache_directory_stored_payload, directory_size_stored_payload) =
             create_tantivy_dir_with_hotcache(

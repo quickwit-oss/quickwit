@@ -6,8 +6,7 @@
 # Notes on image versions:
 #  - For the key services such as postgres and pulsar we are trying to run
 #    against the oldest supported version
-#  - For the zookeeper and kafka we are trying to use the oldest supported
-#    version that has arm64 images
+#  - For kafka we use the oldest version that supports KRaft.
 #  - For everything else we are trying to run against the latest version.
 #
 # To run against the latest image versions update .env file. See .env.example
@@ -74,67 +73,59 @@ services:
     # The oldest version with arm64 docker images. EOL May 2 2025
     image: apachepulsar/pulsar:${PULSAR_VERSION:-3.0.0}
     container_name: pulsar-broker
-    command: bin/pulsar standalone
+    command: bin/pulsar standalone --no-functions-worker
     ports:
       - "${MAP_HOST_PULSAR:-127.0.0.1}:6650:6650"
       - "${MAP_HOST_PULSAR:-127.0.0.1}:8081:8080"
     environment:
       PULSAR_MEM: "-Xms384M -Xmx384M"
+      # Disable functions worker to save memory/time
+      PULSAR_PREFIX_functionsWorkerEnabled: "false"
     profiles:
       - all
       - pulsar
 
   kafka-broker:
-    # The oldest supported version with arm64 docker images. EOL October 27, 2023
-    image: confluentinc/cp-kafka:${CP_VERSION:-7.0.9}
+    image: confluentinc/confluent-local:${CP_VERSION:-7.4.11}
     container_name: kafka-broker
-    depends_on:
-      - zookeeper
     ports:
       - "${MAP_HOST_KAFKA:-127.0.0.1}:9092:9092"
       - "${MAP_HOST_KAFKA:-127.0.0.1}:9101:9101"
-      - "${MAP_HOST_KAFKA:-127.0.0.1}:29092:29092"
     profiles:
       - all
       - kafka
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_HOST://localhost:9092,PLAINTEXT://kafka-broker:29092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_JMX_PORT: 9101
-      KAFKA_JMX_HOSTNAME: localhost
-      KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
-    healthcheck:
-      test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "5"]
-      start_period: 5s
-      interval: 5s
-      timeout: 10s
-      retries: 100
 
-  zookeeper:
-    # The oldest supported version with arm64 images. EOL October 27, 2023
-    image: confluentinc/cp-zookeeper:${CP_VERSION:-7.0.9}
-    container_name: zookeeper
-    ports:
-      - "${MAP_HOST_ZOOKEEPER:-127.0.0.1}:2181:2181"
-    profiles:
-      - all
-      - kafka
     environment:
-      KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
+          # Mode KRaft (Single Node)
+          KAFKA_NODE_ID: 1
+          KAFKA_PROCESS_ROLES: 'broker,controller'
+          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:9093'
+          KAFKA_LOG4J_LOGGERS: "org.apache.kafka.image.loader.MetadataLoader=WARN"
+
+          # Listeners
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT'
+          KAFKA_LISTENERS: 'EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093'
+          KAFKA_ADVERTISED_LISTENERS: 'EXTERNAL://localhost:9092'
+          KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+          KAFKA_INTER_BROKER_LISTENER_NAME: 'EXTERNAL'
+
+          # Configuration simplifiée
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+
+          # ID du Cluster (Nécessaire pour KRaft)
+          CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+
+          KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
     healthcheck:
-      test: ["CMD", "cub", "zk-ready", "localhost:2181", "5"]
-      start_period: 5s
-      interval: 5s
-      timeout: 10s
-      retries: 100
+        # test: ["CMD-SHELL", "nc -z localhost 9092 || exit 1"]
+        test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "5"]
+        start_period: 5s
+        interval: 5s
+        timeout: 10s
+        retries: 100
 
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_VERSION:-3.24.0}

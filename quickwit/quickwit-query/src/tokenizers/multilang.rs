@@ -42,7 +42,7 @@ static JPN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
         path: None,
     };
     let jpn_dictionary = load_dictionary_from_config(jpn_dictionary_config)
-        .expect("Lindera `IPAD` dictionary must be present");
+        .expect("Lindera `IPADIC` dictionary must be present");
     LinderaTokenizer::new(jpn_dictionary, None, Mode::Normal)
 });
 
