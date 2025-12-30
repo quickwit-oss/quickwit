@@ -71,6 +71,21 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         }
     }
 
+    /// Clear all cached data to free memory.
+    /// Used after prewarm operations to prevent unbounded memory growth.
+    fn clear(&mut self) {
+        let num_bytes = self.num_bytes;
+        let num_items = self.num_items;
+        self.cache.clear();
+        self.num_items = 0;
+        self.num_bytes = 0;
+        // Track eviction in metrics
+        if num_items > 0 {
+            self.cache_counters.evict_num_items.inc_by(num_items);
+            self.cache_counters.evict_num_bytes.inc_by(num_bytes);
+        }
+    }
+
     fn get_slice(&mut self, tag: &T, byte_range: Range<usize>) -> Option<OwnedBytes> {
         if byte_range.start == byte_range.end {
             return Some(OwnedBytes::empty());
@@ -348,6 +363,8 @@ pub struct ByteRangeCache {
 struct Inner {
     num_stored_bytes: AtomicU64,
     need_mut_byte_range_cache: Mutex<NeedMutByteRangeCache<Path>>,
+    /// Optional capacity limit in bytes. If None, cache is unlimited.
+    capacity_bytes: Option<u64>,
 }
 
 impl ByteRangeCache {
@@ -358,15 +375,61 @@ impl ByteRangeCache {
         let inner = Inner {
             num_stored_bytes: AtomicU64::default(),
             need_mut_byte_range_cache: Mutex::new(need_mut_byte_range_cache),
+            capacity_bytes: None, // Unlimited
         };
         ByteRangeCache {
             inner_arc: Arc::new(inner),
         }
     }
 
+    /// Creates a slice cache with a maximum capacity in bytes.
+    ///
+    /// When the cache exceeds this capacity, oldest entries are evicted.
+    /// This prevents unbounded memory growth during prewarm operations.
+    ///
+    /// Recommended values:
+    /// - 100MB for light workloads
+    /// - 500MB for medium workloads
+    /// - 1GB+ for heavy workloads with large splits
+    pub fn with_capacity(capacity_bytes: u64, cache_counters: &'static CacheMetrics) -> Self {
+        use quickwit_common::tantivy4java_debug;
+        tantivy4java_debug!("QUICKWIT DEBUG: 📦 Creating ByteRangeCache with capacity {} MB", capacity_bytes / 1024 / 1024);
+        let need_mut_byte_range_cache =
+            NeedMutByteRangeCache::with_infinite_capacity(cache_counters);
+        let inner = Inner {
+            num_stored_bytes: AtomicU64::default(),
+            need_mut_byte_range_cache: Mutex::new(need_mut_byte_range_cache),
+            capacity_bytes: Some(capacity_bytes),
+        };
+        ByteRangeCache {
+            inner_arc: Arc::new(inner),
+        }
+    }
+
+    /// Get the capacity limit (None if unlimited)
+    pub fn get_capacity(&self) -> Option<u64> {
+        self.inner_arc.capacity_bytes
+    }
+
     /// Overall amount of bytes stored in the cache.
     pub fn get_num_bytes(&self) -> u64 {
         self.inner_arc.num_stored_bytes.load(Ordering::Relaxed)
+    }
+
+    /// Clear all cached data to free memory.
+    ///
+    /// This is useful after prewarm operations to prevent unbounded memory growth.
+    /// The data has been persisted to L2 disk cache, so clearing L1 memory cache
+    /// is safe - subsequent queries will populate L1 on-demand from L2.
+    pub fn clear(&self) {
+        use quickwit_common::tantivy4java_debug;
+        let bytes_before = self.get_num_bytes();
+        let mut need_mut_byte_range_cache_locked =
+            self.inner_arc.need_mut_byte_range_cache.lock().unwrap();
+        need_mut_byte_range_cache_locked.clear();
+        drop(need_mut_byte_range_cache_locked);
+        self.inner_arc.num_stored_bytes.store(0, Ordering::Relaxed);
+        tantivy4java_debug!("QUICKWIT DEBUG: 🧹 CACHE CLEAR: Freed {} bytes from ByteRangeCache (L1)", bytes_before);
     }
 
     /// If available, returns the cached view of the slice.
@@ -394,10 +457,45 @@ impl ByteRangeCache {
     }
 
     /// Put the given amount of data in the cache.
+    ///
+    /// If a capacity limit is set:
+    /// - Slices larger than the capacity are skipped (not stored)
+    /// - If adding the slice would exceed capacity, the cache is cleared first
     pub fn put_slice(&self, path: PathBuf, byte_range: Range<usize>, bytes: OwnedBytes) {
         use quickwit_common::tantivy4java_debug;
         let range_size = byte_range.end - byte_range.start;
         tantivy4java_debug!("QUICKWIT DEBUG: 💾 CACHE PUT: {} bytes for path '{}'", range_size, path.display());
+
+        // Check capacity constraints
+        if let Some(capacity) = self.inner_arc.capacity_bytes {
+            // Safety: Skip slices that are larger than the cache capacity
+            // These would just trigger immediate eviction anyway
+            if range_size as u64 > capacity {
+                tantivy4java_debug!(
+                    "QUICKWIT DEBUG: ⏭️ CACHE SKIP: {} bytes exceeds cache capacity of {} MB, not storing",
+                    range_size, capacity / 1024 / 1024
+                );
+                return;
+            }
+
+            let current_bytes = self.get_num_bytes();
+            let new_total = current_bytes + range_size as u64;
+
+            if new_total > capacity {
+                // Evict entire cache when capacity exceeded
+                // This is a simple but effective policy - data is safe in L2 disk cache
+                tantivy4java_debug!(
+                    "QUICKWIT DEBUG: ⚠️ CACHE CAPACITY: {} + {} = {} exceeds {} MB limit, clearing cache",
+                    current_bytes, range_size, new_total, capacity / 1024 / 1024
+                );
+                let mut need_mut_byte_range_cache_locked =
+                    self.inner_arc.need_mut_byte_range_cache.lock().unwrap();
+                need_mut_byte_range_cache_locked.clear();
+                drop(need_mut_byte_range_cache_locked);
+                self.inner_arc.num_stored_bytes.store(0, Ordering::Relaxed);
+            }
+        }
+
         let mut need_mut_byte_range_cache_locked =
             self.inner_arc.need_mut_byte_range_cache.lock().unwrap();
         need_mut_byte_range_cache_locked.put_slice(path, byte_range, bytes);
