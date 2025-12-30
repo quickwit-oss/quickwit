@@ -145,6 +145,11 @@ jobs:
         with:
           # 0.18 requires rustc 1.85
           tool: cargo-deny@0.17.0
+      - name: Install cargo machete
+        if: always() && steps.modified.outputs.rust_src == 'true'
+        uses: taiki-e/cache-cargo-install-action@7447f04c51f2ba27ca35e7f1e28fab848c5b3ba7 # v2.3.1
+        with:
+          tool: cargo-machete
       - name: cargo clippy
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo clippy --workspace --tests --all-features
@@ -152,6 +157,10 @@ jobs:
       - name: cargo deny
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo deny check licenses
+        working-directory: ./quickwit
+      - name: cargo machete
+        if: always() && steps.modified.outputs.rust_src == 'true'
+        run: cargo machete
         working-directory: ./quickwit
       - name: cargo doc
         if: always() && steps.modified.outputs.rust_src == 'true'
