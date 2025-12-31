@@ -48,7 +48,7 @@ Run `make test-all` to run all tests.
 * `make test-all` - starts necessary Docker services and runs all tests.
 * `make -k test-all docker-compose-down` - the same as above, but tears down the Docker services after running all the tests.
 * `make fmt` - runs formatter, this command requires the nightly toolchain to be installed by running `rustup toolchain install nightly`.
-* `make fix` - runs formatter and clippy checks.
+* `make fix` - runs formatter and clippy checks as well as removing unused dependencies (requires `cargo install cargo-machete`).
 * `make typos` - runs the spellcheck tool over the codebase. (Install by running `cargo install typos-cli`)
 * `make doc` - builds docs.
 * `make docker-compose-up` - starts Docker services.

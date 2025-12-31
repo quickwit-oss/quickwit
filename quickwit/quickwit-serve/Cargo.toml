@@ -24,16 +24,12 @@ glob = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
-http-body-util = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
-hyper = { workspace = true }
-hyper-rustls = { workspace = true }
 hyper-util = {workspace = true}
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
-opentelemetry = { workspace = true }
 percent-encoding = { workspace = true }
 pprof = { workspace = true, optional = true }
 prost = { workspace = true }

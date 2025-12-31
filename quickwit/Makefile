@@ -21,6 +21,12 @@ fix:
 	@echo "Running cargo clippy --fix"
 	@cargo clippy --workspace --all-features --tests --fix --allow-dirty --allow-staged
 	@$(MAKE) fmt
+	@$(MAKE) unused-deps
+
+unused-deps:
+	@echo "Checking for unused dependencies"
+	@(command -v cargo-machete >/dev/null || cargo --list | grep -q machete || (echo "cargo-machete is not installed. Please install using 'cargo install cargo-machete'." && exit 1))
+	@cargo machete
 
 # Usage:
 # `make test-all` starts the Docker services and runs all the tests.

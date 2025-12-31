@@ -18,7 +18,6 @@ proc-macro2 = { workspace = true }
 prost-build = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
-tonic-build = { workspace = true }
 tonic-prost-build = { workspace = true }
 
 [dev-dependencies]
