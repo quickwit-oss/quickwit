@@ -89,7 +89,7 @@ base64 = "0.22"
 binggan = { version = "0.15" }
 bitpacking = "0.9.2"
 bytes = { version = "1", features = ["serde"] }
-bytesize = { version = "1.3", features = ["serde"] }
+bytesize = { version = "2.3", features = ["serde"] }
 bytestring = "1.5"
 chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "bd54c81" }
 chrono = { version = "0.4", default-features = false, features = [
@@ -116,8 +116,8 @@ futures-util = { version = "0.3", default-features = false }
 glob = "0.3"
 # We can't directly update google-cloud-auth to 1.3 and google-cloud-gax to 1.4, because the latest version
 # of google-cloud-pubsub is "0.30" which explicitly depends on: google-cloud-auth ^0.17 and google-cloud-gax ^0.19.
-google-cloud-auth = "0.17.2"
-google-cloud-gax = "0.19.2"
+google-cloud-auth = "1.3.0"
+google-cloud-gax = "1.4.0"
 google-cloud-googleapis = { version = "0.16", features = ["pubsub"] }
 google-cloud-pubsub = "0.30"
 heck = "0.5"
@@ -141,9 +141,9 @@ libz-sys = "1.1"
 # The dictionary crates attempt to download artifacts from S3 URLs that return 404 Not Found.
 # Version 0.29.0 is the latest version that builds correctly. It also explicitly depends on lindera-core 0.29
 # and lindera-dictionary 0.29.
-lindera-core = "0.29"
-lindera-dictionary = "0.29"
-lindera-tokenizer = { version = "0.29", features = [
+lindera-core = "0.33"
+lindera-dictionary = "1.4"
+lindera-tokenizer = { version = "0.32", features = [
   "cc-cedict",
   "ipadic",
   "ko-dic",
@@ -160,7 +160,7 @@ numfmt = "1.2"
 once_cell = "1"
 oneshot = "0.1"
 openssl = { version = "0.10", default-features = false }
-openssl-probe = "0.1"
+openssl-probe = "0.2"
 opentelemetry = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.31"
@@ -286,7 +286,7 @@ username = "0.2"
 # We cannot upgrade to utoipa 5.0+ due to significant breaking changes:
 # 1. The `OpenApi` struct structure changed (fields are private), breaking our manual merging logic in openapi.rs
 # in `quickwit-serve`. This code is fundamentally incompatible with version 5.x.
-utoipa = { version = "4.2", features = ["time", "ulid"] }
+utoipa = { version = "5.4", features = ["time", "ulid"] }
 uuid = { version = "1.19", features = ["v4", "serde"] }
 vrl = { version = "0.29", default-features = false, features = [
   "compiler",
@@ -303,7 +303,7 @@ aws-config = "1.8"
 aws-credential-types = { version = "1.2", features = ["hardcoded-credentials"] }
 aws-runtime = "1.5"
 aws-sdk-kinesis = "1.97"
-aws-sdk-s3 = "=1.62"
+aws-sdk-s3 = "=1.119"
 aws-sdk-sqs = "1.91"
 aws-smithy-async = "1.2"
 aws-smithy-http-client = { version = "1.1", features = ["default-client"] }
@@ -315,7 +315,7 @@ aws-smithy-types = { version = "1.3", features = [
 aws-types = "1.3"
 
 azure_core = { version = "0.21", features = ["hmac_rust", "enable_reqwest_rustls"] }
-azure_identity = { version = "0.21" }
+azure_identity = { version = "0.30" }
 azure_storage = { version = "0.21", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
