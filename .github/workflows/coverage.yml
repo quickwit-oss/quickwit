@@ -19,7 +19,7 @@ env:
   AWS_ACCESS_KEY_ID: "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
   CARGO_INCREMENTAL: 0
-  PUBSUB_EMULATOR_HOST: "localhost:9898"
+  PUBSUB_EMULATOR_HOST: "localhost:8681"
   QW_DISABLE_TELEMETRY: 1
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   QW_S3_FORCE_PATH_STYLE_ACCESS: 1
@@ -101,9 +101,9 @@ jobs:
           --health-retries 5
 
       gcp-pubsub-emulator:
-        image: thekevjames/gcloud-pubsub-emulator:7555256f2c
+        image: thekevjames/gcloud-pubsub-emulator:550.0.0
         ports:
-          - "9898:8681"
+          - "8681:8681"
         env:
           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
 
