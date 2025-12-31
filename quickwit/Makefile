@@ -24,8 +24,8 @@ fix:
 	@$(MAKE) unused-deps
 
 unused-deps:
-	@echo "Checking for unused dependencies"
-	@cargo machete
+	@echo "Removing unused dependencies"
+	@(cargo --list | ( ! grep -q machete && echo "cargo-machete is not installed. Please install using 'cargo install cargo-machete'.") ) || cargo machete --fix
 
 # Usage:
 # `make test-all` starts the Docker services and runs all the tests.
