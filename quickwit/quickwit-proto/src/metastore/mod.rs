@@ -79,6 +79,11 @@ pub enum EntityKind {
         /// Index template ID.
         template_id: String,
     },
+    /// A routing table.
+    RoutingTable {
+        /// Routing table ID.
+        routing_table_id: String,
+    },
 }
 
 impl fmt::Display for EntityKind {
@@ -99,6 +104,9 @@ impl fmt::Display for EntityKind {
             EntityKind::Splits { split_ids } => write!(f, "splits `{}`", split_ids.join(", ")),
             EntityKind::IndexTemplate { template_id } => {
                 write!(f, "index template `{template_id}`")
+            }
+            EntityKind::RoutingTable { routing_table_id } => {
+                write!(f, "routing table `{routing_table_id}`")
             }
         }
     }

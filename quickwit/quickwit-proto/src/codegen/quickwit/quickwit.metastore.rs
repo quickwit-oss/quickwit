@@ -533,6 +533,38 @@ pub struct GetClusterIdentityResponse {
     pub uuid: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CreateIndexRoutingTableRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub rules: ::prost::alloc::vec::Vec<IndexRoutingRule>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateIndexRoutingTableResponse {
+    #[prost(string, tag = "1")]
+    pub routing_table_id: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetIndexRoutingTableRequest {
+    #[prost(string, tag = "1")]
+    pub routing_table_id: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIndexRoutingTableResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub rules: ::prost::alloc::vec::Vec<IndexRoutingRule>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct IndexRoutingRule {
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub filter: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -798,6 +830,16 @@ impl RpcName for GetClusterIdentityRequest {
         "get_cluster_identity"
     }
 }
+impl RpcName for CreateIndexRoutingTableRequest {
+    fn rpc_name() -> &'static str {
+        "create_index_routing_table"
+    }
+}
+impl RpcName for GetIndexRoutingTableRequest {
+    fn rpc_name() -> &'static str {
+        "get_index_routing_table"
+    }
+}
 pub type MetastoreServiceStream<T> = quickwit_common::ServiceStream<
     crate::metastore::MetastoreResult<T>,
 >;
@@ -985,6 +1027,16 @@ pub trait MetastoreService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: GetClusterIdentityRequest,
     ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse>;
+    ///Creates index routing table
+    async fn create_index_routing_table(
+        &self,
+        request: CreateIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<CreateIndexRoutingTableResponse>;
+    ///Get index routing table
+    async fn get_index_routing_table(
+        &self,
+        request: GetIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexRoutingTableResponse>;
     async fn check_connectivity(&self) -> anyhow::Result<()>;
     fn endpoints(&self) -> Vec<quickwit_common::uri::Uri>;
 }
@@ -1293,6 +1345,18 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse> {
         self.inner.0.get_cluster_identity(request).await
     }
+    async fn create_index_routing_table(
+        &self,
+        request: CreateIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<CreateIndexRoutingTableResponse> {
+        self.inner.0.create_index_routing_table(request).await
+    }
+    async fn get_index_routing_table(
+        &self,
+        request: GetIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexRoutingTableResponse> {
+        self.inner.0.get_index_routing_table(request).await
+    }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.inner.0.check_connectivity().await
     }
@@ -1510,6 +1574,18 @@ pub mod mock_metastore_service {
             request: super::GetClusterIdentityRequest,
         ) -> crate::metastore::MetastoreResult<super::GetClusterIdentityResponse> {
             self.inner.lock().await.get_cluster_identity(request).await
+        }
+        async fn create_index_routing_table(
+            &self,
+            request: super::CreateIndexRoutingTableRequest,
+        ) -> crate::metastore::MetastoreResult<super::CreateIndexRoutingTableResponse> {
+            self.inner.lock().await.create_index_routing_table(request).await
+        }
+        async fn get_index_routing_table(
+            &self,
+            request: super::GetIndexRoutingTableRequest,
+        ) -> crate::metastore::MetastoreResult<super::GetIndexRoutingTableResponse> {
+            self.inner.lock().await.get_index_routing_table(request).await
         }
         async fn check_connectivity(&self) -> anyhow::Result<()> {
             self.inner.lock().await.check_connectivity().await
@@ -2050,6 +2126,38 @@ impl tower::Service<GetClusterIdentityRequest> for InnerMetastoreServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<CreateIndexRoutingTableRequest> for InnerMetastoreServiceClient {
+    type Response = CreateIndexRoutingTableResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: CreateIndexRoutingTableRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.create_index_routing_table(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<GetIndexRoutingTableRequest> for InnerMetastoreServiceClient {
+    type Response = GetIndexRoutingTableResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: GetIndexRoutingTableRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.get_index_routing_table(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct MetastoreServiceTowerServiceStack {
@@ -2218,6 +2326,16 @@ struct MetastoreServiceTowerServiceStack {
     get_cluster_identity_svc: quickwit_common::tower::BoxService<
         GetClusterIdentityRequest,
         GetClusterIdentityResponse,
+        crate::metastore::MetastoreError,
+    >,
+    create_index_routing_table_svc: quickwit_common::tower::BoxService<
+        CreateIndexRoutingTableRequest,
+        CreateIndexRoutingTableResponse,
+        crate::metastore::MetastoreError,
+    >,
+    get_index_routing_table_svc: quickwit_common::tower::BoxService<
+        GetIndexRoutingTableRequest,
+        GetIndexRoutingTableResponse,
         crate::metastore::MetastoreError,
     >,
 }
@@ -2420,6 +2538,18 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
         request: GetClusterIdentityRequest,
     ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse> {
         self.get_cluster_identity_svc.clone().ready().await?.call(request).await
+    }
+    async fn create_index_routing_table(
+        &self,
+        request: CreateIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<CreateIndexRoutingTableResponse> {
+        self.create_index_routing_table_svc.clone().ready().await?.call(request).await
+    }
+    async fn get_index_routing_table(
+        &self,
+        request: GetIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexRoutingTableResponse> {
+        self.get_index_routing_table_svc.clone().ready().await?.call(request).await
     }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.inner.0.check_connectivity().await
@@ -2758,6 +2888,26 @@ type GetClusterIdentityLayer = quickwit_common::tower::BoxLayer<
     GetClusterIdentityResponse,
     crate::metastore::MetastoreError,
 >;
+type CreateIndexRoutingTableLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        CreateIndexRoutingTableRequest,
+        CreateIndexRoutingTableResponse,
+        crate::metastore::MetastoreError,
+    >,
+    CreateIndexRoutingTableRequest,
+    CreateIndexRoutingTableResponse,
+    crate::metastore::MetastoreError,
+>;
+type GetIndexRoutingTableLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GetIndexRoutingTableRequest,
+        GetIndexRoutingTableResponse,
+        crate::metastore::MetastoreError,
+    >,
+    GetIndexRoutingTableRequest,
+    GetIndexRoutingTableResponse,
+    crate::metastore::MetastoreError,
+>;
 #[derive(Debug, Default)]
 pub struct MetastoreServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -2793,6 +2943,8 @@ pub struct MetastoreServiceTowerLayerStack {
     list_index_templates_layers: Vec<ListIndexTemplatesLayer>,
     delete_index_templates_layers: Vec<DeleteIndexTemplatesLayer>,
     get_cluster_identity_layers: Vec<GetClusterIdentityLayer>,
+    create_index_routing_table_layers: Vec<CreateIndexRoutingTableLayer>,
+    get_index_routing_table_layers: Vec<GetIndexRoutingTableLayer>,
 }
 impl MetastoreServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -3640,6 +3792,60 @@ impl MetastoreServiceTowerLayerStack {
         >>::Service as tower::Service<
             GetClusterIdentityRequest,
         >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CreateIndexRoutingTableRequest,
+                    CreateIndexRoutingTableResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CreateIndexRoutingTableRequest,
+                CreateIndexRoutingTableResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                CreateIndexRoutingTableRequest,
+                Response = CreateIndexRoutingTableResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CreateIndexRoutingTableRequest,
+                CreateIndexRoutingTableResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            CreateIndexRoutingTableRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetIndexRoutingTableRequest,
+                    GetIndexRoutingTableResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetIndexRoutingTableRequest,
+                GetIndexRoutingTableResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                GetIndexRoutingTableRequest,
+                Response = GetIndexRoutingTableResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetIndexRoutingTableRequest,
+                GetIndexRoutingTableResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            GetIndexRoutingTableRequest,
+        >>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -3706,6 +3912,10 @@ impl MetastoreServiceTowerLayerStack {
         self.delete_index_templates_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.get_cluster_identity_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.create_index_routing_table_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.get_index_routing_table_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -4366,6 +4576,50 @@ impl MetastoreServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_create_index_routing_table_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CreateIndexRoutingTableRequest,
+                    CreateIndexRoutingTableResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                CreateIndexRoutingTableRequest,
+                Response = CreateIndexRoutingTableResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            CreateIndexRoutingTableRequest,
+        >>::Future: Send + 'static,
+    {
+        self.create_index_routing_table_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_get_index_routing_table_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetIndexRoutingTableRequest,
+                    GetIndexRoutingTableResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                GetIndexRoutingTableRequest,
+                Response = GetIndexRoutingTableResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            GetIndexRoutingTableRequest,
+        >>::Future: Send + 'static,
+    {
+        self.get_index_routing_table_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> MetastoreServiceClient
     where
         T: MetastoreService,
@@ -4690,6 +4944,22 @@ impl MetastoreServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let create_index_routing_table_svc = self
+            .create_index_routing_table_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let get_index_routing_table_svc = self
+            .get_index_routing_table_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = MetastoreServiceTowerServiceStack {
             inner: inner_client,
             create_index_svc,
@@ -4725,6 +4995,8 @@ impl MetastoreServiceTowerLayerStack {
             list_index_templates_svc,
             delete_index_templates_svc,
             get_cluster_identity_svc,
+            create_index_routing_table_svc,
+            get_index_routing_table_svc,
         };
         MetastoreServiceClient::new(tower_svc_stack)
     }
@@ -5022,6 +5294,24 @@ where
                 GetClusterIdentityResponse,
                 crate::metastore::MetastoreError,
             >,
+        >
+        + tower::Service<
+            CreateIndexRoutingTableRequest,
+            Response = CreateIndexRoutingTableResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<
+                CreateIndexRoutingTableResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >
+        + tower::Service<
+            GetIndexRoutingTableRequest,
+            Response = GetIndexRoutingTableResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<
+                GetIndexRoutingTableResponse,
+                crate::metastore::MetastoreError,
+            >,
         >,
 {
     async fn create_index(
@@ -5220,6 +5510,18 @@ where
         &self,
         request: GetClusterIdentityRequest,
     ) -> crate::metastore::MetastoreResult<GetClusterIdentityResponse> {
+        self.clone().call(request).await
+    }
+    async fn create_index_routing_table(
+        &self,
+        request: CreateIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<CreateIndexRoutingTableResponse> {
+        self.clone().call(request).await
+    }
+    async fn get_index_routing_table(
+        &self,
+        request: GetIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexRoutingTableResponse> {
         self.clone().call(request).await
     }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
@@ -5739,6 +6041,34 @@ where
                 GetClusterIdentityRequest::rpc_name(),
             ))
     }
+    async fn create_index_routing_table(
+        &self,
+        request: CreateIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<CreateIndexRoutingTableResponse> {
+        self.inner
+            .clone()
+            .create_index_routing_table(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                CreateIndexRoutingTableRequest::rpc_name(),
+            ))
+    }
+    async fn get_index_routing_table(
+        &self,
+        request: GetIndexRoutingTableRequest,
+    ) -> crate::metastore::MetastoreResult<GetIndexRoutingTableResponse> {
+        self.inner
+            .clone()
+            .get_index_routing_table(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetIndexRoutingTableRequest::rpc_name(),
+            ))
+    }
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         if self.connection_addrs_rx.borrow().is_empty() {
             anyhow::bail!("no server currently available")
@@ -6136,6 +6466,28 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .0
             .get_cluster_identity(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn create_index_routing_table(
+        &self,
+        request: tonic::Request<CreateIndexRoutingTableRequest>,
+    ) -> Result<tonic::Response<CreateIndexRoutingTableResponse>, tonic::Status> {
+        self.inner
+            .0
+            .create_index_routing_table(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn get_index_routing_table(
+        &self,
+        request: tonic::Request<GetIndexRoutingTableRequest>,
+    ) -> Result<tonic::Response<GetIndexRoutingTableResponse>, tonic::Status> {
+        self.inner
+            .0
+            .get_index_routing_table(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -7223,6 +7575,66 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Creates index routing table
+        pub async fn create_index_routing_table(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateIndexRoutingTableRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateIndexRoutingTableResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/CreateIndexRoutingTable",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "CreateIndexRoutingTable",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Get index routing table
+        pub async fn get_index_routing_table(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetIndexRoutingTableRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIndexRoutingTableResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/GetIndexRoutingTable",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "GetIndexRoutingTable",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -7477,6 +7889,22 @@ pub mod metastore_service_grpc_server {
             request: tonic::Request<super::GetClusterIdentityRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetClusterIdentityResponse>,
+            tonic::Status,
+        >;
+        /// Creates index routing table
+        async fn create_index_routing_table(
+            &self,
+            request: tonic::Request<super::CreateIndexRoutingTableRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateIndexRoutingTableResponse>,
+            tonic::Status,
+        >;
+        /// Get index routing table
+        async fn get_index_routing_table(
+            &self,
+            request: tonic::Request<super::GetIndexRoutingTableRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIndexRoutingTableResponse>,
             tonic::Status,
         >;
     }
@@ -9172,6 +9600,108 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetClusterIdentitySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/CreateIndexRoutingTable" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateIndexRoutingTableSvc<T: MetastoreServiceGrpc>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::CreateIndexRoutingTableRequest>
+                    for CreateIndexRoutingTableSvc<T> {
+                        type Response = super::CreateIndexRoutingTableResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::CreateIndexRoutingTableRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MetastoreServiceGrpc>::create_index_routing_table(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CreateIndexRoutingTableSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/GetIndexRoutingTable" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetIndexRoutingTableSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::GetIndexRoutingTableRequest>
+                    for GetIndexRoutingTableSvc<T> {
+                        type Response = super::GetIndexRoutingTableResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetIndexRoutingTableRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MetastoreServiceGrpc>::get_index_routing_table(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetIndexRoutingTableSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

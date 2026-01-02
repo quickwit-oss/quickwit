@@ -19,11 +19,12 @@ use quickwit_common::uri::Uri;
 use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
+    CreateIndexResponse, CreateIndexRoutingTableRequest, CreateIndexRoutingTableResponse,
+    CreateIndexTemplateRequest, DeleteIndexRequest, DeleteIndexTemplatesRequest, DeleteQuery,
+    DeleteShardsRequest, DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest,
+    DeleteTask, EmptyResponse, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
+    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexRoutingTableRequest,
+    GetIndexRoutingTableResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataRequest, IndexesMetadataResponse,
     LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
     ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
@@ -288,5 +289,19 @@ impl MetastoreService for ControlPlaneMetastore {
         request: GetClusterIdentityRequest,
     ) -> MetastoreResult<GetClusterIdentityResponse> {
         self.metastore.get_cluster_identity(request).await
+    }
+
+    async fn create_index_routing_table(
+        &self,
+        request: CreateIndexRoutingTableRequest,
+    ) -> MetastoreResult<CreateIndexRoutingTableResponse> {
+        self.metastore.create_index_routing_table(request).await
+    }
+
+    async fn get_index_routing_table(
+        &self,
+        request: GetIndexRoutingTableRequest,
+    ) -> MetastoreResult<GetIndexRoutingTableResponse> {
+        self.metastore.get_index_routing_table(request).await
     }
 }

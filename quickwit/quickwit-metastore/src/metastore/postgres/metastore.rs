@@ -29,19 +29,21 @@ use quickwit_config::{
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexStats, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
-    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
-    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    CreateIndexResponse, CreateIndexRoutingTableRequest, CreateIndexRoutingTableResponse,
+    CreateIndexTemplateRequest, DeleteIndexRequest, DeleteIndexTemplatesRequest, DeleteQuery,
+    DeleteShardsRequest, DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest,
+    DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest,
+    FindIndexTemplateMatchesResponse, GetClusterIdentityRequest, GetClusterIdentityResponse,
+    GetIndexRoutingTableRequest, GetIndexRoutingTableResponse, GetIndexTemplateRequest,
+    GetIndexTemplateResponse, IndexMetadataFailure, IndexMetadataFailureReason,
+    IndexMetadataRequest, IndexMetadataResponse, IndexRoutingRule, IndexStats, IndexTemplateMatch,
+    IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListShardsRequest, ListShardsResponse, ListShardsSubresponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
     PublishSplitsRequest, ResetSourceCheckpointRequest, SplitStats, StageSplitsRequest,
     ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
@@ -57,7 +59,9 @@ use uuid::Uuid;
 
 use super::error::convert_sqlx_err;
 use super::migrator::run_migrations;
-use super::model::{PgDeleteTask, PgIndex, PgIndexTemplate, PgShard, PgSplit, Splits};
+use super::model::{
+    PgDeleteTask, PgIndex, PgIndexRoutingRule, PgIndexTemplate, PgShard, PgSplit, Splits,
+};
 use super::pool::TrackedPool;
 use super::split_stream::SplitStream;
 use super::utils::{append_query_filters_and_order_by, establish_connection};
@@ -1762,6 +1766,68 @@ impl MetastoreService for PostgresqlMetastore {
         .fetch_one(&self.connection_pool)
         .await?;
         Ok(GetClusterIdentityResponse { uuid })
+    }
+
+    async fn create_index_routing_table(
+        &self,
+        request: CreateIndexRoutingTableRequest,
+    ) -> MetastoreResult<CreateIndexRoutingTableResponse> {
+        const INSERT_ROUTING_RULE_QUERY: &str = include_str!("queries/routing_rules/insert.sql");
+
+        // Validate request
+        if request.rules.is_empty() {
+            return Err(MetastoreError::InvalidArgument {
+                message: "routing table must contain at least one rule".to_string(),
+            });
+        }
+
+        // Generate routing_table_id
+        let routing_table_id = Uuid::new_v4().hyphenated().to_string();
+
+        // Use transaction for atomicity
+        run_with_tx!(self.connection_pool, tx, "create_routing_table", {
+            // Insert each rule with its array index as the rank
+            for (rank, rule) in request.rules.iter().enumerate() {
+                sqlx::query(INSERT_ROUTING_RULE_QUERY)
+                    .bind(&routing_table_id)
+                    .bind(rank as i32)
+                    .bind(&rule.filter)
+                    .bind(&rule.index_id)
+                    .execute(tx.as_mut())
+                    .await
+                    .map_err(|e| convert_sqlx_err("routing_rules", e))?;
+            }
+
+            Ok(CreateIndexRoutingTableResponse { routing_table_id })
+        })
+    }
+
+    async fn get_index_routing_table(
+        &self,
+        request: GetIndexRoutingTableRequest,
+    ) -> MetastoreResult<GetIndexRoutingTableResponse> {
+        const SELECT_ROUTING_RULES_QUERY: &str = include_str!("queries/routing_rules/select.sql");
+
+        let pg_rules: Vec<PgIndexRoutingRule> = sqlx::query_as(SELECT_ROUTING_RULES_QUERY)
+            .bind(&request.routing_table_id)
+            .fetch_all(&self.connection_pool)
+            .await?;
+
+        if pg_rules.is_empty() {
+            return Err(MetastoreError::NotFound(EntityKind::RoutingTable {
+                routing_table_id: request.routing_table_id.clone(),
+            }));
+        }
+
+        let rules = pg_rules
+            .into_iter()
+            .map(|pg_rule| IndexRoutingRule {
+                index_id: pg_rule.index_id,
+                filter: pg_rule.filter,
+            })
+            .collect();
+
+        Ok(GetIndexRoutingTableResponse { rules })
     }
 }
 

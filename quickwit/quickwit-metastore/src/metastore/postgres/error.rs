@@ -40,6 +40,13 @@ pub(super) fn convert_sqlx_err(index_id: &str, sqlx_error: sqlx::Error) -> Metas
                         index_id: index_id.to_string(),
                     })
                 }
+                (pg_error_codes::UNIQUE_VIOLATION, Some("index_routing_rules")) => {
+                    error!(error=?boxed_db_error, "postgresql-error");
+                    MetastoreError::Internal {
+                        message: "duplicate rank in routing table".to_string(),
+                        cause: format!("DB error {boxed_db_error:?}"),
+                    }
+                }
                 (pg_error_codes::UNIQUE_VIOLATION, _) => {
                     error!(error=?boxed_db_error, "postgresql-error");
                     MetastoreError::Internal {
