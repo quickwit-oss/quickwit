@@ -31,9 +31,9 @@ use quickwit_config::{
 use quickwit_doc_mapper::{Cardinality, FieldMappingEntry, FieldMappingType, QuickwitJsonOptions};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataFailure,
-    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataSubrequest,
-    IndexesMetadataRequest, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
-    StageSplitsRequest, UpdateIndexRequest,
+    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataSubrequest, IndexStats,
+    IndexesMetadataRequest, ListIndexStatsRequest, ListIndexesMetadataRequest, MetastoreError,
+    MetastoreService, PublishSplitsRequest, SplitStats, StageSplitsRequest, UpdateIndexRequest,
 };
 use quickwit_proto::types::{DocMappingUid, IndexUid};
 
@@ -825,4 +825,188 @@ pub async fn test_metastore_delete_index<
     // assert_eq!(splits.len(), 1)
 
     cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_list_index_stats<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
+    let index_id_1 = append_random_suffix("test-list-index-stats");
+    let index_uid_1 = IndexUid::new_with_random_ulid(&index_id_1);
+    let index_uri_1 = format!("ram:///indexes/{index_id_1}");
+    let index_config_1 = IndexConfig::for_test(&index_id_1, &index_uri_1);
+
+    let index_id_2 = append_random_suffix("test-list-index-stats");
+    let index_uid_2 = IndexUid::new_with_random_ulid(&index_id_2);
+    let index_uri_2 = format!("ram:///indexes/{index_id_2}");
+    let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
+
+    let split_id_1 = format!("{index_id_1}--split-1");
+    let split_metadata_1 = SplitMetadata {
+        split_id: split_id_1.clone(),
+        index_uid: index_uid_1.clone(),
+        footer_offsets: 0..2048,
+        ..Default::default()
+    };
+
+    let split_id_2 = format!("{index_id_1}--split-2");
+    let split_metadata_2 = SplitMetadata {
+        split_id: split_id_2.clone(),
+        index_uid: index_uid_1.clone(),
+        footer_offsets: 0..2048,
+        ..Default::default()
+    };
+
+    let split_id_3 = format!("{index_id_1}--split-3");
+    let split_metadata_3 = SplitMetadata {
+        split_id: split_id_3.clone(),
+        index_uid: index_uid_2.clone(),
+        footer_offsets: 0..1000,
+        ..Default::default()
+    };
+
+    // add split-1 and split-2 to index-1
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config_1).unwrap();
+    let index_uid_1: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+        index_uid_1.clone(),
+        vec![split_metadata_1.clone(), split_metadata_2.clone()],
+    )
+    .unwrap();
+    metastore.stage_splits(stage_splits_request).await.unwrap();
+
+    let publish_splits_request = PublishSplitsRequest {
+        index_uid: Some(index_uid_1.clone()),
+        staged_split_ids: vec![split_id_1.clone(), split_id_2.clone()],
+        ..Default::default()
+    };
+    metastore
+        .publish_splits(publish_splits_request)
+        .await
+        .unwrap();
+
+    // add split-3 to index-2
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config_2).unwrap();
+    let index_uid_2: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+        index_uid_2.clone(),
+        vec![split_metadata_3.clone()],
+    )
+    .unwrap();
+    metastore.stage_splits(stage_splits_request).await.unwrap();
+
+    let expected_stats_1 = IndexStats {
+        index_uid: Some(index_uid_1.clone()),
+        staged: Some(SplitStats {
+            num_splits: 0,
+            total_size_bytes: 0,
+        }),
+        published: Some(SplitStats {
+            num_splits: 2,
+            total_size_bytes: 4096,
+        }),
+        marked_for_deletion: Some(SplitStats {
+            num_splits: 0,
+            total_size_bytes: 0,
+        }),
+    };
+    let expected_stats_2 = IndexStats {
+        index_uid: Some(index_uid_2.clone()),
+        staged: Some(SplitStats {
+            num_splits: 1,
+            total_size_bytes: 1000,
+        }),
+        published: Some(SplitStats {
+            num_splits: 0,
+            total_size_bytes: 0,
+        }),
+        marked_for_deletion: Some(SplitStats {
+            num_splits: 0,
+            total_size_bytes: 0,
+        }),
+    };
+
+    let response = metastore
+        .list_index_stats(ListIndexStatsRequest {
+            index_id_patterns: vec!["test-list-index-stats*".to_string()],
+        })
+        .await
+        .unwrap();
+
+    let index_stats_1 = response
+        .index_stats
+        .iter()
+        .find(|index| index.index_uid == Some(index_uid_1.clone()))
+        .expect("Should find index 1");
+
+    assert_eq!(index_stats_1, &expected_stats_1);
+
+    let index_stats_2 = response
+        .index_stats
+        .iter()
+        .find(|index| index.index_uid == Some(index_uid_2.clone()))
+        .expect("Should find index 2");
+    assert_eq!(index_stats_2, &expected_stats_2);
+}
+
+pub async fn test_metastore_list_index_stats_no_splits<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let metastore = MetastoreToTest::default_for_test().await;
+
+    let index_id = append_random_suffix("test-list-index-stats-no-splits");
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    let expected_stats = IndexStats {
+        index_uid: Some(index_uid.clone()),
+        staged: Some(SplitStats {
+            num_splits: 0,
+            total_size_bytes: 0,
+        }),
+        published: Some(SplitStats {
+            num_splits: 0,
+            total_size_bytes: 0,
+        }),
+        marked_for_deletion: Some(SplitStats {
+            num_splits: 0,
+            total_size_bytes: 0,
+        }),
+    };
+
+    let response = metastore
+        .list_index_stats(ListIndexStatsRequest {
+            index_id_patterns: vec!["test-list-index-stats-no-splits*".to_string()],
+        })
+        .await
+        .unwrap();
+
+    let index_stats = response
+        .index_stats
+        .iter()
+        .find(|index| index.index_uid == Some(index_uid.clone()))
+        .expect("Should find index");
+
+    assert_eq!(index_stats, &expected_stats);
 }
