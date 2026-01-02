@@ -1748,15 +1748,15 @@ impl MetastoreService for PostgresqlMetastore {
         &self,
         _: GetClusterIdentityRequest,
     ) -> MetastoreResult<GetClusterIdentityResponse> {
+        // `ON CONFLICT DO NOTHING RETURNING` returns NULL if no insert happens.
+        // To always get the value, we use this pattern:
         let (uuid,) = sqlx::query_as(
             r"
-                WITH insert AS (
-                    INSERT INTO kv (key, value)
-                           VALUES ('cluster_identity', $1)
-                           ON CONFLICT (key) DO NOTHING
-                )
-                SELECT value FROM kv where key = 'cluster_identity';
-                ",
+                INSERT INTO kv (key, value)
+                VALUES ('cluster_identity', $1)
+                ON CONFLICT (key) DO UPDATE SET key = EXCLUDED.key
+                RETURNING value
+            ",
         )
         .bind(Uuid::new_v4().hyphenated().to_string())
         .fetch_one(&self.connection_pool)
