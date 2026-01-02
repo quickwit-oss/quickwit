@@ -204,10 +204,15 @@ service MetastoreService {
 
   // Get cluster identity
   rpc GetClusterIdentity(GetClusterIdentityRequest) returns (GetClusterIdentityResponse);
+
+  // Creates index routing table
+  rpc CreateIndexRoutingTable(CreateIndexRoutingTableRequest) returns (CreateIndexRoutingTableResponse);
+
+  // Get index routing table
+  rpc GetIndexRoutingTable(GetIndexRoutingTableRequest) returns (GetIndexRoutingTableResponse);
 }
 
-message EmptyResponse {
-}
+message EmptyResponse {}
 
 message CreateIndexRequest {
   string index_config_json = 2;
@@ -229,7 +234,7 @@ message UpdateIndexRequest {
 }
 
 message ListIndexesMetadataRequest {
-  reserved  1;
+  reserved 1;
   // List of patterns an index should match or not match to get considered
   // An index must match at least one positive pattern (a pattern not starting
   // with a '-'), and no negative pattern (a pattern starting with a '-').
@@ -550,8 +555,7 @@ message IndexTemplateMatch {
   string index_template_json = 3;
 }
 
-message ListIndexTemplatesRequest {
-}
+message ListIndexTemplatesRequest {}
 
 message ListIndexTemplatesResponse {
   repeated string index_templates_json = 1;
@@ -561,9 +565,29 @@ message DeleteIndexTemplatesRequest {
   repeated string template_ids = 1;
 }
 
-message GetClusterIdentityRequest {
-}
+message GetClusterIdentityRequest {}
 
 message GetClusterIdentityResponse {
   string uuid = 1;
+}
+
+message CreateIndexRoutingTableRequest {
+  repeated IndexRoutingRule rules = 1;
+}
+
+message CreateIndexRoutingTableResponse {
+  string routing_table_id = 1;
+}
+
+message GetIndexRoutingTableRequest {
+  string routing_table_id = 1;
+}
+
+message GetIndexRoutingTableResponse {
+  repeated IndexRoutingRule rules = 1;
+}
+
+message IndexRoutingRule {
+  string index_id = 1;
+  string filter = 2;
 }
