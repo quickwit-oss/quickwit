@@ -23,6 +23,7 @@ use quickwit_config::service::QuickwitService;
 use quickwit_proto::developer::DeveloperServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
+use quickwit_proto::jaeger::storage::v2::trace_reader_server::TraceReaderServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
@@ -203,6 +204,15 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
+
+    // Mount gRPC jaeger v2 service (TraceReader) if present.
+    let jaeger_v2_grpc_service = if let Some(jaeger_service) = services.jaeger_service_opt.clone() {
+        enabled_grpc_services.insert("jaeger-v2");
+        Some(TraceReaderServer::new(jaeger_service))
+    } else {
+        None
+    };
+
     let developer_grpc_service = {
         enabled_grpc_services.insert("developer");
         file_descriptor_sets.push(quickwit_proto::developer::DEVELOPER_FILE_DESCRIPTOR_SET);
@@ -230,6 +240,7 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(ingest_router_grpc_service)
         .add_optional_service(ingester_grpc_service)
         .add_optional_service(jaeger_grpc_service)
+        .add_optional_service(jaeger_v2_grpc_service)
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(otlp_log_grpc_service)
         .add_optional_service(otlp_trace_grpc_service)
