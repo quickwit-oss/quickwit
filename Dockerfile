@@ -38,7 +38,7 @@ WORKDIR /quickwit
 RUN rustup toolchain install
 
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
-    && RUSTFLAGS="--cfg tokio_unstable -C link-arg=-Wl,--threads=1" \
+    && RUSTFLAGS="--cfg tokio_unstable" \
     cargo build \
     -p quickwit-cli \
     --features $CARGO_FEATURES \
