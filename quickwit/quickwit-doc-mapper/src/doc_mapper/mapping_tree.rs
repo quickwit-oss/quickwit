@@ -145,9 +145,9 @@ pub(crate) fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyV
         JsonValue::String(text) => Some(TantivyValue::Str(text)),
         JsonValue::Bool(val) => Some((val).into()),
         JsonValue::Number(number) => {
-            if let Some(val) = u64::from_json_number(&number) {
+            if let Some(val) = i64::from_json_number(&number) {
                 Some((val).into())
-            } else if let Some(val) = i64::from_json_number(&number) {
+            } else if let Some(val) = u64::from_json_number(&number) {
                 Some((val).into())
             } else {
                 f64::from_json_number(&number).map(|val| (val).into())
