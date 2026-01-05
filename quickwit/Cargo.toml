@@ -170,7 +170,7 @@ pem = "3.0.5"
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.33", features = ["std"] }
-pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "f7dd3f6" }
+pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "0426452" }
 postcard = { version = "1.0.4", features = [
   "use-std",
 ], default-features = false }
