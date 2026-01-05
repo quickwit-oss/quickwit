@@ -136,7 +136,7 @@ message FindTraceIDsResponse {
 // Note that if you implement this service, you should also implement
 // OTEL's TraceService in package opentelemetry.proto.collector.trace.v1
 // to allow pushing traces to the storage backend
-// (https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/trace/v1/trace_service.proto)
+// (<https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/collector/trace/v1/trace_service.proto>)
 service TraceReader {
   // GetTraces returns a stream that retrieves all traces with given IDs.
   //
