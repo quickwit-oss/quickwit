@@ -163,3 +163,11 @@ params:
 expected:
   num_hits: 1
 ---
+endpoint: concat/search
+params:
+  # concat date values are stored as strings to enable some level of range
+  # querying even though they don't support fast fields
+  query: "concat_raw:\"2024-01-01\"*"
+expected:
+  num_hits: 1
+---

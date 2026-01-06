@@ -139,7 +139,11 @@ impl<T, I: Iterator<Item = T>> Iterator for OneOrIter<T, I> {
     }
 }
 
-pub(crate) fn map_primitive_json_to_tantivy(value: JsonValue) -> Option<TantivyValue> {
+/// Similar to the native `From<JsonValue> for TantivyValue` implementation, with a
+/// subtle difference: no automatic parsing to DateTime is performed when the string
+/// is a valid RFC3339 date. This enables some level of range querying through prefix
+/// queries despite concatenate fields not supporting fast fields.
+pub(crate) fn map_primitive_json_to_concatenate_value(value: JsonValue) -> Option<TantivyValue> {
     match value {
         JsonValue::Array(_) | JsonValue::Object(_) | JsonValue::Null => None,
         JsonValue::String(text) => Some(TantivyValue::Str(text)),
@@ -260,7 +264,7 @@ impl LeafType {
         }
     }
 
-    fn tantivy_value_from_json(
+    fn concatenate_values_from_json(
         &self,
         json_val: JsonValue,
     ) -> Result<impl Iterator<Item = TantivyValue>, String> {
@@ -302,7 +306,7 @@ impl LeafType {
                         json_obj
                             .into_iter()
                             .flat_map(|(_key, val)| JsonValueIterator::new(val))
-                            .flat_map(map_primitive_json_to_tantivy),
+                            .flat_map(map_primitive_json_to_concatenate_value),
                     ))
                 } else {
                     Err(format!("expected object, got `{json_val}`"))
@@ -388,7 +392,7 @@ impl MappingLeaf {
                 if !self.concatenate.is_empty() {
                     let concat_values = self
                         .typ
-                        .tantivy_value_from_json(el_json_val.clone())
+                        .concatenate_values_from_json(el_json_val.clone())
                         .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
                     for concat_value in concat_values {
                         for field in &self.concatenate {
@@ -408,7 +412,7 @@ impl MappingLeaf {
         if !self.concatenate.is_empty() {
             let concat_values = self
                 .typ
-                .tantivy_value_from_json(json_val.clone())
+                .concatenate_values_from_json(json_val.clone())
                 .map_err(|err_msg| DocParsingError::ValueError(path.join("."), err_msg))?;
             for concat_value in concat_values {
                 for field in &self.concatenate {
