@@ -19,7 +19,7 @@ env:
   AWS_ACCESS_KEY_ID: "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
   CARGO_INCREMENTAL: 0
-  PUBSUB_EMULATOR_HOST: "localhost:9898"
+  PUBSUB_EMULATOR_HOST: "localhost:8681"
   QW_DISABLE_TELEMETRY: 1
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   QW_S3_FORCE_PATH_STYLE_ACCESS: 1
@@ -65,46 +65,45 @@ jobs:
           --health-retries 5
 
       kafka-broker:
-        image: confluentinc/cp-kafka:7.2.1
+        image: confluentinc/confluent-local:7.4.11
         ports:
           - "9092:9092"
           - "9101:9101"
         env:
-          KAFKA_BROKER_ID: 1
-          KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092
+          # Mode KRaft (Single Node)
+          KAFKA_NODE_ID: 1
+          KAFKA_PROCESS_ROLES: 'broker,controller'
+          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:9093'
+          KAFKA_LOG4J_LOGGERS: "org.apache.kafka.image.loader.MetadataLoader=WARN"
+
+          # Listeners
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT'
+          KAFKA_LISTENERS: 'EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093'
+          KAFKA_ADVERTISED_LISTENERS: 'EXTERNAL://localhost:9092'
+          KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+          KAFKA_INTER_BROKER_LISTENER_NAME: 'EXTERNAL'
+
+          # Configuration simplifiée
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
           KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
           KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-          KAFKA_JMX_PORT: 9101
-          KAFKA_JMX_HOSTNAME: localhost
-          KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
-        options: >-
-          --health-cmd "cub kafka-ready -b localhost:9092 1 5"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
-      zookeeper:
-        image: confluentinc/cp-zookeeper:7.2.1
-        ports:
-          - "2181:2181"
-        env:
+          # ID du Cluster (Nécessaire pour KRaft)
+          CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+
           KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
-          ZOOKEEPER_CLIENT_PORT: 2181
-          ZOOKEEPER_TICK_TIME: 2000
+
         options: >-
-          --health-cmd "cub zk-ready localhost:2181 5"
+          --health-cmd "ub kafka-ready -b localhost:9092 1 5"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
       gcp-pubsub-emulator:
-        image: thekevjames/gcloud-pubsub-emulator:7555256f2c
+        image: thekevjames/gcloud-pubsub-emulator:550.0.0
         ports:
-          - "9898:8681"
+          - "8681:8681"
         env:
           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
 

@@ -1854,7 +1854,8 @@ mod tests {
             }"#,
             "concat",
             r#"{"some_int": 25}"#,
-            vec![25_u64.into()],
+            // i64 comes before u64
+            vec![25_i64.into()],
         );
     }
 

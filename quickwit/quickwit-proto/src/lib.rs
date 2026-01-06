@@ -49,6 +49,9 @@ pub mod jaeger {
         pub mod v1 {
             include!("codegen/jaeger/jaeger.storage.v1.rs");
         }
+        pub mod v2 {
+            include!("codegen/jaeger/jaeger.storage.v2.rs");
+        }
     }
 }
 
@@ -196,7 +199,7 @@ impl Extractor for MetadataMap<'_> {
 pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata::MetadataMap) {
     let parent_cx =
         global::get_text_map_propagator(|prop| prop.extract(&MetadataMap(request_metadata)));
-    Span::current().set_parent(parent_cx);
+    let _ = Span::current().set_parent(parent_cx);
 }
 
 impl search::SortOrder {

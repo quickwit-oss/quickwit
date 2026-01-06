@@ -1,7 +1,6 @@
 Component,Origin,License,Copyright
 adler2,https://github.com/oyvindln/adler2,0BSD OR MIT OR Apache-2.0,"Jonas Schievink <jonasschievink@gmail.com>, oyvindln <oyvindln@users.noreply.github.com>"
 advapi32-sys,https://github.com/retep998/winapi-rs,MIT,Peter Atashian <retep998@gmail.com>
-aes,https://github.com/RustCrypto/block-ciphers,MIT OR Apache-2.0,RustCrypto Developers
 aho-corasick,https://github.com/BurntSushi/aho-corasick,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 aliasable,https://github.com/avitex/rust-aliasable,MIT,avitex <avitex@wfxlabs.com>
 alloca,https://github.com/playXE/alloca-rs,MIT,"Adel Prokurov <adel.prokurov@gmail.com>, StackOverflowExcept1on"
@@ -21,8 +20,6 @@ arrayvec,https://github.com/bluss/arrayvec,MIT OR Apache-2.0,bluss
 assert-json-diff,https://github.com/davidpdrsn/assert-json-diff,MIT,David Pedersen <david.pdrsn@gmail.com>
 async-compression,https://github.com/Nullus157/async-compression,MIT OR Apache-2.0,"Wim Looman <wim@nemo157.com>, Allen Bui <fairingrey@gmail.com>"
 async-speed-limit,https://github.com/tikv/async-speed-limit,MIT OR Apache-2.0,The TiKV Project Developers
-async-stream,https://github.com/tokio-rs/async-stream,MIT,Carl Lerche <me@carllerche.com>
-async-stream-impl,https://github.com/tokio-rs/async-stream,MIT,Carl Lerche <me@carllerche.com>
 async-trait,https://github.com/dtolnay/async-trait,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 atomic-waker,https://github.com/smol-rs/atomic-waker,Apache-2.0 OR MIT,"Stjepan Glavina <stjepang@gmail.com>, Contributors to futures-rs"
 aws-config,https://github.com/smithy-lang/smithy-rs,Apache-2.0,"AWS Rust SDK Team <aws-sdk-rust@amazon.com>, Russell Cohen <rcoh@amazon.com>"
@@ -72,8 +69,6 @@ bytes,https://github.com/tokio-rs/bytes,MIT,"Carl Lerche <me@carllerche.com>, Se
 bytes-utils,https://github.com/vorner/bytes-utils,Apache-2.0 OR MIT,Michal 'vorner' Vaner <vorner@vorner.cz>
 bytesize,https://github.com/bytesize-rs/bytesize,Apache-2.0,Hyunsik Choi <hyunsik.choi@gmail.com>
 bytestring,https://github.com/actix/actix-net,MIT OR Apache-2.0,"Nikolay Kim <fafhrd91@gmail.com>, Rob Ede <robjtede@icloud.com>"
-bzip2,https://github.com/alexcrichton/bzip2-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
-bzip2-sys,https://github.com/alexcrichton/bzip2-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 cast,https://github.com/japaric/cast.rs,MIT OR Apache-2.0,Jorge Aparicio <jorge@japaric.io>
 cbor-diag,https://github.com/Nullus157/cbor-diag-rs,MIT OR Apache-2.0,The cbor-diag Authors
 cc,https://github.com/rust-lang/cc-rs,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
@@ -84,7 +79,6 @@ chrono,https://github.com/chronotope/chrono,MIT OR Apache-2.0,The chrono Authors
 ciborium,https://github.com/enarx/ciborium,Apache-2.0,Nathaniel McCallum <npmccallum@profian.com>
 ciborium-io,https://github.com/enarx/ciborium,Apache-2.0,Nathaniel McCallum <npmccallum@profian.com>
 ciborium-ll,https://github.com/enarx/ciborium,Apache-2.0,Nathaniel McCallum <npmccallum@profian.com>
-cipher,https://github.com/RustCrypto/traits,MIT OR Apache-2.0,RustCrypto Developers
 clap,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap Authors
 clap_builder,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap_builder Authors
 clap_lex,https://github.com/clap-rs/clap,MIT OR Apache-2.0,The clap_lex Authors
@@ -96,7 +90,6 @@ compression-codecs,https://github.com/Nullus157/async-compression,MIT OR Apache-
 compression-core,https://github.com/Nullus157/async-compression,MIT OR Apache-2.0,"Wim Looman <wim@nemo157.com>, Allen Bui <fairingrey@gmail.com>"
 console,https://github.com/console-rs/console,MIT,The console Authors
 const-oid,https://github.com/RustCrypto/formats/tree/master/const-oid,Apache-2.0 OR MIT,RustCrypto Developers
-constant_time_eq,https://github.com/cesarb/constant_time_eq,CC0-1.0,Cesar Eduardo Barros <cesarb@cesarb.eti.br>
 core-foundation,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 core-foundation-sys,https://github.com/servo/core-foundation-rs,MIT OR Apache-2.0,The Servo Project Developers
 cpufeatures,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
@@ -223,7 +216,6 @@ idna_adapter,https://github.com/hsivonen/idna_adapter,Apache-2.0 OR MIT,The rust
 indexmap,https://github.com/bluss/indexmap,Apache-2.0 OR MIT,The indexmap Authors
 indexmap,https://github.com/indexmap-rs/indexmap,Apache-2.0 OR MIT,The indexmap Authors
 indicatif,https://github.com/console-rs/indicatif,MIT,The indicatif Authors
-inout,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 inventory,https://github.com/dtolnay/inventory,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 ipnet,https://github.com/krisprice/ipnet,MIT OR Apache-2.0,Kris Price <kris@krisprice.nz>
 ipnetwork,https://github.com/achanda/ipnetwork,MIT OR Apache-2.0,"Abhishek Chanda <abhishek.becs@gmail.com>, Linus Färnstrand <faern@faern.net>"
@@ -244,7 +236,6 @@ libm,https://github.com/rust-lang/compiler-builtins,MIT,Jorge Aparicio <jorge@ja
 libredox,https://gitlab.redox-os.org/redox-os/libredox,MIT,4lDO2 <4lDO2@protonmail.com>
 lindera-cc-cedict,https://github.com/lindera-morphology/lindera,MIT,The lindera-cc-cedict Authors
 lindera-cc-cedict-builder,https://github.com/lindera-morphology/lindera,MIT,The lindera-cc-cedict-builder Authors
-lindera-compress,https://github.com/lindera-morphology/lindera,MIT,The lindera-compress Authors
 lindera-core,https://github.com/lindera-morphology/lindera,MIT,The lindera-core Authors
 lindera-decompress,https://github.com/lindera-morphology/lindera,MIT,The lindera-decompress Authors
 lindera-dictionary,https://github.com/lindera-morphology/lindera,MIT,The lindera-dictionary Authors
@@ -285,6 +276,7 @@ murmurhash32,https://github.com/quickwit-inc/murmurhash32,MIT,Paul Masurel <paul
 new_string_template,https://github.com/hasezoey/new_string_template,MIT,hasezoey <hasezoey@gmail.com>
 no-std-net,https://github.com/dunmatt/no-std-net,MIT,M@ Dunlap <mattdunlap@gmail.com>
 nom,https://github.com/Geal/nom,MIT,contact@geoffroycouprie.com
+nom,https://github.com/rust-bakery/nom,MIT,contact@geoffroycouprie.com
 normalize-line-endings,https://github.com/derekdreery/normalize-line-endings,Apache-2.0,Richard Dodd <richdodj@gmail.com>
 nu-ansi-term,https://github.com/nushell/nu-ansi-term,MIT,"ogham@bsago.me, Ryan Scheel (Havvy) <ryan.havvy@gmail.com>, Josh Triplett <josh@joshtriplett.org>, The Nushell Project Developers"
 num-bigint,https://github.com/rust-num/num-bigint,MIT OR Apache-2.0,The Rust Project Developers
@@ -301,10 +293,11 @@ once_cell_polyfill,https://github.com/polyfill-rs/once_cell_polyfill,MIT OR Apac
 oneshot,https://github.com/faern/oneshot,MIT OR Apache-2.0,Linus Färnstrand <faern@faern.net>
 oorandom,https://hg.sr.ht/~icefox/oorandom,MIT,Simon Heath <icefox@dreamquest.io>
 openssl-probe,https://github.com/alexcrichton/openssl-probe,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
-opentelemetry,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry Authors
+opentelemetry,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry,Apache-2.0,The opentelemetry Authors
+opentelemetry-http,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-http,Apache-2.0,The opentelemetry-http Authors
 opentelemetry-otlp,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-otlp,Apache-2.0,The opentelemetry-otlp Authors
 opentelemetry-proto,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto,Apache-2.0,The opentelemetry-proto Authors
-opentelemetry_sdk,https://github.com/open-telemetry/opentelemetry-rust,Apache-2.0,The opentelemetry_sdk Authors
+opentelemetry_sdk,https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-sdk,Apache-2.0,The opentelemetry_sdk Authors
 ordered-float,https://github.com/reem/rust-ordered-float,MIT,"Jonathan Reem <jonathan.reem@gmail.com>, Matt Brubeck <mbrubeck@limpet.net>"
 ouroboros,https://github.com/someguynamedjosh/ouroboros,MIT OR Apache-2.0,Josh <someguynamedjosh@github.com>
 ouroboros_macro,https://github.com/someguynamedjosh/ouroboros,MIT OR Apache-2.0,Josh <someguynamedjosh@github.com>
@@ -315,8 +308,6 @@ page_size,https://github.com/Elzair/page_size_rs,MIT OR Apache-2.0,Philip Woods 
 papergrid,https://github.com/zhiburt/tabled,MIT,Maxim Zhiburt <zhiburt@gmail.com>
 parking_lot,https://github.com/Amanieu/parking_lot,MIT OR Apache-2.0,Amanieu d'Antras <amanieu@gmail.com>
 parking_lot_core,https://github.com/Amanieu/parking_lot,MIT OR Apache-2.0,Amanieu d'Antras <amanieu@gmail.com>
-password-hash,https://github.com/RustCrypto/traits/tree/master/password-hash,MIT OR Apache-2.0,RustCrypto Developers
-pbkdf2,https://github.com/RustCrypto/password-hashes/tree/master/pbkdf2,MIT OR Apache-2.0,RustCrypto Developers
 peakmem-alloc,https://github.com/PSeitz/peakmem-alloc,MIT,Pascal Seitz <pascal.seitz@gmail.com>
 percent-encoding,https://github.com/servo/rust-url,MIT OR Apache-2.0,The rust-url developers
 perf-event,https://github.com/jimblandy/perf-event,MIT OR Apache-2.0,Jim Blandy <jimb@red-bean.com>
@@ -351,6 +342,8 @@ pretty_assertions,https://github.com/rust-pretty-assertions/rust-pretty-assertio
 prettyplease,https://github.com/dtolnay/prettyplease,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 proc-macro-error,https://gitlab.com/CreepySkeleton/proc-macro-error,MIT OR Apache-2.0,CreepySkeleton <creepy-skeleton@yandex.ru>
 proc-macro-error-attr,https://gitlab.com/CreepySkeleton/proc-macro-error,MIT OR Apache-2.0,CreepySkeleton <creepy-skeleton@yandex.ru>
+proc-macro-error-attr2,https://github.com/GnomedDev/proc-macro-error-2,MIT OR Apache-2.0,"CreepySkeleton <creepy-skeleton@yandex.ru>, GnomedDev <david2005thomas@gmail.com>"
+proc-macro-error2,https://github.com/GnomedDev/proc-macro-error-2,MIT OR Apache-2.0,"CreepySkeleton <creepy-skeleton@yandex.ru>, GnomedDev <david2005thomas@gmail.com>"
 proc-macro2,https://github.com/dtolnay/proc-macro2,MIT OR Apache-2.0,"David Tolnay <dtolnay@gmail.com>, Alex Crichton <alex@alexcrichton.com>"
 proc-macro2-diagnostics,https://github.com/SergioBenitez/proc-macro2-diagnostics,MIT OR Apache-2.0,Sergio Benitez <sb@sergio.bz>
 procfs,https://github.com/eminence/procfs,MIT OR Apache-2.0,Andrew Chin <achin@eminence32.net>
@@ -470,8 +463,8 @@ tantivy-sstable,https://github.com/quickwit-oss/tantivy,MIT,The tantivy-sstable 
 tantivy-stacker,https://github.com/quickwit-oss/tantivy,MIT,The tantivy-stacker Authors
 tantivy-tokenizer-api,https://github.com/quickwit-oss/tantivy,MIT,The tantivy-tokenizer-api Authors
 tempfile,https://github.com/Stebalien/tempfile,MIT OR Apache-2.0,"Steven Allen <steven@stebalien.com>, The Rust Project Developers, Ashley Mannix <ashleymannix@live.com.au>, Jason White <me@jasonwhite.io>"
-termcolor,https://github.com/BurntSushi/termcolor,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 termtree,https://github.com/rust-cli/termtree,MIT,The termtree Authors
+testing_table,https://github.com/zhiburt/tabled,MIT,Maxim Zhiburt <zhiburt@gmail.com>
 thiserror,https://github.com/dtolnay/thiserror,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 thiserror-impl,https://github.com/dtolnay/thiserror,MIT OR Apache-2.0,David Tolnay <dtolnay@gmail.com>
 thousands,https://github.com/tov/thousands-rs,MIT OR Apache-2.0,Jesse A. Tov <jesse.tov@gmail.com>
@@ -537,7 +530,6 @@ uuid,https://github.com/uuid-rs/uuid,Apache-2.0 OR MIT,"Ashley Mannix<ashleymann
 valuable,https://github.com/tokio-rs/valuable,MIT,The valuable Authors
 vsimd,https://github.com/Nugine/simd,MIT,The vsimd Authors
 vte,https://github.com/alacritty/vte,Apache-2.0 OR MIT,"Joe Wilm <joe@jwilm.com>, Christian Duerr <contact@christianduerr.com>"
-vte_generate_state_changes,https://github.com/alacritty/vte,Apache-2.0 OR MIT,Christian Duerr <contact@christianduerr.com>
 wait-timeout,https://github.com/alexcrichton/wait-timeout,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
 walkdir,https://github.com/BurntSushi/walkdir,Unlicense OR MIT,Andrew Gallant <jamslam@gmail.com>
 want,https://github.com/seanmonstar/want,MIT,Sean McArthur <sean@seanmonstar.com>
@@ -563,7 +555,6 @@ winapi-x86_64-pc-windows-gnu,https://github.com/retep998/winapi-rs,MIT OR Apache
 windows,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
 windows-collections,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-collections Authors
 windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,Microsoft
-windows-core,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-core Authors
 windows-future,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-future Authors
 windows-implement,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-implement Authors
 windows-interface,https://github.com/microsoft/windows-rs,MIT OR Apache-2.0,The windows-interface Authors

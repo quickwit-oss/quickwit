@@ -49,14 +49,14 @@ use quickwit_proto::metastore::{
     IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
     IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
-    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
-    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
-    serde_utils,
+    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
+    MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
+    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -807,6 +807,51 @@ impl MetastoreService for FileBackedMetastore {
             .collect();
         let splits_responses_stream = Box::pin(futures::stream::iter(splits_responses));
         Ok(ServiceStream::new(splits_responses_stream))
+    }
+
+    async fn list_index_stats(
+        &self,
+        request: ListIndexStatsRequest,
+    ) -> MetastoreResult<ListIndexStatsResponse> {
+        let index_id_matcher =
+            IndexIdMatcher::try_from_index_id_patterns(&request.index_id_patterns)?;
+        let index_ids: Vec<IndexId> = {
+            let inner_rlock_guard = self.state.read().await;
+            inner_rlock_guard
+                .indexes
+                .iter()
+                .filter_map(|(index_id, index_state)| match index_state {
+                    LazyIndexStatus::Active(_) if index_id_matcher.is_match(index_id) => {
+                        Some(index_id)
+                    }
+                    _ => None,
+                })
+                .cloned()
+                .collect()
+        };
+
+        let mut index_read_futures = FuturesUnordered::new();
+        for index_id in index_ids {
+            let index_read_future = async move {
+                self.read_any(&index_id, None, |index| index.get_stats())
+                    .await
+            };
+            index_read_futures.push(index_read_future);
+        }
+
+        let mut index_stats = Vec::new();
+        while let Some(index_read_result) = index_read_futures.next().await {
+            match index_read_result {
+                Ok(stats) => index_stats.push(stats),
+                Err(MetastoreError::NotFound(_)) => {
+                    // If the index does not exist, we just skip it.
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(ListIndexStatsResponse { index_stats })
     }
 
     async fn list_stale_splits(
@@ -1698,9 +1743,9 @@ mod tests {
 
         // Stage splits in multiple threads
         let mut handles = Vec::new();
-        let mut random_generator = rand::thread_rng();
+        let mut random_generator = rand::rng();
         for i in 1..=20 {
-            let sleep_duration = Duration::from_millis(random_generator.gen_range(0..=200));
+            let sleep_duration = Duration::from_millis(random_generator.random_range(0..=200));
             let metastore = metastore.clone();
             let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
             let handle = tokio::spawn({
