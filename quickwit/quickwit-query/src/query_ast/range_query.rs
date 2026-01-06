@@ -216,7 +216,11 @@ impl BuildTantivyAst for RangeQuery {
                 } else if let Some(range) = bounds_range_f64 {
                     sub_queries.push(query_from_fast_val_range(&empty_term, range).into());
                 }
-
+                let bounds_range_date: Option<(Bound<DateTime>, Bound<DateTime>)> =
+                    convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
+                if let Some(range) = bounds_range_date {
+                    sub_queries.push(query_from_fast_val_range(&empty_term, range).into());
+                }
                 let mut normalizer =
                     options
                         .get_fast_field_tokenizer_name()
@@ -401,6 +405,34 @@ mod tests {
              Included(Term(field=6, type=Json, path=hello, type=Str, \"1980\")), upper_bound: \
              Included(Term(field=6, type=Json, path=hello, type=Str, \"1989\")) } })], filter: \
              [], minimum_should_match: None })"
+        );
+    }
+
+    #[test]
+    fn test_range_dynamic_datetime() {
+        let range_query = RangeQuery {
+            field: "hello".to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String(
+                "2020-12-09T16:09:53+00:00".to_string(),
+            )),
+            upper_bound: Bound::Included(JsonLiteral::String(
+                "2020-12-09T16:09:53+00:00".to_string(),
+            )),
+        };
+        let schema = make_schema(true);
+        let tantivy_ast = range_query
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
+            .unwrap();
+        assert_eq!(
+            format!("{tantivy_ast:?}"),
+            "Bool(TantivyBoolQuery { must: [], must_not: [], should: [Leaf(FastFieldRangeQuery { \
+             bounds: BoundsRange { lower_bound: Included(Term(field=6, type=Json, path=hello, \
+             type=Date, 2020-12-09T16:09:53Z)), upper_bound: Included(Term(field=6, type=Json, \
+             path=hello, type=Date, 2020-12-09T16:09:53Z)) } }), Leaf(FastFieldRangeQuery { \
+             bounds: BoundsRange { lower_bound: Included(Term(field=6, type=Json, path=hello, \
+             type=Str, \"2020-12-09T16:09:53+00:00\")), upper_bound: Included(Term(field=6, \
+             type=Json, path=hello, type=Str, \"2020-12-09T16:09:53+00:00\")) } })], filter: [], \
+             minimum_should_match: None })"
         );
     }
 
