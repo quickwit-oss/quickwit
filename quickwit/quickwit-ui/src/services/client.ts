@@ -103,13 +103,25 @@ export class Client {
     return this.fetch(`${this.apiRoot()}indexes`, {});
   }
 
+  // TODO unit test
+  async updateIndexConfig(
+    indexId: string,
+    indexConfig: IndexMetadata["index_config"],
+  ): Promise<IndexMetadata> {
+    return this.fetch(
+      `${this.apiRoot()}indexes/${indexId}`,
+      { method: "PUT" },
+      JSON.stringify(indexConfig),
+    );
+  }
+
   async fetch<T>(
     url: string,
     params: RequestInit,
     body: string | null = null,
   ): Promise<T> {
     if (body !== null) {
-      params.method = "POST";
+      params.method = params.method ?? "POST";
       params.body = body;
       params.headers = {
         ...params.headers,

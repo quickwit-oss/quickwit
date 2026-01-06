@@ -12,17 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { BeforeMount, Editor, OnMount } from "@monaco-editor/react";
-import { useCallback } from "react";
+import { BeforeMount, Editor, OnMount, useMonaco } from "@monaco-editor/react";
+import { useCallback, useEffect, useId } from "react";
 import { EDITOR_THEME } from "../utils/theme";
 
 export function JsonEditor({
   content,
+  readOnly = true,
   resizeOnMount,
+  jsonSchema,
+  onContentEdited,
 }: {
   content: unknown;
+  readOnly?: boolean;
   resizeOnMount: boolean;
+  jsonSchema?: object;
+  onContentEdited?: (value: unknown) => void;
 }) {
+  const monaco = useMonaco();
+  const arbitraryFilename = "inmemory://" + useId();
+
+  // Apply json schema
+  useEffect(() => {
+    if (!monaco || !jsonSchema) return;
+
+    monaco.languages.json.jsonDefaults.setDiagnosticsOptions({
+      validate: true,
+      schemas: [
+        {
+          uri: "http://quickwit-schema.json",
+          fileMatch: [arbitraryFilename],
+          schema: jsonSchema,
+        },
+      ],
+    });
+  }, [monaco, jsonSchema, arbitraryFilename]);
+
   // Setting editor height based on lines height and count to stretch and fit its content.
   const onMount: OnMount = useCallback(
     (editor) => {
@@ -53,12 +78,18 @@ export function JsonEditor({
 
   return (
     <Editor
+      path={arbitraryFilename}
       language="json"
       value={JSON.stringify(content, null, 2)}
+      onChange={(value) => {
+        try {
+          if (value) onContentEdited?.(JSON.parse(value));
+        } catch (err) {}
+      }}
       beforeMount={beforeMount}
       onMount={onMount}
       options={{
-        readOnly: true,
+        readOnly: readOnly,
         fontFamily: "monospace",
         overviewRulerBorder: false,
         overviewRulerLanes: 0,
