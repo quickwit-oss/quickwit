@@ -22,6 +22,8 @@ json:
         type: bool
       - name: int
         type: u64
+      - name: float
+        type: f64
       - name: json
         type: json
       - name: concat_raw
@@ -32,6 +34,7 @@ json:
           - boolean
           - int
           - json
+          - float
         tokenizer: raw
         include_dynamic_fields: true
       - name: concat_default
@@ -42,6 +45,7 @@ json:
           - boolean
           - int
           - json
+          - float
         tokenizer: default
     dynamic_mapping:
       tokenizer: default
@@ -59,6 +63,12 @@ ndjson:
   - {"text1": "true"}
   - {"boolean": true}
   - {"text2": "i like 42"}
-  - { "int": 42}
+  - {"int": 42}
   - {"other-field": "otherfieldvalue", "other-field-number": 9, "other-field-bool": false}
   - {"json": {"some_bool": false, "some_int": 10, "nested": {"some_string": "nestedstring"}}}
+  - {"float": 1.5}
+  - {"json": {"val:": 2.5}}
+  - {"other": 3.5}
+  # too big to be a i64, parsed as a u64
+  - {"big": 9223372036854775808}
+  - {"neg": -5}

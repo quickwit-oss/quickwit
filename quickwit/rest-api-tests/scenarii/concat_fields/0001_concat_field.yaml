@@ -115,3 +115,51 @@ params:
 expected:
   num_hits: 1
 ---
+endpoint: concat/search
+params:
+  query: "concat_default:1.5"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_default:2.5"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_default:3.5"
+expected:
+  num_hits: 0
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:1.5"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:2.5"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:3.5"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:9223372036854775808"
+expected:
+  num_hits: 1
+---
+endpoint: concat/search
+params:
+  query: "concat_raw:-5"
+expected:
+  num_hits: 1
+---
