@@ -1129,19 +1129,25 @@ impl IngestController {
             return Vec::new();
         }
         let mut num_open_shards: usize = 0;
-        let mut per_leader_open_shards: HashMap<&str, Vec<&Shard>> = HashMap::new();
+        let mut per_active_leader_open_shards: HashMap<&str, Vec<&Shard>> = HashMap::new();
+        let mut orphaned_shards = Vec::new();
 
         for shard in model.all_shards() {
             if shard.is_open() {
                 num_open_shards += 1;
-                per_leader_open_shards
-                    .entry(&shard.leader_id)
-                    .or_default()
-                    .push(&shard.shard);
+                let leader_id = NodeId::new(shard.leader_id.to_string());
+                if !self.ingester_pool.contains_key(&leader_id) {
+                    orphaned_shards.push(shard.shard.clone());
+                } else {
+                    per_active_leader_open_shards
+                        .entry(&shard.leader_id)
+                        .or_default()
+                        .push(&shard.shard);
+                }
             }
         }
         for ingester_id in &ingester_ids {
-            per_leader_open_shards
+            per_active_leader_open_shards
                 .entry(ingester_id.as_str())
                 .or_default();
         }
@@ -1152,20 +1158,22 @@ impl IngestController {
             f32::floor(target_num_open_shards_per_leader * 0.9) as usize;
 
         let mut rng = rng();
-        let mut per_leader_open_shard_shuffled: Vec<Vec<&Shard>> = per_leader_open_shards
-            .into_values()
-            .map(|mut shards| {
-                shards.shuffle(&mut rng);
-                shards
-            })
-            .collect();
+        let mut per_active_leader_open_shard_shuffled: Vec<Vec<&Shard>> =
+            per_active_leader_open_shards
+                .into_values()
+                .map(|mut shards| {
+                    shards.shuffle(&mut rng);
+                    shards
+                })
+                .collect();
 
-        let mut shards_to_rebalance: Vec<Shard> = Vec::new();
+        let mut shards_to_rebalance: Vec<Shard> = Vec::from(orphaned_shards);
 
         loop {
-            let MinMaxResult::MinMax(min_shards, max_shards) = per_leader_open_shard_shuffled
-                .iter_mut()
-                .minmax_by_key(|shards| shards.len())
+            let MinMaxResult::MinMax(min_shards, max_shards) =
+                per_active_leader_open_shard_shuffled
+                    .iter_mut()
+                    .minmax_by_key(|shards| shards.len())
             else {
                 break;
             };
@@ -1308,7 +1316,6 @@ fn find_scale_down_candidate(
 
 #[cfg(test)]
 mod tests {
-
     use std::collections::BTreeSet;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -3544,7 +3551,10 @@ mod tests {
         );
     }
 
-    fn test_compute_shards_to_rebalance_aux(shard_allocation: &[usize]) {
+    fn test_compute_shards_to_rebalance_aux(
+        shard_allocation: &[usize],
+        num_inactive_ingesters: usize,
+    ) {
         let index_id = "test-index";
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/test-index");
         let index_uid = index_metadata.index_uid.clone();
@@ -3561,7 +3571,7 @@ mod tests {
         let mock_ingester = MockIngesterService::new();
         let ingester_client = IngesterServiceClient::from_mock(mock_ingester);
 
-        let ingester_ids: Vec<String> = (0..shard_allocation.len())
+        let ingester_ids: Vec<String> = (0..shard_allocation.len() - num_inactive_ingesters)
             .map(|i| format!("test-ingester-{}", i))
             .collect();
 
@@ -3573,11 +3583,16 @@ mod tests {
         for (ingester_idx, &num_shards) in shard_allocation.iter().enumerate() {
             for _ in 0..num_shards {
                 let shard_id = shards.len() as u64;
+                let leader_id = if ingester_idx < ingester_ids.len() {
+                    ingester_ids[ingester_idx].clone()
+                } else {
+                    format!("test-ingester-{}", ingester_idx)
+                };
                 let shard = Shard {
                     index_uid: Some(index_uid.clone()),
                     source_id: source_id.to_string(),
                     shard_id: Some(ShardId::from(shard_id)),
-                    leader_id: ingester_ids[ingester_idx].clone(),
+                    leader_id,
                     shard_state: ShardState::Open as i32,
                     ..Default::default()
                 };
@@ -3670,15 +3685,18 @@ mod tests {
         fn test_compute_shards_to_rebalance_proptest(
             shard_allocation in proptest::collection::vec(0..13usize, 0..13usize),
         ) {
-            test_compute_shards_to_rebalance_aux(&shard_allocation);
+            test_compute_shards_to_rebalance_aux(&shard_allocation, 0);
         }
     }
 
     #[test]
     fn test_compute_shards_to_rebalance() {
-        test_compute_shards_to_rebalance_aux(&[]);
-        test_compute_shards_to_rebalance_aux(&[0]);
-        test_compute_shards_to_rebalance_aux(&[1]);
-        test_compute_shards_to_rebalance_aux(&[0, 1]);
+        test_compute_shards_to_rebalance_aux(&[], 0);
+        test_compute_shards_to_rebalance_aux(&[0], 0);
+        test_compute_shards_to_rebalance_aux(&[1], 0);
+        test_compute_shards_to_rebalance_aux(&[0, 1], 0);
+        test_compute_shards_to_rebalance_aux(&[0, 1], 1);
+        test_compute_shards_to_rebalance_aux(&[0, 1, 2, 3, 4], 2);
+        test_compute_shards_to_rebalance_aux(&[0, 1, 2, 3, 4], 4);
     }
 }
