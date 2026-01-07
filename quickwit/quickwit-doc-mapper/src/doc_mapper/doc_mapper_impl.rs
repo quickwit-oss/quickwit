@@ -35,7 +35,7 @@ use super::field_presence::populate_field_presence;
 use super::tantivy_val_to_json::tantivy_value_to_json;
 use crate::doc_mapper::mapping_tree::{
     JsonValueIterator, MappingNode, MappingNodeRoot, build_field_path_from_str, build_mapping_tree,
-    map_primitive_json_to_tantivy,
+    map_primitive_json_to_concatenate_value,
 };
 use crate::doc_mapper::{FieldMappingType, JsonObject, Partition};
 use crate::query_builder::build_query;
@@ -530,7 +530,7 @@ impl DocMapper {
             if !self.concatenate_dynamic_fields.is_empty() {
                 let json_obj_values =
                     JsonValueIterator::new(serde_json::Value::Object(dynamic_json_obj.clone()))
-                        .flat_map(map_primitive_json_to_tantivy);
+                        .flat_map(map_primitive_json_to_concatenate_value);
 
                 for value in json_obj_values {
                     for concatenate_dynamic_field in self.concatenate_dynamic_fields.iter() {
