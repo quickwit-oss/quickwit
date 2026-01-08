@@ -311,6 +311,8 @@ mod proxy {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio_tungstenite::tungstenite::error::Error as TungsteniteError;
 
+    use crate::cloudprem::InstrumentedStream;
+
     pub fn ignore_proxy<'a>(
         target: &str,
         env: impl IntoIterator<Item = &'a (String, String)>,
@@ -387,6 +389,7 @@ mod proxy {
     ) -> Result<impl tokio::io::AsyncRead + tokio::io::AsyncWrite + use<'a>, TungsteniteError> {
         let Some(proxy) = proxy_opt else {
             let stream = tokio::net::TcpStream::connect((original_target, 443)).await?;
+            let stream = InstrumentedStream::new(stream);
             return Ok(stream);
         };
 
@@ -402,6 +405,7 @@ mod proxy {
 
         read_handshake(&mut stream).await?;
 
+        let stream = InstrumentedStream::new(stream);
         Ok(stream)
     }
 

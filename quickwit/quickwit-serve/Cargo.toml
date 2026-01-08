@@ -41,6 +41,7 @@ openssl = { workspace = true }
 opentelemetry = { workspace = true }
 pem = { workspace = true }
 percent-encoding = { workspace = true }
+pin-project = { workspace = true }
 pomchi = { workspace = true }
 postcard = { workspace = true }
 pprof = { workspace = true, optional = true }
@@ -102,6 +103,7 @@ assert-json-diff = { workspace = true }
 http = { workspace = true }
 http-body = "0.4"
 itertools = { workspace = true }
+metrics-util = "0.20"
 mockall = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
