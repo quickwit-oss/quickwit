@@ -171,7 +171,7 @@ async fn test_multi_nodes_cluster() {
 async fn test_metrics() {
     let recorder = DebuggingRecorder::new();
     let snapshotter = recorder.snapshotter();
-    metrics::set_global_recorder(Box::leak(Box::new(recorder))).unwrap();
+    let _recorder_guard = metrics::set_default_local_recorder(Box::leak(Box::new(recorder)));
 
     let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
     let index_id = "test-metrics-index";
