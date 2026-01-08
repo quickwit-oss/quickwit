@@ -1104,7 +1104,6 @@ impl IngestController {
     }
 
     /// Computes shards that need to be rebalanced.
-
     ///
     /// This function identifies which shards should be moved to achieve a balance across available
     /// ingesters.
