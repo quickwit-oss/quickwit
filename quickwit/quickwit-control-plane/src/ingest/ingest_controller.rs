@@ -23,7 +23,6 @@ use std::time::Duration;
 use fnv::FnvHashSet;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
-use itertools::{Itertools, MinMaxResult};
 use quickwit_actors::Mailbox;
 use quickwit_common::Progress;
 use quickwit_common::pretty::PrettySample;
@@ -1103,138 +1102,78 @@ impl IngestController {
         Ok(Some(tokio::spawn(close_shards_and_send_callback_fut)))
     }
 
-    /// This method just "computes"" the number of shards to move for rebalance.
-    /// It does not run any side effect except logging.
+    /// Computes shards that need to be rebalanced.
     ///
-    /// It takes inactive ingesters into account, and rebalances all of those shards. When there are
-    /// no inactive ingesters, it rebalances the minimal number of shards.
+    /// This function identifies which shards should be moved to achieve a balance across available
+    /// ingesters. It returns:
+    /// 1. All shards on unavailable ingesters (orphaned shards)
+    /// 2. Excess shards from active ingesters that have more than target_max
     ///
-    /// If there's a mix of active and inactive ingesters, `target_num_open_shards_per_leader`
-    /// can be higher than expected. Be careful to not create infinite loops in these cases.
-    ///
-    /// TODO: This implementation does not consider replicas.
+    /// The target max is calculated using integer ceiling division. It ensures balance
+    /// is achievable (e.g., 13 shards / 3 ingesters → [4, 4, 5]).
     fn compute_shards_to_rebalance(&self, model: &ControlPlaneModel) -> Vec<Shard> {
         let ingester_ids: Vec<NodeId> = self.ingester_pool.keys();
-        let num_ingesters = ingester_ids.len();
+        let num_available_ingesters = ingester_ids.len();
 
-        if num_ingesters == 0 {
+        if num_available_ingesters == 0 {
             debug!("no ingesters available");
             return Vec::new();
         }
-        if num_ingesters < 2 {
+        if num_available_ingesters < 2 {
             return Vec::new();
         }
-        let mut num_open_shards: usize = 0;
-        let mut per_active_leader_open_shards: HashMap<&str, Vec<&Shard>> = HashMap::new();
-        let mut orphaned_shards = Vec::new();
 
-        for shard in model.all_shards() {
-            num_open_shards += 1;
-            if shard.is_open() {
-                let leader_id = NodeId::new(shard.leader_id.to_string());
-                if !self.ingester_pool.contains_key(&leader_id) {
-                    orphaned_shards.push(shard.shard.clone());
-                } else {
-                    per_active_leader_open_shards
-                        .entry(&shard.leader_id)
-                        .or_default()
-                        .push(&shard.shard);
-                }
-            }
-        }
+        let mut total_open_shards: usize = 0;
+        let mut orphaned_shards: Vec<Shard> = Vec::new();
+        let mut per_available_ingester_shards: HashMap<&str, Vec<&Shard>> = HashMap::new();
+
         for ingester_id in &ingester_ids {
-            per_active_leader_open_shards
+            per_available_ingester_shards
                 .entry(ingester_id.as_str())
                 .or_default();
         }
-        let target_num_open_shards_per_leader = num_open_shards as f32 / num_ingesters as f32;
+
+        for shard in model.all_shards() {
+            if !shard.is_open() {
+                continue;
+            }
+            total_open_shards += 1;
+
+            let leader_id = NodeId::new(shard.leader_id.to_string());
+            if self.ingester_pool.contains_key(&leader_id) {
+                per_available_ingester_shards
+                    .entry(&shard.leader_id)
+                    .or_default()
+                    .push(&shard.shard);
+            } else {
+                orphaned_shards.push(shard.shard.clone());
+            }
+        }
+
+        let target_max = total_open_shards.div_ceil(num_available_ingesters);
+
+        let mut shards_to_rebalance = orphaned_shards;
 
         let mut rng = rng();
-        let per_active_leader_open_shard_shuffled: Vec<Vec<&Shard>> = per_active_leader_open_shards
-            .into_values()
-            .map(|mut shards| {
-                shards.shuffle(&mut rng);
-                shards
-            })
-            .collect();
-
-        if orphaned_shards.is_empty() {
-            Self::balance_active_ingesters(
-                target_num_open_shards_per_leader,
-                per_active_leader_open_shard_shuffled,
-            )
-        } else {
-            let additional_shards_to_rebalance = Self::fit_active_ingesters_to_target(
-                target_num_open_shards_per_leader as usize,
-                per_active_leader_open_shard_shuffled,
-            );
-            let mut all_shards_to_rebalance = orphaned_shards;
-            all_shards_to_rebalance.extend(additional_shards_to_rebalance);
-            all_shards_to_rebalance
-        }
-
-        // let mut shards_to_rebalance: Vec<Shard> = Vec::from(orphaned_shards);
-    }
-
-    // case where there are open shards on inactive ingesters. in this case, the only thing we need
-    // to do if figure out which ingesters have too many shards, since we'd need the orphaned shards
-    // to fully optimize (and those already need to be rebalanced anyway)
-    fn fit_active_ingesters_to_target(
-        target_num_open_shards_per_leader: usize,
-        mut per_active_leader_open_shard_shuffled: Vec<Vec<&Shard>>,
-    ) -> Vec<Shard> {
-        let mut shards_to_rebalance = Vec::new();
-        for ingester in per_active_leader_open_shard_shuffled.iter_mut() {
-            while ingester.len() > 0 && ingester.len() > target_num_open_shards_per_leader {
-                shards_to_rebalance.push(ingester.pop().unwrap().clone());
+        for shards in per_available_ingester_shards.values_mut() {
+            shards.shuffle(&mut rng);
+            while shards.len() > target_max {
+                shards_to_rebalance.push(shards.pop().unwrap().clone());
             }
         }
-        shards_to_rebalance
-    }
 
-    // case where all open shards are on active ingesters. in this case, we can optimize which
-    // nodes to rebalance more accurately
-    fn balance_active_ingesters(
-        target_num_open_shards_per_leader: f32,
-        mut per_active_leader_open_shard_shuffled: Vec<Vec<&Shard>>,
-    ) -> Vec<Shard> {
-        let max_num_open_shards_per_leader =
-            f32::ceil(target_num_open_shards_per_leader * 1.1) as usize;
-        let min_num_open_shards_per_leader =
-            f32::floor(target_num_open_shards_per_leader * 0.9) as usize;
-        let mut shards_to_rebalance = Vec::new();
-        loop {
-            let MinMaxResult::MinMax(min_shards, max_shards) =
-                per_active_leader_open_shard_shuffled
-                    .iter_mut()
-                    .minmax_by_key(|shards| shards.len())
-            else {
-                break;
-            };
-            if min_shards.len() < min_num_open_shards_per_leader
-                || max_shards.len() > max_num_open_shards_per_leader
-            {
-                let shard = max_shards.pop().expect("shards should not be empty");
-                shards_to_rebalance.push(shard.clone());
-                min_shards.push(shard);
-            } else {
-                break;
-            }
-        }
         let num_shards_to_rebalance = shards_to_rebalance.len();
-
-        if num_shards_to_rebalance == 0 {
-            debug!("no shards to rebalance");
-        } else {
+        if num_shards_to_rebalance > 0 {
             info!(
-                // num_open_shards,
-                // num_available_ingesters = num_ingesters,
-                min_shards_threshold = min_num_open_shards_per_leader,
-                max_shards_threshold = max_num_open_shards_per_leader,
+                total_open_shards,
+                num_available_ingesters,
+                target_min = total_open_shards / num_available_ingesters,
+                target_max,
                 num_shards_to_rebalance,
                 "rebalancing {num_shards_to_rebalance} shards"
             );
         }
+
         shards_to_rebalance
     }
 
@@ -3585,9 +3524,13 @@ mod tests {
         );
     }
 
+    /// Test helper for compute_shards_to_rebalance_v2.
+    ///
+    /// - `active_ingester_shards`: shards per active ingester (these are in the pool)
+    /// - `inactive_ingester_shards`: shards per inactive ingester (NOT in the pool - orphaned)
     fn test_compute_shards_to_rebalance_aux(
-        shard_allocation: &[usize],
-        num_inactive_ingesters: usize,
+        active_ingester_shards: &[usize],
+        inactive_ingester_shards: &[usize],
     ) {
         let index_id = "test-index";
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/test-index");
@@ -3601,39 +3544,58 @@ mod tests {
         source_config.source_id = source_id.to_string();
         model.add_source(&index_uid, source_config).unwrap();
 
+        // Create active ingesters and add to pool
         let ingester_pool = IngesterPool::default();
         let mock_ingester = MockIngesterService::new();
         let ingester_client = IngesterServiceClient::from_mock(mock_ingester);
-        let active_ingesters = shard_allocation.len() - num_inactive_ingesters;
 
-        let ingester_ids: Vec<String> = (0..active_ingesters)
-            .map(|i| format!("test-ingester-{}", i))
+        let active_ids: Vec<String> = (0..active_ingester_shards.len())
+            .map(|i| format!("active-ingester-{}", i))
             .collect();
 
-        for ingester_id in &ingester_ids {
+        for ingester_id in &active_ids {
             ingester_pool.insert(NodeId::from(ingester_id.clone()), ingester_client.clone());
         }
-        let mut shards = Vec::new();
 
-        for (ingester_idx, &num_shards) in shard_allocation.iter().enumerate() {
+        // Create inactive ingester IDs (NOT added to pool)
+        let inactive_ids: Vec<String> = (0..inactive_ingester_shards.len())
+            .map(|i| format!("inactive-ingester-{}", i))
+            .collect();
+
+        // Create all shards
+        let mut shards = Vec::new();
+        let mut shard_id: u64 = 0;
+
+        // Shards on active ingesters
+        for (idx, &num_shards) in active_ingester_shards.iter().enumerate() {
             for _ in 0..num_shards {
-                let shard_id = shards.len() as u64;
-                let leader_id = if ingester_idx < ingester_ids.len() {
-                    ingester_ids[ingester_idx].clone()
-                } else {
-                    format!("test-ingester-{}", ingester_idx)
-                };
-                let shard = Shard {
+                shards.push(Shard {
                     index_uid: Some(index_uid.clone()),
-                    source_id: source_id.to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(shard_id)),
-                    leader_id,
+                    leader_id: active_ids[idx].clone(),
                     shard_state: ShardState::Open as i32,
                     ..Default::default()
-                };
-                shards.push(shard);
+                });
+                shard_id += 1;
             }
         }
+
+        // Shards on inactive ingesters (orphaned)
+        for (idx, &num_shards) in inactive_ingester_shards.iter().enumerate() {
+            for _ in 0..num_shards {
+                shards.push(Shard {
+                    index_uid: Some(index_uid.clone()),
+                    source_id: source_id.clone(),
+                    shard_id: Some(ShardId::from(shard_id)),
+                    leader_id: inactive_ids[idx].clone(),
+                    shard_state: ShardState::Open as i32,
+                    ..Default::default()
+                });
+                shard_id += 1;
+            }
+        }
+
         model.insert_shards(&index_uid, &source_id, shards.clone());
 
         let controller = IngestController::new(
@@ -3664,7 +3626,7 @@ mod tests {
                 *per_ingester_num_shards.entry(&shard.leader_id).or_default() += 1;
             }
         }
-        for ingester_id in &ingester_ids {
+        for ingester_id in &active_ids {
             per_ingester_num_shards
                 .entry(ingester_id.as_str())
                 .or_default();
@@ -3674,7 +3636,6 @@ mod tests {
             .map(|(ingester_id, num_shards)| (num_shards, ingester_id))
             .collect();
         let mut opened_shards: Vec<Shard> = Vec::new();
-        let mut shard_id = shards.len() as u64;
 
         for _ in 0..shards_to_rebalance.len() {
             let (num_shards, ingester_id) = per_ingester_num_shards_sorted.pop_first().unwrap();
@@ -3694,7 +3655,7 @@ mod tests {
             .iter()
             .map(|(num_shards, _)| num_shards)
             .sum();
-        let target_num_open_shards_per_leader = num_open_shards as f32 / ingester_ids.len() as f32;
+        let target_num_open_shards_per_leader = num_open_shards as f32 / active_ids.len() as f32;
         let max_num_open_shards_per_leader =
             f32::ceil(target_num_open_shards_per_leader * 1.1) as usize;
         let min_num_open_shards_per_leader =
@@ -3718,19 +3679,20 @@ mod tests {
     proptest! {
         #[test]
         fn test_compute_shards_to_rebalance_proptest(
-            shard_allocation in proptest::collection::vec(0..13usize, 0..13usize),
+            active_shards in proptest::collection::vec(0..13usize, 0..13usize),
+            inactive_shards in proptest::collection::vec(0..13usize, 0..5usize),
         ) {
-            test_compute_shards_to_rebalance_aux(&shard_allocation, 0);
+            test_compute_shards_to_rebalance_aux(&active_shards, &inactive_shards);
         }
     }
 
     #[test]
     fn test_compute_shards_to_rebalance() {
-        test_compute_shards_to_rebalance_aux(&[], 0);
-        test_compute_shards_to_rebalance_aux(&[0], 0);
-        test_compute_shards_to_rebalance_aux(&[1], 0);
-        test_compute_shards_to_rebalance_aux(&[0, 1], 0);
-        test_compute_shards_to_rebalance_aux(&[0, 1, 1], 1);
-        test_compute_shards_to_rebalance_aux(&[0, 1, 2, 3, 4], 2);
+        test_compute_shards_to_rebalance_aux(&[], &[]);
+        test_compute_shards_to_rebalance_aux(&[0], &[]);
+        test_compute_shards_to_rebalance_aux(&[1], &[]);
+        test_compute_shards_to_rebalance_aux(&[0, 1], &[]);
+        test_compute_shards_to_rebalance_aux(&[0, 1], &[1]);
+        test_compute_shards_to_rebalance_aux(&[0, 1, 2], &[3, 4]);
     }
 }
