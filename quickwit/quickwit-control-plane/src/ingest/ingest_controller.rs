@@ -1115,11 +1115,11 @@ impl IngestController {
     /// The closing operation can only be done by the leader of that shard.
     /// For these reason, we exclude these shards from the rebalance process.
     fn compute_shards_to_rebalance(&self, model: &ControlPlaneModel) -> Vec<Shard> {
-        let mut per_available_ingester_shards: HashMap<String, Vec<&Shard>> = self
+        let mut per_available_ingester_shards: HashMap<NodeId, Vec<&Shard>> = self
             .ingester_pool
             .keys()
             .into_iter()
-            .map(|ingester_id| (ingester_id.as_str().to_string(), Vec::new()))
+            .map(|ingester_id| (ingester_id, Vec::new()))
             .collect();
 
         let mut num_available_shards: usize = 0;
@@ -1127,7 +1127,8 @@ impl IngestController {
             if !shard.is_open() {
                 continue;
             }
-            if let Some(shards) = per_available_ingester_shards.get_mut(shard.leader_id.as_str()) {
+            let leader_id_ref = NodeIdRef::from_str(&shard.leader_id);
+            if let Some(shards) = per_available_ingester_shards.get_mut(leader_id_ref) {
                 // We only consider shards that are on available ingesters
                 // because we won't be able to move shards that are not reachable.
                 num_available_shards += 1;
@@ -3537,13 +3538,14 @@ mod tests {
         );
     }
 
-    /// Test helper for compute_shards_to_rebalance_v2.
+    /// Test helper for compute_shards_to_rebalance.
+    /// The reason for testing both available and unavailable ingesters with open shards is to
+    /// ensure the algorithm holds up when there are open shards
     ///
-    /// - `active_ingester_shards`: shards per active ingester (these are in the pool)
-    /// - `inactive_ingester_shards`: shards per inactive ingester (NOT in the pool - orphaned)
+    /// - `available_ingester_shards`: open shards per available ingester
+    /// - `unavailable_ingester_shards`: open shards on unavailable ingesters
     fn test_compute_shards_to_rebalance_aux(
-        active_ingester_shards: &[usize],
-        inactive_ingester_shards: &[usize],
+        available_ingester_shards: &[usize], unavailable_ingester_shards: &[usize],
     ) {
         let index_id = "test-index";
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/test-index");
@@ -3557,12 +3559,11 @@ mod tests {
         source_config.source_id = source_id.to_string();
         model.add_source(&index_uid, source_config).unwrap();
 
-        // Create active ingesters and add to pool
         let ingester_pool = IngesterPool::default();
         let mock_ingester = MockIngesterService::new();
         let ingester_client = IngesterServiceClient::from_mock(mock_ingester);
 
-        let active_ids: Vec<String> = (0..active_ingester_shards.len())
+        let active_ids: Vec<String> = (0..available_ingester_shards.len())
             .map(|i| format!("active-ingester-{}", i))
             .collect();
 
@@ -3570,17 +3571,14 @@ mod tests {
             ingester_pool.insert(NodeId::from(ingester_id.clone()), ingester_client.clone());
         }
 
-        // Create inactive ingester IDs (NOT added to pool)
-        let inactive_ids: Vec<String> = (0..inactive_ingester_shards.len())
+        let inactive_ids: Vec<String> = (0..unavailable_ingester_shards.len())
             .map(|i| format!("inactive-ingester-{}", i))
             .collect();
 
-        // Create all shards
         let mut shards: Vec<Shard> = Vec::new();
         let mut shard_id: u64 = 0;
 
-        // Shards on active ingesters
-        for (idx, &num_shards) in active_ingester_shards.iter().enumerate() {
+        for (idx, &num_shards) in available_ingester_shards.iter().enumerate() {
             for _ in 0..num_shards {
                 shards.push(Shard {
                     index_uid: Some(index_uid.clone()),
@@ -3594,8 +3592,8 @@ mod tests {
             }
         }
 
-        // Shards on inactive ingesters (orphaned)
-        for (idx, &num_shards) in inactive_ingester_shards.iter().enumerate() {
+        // Shards on unavailable ingesters - these shouldn't affect rebalancing calculations
+        for (idx, &num_shards) in unavailable_ingester_shards.iter().enumerate() {
             for _ in 0..num_shards {
                 shards.push(Shard {
                     index_uid: Some(index_uid.clone()),
@@ -3632,7 +3630,7 @@ mod tests {
         let closed_shard_ids = model.close_shards(&source_uid, &shard_ids_to_rebalance);
         assert_eq!(closed_shard_ids.len(), shards_to_rebalance.len());
 
-        let mut per_active_ingester_num_shards: HashMap<&str, usize> = active_ids
+        let mut per_available_ingester_num_shards: HashMap<&str, usize> = active_ids
             .iter()
             .map(|active_id| (active_id.as_str(), 0))
             .collect();
@@ -3642,7 +3640,7 @@ mod tests {
                 continue;
             }
             if let Some(count_shard) =
-                per_active_ingester_num_shards.get_mut(shard.leader_id.as_str())
+                per_available_ingester_num_shards.get_mut(shard.leader_id.as_str())
             {
                 *count_shard += 1;
             }
@@ -3650,7 +3648,7 @@ mod tests {
 
         // Now we move the different shards.
         let mut per_ingester_num_shards_sorted: BTreeSet<(usize, &str)> =
-            per_active_ingester_num_shards
+            per_available_ingester_num_shards
                 .into_iter()
                 .map(|(ingester_id, num_shards)| (num_shards, ingester_id))
                 .collect();
