@@ -17,7 +17,7 @@ use std::net::SocketAddr;
 use bytesize::ByteSize;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
-use quickwit_common::tower::{ClientGrpcConfig, GrpcMetricsLayer, make_channel};
+use quickwit_common::tower::{ClientGrpcConfig, ServiceMetricsLayer, make_channel};
 use quickwit_proto::cluster::cluster_service_grpc_server::ClusterServiceGrpcServer;
 use quickwit_proto::cluster::{
     ChitchatId as ProtoChitchatId, ClusterError, ClusterResult, ClusterService,
@@ -30,10 +30,10 @@ use crate::Cluster;
 
 const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mib(64);
 
-static CLUSTER_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("cluster", "client"));
-static CLUSTER_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("cluster", "server"));
+static CLUSTER_GRPC_CLIENT_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("cluster", "client"));
+static CLUSTER_GRPC_SERVER_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("cluster", "server"));
 
 pub(crate) async fn cluster_grpc_client(
     socket_addr: SocketAddr,
