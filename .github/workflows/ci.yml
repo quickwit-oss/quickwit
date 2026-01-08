@@ -52,6 +52,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      - name: Cleanup Disk Space
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/swift
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          df -h
+
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - name: Install Ubuntu packages
         run: sudo apt-get -y install protobuf-compiler
