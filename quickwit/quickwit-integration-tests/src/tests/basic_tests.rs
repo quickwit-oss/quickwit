@@ -249,6 +249,8 @@ async fn test_metrics() {
         "disk.available_space.gauge",
         "network.bytes_recv.counter",
         "network.bytes_sent.counter",
+        "num_splits.gauge",
+        "split_size_bytes.gauge",
     ];
     let mut found_metrics = Vec::new();
 

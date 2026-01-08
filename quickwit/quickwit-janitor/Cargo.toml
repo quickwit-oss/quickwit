@@ -15,6 +15,7 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
+metrics = { workspace = true }
 once_cell = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -41,7 +42,9 @@ quickwit-storage = { workspace = true }
 testsuite = []
 
 [dev-dependencies]
+metrics-util = "0.20"
 mockall = { workspace = true }
+ordered-float = "5.1"
 tempfile = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }

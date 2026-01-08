@@ -26,6 +26,7 @@ use tracing::info;
 
 pub mod actors;
 pub mod error;
+mod index_metrics;
 mod janitor_service;
 mod metrics;
 mod retention_policy_execution;
@@ -33,6 +34,7 @@ mod retention_policy_execution;
 pub use janitor_service::JanitorService;
 
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
+use crate::index_metrics::start_index_metrics_loop;
 
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(SplitInfo)))]
@@ -57,7 +59,7 @@ pub async fn start_janitor_service(
         universe.spawn_builder().spawn(retention_policy_executor);
     let delete_task_service_handle = if run_delete_task_service {
         let delete_task_service = DeleteTaskService::new(
-            metastore,
+            metastore.clone(),
             search_job_placer,
             storage_resolver,
             config.data_dir_path.clone(),
@@ -78,6 +80,9 @@ pub async fn start_janitor_service(
         garbage_collector_handle,
         retention_policy_executor_handle,
     );
+
+    start_index_metrics_loop(metastore);
+
     let (janitor_service_mailbox, _janitor_service_handle) =
         universe.spawn_builder().spawn(janitor_service);
     Ok(janitor_service_mailbox)
