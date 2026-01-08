@@ -3544,7 +3544,8 @@ mod tests {
     /// - `available_ingester_shards`: open shards per available ingester
     /// - `unavailable_ingester_shards`: open shards on unavailable ingesters
     fn test_compute_shards_to_rebalance_aux(
-        available_ingester_shards: &[usize], unavailable_ingester_shards: &[usize],
+        available_ingester_shards: &[usize],
+        unavailable_ingester_shards: &[usize],
     ) {
         let index_id = "test-index";
         let index_metadata = IndexMetadata::for_test(index_id, "ram://indexes/test-index");
