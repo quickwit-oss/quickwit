@@ -1122,25 +1122,62 @@ impl IngestController {
             .map(|ingester_id| (ingester_id.as_str().to_string(), Vec::new()))
             .collect();
 
+        let mut num_available_shards: usize = 0;
         for shard in model.all_shards() {
             if !shard.is_open() {
                 continue;
             }
-            // let leader_id = NodeId::new(shard.leader_id.to_string());
             if let Some(shards) = per_available_ingester_shards.get_mut(shard.leader_id.as_str()) {
                 // We only consider shards that are on available ingesters
                 // because we won't be able to move shards that are not reachable.
+                num_available_shards += 1;
                 shards.push(&shard.shard)
             }
         }
 
         let num_available_ingesters = per_available_ingester_shards.len();
-        let shards_to_rebalance = compute_shards_to_rebalance_aux(per_available_ingester_shards);
+
+        let mut rng = rng();
+        let mut per_leader_open_shards_shuffled: Vec<Vec<&Shard>> = per_available_ingester_shards
+            .into_values()
+            .map(|mut shards| {
+                shards.shuffle(&mut rng);
+                shards
+            })
+            .collect();
+
+        let mut shards_to_rebalance: Vec<Shard> = Vec::new();
+
+        // This is more of a loop-loop, but since we know it should exit before
+        // `num_available_ingesters`, we defensively use a for-loop.
+        for _ in 0..num_available_shards {
+            let MinMaxResult::MinMax(min_shards, max_shards) = per_leader_open_shards_shuffled
+                .iter_mut()
+                .minmax_by_key(|shards| shards.len())
+            else {
+                // There are less than 2 ingesters.
+                // Nothing to do here.
+                break;
+            };
+
+            // We leave a tolerance of 1/10 between the min and max number of shards per leader
+            const TOLERANCE_INV_RATIO: usize = 10;
+            if max_shards.len()
+                < min_shards.len() + min_shards.len().div_ceil(TOLERANCE_INV_RATIO).max(2)
+            {
+                break;
+            }
+
+            let shard = max_shards.pop().expect("shards should not be empty");
+            shards_to_rebalance.push(shard.clone());
+            min_shards.push(shard);
+        }
 
         if shards_to_rebalance.is_empty() {
             debug!("no shards to rebalance");
         } else {
             info!(
+                num_available_shards,
                 num_available_ingesters,
                 num_shards_to_rebalance = shards_to_rebalance.len(),
                 "rebalancing shards"
@@ -1206,61 +1243,6 @@ impl IngestController {
             }
             closed_shards
         }
-    }
-}
-
-fn compute_shards_to_rebalance_aux(
-    per_available_ingester_shards: HashMap<String, Vec<&Shard>>,
-) -> Vec<Shard> {
-    let mut rng = rng();
-    let mut per_leader_open_shards_shuffled: Vec<Vec<&Shard>> = per_available_ingester_shards
-        .into_values()
-        .map(|mut shards| {
-            shards.shuffle(&mut rng);
-            shards
-        })
-        .collect();
-
-    let mut shards_to_rebalance: Vec<Shard> = Vec::new();
-
-    loop {
-        let MinMaxResult::MinMax(min_shards, max_shards) = per_leader_open_shards_shuffled
-            .iter_mut()
-            .minmax_by_key(|shards| shards.len())
-        else {
-            // There are less than 2 ingesters.
-            // Nothing to do here.
-            return Vec::new();
-        };
-
-        // We leave a tolerance of 1/10 between the min and max number of shards per leader
-        const TOLERANCE_INV_RATIO: usize = 10;
-        if max_shards.len()
-            < min_shards.len() + min_shards.len().div_ceil(TOLERANCE_INV_RATIO).max(2)
-        {
-            return shards_to_rebalance;
-        }
-
-        // We can now move one shard from the node holding max_shards to the node
-        // holding min_shards.
-        //
-        // We can now move one shard from the node holding max_shards to the node
-        // holding min_shards.
-        //
-        // The operation of moving one node holding A shards to a node holding B shards strictly
-        // decreases variance as long as
-        // B - A >= 2.
-        //
-        // Proof:
-        // The mean remains the same.
-        // The variance varies by:
-        // (A + 1) ^ 2 + (B - 1) ^ 2 - A^2 - B^2
-        // = 2(A - B) + 2
-        // <= -2
-
-        let shard = max_shards.pop().expect("shards should not be empty");
-        shards_to_rebalance.push(shard.clone());
-        min_shards.push(shard);
     }
 }
 
@@ -3706,13 +3688,13 @@ mod tests {
     }
 
     proptest! {
-           #[test]
-           fn test_compute_shards_to_rebalance_proptest(
-               active_shards in proptest::collection::vec(0..13usize, 0..13usize),
-               inactive_shards in proptest::collection::vec(0..13usize, 0..5usize),
-           ) {
-               test_compute_shards_to_rebalance_aux(&active_shards, &inactive_shards);
-           }
+        #[test]
+        fn test_compute_shards_to_rebalance_proptest(
+            active_shards in proptest::collection::vec(0..13usize, 0..13usize),
+            inactive_shards in proptest::collection::vec(0..13usize, 0..5usize),
+        ) {
+            test_compute_shards_to_rebalance_aux(&active_shards, &inactive_shards);
+        }
     }
 
     #[test]
