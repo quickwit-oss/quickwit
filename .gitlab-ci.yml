@@ -101,4 +101,4 @@ deploy_to_staging:
     - arch:amd64
   script:
     - export PATH="$PATH:$CI_PROJECT_DIR/bazel-bin"
-    - bzl run staging.publish
+    - bzl run staging.publish --define image_digest=$(crane digest registry.ddbuild.io/pomsky:edge)
