@@ -23,6 +23,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }
+tonic-prost = { workspace = true }
 tower = { workspace = true }
 utoipa = { workspace = true }
 

@@ -34,3 +34,9 @@ params:
   query: "ts:>=1684993002 AND ts:<1684993004"
 expected:
   num_hits: 2
+---
+endpoint: simple/search
+params:
+  query: "auto_date:>=2023-05-25T00:00:00Z AND auto_date:<2023-05-26T00:00:00Z"
+expected:
+  num_hits: 2

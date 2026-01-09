@@ -872,6 +872,8 @@ mod kafka_broker_tests {
 
     fn get_source_config(topic: &str, auto_offset_reset: &str) -> (String, SourceConfig) {
         let source_id = append_random_suffix("test-kafka-source--source");
+        // Setting explicitly ip v4 with `broker.address.family` is required
+        // because of https://github.com/fede1024/rust-rdkafka/issues/809
         let source_config = SourceConfig {
             source_id: source_id.clone(),
             num_pipelines: NonZeroUsize::MIN,
@@ -882,6 +884,7 @@ mod kafka_broker_tests {
                 client_params: json!({
                     "auto.offset.reset": auto_offset_reset,
                     "bootstrap.servers": "localhost:9092",
+                    "broker.address.family": "v4",
                 }),
                 enable_backfill_mode: true,
             }),

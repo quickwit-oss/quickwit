@@ -140,28 +140,30 @@ fn convert_metric(
 ) -> Option<Metric> {
     let metric_value = match metric_type {
         MetricType::COUNTER => {
-            let counter = metric.take_counter();
-            let counter_value = safe_f64_to_u64(counter.get_value())?;
+            let counter = metric.counter.take().unwrap_or_default();
+            let counter_value = safe_f64_to_u64(counter.value())?;
             MetricValue::Counter(counter_value)
         }
         MetricType::GAUGE => {
-            let gauge = metric.take_gauge();
-            let gauge_value = gauge.get_value();
+            let gauge = metric.gauge.take().unwrap_or_default();
+            let gauge_value = gauge.value();
             MetricValue::Gauge(gauge_value)
         }
         MetricType::HISTOGRAM => {
-            let mut histogram: prometheus::proto::Histogram = metric.take_histogram();
+            let histogram = metric.histogram.take().unwrap_or_default();
+            let sample_count = histogram.sample_count();
+            let sample_sum = histogram.sample_sum();
             let buckets: Vec<HistogramBucket> = histogram
-                .take_bucket()
+                .bucket
                 .into_iter()
                 .map(|bucket| HistogramBucket {
-                    cumulative_count: bucket.get_cumulative_count(),
-                    upper_bound: bucket.get_upper_bound(),
+                    cumulative_count: bucket.cumulative_count(),
+                    upper_bound: bucket.upper_bound(),
                 })
                 .collect();
             MetricValue::Histogram(Histogram {
-                sample_count: histogram.get_sample_count(),
-                sample_sum: histogram.get_sample_sum(),
+                sample_count,
+                sample_sum,
                 buckets,
             })
         }
@@ -173,8 +175,8 @@ fn convert_metric(
         .take_label()
         .into_iter()
         .map(|label| Label {
-            name: label.get_name().to_string(),
-            value: label.get_value().to_string(),
+            name: label.name().to_string(),
+            value: label.value().to_string(),
         })
         .collect();
     Some(Metric {

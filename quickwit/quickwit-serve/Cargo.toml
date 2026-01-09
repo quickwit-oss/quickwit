@@ -16,7 +16,6 @@ async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
-chrono = { workspace = true }
 elasticsearch-dsl = "0.4"
 flate2 = { workspace = true }
 futures = { workspace = true }
@@ -25,16 +24,13 @@ glob = { workspace = true }
 hex = { workspace = true }
 http = { workspace = true }
 http-body = { workspace = true }
-http-body-util = { workspace = true }
 http-serde = { workspace = true }
 httparse = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
-hyper-rustls = { workspace = true }
 hyper-util = {workspace = true}
 itertools = { workspace = true }
 metrics = { workspace = true }
-metrics-exporter-dogstatsd = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
 openssl = { workspace = true }
@@ -72,7 +68,6 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 urlencoding = { workspace = true }
 utoipa = { workspace = true }
-uuid = { workspace = true }
 warp = { workspace = true, features = ["server"] }
 zstd = { workspace = true }
 

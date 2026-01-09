@@ -82,7 +82,7 @@ pub struct Context {
         ::prost::alloc::string::String,
     >,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ClusterIdentify {
     #[prost(int64, tag = "1")]
     pub org_id: i64,
@@ -93,7 +93,7 @@ pub struct ClusterIdentify {
     #[prost(string, tag = "3")]
     pub name: ::prost::alloc::string::String,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PullClusterMetricsRequest {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PullClusterMetricsResponse {
@@ -120,14 +120,14 @@ pub struct NodeMetrics {
     #[prost(message, repeated, tag = "4")]
     pub metric_families: ::prost::alloc::vec::Vec<metrics::MetricFamily>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PingRequest {
     #[prost(int64, tag = "1")]
     pub org_id: i64,
     #[prost(message, optional, tag = "2")]
     pub scope: ::core::option::Option<Scope>,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PingResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListRequest {
@@ -151,7 +151,7 @@ pub struct ListRequest {
     #[prost(message, optional, tag = "8")]
     pub scope: ::core::option::Option<Scope>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SortKv {
     #[prost(bool, tag = "1")]
     pub ascending: bool,
@@ -169,7 +169,7 @@ pub struct ListResponse {
     #[prost(message, optional, tag = "3")]
     pub statistics: ::core::option::Option<Statistics>,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Statistics {
     #[prost(uint64, tag = "1")]
     pub hit_count: u64,
@@ -185,14 +185,14 @@ pub struct Stream {
     #[prost(message, repeated, tag = "1")]
     pub events: ::prost::alloc::vec::Vec<Event>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Event {
     #[prost(message, optional, tag = "1")]
     pub tracker: ::core::option::Option<EventTracker>,
     #[prost(string, tag = "2")]
     pub content_json: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct EventTracker {
     /// A unique id tied to the event.
     #[prost(string, tag = "1")]
@@ -208,7 +208,7 @@ pub struct EventTracker {
     #[prost(uint64, optional, tag = "5")]
     pub row_number: ::core::option::Option<u64>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FetchOneRequest {
     #[prost(message, optional, tag = "1")]
     pub event_tracker: ::core::option::Option<EventTracker>,
@@ -220,7 +220,7 @@ pub struct FetchOneRequest {
     #[prost(message, optional, tag = "4")]
     pub scope: ::core::option::Option<Scope>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FetchOneResponse {
     #[prost(message, optional, tag = "1")]
     pub event: ::core::option::Option<Event>,
@@ -298,7 +298,7 @@ pub struct TimeGrouping {
     #[prost(message, optional, boxed, tag = "6")]
     pub child: ::core::option::Option<::prost::alloc::boxed::Box<Aggregation>>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Rollup {
     #[prost(enumeration = "rollup::RollupType", tag = "1")]
     pub r#type: i32,
@@ -400,7 +400,7 @@ pub struct FlatFieldsGroupBy {
     #[prost(message, optional, boxed, tag = "6")]
     pub child: ::core::option::Option<::prost::alloc::boxed::Box<Aggregation>>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Field {
     #[prost(message, optional, tag = "1")]
     pub expression: ::core::option::Option<ExpressionNode>,
@@ -436,7 +436,7 @@ pub struct AnyCompute {
     #[prost(string, tag = "3")]
     pub id: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MetricCompute {
     #[prost(message, optional, tag = "1")]
     pub expression: ::core::option::Option<ExpressionNode>,
@@ -459,7 +459,7 @@ pub struct AggregationResult {
     #[prost(message, repeated, tag = "2")]
     pub value: ::prost::alloc::vec::Vec<AggValue>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SortByExprAndAgg {
     #[prost(bool, tag = "1")]
     pub ascending: bool,
@@ -513,20 +513,20 @@ pub mod sort_by_expr_and_agg {
         }
     }
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExprAndAgg {
     #[prost(message, optional, tag = "1")]
     pub expr: ::core::option::Option<ExpressionNode>,
     #[prost(string, tag = "2")]
     pub agg_function: ::prost::alloc::string::String,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExpressionNode {
     /// this is always a com.dd.calc_fields.proto.CalcNode
     #[prost(message, optional, tag = "1")]
     pub calc_node: ::core::option::Option<::prost_types::Any>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Scope {
     #[prost(string, repeated, tag = "1")]
     pub included_indices: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
@@ -588,7 +588,7 @@ pub struct FirstLast {
     #[prost(message, repeated, tag = "1")]
     pub entries: ::prost::alloc::vec::Vec<FirstLastEntry>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FirstLastEntry {
     #[prost(bytes = "vec", tag = "1")]
     pub sort_by: ::prost::alloc::vec::Vec<u8>,
@@ -663,12 +663,12 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: AggregationRequest,
     ) -> crate::cloudprem::CloudPremResult<AggregationResponse>;
-    /// Gather metrics information from all nodes in the cluster, and returns a list of `NodeMetrics` objects.
+    ///Gather metrics information from all nodes in the cluster, and returns a list of `NodeMetrics` objects.
     async fn pull_cluster_metrics(
         &self,
         request: PullClusterMetricsRequest,
     ) -> crate::cloudprem::CloudPremResult<PullClusterMetricsResponse>;
-    /// These are endpoints to use the capabilities of the underlying quickwit searcher
+    ///These are endpoints to use the capabilities of the underlying quickwit searcher
     async fn root_search(
         &self,
         request: super::quickwit::search::SearchRequest,
@@ -677,7 +677,7 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse>;
-    /// Response are sent to the bridge by the front, which initialised the connection
+    ///Response are sent to the bridge by the front, which initialised the connection
     async fn inverted_request_stream(
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
@@ -2318,7 +2318,7 @@ pub mod cloud_prem_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/cloudprem.CloudPremService/Ping",
             );
@@ -2339,7 +2339,7 @@ pub mod cloud_prem_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/cloudprem.CloudPremService/List",
             );
@@ -2363,7 +2363,7 @@ pub mod cloud_prem_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/cloudprem.CloudPremService/FetchOne",
             );
@@ -2387,7 +2387,7 @@ pub mod cloud_prem_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/cloudprem.CloudPremService/Aggregate",
             );
@@ -2412,7 +2412,7 @@ pub mod cloud_prem_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/cloudprem.CloudPremService/PullClusterMetrics",
             );
@@ -2441,7 +2441,7 @@ pub mod cloud_prem_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/cloudprem.CloudPremService/RootSearch",
             );
@@ -2467,7 +2467,7 @@ pub mod cloud_prem_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/cloudprem.CloudPremService/RootListTerms",
             );
@@ -2492,7 +2492,7 @@ pub mod cloud_prem_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/cloudprem.CloudPremService/InvertedRequestStream",
             );
@@ -2687,7 +2687,7 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = PingSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2731,7 +2731,7 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ListSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2777,7 +2777,7 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = FetchOneSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2823,7 +2823,7 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = AggregateSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2872,7 +2872,7 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = PullClusterMetricsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2921,7 +2921,7 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RootSearchSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -2973,7 +2973,7 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RootListTermsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,
@@ -3023,7 +3023,7 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = InvertedRequestStreamSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,

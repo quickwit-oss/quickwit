@@ -23,7 +23,7 @@ pub struct Log {
     #[prost(message, repeated, tag = "2")]
     pub fields: ::prost::alloc::vec::Vec<KeyValue>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SpanRef {
     #[prost(bytes = "vec", tag = "1")]
     pub trace_id: ::prost::alloc::vec::Vec<u8>,
@@ -101,7 +101,7 @@ pub struct Batch {
     #[prost(message, optional, tag = "2")]
     pub process: ::core::option::Option<Process>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DependencyLink {
     #[prost(string, tag = "1")]
     pub parent: ::prost::alloc::string::String,

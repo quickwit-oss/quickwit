@@ -141,9 +141,13 @@ fn compute_query_with_field(
             let term = Term::from_field_bool(field, bool_val);
             Ok(make_term_query(term))
         }
-        FieldType::Date(_) => {
+        FieldType::Date(date_options) => {
             let dt = parse_value_from_user_text(value, field_entry.name())?;
-            let term = Term::from_field_date_for_search(field, dt);
+            let term = if date_options.is_indexed() {
+                Term::from_field_date_for_search(field, dt)
+            } else {
+                Term::from_field_date(field, dt.truncate(date_options.get_precision()))
+            };
             Ok(make_term_query(term))
         }
         FieldType::Str(text_options) => {

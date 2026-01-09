@@ -118,6 +118,7 @@ message GetOrCreateOpenShardsFailure {
 
 message AdviseResetShardsRequest {
   repeated quickwit.ingest.ShardIds shard_ids = 1;
+  string ingester_id = 2;
 }
 
 message AdviseResetShardsResponse {

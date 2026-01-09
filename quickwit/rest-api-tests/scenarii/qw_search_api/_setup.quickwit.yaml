@@ -30,8 +30,8 @@ endpoint: simple/ingest
 params:
   commit: force
 ndjson:
-  - {"ts": 1684993001, "not_fast": 1684993001}
-  - {"ts": 1684993002, "not_fast": 1684993002}
+  - {"ts": 1684993001, "not_fast": 1684993001, "auto_date": "2023-05-25T10:00:00Z"}
+  - {"ts": 1684993002, "not_fast": 1684993002, "auto_date": "2023-05-25T11:00:00Z"}
 ---
 # Ingest documents split #2
 method: POST

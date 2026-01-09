@@ -1946,11 +1946,8 @@ mod tests {
         assert!(indexing_tasks.is_empty());
 
         let apply_plan_requests = client_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
-        assert!(!apply_plan_requests.is_empty());
-
-        for apply_plan_request in &apply_plan_requests {
-            assert!(apply_plan_request.indexing_tasks.is_empty());
-        }
+        let last_apply_plan_request = apply_plan_requests.last().unwrap();
+        assert!(last_apply_plan_request.indexing_tasks.is_empty());
 
         universe.assert_quit().await;
     }

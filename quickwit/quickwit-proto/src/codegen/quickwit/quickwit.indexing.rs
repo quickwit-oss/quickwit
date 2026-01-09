@@ -26,7 +26,7 @@ pub struct IndexingTask {
     pub params_fingerprint: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ApplyIndexingPlanResponse {}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
@@ -35,7 +35,7 @@ use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IndexingService: std::fmt::Debug + Send + Sync + 'static {
-    /// Apply an indexing plan on the node.
+    ///Apply an indexing plan on the node.
     async fn apply_indexing_plan(
         &self,
         request: ApplyIndexingPlanRequest,
@@ -624,7 +624,7 @@ pub mod indexing_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.indexing.IndexingService/ApplyIndexingPlan",
             );
@@ -772,7 +772,7 @@ pub mod indexing_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ApplyIndexingPlanSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,

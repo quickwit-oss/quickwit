@@ -313,7 +313,10 @@ impl Ingester {
             })
             .collect();
 
-        let advise_reset_shards_request = AdviseResetShardsRequest { shard_ids };
+        let advise_reset_shards_request = AdviseResetShardsRequest {
+            ingester_id: self.self_node_id.to_string(),
+            shard_ids,
+        };
         let advise_reset_shards_future = self
             .control_plane
             .advise_reset_shards(advise_reset_shards_request);
@@ -3256,6 +3259,7 @@ mod tests {
             .expect_advise_reset_shards()
             .once()
             .returning(|mut request| {
+                assert_eq!(request.ingester_id, "test-ingester");
                 assert_eq!(request.shard_ids.len(), 1);
                 assert_eq!(request.shard_ids[0].index_uid(), &("test-index", 0));
                 assert_eq!(request.shard_ids[0].source_id, "test-source");

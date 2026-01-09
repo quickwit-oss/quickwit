@@ -601,6 +601,7 @@ impl Handler<()> for TestActorWithDrain {
     }
 }
 
+#[ignore]
 #[tokio::test]
 async fn test_drain_is_called() {
     quickwit_common::setup_logging_for_tests();

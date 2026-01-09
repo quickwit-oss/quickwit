@@ -335,16 +335,16 @@ mod tests {
 
     #[test]
     fn test_prefix_random() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let template = "A".repeat(100);
         for _ in 0..10000 {
-            let rand_bytes = rng.r#gen::<usize>() % 4;
-            let parts_num = rng.r#gen::<usize>() % 10;
+            let rand_bytes = rng.random_range(0..4);
+            let parts_num = rng.random_range(0..10);
             let mut builder = Builder::default();
             builder.rand_bytes(rand_bytes);
             let mut max_size = 0;
             for _ in 0..parts_num {
-                let size = 1 + rand::random::<usize>() % 10;
+                let size = 1 + rng.random_range(0..10);
                 builder.join(&template[0..size]);
                 max_size += size + 1;
             }
@@ -360,14 +360,14 @@ mod tests {
                 }
             };
             let limit_threshold = parts_num + separator_count + rand_bytes;
-            if parts_num > 0 && rng.r#gen::<bool>() {
-                builder.max_length(rand::random::<usize>() % limit_threshold);
+            if parts_num > 0 && rng.random() {
+                builder.max_length(rng.random_range(0..limit_threshold));
                 assert_eq!(
                     "the filename limit is too small",
                     builder.prefix().unwrap_err().to_string()
                 );
             } else {
-                let len = limit_threshold + rand::random::<usize>() % 100;
+                let len = limit_threshold + rng.random_range(0..100);
                 builder.max_length(len);
                 let builder_debug = format!("{builder:?}, len {len}");
                 let builder_prefix = builder.prefix().unwrap();

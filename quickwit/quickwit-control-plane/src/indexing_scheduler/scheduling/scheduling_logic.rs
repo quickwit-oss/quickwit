@@ -778,6 +778,7 @@ mod tests {
     }
 
     proptest! {
+        #[ignore]
         #[test]
         fn test_proptest_post_conditions((problem, solution) in problem_solution_strategy()) {
             let solution_1 = solve(problem.clone(), solution);

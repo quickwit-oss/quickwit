@@ -51,7 +51,7 @@ pub struct IngestSuccess {
     pub parse_failures: ::prost::alloc::vec::Vec<super::ParseFailure>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct IngestFailure {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
@@ -132,8 +132,8 @@ impl RpcName for IngestRequestV2 {
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngestRouterService: std::fmt::Debug + Send + Sync + 'static {
-    /// Ingests batches of documents for one or multiple indexes.
-    /// TODO: Describe error cases and how to handle them.
+    ///Ingests batches of documents for one or multiple indexes.
+    ///TODO: Describe error cases and how to handle them.
     async fn ingest(
         &self,
         request: IngestRequestV2,
@@ -726,7 +726,7 @@ pub mod ingest_router_service_grpc_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/quickwit.ingest.router.IngestRouterService/Ingest",
             );
@@ -873,7 +873,7 @@ pub mod ingest_router_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = IngestSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,

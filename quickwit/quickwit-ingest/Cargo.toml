@@ -18,7 +18,6 @@ bytesize = { workspace = true }
 fail = { workspace = true, optional = true }
 futures = { workspace = true }
 http = { workspace = true }
-itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 mrecordlog = { workspace = true }
 once_cell = { workspace = true }
@@ -30,6 +29,7 @@ serde_json_borrow = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
+tonic-prost = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }

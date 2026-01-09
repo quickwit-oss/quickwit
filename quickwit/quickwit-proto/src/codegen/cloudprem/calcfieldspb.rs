@@ -48,7 +48,7 @@ pub mod calc_node {
     /// Field reference. Can be a calculated field (like '#foo') or a regular field
     /// (like 'service' or '@duration').
     #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-    #[derive(Clone, PartialEq, ::prost::Message)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct FieldRef {
         /// Includes the leading '#' or '@' (if any).
         #[prost(string, tag = "1")]
@@ -240,13 +240,13 @@ pub mod calc_node {
             If = 55,
             /// n arguments, any type (returns first non-null argument)
             Coalesce = 56,
-            /// n arguments (returns (K*2)th argument if 0th argument
+            /// n arguments (returns (K\*2)th argument if 0th argument
             Switch = 57,
-            /// equals (K*2-1)th argument, else returns last argument).
+            /// equals (K\*2-1)th argument, else returns last argument).
             ///
-            /// n arguments (returns (K*2)th argument for the first
+            /// n arguments (returns (K\*2)th argument for the first
             SwitchWhen = 58,
-            /// true (K*2-1)th argument, else returns last argument).
+            /// true (K\*2-1)th argument, else returns last argument).
             /// -- Cast operators
             ///
             /// 1 argument, any type

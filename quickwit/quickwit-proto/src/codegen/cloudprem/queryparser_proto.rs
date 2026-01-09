@@ -87,7 +87,7 @@ impl ::prost::Name for Value {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MatchAllQueryNode {}
 impl ::prost::Name for MatchAllQueryNode {
     const NAME: &'static str = "MatchAllQueryNode";
@@ -100,7 +100,7 @@ impl ::prost::Name for MatchAllQueryNode {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MatchNoneQueryNode {}
 impl ::prost::Name for MatchNoneQueryNode {
     const NAME: &'static str = "MatchNoneQueryNode";
@@ -209,7 +209,7 @@ impl ::prost::Name for AttributeRangeQueryNode {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AttributeCidrQueryNode {
     #[prost(string, tag = "1")]
     pub attribute: ::prost::alloc::string::String,
@@ -274,7 +274,7 @@ impl ::prost::Name for AttributeComparisonQueryNode {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AttributeExistQueryNode {
     #[prost(string, tag = "1")]
     pub attribute: ::prost::alloc::string::String,
@@ -290,7 +290,7 @@ impl ::prost::Name for AttributeExistQueryNode {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AttributeMissingQueryNode {
     #[prost(string, tag = "1")]
     pub attribute: ::prost::alloc::string::String,
@@ -306,7 +306,7 @@ impl ::prost::Name for AttributeMissingQueryNode {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AttributePrefixQueryNode {
     #[prost(string, tag = "1")]
     pub attribute: ::prost::alloc::string::String,
@@ -323,18 +323,17 @@ impl ::prost::Name for AttributePrefixQueryNode {
         "/queryparser_proto.AttributePrefixQueryNode".into()
     }
 }
-///
 /// Piece of a wildcard pattern.
 ///
 /// For instance, `??*abc` is encoded as:
 ///
 /// * prefix_min_n_wild = 2 (two "?")
-/// * prefix_unbounded_n_wild = true ("*" means >2 wild chars can match)
+/// * prefix_unbounded_n_wild = true ("\*" means >2 wild chars can match)
 /// * literal = abc (this must match exactly)
 ///
 /// Other inputs, such as `*?*?*abc`, can have the exact same representation.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct WildcardToken {
     #[prost(int32, tag = "1")]
     pub prefix_min_n_wild: i32,
@@ -353,7 +352,6 @@ impl ::prost::Name for WildcardToken {
         "/queryparser_proto.WildcardToken".into()
     }
 }
-///
 /// Parsed pattern, which could be used to generate a regex.
 ///
 /// A pattern is a sequence of "any" characters (with min/max length)
@@ -404,7 +402,7 @@ impl ::prost::Name for AttributeWildcardQueryNode {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AttributeQuotedQueryNode {
     #[prost(string, tag = "1")]
     pub attribute: ::prost::alloc::string::String,

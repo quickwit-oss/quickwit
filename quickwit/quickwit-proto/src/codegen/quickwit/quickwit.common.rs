@@ -4,7 +4,7 @@
 ///
 /// Modify at your own risk.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DocUid {
     /// ULID encoded as a sequence of 16 bytes (big-endian u128).
     #[prost(bytes = "vec", tag = "1")]
