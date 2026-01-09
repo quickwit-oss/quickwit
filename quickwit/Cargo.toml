@@ -359,7 +359,6 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "d904630", d
   "lz4-compression",
   "mmap",
   "quickwit",
-  "stemmer",
   "zstd-compression",
   "columnar-zstd-compression",
 ] }
