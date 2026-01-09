@@ -27,7 +27,7 @@ use quickwit_common::truncate_str;
 use quickwit_config::{NodeConfig, validate_index_id_pattern};
 use quickwit_index_management::IndexService;
 use quickwit_metastore::*;
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{
     CountHits, ListFieldsResponse, PartialHit, ScrollRequest, SearchResponse, SortByValue,
     SortDatetimeFormat,
@@ -39,7 +39,7 @@ use quickwit_search::{
     AggregationResults, SearchError, SearchService, list_all_splits, resolve_index_patterns,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Map, Value, json};
 use warp::hyper::StatusCode;
 use warp::reply::with_status;
 use warp::{Filter, Rejection};
@@ -62,6 +62,7 @@ use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
 use super::{TrackTotalHits, make_elastic_api_response};
+use crate::elasticsearch_api::model::ElasticsearchMappingsResponse;
 use crate::format::BodyFormat;
 use crate::rest::recover_fn;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
@@ -90,6 +91,50 @@ pub fn es_compat_cluster_info_handler(
             },
         )
         .boxed()
+}
+
+/// GET _elastic/_aliases
+pub fn es_compat_aliases_handler()
+-> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_aliases")
+        .and(warp::get())
+        .then(|| async { Ok(Value::Object(Map::new())) })
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
+        .boxed()
+}
+
+/// GET _elastic/{index}/_mapping
+pub fn es_compat_index_mapping_handler(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / String / "_mapping")
+        .and(warp::get())
+        .and(with_arg(metastore))
+        .then(es_compat_index_mapping)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
+}
+
+async fn get_index_metadata(
+    index_id: String,
+    metastore: MetastoreServiceClient,
+) -> Result<IndexMetadata, SearchError> {
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
+    let index_metadata = metastore
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?;
+    Ok(index_metadata)
+}
+
+async fn es_compat_index_mapping(
+    index_id: String,
+    metastore: MetastoreServiceClient,
+) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
+    let index_metadata = get_index_metadata(index_id.clone(), metastore).await?;
+    let response = ElasticsearchMappingsResponse::from_doc_mapping(vec![index_metadata]);
+    Ok(response)
 }
 
 /// GET or POST _elastic/_search

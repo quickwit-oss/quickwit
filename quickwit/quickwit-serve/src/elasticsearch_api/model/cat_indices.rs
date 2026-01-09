@@ -83,8 +83,13 @@ impl CatIndexQueryParams {
         if self.v.is_some() {
             return Err(unsupported_parameter_error("v"));
         }
-        if self.s.is_some() {
-            return Err(unsupported_parameter_error("s"));
+        if let Some(sort_by) = &self.s {
+            if sort_by.len() > 1 {
+                return Err(unsupported_parameter_error("s"));
+            }
+            if sort_by[0] != "index" && sort_by[0] != "index:asc" {
+                return Err(unsupported_parameter_error("s"));
+            }
         }
         Ok(())
     }
