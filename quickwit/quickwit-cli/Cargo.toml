@@ -103,7 +103,7 @@ release-feature-set = [
   "quickwit-storage/azure",
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
-  "quickwit-doc-mapper/multilang",
+  # "quickwit-doc-mapper/multilang",
 ]
 release-feature-vendored-set = [
   "jemalloc",
