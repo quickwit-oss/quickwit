@@ -124,7 +124,7 @@ control_plane:
       memory: 4Gi
 
 indexer:
-  replicaCount: 30
+  replicaCount: 40
 
   resources:
     limits:
@@ -174,5 +174,5 @@ config:
   metastore_uri: postgres://logs_cloudprem_cloudprem@orgstore-logs-cloudprem-metastore-pg-proxy.orgstore-logs-cloudprem-metastore.all-clusters.local-dc.fabric.dog/logs_cloudprem_metastore
 
   ingest_api:
-    max_queue_memory_usage: 2GiB # max(2GiB, commit timeout * indexing throughput * num vCPUs * 2)
-    max_queue_disk_usage: 4GiB # max queue mem usage * 2
+    max_queue_memory_usage: 5GiB # memory capacity * 0.3
+    max_queue_disk_usage: 10GiB # max queue mem usage * 2
