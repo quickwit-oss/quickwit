@@ -42,6 +42,9 @@ use warp::hyper::StatusCode;
 use warp::{Filter, Rejection};
 
 use crate::elasticsearch_api::model::ElasticsearchError;
+use crate::elasticsearch_api::rest_handler::{
+    es_compat_aliases_handler, es_compat_index_mapping_handler,
+};
 use crate::rest::recover_fn;
 use crate::rest_api_response::RestApiResponse;
 use crate::{BodyFormat, BuildInfo};
@@ -95,6 +98,8 @@ pub fn elastic_api_handlers(
         .or(es_compat_index_cat_indices_handler(metastore.clone()))
         .or(es_compat_cat_indices_handler(metastore.clone()))
         .or(es_compat_resolve_index_handler(metastore.clone()))
+        .or(es_compat_aliases_handler())
+        .or(es_compat_index_mapping_handler(metastore.clone()))
         .recover(recover_fn)
         .boxed()
     // Register newly created handlers here.
