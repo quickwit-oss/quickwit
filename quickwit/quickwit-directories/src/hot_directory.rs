@@ -129,7 +129,7 @@ impl SliceCacheIndex {
 }
 
 #[derive(Default)]
-struct StaticDirectoryCacheBuilder {
+pub struct StaticDirectoryCacheBuilder {
     file_cache_builder: HashMap<PathBuf, StaticSliceCacheBuilder>,
     file_lengths: HashMap<PathBuf, u64>, // a mapping from file path to file size in bytes
 }
@@ -260,7 +260,7 @@ impl StaticSliceCache {
     }
 }
 
-struct StaticSliceCacheBuilder {
+pub struct StaticSliceCacheBuilder {
     wrt: Vec<u8>,
     slices: Vec<SliceCacheIndexEntry>,
     offset: u64,
@@ -457,7 +457,7 @@ impl Directory for HotDirectory {
     crate::read_only_directory!();
 }
 
-fn list_index_files(index: &Index) -> tantivy::Result<HashSet<PathBuf>> {
+pub fn list_index_files(index: &Index) -> tantivy::Result<HashSet<PathBuf>> {
     let index_meta = index.load_metas()?;
     let mut files: HashSet<PathBuf> = index_meta
         .segments
