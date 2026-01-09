@@ -28,11 +28,12 @@ members = [
   "quickwit-opentelemetry",
   "quickwit-proto",
   "quickwit-query",
-  "quickwit-remote-api",
+  "quickwit-remote-api", # Fork: added (not present upstream)
   "quickwit-rest-client",
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  # Fork: removed "quickwit-telemetry" (present upstream)
 ]
 
 # The following list excludes `quickwit-metastore-utils`
@@ -65,6 +66,7 @@ default-members = [
   "quickwit-search",
   "quickwit-serve",
   "quickwit-storage",
+  # Fork: removed "quickwit-telemetry" (present in upstream)
 ]
 
 [workspace.package]
@@ -95,7 +97,6 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
 ] }
-chrono-tz = "0.10"
 clap = { version = "4.5", features = ["env", "string"] }
 coarsetime = "0.1"
 colored = "3.0"
@@ -105,7 +106,6 @@ cron = "0.15"
 dialoguer = "0.12"
 dotenvy = "0.15"
 dyn-clone = "1.0"
-either = "1.13"
 enum-iterator = "2.3"
 env_logger = "0.11"
 fail = "0.5"
@@ -129,7 +129,6 @@ http = "1.4"
 http-body = "1.0"
 http-body-util = "0.1"
 http-serde = "2.1"
-httparse = "1.10"
 humantime = "2.3"
 hyper = { version = "1.8", features = ["client", "http1", "http2", "server"] }
 hyper-rustls = "0.27"
@@ -153,8 +152,6 @@ lindera-tokenizer = { version = "0.29", features = [
 lru = "0.16"
 matches = "0.1"
 md5 = "0.8"
-metrics = "0.24"
-metrics-exporter-dogstatsd = "0.9"
 mime_guess = "2.0"
 mockall = "0.14"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
@@ -169,11 +166,9 @@ opentelemetry = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.31"
 ouroboros = "0.18"
-pem = "3.0.5"
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
-pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "0426452" }
 postcard = { version = "1.1", features = [
   "use-std",
 ], default-features = false }
@@ -214,7 +209,6 @@ reqwest-middleware = "0.4"
 reqwest-retry = "0.8"
 rust-embed = "8.9"
 rustc-hash = "2.1"
-ryu = "1.0.20"
 rustls = "0.23"
 rustls-pemfile = "2.2"
 sea-query = { version = "0.32" }
@@ -240,7 +234,7 @@ sqlx = { version = "0.8", features = [
 ] }
 syn = { version = "2.0", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "1"
-sysinfo = { version = "0.37", default-features = false, features = ["disk", "network", "system"] }
+sysinfo = { version = "0.37", default-features = false, features = ["disk", "network", "system"] } # Fork: added "network", "system" features
 tabled = { version = "0.20", features = ["ansi"] }
 tempfile = "3"
 thiserror = "2"
@@ -252,7 +246,6 @@ tokio = { version = "1.48", features = ["full"] }
 tokio-metrics = { version = "0.4", features = ["rt"] }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-tungstenite = { version = "0.27.0", features = ["native-tls"] }
 tokio-util = { version = "0.7", features = ["full"] }
 toml = "0.9"
 tonic = { version = "0.14", features = [
@@ -290,9 +283,6 @@ tracing-subscriber = { version = "0.3", features = [
 ttl_cache = "0.5"
 typetag = "0.2"
 ulid = "1.2"
-uaparser = "0.6.4"
-unicode-segmentation = "1.12"
-urlencoding = "2"
 username = "0.2"
 # We cannot upgrade to utoipa 5.0+ due to significant breaking changes:
 # 1. The `OpenApi` struct structure changed (fields are private), breaking our manual merging logic in openapi.rs
@@ -304,7 +294,7 @@ vrl = { version = "0.29", default-features = false, features = [
   "diagnostic",
   "stdlib",
   "value",
-  "datadog",
+  "datadog", # Fork: added "datadog" feature
 ] }
 warp = { version = "0.4", features = ["server", "test"] }
 whichlang = "0.1"
@@ -365,6 +355,7 @@ quickwit-rest-client = { path = "quickwit-rest-client" }
 quickwit-search = { path = "quickwit-search" }
 quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
+# Fork: removed quickwit-telemetry (present in upstream)
 
 tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "d904630", default-features = false, features = [
   "lz4-compression",
@@ -379,6 +370,20 @@ tantivy-fst = "0.5"
 # This is actually not used directly the goal is to fix the version
 # used by reqwest.
 encoding_rs = "=0.8.35"
+
+# Pomsky-specific dependencies
+chrono-tz = "0.10"
+either = "1.13"
+httparse = "1.10"
+metrics = "0.24"
+metrics-exporter-dogstatsd = "0.9"
+pem = "3.0.5"
+pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "0426452" }
+ryu = "1.0.20"
+tokio-tungstenite = { version = "0.27.0", features = ["native-tls"] }
+uaparser = "0.6.4"
+unicode-segmentation = "1.12"
+urlencoding = "2"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }
