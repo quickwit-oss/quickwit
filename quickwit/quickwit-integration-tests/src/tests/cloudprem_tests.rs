@@ -246,6 +246,148 @@ async fn test_list() {
 }
 
 #[tokio::test]
+async fn test_index_crud_operations() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let test_index_id = "test-index";
+
+    // Step 1: Get indexes - record initial index count
+    let get_response = client
+        .get_indexes(authenticated_request(GetIndexesRequest {
+            org_id: 2,
+            cluster_id: "test-cluster".to_string(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let initial_index_count = get_response.indexes.len();
+
+    // Step 2: Create index with retention policy
+    let create_request = CreateIndexRequest {
+        index_id: test_index_id.to_string(),
+        index_config: Some(index::IndexConfig {
+            retention_policy: Some(index::RetentionPolicy {
+                period: "8 days".to_string(),
+            }),
+        }),
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    let create_response = client
+        .create_index(authenticated_request(create_request))
+        .await
+        .expect("create_index should succeed")
+        .into_inner();
+
+    let created_metadata = create_response.index_metadata.unwrap();
+    let created_config = created_metadata.index_config.unwrap();
+    assert_eq!(created_metadata.index_id, test_index_id);
+    assert_eq!(
+        created_config.retention_policy.as_ref().unwrap().period,
+        "8 days"
+    );
+
+    // Step 3: Verify with get_indexes - should have one more index
+    {
+        let get_response = client
+            .get_indexes(authenticated_request(GetIndexesRequest {
+                org_id: 2,
+                cluster_id: "test-cluster".to_string(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(get_response.indexes.len(), initial_index_count + 1);
+        assert!(
+            get_response
+                .indexes
+                .iter()
+                .any(|idx| idx.index_id == test_index_id)
+        );
+    }
+
+    // Step 4: Update index - change retention policy
+    let update_request = UpdateIndexRequest {
+        index_id: test_index_id.to_string(),
+        index_config: Some(index::IndexConfig {
+            retention_policy: Some(index::RetentionPolicy {
+                period: "32 days".to_string(),
+            }),
+        }),
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    let update_response = client
+        .update_index(authenticated_request(update_request))
+        .await
+        .expect("update_index should succeed")
+        .into_inner();
+
+    let updated_metadata = update_response.index_metadata.unwrap();
+    let updated_config = updated_metadata.index_config.unwrap();
+    assert_eq!(updated_metadata.index_id, test_index_id);
+    assert_eq!(
+        updated_config.retention_policy.as_ref().unwrap().period,
+        "32 days"
+    );
+
+    // Step 5: Verify update with get_indexes
+    {
+        let get_response = client
+            .get_indexes(authenticated_request(GetIndexesRequest {
+                org_id: 2,
+                cluster_id: "test-cluster".to_string(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        let index = get_response
+            .indexes
+            .iter()
+            .find(|idx| idx.index_id == test_index_id)
+            .expect("updated index should be in list");
+        let config = index.index_config.as_ref().unwrap();
+        assert_eq!(config.retention_policy.as_ref().unwrap().period, "32 days");
+    }
+
+    // Step 6: Delete index
+    let delete_request = DeleteIndexRequest {
+        index_id: test_index_id.to_string(),
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    client
+        .delete_index(authenticated_request(delete_request))
+        .await
+        .expect("delete_index should succeed");
+
+    // Step 7: Verify deletion - should be back to initial count
+    {
+        let get_response = client
+            .get_indexes(authenticated_request(GetIndexesRequest {
+                org_id: 2,
+                cluster_id: "test-cluster".to_string(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        assert_eq!(get_response.indexes.len(), initial_index_count);
+        assert!(
+            !get_response
+                .indexes
+                .iter()
+                .any(|idx| idx.index_id == test_index_id),
+            "deleted index should not be in list"
+        );
+    }
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn test_search_after() {
     let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
     let sandbox = setup_env(&mut data).await;
@@ -631,6 +773,49 @@ async fn test_create_managed_indexes_on_startup() {
         .delete(index_ids[2], false)
         .await
         .unwrap();
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_get_indexes() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    let request = GetIndexesRequest {
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+
+    let res = client
+        .get_indexes(authenticated_request(request))
+        .await
+        .unwrap();
+    let res = res.into_inner();
+
+    // We should have at least the "datadog" index created by setup_env
+    let datadog_index = res
+        .indexes
+        .iter()
+        .find(|idx| idx.index_id == "datadog")
+        .expect("datadog index should exist");
+
+    assert!(!datadog_index.index_uri.is_empty());
+    assert!(datadog_index.create_timestamp > 0);
+
+    // Verify index_config is present
+    let index_config = datadog_index
+        .index_config
+        .as_ref()
+        .expect("index_config should be present");
+
+    // The datadog index may or may not have a retention policy configured
+    // Just verify the structure is correct
+    if let Some(retention_policy) = &index_config.retention_policy {
+        assert!(!retention_policy.period.is_empty());
+    }
 
     sandbox.shutdown().await.unwrap();
 }

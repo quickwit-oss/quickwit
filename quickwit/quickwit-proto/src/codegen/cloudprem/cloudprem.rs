@@ -5,7 +5,10 @@ pub struct AnyRequest {
     pub req_id: u64,
     #[prost(message, optional, tag = "2")]
     pub context: ::core::option::Option<Context>,
-    #[prost(oneof = "any_request::Request", tags = "11, 12, 13, 14, 15, 17, 18, 21")]
+    #[prost(
+        oneof = "any_request::Request",
+        tags = "11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25"
+    )]
     pub request: ::core::option::Option<any_request::Request>,
 }
 /// Nested message and enum types in `AnyRequest`.
@@ -29,6 +32,14 @@ pub mod any_request {
         /// Same as a ping, but not propagated further
         #[prost(message, tag = "21")]
         LocalPing(super::PingRequest),
+        #[prost(message, tag = "22")]
+        GetIndexes(super::GetIndexesRequest),
+        #[prost(message, tag = "23")]
+        CreateIndex(super::CreateIndexRequest),
+        #[prost(message, tag = "24")]
+        UpdateIndex(super::UpdateIndexRequest),
+        #[prost(message, tag = "25")]
+        DeleteIndex(super::DeleteIndexRequest),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -39,7 +50,7 @@ pub struct AnyResponse {
     pub grpc_code: u32,
     #[prost(
         oneof = "any_response::Response",
-        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 21"
+        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25"
     )]
     pub response: ::core::option::Option<any_response::Response>,
 }
@@ -72,6 +83,14 @@ pub mod any_response {
         /// Same as a ping, but not propagated further
         #[prost(message, tag = "21")]
         LocalPing(super::PingResponse),
+        #[prost(message, tag = "22")]
+        GetIndexes(super::GetIndexesResponse),
+        #[prost(message, tag = "23")]
+        CreateIndex(super::CreateIndexResponse),
+        #[prost(message, tag = "24")]
+        UpdateIndex(super::UpdateIndexResponse),
+        #[prost(message, tag = "25")]
+        DeleteIndex(super::DeleteIndexResponse),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -84,6 +103,7 @@ pub struct Context {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ClusterIdentify {
+    /// org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
     #[prost(int64, tag = "1")]
     pub org_id: i64,
     /// This is a uuid. it may be unset for older Pomsky versions
@@ -122,6 +142,7 @@ pub struct NodeMetrics {
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PingRequest {
+    /// org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
     #[prost(int64, tag = "1")]
     pub org_id: i64,
     #[prost(message, optional, tag = "2")]
@@ -129,6 +150,71 @@ pub struct PingRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PingResponse {}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetIndexesRequest {
+    /// org_id,cluster_id are used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
+    #[prost(int64, tag = "998")]
+    pub org_id: i64,
+    #[prost(string, tag = "999")]
+    pub cluster_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIndexesResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub indexes: ::prost::alloc::vec::Vec<index::IndexMetadata>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateIndexRequest {
+    /// Unique identifier for the index to create.
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_config: ::core::option::Option<index::IndexConfig>,
+    /// org_id,cluster_id are used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
+    #[prost(int64, tag = "998")]
+    pub org_id: i64,
+    #[prost(string, tag = "999")]
+    pub cluster_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateIndexResponse {
+    /// Metadata of the created index.
+    #[prost(message, optional, tag = "1")]
+    pub index_metadata: ::core::option::Option<index::IndexMetadata>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UpdateIndexRequest {
+    /// Unique identifier for the index to update.
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_config: ::core::option::Option<index::IndexConfig>,
+    /// org_id,cluster_id are used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
+    #[prost(int64, tag = "998")]
+    pub org_id: i64,
+    #[prost(string, tag = "999")]
+    pub cluster_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UpdateIndexResponse {
+    /// Metadata of the updated index.
+    #[prost(message, optional, tag = "1")]
+    pub index_metadata: ::core::option::Option<index::IndexMetadata>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteIndexRequest {
+    /// Unique identifier for the index to delete.
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    /// org_id,cluster_id are used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
+    #[prost(int64, tag = "998")]
+    pub org_id: i64,
+    #[prost(string, tag = "999")]
+    pub cluster_id: ::prost::alloc::string::String,
+}
+/// Empty response indicating successful deletion.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteIndexResponse {}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListRequest {
     /// this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
@@ -144,6 +230,7 @@ pub struct ListRequest {
     pub fetch_only_requested_columns: bool,
     #[prost(message, repeated, tag = "5")]
     pub sort: ::prost::alloc::vec::Vec<SortKv>,
+    /// org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
     #[prost(int64, tag = "6")]
     pub org_id: i64,
     #[prost(message, optional, tag = "7")]
@@ -212,6 +299,7 @@ pub struct EventTracker {
 pub struct FetchOneRequest {
     #[prost(message, optional, tag = "1")]
     pub event_tracker: ::core::option::Option<EventTracker>,
+    /// org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
     #[prost(int64, tag = "2")]
     pub org_id: i64,
     /// this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
@@ -234,6 +322,7 @@ pub struct AggregationRequest {
     pub query: ::core::option::Option<::prost_types::Any>,
     #[prost(message, optional, tag = "2")]
     pub aggregation: ::core::option::Option<Aggregation>,
+    /// org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
     #[prost(int64, tag = "3")]
     pub org_id: i64,
     #[prost(message, optional, tag = "4")]
@@ -636,6 +725,26 @@ impl RpcName for super::quickwit::search::ListTermsRequest {
         "root_list_terms"
     }
 }
+impl RpcName for GetIndexesRequest {
+    fn rpc_name() -> &'static str {
+        "get_indexes"
+    }
+}
+impl RpcName for CreateIndexRequest {
+    fn rpc_name() -> &'static str {
+        "create_index"
+    }
+}
+impl RpcName for UpdateIndexRequest {
+    fn rpc_name() -> &'static str {
+        "update_index"
+    }
+}
+impl RpcName for DeleteIndexRequest {
+    fn rpc_name() -> &'static str {
+        "delete_index"
+    }
+}
 impl RpcName for AnyResponse {
     fn rpc_name() -> &'static str {
         "inverted_request_stream"
@@ -677,6 +786,26 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse>;
+    ///Returns the list of indexes
+    async fn get_indexes(
+        &self,
+        request: GetIndexesRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetIndexesResponse>;
+    ///Creates a new index.
+    async fn create_index(
+        &self,
+        request: CreateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<CreateIndexResponse>;
+    ///Updates an existing index.
+    async fn update_index(
+        &self,
+        request: UpdateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<UpdateIndexResponse>;
+    ///Deletes an existing index.
+    async fn delete_index(
+        &self,
+        request: DeleteIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<DeleteIndexResponse>;
     ///Response are sent to the bridge by the front, which initialised the connection
     async fn inverted_request_stream(
         &self,
@@ -832,6 +961,30 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
         self.inner.0.root_list_terms(request).await
     }
+    async fn get_indexes(
+        &self,
+        request: GetIndexesRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetIndexesResponse> {
+        self.inner.0.get_indexes(request).await
+    }
+    async fn create_index(
+        &self,
+        request: CreateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<CreateIndexResponse> {
+        self.inner.0.create_index(request).await
+    }
+    async fn update_index(
+        &self,
+        request: UpdateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<UpdateIndexResponse> {
+        self.inner.0.update_index(request).await
+    }
+    async fn delete_index(
+        &self,
+        request: DeleteIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<DeleteIndexResponse> {
+        self.inner.0.delete_index(request).await
+    }
     async fn inverted_request_stream(
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
@@ -893,6 +1046,30 @@ pub mod mock_cloud_prem_service {
             super::super::quickwit::search::ListTermsResponse,
         > {
             self.inner.lock().await.root_list_terms(request).await
+        }
+        async fn get_indexes(
+            &self,
+            request: super::GetIndexesRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::GetIndexesResponse> {
+            self.inner.lock().await.get_indexes(request).await
+        }
+        async fn create_index(
+            &self,
+            request: super::CreateIndexRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::CreateIndexResponse> {
+            self.inner.lock().await.create_index(request).await
+        }
+        async fn update_index(
+            &self,
+            request: super::UpdateIndexRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::UpdateIndexResponse> {
+            self.inner.lock().await.update_index(request).await
+        }
+        async fn delete_index(
+            &self,
+            request: super::DeleteIndexRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::DeleteIndexResponse> {
+            self.inner.lock().await.delete_index(request).await
         }
         async fn inverted_request_stream(
             &self,
@@ -1024,6 +1201,70 @@ for InnerCloudPremServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<GetIndexesRequest> for InnerCloudPremServiceClient {
+    type Response = GetIndexesResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: GetIndexesRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.get_indexes(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<CreateIndexRequest> for InnerCloudPremServiceClient {
+    type Response = CreateIndexResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: CreateIndexRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.create_index(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<UpdateIndexRequest> for InnerCloudPremServiceClient {
+    type Response = UpdateIndexResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: UpdateIndexRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.update_index(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<DeleteIndexRequest> for InnerCloudPremServiceClient {
+    type Response = DeleteIndexResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: DeleteIndexRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.delete_index(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<quickwit_common::ServiceStream<AnyResponse>>
 for InnerCloudPremServiceClient {
     type Response = CloudPremServiceStream<AnyRequest>;
@@ -1084,6 +1325,26 @@ struct CloudPremServiceTowerServiceStack {
         super::quickwit::search::ListTermsResponse,
         crate::cloudprem::CloudPremError,
     >,
+    get_indexes_svc: quickwit_common::tower::BoxService<
+        GetIndexesRequest,
+        GetIndexesResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    create_index_svc: quickwit_common::tower::BoxService<
+        CreateIndexRequest,
+        CreateIndexResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    update_index_svc: quickwit_common::tower::BoxService<
+        UpdateIndexRequest,
+        UpdateIndexResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    delete_index_svc: quickwit_common::tower::BoxService<
+        DeleteIndexRequest,
+        DeleteIndexResponse,
+        crate::cloudprem::CloudPremError,
+    >,
     inverted_request_stream_svc: quickwit_common::tower::BoxService<
         quickwit_common::ServiceStream<AnyResponse>,
         CloudPremServiceStream<AnyRequest>,
@@ -1133,6 +1394,30 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
         self.root_list_terms_svc.clone().ready().await?.call(request).await
+    }
+    async fn get_indexes(
+        &self,
+        request: GetIndexesRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetIndexesResponse> {
+        self.get_indexes_svc.clone().ready().await?.call(request).await
+    }
+    async fn create_index(
+        &self,
+        request: CreateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<CreateIndexResponse> {
+        self.create_index_svc.clone().ready().await?.call(request).await
+    }
+    async fn update_index(
+        &self,
+        request: UpdateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<UpdateIndexResponse> {
+        self.update_index_svc.clone().ready().await?.call(request).await
+    }
+    async fn delete_index(
+        &self,
+        request: DeleteIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<DeleteIndexResponse> {
+        self.delete_index_svc.clone().ready().await?.call(request).await
     }
     async fn inverted_request_stream(
         &self,
@@ -1211,6 +1496,46 @@ type RootListTermsLayer = quickwit_common::tower::BoxLayer<
     super::quickwit::search::ListTermsResponse,
     crate::cloudprem::CloudPremError,
 >;
+type GetIndexesLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GetIndexesRequest,
+        GetIndexesResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    GetIndexesRequest,
+    GetIndexesResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type CreateIndexLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        CreateIndexRequest,
+        CreateIndexResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    CreateIndexRequest,
+    CreateIndexResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type UpdateIndexLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        UpdateIndexRequest,
+        UpdateIndexResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    UpdateIndexRequest,
+    UpdateIndexResponse,
+    crate::cloudprem::CloudPremError,
+>;
+type DeleteIndexLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        DeleteIndexRequest,
+        DeleteIndexResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    DeleteIndexRequest,
+    DeleteIndexResponse,
+    crate::cloudprem::CloudPremError,
+>;
 type InvertedRequestStreamLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         quickwit_common::ServiceStream<AnyResponse>,
@@ -1230,6 +1555,10 @@ pub struct CloudPremServiceTowerLayerStack {
     pull_cluster_metrics_layers: Vec<PullClusterMetricsLayer>,
     root_search_layers: Vec<RootSearchLayer>,
     root_list_terms_layers: Vec<RootListTermsLayer>,
+    get_indexes_layers: Vec<GetIndexesLayer>,
+    create_index_layers: Vec<CreateIndexLayer>,
+    update_index_layers: Vec<UpdateIndexLayer>,
+    delete_index_layers: Vec<DeleteIndexLayer>,
     inverted_request_stream_layers: Vec<InvertedRequestStreamLayer>,
 }
 impl CloudPremServiceTowerLayerStack {
@@ -1418,6 +1747,106 @@ impl CloudPremServiceTowerLayerStack {
         >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
+                    GetIndexesRequest,
+                    GetIndexesResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetIndexesRequest,
+                GetIndexesResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                GetIndexesRequest,
+                Response = GetIndexesResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetIndexesRequest,
+                GetIndexesResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<GetIndexesRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CreateIndexRequest,
+                    CreateIndexResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CreateIndexRequest,
+                CreateIndexResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                CreateIndexRequest,
+                Response = CreateIndexResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CreateIndexRequest,
+                CreateIndexResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<CreateIndexRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    UpdateIndexRequest,
+                    UpdateIndexResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                UpdateIndexRequest,
+                UpdateIndexResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                UpdateIndexRequest,
+                Response = UpdateIndexResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                UpdateIndexRequest,
+                UpdateIndexResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<UpdateIndexRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteIndexRequest,
+                    DeleteIndexResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteIndexRequest,
+                DeleteIndexResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                DeleteIndexRequest,
+                Response = DeleteIndexResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DeleteIndexRequest,
+                DeleteIndexResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<DeleteIndexRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
                     quickwit_common::ServiceStream<AnyResponse>,
                     CloudPremServiceStream<AnyRequest>,
                     crate::cloudprem::CloudPremError,
@@ -1453,6 +1882,14 @@ impl CloudPremServiceTowerLayerStack {
         self.root_search_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.root_list_terms_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.get_indexes_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.create_index_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.update_index_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.delete_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.inverted_request_stream_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -1598,6 +2035,82 @@ impl CloudPremServiceTowerLayerStack {
         self.root_list_terms_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_get_indexes_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetIndexesRequest,
+                    GetIndexesResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                GetIndexesRequest,
+                Response = GetIndexesResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<GetIndexesRequest>>::Future: Send + 'static,
+    {
+        self.get_indexes_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_create_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CreateIndexRequest,
+                    CreateIndexResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                CreateIndexRequest,
+                Response = CreateIndexResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<CreateIndexRequest>>::Future: Send + 'static,
+    {
+        self.create_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_update_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    UpdateIndexRequest,
+                    UpdateIndexResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                UpdateIndexRequest,
+                Response = UpdateIndexResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<UpdateIndexRequest>>::Future: Send + 'static,
+    {
+        self.update_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_delete_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DeleteIndexRequest,
+                    DeleteIndexResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                DeleteIndexRequest,
+                Response = DeleteIndexResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<DeleteIndexRequest>>::Future: Send + 'static,
+    {
+        self.delete_index_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn stack_inverted_request_stream_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
@@ -1736,6 +2249,38 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let get_indexes_svc = self
+            .get_indexes_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let create_index_svc = self
+            .create_index_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let update_index_svc = self
+            .update_index_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let delete_index_svc = self
+            .delete_index_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let inverted_request_stream_svc = self
             .inverted_request_stream_layers
             .into_iter()
@@ -1753,6 +2298,10 @@ impl CloudPremServiceTowerLayerStack {
             pull_cluster_metrics_svc,
             root_search_svc,
             root_list_terms_svc,
+            get_indexes_svc,
+            create_index_svc,
+            update_index_svc,
+            delete_index_svc,
             inverted_request_stream_svc,
         };
         CloudPremServiceClient::new(tower_svc_stack)
@@ -1882,6 +2431,30 @@ where
             >,
         >
         + tower::Service<
+            GetIndexesRequest,
+            Response = GetIndexesResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<GetIndexesResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            CreateIndexRequest,
+            Response = CreateIndexResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<CreateIndexResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            UpdateIndexRequest,
+            Response = UpdateIndexResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<UpdateIndexResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
+            DeleteIndexRequest,
+            Response = DeleteIndexResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<DeleteIndexResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
             quickwit_common::ServiceStream<AnyResponse>,
             Response = CloudPremServiceStream<AnyRequest>,
             Error = crate::cloudprem::CloudPremError,
@@ -1931,6 +2504,30 @@ where
         &self,
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
+        self.clone().call(request).await
+    }
+    async fn get_indexes(
+        &self,
+        request: GetIndexesRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetIndexesResponse> {
+        self.clone().call(request).await
+    }
+    async fn create_index(
+        &self,
+        request: CreateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<CreateIndexResponse> {
+        self.clone().call(request).await
+    }
+    async fn update_index(
+        &self,
+        request: UpdateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<UpdateIndexResponse> {
+        self.clone().call(request).await
+    }
+    async fn delete_index(
+        &self,
+        request: DeleteIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<DeleteIndexResponse> {
         self.clone().call(request).await
     }
     async fn inverted_request_stream(
@@ -2072,6 +2669,62 @@ where
                 super::quickwit::search::ListTermsRequest::rpc_name(),
             ))
     }
+    async fn get_indexes(
+        &self,
+        request: GetIndexesRequest,
+    ) -> crate::cloudprem::CloudPremResult<GetIndexesResponse> {
+        self.inner
+            .clone()
+            .get_indexes(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetIndexesRequest::rpc_name(),
+            ))
+    }
+    async fn create_index(
+        &self,
+        request: CreateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<CreateIndexResponse> {
+        self.inner
+            .clone()
+            .create_index(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                CreateIndexRequest::rpc_name(),
+            ))
+    }
+    async fn update_index(
+        &self,
+        request: UpdateIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<UpdateIndexResponse> {
+        self.inner
+            .clone()
+            .update_index(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                UpdateIndexRequest::rpc_name(),
+            ))
+    }
+    async fn delete_index(
+        &self,
+        request: DeleteIndexRequest,
+    ) -> crate::cloudprem::CloudPremResult<DeleteIndexResponse> {
+        self.inner
+            .clone()
+            .delete_index(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                DeleteIndexRequest::rpc_name(),
+            ))
+    }
     async fn inverted_request_stream(
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
@@ -2191,6 +2844,50 @@ for CloudPremServiceGrpcServerAdapter {
         self.inner
             .0
             .root_list_terms(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn get_indexes(
+        &self,
+        request: tonic::Request<GetIndexesRequest>,
+    ) -> Result<tonic::Response<GetIndexesResponse>, tonic::Status> {
+        self.inner
+            .0
+            .get_indexes(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn create_index(
+        &self,
+        request: tonic::Request<CreateIndexRequest>,
+    ) -> Result<tonic::Response<CreateIndexResponse>, tonic::Status> {
+        self.inner
+            .0
+            .create_index(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn update_index(
+        &self,
+        request: tonic::Request<UpdateIndexRequest>,
+    ) -> Result<tonic::Response<UpdateIndexResponse>, tonic::Status> {
+        self.inner
+            .0
+            .update_index(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn delete_index(
+        &self,
+        request: tonic::Request<DeleteIndexRequest>,
+    ) -> Result<tonic::Response<DeleteIndexResponse>, tonic::Status> {
+        self.inner
+            .0
+            .delete_index(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2476,6 +3173,106 @@ pub mod cloud_prem_service_grpc_client {
                 .insert(GrpcMethod::new("cloudprem.CloudPremService", "RootListTerms"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the list of indexes
+        pub async fn get_indexes(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetIndexesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIndexesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/GetIndexes",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "GetIndexes"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Creates a new index.
+        pub async fn create_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateIndexResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/CreateIndex",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "CreateIndex"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Updates an existing index.
+        pub async fn update_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UpdateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateIndexResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/UpdateIndex",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "UpdateIndex"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Deletes an existing index.
+        pub async fn delete_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteIndexResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/DeleteIndex",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "DeleteIndex"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Response are sent to the bridge by the front, which initialised the connection
         pub async fn inverted_request_stream(
             &mut self,
@@ -2564,6 +3361,38 @@ pub mod cloud_prem_service_grpc_server {
             request: tonic::Request<super::super::quickwit::search::ListTermsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::quickwit::search::ListTermsResponse>,
+            tonic::Status,
+        >;
+        /// Returns the list of indexes
+        async fn get_indexes(
+            &self,
+            request: tonic::Request<super::GetIndexesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIndexesResponse>,
+            tonic::Status,
+        >;
+        /// Creates a new index.
+        async fn create_index(
+            &self,
+            request: tonic::Request<super::CreateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateIndexResponse>,
+            tonic::Status,
+        >;
+        /// Updates an existing index.
+        async fn update_index(
+            &self,
+            request: tonic::Request<super::UpdateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateIndexResponse>,
+            tonic::Status,
+        >;
+        /// Deletes an existing index.
+        async fn delete_index(
+            &self,
+            request: tonic::Request<super::DeleteIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteIndexResponse>,
             tonic::Status,
         >;
         /// Server streaming response type for the InvertedRequestStream method.
@@ -2973,6 +3802,190 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RootListTermsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/GetIndexes" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetIndexesSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<super::GetIndexesRequest>
+                    for GetIndexesSvc<T> {
+                        type Response = super::GetIndexesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetIndexesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CloudPremServiceGrpc>::get_indexes(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetIndexesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/CreateIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateIndexSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<super::CreateIndexRequest>
+                    for CreateIndexSvc<T> {
+                        type Response = super::CreateIndexResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateIndexRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CloudPremServiceGrpc>::create_index(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CreateIndexSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/UpdateIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateIndexSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<super::UpdateIndexRequest>
+                    for UpdateIndexSvc<T> {
+                        type Response = super::UpdateIndexResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateIndexRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CloudPremServiceGrpc>::update_index(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateIndexSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/DeleteIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteIndexSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<super::DeleteIndexRequest>
+                    for DeleteIndexSvc<T> {
+                        type Response = super::DeleteIndexResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteIndexRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CloudPremServiceGrpc>::delete_index(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteIndexSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

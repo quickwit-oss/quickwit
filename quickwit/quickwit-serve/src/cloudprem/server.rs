@@ -80,8 +80,12 @@ pub(crate) async fn start_cloudprem_server(
         file_descriptor_sets.push(quickwit_proto::cloudprem::CLOUDPREM_METRICS_FILE_DESCRIPTOR_SET);
 
         let search_service = services.search_service.clone();
-        let cloudprem_service_impl =
-            CloudPremServiceImpl::new(search_service, services.cluster.clone());
+        let cloudprem_service_impl = CloudPremServiceImpl::new(
+            search_service,
+            services.metastore_client.clone(),
+            services.cluster.clone(),
+            services.node_config.default_index_root_uri.clone(),
+        );
         let cloudprem_service_client =
             CloudPremServiceClient::tower().build(cloudprem_service_impl);
         if cloudprem_config.enable_reverse_connection {

@@ -213,6 +213,9 @@ impl From<quickwit_proto::cloudprem::CloudPremError> for SearchError {
             CloudPremError::Timeout(msg) => Self::Timeout(msg),
             CloudPremError::TooManyRequests => Self::TooManyRequests,
             CloudPremError::DocumentNotFound { .. } => Self::Internal(err.to_string()),
+            CloudPremError::IndexAlreadyExists(msg) => Self::InvalidQuery(msg),
+            CloudPremError::IndexNotFound(msg) => Self::InvalidQuery(msg),
+            CloudPremError::InvalidArgument(msg) => Self::InvalidQuery(msg),
             CloudPremError::Unimplemented => Self::Internal("unimplented".to_string()),
         }
     }

@@ -78,6 +78,19 @@ async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest
         Request::RootListTerms(root_list_terms) => {
             Response::RootListTerms(handle_err!(server.root_list_terms(root_list_terms).await))
         }
+        Request::GetIndexes(get_indexes) => {
+            Response::GetIndexes(handle_err!(server.get_indexes(get_indexes).await))
+        }
+        Request::DeleteIndex(delete_index) => {
+            Response::DeleteIndex(handle_err!(server.delete_index(delete_index).await))
+        }
+        Request::UpdateIndex(update_index) => {
+            Response::UpdateIndex(handle_err!(server.update_index(update_index).await))
+        }
+        Request::CreateIndex(create_index) => {
+            Response::CreateIndex(handle_err!(server.create_index(create_index).await))
+        }
+
         _ => return unimplemented("Unimplemented request"),
     };
     AnyResponse {

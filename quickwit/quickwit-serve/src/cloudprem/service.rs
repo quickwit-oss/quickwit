@@ -7,16 +7,33 @@ use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_common::ServiceStream;
+use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::ServiceError as _;
+use quickwit_config::{RetentionPolicy, SourceConfig, validate_identifier};
+use quickwit_metastore::{
+    CreateIndexResponseExt, IndexMetadataResponseExt, ListIndexesMetadataResponseExt,
+};
+use quickwit_proto::ServiceError;
+use quickwit_proto::cloudprem::index::{
+    IndexConfig as IndexConfigProto, IndexMetadata as IndexMetadataProto,
+    RetentionPolicy as RetentionPolicyProto,
+};
 use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
-    Event, EventTracker, FetchOneRequest, FetchOneResponse, ListRequest, ListResponse, NodeMetrics,
-    PingRequest, PingResponse, PullClusterMetricsResponse, Statistics,
+    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse, Event,
+    EventTracker, FetchOneRequest, FetchOneResponse, GetIndexesRequest, GetIndexesResponse,
+    ListRequest, ListResponse, NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
+    Statistics, UpdateIndexRequest, UpdateIndexResponse,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, PullMetricsRequest, PullMetricsResponse,
+};
+use quickwit_proto::metastore::{
+    CreateIndexRequest as MetastoreCreateIndexRequest,
+    DeleteIndexRequest as MetastoreDeleteIndexRequest, ListIndexesMetadataRequest,
+    MetastoreService, MetastoreServiceClient, UpdateIndexRequest as MetastoreUpdateIndexRequest,
+    serde_utils,
 };
 use quickwit_proto::search::{
     CountHits, Hit, ListTermsRequest, ListTermsResponse, PartialHit, SearchRequest, SearchResponse,
@@ -41,7 +58,9 @@ const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
 #[allow(dead_code)]
 pub struct CloudPremServiceImpl {
     search_service: Arc<dyn SearchService>,
+    metastore_client: MetastoreServiceClient,
     cluster: Cluster,
+    default_index_root_uri: Uri,
 }
 
 impl fmt::Debug for CloudPremServiceImpl {
@@ -51,10 +70,17 @@ impl fmt::Debug for CloudPremServiceImpl {
 }
 
 impl CloudPremServiceImpl {
-    pub fn new(search_service: Arc<dyn SearchService>, cluster: Cluster) -> Self {
+    pub fn new(
+        search_service: Arc<dyn SearchService>,
+        metastore_client: MetastoreServiceClient,
+        cluster: Cluster,
+        default_index_root_uri: Uri,
+    ) -> Self {
         CloudPremServiceImpl {
             search_service,
+            metastore_client,
             cluster,
+            default_index_root_uri,
         }
     }
 }
@@ -396,6 +422,218 @@ impl CloudPremService for CloudPremServiceImpl {
         CloudPremError,
     > {
         Err(CloudPremError::Unimplemented)
+    }
+
+    async fn get_indexes(
+        &self,
+        _request: GetIndexesRequest,
+    ) -> CloudPremResult<GetIndexesResponse> {
+        info!("received GetIndexes request");
+
+        let indexes_metadata = self
+            .metastore_client
+            .clone()
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
+            .await?
+            .deserialize_indexes_metadata()
+            .await?;
+
+        let indexes = indexes_metadata
+            .iter()
+            .map(index_metadata_to_proto)
+            .collect();
+
+        Ok(GetIndexesResponse { indexes })
+    }
+
+    async fn create_index(
+        &self,
+        request: CreateIndexRequest,
+    ) -> CloudPremResult<CreateIndexResponse> {
+        info!(index_id=%request.index_id, "received CreateIndex request");
+
+        // Validate index_id
+        validate_identifier("index ID", &request.index_id)
+            .map_err(|e| CloudPremError::InvalidArgument(e.to_string()))?;
+
+        // Build index_uri from default root
+        let index_uri = self
+            .default_index_root_uri
+            .join(&request.index_id)
+            .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+
+        // Load the default datadog.yaml config
+        let default_config_bytes = include_bytes!("../../../../config/cloudprem/datadog.yaml");
+        let mut index_config = quickwit_config::load_index_config_from_user_config(
+            quickwit_config::ConfigFormat::Yaml,
+            default_config_bytes,
+            &self.default_index_root_uri,
+        )
+        .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+
+        // Override the index_id and index_uri from the request
+        index_config.index_id = request.index_id.clone();
+        index_config.index_uri = index_uri;
+
+        // Patch with retention policy from request if provided
+        if let Some(proto_config) = request.index_config {
+            if let Some(proto_rp) = proto_config.retention_policy {
+                index_config.retention_policy_opt = Some(RetentionPolicy {
+                    retention_period: proto_rp.period,
+                    evaluation_schedule: RetentionPolicy::default_schedule(),
+                });
+            } else {
+                // If index_config is provided but retention_policy is None, remove it
+                index_config.retention_policy_opt = None;
+            }
+        }
+
+        // Serialize config
+        let index_config_json = serde_utils::to_json_str(&index_config)?;
+
+        // Add default sources
+        let source_configs_json = vec![
+            serde_utils::to_json_str(&SourceConfig::ingest_api_default())?,
+            serde_utils::to_json_str(&SourceConfig::ingest_v2())?,
+        ];
+
+        let create_response = self
+            .metastore_client
+            .clone()
+            .create_index(MetastoreCreateIndexRequest {
+                index_config_json,
+                source_configs_json,
+            })
+            .await?;
+
+        let index_metadata = create_response.deserialize_index_metadata()?;
+
+        let index_metadata_proto = index_metadata_to_proto(&index_metadata);
+
+        Ok(CreateIndexResponse {
+            index_metadata: Some(index_metadata_proto),
+        })
+    }
+
+    async fn update_index(
+        &self,
+        request: UpdateIndexRequest,
+    ) -> CloudPremResult<UpdateIndexResponse> {
+        info!(index_id=%request.index_id, "received UpdateIndex request");
+
+        // Get current index metadata
+        let index_metadata_request =
+            quickwit_proto::metastore::IndexMetadataRequest::for_index_id(request.index_id.clone());
+        let current_metadata_response = self
+            .metastore_client
+            .clone()
+            .index_metadata(index_metadata_request)
+            .await?;
+
+        let current_metadata = current_metadata_response.deserialize_index_metadata()?;
+        let index_uid = current_metadata.index_uid.clone();
+        let mut updated_config = current_metadata.into_index_config();
+
+        // Update retention policy if provided
+        if let Some(index_config) = request.index_config {
+            if let Some(proto_rp) = index_config.retention_policy {
+                // Validate that the index has a timestamp field before allowing retention
+                // policy
+                if updated_config.doc_mapping.timestamp_field.is_none() {
+                    return Err(quickwit_proto::metastore::MetastoreError::InvalidArgument {
+                        message: "Cannot set retention policy: retention policy requires a \
+                                  timestamp field, but doc mapping does not declare one"
+                            .to_string(),
+                    }
+                    .into());
+                }
+                updated_config.retention_policy_opt = Some(RetentionPolicy {
+                    retention_period: proto_rp.period,
+                    evaluation_schedule: RetentionPolicy::default_schedule(),
+                });
+            } else {
+                // If no retention policy provided, remove it
+                updated_config.retention_policy_opt = None;
+            }
+        }
+
+        // Serialize each part of the config
+        let doc_mapping_json = serde_utils::to_json_str(&updated_config.doc_mapping)?;
+        let indexing_settings_json = serde_utils::to_json_str(&updated_config.indexing_settings)?;
+        let ingest_settings_json = serde_utils::to_json_str(&updated_config.ingest_settings)?;
+        let search_settings_json = serde_utils::to_json_str(&updated_config.search_settings)?;
+        let retention_policy_json_opt = updated_config
+            .retention_policy_opt
+            .as_ref()
+            .map(serde_utils::to_json_str)
+            .transpose()?;
+
+        let update_response = self
+            .metastore_client
+            .clone()
+            .update_index(MetastoreUpdateIndexRequest {
+                index_uid: Some(index_uid),
+                doc_mapping_json,
+                indexing_settings_json,
+                ingest_settings_json,
+                search_settings_json,
+                retention_policy_json_opt,
+            })
+            .await?;
+
+        let updated_metadata = update_response.deserialize_index_metadata()?;
+
+        let index_metadata_proto = index_metadata_to_proto(&updated_metadata);
+
+        Ok(UpdateIndexResponse {
+            index_metadata: Some(index_metadata_proto),
+        })
+    }
+
+    async fn delete_index(
+        &self,
+        request: DeleteIndexRequest,
+    ) -> CloudPremResult<DeleteIndexResponse> {
+        info!(index_id=%request.index_id, "received DeleteIndex request");
+
+        // Get index metadata to obtain the IndexUid
+        let index_metadata_request =
+            quickwit_proto::metastore::IndexMetadataRequest::for_index_id(request.index_id.clone());
+        let index_metadata_response = self
+            .metastore_client
+            .clone()
+            .index_metadata(index_metadata_request)
+            .await?;
+
+        let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+        let index_uid = index_metadata.index_uid;
+
+        self.metastore_client
+            .clone()
+            .delete_index(MetastoreDeleteIndexRequest {
+                index_uid: Some(index_uid),
+            })
+            .await?;
+
+        Ok(DeleteIndexResponse {})
+    }
+}
+
+/// Converts quickwit IndexMetadata to cloudprem proto format.
+fn index_metadata_to_proto(metadata: &quickwit_metastore::IndexMetadata) -> IndexMetadataProto {
+    let retention_policy = metadata
+        .index_config
+        .retention_policy_opt
+        .as_ref()
+        .map(|rp| RetentionPolicyProto {
+            period: rp.retention_period.clone(),
+        });
+
+    IndexMetadataProto {
+        index_id: metadata.index_config.index_id.clone(),
+        index_uri: metadata.index_config.index_uri.to_string(),
+        create_timestamp: metadata.create_timestamp,
+        index_config: Some(IndexConfigProto { retention_policy }),
     }
 }
 

@@ -7,6 +7,10 @@ include!("../codegen/cloudprem/calcfieldspb.rs");
 include!("../codegen/cloudprem/cloudprem.rs");
 include!("../codegen/cloudprem/queryparser_proto.rs");
 
+pub mod index {
+    include!("../codegen/cloudprem/cloudprem.index.rs");
+}
+
 pub mod metrics {
     include!("../codegen/cloudprem/cloudprem.metrics.rs");
 }
@@ -36,6 +40,12 @@ pub enum CloudPremError {
         split_id: Option<String>,
         doc_id: Option<u64>,
     },
+    #[error("index already exists: {0}")]
+    IndexAlreadyExists(String),
+    #[error("index not found: {0}")]
+    IndexNotFound(String),
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
     #[error("unimplemented")]
     Unimplemented,
 }
@@ -54,6 +64,9 @@ impl ServiceError for CloudPremError {
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
             Self::DocumentNotFound { .. } => ServiceErrorCode::NotFound,
+            Self::IndexAlreadyExists(_) => ServiceErrorCode::BadRequest,
+            Self::IndexNotFound(_) => ServiceErrorCode::NotFound,
+            Self::InvalidArgument(_) => ServiceErrorCode::BadRequest,
             Self::Unimplemented => ServiceErrorCode::Unimplemented,
         }
     }
@@ -74,5 +87,22 @@ impl GrpcServiceError for CloudPremError {
 
     fn new_unavailable(message: String) -> Self {
         Self::Unavailable(message)
+    }
+}
+
+impl From<crate::metastore::MetastoreError> for CloudPremError {
+    fn from(error: crate::metastore::MetastoreError) -> Self {
+        use crate::metastore::MetastoreError;
+        match error {
+            MetastoreError::AlreadyExists(entity) => {
+                CloudPremError::IndexAlreadyExists(format!("{} already exists", entity))
+            }
+            MetastoreError::NotFound(entity) => CloudPremError::IndexNotFound(entity.to_string()),
+            MetastoreError::InvalidArgument { message } => CloudPremError::InvalidArgument(message),
+            MetastoreError::Timeout(msg) => CloudPremError::Timeout(msg),
+            MetastoreError::TooManyRequests => CloudPremError::TooManyRequests,
+            MetastoreError::Unavailable(msg) => CloudPremError::Unavailable(msg),
+            _ => CloudPremError::Internal(error.to_string()),
+        }
     }
 }

@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package cloudprem.index;
+
+option go_package = "github.com/DataDog/dd-source/domains/event-platform/shared/libs/cloudprem-proto";
+option java_package = "com.dd.event_platform.cloudprem.proto";
+
+message IndexMetadata {
+  // Unique identifier for the index (e.g., "datadog").
+  string index_id = 1;
+  // The index URI where data is stored.
+  string index_uri = 2;
+  // Unix timestamp (seconds) when the index was created.
+  int64 create_timestamp = 3;
+  // Index configuration.
+  optional IndexConfig index_config = 4;
+}
+
+message IndexConfig {
+  // retention policy for the index.
+  optional RetentionPolicy retention_policy = 1;
+}
+
+message RetentionPolicy {
+  // Duration of time for which the splits should be retained (e.g., "1 hour", "3 days", "1 week").
+  string period = 1;
+}
