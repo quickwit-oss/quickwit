@@ -132,6 +132,11 @@ pub struct SplitMetadata {
     /// Doc mapping UID used when creating this split. This split may only be merged with other
     /// splits using the same doc mapping UID.
     pub doc_mapping_uid: DocMappingUid,
+
+    /// Earliest arrival timestamp (in milliseconds since the Unix epoch) of all documents in the
+    /// split. In other words: `min(doc.arrival_timestamp_millis for doc in split)`.
+    /// This is used to track ingestion lag.
+    pub min_arrival_timestamp_secs_opt: Option<u64>,
 }
 
 impl fmt::Debug for SplitMetadata {
@@ -281,6 +286,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
             doc_mapping_uid: DocMappingUid::default(),
+            min_arrival_timestamp_secs_opt: Some(1763681493923),
         }
     }
 
@@ -421,16 +427,17 @@ mod tests {
             delete_opstamp: 0,
             num_merge_ops: 0,
             doc_mapping_uid: DocMappingUid::default(),
+            min_arrival_timestamp_secs_opt: Some(1763681493923),
         };
 
-        let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { \
-                               index_id: \"00000000-0000-0000-0000-000000000000\", \
-                               incarnation_id: Ulid(0) }, partition_id: 0, source_id: \
-                               \"source-1\", node_id: \"node-1\", num_docs: 100, \
-                               uncompressed_docs_size_in_bytes: 1024, time_range: Some(0..=100), \
-                               create_timestamp: 1629867600, maturity: Mature, tags: \
-                               \"{\\\"🐱\\\", \\\"😻\\\", \\\"😼\\\", \\\"😿\\\", and 1 more}\", \
-                               footer_offsets: 0..1024, delete_opstamp: 0, num_merge_ops: 0 }";
+        let expected_output =
+            "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { index_id: \
+             \"00000000-0000-0000-0000-000000000000\", incarnation_id: Ulid(0) }, partition_id: \
+             0, source_id: \"source-1\", node_id: \"node-1\", num_docs: 100, \
+             uncompressed_docs_size_in_bytes: 1024, time_range: Some(0..=100), create_timestamp: \
+             1629867600, maturity: Mature, tags: \"{\\\"🐱\\\", \\\"😻\\\", \\\"😼\\\", \
+             \\\"😿\\\", and 1 more}\", footer_offsets: 0..1024, delete_opstamp: 0, \
+             num_merge_ops: 0, min_arrival_timestamp_secs_opt: Some(1763681493923) }";
 
         assert_eq!(format!("{split_metadata:?}"), expected_output);
     }
