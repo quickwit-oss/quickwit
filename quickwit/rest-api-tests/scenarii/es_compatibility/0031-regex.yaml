@@ -13,6 +13,21 @@ expected:
       value: 100
       relation: "eq"
 ---
+# Regex always match from start to end (`(re)` equivalent to `^(re)$`)
+params:
+  size: 3
+json:
+  track_total_hits: true
+  query:
+    regexp:
+      type:
+        value: "event"
+expected:
+  hits:
+    total:
+      value: 0
+      relation: "eq"
+---
 # Regex with case_insensitive flag
 params:
   size: 3
@@ -44,4 +59,32 @@ expected:
   hits:
     total:
       value: 0
+      relation: "eq"
+---
+# leading ^ and trailing $ are ignored
+params:
+  size: 3
+json:
+  track_total_hits: true
+  query:
+    regexp:
+      type:
+        value: "pushevent"
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+---
+# regex in query_string
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "type:/pushevent/"
+expected:
+  hits:
+    total:
+      value: 60
       relation: "eq"
