@@ -234,8 +234,7 @@ pub enum BucketEntries<T> {
 }
 
 impl<T, U> From<TantivyBucketEntries<T>> for BucketEntries<U>
-where
-    U: From<T>,
+where U: From<T>
 {
     fn from(value: TantivyBucketEntries<T>) -> BucketEntries<U> {
         match value {
@@ -250,8 +249,7 @@ where
 }
 
 impl<T, U> From<BucketEntries<T>> for TantivyBucketEntries<U>
-where
-    U: From<T>,
+where U: From<T>
 {
     fn from(value: BucketEntries<T>) -> TantivyBucketEntries<U> {
         match value {
