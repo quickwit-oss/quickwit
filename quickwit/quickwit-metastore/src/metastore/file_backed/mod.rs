@@ -41,22 +41,24 @@ use quickwit_common::ServiceStream;
 use quickwit_config::IndexTemplate;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
-    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
-    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
+    CreateIndexResponse, CreateIndexRoutingTableRequest, CreateIndexRoutingTableResponse,
+    CreateIndexTemplateRequest, DeleteIndexRequest, DeleteIndexTemplatesRequest, DeleteQuery,
+    DeleteShardsRequest, DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest,
+    DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest,
+    FindIndexTemplateMatchesResponse, GetClusterIdentityRequest, GetClusterIdentityResponse,
+    GetIndexRoutingTableRequest, GetIndexRoutingTableResponse, GetIndexTemplateRequest,
+    GetIndexTemplateResponse, IndexMetadataFailure, IndexMetadataFailureReason,
+    IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch, IndexesMetadataRequest,
+    IndexesMetadataResponse, LastDeleteOpstampRequest, LastDeleteOpstampResponse,
+    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
+    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -1273,6 +1275,26 @@ impl MetastoreService for FileBackedMetastore {
 
         Ok(GetClusterIdentityResponse {
             uuid: state_wlock_guard.identity.hyphenated().to_string(),
+        })
+    }
+
+    async fn create_index_routing_table(
+        &self,
+        _request: CreateIndexRoutingTableRequest,
+    ) -> MetastoreResult<CreateIndexRoutingTableResponse> {
+        Err(MetastoreError::Internal {
+            message: "routing tables are not supported in file-backed metastore".to_string(),
+            cause: "unsupported operation".to_string(),
+        })
+    }
+
+    async fn get_index_routing_table(
+        &self,
+        _request: GetIndexRoutingTableRequest,
+    ) -> MetastoreResult<GetIndexRoutingTableResponse> {
+        Err(MetastoreError::Internal {
+            message: "routing tables are not supported in file-backed metastore".to_string(),
+            cause: "unsupported operation".to_string(),
         })
     }
 }

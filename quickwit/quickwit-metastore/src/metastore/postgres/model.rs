@@ -292,3 +292,11 @@ impl From<PgShard> for Shard {
 pub(super) struct PgIndexTemplate {
     pub index_template_json: String,
 }
+
+#[derive(sqlx::FromRow, Debug)]
+pub(super) struct PgIndexRoutingRule {
+    pub routing_table_id: String,
+    pub rank: i32,
+    pub filter: String,
+    pub index_id: String,
+}
