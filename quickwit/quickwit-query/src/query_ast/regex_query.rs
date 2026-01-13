@@ -60,6 +60,12 @@ impl RegexQuery {
         };
         let field_type = field_entry.field_type();
 
+        // tantivy_fst matches `(re)` as if was `^(re)$` and errors if the
+        // anchors are present. We strip them to make the queries more lenient
+        // (matches Elasticsearch behavior).
+        let stripped_regex = self.regex.strip_prefix('^').unwrap_or(&self.regex);
+        let stripped_regex = stripped_regex.strip_suffix('$').unwrap_or(stripped_regex);
+
         match field_type {
             FieldType::Str(text_options) => {
                 text_options.get_indexing_options().ok_or_else(|| {
@@ -69,7 +75,7 @@ impl RegexQuery {
                     ))
                 })?;
 
-                Ok((field, None, self.regex.clone()))
+                Ok((field, None, stripped_regex.to_string()))
             }
             FieldType::JsonObject(json_options) => {
                 json_options.get_text_indexing_options().ok_or_else(|| {
@@ -90,7 +96,7 @@ impl RegexQuery {
                 // We skip the 1st byte which is a marker to tell this is json. This isn't present
                 // in the dictionary
                 let byte_path_prefix = value.as_serialized()[1..].to_owned();
-                Ok((field, Some(byte_path_prefix), self.regex.clone()))
+                Ok((field, Some(byte_path_prefix), stripped_regex.to_string()))
             }
             _ => Err(InvalidQuery::SchemaError(
                 "trying to run a regex query on a non-text field".to_string(),
