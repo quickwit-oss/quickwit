@@ -938,6 +938,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         grpc_advertise_addr: config.grpc_advertise_addr,
         indexing_cpu_capacity: CpuCapacity::zero(),
         indexing_tasks: Vec::new(),
+        availability_zone: None,
     };
     let client_grpc_config = make_client_grpc_config(&config.grpc_config)?;
     let cluster = Cluster::join(
