@@ -109,6 +109,7 @@ pub struct ClusterMember {
     /// Indexing cpu capacity of the node expressed in milli cpu.
     pub indexing_cpu_capacity: CpuCapacity,
     pub is_ready: bool,
+    /// Availability zone the node is running in, if enabled.
     pub availability_zone: Option<String>,
 }
 
