@@ -566,6 +566,7 @@ impl Default for JaegerConfig {
 pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: NodeId,
+    pub availability_zone: Option<String>,
     pub enabled_services: HashSet<QuickwitService>,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,
