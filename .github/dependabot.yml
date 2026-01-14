@@ -4,7 +4,7 @@ updates:
   - package-ecosystem: cargo
     directory: "/quickwit"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
       rust-dependencies:
         patterns:
@@ -18,14 +18,14 @@ updates:
   - package-ecosystem: docker
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 10
 
   # GitHub Actions
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
       github-actions:
         patterns:
@@ -36,7 +36,7 @@ updates:
   - package-ecosystem: npm
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
       npm-dependencies:
         patterns:
