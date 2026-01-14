@@ -1,0 +1,128 @@
+# Test top_hits aggregation grouped by actor.login
+params:
+  size: 0
+json:
+  aggs:
+    logins:
+      terms:
+        field: actor.login
+      aggs:
+        recent_events:
+          top_hits:
+            size: 1
+            sort:
+              - created_at: desc
+            docvalue_fields:
+              - created_at
+              - repo.name
+
+expected:
+  hits:
+    total:
+      value: 100
+    hits: []
+
+  aggregations:
+    logins:
+      doc_count_error_upper_bound: 0
+      sum_other_doc_count: 86
+      buckets:
+        - key: jadonk
+          doc_count: 2
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["beagleboard/beagleboard-org"]
+                  created_at: ["2015-02-01T00:00:16Z"]
+
+        - key: teozfrank
+          doc_count: 2
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["teozfrank/DuelMe"]
+                  created_at: ["2015-02-01T00:00:06Z"]
+
+        - key: hodgies
+          doc_count: 2
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["comp4560-4R-assignemnt-git-wrecked/git-wrecked"]
+                  created_at: ["2015-02-01T00:00:06Z"]
+
+        - key: freeside
+          doc_count: 2
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["freeside/Freeside"]
+                  created_at: ["2015-02-01T00:00:12Z"]
+
+        - key: enist
+          doc_count: 1
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["t4t5/sweetalert"]
+                  created_at: ["2015-02-01T00:00:11Z"]
+
+        - key: brandon1011
+          doc_count: 1
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["jazzTheJackRabbit/recommendationSystems"]
+                  created_at: ["2015-02-01T00:00:11Z"]
+
+        - key: wmfgerrit
+          doc_count: 1
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["wikimedia/mediawiki-extensions"]
+                  created_at: ["2015-02-01T00:00:06Z"]
+
+        - key: raxacoricofallapatorius
+          doc_count: 1
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["raxacoricofallapatorius/astro"]
+                  created_at: ["2015-02-01T00:00:11Z"]
+
+        - key: manfredtremmel
+          doc_count: 1
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["ManfredTremmel/gwt-commons-lang3"]
+                  created_at: ["2015-02-01T00:00:13Z"]
+
+        - key: cn-nytimes
+          doc_count: 1
+          recent_events:
+            hits:
+              - sort:
+                  $expect: "len(val) == 1"
+                docvalue_fields:
+                  repo.name: ["cn-nytimes/mirrors"]
+                  created_at: ["2015-02-01T00:00:11Z"]
