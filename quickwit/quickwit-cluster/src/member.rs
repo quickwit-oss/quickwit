@@ -80,7 +80,7 @@ impl NodeStateExt for NodeState {
     }
 
     fn availability_zone(&self) -> Option<String> {
-        self.get(AVAILABILITY_ZONE_KEY).map(|x| x.to_string())
+        self.get(AVAILABILITY_ZONE_KEY).map(|az| az.to_string())
     }
 }
 

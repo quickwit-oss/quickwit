@@ -2,6 +2,7 @@ version: 0.8
 
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
+availability_zone: az-1
 enabled_services:
   - janitor
   - metastore

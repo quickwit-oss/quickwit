@@ -66,6 +66,10 @@ fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
     ConfigValue::with_default(node_id)
 }
 
+fn default_availability_zone() -> ConfigValue<String, QW_AVAILABILITY_ZONE> {
+    ConfigValue::none()
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 struct List(Vec<String>);
 
@@ -169,7 +173,7 @@ struct NodeConfigBuilder {
     cluster_id: ConfigValue<String, QW_CLUSTER_ID>,
     #[serde(default = "default_node_id")]
     node_id: ConfigValue<String, QW_NODE_ID>,
-    #[serde(default)]
+    #[serde(default = "default_availability_zone")]
     availability_zone: ConfigValue<String, QW_AVAILABILITY_ZONE>,
     #[serde(default = "default_enabled_services")]
     enabled_services: ConfigValue<List, QW_ENABLED_SERVICES>,
@@ -220,7 +224,7 @@ impl NodeConfigBuilder {
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<NodeConfig> {
         let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
-        let availability_zone = self.availability_zone.resolve(env_vars).ok();
+        let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
         let enabled_services = self
             .enabled_services
@@ -474,6 +478,7 @@ pub fn node_config_for_tests_from_ports(
 ) -> NodeConfig {
     let node_id = NodeId::new(default_node_id().unwrap());
     let enabled_services = QuickwitService::supported_services();
+    let availability_zone = Some(String::from("az-1"));
     let listen_address = Host::default();
     let rest_listen_addr = listen_address
         .with_port(rest_listen_port)
@@ -504,7 +509,7 @@ pub fn node_config_for_tests_from_ports(
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
         node_id,
-        availability_zone: None,
+        availability_zone,
         enabled_services,
         gossip_advertise_addr: gossip_listen_addr,
         grpc_advertise_addr: grpc_listen_addr,
@@ -559,6 +564,7 @@ mod tests {
         assert!(config.is_service_enabled(QuickwitService::Janitor));
         assert!(config.is_service_enabled(QuickwitService::Metastore));
 
+        assert_eq!(config.availability_zone.unwrap(), "az-1");
         assert_eq!(
             config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 1111)
@@ -744,6 +750,7 @@ mod tests {
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
         assert_eq!(config.node_id, get_short_hostname().unwrap());
+        assert_eq!(config.availability_zone, None);
         assert_eq!(
             config.enabled_services,
             QuickwitService::supported_services()
