@@ -25,7 +25,6 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
 use quickwit_proto::types::IndexId;
 use quickwit_proto::{ServiceError, ServiceErrorCode, tonic};
 use serde::{self, Serialize};
-use tracing::error;
 use warp::{Filter, Rejection};
 
 use crate::decompression::get_body_bytes;
