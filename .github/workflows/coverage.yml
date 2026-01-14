@@ -157,7 +157,7 @@ jobs:
         run: rustup update stable
 
       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
-        uses: taiki-e/install-action@03ef6f57d573ca4522fb02950f326083373b85bf # v2.66.2
+        uses: taiki-e/install-action@90558ad1e179036f31467972b00dec6cb80701fa # v2.66.3
         with:
           tool: cargo-llvm-cov,nextest,protoc
 
