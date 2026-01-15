@@ -10,6 +10,12 @@ api_root: http://localhost:7280/api/v1/
 endpoint: indexes/empty_index
 status_code: null
 ---
+# Delete possibly remaining index
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/simple_es_compat
+status_code: null
+---
 # Create index
 method: POST
 api_root: http://localhost:7280/api/v1/
@@ -104,3 +110,30 @@ params:
 ndjson:
   - {"fast_text": "abc-123", "obj": {"nested_text": "abc-123"}}
   - {"fast_text": "def-456", "obj": {"nested_text": "ghi-789"}}
+
+---
+# Create simple_es_compat index
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.7"
+  index_id: simple_es_compat
+  doc_mapping:
+    field_mappings:
+      - name: keyword_text
+        type: text
+        fast: true
+        indexed: true
+        tokenizer: raw
+sleep_after: 1
+---
+# Ingest documents into simple_es_compat
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: simple_es_compat/ingest
+params:
+  commit: force
+ndjson:
+  - {"keyword_text": "red"}
+  - {"keyword_text": "gold$"}
