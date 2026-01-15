@@ -26,6 +26,8 @@ expected:
   docs.count: '0'
 - index: otel-traces-v0_9
   docs.count: '0'
+- index: simple_es_compat
+  docs.count: '2'
 ---
 method: [GET]
 engines:
