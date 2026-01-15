@@ -19,56 +19,78 @@ use std::task::{Context, Poll, ready};
 use std::time::Instant;
 
 use pin_project::{pin_project, pinned_drop};
-use quickwit_proto::search::LeafSearchResponse;
+use quickwit_proto::search::{LeafSearchResponse, SearchResponse};
 
 use crate::SearchError;
 use crate::metrics::SEARCH_METRICS;
 
-// root
+// planning
 
-pub enum RootSearchMetricsStep {
-    Plan,
-    Exec { num_targeted_splits: usize },
+/// Wrapper around the plan future to tracks error/cancellation metrics.
+/// Planning phase success isn't explicitely recorded as it can be deduced from
+/// the search phase metrics.
+#[pin_project(PinnedDrop)]
+pub struct SearchPlanMetricsFuture<F> {
+    #[pin]
+    pub tracked: F,
+    pub start: Instant,
+    pub is_success: Option<bool>,
 }
 
-/// Wrapper around the plan and search futures to track metrics.
+#[pinned_drop]
+impl<F> PinnedDrop for SearchPlanMetricsFuture<F> {
+    fn drop(self: Pin<&mut Self>) {
+        let status = match self.is_success {
+            // this is a partial success, actual status will be recorded during the search step
+            Some(true) => return,
+            Some(false) => "plan-error",
+            None => "plan-cancelled",
+        };
+
+        let label_values = [status];
+        SEARCH_METRICS
+            .root_search_requests_total
+            .with_label_values(label_values)
+            .inc();
+        SEARCH_METRICS
+            .root_search_request_duration_seconds
+            .with_label_values(label_values)
+            .observe(self.start.elapsed().as_secs_f64());
+    }
+}
+
+impl<F, R> Future for SearchPlanMetricsFuture<F>
+where F: Future<Output = crate::Result<R>>
+{
+    type Output = crate::Result<R>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.project();
+        let response = ready!(this.tracked.poll(cx));
+        if let Err(err) = &response {
+            tracing::error!(?err, "root search planning failed");
+        }
+        *this.is_success = Some(response.is_ok());
+        Poll::Ready(Ok(response?))
+    }
+}
+
+// root search
+
+/// Wrapper around the root search futures to track metrics.
 #[pin_project(PinnedDrop)]
 pub struct RootSearchMetricsFuture<F> {
     #[pin]
     pub tracked: F,
     pub start: Instant,
-    pub step: RootSearchMetricsStep,
-    pub is_success: Option<bool>,
+    pub num_targeted_splits: usize,
+    pub status: Option<&'static str>,
 }
 
 #[pinned_drop]
 impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
     fn drop(self: Pin<&mut Self>) {
-        let (num_targeted_splits, status) = match (&self.step, self.is_success) {
-            // is is a partial success, actual success is recorded during the search step
-            (RootSearchMetricsStep::Plan, Some(true)) => return,
-            (RootSearchMetricsStep::Plan, Some(false)) => (0, "plan-error"),
-            (RootSearchMetricsStep::Plan, None) => (0, "plan-cancelled"),
-            (
-                RootSearchMetricsStep::Exec {
-                    num_targeted_splits,
-                },
-                Some(true),
-            ) => (*num_targeted_splits, "success"),
-            (
-                RootSearchMetricsStep::Exec {
-                    num_targeted_splits,
-                },
-                Some(false),
-            ) => (*num_targeted_splits, "error"),
-            (
-                RootSearchMetricsStep::Exec {
-                    num_targeted_splits,
-                },
-                None,
-            ) => (*num_targeted_splits, "cancelled"),
-        };
-
+        let status = self.status.unwrap_or("cancelled");
         let label_values = [status];
         SEARCH_METRICS
             .root_search_requests_total
@@ -81,30 +103,39 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
         SEARCH_METRICS
             .root_search_targeted_splits
             .with_label_values(label_values)
-            .observe(num_targeted_splits as f64);
+            .observe(self.num_targeted_splits as f64);
     }
 }
 
-impl<F, R, E> Future for RootSearchMetricsFuture<F>
-where F: Future<Output = Result<R, E>>
+impl<F> Future for RootSearchMetricsFuture<F>
+where F: Future<Output = crate::Result<SearchResponse>>
 {
-    type Output = Result<R, E>;
+    type Output = crate::Result<SearchResponse>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let response = ready!(this.tracked.poll(cx));
-        *this.is_success = Some(response.is_ok());
+        if let Err(err) = &response {
+            tracing::error!(?err, "root search failed");
+        }
+        if let Ok(resp) = &response {
+            if resp.failed_splits.is_empty() {
+                *this.status = Some("success");
+            } else {
+                *this.status = Some("partial-success");
+            }
+        } else {
+            *this.status = Some("error");
+        }
         Poll::Ready(Ok(response?))
     }
 }
 
-// leaf
+// leaf search
 
 /// Wrapper around the search future to track metrics.
 #[pin_project(PinnedDrop)]
-pub struct LeafSearchMetricsFuture<F>
-where F: Future<Output = Result<LeafSearchResponse, SearchError>>
-{
+pub struct LeafSearchMetricsFuture<F> {
     #[pin]
     pub tracked: F,
     pub start: Instant,
@@ -113,9 +144,7 @@ where F: Future<Output = Result<LeafSearchResponse, SearchError>>
 }
 
 #[pinned_drop]
-impl<F> PinnedDrop for LeafSearchMetricsFuture<F>
-where F: Future<Output = Result<LeafSearchResponse, SearchError>>
-{
+impl<F> PinnedDrop for LeafSearchMetricsFuture<F> {
     fn drop(self: Pin<&mut Self>) {
         let label_values = [self.status.unwrap_or("cancelled")];
         SEARCH_METRICS
@@ -141,10 +170,10 @@ where F: Future<Output = Result<LeafSearchResponse, SearchError>>
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let response = ready!(this.tracked.poll(cx));
-        *this.status = if response.is_ok() {
-            Some("success")
-        } else {
-            Some("error")
+        *this.status = match &response {
+            Ok(resp) if !resp.failed_splits.is_empty() => Some("partial-success"),
+            Ok(_) => Some("success"),
+            Err(_) => Some("error"),
         };
         Poll::Ready(Ok(response?))
     }
