@@ -371,6 +371,7 @@ encoding_rs = "=0.8.35"
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }
+tantivy-fst = { git = "https://github.com/SekoiaLab/fst/", rev = "1997e450c52712357a2ffdbf0446263357ee0c02" }
 
 ## this patched version of tracing helps better understand what happens inside futures (when are
 ## they polled, how long does poll take...)
