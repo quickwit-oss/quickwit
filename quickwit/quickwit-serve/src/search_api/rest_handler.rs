@@ -210,6 +210,9 @@ pub struct SearchRequestQueryString {
     #[schema(value_type = bool)]
     #[serde(default)]
     pub allow_failed_splits: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub split_id: Option<String>,
 }
 
 mod count_hits_from_bool {
@@ -265,6 +268,7 @@ pub fn search_request_from_api_request(
         search_after: None,
         count_hits: search_request.count_all.into(),
         ignore_missing_indexes: false,
+        split_id: search_request.split_id,
     };
     Ok(search_request)
 }

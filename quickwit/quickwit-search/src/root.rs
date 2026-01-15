@@ -372,6 +372,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // to recompute it afterward.
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
         ignore_missing_indexes: req.ignore_missing_indexes,
+        split_id: req.split_id.clone(),
     })
 }
 
@@ -1149,6 +1150,18 @@ async fn refine_and_list_matches(
         metastore,
     )
     .await?;
+
+    if let Some(split_id) = &search_request.split_id {
+        for split_metadata in split_metadatas {
+            if &split_metadata.split_id == split_id {
+                return Ok(vec![split_metadata]);
+            }
+        }
+        return Err(SearchError::InvalidQuery(format!(
+            "split ID {split_id} not found for the given query"
+        )));
+    }
+
     Ok(split_metadatas)
 }
 
