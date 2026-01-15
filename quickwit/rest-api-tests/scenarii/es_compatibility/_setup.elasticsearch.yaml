@@ -7,6 +7,10 @@ method: DELETE
 endpoint: empty_index
 status_code: null
 ---
+method: DELETE
+endpoint: simple_es_compat
+status_code: null
+---
 # empty index
 method: PUT
 endpoint: empty_index
@@ -118,6 +122,23 @@ method: PUT
 endpoint: gharchive/_settings
 json: { "number_of_replicas": 0 }
 ---
+# Create index
+method: PUT
+endpoint: simple_es_compat
+json: {
+  "mappings": {
+    "properties": {
+      "keyword_text": {
+        "type": "keyword",
+      }
+    }
+  }
+}
+---
+method: PUT
+endpoint: simple_es_compat/_settings
+json: { "number_of_replicas": 0 }
+---
 # Ingest documents
 method: POST
 endpoint: _bulk
@@ -125,3 +146,14 @@ params:
   refresh: "true"
 headers: {"Content-Type": "application/json", "content-encoding": "gzip"}
 body_from_file: gharchive-bulk.json.gz
+---
+method: POST
+endpoint: _bulk
+params:
+  refresh: "true"
+headers: {"Content-Type": "application/json"}
+ndjson:
+  - {"index":{"_index":"simple_es_compat"}}
+  - {"keyword_text": "red"}
+  - {"index":{"_index":"simple_es_compat"}}
+  - {"keyword_text": "gold$"}
