@@ -65,8 +65,8 @@ enum OneOrMany {
 impl From<OneOrMany> for Vec<String> {
     fn from(one_or_many: OneOrMany) -> Vec<String> {
         match one_or_many {
-            OneOrMany::One(one_value) => vec![one_value.into()],
-            OneOrMany::Many(values) => values.into_iter().map(|v| v.into()).collect(),
+            OneOrMany::One(one_value) => vec![one_value.to_string()],
+            OneOrMany::Many(values) => values.into_iter().map(ToString::to_string).collect(),
         }
     }
 }
