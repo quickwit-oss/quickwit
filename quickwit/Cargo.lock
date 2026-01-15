@@ -7127,6 +7127,7 @@ dependencies = [
  "quickwit-serve",
  "quickwit-storage",
  "rand 0.9.2",
+ "rdkafka",
  "reqwest",
  "rustls 0.23.36",
  "serde_json",

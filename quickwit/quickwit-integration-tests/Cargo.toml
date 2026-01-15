@@ -11,6 +11,9 @@ authors.workspace = true
 license.workspace = true
 
 [features]
+kafka-broker-tests = [
+    "quickwit-indexing/kafka",
+]
 sqs-localstack-tests = [
     "quickwit-indexing/sqs",
     "quickwit-indexing/sqs-localstack-tests",
@@ -26,6 +29,7 @@ hyper = { workspace = true }
 hyper-util = { workspace = true }
 itertools = { workspace = true }
 rand = { workspace = true }
+rdkafka = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
 serde_json = { workspace = true }

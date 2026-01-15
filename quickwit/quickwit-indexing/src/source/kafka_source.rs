@@ -714,6 +714,10 @@ fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig>
     };
     let mut client_config = ClientConfig::new();
     for (key, value_json) in params {
+        if key == "indexing_settings" {
+            // used for QW per source settings override workaround
+            continue;
+        }
         let value = match value_json {
             JsonValue::Bool(value_bool) => value_bool.to_string(),
             JsonValue::Number(value_number) => value_number.to_string(),
@@ -834,6 +838,7 @@ mod kafka_broker_tests {
     {
         let producer: &FutureProducer = &ClientConfig::new()
             .set("bootstrap.servers", "localhost:9092")
+            .set("broker.address.family", "v4")
             .set("statistics.interval.ms", "500")
             .set("api.version.request", "true")
             .set("debug", "all")
@@ -1172,7 +1177,7 @@ mod kafka_broker_tests {
     #[tokio::test]
     async fn test_kafka_source_suggest_truncate() {
         let admin_client = create_admin_client();
-        let topic = append_random_suffix("test-kafka-source--suggest-truncate--topic");
+        let topic = append_random_suffix("test--source--suggest-truncate--topic");
         create_topic(&admin_client, &topic, 2).await.unwrap();
 
         let metastore = metastore_for_test();

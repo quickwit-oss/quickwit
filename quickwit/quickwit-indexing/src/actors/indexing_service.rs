@@ -31,7 +31,7 @@ use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::{io, temp_dir};
 use quickwit_config::{
-    INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, build_doc_mapper,
+    INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, SourceParams, build_doc_mapper,
     indexing_pipeline_params_fingerprint,
 };
 use quickwit_ingest::{
@@ -289,8 +289,23 @@ impl IndexingService {
                 let message = format!("failed to spawn indexing pipeline: {error}");
                 IndexingError::Internal(message)
             })?;
-        let merge_policy =
-            crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
+
+        let mut indexing_settings = index_config.indexing_settings.clone();
+        if let SourceParams::Kafka(kafka_params) = &source_config.source_params
+            && let Some(indexing_settings_value) =
+                kafka_params.client_params.get("indexing_settings")
+        {
+            if let Ok(indexing_pipeline) = serde_json::from_value(indexing_settings_value.clone()) {
+                indexing_settings = indexing_pipeline;
+            } else {
+                error!(
+                    index_id = indexing_pipeline_id.index_uid.index_id,
+                    source_id = indexing_pipeline_id.source_id,
+                    "source level override of indexing_settings failed, deserialization error"
+                );
+            }
+        }
+        let merge_policy = crate::merge_policy::merge_policy_from_settings(&indexing_settings);
         let retention_policy = index_config.retention_policy_opt.clone();
         let split_store = IndexingSplitStore::new(storage.clone(), self.local_split_store.clone());
 
@@ -345,7 +360,7 @@ impl IndexingService {
             // Indexing-related parameters
             doc_mapper,
             indexing_directory,
-            indexing_settings: index_config.indexing_settings.clone(),
+            indexing_settings,
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
