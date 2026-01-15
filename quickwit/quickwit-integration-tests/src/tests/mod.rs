@@ -19,6 +19,7 @@ mod ingest_v2_tests;
 mod kafka_tests;
 mod no_cp_tests;
 mod otlp_tests;
+mod secondary_timestamp;
 #[cfg(feature = "sqs-localstack-tests")]
 mod sqs_tests;
 mod tls_tests;

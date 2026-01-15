@@ -158,6 +158,48 @@ pub(super) fn append_query_filters_and_order_by(
         Bound::Unbounded => {}
     };
 
+    if let Some(v) = query.max_secondary_time_range_end {
+        sql.cond_where(any![
+            Expr::col(Splits::SecondaryTimeRangeEnd).lte(v),
+            sea_query::all![
+                Expr::col(Splits::SecondaryTimeRangeEnd).is_null(),
+                Expr::col(Splits::TimeRangeEnd).lte(v)
+            ]
+        ]);
+    }
+
+    match query.secondary_time_range.start {
+        Bound::Included(v) => {
+            sql.cond_where(any![
+                Expr::col(Splits::SecondaryTimeRangeEnd).gte(v),
+                Expr::col(Splits::SecondaryTimeRangeEnd).is_null()
+            ]);
+        }
+        Bound::Excluded(v) => {
+            sql.cond_where(any![
+                Expr::col(Splits::SecondaryTimeRangeEnd).gt(v),
+                Expr::col(Splits::SecondaryTimeRangeEnd).is_null()
+            ]);
+        }
+        Bound::Unbounded => {}
+    };
+
+    match query.secondary_time_range.end {
+        Bound::Included(v) => {
+            sql.cond_where(any![
+                Expr::col(Splits::SecondaryTimeRangeStart).lte(v),
+                Expr::col(Splits::SecondaryTimeRangeStart).is_null()
+            ]);
+        }
+        Bound::Excluded(v) => {
+            sql.cond_where(any![
+                Expr::col(Splits::SecondaryTimeRangeStart).lt(v),
+                Expr::col(Splits::SecondaryTimeRangeStart).is_null()
+            ]);
+        }
+        Bound::Unbounded => {}
+    };
+
     match &query.mature {
         Bound::Included(evaluation_datetime) => {
             sql.cond_where(any![

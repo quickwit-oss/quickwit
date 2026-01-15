@@ -59,6 +59,11 @@ pub(crate) struct SplitMetadataV0_8 {
     /// the split.
     pub time_range: Option<RangeInclusive<i64>>,
 
+    #[schema(value_type = Option<Object>)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// The min / max ingestion time in the split.
+    pub secondary_time_range: Option<RangeInclusive<i64>>,
+
     /// Timestamp for tracking when the split was created.
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
@@ -122,6 +127,7 @@ impl From<SplitMetadataV0_8> for SplitMetadata {
             num_docs: v8.num_docs,
             uncompressed_docs_size_in_bytes: v8.uncompressed_docs_size_in_bytes,
             time_range: v8.time_range,
+            secondary_time_range: v8.secondary_time_range,
             create_timestamp: v8.create_timestamp,
             maturity: v8.maturity,
             tags: v8.tags,
@@ -144,6 +150,7 @@ impl From<SplitMetadata> for SplitMetadataV0_8 {
             num_docs: split.num_docs,
             uncompressed_docs_size_in_bytes: split.uncompressed_docs_size_in_bytes,
             time_range: split.time_range,
+            secondary_time_range: split.secondary_time_range,
             create_timestamp: split.create_timestamp,
             maturity: split.maturity,
             tags: split.tags,

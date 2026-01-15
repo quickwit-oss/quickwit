@@ -126,6 +126,13 @@ pub struct DocMapping {
     #[serde(default)]
     pub timestamp_field: Option<String>,
 
+    /// Field with the secondary timestamp. A new secondary time can be added
+    /// but it cannot be changed. If the secondary timestamp is missing from a
+    /// document in the split, the range is not set in the split metadata.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secondary_timestamp_field: Option<String>,
+
     /// Declares the low cardinality fields for which the values ​​are recorded directly in the
     /// splits metadata.
     #[schema(value_type = Vec<String>)]
@@ -199,6 +206,7 @@ mod tests {
                 },
             ],
             timestamp_field: Some("timestamp".to_string()),
+            secondary_timestamp_field: None,
             tag_fields: BTreeSet::from_iter(["level".to_string()]),
             partition_key: Some("tenant_id".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),

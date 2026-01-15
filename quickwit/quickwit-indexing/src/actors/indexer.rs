@@ -40,7 +40,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{DocMappingUid, PublishToken};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
-use tantivy::schema::Schema;
+use tantivy::schema::{Field, Schema, Value};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, IndexBuilder, IndexSettings};
@@ -94,6 +94,7 @@ struct IndexerState {
     publish_token_opt: Option<PublishToken>,
     schema: Schema,
     doc_mapping_uid: DocMappingUid,
+    secondary_time_field_opt: Option<Field>,
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
@@ -326,6 +327,28 @@ impl IndexerState {
             if let Some(timestamp) = timestamp_opt {
                 record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
             }
+            if let Some(secondary_timestamp_field) = self.secondary_time_field_opt {
+                let secondary_timestamp_opt = doc
+                    .get_first(secondary_timestamp_field)
+                    .and_then(|val| val.as_datetime());
+                if let Some(secondary_timestamp) = secondary_timestamp_opt {
+                    record_timestamp(
+                        secondary_timestamp,
+                        &mut indexed_split.split_attrs.secondary_time_range,
+                    );
+                } else {
+                    // The secondary timestamp should always be present. If not,
+                    // we cannot derive a range for the split.
+                    indexed_split.split_attrs.secondary_time_range =
+                        Some(DateTime::MIN..=DateTime::MAX);
+                    quickwit_common::rate_limited_warn!(
+                        limit_per_min = 1,
+                        index_id = self.pipeline_id.index_uid.index_id,
+                        split_id = indexed_split.split_id(),
+                        "secondary timestamp field missing"
+                    );
+                }
+            }
             let _protect_guard = ctx.protect_zone();
             indexed_split
                 .index_writer
@@ -338,6 +361,12 @@ impl IndexerState {
         memory_usage.add(memory_usage_delta);
         Ok(())
     }
+}
+
+fn extract_secondary_timestamp_field(doc_mapper: &DocMapper) -> Option<Field> {
+    let schema = doc_mapper.schema();
+    let timestamp_field_name = doc_mapper.secondary_timestamp_field_name()?;
+    schema.get_field(timestamp_field_name).ok()
 }
 
 /// A workbench hosts the set of `IndexedSplit` that are being built.
@@ -570,6 +599,7 @@ impl Indexer {
                 publish_token_opt: None,
                 schema,
                 doc_mapping_uid: doc_mapper.doc_mapping_uid(),
+                secondary_time_field_opt: extract_secondary_timestamp_field(&doc_mapper),
                 tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
@@ -1659,6 +1689,165 @@ mod tests {
             IndexCheckpointDelta::for_test("test-source", 4..8)
         );
 
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    fn doc_mapper_with_secondary_time() -> DocMapper {
+        const JSON_CONFIG_VALUE: &str = r#"
+        {
+            "store_source": true,
+            "index_field_presence": true,
+            "default_search_fields": ["body"],
+            "timestamp_field": "timestamp",
+            "secondary_timestamp_field": "event.created",
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "datetime",
+                    "output_format": "unix_timestamp_secs",
+                    "fast": true
+                },
+                {
+                    "name": "body",
+                    "type": "text",
+                    "stored": true
+                },
+                {
+                    "name": "event",
+                    "type": "object",
+                    "field_mappings": [
+                        {
+                            "name": "created",
+                            "type": "datetime",
+                            "output_format": "unix_timestamp_secs",
+                            "fast": true
+                        }
+                    ]
+                }
+            ]
+        }"#;
+        serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_indexer_primary_and_secondary_time() -> anyhow::Result<()> {
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let pipeline_id = IndexingPipelineId {
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from("test-node"),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let doc_mapper = Arc::new(doc_mapper_with_secondary_time());
+        let last_delete_opstamp = 10;
+        let schema = doc_mapper.schema();
+        let body_field = schema.get_field("body").unwrap();
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let event_created_field = schema.get_field("event.created").unwrap();
+        let indexing_directory = TempDirectory::for_test();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.split_num_docs_target = 3;
+        let universe = Universe::with_accelerated_time();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_splits().never();
+        mock_metastore
+            .expect_last_delete_opstamp()
+            .times(1)
+            .returning(move |delete_opstamp_request| {
+                assert_eq!(delete_opstamp_request.index_uid(), &index_uid);
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
+            });
+        mock_metastore.expect_publish_splits().never();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            indexing_directory,
+            indexing_settings,
+            None,
+            index_serializer_mailbox,
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+        indexer_mailbox
+            .send_message(ProcessedDocBatch::new(
+                vec![
+                    ProcessedDoc {
+                        doc: doc!(
+                            body_field=>"this is a test document",
+                            timestamp_field=>DateTime::from_timestamp_secs(1_662_000_435),
+                            event_created_field=>DateTime::from_timestamp_secs(1_663_000_435),
+                        ),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_000_435)),
+                        partition: 1,
+                        num_bytes: 30,
+                    },
+                    ProcessedDoc {
+                        doc: doc!(
+                            body_field=>"this is a test document 2",
+                            timestamp_field=>DateTime::from_timestamp_secs(1_662_000_535),
+                            event_created_field=>DateTime::from_timestamp_secs(1_663_000_535),
+                        ),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_000_535)),
+                        partition: 1,
+                        num_bytes: 30,
+                    },
+                ],
+                SourceCheckpointDelta::from_range(4..6),
+                false,
+            ))
+            .await?;
+        indexer_mailbox
+            .send_message(ProcessedDocBatch::new(
+                vec![
+                    ProcessedDoc {
+                        doc: doc!(
+                            body_field=>"this is a test document 3",
+                            timestamp_field=>DateTime::from_timestamp_secs(1_662_000_635),
+                            event_created_field=>DateTime::from_timestamp_secs(1_663_000_635),
+                        ),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_000_635)),
+                        partition: 1,
+                        num_bytes: 30,
+                    },
+                    ProcessedDoc {
+                        doc: doc!(
+                            body_field=>"this is a test document 4",
+                            timestamp_field=>DateTime::from_timestamp_secs(1_662_000_735),
+                            event_created_field=>DateTime::from_timestamp_secs(1_663_000_735),
+                        ),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_000_735)),
+                        partition: 1,
+                        num_bytes: 30,
+                    },
+                ],
+                SourceCheckpointDelta::from_range(6..8),
+                false,
+            ))
+            .await?;
+
+        indexer_handle.process_pending_and_observe().await;
+        let messages: Vec<IndexedSplitBatchBuilder> = index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(messages.len(), 1);
+        let batch = messages.into_iter().next().unwrap();
+        assert_eq!(batch.commit_trigger, CommitTrigger::NumDocsLimit);
+        assert_eq!(batch.splits.len(), 1);
+        let new_split_attrs = &batch.splits[0].split_attrs;
+        assert_eq!(new_split_attrs.num_docs, 4);
+
+        assert_eq!(
+            new_split_attrs.time_range.as_ref().unwrap(),
+            &(DateTime::from_timestamp_secs(1_662_000_435)
+                ..=DateTime::from_timestamp_secs(1_662_000_735))
+        );
+        assert_eq!(
+            new_split_attrs.secondary_time_range.as_ref().unwrap(),
+            &(DateTime::from_timestamp_secs(1_663_000_435)
+                ..=DateTime::from_timestamp_secs(1_663_000_735))
+        );
+
+        batch.splits.into_iter().next().unwrap().finalize()?;
         universe.assert_quit().await;
         Ok(())
     }

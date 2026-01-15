@@ -97,6 +97,9 @@ pub struct SplitMetadata {
     /// the split, expressed in seconds.
     pub time_range: Option<RangeInclusive<i64>>,
 
+    /// The min / max ingestion time in the split.
+    pub secondary_time_range: Option<RangeInclusive<i64>>,
+
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: i64,
 
@@ -148,6 +151,7 @@ impl fmt::Debug for SplitMetadata {
             &self.uncompressed_docs_size_in_bytes,
         );
         debug_struct.field("time_range", &self.time_range);
+        debug_struct.field("secondary_time_range", &self.secondary_time_range);
         debug_struct.field("create_timestamp", &self.create_timestamp);
         debug_struct.field("maturity", &self.maturity);
         if !self.tags.is_empty() {
@@ -273,6 +277,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             num_docs: 12303,
             uncompressed_docs_size_in_bytes: 234234,
             time_range: Some(121000..=130198),
+            secondary_time_range: None,
             create_timestamp: 3,
             maturity: SplitMaturity::Immature {
                 maturation_period: Duration::from_secs(4),
@@ -406,6 +411,7 @@ mod tests {
             num_docs: 100,
             uncompressed_docs_size_in_bytes: 1024,
             time_range: Some(0..=100),
+            secondary_time_range: Some(120000..=130000),
             create_timestamp: 1629867600,
             maturity: SplitMaturity::Mature,
             tags: {
@@ -423,14 +429,14 @@ mod tests {
             doc_mapping_uid: DocMappingUid::default(),
         };
 
-        let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { \
-                               index_id: \"00000000-0000-0000-0000-000000000000\", \
-                               incarnation_id: Ulid(0) }, partition_id: 0, source_id: \
-                               \"source-1\", node_id: \"node-1\", num_docs: 100, \
-                               uncompressed_docs_size_in_bytes: 1024, time_range: Some(0..=100), \
-                               create_timestamp: 1629867600, maturity: Mature, tags: \
-                               \"{\\\"🐱\\\", \\\"😻\\\", \\\"😼\\\", \\\"😿\\\", and 1 more}\", \
-                               footer_offsets: 0..1024, delete_opstamp: 0, num_merge_ops: 0 }";
+        let expected_output =
+            "SplitMetadata { split_id: \"split-1\", index_uid: IndexUid { index_id: \
+             \"00000000-0000-0000-0000-000000000000\", incarnation_id: Ulid(0) }, partition_id: \
+             0, source_id: \"source-1\", node_id: \"node-1\", num_docs: 100, \
+             uncompressed_docs_size_in_bytes: 1024, time_range: Some(0..=100), \
+             secondary_time_range: Some(120000..=130000), create_timestamp: 1629867600, maturity: \
+             Mature, tags: \"{\\\"🐱\\\", \\\"😻\\\", \\\"😼\\\", \\\"😿\\\", and 1 more}\", \
+             footer_offsets: 0..1024, delete_opstamp: 0, num_merge_ops: 0 }";
 
         assert_eq!(format!("{split_metadata:?}"), expected_output);
     }

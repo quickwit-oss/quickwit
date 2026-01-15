@@ -59,6 +59,7 @@ pub struct SplitAttrs {
     pub uncompressed_docs_size_in_bytes: u64,
 
     pub time_range: Option<RangeInclusive<DateTime>>,
+    pub secondary_time_range: Option<RangeInclusive<DateTime>>,
 
     pub replaced_split_ids: Vec<String>,
 
@@ -100,12 +101,22 @@ pub fn create_split_metadata(
         .as_ref()
         .map(|range| range.start().into_timestamp_secs()..=range.end().into_timestamp_secs());
 
+    let secondary_time_range = split_attrs
+        .secondary_time_range
+        .as_ref()
+        // don't record the range if an event was missing the secondary timestamp
+        .filter(|range| range != &&(DateTime::MIN..=DateTime::MAX))
+        .map(|range| range.start().into_timestamp_secs()..=range.end().into_timestamp_secs());
+
     let mut maturity =
         merge_policy.split_maturity(split_attrs.num_docs as usize, split_attrs.num_merge_ops);
     if let Some(max_maturity) = max_maturity_before_end_of_retention(
         retention_policy,
         create_timestamp,
         time_range.as_ref().map(|time_range| *time_range.end()),
+        secondary_time_range
+            .as_ref()
+            .map(|time_range| *time_range.end()),
     ) {
         maturity = maturity.min(max_maturity);
     }
@@ -118,6 +129,7 @@ pub fn create_split_metadata(
         partition_id: split_attrs.partition_id,
         num_docs: split_attrs.num_docs as usize,
         time_range,
+        secondary_time_range,
         uncompressed_docs_size_in_bytes: split_attrs.uncompressed_docs_size_in_bytes,
         create_timestamp,
         maturity,
@@ -134,9 +146,14 @@ fn max_maturity_before_end_of_retention(
     retention_policy: Option<&quickwit_config::RetentionPolicy>,
     create_timestamp: i64,
     time_range_end: Option<i64>,
+    secondary_time_range_end: Option<i64>,
 ) -> Option<SplitMaturity> {
-    let time_range_end = time_range_end? as u64;
-    let retention_period_s = retention_policy?.retention_period().ok()?.as_secs();
+    let retention_policy = retention_policy?;
+    let time_range_end = match retention_policy.timestamp_type {
+        quickwit_config::RetentionTimestampType::Primary => time_range_end? as u64,
+        quickwit_config::RetentionTimestampType::Secondary => secondary_time_range_end? as u64,
+    };
+    let retention_period_s = retention_policy.retention_period().ok()?.as_secs();
 
     let maturity = if let Some(maturation_period_s) =
         (time_range_end + retention_period_s).checked_sub(create_timestamp as u64)
@@ -165,6 +182,7 @@ mod tests {
         let retention_policy = quickwit_config::RetentionPolicy {
             evaluation_schedule: "daily".to_string(),
             retention_period: "300 sec".to_string(),
+            timestamp_type: Default::default(),
         };
         let create_timestamp = 1000;
 
@@ -174,6 +192,7 @@ mod tests {
                 Some(&retention_policy),
                 create_timestamp,
                 Some(200),
+                None,
             ),
             Some(SplitMaturity::Mature)
         );
@@ -184,6 +203,7 @@ mod tests {
                 Some(&retention_policy),
                 create_timestamp,
                 Some(750),
+                None,
             ),
             Some(SplitMaturity::Immature {
                 maturation_period: Duration::from_secs(50)
@@ -192,14 +212,19 @@ mod tests {
 
         // no retention policy
         assert_eq!(
-            max_maturity_before_end_of_retention(None, create_timestamp, Some(850),),
+            max_maturity_before_end_of_retention(None, create_timestamp, Some(850), None),
             None,
         );
 
         // no timestamp_range.end but a retention policy, that's odd, don't change anything about
         // the maturity period
         assert_eq!(
-            max_maturity_before_end_of_retention(Some(&retention_policy), create_timestamp, None,),
+            max_maturity_before_end_of_retention(
+                Some(&retention_policy),
+                create_timestamp,
+                None,
+                None
+            ),
             None,
         );
     }

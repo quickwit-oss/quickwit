@@ -214,6 +214,45 @@ pub async fn list_relevant_splits(
     Ok(splits_metadata)
 }
 
+/// Extract the list of relevant splits for a given request.
+pub async fn list_relevant_splits_with_secondary_time(
+    index_uids: Vec<IndexUid>,
+    start_timestamp: Option<i64>,
+    end_timestamp: Option<i64>,
+    start_secondary_timestamp: Option<i64>,
+    end_secondary_timestamp: Option<i64>,
+    tags_filter_opt: Option<TagFilterAst>,
+    metastore: &mut MetastoreServiceClient,
+) -> crate::Result<Vec<SplitMetadata>> {
+    let Some(mut query) = ListSplitsQuery::try_from_index_uids(index_uids) else {
+        return Ok(Vec::new());
+    };
+    query = query.with_split_state(SplitState::Published);
+
+    if let Some(start_ts) = start_timestamp {
+        query = query.with_time_range_start_gte(start_ts);
+    }
+    if let Some(end_ts) = end_timestamp {
+        query = query.with_time_range_end_lt(end_ts);
+    }
+    if let Some(start_ts) = start_secondary_timestamp {
+        query = query.with_secondary_time_range_start_gte(start_ts);
+    }
+    if let Some(end_ts) = end_secondary_timestamp {
+        query = query.with_secondary_time_range_end_lt(end_ts);
+    }
+    if let Some(tags_filter) = tags_filter_opt {
+        query = query.with_tags_filter(tags_filter);
+    }
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(&query)?;
+    let splits_metadata: Vec<SplitMetadata> = metastore
+        .list_splits(list_splits_request)
+        .await?
+        .collect_splits_metadata()
+        .await?;
+    Ok(splits_metadata)
+}
+
 /// Resolve index patterns and returns IndexMetadata for found indices.
 /// Patterns follow the elastic search patterns.
 pub async fn resolve_index_patterns(

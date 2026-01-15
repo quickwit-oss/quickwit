@@ -206,6 +206,20 @@ pub struct SearchSettings {
     pub default_search_fields: Vec<String>,
 }
 
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize, Default, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RetentionTimestampType {
+    #[default]
+    Primary,
+    Secondary,
+}
+
+impl RetentionTimestampType {
+    pub fn is_primary(&self) -> bool {
+        matches!(self, RetentionTimestampType::Primary)
+    }
+}
+
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RetentionPolicy {
@@ -220,6 +234,11 @@ pub struct RetentionPolicy {
     #[serde(default = "RetentionPolicy::default_schedule")]
     #[serde(rename = "schedule")]
     pub evaluation_schedule: String,
+
+    /// The target timestamp field to use for retention evaluation. When the
+    /// range is not in the split's metadata, the split is never deleted.
+    #[serde(default, skip_serializing_if = "RetentionTimestampType::is_primary")]
+    pub timestamp_type: RetentionTimestampType,
 }
 
 impl RetentionPolicy {
@@ -467,6 +486,7 @@ impl crate::TestableForRegression for IndexConfig {
                 message_mapping,
             ],
             timestamp_field: Some("timestamp".to_string()),
+            secondary_timestamp_field: None,
             tag_fields: BTreeSet::from_iter(["tenant_id".to_string(), "log_level".to_string()]),
             partition_key: Some("tenant_id".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),
@@ -502,6 +522,7 @@ impl crate::TestableForRegression for IndexConfig {
         let retention_policy_opt = Some(RetentionPolicy {
             retention_period: "90 days".to_string(),
             evaluation_schedule: "daily".to_string(),
+            timestamp_type: RetentionTimestampType::Primary,
         });
         IndexConfig {
             index_id: "my-index".to_string(),
@@ -674,6 +695,7 @@ mod tests {
         let expected_retention_policy = RetentionPolicy {
             retention_period: "90 days".to_string(),
             evaluation_schedule: "daily".to_string(),
+            timestamp_type: RetentionTimestampType::Primary,
         };
         assert_eq!(
             index_config.retention_policy_opt.unwrap(),
@@ -853,6 +875,7 @@ mod tests {
         let retention_policy = RetentionPolicy {
             retention_period: "90 days".to_string(),
             evaluation_schedule: "hourly".to_string(),
+            timestamp_type: RetentionTimestampType::Primary,
         };
         let retention_policy_yaml = serde_yaml::to_string(&retention_policy).unwrap();
         assert_eq!(
@@ -873,6 +896,7 @@ mod tests {
             let expected_retention_policy = RetentionPolicy {
                 retention_period: "90 days".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
             };
             assert_eq!(retention_policy, expected_retention_policy);
         }
@@ -887,6 +911,23 @@ mod tests {
             let expected_retention_policy = RetentionPolicy {
                 retention_period: "90 days".to_string(),
                 evaluation_schedule: "daily".to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
+            };
+            assert_eq!(retention_policy, expected_retention_policy);
+        }
+        {
+            let retention_policy_yaml = r#"
+            period: 90 days
+            schedule: daily
+            timestamp_type: secondary
+        "#;
+            let retention_policy =
+                serde_yaml::from_str::<RetentionPolicy>(retention_policy_yaml).unwrap();
+
+            let expected_retention_policy = RetentionPolicy {
+                retention_period: "90 days".to_string(),
+                evaluation_schedule: "daily".to_string(),
+                timestamp_type: RetentionTimestampType::Secondary,
             };
             assert_eq!(retention_policy, expected_retention_policy);
         }
@@ -898,6 +939,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
             };
             assert_eq!(
                 retention_policy.retention_period().unwrap(),
@@ -907,6 +949,7 @@ mod tests {
                 let retention_policy = RetentionPolicy {
                     retention_period: "foo".to_string(),
                     evaluation_schedule: "hourly".to_string(),
+                    timestamp_type: RetentionTimestampType::Primary,
                 };
                 assert_eq!(
                     retention_policy.retention_period().unwrap_err().to_string(),
@@ -931,6 +974,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "@hourly".to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
             };
             assert_eq!(
                 retention_policy.evaluation_schedule().unwrap(),
@@ -941,6 +985,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
             };
             assert_eq!(
                 retention_policy.evaluation_schedule().unwrap(),
@@ -951,6 +996,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "0 * * * * *".to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
             };
             let evaluation_schedule = retention_policy.evaluation_schedule().unwrap();
             assert_eq!(evaluation_schedule.seconds().count(), 1);
@@ -964,6 +1010,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
             };
             retention_policy.validate().unwrap();
         }
@@ -971,6 +1018,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "foo".to_string(),
                 evaluation_schedule: "hourly".to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
             };
             retention_policy.validate().unwrap_err();
         }
@@ -978,6 +1026,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: "foo".to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
             };
             retention_policy.validate().unwrap_err();
         }
@@ -990,6 +1039,7 @@ mod tests {
             let retention_policy = RetentionPolicy {
                 retention_period: "1 hour".to_string(),
                 evaluation_schedule: schedule_str.to_string(),
+                timestamp_type: RetentionTimestampType::Primary,
             };
 
             let next_evaluation_duration = chrono::Duration::nanoseconds(

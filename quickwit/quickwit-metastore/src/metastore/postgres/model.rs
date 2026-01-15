@@ -79,6 +79,8 @@ pub enum Splits {
     SplitState,
     TimeRangeStart,
     TimeRangeEnd,
+    SecondaryTimeRangeStart,
+    SecondaryTimeRangeEnd,
     CreateTimestamp,
     UpdateTimestamp,
     PublishTimestamp,
@@ -128,6 +130,10 @@ pub(super) struct PgSplit {
     pub index_uid: IndexUid,
     /// Delete opstamp.
     pub delete_opstamp: i64,
+    /// The min timestamp for the secondary time dimension.
+    pub secondary_time_range_start: Option<i64>,
+    /// The max timestamp for the secondary time dimension.
+    pub secondary_time_range_end: Option<i64>,
 }
 
 impl PgSplit {

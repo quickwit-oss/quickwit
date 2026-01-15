@@ -658,6 +658,12 @@ pub struct ListSplitsQuery {
     /// The maximum time range end to filter by.
     pub max_time_range_end: Option<i64>,
 
+    /// The time range to filter by on the secondary timestamp.
+    pub secondary_time_range: FilterRange<i64>,
+
+    /// The maximum time range end to filter by on the secondary timestamp.
+    pub max_secondary_time_range_end: Option<i64>,
+
     /// The delete opstamp range to filter by.
     pub delete_opstamp: FilterRange<u64>,
 
@@ -725,6 +731,8 @@ impl ListSplitsQuery {
             tags: None,
             time_range: Default::default(),
             max_time_range_end: None,
+            secondary_time_range: Default::default(),
+            max_secondary_time_range_end: None,
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
@@ -749,6 +757,8 @@ impl ListSplitsQuery {
             tags: None,
             time_range: Default::default(),
             max_time_range_end: None,
+            secondary_time_range: Default::default(),
+            max_secondary_time_range_end: None,
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
@@ -769,6 +779,8 @@ impl ListSplitsQuery {
             tags: None,
             time_range: Default::default(),
             max_time_range_end: None,
+            secondary_time_range: Default::default(),
+            max_secondary_time_range_end: None,
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
@@ -846,6 +858,28 @@ impl ListSplitsQuery {
     /// *less than or equal to* the provided value.
     pub fn with_max_time_range_end(mut self, v: i64) -> Self {
         self.max_time_range_end = Some(v);
+        self
+    }
+
+    /// Sets the field's lower bound to match values that are
+    /// *less than* the provided value.
+    pub fn with_secondary_time_range_end_lt(mut self, v: i64) -> Self {
+        self.secondary_time_range.end = Bound::Excluded(v);
+        self
+    }
+
+    /// Sets the field's upper bound to match values that are
+    /// *greater than or equal to* the provided value.
+    pub fn with_secondary_time_range_start_gte(mut self, v: i64) -> Self {
+        self.secondary_time_range.start = Bound::Included(v);
+        self
+    }
+
+    /// Retains only splits with a secondary time range end that is defined and
+    /// *less than or equal to* the provided value. If the secondary time range
+    /// end is not defined, falls back to the primary.
+    pub fn with_max_secondary_time_range_end(mut self, v: i64) -> Self {
+        self.max_secondary_time_range_end = Some(v);
         self
     }
 

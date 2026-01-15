@@ -17,6 +17,7 @@ mod factory;
 mod metastore;
 mod metrics;
 mod migrator;
+mod migrator_sk;
 mod model;
 mod pool;
 mod split_stream;

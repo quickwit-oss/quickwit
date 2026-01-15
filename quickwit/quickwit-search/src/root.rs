@@ -56,7 +56,7 @@ use crate::search_response_rest::StorageRequestCount;
 use crate::service::SearcherContext;
 use crate::{
     SearchError, SearchJobPlacer, SearchPlanResponseRest, SearchServiceClient,
-    extract_split_and_footer_offsets, list_relevant_splits,
+    extract_split_and_footer_offsets, list_relevant_splits_with_secondary_time,
 };
 
 /// Maximum accepted scroll TTL.
@@ -280,6 +280,35 @@ fn validate_request_and_build_metadata(
         indexes_meta_for_leaf_search,
         sort_fields_is_datetime,
     })
+}
+
+fn validate_secondary_time(index_metadata: &[IndexMetadata]) -> crate::Result<Option<String>> {
+    let mut secondary_timestamp_field_opt = None;
+    for index_metadata in index_metadata {
+        let index_secondary_timestamp_field_opt = index_metadata
+            .index_config
+            .doc_mapping
+            .secondary_timestamp_field
+            .as_deref();
+        if let Some(index_secondary_timestamp_field) = index_secondary_timestamp_field_opt {
+            match secondary_timestamp_field_opt {
+                Some(secondary_timestamp_field)
+                    if secondary_timestamp_field != index_secondary_timestamp_field =>
+                {
+                    return Err(SearchError::InvalidQuery(
+                        "the timestamp field (if present) must be the same for all indexes"
+                            .to_string(),
+                    ));
+                }
+                None => {
+                    secondary_timestamp_field_opt =
+                        Some(index_secondary_timestamp_field.to_string());
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(secondary_timestamp_field_opt)
 }
 
 /// Validate sort field types.
@@ -1119,6 +1148,7 @@ async fn refine_and_list_matches(
     query_ast_resolved: QueryAst,
     sort_fields_is_datetime: HashMap<String, bool>,
     timestamp_field_opt: Option<String>,
+    secondary_timestamp_field_opt: Option<String>,
 ) -> crate::Result<Vec<SplitMetadata>> {
     let index_uids = indexes_metadata
         .iter()
@@ -1138,14 +1168,28 @@ async fn refine_and_list_matches(
             &mut search_request.end_timestamp,
         );
     }
+
+    let mut start_secondary_timestamp_opt: Option<i64> = None;
+    let mut end_secondary_timestamp_opt: Option<i64> = None;
+    if let Some(secondary_timestamp_field) = &secondary_timestamp_field_opt {
+        refine_start_end_timestamp_from_ast(
+            &query_ast_resolved,
+            secondary_timestamp_field,
+            &mut start_secondary_timestamp_opt,
+            &mut end_secondary_timestamp_opt,
+        );
+    }
+
     let tag_filter_ast = extract_tags_from_query(query_ast_resolved);
 
     // TODO if search after is set, we sort by timestamp and we don't want to count all results,
     // we can refine more here. Same if we sort by _shard_doc
-    let split_metadatas: Vec<SplitMetadata> = list_relevant_splits(
+    let split_metadatas: Vec<SplitMetadata> = list_relevant_splits_with_secondary_time(
         index_uids,
         search_request.start_timestamp,
         search_request.end_timestamp,
+        start_secondary_timestamp_opt,
+        end_secondary_timestamp_opt,
         tag_filter_ast,
         metastore,
     )
@@ -1191,6 +1235,7 @@ async fn plan_splits_for_root_search(
     }
 
     let request_metadata = validate_request_and_build_metadata(&indexes_metadata, search_request)?;
+    let secondary_timestamp_field_opt = validate_secondary_time(&indexes_metadata)?;
     let split_metadatas = refine_and_list_matches(
         metastore,
         search_request,
@@ -1198,6 +1243,7 @@ async fn plan_splits_for_root_search(
         request_metadata.query_ast_resolved,
         request_metadata.sort_fields_is_datetime,
         request_metadata.timestamp_field_opt,
+        secondary_timestamp_field_opt,
     )
     .await?;
     Ok((
@@ -1315,6 +1361,7 @@ pub async fn search_plan(
     .map_err(|err| SearchError::Internal(format!("failed to build doc mapper. cause: {err}")))?;
 
     let request_metadata = validate_request_and_build_metadata(&indexes_metadata, &search_request)?;
+    let secondary_timestamp_field_opt = validate_secondary_time(&indexes_metadata)?;
     let split_metadatas = refine_and_list_matches(
         &mut metastore,
         &mut search_request,
@@ -1322,6 +1369,7 @@ pub async fn search_plan(
         request_metadata.query_ast_resolved.clone(),
         request_metadata.sort_fields_is_datetime,
         request_metadata.timestamp_field_opt,
+        secondary_timestamp_field_opt,
     )
     .await?;
 

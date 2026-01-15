@@ -276,6 +276,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         split_id: split_id_3.clone(),
         index_uid: index_uid.clone(),
         time_range: Some(200..=299),
+        secondary_time_range: Some(800..=899),
         create_timestamp: current_timestamp,
         maturity: SplitMaturity::Immature {
             maturation_period: Duration::from_secs(20),
@@ -290,6 +291,7 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         split_id: split_id_4.clone(),
         index_uid: index_uid.clone(),
         time_range: Some(300..=399),
+        secondary_time_range: Some(900..=999),
         tags: to_btree_set(&["tag!", "tag:foo", "$tag!"]),
         delete_opstamp: 7,
         ..Default::default()
@@ -889,6 +891,106 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(split_ids, &[&split_id_2, &split_id_3]);
+
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .with_secondary_time_range_start_gte(0)
+            .with_secondary_time_range_end_lt(1);
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        let split_ids = collect_split_ids(&splits);
+        assert_eq!(
+            split_ids,
+            &[&split_id_1, &split_id_2, &split_id_5, &split_id_6]
+        );
+
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .with_secondary_time_range_start_gte(500)
+            .with_secondary_time_range_end_lt(800);
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        let split_ids = collect_split_ids(&splits);
+        assert_eq!(
+            split_ids,
+            &[&split_id_1, &split_id_2, &split_id_5, &split_id_6]
+        );
+
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .with_secondary_time_range_start_gte(500)
+            .with_secondary_time_range_end_lt(801);
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        let split_ids = collect_split_ids(&splits);
+        assert_eq!(
+            split_ids,
+            &[
+                &split_id_1,
+                &split_id_2,
+                &split_id_3,
+                &split_id_5,
+                &split_id_6
+            ]
+        );
+
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .with_secondary_time_range_start_gte(950)
+            .with_secondary_time_range_end_lt(1000);
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        let split_ids = collect_split_ids(&splits);
+        assert_eq!(
+            split_ids,
+            &[
+                &split_id_1,
+                &split_id_2,
+                &split_id_4,
+                &split_id_5,
+                &split_id_6
+            ]
+        );
+
+        let query =
+            ListSplitsQuery::for_index(index_uid.clone()).with_max_secondary_time_range_end(950);
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        let split_ids = collect_split_ids(&splits);
+        assert_eq!(split_ids, &[&split_id_1, &split_id_2, &split_id_3]);
+
+        let query =
+            ListSplitsQuery::for_index(index_uid.clone()).with_max_secondary_time_range_end(150);
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_list_splits_query(&query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        let split_ids = collect_split_ids(&splits);
+        assert_eq!(split_ids, &[&split_id_1]);
 
         cleanup_index(&mut metastore, index_uid).await;
     }

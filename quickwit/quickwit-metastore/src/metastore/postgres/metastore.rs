@@ -131,6 +131,9 @@ impl PostgresqlMetastore {
 
         run_migrations(&connection_pool, skip_migrations, skip_locking).await?;
 
+        super::migrator_sk::run_fork_migrations(&connection_pool, skip_migrations, skip_locking)
+            .await?;
+
         let metastore = PostgresqlMetastore {
             uri: connection_uri.clone(),
             connection_pool,
@@ -594,6 +597,8 @@ impl MetastoreService for PostgresqlMetastore {
         let mut split_ids = Vec::with_capacity(splits_metadata.len());
         let mut time_range_start_list = Vec::with_capacity(splits_metadata.len());
         let mut time_range_end_list = Vec::with_capacity(splits_metadata.len());
+        let mut secondary_time_range_start_list = Vec::with_capacity(splits_metadata.len());
+        let mut secondary_time_range_end_list = Vec::with_capacity(splits_metadata.len());
         let mut tags_list = Vec::with_capacity(splits_metadata.len());
         let mut splits_metadata_json = Vec::with_capacity(splits_metadata.len());
         let mut delete_opstamps = Vec::with_capacity(splits_metadata.len());
@@ -614,6 +619,16 @@ impl MetastoreService for PostgresqlMetastore {
             let time_range_end = split_metadata.time_range.map(|range| *range.end());
             time_range_end_list.push(time_range_end);
 
+            let secondary_time_range_start = split_metadata
+                .secondary_time_range
+                .as_ref()
+                .map(|range| *range.start());
+            secondary_time_range_start_list.push(secondary_time_range_start);
+            let secondary_time_range_end = split_metadata
+                .secondary_time_range
+                .map(|range| *range.end());
+            secondary_time_range_end_list.push(secondary_time_range_end);
+
             let tags: Vec<String> = split_metadata.tags.into_iter().collect();
             tags_list.push(sqlx::types::Json(tags));
             split_ids.push(split_metadata.split_id);
@@ -626,25 +641,29 @@ impl MetastoreService for PostgresqlMetastore {
         run_with_tx!(self.connection_pool, tx, "stage splits", {
             let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"
                 INSERT INTO splits
-                    (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid, node_id)
+                    (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid, node_id)
                 SELECT
                     split_id,
                     time_range_start,
                     time_range_end,
+                    secondary_time_range_start,
+                    secondary_time_range_end,
                     ARRAY(SELECT json_array_elements_text(tags_json::json)) as tags,
                     split_metadata_json,
                     delete_opstamp,
                     to_timestamp(maturity_timestamp),
-                    $9 as split_state,
-                    $10 as index_uid,
+                    $11 as split_state,
+                    $12 as index_uid,
                     node_id
                 FROM
-                    UNNEST($1, $2, $3, $4, $5, $6, $7, $8)
-                    AS staged_splits (split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp, node_id)
+                    UNNEST($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    AS staged_splits (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp, node_id)
                 ON CONFLICT(index_uid, split_id) DO UPDATE
                     SET
                         time_range_start = excluded.time_range_start,
                         time_range_end = excluded.time_range_end,
+                        secondary_time_range_start = excluded.secondary_time_range_start,
+                        secondary_time_range_end = excluded.secondary_time_range_end,
                         tags = excluded.tags,
                         split_metadata_json = excluded.split_metadata_json,
                         delete_opstamp = excluded.delete_opstamp,
@@ -658,6 +677,8 @@ impl MetastoreService for PostgresqlMetastore {
                 .bind(&split_ids)
                 .bind(time_range_start_list)
                 .bind(time_range_end_list)
+                .bind(secondary_time_range_start_list)
+                .bind(secondary_time_range_end_list)
                 .bind(tags_list)
                 .bind(splits_metadata_json)
                 .bind(delete_opstamps)

@@ -46,8 +46,8 @@ pub use cluster_config::ClusterConfig;
 use index_config::serialize::{IndexConfigV0_8, VersionedIndexConfig};
 pub use index_config::{
     IndexConfig, IndexingResources, IndexingSettings, IngestSettings, RetentionPolicy,
-    SearchSettings, build_doc_mapper, load_index_config_from_user_config, load_index_config_update,
-    prepare_doc_mapping_update,
+    RetentionTimestampType, SearchSettings, build_doc_mapper, load_index_config_from_user_config,
+    load_index_config_update, prepare_doc_mapping_update,
 };
 pub use quickwit_doc_mapper::DocMapping;
 use serde::Serialize;
@@ -118,6 +118,7 @@ pub fn disable_ingest_v1() -> bool {
     PulsarSourceParams,
     RegionOrEndpoint,
     RetentionPolicy,
+    RetentionTimestampType,
     SearchSettings,
     SourceConfigV0_7,
     SourceConfigV0_8,

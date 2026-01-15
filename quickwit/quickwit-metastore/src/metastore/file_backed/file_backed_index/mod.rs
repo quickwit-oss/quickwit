@@ -771,6 +771,23 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         }
     }
 
+    if let Some(range) = &split.split_metadata.secondary_time_range
+        && !query.secondary_time_range.overlaps_with(range.clone())
+    {
+        return false;
+    }
+    if let Some(v) = query.max_secondary_time_range_end {
+        match (
+            &split.split_metadata.secondary_time_range,
+            &split.split_metadata.time_range,
+        ) {
+            (Some(secondary_time_range), _) if secondary_time_range.end() > &v => return false,
+            (None, Some(time_range)) if time_range.end() > &v => return false,
+            (None, None) => return false,
+            _ => {}
+        }
+    }
+
     if let Some(node_id) = &query.node_id
         && split.split_metadata.node_id != *node_id
     {

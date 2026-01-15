@@ -209,6 +209,30 @@ fn merge_time_range(splits: &[SplitMetadata]) -> Option<RangeInclusive<DateTime>
         })
 }
 
+fn merge_secondary_time_range_if_exists(
+    splits: &[SplitMetadata],
+) -> Option<RangeInclusive<DateTime>> {
+    if splits
+        .iter()
+        .any(|split| split.secondary_time_range.is_none())
+    {
+        return None;
+    }
+
+    splits
+        .iter()
+        .flat_map(|split| split.secondary_time_range.clone())
+        .flat_map(|secondary_time_range| {
+            vec![*secondary_time_range.start(), *secondary_time_range.end()].into_iter()
+        })
+        .minmax()
+        .into_option()
+        .map(|(min_timestamp, max_timestamp)| {
+            DateTime::from_timestamp_secs(min_timestamp)
+                ..=DateTime::from_timestamp_secs(max_timestamp)
+        })
+}
+
 fn sum_doc_sizes_in_bytes(splits: &[SplitMetadata]) -> u64 {
     splits
         .iter()
@@ -253,6 +277,7 @@ pub fn merge_split_attrs(
 ) -> anyhow::Result<SplitAttrs> {
     let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
     let time_range: Option<RangeInclusive<DateTime>> = merge_time_range(splits);
+    let secondary_time_range = merge_secondary_time_range_if_exists(splits);
     let uncompressed_docs_size_in_bytes = sum_doc_sizes_in_bytes(splits);
     let num_docs = sum_num_docs(splits);
     let replaced_split_ids: Vec<SplitId> = splits
@@ -283,6 +308,7 @@ pub fn merge_split_attrs(
         partition_id,
         replaced_split_ids,
         time_range,
+        secondary_time_range,
         num_docs,
         uncompressed_docs_size_in_bytes,
         delete_opstamp,
@@ -466,6 +492,7 @@ impl MergeExecutor {
                 partition_id: split.partition_id,
                 replaced_split_ids: vec![split.split_id.clone()],
                 time_range,
+                secondary_time_range: None,
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
