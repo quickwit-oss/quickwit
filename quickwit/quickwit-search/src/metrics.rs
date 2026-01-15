@@ -108,22 +108,24 @@ pub struct SearchMetrics {
     pub root_search_requests_total: IntCounterVec<1>,
     pub root_search_request_duration_seconds: HistogramVec<1>,
     pub root_search_targeted_splits: HistogramVec<1>,
-    pub leaf_search_requests_total: IntCounterVec<1>,
-    pub leaf_search_request_duration_seconds: HistogramVec<1>,
-    pub leaf_search_targeted_splits: HistogramVec<1>,
+    pub leaf_search_requests_total: IntCounterVec<2>,
+    pub leaf_search_request_duration_seconds: HistogramVec<2>,
+    pub leaf_search_targeted_splits: HistogramVec<2>,
     pub leaf_list_terms_splits_total: IntCounter,
     pub split_search_outcome_total: SplitSearchOutcomeCounters,
-    pub leaf_search_split_duration_secs: Histogram,
+    pub leaf_search_split_duration_secs: HistogramVec<1>,
     pub job_assigned_total: IntCounterVec<1>,
     pub leaf_search_single_split_tasks_pending: IntGauge,
     pub leaf_search_single_split_tasks_ongoing: IntGauge,
+    pub leaf_search_single_split_secondary_tasks_pending: IntGauge,
+    pub leaf_search_single_split_secondary_tasks_ongoing: IntGauge,
     pub leaf_search_single_split_warmup_num_bytes: Histogram,
     pub searcher_local_kv_store_size_bytes: IntGauge,
 }
 
 /// From 0.008s to 131.072s
 fn duration_buckets() -> Vec<f64> {
-    exponential_buckets(0.008, 2.0, 15).unwrap()
+    exponential_buckets(0.064, 2.0, 15).unwrap()
 }
 
 impl Default for SearchMetrics {
@@ -151,12 +153,15 @@ impl Default for SearchMetrics {
             ByteSize::gb(5).as_u64() as f64,
         ];
 
-        let leaf_search_single_split_tasks = new_gauge_vec::<1>(
+        let leaf_search_single_split_tasks = new_gauge_vec::<2>(
             "leaf_search_single_split_tasks",
             "Number of single split search tasks pending or ongoing",
             "search",
             &[],
-            ["status"], // takes values "ongoing" or "pending"
+            [
+                "status", // "ongoing" or "pending"
+                "queue",  // "primary" or "secondary"
+            ],
         );
 
         SearchMetrics {
@@ -188,14 +193,14 @@ impl Default for SearchMetrics {
                 "Total number of leaf search gRPC requests processed.",
                 "search",
                 &[("kind", "server")],
-                ["status"],
+                ["status", "queue"],
             ),
             leaf_search_request_duration_seconds: new_histogram_vec(
                 "leaf_search_request_duration_seconds",
                 "Duration of leaf search gRPC requests in seconds.",
                 "search",
                 &[("kind", "server")],
-                ["status"],
+                ["status", "queue"],
                 duration_buckets(),
             ),
             leaf_search_targeted_splits: new_histogram_vec(
@@ -203,7 +208,7 @@ impl Default for SearchMetrics {
                 "Number of splits targeted per leaf search GRPC request.",
                 "search",
                 &[],
-                ["status"],
+                ["status", "queue"],
                 targeted_splits_buckets,
             ),
 
@@ -214,18 +219,24 @@ impl Default for SearchMetrics {
                 &[],
             ),
             split_search_outcome_total: SplitSearchOutcomeCounters::new_registered(),
-
-            leaf_search_split_duration_secs: new_histogram(
+            leaf_search_split_duration_secs: new_histogram_vec(
                 "leaf_search_split_duration_secs",
                 "Number of seconds required to run a leaf search over a single split. The timer \
                  starts after the semaphore is obtained.",
                 "search",
+                &[],
+                ["queue"],
                 duration_buckets(),
             ),
+            // we need to expose the gauges here to provide a static ref to for the gauge guards
             leaf_search_single_split_tasks_ongoing: leaf_search_single_split_tasks
-                .with_label_values(["ongoing"]),
+                .with_label_values(["ongoing", "primary"]),
             leaf_search_single_split_tasks_pending: leaf_search_single_split_tasks
-                .with_label_values(["pending"]),
+                .with_label_values(["pending", "primary"]),
+            leaf_search_single_split_secondary_tasks_ongoing: leaf_search_single_split_tasks
+                .with_label_values(["ongoing", "secondary"]),
+            leaf_search_single_split_secondary_tasks_pending: leaf_search_single_split_tasks
+                .with_label_values(["pending", "secondary"]),
             leaf_search_single_split_warmup_num_bytes: new_histogram(
                 "leaf_search_single_split_warmup_num_bytes",
                 "Size of the short lived cache for a single split once the warmup is done.",
@@ -246,6 +257,37 @@ impl Default for SearchMetrics {
                 "search",
                 &[],
             ),
+        }
+    }
+}
+
+pub fn queue_label(is_broad_search: bool) -> &'static str {
+    if is_broad_search {
+        "secondary"
+    } else {
+        "primary"
+    }
+}
+
+/// Metrics for the various instances of permit providers.
+#[derive(Clone)]
+pub struct SearchTaskMetrics {
+    pub ongoing_tasks: &'static IntGauge,
+    pub pending_tasks: &'static IntGauge,
+}
+
+impl SearchMetrics {
+    pub fn search_task_metrics(&'static self) -> SearchTaskMetrics {
+        SearchTaskMetrics {
+            ongoing_tasks: &self.leaf_search_single_split_tasks_ongoing,
+            pending_tasks: &self.leaf_search_single_split_tasks_pending,
+        }
+    }
+
+    pub fn secondary_search_task_metrics(&'static self) -> SearchTaskMetrics {
+        SearchTaskMetrics {
+            ongoing_tasks: &self.leaf_search_single_split_secondary_tasks_ongoing,
+            pending_tasks: &self.leaf_search_single_split_secondary_tasks_pending,
         }
     }
 }

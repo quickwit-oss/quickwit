@@ -22,7 +22,7 @@ use pin_project::{pin_project, pinned_drop};
 use quickwit_proto::search::{LeafSearchResponse, SearchResponse};
 
 use crate::SearchError;
-use crate::metrics::SEARCH_METRICS;
+use crate::metrics::{SEARCH_METRICS, queue_label};
 
 // planning
 
@@ -141,12 +141,16 @@ pub struct LeafSearchMetricsFuture<F> {
     pub start: Instant,
     pub targeted_splits: usize,
     pub status: Option<&'static str>,
+    pub is_broad_search: bool,
 }
 
 #[pinned_drop]
 impl<F> PinnedDrop for LeafSearchMetricsFuture<F> {
     fn drop(self: Pin<&mut Self>) {
-        let label_values = [self.status.unwrap_or("cancelled")];
+        let label_values = [
+            self.status.unwrap_or("cancelled"),
+            queue_label(self.is_broad_search),
+        ];
         SEARCH_METRICS
             .leaf_search_requests_total
             .with_label_values(label_values)
