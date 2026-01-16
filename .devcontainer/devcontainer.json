@@ -33,7 +33,7 @@
             "moby": true
         },
         "ghcr.io/devcontainers/features/node:1": {
-            "version": "18"
+            "version": "24"
         },
         "ghcr.io/devcontainers/features/aws-cli:1": {},
         "ghcr.io/devcontainers-contrib/features/protoc:1": {}
