@@ -264,10 +264,20 @@ impl SplitCacheLimits {
 pub struct SearcherConfig {
     pub aggregation_memory_limit: ByteSize,
     pub aggregation_bucket_limit: u32,
-    pub fast_field_cache_capacity: ByteSize,
-    pub split_footer_cache_capacity: ByteSize,
-    pub partial_request_cache_capacity: ByteSize,
-    pub predicate_cache_capacity: ByteSize,
+
+    #[serde(alias = "fast_field_cache_capacity")]
+    #[serde(deserialize_with = "crate::deserialize_or_try_with::<ByteSize, _, _>")]
+    pub fast_field_cache: CacheConfig,
+    #[serde(alias = "split_footer_cache_capacity")]
+    #[serde(deserialize_with = "crate::deserialize_or_try_with::<ByteSize, _, _>")]
+    pub split_footer_cache: CacheConfig,
+    #[serde(alias = "partial_request_cache_capacity")]
+    #[serde(deserialize_with = "crate::deserialize_or_try_with::<ByteSize, _, _>")]
+    pub partial_request_cache: CacheConfig,
+    #[serde(alias = "predicate_cache_capacity")]
+    #[serde(deserialize_with = "crate::deserialize_or_try_with::<ByteSize, _, _>")]
+    pub predicate_cache: CacheConfig,
+
     pub max_num_concurrent_split_searches: usize,
     pub max_splits_per_search: Option<usize>,
     // Deprecated: stream search requests are no longer supported.
@@ -285,6 +295,37 @@ pub struct SearcherConfig {
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheConfig {
+    pub capacity: ByteSize,
+    pub policy: CachePolicy,
+
+    // Cache configs inside the virtual cache aren't allowed to contain virtual cache
+    pub virtual_cache: Vec<CacheConfig>,
+}
+
+impl CacheConfig {
+    pub fn default_with_capacity(capacity: ByteSize) -> Self {
+        CacheConfig {
+            capacity,
+            policy: CachePolicy::Lru,
+            virtual_cache: Vec::new(),
+        }
+    }
+}
+
+impl From<ByteSize> for CacheConfig {
+    fn from(capacity: ByteSize) -> Self {
+        CacheConfig::default_with_capacity(capacity)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum CachePolicy {
+    Lru,
 }
 
 /// Configuration controlling how fast a searcher should timeout a `get_slice`
@@ -323,10 +364,10 @@ impl StorageTimeoutPolicy {
 impl Default for SearcherConfig {
     fn default() -> Self {
         SearcherConfig {
-            fast_field_cache_capacity: ByteSize::gb(1),
-            split_footer_cache_capacity: ByteSize::mb(500),
-            partial_request_cache_capacity: ByteSize::mb(64),
-            predicate_cache_capacity: ByteSize::mb(256),
+            fast_field_cache: CacheConfig::default_with_capacity(ByteSize::gb(1)),
+            split_footer_cache: CacheConfig::default_with_capacity(ByteSize::mb(500)),
+            partial_request_cache: CacheConfig::default_with_capacity(ByteSize::mb(64)),
+            predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
             max_num_concurrent_split_searches: 100,
             max_splits_per_search: None,
             _max_num_concurrent_split_streams: None,

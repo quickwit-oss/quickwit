@@ -73,7 +73,7 @@ pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig, JaegerConfig,
+    CacheConfig, DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig, JaegerConfig,
     KeepAliveConfig, NodeConfig, RestConfig, SearcherConfig, SplitCacheLimits,
     StorageTimeoutPolicy, TlsConfig,
 };
@@ -297,6 +297,29 @@ pub fn indexing_pipeline_params_fingerprint(
     hasher.write_u64(index_config.indexing_params_fingerprint());
     hasher.write_u64(source_config.indexing_params_fingerprint());
     hasher.finish()
+}
+
+// Attempt to deserialize a T, or deserialize a U, and transform it into a T with the provided
+// function
+fn deserialize_or_try_with<'de, U, T, D>(d: D) -> Result<T, D::Error>
+where
+    T: serde::Deserialize<'de> + From<U>,
+    U: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Either<T, U> {
+        Main(T),
+        Fallback(U),
+    }
+
+    match Either::<T, U>::deserialize(d)? {
+        Either::Main(t) => Ok(t),
+        Either::Fallback(u) => Ok(u.into()),
+    }
 }
 
 #[cfg(test)]

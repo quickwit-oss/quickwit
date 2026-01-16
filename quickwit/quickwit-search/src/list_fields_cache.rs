@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
     ListFields, SplitIdAndFooterOffsets, deserialize_split_fields, serialize_split_fields,
 };
@@ -26,10 +27,10 @@ pub struct ListFieldsCache {
 // TODO For now this simply caches the whole ListFieldsEntryResponse. We could
 // be more clever and cache aggregates instead.
 impl ListFieldsCache {
-    pub fn new(capacity: usize) -> ListFieldsCache {
+    pub fn new(config: &CacheConfig) -> ListFieldsCache {
         ListFieldsCache {
-            content: MemorySizedCache::with_capacity_in_bytes(
-                capacity,
+            content: MemorySizedCache::from_config(
+                config,
                 &quickwit_storage::STORAGE_METRICS.partial_request_cache,
             ),
         }
@@ -66,6 +67,7 @@ impl CacheKey {
 
 #[cfg(test)]
 mod tests {
+    use bytesize::ByteSize;
     use quickwit_proto::search::{
         ListFieldType, ListFields, ListFieldsEntryResponse, SplitIdAndFooterOffsets,
     };
@@ -74,7 +76,7 @@ mod tests {
 
     #[test]
     fn test_list_fields_cache() {
-        let cache = ListFieldsCache::new(64_000_000);
+        let cache = ListFieldsCache::new(&ByteSize::mb(64).into());
 
         let split_1 = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),

@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_config::CacheConfig;
 
 use crate::OwnedBytes;
 use crate::cache::{MemorySizedCache, StorageCache};
@@ -37,16 +38,15 @@ impl From<Vec<(&'static str, Arc<dyn StorageCache>)>> for QuickwitCache {
 }
 
 impl QuickwitCache {
-    /// Creates a [`QuickwitCache`] with a cache on fast fields
-    /// with a capacity of `fast_field_cache_capacity`.
-    pub fn new(fast_field_cache_capacity: usize) -> Self {
+    /// Creates a [`QuickwitCache`] with a cache on fast fields.
+    pub fn new(cache_config: &CacheConfig) -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
         let fast_field_cache_counters: &'static CacheMetrics =
             &crate::STORAGE_METRICS.fast_field_cache;
         quickwit_cache.add_route(
             ".fast",
-            Arc::new(SimpleCache::with_capacity_in_bytes(
-                fast_field_cache_capacity,
+            Arc::new(SimpleCache::from_config(
+                cache_config,
                 fast_field_cache_counters,
             )),
         );
@@ -117,15 +117,9 @@ struct SimpleCache {
 }
 
 impl SimpleCache {
-    fn with_capacity_in_bytes(
-        capacity_in_bytes: usize,
-        cache_counters: &'static CacheMetrics,
-    ) -> Self {
+    fn from_config(cache_config: &CacheConfig, cache_counters: &'static CacheMetrics) -> Self {
         SimpleCache {
-            slice_cache: MemorySizedCache::with_capacity_in_bytes(
-                capacity_in_bytes,
-                cache_counters,
-            ),
+            slice_cache: MemorySizedCache::from_config(cache_config, cache_counters),
         }
     }
 }

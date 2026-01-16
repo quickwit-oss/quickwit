@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use lru::LruCache;
+use quickwit_config::CacheConfig;
 use tokio::time::Instant;
 use tracing::{error, warn};
 
@@ -183,13 +184,16 @@ pub struct MemorySizedCache<K: Hash + Eq = SliceAddress> {
 
 impl<K: Hash + Eq> MemorySizedCache<K> {
     /// Creates an slice cache with the given capacity.
-    pub fn with_capacity_in_bytes(
-        capacity_in_bytes: usize,
-        cache_counters: &'static CacheMetrics,
-    ) -> Self {
+    pub fn from_config(cache_config: &CacheConfig, cache_counters: &'static CacheMetrics) -> Self {
         MemorySizedCache {
             inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
-                Capacity::InBytes(capacity_in_bytes),
+                Capacity::InBytes(
+                    cache_config
+                        .capacity
+                        .as_u64()
+                        .try_into()
+                        .unwrap_or(usize::MAX),
+                ),
                 cache_counters,
             )),
         }
@@ -240,6 +244,7 @@ impl MemorySizedCache<SliceAddress> {
 
 #[cfg(test)]
 mod tests {
+    use bytesize::ByteSize;
 
     use super::*;
     use crate::metrics::CACHE_METRICS_FOR_TESTS;
@@ -247,7 +252,10 @@ mod tests {
     #[tokio::test]
     async fn test_cache_edge_condition() {
         tokio::time::pause();
-        let cache = MemorySizedCache::<String>::with_capacity_in_bytes(5, &CACHE_METRICS_FOR_TESTS);
+        let cache = MemorySizedCache::<String>::from_config(
+            &ByteSize::b(5).into(),
+            &CACHE_METRICS_FOR_TESTS,
+        );
         {
             let data = OwnedBytes::new(&b"abc"[..]);
             cache.put("3".to_string(), data);
@@ -304,7 +312,8 @@ mod tests {
 
     #[test]
     fn test_cache() {
-        let cache = MemorySizedCache::with_capacity_in_bytes(10_000, &CACHE_METRICS_FOR_TESTS);
+        let cache =
+            MemorySizedCache::from_config(&ByteSize::kb(10).into(), &CACHE_METRICS_FOR_TESTS);
         assert!(cache.get(&"hello.seg").is_none());
         let data = OwnedBytes::new(&b"werwer"[..]);
         cache.put("hello.seg", data);
