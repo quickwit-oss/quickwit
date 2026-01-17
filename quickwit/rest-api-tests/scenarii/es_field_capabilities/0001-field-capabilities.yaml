@@ -334,3 +334,123 @@ engines:
   - elasticsearch
 endpoint: doesno*texist/_field_caps?fields=date
 status_code: 200
+---
+# Test _field_caps API with index_filter (term query)
+method: [POST]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=*
+json_body:
+  index_filter:
+    term:
+      name: "Alice"
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    name:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+      text:
+        type: text
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+---
+# Test _field_caps API with index_filter (match_all query)
+method: [POST]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=name
+json_body:
+  index_filter:
+    match_all: {}
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    name:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+      text:
+        type: text
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+---
+# Test _field_caps API with index_filter (bool query)
+method: [POST]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=response,name
+json_body:
+  index_filter:
+    bool:
+      must:
+        - term:
+            name: "Alice"
+      filter:
+        - range:
+            response:
+              gte: 100
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    response:
+      long:
+        type: long
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+    name:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+      text:
+        type: text
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+---
+# Test _field_caps API with invalid index_filter
+method: [POST]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=*
+json_body:
+  index_filter:
+    invalid_query_type:
+      field: "value"
+status_code: 400
+---
+# Test _field_caps API with empty index_filter (should work like no filter)
+method: [POST]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=name
+json_body:
+  index_filter: {}
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    name:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+      text:
+        type: text
+        metadata_field: false
+        searchable: true
+        aggregatable: true
