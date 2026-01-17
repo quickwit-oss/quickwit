@@ -125,6 +125,10 @@ message ListFieldsRequest {
   optional int64 start_timestamp = 3;
   optional int64 end_timestamp = 4;
 
+  // JSON-serialized QueryAst for index_filter support.
+  // When provided, only fields from documents matching this query are returned.
+  optional string query_ast = 5;
+
   // Control if the request will fail if split_ids contains a split that does not exist.
   // optional bool fail_on_missing_index = 6;
 }
@@ -142,6 +146,9 @@ message LeafListFieldsRequest {
   // Wildcard expressions are supported.
   repeated string fields = 4;
 
+  // JSON-serialized QueryAst for index_filter support.
+  // When provided, only fields from documents matching this query are returned.
+  optional string query_ast = 5;
 }
 
 message ListFieldsResponse {
