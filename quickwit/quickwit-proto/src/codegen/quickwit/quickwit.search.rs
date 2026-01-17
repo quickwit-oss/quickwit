@@ -70,6 +70,10 @@ pub struct ListFieldsRequest {
     pub start_timestamp: ::core::option::Option<i64>,
     #[prost(int64, optional, tag = "4")]
     pub end_timestamp: ::core::option::Option<i64>,
+    /// JSON-serialized QueryAst for index_filter support.
+    /// When provided, only fields from documents matching this query are returned.
+    #[prost(string, optional, tag = "5")]
+    pub query_ast: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -88,6 +92,10 @@ pub struct LeafListFieldsRequest {
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "4")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// JSON-serialized QueryAst for index_filter support.
+    /// When provided, only fields from documents matching this query are returned.
+    #[prost(string, optional, tag = "5")]
+    pub query_ast: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]

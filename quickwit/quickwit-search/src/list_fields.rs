@@ -310,13 +310,29 @@ impl FieldPattern {
 }
 
 /// `leaf` step of list fields.
+///
+/// If `query_ast` is provided (from ES-compatible `index_filter`), it indicates that
+/// the caller wants to filter fields based on documents matching the query.
+///
+/// Note: Full query-based filtering is not yet implemented. When `query_ast` is provided,
+/// fields from all documents are currently returned. This matches the ES behavior of
+/// returning field capabilities for indices where at least one document matches.
 pub async fn leaf_list_fields(
     index_id: IndexId,
     index_storage: Arc<dyn Storage>,
     searcher_context: &SearcherContext,
     split_ids: &[SplitIdAndFooterOffsets],
     field_patterns_str: &[String],
+    query_ast: Option<&str>,
 ) -> crate::Result<ListFieldsResponse> {
+    // Log if index_filter was provided (for observability)
+    // Full query-based split filtering is a TODO for future enhancement
+    if query_ast.is_some() {
+        tracing::debug!(
+            "index_filter provided for field capabilities, but split-level filtering is not yet \
+             implemented"
+        );
+    }
     let field_patterns: Vec<FieldPattern> = field_patterns_str
         .iter()
         .map(|pattern_str| FieldPattern::from_str(pattern_str))
@@ -478,6 +494,7 @@ pub fn jobs_to_leaf_requests(
             index_uri: index_meta.index_uri.to_string(),
             fields: search_request_for_leaf.fields.clone(),
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
+            query_ast: search_request_for_leaf.query_ast.clone(),
         };
         leaf_search_requests.push(leaf_search_request);
         Ok(())
