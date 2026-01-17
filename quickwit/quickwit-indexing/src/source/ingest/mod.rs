@@ -410,9 +410,8 @@ impl IngestSource {
                 .assigned_shards
                 .keys()
                 .filter(|&shard_id| !new_assigned_shard_ids.contains(shard_id))
-                .cloned()
                 .any(|removed_shard_id| {
-                    let Some(assigned_shard) = self.assigned_shards.get(&removed_shard_id) else {
+                    let Some(assigned_shard) = self.assigned_shards.get(removed_shard_id) else {
                         return false;
                     };
                     assigned_shard.status != IndexingStatus::Complete

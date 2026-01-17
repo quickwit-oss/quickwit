@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - release-0.9
     paths:
       - "quickwit/**"
     tags:
@@ -40,11 +41,11 @@ jobs:
       - name: Cleanup Disk Space
         run: |
           df -h
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /usr/local/.ghcup
           sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/share/swift
           df -h
 
       - name: Checkout
@@ -145,6 +146,7 @@ jobs:
             type=semver,pattern={{version}},value=latest
             type=semver,pattern={{version}},suffix=-slim-bookworm
             type=ref,event=tag
+            type=raw,value=v0.9.0-rc,enable=${{ github.ref == 'refs/heads/release-0.9' }}
       - name: Login to Docker Hub
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:

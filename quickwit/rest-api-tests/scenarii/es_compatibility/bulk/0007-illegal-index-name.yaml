@@ -1,3 +1,6 @@
+# allowed characters are different between ES and Quickwit
+engines:
+  - quickwit
 ndjson:
   - index: { "_index": "test-index" }
   - message: Hola, Mundo!

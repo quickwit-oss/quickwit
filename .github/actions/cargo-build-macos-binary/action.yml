@@ -17,7 +17,7 @@ runs:
       shell: bash
     - uses: actions/setup-node@v3
       with:
-        node-version: 20
+        node-version: 24
         cache: "yarn"
         cache-dependency-path: quickwit/quickwit-ui/yarn.lock
     - run: yarn global add node-gyp
@@ -36,9 +36,9 @@ runs:
       working-directory: ./quickwit
     - name: Retrieve and export commit date, hash, and tags
       run: |
-          echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
-          echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
-          echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
+        echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+        echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
+        echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
       shell: bash
     - name: Build binary
       run: cargo build --release --features release-macos-feature-vendored-set --target ${{ matrix.target }} --bin quickwit
