@@ -297,14 +297,16 @@ pub struct SearcherConfig {
     pub warmup_single_split_initial_allocation: ByteSize,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CacheConfig {
     pub capacity: ByteSize,
+    #[serde(default)]
     pub policy: CachePolicy,
 
     // Cache configs inside the virtual cache aren't allowed to contain virtual cache
-    pub virtual_cache: Vec<CacheConfig>,
+    #[serde(default)]
+    pub virtual_caches: Vec<CacheConfig>,
 }
 
 impl CacheConfig {
@@ -312,7 +314,7 @@ impl CacheConfig {
         CacheConfig {
             capacity,
             policy: CachePolicy::Lru,
-            virtual_cache: Vec::new(),
+            virtual_caches: Vec::new(),
         }
     }
 }
@@ -323,9 +325,19 @@ impl From<ByteSize> for CacheConfig {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
 pub enum CachePolicy {
+    #[default]
     Lru,
+}
+
+impl std::fmt::Display for CachePolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CachePolicy::Lru => f.write_str("lru"),
+        }
+    }
 }
 
 /// Configuration controlling how fast a searcher should timeout a `get_slice`

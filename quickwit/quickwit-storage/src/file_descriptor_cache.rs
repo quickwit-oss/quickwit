@@ -23,12 +23,12 @@ use tantivy::directory::OwnedBytes;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use ulid::Ulid;
 
-use crate::metrics::CacheMetrics;
+use crate::metrics::SingleCacheMetrics;
 
 pub struct FileDescriptorCache {
     fd_cache: Mutex<lru::LruCache<Ulid, SplitFile>>,
     fd_semaphore: Arc<Semaphore>,
-    fd_cache_metrics: CacheMetrics,
+    fd_cache_metrics: SingleCacheMetrics,
 }
 
 #[derive(Clone)]
@@ -68,7 +68,7 @@ impl FileDescriptorCache {
     fn new(
         max_fd_limit: NonZeroU32,
         fd_cache_capacity: NonZeroU32,
-        fd_cache_metrics: CacheMetrics,
+        fd_cache_metrics: SingleCacheMetrics,
     ) -> FileDescriptorCache {
         assert!(max_fd_limit.get() > fd_cache_capacity.get());
         let fd_cache = Mutex::new(lru::LruCache::new(
@@ -88,7 +88,10 @@ impl FileDescriptorCache {
         Self::new(
             NonZeroU32::new(max_fd_limit).unwrap(),
             fd_cache_capacity,
-            crate::STORAGE_METRICS.fd_cache_metrics.clone(),
+            crate::STORAGE_METRICS
+                .fd_cache_metrics
+                .cache_metrics
+                .clone(),
         )
     }
 
@@ -185,7 +188,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fd_cache_big_cache() {
-        let cache_metrics = CacheMetrics::for_component("fdtest");
+        let cache_metrics = CacheMetrics::for_component("fdtest").cache_metrics;
         let fd_cache = FileDescriptorCache::new(
             NonZeroU32::new(20).unwrap(),
             NonZeroU32::new(10).unwrap(),
@@ -227,7 +230,7 @@ mod tests {
     // opening the file several times.
     #[tokio::test]
     async fn test_fd_cache_small_cache() {
-        let cache_metrics = CacheMetrics::for_component("fdtest2");
+        let cache_metrics = CacheMetrics::for_component("fdtest2").cache_metrics;
         let fd_cache = FileDescriptorCache::new(
             NonZeroU32::new(20).unwrap(),
             NonZeroU32::new(10).unwrap(),

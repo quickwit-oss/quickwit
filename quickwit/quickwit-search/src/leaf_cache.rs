@@ -77,7 +77,7 @@ impl LeafSearchCache {
 }
 
 /// A key inside a [`LeafSearchCache`].
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, Clone, PartialEq, Eq)]
 struct CacheKey {
     /// The split this entry refers to
     split_id: SplitId,

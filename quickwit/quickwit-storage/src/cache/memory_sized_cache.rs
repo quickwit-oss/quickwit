@@ -26,8 +26,8 @@ use tracing::{error, warn};
 
 use crate::OwnedBytes;
 use crate::cache::slice_address::{SliceAddress, SliceAddressKey, SliceAddressRef};
-use crate::cache::stored_item::StoredItem;
-use crate::metrics::CacheMetrics;
+use crate::cache::stored_item::{StoredItem, ValueLen};
+use crate::metrics::{CacheMetrics, SingleCacheMetrics};
 
 /// We do not evict anything that has been accessed in the last 60s.
 ///
@@ -60,15 +60,15 @@ impl Capacity {
     }
 }
 
-struct NeedMutMemorySizedCache<K: Hash + Eq> {
-    lru_cache: LruCache<K, StoredItem>,
+struct NeedMutMemorySizedCache<K: Hash + Eq, V = OwnedBytes> {
+    lru_cache: LruCache<K, StoredItem<V>>,
     num_items: usize,
     num_bytes: u64,
     capacity: Capacity,
-    cache_counters: &'static CacheMetrics,
+    cache_counters: SingleCacheMetrics,
 }
 
-impl<K: Hash + Eq> Drop for NeedMutMemorySizedCache<K> {
+impl<K: Hash + Eq, V> Drop for NeedMutMemorySizedCache<K, V> {
     fn drop(&mut self) {
         // we don't count this toward evicted entries, as we are clearing the whole cache
         self.cache_counters
@@ -80,9 +80,9 @@ impl<K: Hash + Eq> Drop for NeedMutMemorySizedCache<K> {
     }
 }
 
-impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
+impl<K: Hash + Eq, V: ValueLen + Clone> NeedMutMemorySizedCache<K, V> {
     /// Creates a new NeedMutSliceCache with the given capacity.
-    fn with_capacity(capacity: Capacity, cache_counters: &'static CacheMetrics) -> Self {
+    fn with_capacity(capacity: Capacity, cache_counters: SingleCacheMetrics) -> Self {
         NeedMutMemorySizedCache {
             // The limit will be decided by the amount of memory in the cache,
             // not the number of items in the cache.
@@ -111,7 +111,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
         self.cache_counters.evict_num_bytes.inc_by(num_bytes);
     }
 
-    pub fn get<Q>(&mut self, cache_key: &Q) -> Option<OwnedBytes>
+    pub fn get<Q>(&mut self, cache_key: &Q) -> Option<V>
     where
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
@@ -130,7 +130,7 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     /// Attempt to put the given amount of data in the cache.
     /// This may fail silently if the owned_bytes slice is larger than the cache
     /// capacity.
-    fn put(&mut self, key: K, bytes: OwnedBytes) {
+    fn put(&mut self, key: K, bytes: V) {
         if self.capacity.exceeds_capacity(bytes.len()) {
             // The value does not fit in the cache. We simply don't store it.
             if self.capacity != Capacity::InBytes(0) {
@@ -177,35 +177,110 @@ impl<K: Hash + Eq> NeedMutMemorySizedCache<K> {
     }
 }
 
-/// A simple in-resident memory slice cache.
-pub struct MemorySizedCache<K: Hash + Eq = SliceAddress> {
-    inner: Mutex<NeedMutMemorySizedCache<K>>,
+// A fake entry inside a cache, which the cache believe to be of the given size
+#[derive(Clone)]
+struct FakeCacheEntry(usize);
+
+impl ValueLen for FakeCacheEntry {
+    fn len(&self) -> usize {
+        self.0
+    }
 }
 
-impl<K: Hash + Eq> MemorySizedCache<K> {
+struct CacheState<K: Hash + Eq> {
+    cache: NeedMutMemorySizedCache<K>,
+    virtual_caches: Vec<NeedMutMemorySizedCache<K, FakeCacheEntry>>,
+}
+
+impl<K: Hash + Eq + Clone> CacheState<K> {
+    fn from_config(cache_config: &CacheConfig, cache_counters: &'static CacheMetrics) -> Self {
+        let cache = NeedMutMemorySizedCache::with_capacity(
+            Capacity::InBytes(
+                cache_config
+                    .capacity
+                    .as_u64()
+                    .try_into()
+                    .unwrap_or(usize::MAX),
+            ),
+            cache_counters.cache_metrics.clone(),
+        );
+        let virtual_caches = cache_config
+            .virtual_caches
+            .iter()
+            .cloned()
+            .map(|mut virtual_cache_config| {
+                let mut capacity = virtual_cache_config.capacity.as_u64();
+                if capacity == 0 {
+                    // As a special case, if virtual cache capacity is zero, it's assumed to mean
+                    // "same capacity as the real cache", but possibly with a
+                    // different policy
+                    capacity = cache_config.capacity.as_u64();
+                    virtual_cache_config.capacity = cache_config.capacity;
+                }
+
+                let capacity = capacity.try_into().unwrap_or(usize::MAX);
+                NeedMutMemorySizedCache::with_capacity(
+                    Capacity::InBytes(capacity),
+                    cache_counters.virtual_cache(&virtual_cache_config),
+                )
+            })
+            .collect();
+        CacheState {
+            cache,
+            virtual_caches,
+        }
+    }
+
+    fn infinite(cache_counters: &'static CacheMetrics) -> Self {
+        CacheState {
+            cache: NeedMutMemorySizedCache::with_capacity(
+                Capacity::Unlimited,
+                cache_counters.cache_metrics.clone(),
+            ),
+            // there is no point in having virtual caches for an unbounded cache
+            virtual_caches: Vec::new(),
+        }
+    }
+
+    pub fn get<Q>(&mut self, cache_key: &Q) -> Option<OwnedBytes>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        for virtual_cache in &mut self.virtual_caches {
+            // we simulate an access on all virtual caches
+            virtual_cache.get(cache_key);
+        }
+        self.cache.get(cache_key)
+    }
+
+    fn put(&mut self, key: K, bytes: OwnedBytes) {
+        for virtual_cache in &mut self.virtual_caches {
+            // we simulate an access on all virtual caches
+            virtual_cache.put(key.clone(), FakeCacheEntry(bytes.len()));
+        }
+
+        self.cache.put(key, bytes)
+    }
+}
+
+/// A simple in-resident memory slice cache.
+pub struct MemorySizedCache<K: Hash + Eq = SliceAddress> {
+    inner: Mutex<CacheState<K>>,
+}
+
+impl<K: Hash + Eq + Clone> MemorySizedCache<K> {
     /// Creates an slice cache with the given capacity.
     pub fn from_config(cache_config: &CacheConfig, cache_counters: &'static CacheMetrics) -> Self {
         MemorySizedCache {
-            inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
-                Capacity::InBytes(
-                    cache_config
-                        .capacity
-                        .as_u64()
-                        .try_into()
-                        .unwrap_or(usize::MAX),
-                ),
-                cache_counters,
-            )),
+            inner: Mutex::new(CacheState::from_config(cache_config, cache_counters)),
         }
     }
 
     /// Creates a slice cache that never removes any entry.
     pub fn with_infinite_capacity(cache_counters: &'static CacheMetrics) -> Self {
         MemorySizedCache {
-            inner: Mutex::new(NeedMutMemorySizedCache::with_capacity(
-                Capacity::Unlimited,
-                cache_counters,
-            )),
+            inner: Mutex::new(CacheState::infinite(cache_counters)),
         }
     }
 

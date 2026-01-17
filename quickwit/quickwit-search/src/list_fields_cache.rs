@@ -51,7 +51,7 @@ impl ListFieldsCache {
 }
 
 /// A key inside a [`ListFieldsCache`].
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, Clone, PartialEq, Eq)]
 struct CacheKey {
     /// The split this entry refers to
     split_id: SplitId,

@@ -309,6 +309,7 @@ where
 {
     use serde::Deserialize;
 
+    // TODO while this is nice to use, the error messages are really bad
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum Either<T, U> {
