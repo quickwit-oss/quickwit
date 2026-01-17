@@ -12,8 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::net::Ipv6Addr;
+
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use tantivy::DateTime;
 use tantivy::aggregation::Key as TantivyKey;
 use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
@@ -24,8 +27,10 @@ use tantivy::aggregation::agg_result::{
 use tantivy::aggregation::metric::{
     ExtendedStats, PercentileValues as TantivyPercentileValues, PercentileValuesVecEntry,
     PercentilesMetricResult as TantivyPercentilesMetricResult, SingleMetricResult, Stats,
-    TopHitsMetricResult,
+    TopHitsMetricResult as TantivyTopHitsMetricResult, TopHitsVecEntry as TantivyTopHitsVecEntry,
 };
+use tantivy::schema::{Facet, OwnedValue as TantivyOwnedValue};
+use tantivy::tokenizer::PreTokenizedString;
 
 // hopefully all From in this module are no-ops, otherwise, this is a very sad situation
 
@@ -116,7 +121,7 @@ impl From<TantivyMetricResult> for MetricResult {
             TantivyMetricResult::ExtendedStats(val) => MetricResult::ExtendedStats(val),
             TantivyMetricResult::Sum(val) => MetricResult::Sum(val),
             TantivyMetricResult::Percentiles(val) => MetricResult::Percentiles(val.into()),
-            TantivyMetricResult::TopHits(val) => MetricResult::TopHits(val),
+            TantivyMetricResult::TopHits(val) => MetricResult::TopHits(val.into()),
             TantivyMetricResult::Cardinality(val) => MetricResult::Cardinality(val),
         }
     }
@@ -133,7 +138,7 @@ impl From<MetricResult> for TantivyMetricResult {
             MetricResult::ExtendedStats(val) => TantivyMetricResult::ExtendedStats(val),
             MetricResult::Sum(val) => TantivyMetricResult::Sum(val),
             MetricResult::Percentiles(val) => TantivyMetricResult::Percentiles(val.into()),
-            MetricResult::TopHits(val) => TantivyMetricResult::TopHits(val),
+            MetricResult::TopHits(val) => TantivyMetricResult::TopHits(val.into()),
             MetricResult::Cardinality(val) => TantivyMetricResult::Cardinality(val),
         }
     }
@@ -411,5 +416,151 @@ impl From<PercentilesMetricResult> for TantivyPercentilesMetricResult {
             PercentileValues::HashMap(map) => TantivyPercentileValues::HashMap(map),
         };
         TantivyPercentilesMetricResult { values }
+    }
+}
+
+// Redefine the tantivy TopHitsVecEntry to use our own `OwnedValue`
+// and avoid skip_serializing_if so postcard can (de)-serialize it.
+/// The top_hits metric results entry
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TopHitsVecEntry {
+    /// The sort values of the document, depending on the sort criteria in the request.
+    pub sort: Vec<Option<u64>>,
+
+    /// Search results, for queries that include field retrieval requests
+    /// (`docvalue_fields`).
+    #[serde(rename = "docvalue_fields")]
+    pub doc_value_fields: FxHashMap<String, OwnedValue>,
+}
+
+/// The top_hits metric aggregation results a list of top hits by sort criteria.
+///
+/// The main reason for wrapping it in `hits` is to match elasticsearch output structure.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TopHitsMetricResult {
+    /// The result of the top_hits metric.
+    pub hits: Vec<TopHitsVecEntry>,
+}
+
+/// Redefinition of [`TantivyOwnedValue`] to have it work
+/// with postcard de-serialization.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum OwnedValue {
+    /// A null value.
+    Null,
+    /// The str type is used for any text information.
+    Str(String),
+    /// Pre-tokenized str type,
+    PreTokStr(PreTokenizedString),
+    /// Unsigned 64-bits Integer `u64`
+    U64(u64),
+    /// Signed 64-bits Integer `i64`
+    I64(i64),
+    /// 64-bits Float `f64`
+    F64(f64),
+    /// Bool value
+    Bool(bool),
+    /// Date/time with nanoseconds precision
+    Date(DateTime),
+    /// Facet
+    Facet(Facet),
+    /// Arbitrarily sized byte array
+    Bytes(Vec<u8>),
+    /// A set of values.
+    Array(Vec<Self>),
+    /// Dynamic object value.
+    Object(Vec<(String, Self)>),
+    /// IpV6 Address. Internally there is no IpV4, it needs to be converted to `Ipv6Addr`.
+    IpAddr(Ipv6Addr),
+}
+
+impl From<TopHitsVecEntry> for TantivyTopHitsVecEntry {
+    fn from(value: TopHitsVecEntry) -> TantivyTopHitsVecEntry {
+        TantivyTopHitsVecEntry {
+            sort: value.sort,
+            doc_value_fields: value
+                .doc_value_fields
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
+        }
+    }
+}
+impl From<TantivyTopHitsVecEntry> for TopHitsVecEntry {
+    fn from(value: TantivyTopHitsVecEntry) -> Self {
+        TopHitsVecEntry {
+            sort: value.sort,
+            doc_value_fields: value
+                .doc_value_fields
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
+        }
+    }
+}
+impl From<TopHitsMetricResult> for TantivyTopHitsMetricResult {
+    fn from(value: TopHitsMetricResult) -> Self {
+        TantivyTopHitsMetricResult {
+            hits: value
+                .hits
+                .into_iter()
+                .map(TantivyTopHitsVecEntry::from)
+                .collect(),
+        }
+    }
+}
+impl From<TantivyTopHitsMetricResult> for TopHitsMetricResult {
+    fn from(value: TantivyTopHitsMetricResult) -> Self {
+        TopHitsMetricResult {
+            hits: value.hits.into_iter().map(TopHitsVecEntry::from).collect(),
+        }
+    }
+}
+
+impl From<TantivyOwnedValue> for OwnedValue {
+    fn from(value: TantivyOwnedValue) -> Self {
+        match value {
+            TantivyOwnedValue::Null => OwnedValue::Null,
+            TantivyOwnedValue::Str(v) => OwnedValue::Str(v),
+            TantivyOwnedValue::PreTokStr(v) => OwnedValue::PreTokStr(v),
+            TantivyOwnedValue::U64(v) => OwnedValue::U64(v),
+            TantivyOwnedValue::I64(v) => OwnedValue::I64(v),
+            TantivyOwnedValue::F64(v) => OwnedValue::F64(v),
+            TantivyOwnedValue::Bool(v) => OwnedValue::Bool(v),
+            TantivyOwnedValue::Date(v) => OwnedValue::Date(v),
+            TantivyOwnedValue::Facet(v) => OwnedValue::Facet(v),
+            TantivyOwnedValue::Bytes(v) => OwnedValue::Bytes(v),
+            TantivyOwnedValue::Array(v) => {
+                OwnedValue::Array(v.into_iter().map(OwnedValue::from).collect())
+            }
+            TantivyOwnedValue::Object(v) => {
+                OwnedValue::Object(v.into_iter().map(|(k, v)| (k, v.into())).collect())
+            }
+            TantivyOwnedValue::IpAddr(v) => OwnedValue::IpAddr(v),
+        }
+    }
+}
+
+impl From<OwnedValue> for TantivyOwnedValue {
+    fn from(value: OwnedValue) -> Self {
+        match value {
+            OwnedValue::Null => TantivyOwnedValue::Null,
+            OwnedValue::Str(v) => TantivyOwnedValue::Str(v),
+            OwnedValue::PreTokStr(v) => TantivyOwnedValue::PreTokStr(v),
+            OwnedValue::F64(v) => TantivyOwnedValue::F64(v),
+            OwnedValue::U64(v) => TantivyOwnedValue::U64(v),
+            OwnedValue::I64(v) => TantivyOwnedValue::I64(v),
+            OwnedValue::Bool(v) => TantivyOwnedValue::Bool(v),
+            OwnedValue::Date(v) => TantivyOwnedValue::Date(v),
+            OwnedValue::Facet(v) => TantivyOwnedValue::Facet(v),
+            OwnedValue::Bytes(v) => TantivyOwnedValue::Bytes(v),
+            OwnedValue::Array(v) => {
+                TantivyOwnedValue::Array(v.into_iter().map(TantivyOwnedValue::from).collect())
+            }
+            OwnedValue::Object(v) => {
+                TantivyOwnedValue::Object(v.into_iter().map(|(k, v)| (k, v.into())).collect())
+            }
+            OwnedValue::IpAddr(v) => TantivyOwnedValue::IpAddr(v),
+        }
     }
 }
