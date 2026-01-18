@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod base_cache;
 mod byte_range_cache;
 mod memory_sized_cache;
 mod quickwit_cache;

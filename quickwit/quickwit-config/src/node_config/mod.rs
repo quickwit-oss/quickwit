@@ -373,7 +373,6 @@ pub enum CachePolicy {
     Lru,
     S3Fifo,
     TinyLfu,
-    TinyUfo,
 }
 
 impl std::fmt::Display for CachePolicy {
@@ -382,7 +381,6 @@ impl std::fmt::Display for CachePolicy {
             CachePolicy::Lru => f.write_str("lru"),
             CachePolicy::S3Fifo => f.write_str("s3-fifo"),
             CachePolicy::TinyLfu => f.write_str("tiny-lfu"),
-            CachePolicy::TinyUfo => f.write_str("tiny-ufo"),
         }
     }
 }

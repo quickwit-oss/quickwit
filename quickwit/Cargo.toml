@@ -152,6 +152,7 @@ lru = "0.16"
 matches = "0.1"
 md5 = "0.8"
 mime_guess = "2.0"
+mini-moka = "0.10.3"
 mockall = "0.14"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
 new_string_template = "1.5"
@@ -187,6 +188,7 @@ pulsar = { version = "6.6", default-features = false, features = [
   "compression",
   "tokio-runtime",
 ] }
+quick_cache = "0.6.18"
 quote = "1.0"
 rand = "0.9"
 rand_distr = "0.5"
