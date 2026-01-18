@@ -197,7 +197,7 @@ impl<K: Hash + Eq + Clone> CacheState<K> {
         let cache = NeedMutMemorySizedCache::with_capacity(
             Capacity::InBytes(
                 cache_config
-                    .capacity
+                    .capacity()
                     .as_u64()
                     .try_into()
                     .unwrap_or(usize::MAX),
@@ -209,16 +209,12 @@ impl<K: Hash + Eq + Clone> CacheState<K> {
             .iter()
             .cloned()
             .map(|mut virtual_cache_config| {
-                let mut capacity = virtual_cache_config.capacity.as_u64();
-                if capacity == 0 {
-                    // As a special case, if virtual cache capacity is zero, it's assumed to mean
-                    // "same capacity as the real cache", but possibly with a
-                    // different policy
-                    capacity = cache_config.capacity.as_u64();
-                    virtual_cache_config.capacity = cache_config.capacity;
-                }
-
-                let capacity = capacity.try_into().unwrap_or(usize::MAX);
+                let capacity = virtual_cache_config
+                    .capacity_for_virtual_cache(cache_config.capacity())
+                    .as_u64()
+                    .try_into()
+                    .unwrap_or(usize::MAX);
+                let _policy = virtual_cache_config.policy_for_virtual_cache(cache_config.policy());
                 NeedMutMemorySizedCache::with_capacity(
                     Capacity::InBytes(capacity),
                     cache_counters.virtual_cache(&virtual_cache_config),

@@ -299,30 +299,6 @@ pub fn indexing_pipeline_params_fingerprint(
     hasher.finish()
 }
 
-// Attempt to deserialize a T, or deserialize a U, and transform it into a T with the provided
-// function
-fn deserialize_or_try_with<'de, U, T, D>(d: D) -> Result<T, D::Error>
-where
-    T: serde::Deserialize<'de> + From<U>,
-    U: serde::Deserialize<'de>,
-    D: serde::Deserializer<'de>,
-{
-    use serde::Deserialize;
-
-    // TODO while this is nice to use, the error messages are really bad
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum Either<T, U> {
-        Main(T),
-        Fallback(U),
-    }
-
-    match Either::<T, U>::deserialize(d)? {
-        Either::Main(t) => Ok(t),
-        Either::Fallback(u) => Ok(u.into()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::validate_identifier;

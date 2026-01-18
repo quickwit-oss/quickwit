@@ -242,8 +242,8 @@ impl CacheMetrics {
         }
 
         const CACHE_METRICS_NAMESPACE: &str = "cache";
-        let capacity = config.capacity.as_u64().to_string();
-        let policy = config.policy.to_string();
+        let capacity = config.capacity().as_u64().to_string();
+        let policy = config.policy().to_string();
         let labels = [
             ("component_name", self.component_name.as_str()),
             ("capacity", &capacity),
