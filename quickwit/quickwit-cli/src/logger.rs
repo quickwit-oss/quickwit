@@ -94,7 +94,7 @@ pub fn setup_logging_and_tracing(
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     let provider_opt = if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
         let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
-            .with_http()
+            .with_tonic()
             .build()
             .context("failed to initialize OpenTelemetry OTLP exporter")?;
         let batch_processor = trace::BatchSpanProcessor::builder(otlp_exporter)
