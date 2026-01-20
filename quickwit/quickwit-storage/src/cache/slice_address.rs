@@ -54,6 +54,12 @@ impl SliceAddressKey for SliceAddressRef<'_> {
     }
 }
 
+impl<'a> Borrow<dyn SliceAddressKey + 'a> for std::sync::Arc<SliceAddress> {
+    fn borrow(&self) -> &(dyn SliceAddressKey + 'a) {
+        &**self
+    }
+}
+
 impl<'a> Borrow<dyn SliceAddressKey + 'a> for SliceAddress {
     fn borrow(&self) -> &(dyn SliceAddressKey + 'a) {
         self

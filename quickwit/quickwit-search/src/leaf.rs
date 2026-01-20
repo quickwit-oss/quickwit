@@ -450,14 +450,6 @@ async fn leaf_search_single_split(
         &split,
         ctx.doc_mapper.timestamp_field_name(),
     );
-    if let Some(cached_answer) = ctx
-        .searcher_context
-        .leaf_search_cache
-        .get(split.clone(), search_request.clone())
-    {
-        leaf_search_state_guard.set_state(SplitSearchState::CacheHit);
-        return Ok(Some(cached_answer));
-    }
 
     let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
@@ -469,6 +461,15 @@ async fn leaf_search_single_split(
     if is_metadata_count_request_with_ast(&query_ast, &search_request) {
         leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmup);
         return Ok(Some(get_leaf_resp_from_count(split.num_docs)));
+    }
+
+    if let Some(cached_answer) = ctx
+        .searcher_context
+        .leaf_search_cache
+        .get(split.clone(), search_request.clone())
+    {
+        leaf_search_state_guard.set_state(SplitSearchState::CacheHit);
+        return Ok(Some(cached_answer));
     }
 
     let split_id = split.split_id.to_string();
