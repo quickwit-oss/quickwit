@@ -22,9 +22,11 @@ http-body-util = { workspace = true}
 hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
+mini-moka = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
+quick_cache = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

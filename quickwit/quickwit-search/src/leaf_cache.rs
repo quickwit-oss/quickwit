@@ -15,6 +15,7 @@
 use std::ops::{Bound, RangeBounds};
 
 use prost::Message;
+use quickwit_config::CacheConfig;
 use quickwit_proto::search::{
     CountHits, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
 };
@@ -43,10 +44,10 @@ pub struct LeafSearchCache {
 // queries which vary only by search_after.
 
 impl LeafSearchCache {
-    pub fn new(capacity: usize) -> LeafSearchCache {
+    pub fn new(config: &CacheConfig) -> LeafSearchCache {
         LeafSearchCache {
-            content: MemorySizedCache::with_capacity_in_bytes(
-                capacity,
+            content: MemorySizedCache::from_config(
+                config,
                 &quickwit_storage::STORAGE_METRICS.partial_request_cache,
             ),
         }
@@ -76,7 +77,7 @@ impl LeafSearchCache {
 }
 
 /// A key inside a [`LeafSearchCache`].
-#[derive(Debug, Hash, PartialEq, Eq)]
+#[derive(Debug, Hash, Clone, PartialEq, Eq)]
 struct CacheKey {
     /// The split this entry refers to
     split_id: SplitId,
@@ -193,10 +194,10 @@ pub struct PredicateCacheImpl {
 }
 
 impl PredicateCacheImpl {
-    pub fn new(capacity: usize) -> Self {
+    pub fn new(config: &CacheConfig) -> Self {
         PredicateCacheImpl {
-            content: MemorySizedCache::with_capacity_in_bytes(
-                capacity,
+            content: MemorySizedCache::from_config(
+                config,
                 &quickwit_storage::STORAGE_METRICS.predicate_cache,
             ),
         }
@@ -235,6 +236,7 @@ impl quickwit_query::query_ast::PredicateCache for PredicateCacheImpl {
 
 #[cfg(test)]
 mod tests {
+    use bytesize::ByteSize;
     use quickwit_proto::search::{
         LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortValue,
         SplitIdAndFooterOffsets,
@@ -244,7 +246,7 @@ mod tests {
 
     #[test]
     fn test_leaf_search_cache_no_timestamp() {
-        let cache = LeafSearchCache::new(64_000_000);
+        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
 
         let split_1 = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),
@@ -310,7 +312,7 @@ mod tests {
 
     #[test]
     fn test_leaf_search_cache_timestamp() {
-        let cache = LeafSearchCache::new(64_000_000);
+        let cache = LeafSearchCache::new(&ByteSize::mb(64).into());
 
         let split_1 = SplitIdAndFooterOffsets {
             split_id: "split_1".to_string(),

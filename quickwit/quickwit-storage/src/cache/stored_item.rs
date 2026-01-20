@@ -17,13 +17,13 @@ use tokio::time::Instant;
 
 /// It is a bit overkill to put this in its own module, but I
 /// wanted to ensure that no one would access payload without updating `last_access_time`.
-pub(super) struct StoredItem {
+pub(super) struct StoredItem<V = OwnedBytes> {
     last_access_time: Instant,
-    payload: OwnedBytes,
+    payload: V,
 }
 
-impl StoredItem {
-    pub fn new(payload: OwnedBytes, now: Instant) -> Self {
+impl<V> StoredItem<V> {
+    pub fn new(payload: V, now: Instant) -> Self {
         StoredItem {
             last_access_time: now,
             payload,
@@ -31,8 +31,8 @@ impl StoredItem {
     }
 }
 
-impl StoredItem {
-    pub fn payload(&mut self) -> OwnedBytes {
+impl<V: ValueLen + Clone> StoredItem<V> {
+    pub fn payload(&mut self) -> V {
         self.last_access_time = Instant::now();
         self.payload.clone()
     }
@@ -43,5 +43,15 @@ impl StoredItem {
 
     pub fn last_access_time(&self) -> Instant {
         self.last_access_time
+    }
+}
+
+pub(crate) trait ValueLen {
+    fn len(&self) -> usize;
+}
+
+impl ValueLen for OwnedBytes {
+    fn len(&self) -> usize {
+        OwnedBytes::len(self)
     }
 }

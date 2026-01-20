@@ -32,7 +32,7 @@ use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_proto::types::NodeId;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
 use crate::node_config::serialize::load_node_config_with_env;
@@ -264,10 +264,25 @@ impl SplitCacheLimits {
 pub struct SearcherConfig {
     pub aggregation_memory_limit: ByteSize,
     pub aggregation_bucket_limit: u32,
-    pub fast_field_cache_capacity: ByteSize,
-    pub split_footer_cache_capacity: ByteSize,
-    pub partial_request_cache_capacity: ByteSize,
-    pub predicate_cache_capacity: ByteSize,
+
+    #[serde(alias = "fast_field_cache_capacity")]
+    #[serde(
+        deserialize_with = "CacheConfig::deserialize_with_default::<_, {ByteSize::gb(1).as_u64()}>"
+    )]
+    pub fast_field_cache: CacheConfig,
+    #[serde(alias = "split_footer_cache_capacity")]
+    #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
+                                {ByteSize::mb(500).as_u64()}>")]
+    pub split_footer_cache: CacheConfig,
+    #[serde(alias = "partial_request_cache_capacity")]
+    #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
+                                {ByteSize::mb(64).as_u64()}>")]
+    pub partial_request_cache: CacheConfig,
+    #[serde(alias = "predicate_cache_capacity")]
+    #[serde(deserialize_with = "CacheConfig::deserialize_with_default::<_, \
+                                {ByteSize::mb(256).as_u64()}>")]
+    pub predicate_cache: CacheConfig,
+
     pub max_num_concurrent_split_searches: usize,
     pub max_splits_per_search: Option<usize>,
     // Deprecated: stream search requests are no longer supported.
@@ -285,6 +300,89 @@ pub struct SearcherConfig {
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CacheConfig {
+    #[serde(default)]
+    capacity: Option<ByteSize>,
+    #[serde(default)]
+    policy: Option<CachePolicy>,
+
+    // Cache configs inside the virtual cache aren't allowed to contain virtual cache
+    #[serde(default)]
+    pub virtual_caches: Vec<CacheConfig>,
+}
+
+impl CacheConfig {
+    pub fn default_with_capacity(capacity: ByteSize) -> Self {
+        CacheConfig {
+            capacity: Some(capacity),
+            policy: None,
+            virtual_caches: Vec::new(),
+        }
+    }
+
+    pub fn capacity(&self) -> ByteSize {
+        // this should always be there
+        self.capacity.unwrap_or_default()
+    }
+
+    pub fn capacity_for_virtual_cache(&mut self, real_capacity: ByteSize) -> ByteSize {
+        let capacity = self.capacity.unwrap_or(real_capacity);
+        self.capacity = Some(capacity);
+        capacity
+    }
+
+    pub fn policy(&self) -> CachePolicy {
+        self.policy.unwrap_or_default()
+    }
+
+    pub fn policy_for_virtual_cache(&mut self, real_policy: CachePolicy) -> CachePolicy {
+        let policy = self.policy.unwrap_or(real_policy);
+        self.policy = Some(policy);
+        policy
+    }
+
+    fn deserialize_with_default<'de, D, const DEFAULT_CAPACITY: u64>(
+        deserializer: D,
+    ) -> Result<CacheConfig, D::Error>
+    where D: Deserializer<'de> {
+        use serde_with::{DeserializeAs, FromInto, PickFirst, Same};
+
+        let mut cache_config: CacheConfig =
+            PickFirst::<(Same, FromInto<ByteSize>)>::deserialize_as(deserializer)?;
+        if cache_config.capacity.is_none() {
+            cache_config.capacity = Some(ByteSize::b(DEFAULT_CAPACITY));
+        }
+        Ok(cache_config)
+    }
+}
+
+impl From<ByteSize> for CacheConfig {
+    fn from(capacity: ByteSize) -> Self {
+        CacheConfig::default_with_capacity(capacity)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum CachePolicy {
+    #[default]
+    Lru,
+    S3Fifo,
+    TinyLfu,
+}
+
+impl std::fmt::Display for CachePolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CachePolicy::Lru => f.write_str("lru"),
+            CachePolicy::S3Fifo => f.write_str("s3-fifo"),
+            CachePolicy::TinyLfu => f.write_str("tiny-lfu"),
+        }
+    }
 }
 
 /// Configuration controlling how fast a searcher should timeout a `get_slice`
@@ -323,10 +421,10 @@ impl StorageTimeoutPolicy {
 impl Default for SearcherConfig {
     fn default() -> Self {
         SearcherConfig {
-            fast_field_cache_capacity: ByteSize::gb(1),
-            split_footer_cache_capacity: ByteSize::mb(500),
-            partial_request_cache_capacity: ByteSize::mb(64),
-            predicate_cache_capacity: ByteSize::mb(256),
+            fast_field_cache: CacheConfig::default_with_capacity(ByteSize::gb(1)),
+            split_footer_cache: CacheConfig::default_with_capacity(ByteSize::mb(500)),
+            partial_request_cache: CacheConfig::default_with_capacity(ByteSize::mb(64)),
+            predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
             max_num_concurrent_split_searches: 100,
             max_splits_per_search: None,
             _max_num_concurrent_split_streams: None,
