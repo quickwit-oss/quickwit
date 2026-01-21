@@ -7,7 +7,7 @@ pub struct AnyRequest {
     pub context: ::core::option::Option<Context>,
     #[prost(
         oneof = "any_request::Request",
-        tags = "11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25"
+        tags = "11, 12, 13, 14, 15, 17, 18, 19, 21, 22, 23, 24, 25"
     )]
     pub request: ::core::option::Option<any_request::Request>,
 }
@@ -29,6 +29,8 @@ pub mod any_request {
         RootSearch(super::super::quickwit::search::SearchRequest),
         #[prost(message, tag = "18")]
         RootListTerms(super::super::quickwit::search::ListTermsRequest),
+        #[prost(message, tag = "19")]
+        RootListFields(super::super::quickwit::search::ListFieldsRequest),
         /// Same as a ping, but not propagated further
         #[prost(message, tag = "21")]
         LocalPing(super::PingRequest),
@@ -50,7 +52,7 @@ pub struct AnyResponse {
     pub grpc_code: u32,
     #[prost(
         oneof = "any_response::Response",
-        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25"
+        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 21, 22, 23, 24, 25"
     )]
     pub response: ::core::option::Option<any_response::Response>,
 }
@@ -80,6 +82,8 @@ pub mod any_response {
         RootSearch(super::super::quickwit::search::SearchResponse),
         #[prost(message, tag = "18")]
         RootListTerms(super::super::quickwit::search::ListTermsResponse),
+        #[prost(message, tag = "19")]
+        RootListFields(super::super::quickwit::search::ListFieldsResponse),
         /// Same as a ping, but not propagated further
         #[prost(message, tag = "21")]
         LocalPing(super::PingResponse),
@@ -725,6 +729,11 @@ impl RpcName for super::quickwit::search::ListTermsRequest {
         "root_list_terms"
     }
 }
+impl RpcName for super::quickwit::search::ListFieldsRequest {
+    fn rpc_name() -> &'static str {
+        "root_list_fields"
+    }
+}
 impl RpcName for GetIndexesRequest {
     fn rpc_name() -> &'static str {
         "get_indexes"
@@ -786,6 +795,10 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse>;
+    async fn root_list_fields(
+        &self,
+        request: super::quickwit::search::ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListFieldsResponse>;
     ///Returns the list of indexes
     async fn get_indexes(
         &self,
@@ -961,6 +974,12 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
         self.inner.0.root_list_terms(request).await
     }
+    async fn root_list_fields(
+        &self,
+        request: super::quickwit::search::ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListFieldsResponse> {
+        self.inner.0.root_list_fields(request).await
+    }
     async fn get_indexes(
         &self,
         request: GetIndexesRequest,
@@ -1046,6 +1065,14 @@ pub mod mock_cloud_prem_service {
             super::super::quickwit::search::ListTermsResponse,
         > {
             self.inner.lock().await.root_list_terms(request).await
+        }
+        async fn root_list_fields(
+            &self,
+            request: super::super::quickwit::search::ListFieldsRequest,
+        ) -> crate::cloudprem::CloudPremResult<
+            super::super::quickwit::search::ListFieldsResponse,
+        > {
+            self.inner.lock().await.root_list_fields(request).await
         }
         async fn get_indexes(
             &self,
@@ -1201,6 +1228,26 @@ for InnerCloudPremServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<super::quickwit::search::ListFieldsRequest>
+for InnerCloudPremServiceClient {
+    type Response = super::quickwit::search::ListFieldsResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(
+        &mut self,
+        request: super::quickwit::search::ListFieldsRequest,
+    ) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.root_list_fields(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<GetIndexesRequest> for InnerCloudPremServiceClient {
     type Response = GetIndexesResponse;
     type Error = crate::cloudprem::CloudPremError;
@@ -1325,6 +1372,11 @@ struct CloudPremServiceTowerServiceStack {
         super::quickwit::search::ListTermsResponse,
         crate::cloudprem::CloudPremError,
     >,
+    root_list_fields_svc: quickwit_common::tower::BoxService<
+        super::quickwit::search::ListFieldsRequest,
+        super::quickwit::search::ListFieldsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
     get_indexes_svc: quickwit_common::tower::BoxService<
         GetIndexesRequest,
         GetIndexesResponse,
@@ -1394,6 +1446,12 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
         self.root_list_terms_svc.clone().ready().await?.call(request).await
+    }
+    async fn root_list_fields(
+        &self,
+        request: super::quickwit::search::ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListFieldsResponse> {
+        self.root_list_fields_svc.clone().ready().await?.call(request).await
     }
     async fn get_indexes(
         &self,
@@ -1496,6 +1554,16 @@ type RootListTermsLayer = quickwit_common::tower::BoxLayer<
     super::quickwit::search::ListTermsResponse,
     crate::cloudprem::CloudPremError,
 >;
+type RootListFieldsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        super::quickwit::search::ListFieldsRequest,
+        super::quickwit::search::ListFieldsResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    super::quickwit::search::ListFieldsRequest,
+    super::quickwit::search::ListFieldsResponse,
+    crate::cloudprem::CloudPremError,
+>;
 type GetIndexesLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         GetIndexesRequest,
@@ -1555,6 +1623,7 @@ pub struct CloudPremServiceTowerLayerStack {
     pull_cluster_metrics_layers: Vec<PullClusterMetricsLayer>,
     root_search_layers: Vec<RootSearchLayer>,
     root_list_terms_layers: Vec<RootListTermsLayer>,
+    root_list_fields_layers: Vec<RootListFieldsLayer>,
     get_indexes_layers: Vec<GetIndexesLayer>,
     create_index_layers: Vec<CreateIndexLayer>,
     update_index_layers: Vec<UpdateIndexLayer>,
@@ -1747,6 +1816,33 @@ impl CloudPremServiceTowerLayerStack {
         >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
+                    super::quickwit::search::ListFieldsRequest,
+                    super::quickwit::search::ListFieldsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::quickwit::search::ListFieldsRequest,
+                super::quickwit::search::ListFieldsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                super::quickwit::search::ListFieldsRequest,
+                Response = super::quickwit::search::ListFieldsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                super::quickwit::search::ListFieldsRequest,
+                super::quickwit::search::ListFieldsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<
+            super::quickwit::search::ListFieldsRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
                     GetIndexesRequest,
                     GetIndexesResponse,
                     crate::cloudprem::CloudPremError,
@@ -1882,6 +1978,8 @@ impl CloudPremServiceTowerLayerStack {
         self.root_search_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.root_list_terms_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.root_list_fields_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.get_indexes_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -2033,6 +2131,27 @@ impl CloudPremServiceTowerLayerStack {
         >>::Future: Send + 'static,
     {
         self.root_list_terms_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_root_list_fields_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    super::quickwit::search::ListFieldsRequest,
+                    super::quickwit::search::ListFieldsResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::quickwit::search::ListFieldsRequest,
+                Response = super::quickwit::search::ListFieldsResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::quickwit::search::ListFieldsRequest,
+        >>::Future: Send + 'static,
+    {
+        self.root_list_fields_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_get_indexes_layer<L>(mut self, layer: L) -> Self
@@ -2249,6 +2368,14 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let root_list_fields_svc = self
+            .root_list_fields_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let get_indexes_svc = self
             .get_indexes_layers
             .into_iter()
@@ -2298,6 +2425,7 @@ impl CloudPremServiceTowerLayerStack {
             pull_cluster_metrics_svc,
             root_search_svc,
             root_list_terms_svc,
+            root_list_fields_svc,
             get_indexes_svc,
             create_index_svc,
             update_index_svc,
@@ -2431,6 +2559,15 @@ where
             >,
         >
         + tower::Service<
+            super::quickwit::search::ListFieldsRequest,
+            Response = super::quickwit::search::ListFieldsResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<
+                super::quickwit::search::ListFieldsResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >
+        + tower::Service<
             GetIndexesRequest,
             Response = GetIndexesResponse,
             Error = crate::cloudprem::CloudPremError,
@@ -2504,6 +2641,12 @@ where
         &self,
         request: super::quickwit::search::ListTermsRequest,
     ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListTermsResponse> {
+        self.clone().call(request).await
+    }
+    async fn root_list_fields(
+        &self,
+        request: super::quickwit::search::ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListFieldsResponse> {
         self.clone().call(request).await
     }
     async fn get_indexes(
@@ -2667,6 +2810,20 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 super::quickwit::search::ListTermsRequest::rpc_name(),
+            ))
+    }
+    async fn root_list_fields(
+        &self,
+        request: super::quickwit::search::ListFieldsRequest,
+    ) -> crate::cloudprem::CloudPremResult<super::quickwit::search::ListFieldsResponse> {
+        self.inner
+            .clone()
+            .root_list_fields(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                super::quickwit::search::ListFieldsRequest::rpc_name(),
             ))
     }
     async fn get_indexes(
@@ -2844,6 +3001,20 @@ for CloudPremServiceGrpcServerAdapter {
         self.inner
             .0
             .root_list_terms(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn root_list_fields(
+        &self,
+        request: tonic::Request<super::quickwit::search::ListFieldsRequest>,
+    ) -> Result<
+        tonic::Response<super::quickwit::search::ListFieldsResponse>,
+        tonic::Status,
+    > {
+        self.inner
+            .0
+            .root_list_fields(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -3173,6 +3344,32 @@ pub mod cloud_prem_service_grpc_client {
                 .insert(GrpcMethod::new("cloudprem.CloudPremService", "RootListTerms"));
             self.inner.unary(req, path, codec).await
         }
+        pub async fn root_list_fields(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::quickwit::search::ListFieldsRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::quickwit::search::ListFieldsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/RootListFields",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "RootListFields"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Returns the list of indexes
         pub async fn get_indexes(
             &mut self,
@@ -3361,6 +3558,13 @@ pub mod cloud_prem_service_grpc_server {
             request: tonic::Request<super::super::quickwit::search::ListTermsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::quickwit::search::ListTermsResponse>,
+            tonic::Status,
+        >;
+        async fn root_list_fields(
+            &self,
+            request: tonic::Request<super::super::quickwit::search::ListFieldsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::quickwit::search::ListFieldsResponse>,
             tonic::Status,
         >;
         /// Returns the list of indexes
@@ -3802,6 +4006,58 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = RootListTermsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/RootListFields" => {
+                    #[allow(non_camel_case_types)]
+                    struct RootListFieldsSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<
+                        super::super::quickwit::search::ListFieldsRequest,
+                    > for RootListFieldsSvc<T> {
+                        type Response = super::super::quickwit::search::ListFieldsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::quickwit::search::ListFieldsRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CloudPremServiceGrpc>::root_list_fields(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RootListFieldsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

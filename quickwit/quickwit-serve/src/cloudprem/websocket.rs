@@ -78,6 +78,9 @@ async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest
         Request::RootListTerms(root_list_terms) => {
             Response::RootListTerms(handle_err!(server.root_list_terms(root_list_terms).await))
         }
+        Request::RootListFields(root_list_fields) => {
+            Response::RootListFields(handle_err!(server.root_list_fields(root_list_fields).await))
+        }
         Request::GetIndexes(get_indexes) => {
             Response::GetIndexes(handle_err!(server.get_indexes(get_indexes).await))
         }

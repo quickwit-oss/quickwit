@@ -36,8 +36,8 @@ use quickwit_proto::metastore::{
     serde_utils,
 };
 use quickwit_proto::search::{
-    CountHits, Hit, ListTermsRequest, ListTermsResponse, PartialHit, SearchRequest, SearchResponse,
-    SortField, SortOrder,
+    CountHits, Hit, ListFieldsRequest, ListFieldsResponse, ListTermsRequest, ListTermsResponse,
+    PartialHit, SearchRequest, SearchResponse, SortField, SortOrder,
 };
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
@@ -389,6 +389,19 @@ impl CloudPremService for CloudPremServiceImpl {
         filter_safe_indexes(&mut list_terms_request.index_id_patterns);
         self.search_service
             .root_list_terms(list_terms_request)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn root_list_fields(
+        &self,
+        mut list_fields_request: ListFieldsRequest,
+    ) -> Result<ListFieldsResponse, CloudPremError> {
+        // we don't want to ever access customer data here, that has to go through properly audited
+        // channels
+        filter_safe_indexes(&mut list_fields_request.index_id_patterns);
+        self.search_service
+            .root_list_fields(list_fields_request)
             .await
             .map_err(Into::into)
     }

@@ -28,6 +28,7 @@ service CloudPremService {
   // These are endpoints to use the capabilities of the underlying quickwit searcher
   rpc RootSearch(quickwit.search.SearchRequest) returns (quickwit.search.SearchResponse);
   rpc RootListTerms(quickwit.search.ListTermsRequest) returns (quickwit.search.ListTermsResponse);
+  rpc RootListFields(quickwit.search.ListFieldsRequest) returns (quickwit.search.ListFieldsResponse);
 
   // Returns the list of indexes
   rpc GetIndexes(GetIndexesRequest) returns (GetIndexesResponse);
@@ -57,6 +58,7 @@ message AnyRequest {
         PullClusterMetricsRequest pull_cluster_metrics = 15;
         quickwit.search.SearchRequest root_search = 17;
         quickwit.search.ListTermsRequest root_list_terms = 18;
+        quickwit.search.ListFieldsRequest root_list_fields = 19;
 
         // Same as a ping, but not propagated further
         PingRequest local_ping = 21;
@@ -86,6 +88,7 @@ message AnyResponse {
         PullClusterMetricsResponse pull_cluster_metrics = 15;
         quickwit.search.SearchResponse root_search = 17;
         quickwit.search.ListTermsResponse root_list_terms = 18;
+        quickwit.search.ListFieldsResponse root_list_fields = 19;
 
         // Same as a ping, but not propagated further
         PingResponse local_ping = 21;
