@@ -261,7 +261,10 @@ fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
         OnceLock::new();
     let java_datetime_format_map = JAVA_DATE_FORMAT_ALIASES.get_or_init(|| {
         let mut m = HashMap::new();
-        m.insert("date_optional_time", "yyyy-MM-dd['T'HH[:mm[:ss[.SSS][Z]]]]");
+        m.insert(
+            "date_optional_time",
+            "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSS][Z]]]]]]",
+        );
         m.insert(
             "strict_date_optional_time",
             "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSS][Z]]]]]]",
