@@ -14,11 +14,11 @@
 
 use std::collections::HashMap;
 
-use warp::hyper::StatusCode;
 use quickwit_proto::search::{ListFieldType, ListFieldsEntryResponse, ListFieldsResponse};
 use quickwit_query::ElasticQueryDsl;
 use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
+use warp::hyper::StatusCode;
 
 use super::ElasticsearchError;
 use super::search_query_params::*;
@@ -176,38 +176,48 @@ pub fn convert_to_es_field_capabilities_response(
     FieldCapabilityResponse { indices, fields }
 }
 
+/// Parses an Elasticsearch index_filter JSON value into a Quickwit QueryAst.
+///
+/// Returns `Ok(None)` if the index_filter is null or empty.
+/// Returns `Ok(Some(QueryAst))` if the index_filter is valid.
+/// Returns `Err` if the index_filter is invalid or cannot be converted.
+pub fn parse_index_filter_to_query_ast(
+    index_filter: serde_json::Value,
+) -> Result<Option<QueryAst>, ElasticsearchError> {
+    if index_filter.is_null() || index_filter == serde_json::Value::Object(Default::default()) {
+        return Ok(None);
+    }
+
+    // Parse ES Query DSL to internal QueryAst
+    let elastic_query_dsl: ElasticQueryDsl =
+        serde_json::from_value(index_filter).map_err(|err| {
+            ElasticsearchError::new(
+                StatusCode::BAD_REQUEST,
+                format!("Invalid index_filter: {err}"),
+                None,
+            )
+        })?;
+
+    let query_ast: QueryAst = elastic_query_dsl.try_into().map_err(|err: anyhow::Error| {
+        ElasticsearchError::new(
+            StatusCode::BAD_REQUEST,
+            format!("Failed to convert index_filter: {err}"),
+            None,
+        )
+    })?;
+
+    Ok(Some(query_ast))
+}
+
 #[allow(clippy::result_large_err)]
 pub fn build_list_field_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: FieldCapabilityQueryParams,
     search_body: FieldCapabilityRequestBody,
 ) -> Result<quickwit_proto::search::ListFieldsRequest, ElasticsearchError> {
-    // Parse index_filter if provided
-    let query_ast_json: Option<String> = if search_body.index_filter.is_null()
-        || search_body.index_filter == serde_json::Value::Object(Default::default())
-    {
-        None
-    } else {
-        // Parse ES Query DSL to internal QueryAst
-        let elastic_query_dsl: ElasticQueryDsl =
-            serde_json::from_value(search_body.index_filter).map_err(|err| {
-                ElasticsearchError::new(
-                    StatusCode::BAD_REQUEST,
-                    format!("Invalid index_filter: {err}"),
-                    None,
-                )
-            })?;
-
-        let query_ast: QueryAst = elastic_query_dsl.try_into().map_err(|err: anyhow::Error| {
-            ElasticsearchError::new(
-                StatusCode::BAD_REQUEST,
-                format!("Failed to convert index_filter: {err}"),
-                None,
-            )
-        })?;
-
-        Some(serde_json::to_string(&query_ast).expect("QueryAst should be JSON serializable"))
-    };
+    let query_ast = parse_index_filter_to_query_ast(search_body.index_filter)?;
+    let query_ast_json = query_ast
+        .map(|ast| serde_json::to_string(&ast).expect("QueryAst should be JSON serializable"));
 
     Ok(quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
@@ -357,5 +367,34 @@ mod tests {
         assert_eq!(result.start_timestamp, Some(1000));
         assert_eq!(result.end_timestamp, Some(2000));
         assert!(result.query_ast.is_some());
+    }
+
+    #[test]
+    fn test_parse_index_filter_to_query_ast_null() {
+        let result = parse_index_filter_to_query_ast(serde_json::Value::Null).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_index_filter_to_query_ast_empty_object() {
+        let result = parse_index_filter_to_query_ast(json!({})).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_index_filter_to_query_ast_valid_term() {
+        let result = parse_index_filter_to_query_ast(json!({
+            "term": { "status": "active" }
+        }))
+        .unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_index_filter_to_query_ast_invalid() {
+        let result = parse_index_filter_to_query_ast(json!({
+            "invalid_query_type": { "field": "value" }
+        }));
+        assert!(result.is_err());
     }
 }

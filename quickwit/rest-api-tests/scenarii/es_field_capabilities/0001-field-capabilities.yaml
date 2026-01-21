@@ -336,14 +336,16 @@ endpoint: doesno*texist/_field_caps?fields=date
 status_code: 200
 ---
 # Test _field_caps API with index_filter (term query)
+# Note: term queries require exact token match; 'fritz' is lowercase due to default tokenizer
 method: [POST]
 engines:
   - quickwit
+  - elasticsearch
 endpoint: fieldcaps/_field_caps?fields=*
-json_body:
+json:
   index_filter:
     term:
-      name: "Alice"
+      name: "fritz"
 expected:
   indices:
   - fieldcaps
@@ -364,8 +366,9 @@ expected:
 method: [POST]
 engines:
   - quickwit
+  - elasticsearch
 endpoint: fieldcaps/_field_caps?fields=name
-json_body:
+json:
   index_filter:
     match_all: {}
 expected:
@@ -388,17 +391,18 @@ expected:
 method: [POST]
 engines:
   - quickwit
+  - elasticsearch
 endpoint: fieldcaps/_field_caps?fields=response,name
-json_body:
+json:
   index_filter:
     bool:
       must:
         - term:
-            name: "Alice"
+            name: "fritz"
       filter:
         - range:
             response:
-              gte: 100
+              gte: 30
 expected:
   indices:
   - fieldcaps
@@ -425,8 +429,9 @@ expected:
 method: [POST]
 engines:
   - quickwit
+  - elasticsearch
 endpoint: fieldcaps/_field_caps?fields=*
-json_body:
+json:
   index_filter:
     invalid_query_type:
       field: "value"
@@ -436,8 +441,9 @@ status_code: 400
 method: [POST]
 engines:
   - quickwit
+  - elasticsearch
 endpoint: fieldcaps/_field_caps?fields=name
-json_body:
+json:
   index_filter: {}
 expected:
   indices:

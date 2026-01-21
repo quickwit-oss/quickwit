@@ -93,9 +93,13 @@ pub struct LeafListFieldsRequest {
     #[prost(string, repeated, tag = "4")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// JSON-serialized QueryAst for index_filter support.
-    /// When provided, only fields from documents matching this query are returned.
+    /// When provided, only splits containing documents matching this query are included.
     #[prost(string, optional, tag = "5")]
     pub query_ast: ::core::option::Option<::prost::alloc::string::String>,
+    /// JSON-serialized DocMapper for query execution.
+    /// Required when query_ast is provided to build and execute the query.
+    #[prost(string, optional, tag = "6")]
+    pub doc_mapper: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
