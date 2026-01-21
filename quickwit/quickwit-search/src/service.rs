@@ -308,6 +308,7 @@ impl SearchService for SearchServiceImpl {
             &split_ids[..],
             &list_fields_req.fields,
             list_fields_req.query_ast.as_deref(),
+            list_fields_req.doc_mapper.as_deref(),
         )
         .await
     }
