@@ -261,14 +261,14 @@ fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
         OnceLock::new();
     let java_datetime_format_map = JAVA_DATE_FORMAT_ALIASES.get_or_init(|| {
         let mut m = HashMap::new();
-        m.insert("date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");
+        m.insert("date_optional_time", "yyyy-MM-dd['T'HH[:mm[:ss[.SSS][Z]]]]");
         m.insert(
             "strict_date_optional_time",
-            "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSS[Z]]]]]]]",
+            "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSS][Z]]]]]]",
         );
         m.insert(
             "strict_date_optional_time_nanos",
-            "yyyy[-MM[-dd['T'HH:mm:ss.SSSSSSZ]]]",
+            "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSSSSS][Z]]]]]]",
         );
         m.insert("basic_date", "yyyyMMdd");
 
@@ -660,6 +660,7 @@ mod tests {
             "2019-03-23T21:35:46.123+00:00",
             "2019-03-23T21:36:46.123+03:00",
             "2019-03-23T21:37:46.123+0300",
+            "2019-03-23T21:38:46+00:00",
         ];
         let expected = [
             datetime!(2019-01-01 00:00:00 UTC),
@@ -671,6 +672,7 @@ mod tests {
             datetime!(2019-03-23 21:35:46.123 UTC),
             datetime!(2019-03-23 21:36:46.123 +03:00:00),
             datetime!(2019-03-23 21:37:46.123 +03:00:00),
+            datetime!(2019-03-23 21:38:46 UTC),
         ];
         for (date_str, &expected_dt) in dates.iter().zip(expected.iter()) {
             let parsed_dt = parser
@@ -692,6 +694,7 @@ mod tests {
             "2019-03-23T21:35:46.123456789+00:00",
             "2019-03-23T21:36:46.123456789+03:00",
             "2019-03-23T21:37:46.123456789+0300",
+            "2019-03-23T21:38:46+00:00",
         ];
         let expected = [
             datetime!(2019-01-01 00:00:00 UTC),
@@ -701,6 +704,7 @@ mod tests {
             datetime!(2019-03-23 21:35:46.123456789 UTC),
             datetime!(2019-03-23 21:36:46.123456789 +03:00:00),
             datetime!(2019-03-23 21:37:46.123456789 +03:00:00),
+            datetime!(2019-03-23 21:38:46 UTC),
         ];
         for (date_str, &expected_dt) in dates.iter().zip(expected.iter()) {
             let parsed_dt = parser
