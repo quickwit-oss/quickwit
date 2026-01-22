@@ -58,7 +58,6 @@ message AnyRequest {
         PullClusterMetricsRequest pull_cluster_metrics = 15;
         quickwit.search.SearchRequest root_search = 17;
         quickwit.search.ListTermsRequest root_list_terms = 18;
-        quickwit.search.ListFieldsRequest root_list_fields = 19;
 
         // Same as a ping, but not propagated further
         PingRequest local_ping = 21;
@@ -67,6 +66,8 @@ message AnyRequest {
         CreateIndexRequest create_index = 23;
         UpdateIndexRequest update_index = 24;
         DeleteIndexRequest delete_index = 25;
+        quickwit.search.ListFieldsRequest root_list_fields = 26;
+
     }
 }
 
@@ -88,7 +89,6 @@ message AnyResponse {
         PullClusterMetricsResponse pull_cluster_metrics = 15;
         quickwit.search.SearchResponse root_search = 17;
         quickwit.search.ListTermsResponse root_list_terms = 18;
-        quickwit.search.ListFieldsResponse root_list_fields = 19;
 
         // Same as a ping, but not propagated further
         PingResponse local_ping = 21;
@@ -97,6 +97,8 @@ message AnyResponse {
         CreateIndexResponse create_index = 23;
         UpdateIndexResponse update_index = 24;
         DeleteIndexResponse delete_index = 25;
+        quickwit.search.ListFieldsResponse root_list_fields = 26;
+
     }
 }
 

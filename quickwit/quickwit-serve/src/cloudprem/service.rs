@@ -395,11 +395,8 @@ impl CloudPremService for CloudPremServiceImpl {
 
     async fn root_list_fields(
         &self,
-        mut list_fields_request: ListFieldsRequest,
+        list_fields_request: ListFieldsRequest,
     ) -> Result<ListFieldsResponse, CloudPremError> {
-        // we don't want to ever access customer data here, that has to go through properly audited
-        // channels
-        filter_safe_indexes(&mut list_fields_request.index_id_patterns);
         self.search_service
             .root_list_fields(list_fields_request)
             .await

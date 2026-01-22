@@ -7,7 +7,7 @@ pub struct AnyRequest {
     pub context: ::core::option::Option<Context>,
     #[prost(
         oneof = "any_request::Request",
-        tags = "11, 12, 13, 14, 15, 17, 18, 19, 21, 22, 23, 24, 25"
+        tags = "11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26"
     )]
     pub request: ::core::option::Option<any_request::Request>,
 }
@@ -29,8 +29,6 @@ pub mod any_request {
         RootSearch(super::super::quickwit::search::SearchRequest),
         #[prost(message, tag = "18")]
         RootListTerms(super::super::quickwit::search::ListTermsRequest),
-        #[prost(message, tag = "19")]
-        RootListFields(super::super::quickwit::search::ListFieldsRequest),
         /// Same as a ping, but not propagated further
         #[prost(message, tag = "21")]
         LocalPing(super::PingRequest),
@@ -42,6 +40,8 @@ pub mod any_request {
         UpdateIndex(super::UpdateIndexRequest),
         #[prost(message, tag = "25")]
         DeleteIndex(super::DeleteIndexRequest),
+        #[prost(message, tag = "26")]
+        RootListFields(super::super::quickwit::search::ListFieldsRequest),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -52,7 +52,7 @@ pub struct AnyResponse {
     pub grpc_code: u32,
     #[prost(
         oneof = "any_response::Response",
-        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 21, 22, 23, 24, 25"
+        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26"
     )]
     pub response: ::core::option::Option<any_response::Response>,
 }
@@ -82,8 +82,6 @@ pub mod any_response {
         RootSearch(super::super::quickwit::search::SearchResponse),
         #[prost(message, tag = "18")]
         RootListTerms(super::super::quickwit::search::ListTermsResponse),
-        #[prost(message, tag = "19")]
-        RootListFields(super::super::quickwit::search::ListFieldsResponse),
         /// Same as a ping, but not propagated further
         #[prost(message, tag = "21")]
         LocalPing(super::PingResponse),
@@ -95,6 +93,8 @@ pub mod any_response {
         UpdateIndex(super::UpdateIndexResponse),
         #[prost(message, tag = "25")]
         DeleteIndex(super::DeleteIndexResponse),
+        #[prost(message, tag = "26")]
+        RootListFields(super::super::quickwit::search::ListFieldsResponse),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
