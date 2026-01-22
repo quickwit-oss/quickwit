@@ -307,41 +307,86 @@ fn build_quoted_query(quote_query_node: AttributeQuotedQueryNode) -> QueryAst {
 }
 
 fn build_search_query(search_query: AttributeSearchQueryNode) -> Result<QueryAst, InvalidQuery> {
+    use crate::{BooleanOperand, MatchAllOrNone};
     // this is a *:xxx query (full text on all fields)
-    let mode = match search_query.mode() {
-        SearchQueryMode::InvalidSearchMode => return Err(missing_required("search.mode")),
 
-        SearchQueryMode::Wes => FullTextMode::Bool {
-            operator: crate::BooleanOperand::And,
-        },
-        SearchQueryMode::WesQuoted => FullTextMode::Phrase { slop: 0 },
-        SearchQueryMode::WesPrefix | SearchQueryMode::WesGlob => {
-            return Err(unsupported_query_error("full-text search with wildcard"));
-        }
-    };
-    let string_pattern = if let Some(pattern) = search_query.structured_text {
-        wildcard_pattern_to_string(&pattern)
+    let string_pattern = if let Some(ref pattern) = search_query.structured_text {
+        wildcard_pattern_to_string(pattern)
     } else {
         // we only do this if upstream did not provide us with a preparsed
         // (non deprecated) input
         #[allow(deprecated)]
-        search_query.text
+        search_query.text.clone()
     };
-    let asts: Vec<QueryAst> = expand_virtual_fields(search_query.attribute)
-        .into_iter()
-        .map(|field| {
+
+    let converter: &dyn Fn(String) -> QueryAst = match search_query.mode() {
+        SearchQueryMode::InvalidSearchMode => return Err(missing_required("search.mode")),
+        SearchQueryMode::Wes => &|field| {
             FullTextQuery {
                 field,
                 text: string_pattern.clone(),
                 params: FullTextParams {
                     tokenizer: None,
-                    mode,
-                    zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                    mode: FullTextMode::Bool {
+                        operator: BooleanOperand::And,
+                    },
+                    zero_terms_query: MatchAllOrNone::MatchNone,
                 },
                 lenient: false,
             }
             .into()
-        })
+        },
+        SearchQueryMode::WesQuoted => &|field| {
+            FullTextQuery {
+                field,
+                text: string_pattern.clone(),
+                params: FullTextParams {
+                    tokenizer: None,
+                    mode: FullTextMode::Phrase { slop: 0 },
+                    zero_terms_query: MatchAllOrNone::MatchNone,
+                },
+                lenient: false,
+            }
+            .into()
+        },
+        SearchQueryMode::WesPrefix => {
+            let text = string_pattern.trim_end_matches('*');
+            &|field| {
+                FullTextQuery {
+                    field,
+                    text: text.to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        // SaaS returns documents where terms are not in the right order
+                        mode: FullTextMode::BoolPrefix {
+                            operator: BooleanOperand::And,
+                            max_expansions: u32::MAX,
+                        },
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }
+                .into()
+            }
+        }
+        SearchQueryMode::WesGlob => {
+            // we could "manually tokenize" and make into an union of wildcard queries to reproduce
+            // more correctly SaaS behavior.
+            &|field| {
+                WildcardQuery {
+                    field,
+                    value: string_pattern.clone(),
+                    lenient: false,
+                    case_insensitive: false,
+                }
+                .into()
+            }
+        }
+    };
+
+    let asts: Vec<QueryAst> = expand_virtual_fields(search_query.attribute)
+        .into_iter()
+        .map(converter)
         .collect();
     Ok(union(asts))
 }
