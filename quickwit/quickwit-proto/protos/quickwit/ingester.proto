@@ -73,7 +73,6 @@ message PersistSubrequest {
   uint32 subrequest_id = 1;
   quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
-  quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.DocBatchV2 doc_batch = 5;
 }
 
@@ -107,7 +106,6 @@ message PersistFailure {
   uint32 subrequest_id = 1;
   quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
-  quickwit.ingest.ShardId shard_id = 4;
   PersistFailureReason reason = 5;
 }
 

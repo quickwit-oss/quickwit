@@ -13,20 +13,20 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
+use std::{collections, fmt};
 
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
-use quickwit_proto::ingest::ingester::IngesterStatus;
+use quickwit_proto::ingest::ingester::{IngesterStatus, PersistFailureReason};
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::{DocMappingUid, Position, QueueId};
+use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, split_queue_id};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tracing::{error, info};
 
@@ -71,6 +71,34 @@ impl InnerIngesterState {
     pub fn set_status(&mut self, status: IngesterStatus) {
         self.status = status;
         self.status_tx.send(status).expect("channel should be open");
+    }
+
+    /// Returns the shard with the most available permits for this Source/Index.
+    /// TODO: Adding an auxiliary data structure to look this up in one shot could make this simpler.
+    pub fn find_open_queue(
+        &self,
+        index_id: IndexUid,
+        source_id: String,
+    ) -> Result<QueueId, PersistFailureReason> {
+        // max heap, so that we choose the queue with the most available permits.
+        let mut candidate_shards = collections::BinaryHeap::new();
+        for (queue_id, ingester_shard) in &self.shards {
+            if !ingester_shard.is_open() {
+                continue;
+            }
+            let (shard_index_id, shard_source_id, _) = split_queue_id(queue_id).unwrap();
+            if shard_index_id == index_id && shard_source_id == source_id {
+                // match - this is a potential shard for us to write to.
+                let (rate_limiter, _) = self.rate_trackers.get(queue_id).unwrap();
+                let available_permits = rate_limiter.available_permits();
+                candidate_shards.push((available_permits, queue_id));
+            }
+        }
+        if candidate_shards.is_empty() {
+            return Err(PersistFailureReason::ShardNotFound);
+        }
+        let (_, queue_id) = candidate_shards.pop().unwrap();
+        Ok(queue_id.clone())
     }
 }
 
