@@ -373,7 +373,7 @@ impl CloudPremService for CloudPremServiceImpl {
     ) -> Result<SearchResponse, CloudPremError> {
         // we don't want to ever access customer data here, that has to go through properly audited
         // channels
-        filter_safe_indexes(&mut search_request.index_id_patterns);
+        filter_safe_indexes(&mut search_request.index_id_patterns)?;
         self.search_service
             .root_search(search_request)
             .await
@@ -386,7 +386,7 @@ impl CloudPremService for CloudPremServiceImpl {
     ) -> Result<ListTermsResponse, CloudPremError> {
         // we don't want to ever access customer data here, that has to go through properly audited
         // channels
-        filter_safe_indexes(&mut list_terms_request.index_id_patterns);
+        filter_safe_indexes(&mut list_terms_request.index_id_patterns)?;
         self.search_service
             .root_list_terms(list_terms_request)
             .await
@@ -691,11 +691,18 @@ async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
     }
 }
 
-fn filter_safe_indexes(index_id_patterns: &mut Vec<String>) {
+fn filter_safe_indexes(index_id_patterns: &mut Vec<String>) -> CloudPremResult<()> {
     let safe_pattern_char = |c: char| c.is_ascii_alphanumeric() || "-._*".contains(c);
 
     index_id_patterns
         .retain(|pattern| pattern.starts_with("otel-") && pattern.chars().all(safe_pattern_char));
+    if index_id_patterns.is_empty() {
+        Err(CloudPremError::InvalidQuery(
+            "no safe index targeted".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 struct HitMapper {
