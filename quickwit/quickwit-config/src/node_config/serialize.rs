@@ -226,9 +226,7 @@ impl NodeConfigBuilder {
         let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
         let availability_zone = self
             .availability_zone
-            .resolve_optional(env_vars)?
-            // if the env var is empty, it'll return Some(""), and we don't want that.
-            .filter(|str| !str.is_empty());
+            .resolve_optional(env_vars)?;
 
         let enabled_services = self
             .enabled_services
