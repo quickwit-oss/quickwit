@@ -556,8 +556,8 @@ mod tests {
     use itertools::Itertools;
 
     use super::*;
-    use crate::node_config::WebsocketConfig;
     use crate::CacheConfig;
+    use crate::node_config::WebsocketConfig;
     use crate::storage_config::StorageBackendFlavor;
 
     fn get_config_filepath(config_filename: &str) -> String {
