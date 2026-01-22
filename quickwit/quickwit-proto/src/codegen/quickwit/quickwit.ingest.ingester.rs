@@ -37,8 +37,6 @@ pub struct PersistSubrequest {
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
@@ -79,8 +77,6 @@ pub struct PersistFailure {
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(enumeration = "PersistFailureReason", tag = "5")]
     pub reason: i32,
 }
@@ -400,8 +396,10 @@ pub enum PersistFailureReason {
     ShardNotFound = 1,
     ShardClosed = 2,
     ShardRateLimited = 3,
+    NoShardsAvailable = 6,
     WalFull = 4,
     Timeout = 5,
+    NodeUnavailable = 7,
 }
 impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -414,8 +412,10 @@ impl PersistFailureReason {
             Self::ShardNotFound => "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND",
             Self::ShardClosed => "PERSIST_FAILURE_REASON_SHARD_CLOSED",
             Self::ShardRateLimited => "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED",
+            Self::NoShardsAvailable => "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE",
             Self::WalFull => "PERSIST_FAILURE_REASON_WAL_FULL",
             Self::Timeout => "PERSIST_FAILURE_REASON_TIMEOUT",
+            Self::NodeUnavailable => "PERSIST_FAILURE_REASON_NODE_UNAVAILABLE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -425,8 +425,10 @@ impl PersistFailureReason {
             "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND" => Some(Self::ShardNotFound),
             "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
             "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED" => Some(Self::ShardRateLimited),
+            "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
             "PERSIST_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
             "PERSIST_FAILURE_REASON_TIMEOUT" => Some(Self::Timeout),
+            "PERSIST_FAILURE_REASON_NODE_UNAVAILABLE" => Some(Self::NodeUnavailable),
             _ => None,
         }
     }

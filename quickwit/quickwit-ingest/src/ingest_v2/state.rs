@@ -19,23 +19,22 @@ use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use mrecordlog::error::{DeleteQueueError, TruncateError};
-use quickwit_common::pretty::PrettyDisplay;
-use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
-use quickwit_doc_mapper::DocMapper;
-use quickwit_proto::control_plane::AdviseResetShardsResponse;
-use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::{DocMappingUid, Position, QueueId};
-use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
-use tracing::{error, info};
-
 use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{FollowerId, LeaderId};
+use mrecordlog::error::{DeleteQueueError, TruncateError};
+use quickwit_common::pretty::PrettyDisplay;
+use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
+use quickwit_doc_mapper::DocMapper;
+use quickwit_proto::control_plane::AdviseResetShardsResponse;
+use quickwit_proto::ingest::ingester::{IngesterStatus, PersistFailureReason};
+use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
+use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, split_queue_id};
+use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
+use tracing::{error, info};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
 /// guarantees that the internal data structures are always locked in the same order.
@@ -71,6 +70,31 @@ impl InnerIngesterState {
     pub fn set_status(&mut self, status: IngesterStatus) {
         self.status = status;
         self.status_tx.send(status).expect("channel should be open");
+    }
+
+    /// Returns the shard with the most available permits for this Source/Index.
+    pub fn find_most_capacity_shard(
+        &mut self,
+        index_id: IndexUid,
+        source_id: String,
+    ) -> Option<(&QueueId, &mut IngesterShard)> {
+        self.shards
+            .iter_mut()
+            .filter_map(|(queue_id, shard)| {
+                let (shard_index_id, shard_source_id, _) = split_queue_id(queue_id).unwrap();
+                if !(shard_index_id == index_id && shard_source_id == source_id) {
+                    return None;
+                }
+                let (rate_limiter, _) = self.rate_trackers.get(queue_id).unwrap();
+                let available_permits = rate_limiter.available_permits();
+                Some((available_permits, queue_id, shard))
+            })
+            .max_by(
+                |(left_available_permits, _, _), (right_available_permits, _, _)| {
+                    left_available_permits.cmp(right_available_permits)
+                },
+            )
+            .map(|(_, queue_id, shard)| (queue_id, shard))
     }
 }
 

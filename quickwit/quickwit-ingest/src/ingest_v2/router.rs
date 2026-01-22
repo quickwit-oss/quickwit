@@ -279,6 +279,7 @@ impl IngestRouter {
     ) {
         let mut closed_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
         let mut deleted_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
+        let mut unavailable_nodes =
 
         while let Some((persist_summary, persist_result)) = persist_futures.next().await {
             match persist_result {
@@ -290,6 +291,7 @@ impl IngestRouter {
                         workbench.record_persist_failure(&persist_failure);
 
                         match persist_failure.reason() {
+
                             PersistFailureReason::ShardClosed => {
                                 let shard_id = persist_failure.shard_id().clone();
                                 let index_uid: IndexUid = persist_failure.index_uid().clone();
@@ -398,7 +400,6 @@ impl IngestRouter {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: next_open_shard.index_uid.clone().into(),
                 source_id: next_open_shard.source_id.clone(),
-                shard_id: Some(next_open_shard.shard_id.clone()),
                 doc_batch: subrequest.doc_batch.clone(),
             };
             per_leader_persist_subrequests

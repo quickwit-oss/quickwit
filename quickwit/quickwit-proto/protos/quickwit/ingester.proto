@@ -73,7 +73,6 @@ message PersistSubrequest {
   uint32 subrequest_id = 1;
   quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
-  quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.DocBatchV2 doc_batch = 5;
 }
 
@@ -99,15 +98,16 @@ enum PersistFailureReason {
   PERSIST_FAILURE_REASON_SHARD_NOT_FOUND = 1;
   PERSIST_FAILURE_REASON_SHARD_CLOSED = 2;
   PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED = 3;
+  PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE = 6;
   PERSIST_FAILURE_REASON_WAL_FULL = 4;
   PERSIST_FAILURE_REASON_TIMEOUT = 5;
+  PERSIST_FAILURE_REASON_NODE_UNAVAILABLE = 7;
 }
 
 message PersistFailure {
   uint32 subrequest_id = 1;
   quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
-  quickwit.ingest.ShardId shard_id = 4;
   PersistFailureReason reason = 5;
 }
 
