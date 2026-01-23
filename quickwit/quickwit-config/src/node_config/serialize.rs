@@ -224,9 +224,7 @@ impl NodeConfigBuilder {
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<NodeConfig> {
         let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
-        let availability_zone = self
-            .availability_zone
-            .resolve_optional(env_vars)?;
+        let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
         let enabled_services = self
             .enabled_services
