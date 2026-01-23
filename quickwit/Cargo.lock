@@ -4785,6 +4785,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4_flex"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab6473172471198271ff72e9379150e9dfd70d8e533e0752a27e515b48dd375e"
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5668,7 +5674,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 [[package]]
 name = "ownedbytes"
 version = "0.9.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=b86caee#b86caeefe26f889592746aef32e79adcb50c26ce"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -9597,7 +9603,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.26.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=b86caee#b86caeefe26f889592746aef32e79adcb50c26ce"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -9619,8 +9625,8 @@ dependencies = [
  "itertools 0.14.0",
  "levenshtein_automata",
  "log",
- "lru 0.12.5",
- "lz4_flex",
+ "lru 0.16.3",
+ "lz4_flex 0.12.0",
  "measure_time",
  "memmap2",
  "once_cell",
@@ -9653,7 +9659,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.9.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=b86caee#b86caeefe26f889592746aef32e79adcb50c26ce"
 dependencies = [
  "bitpacking",
 ]
@@ -9661,7 +9667,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=b86caee#b86caeefe26f889592746aef32e79adcb50c26ce"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -9676,7 +9682,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.10.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=b86caee#b86caeefe26f889592746aef32e79adcb50c26ce"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -9699,7 +9705,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.25.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=b86caee#b86caeefe26f889592746aef32e79adcb50c26ce"
 dependencies = [
  "fnv",
  "nom 7.1.3",
@@ -9711,7 +9717,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=b86caee#b86caeefe26f889592746aef32e79adcb50c26ce"
 dependencies = [
  "futures-util",
  "itertools 0.14.0",
@@ -9724,7 +9730,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=b86caee#b86caeefe26f889592746aef32e79adcb50c26ce"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -9733,7 +9739,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=b86caee#b86caeefe26f889592746aef32e79adcb50c26ce"
 dependencies = [
  "serde",
 ]
@@ -10799,7 +10805,7 @@ dependencies = [
  "jsonschema",
  "lalrpop",
  "lalrpop-util",
- "lz4_flex",
+ "lz4_flex 0.11.5",
  "md-5",
  "nom 8.0.0",
  "nom-language",
