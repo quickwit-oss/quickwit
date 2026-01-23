@@ -300,6 +300,12 @@ pub struct SearcherConfig {
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
+
+    pub secondary_max_num_concurrent_split_searches: usize,
+    pub secondary_warmup_memory_budget: ByteSize,
+    pub secondary_targeted_split_count_threshold: Option<usize>,
+    #[serde(default = "SearcherConfig::default_request_timeout_secs")]
+    secondary_request_timeout_secs: NonZeroU64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -435,6 +441,11 @@ impl Default for SearcherConfig {
             storage_timeout_policy: None,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::gb(1),
+
+            secondary_max_num_concurrent_split_searches: 50,
+            secondary_warmup_memory_budget: ByteSize::gb(50),
+            secondary_targeted_split_count_threshold: None,
+            secondary_request_timeout_secs: Self::default_request_timeout_secs(),
         }
     }
 }
@@ -443,6 +454,9 @@ impl SearcherConfig {
     /// The timeout after which a search should be cancelled
     pub fn request_timeout(&self) -> Duration {
         Duration::from_secs(self.request_timeout_secs.get())
+    }
+    pub fn secondary_request_timeout(&self) -> Duration {
+        Duration::from_secs(self.secondary_request_timeout_secs.get())
     }
     fn default_request_timeout_secs() -> NonZeroU64 {
         NonZeroU64::new(30).unwrap()

@@ -48,7 +48,7 @@ use tokio::task::JoinError;
 use tracing::*;
 
 use crate::collector::{IncrementalCollector, make_collector_for_split, make_merge_collector};
-use crate::metrics::SplitSearchOutcomeCounters;
+use crate::metrics::{SplitSearchOutcomeCounters, queue_label};
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
 use crate::service::{SearcherContext, deserialize_doc_mapper};
@@ -95,6 +95,7 @@ pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
+    split_cache_read_only: bool,
 ) -> anyhow::Result<(FileSlice, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data = get_split_footer_from_cache_or_fetch(
@@ -108,7 +109,11 @@ pub(crate) async fn open_split_bundle(
     // This is before the bundle storage: at this point, this storage is reading `.split` files.
     let index_storage_with_split_cache =
         if let Some(split_cache) = searcher_context.split_cache_opt.as_ref() {
-            SplitCache::wrap_storage(split_cache.clone(), index_storage.clone())
+            SplitCache::wrap_storage(
+                split_cache.clone(),
+                index_storage.clone(),
+                split_cache_read_only,
+            )
         } else {
             index_storage.clone()
         };
@@ -151,6 +156,7 @@ pub(crate) async fn open_index_with_caches(
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
     tokenizer_manager: Option<&TokenizerManager>,
     ephemeral_unbounded_cache: Option<ByteRangeCache>,
+    split_cache_read_only: bool,
 ) -> anyhow::Result<(Index, HotDirectory)> {
     let index_storage_with_retry_on_timeout =
         configure_storage_retries(searcher_context, index_storage);
@@ -159,6 +165,7 @@ pub(crate) async fn open_index_with_caches(
         searcher_context,
         index_storage_with_retry_on_timeout,
         split_and_footer_offsets,
+        split_cache_read_only,
     )
     .await?;
 
@@ -441,10 +448,10 @@ async fn leaf_search_single_split(
     split: SplitIdAndFooterOffsets,
     aggregations_limits: AggregationLimitsGuard,
     search_permit: &mut SearchPermit,
+    is_broad_search: bool,
 ) -> crate::Result<Option<LeafSearchResponse>> {
     let mut leaf_search_state_guard =
         SplitSearchStateGuard::new(ctx.split_outcome_counters.clone());
-
     rewrite_request(
         &mut search_request,
         &split,
@@ -481,6 +488,8 @@ async fn leaf_search_single_split(
         &split,
         Some(ctx.doc_mapper.tokenizer_manager()),
         Some(byte_range_cache.clone()),
+        // for broad searches, we want to avoid evicting useful cached splits
+        is_broad_search,
     )
     .await?;
 
@@ -1212,6 +1221,7 @@ pub async fn multi_index_leaf_search(
     searcher_context: Arc<SearcherContext>,
     leaf_search_request: LeafSearchRequest,
     storage_resolver: &StorageResolver,
+    is_broad_search: bool,
 ) -> Result<LeafSearchResponse, SearchError> {
     let search_request: Arc<SearchRequest> = leaf_search_request
         .search_request
@@ -1270,6 +1280,7 @@ pub async fn multi_index_leaf_search(
                     leaf_search_request_ref.split_offsets,
                     doc_mapper,
                     aggregation_limits,
+                    is_broad_search,
                 )
                 .await
             }
@@ -1278,11 +1289,13 @@ pub async fn multi_index_leaf_search(
         leaf_request_tasks.push(leaf_request_future);
     }
 
-    let leaf_responses: Vec<crate::Result<LeafSearchResponse>> = tokio::time::timeout(
-        searcher_context.searcher_config.request_timeout(),
-        try_join_all(leaf_request_tasks),
-    )
-    .await??;
+    let timeout = if is_broad_search {
+        searcher_context.searcher_config.secondary_request_timeout()
+    } else {
+        searcher_context.searcher_config.request_timeout()
+    };
+    let leaf_responses: Vec<crate::Result<LeafSearchResponse>> =
+        tokio::time::timeout(timeout, try_join_all(leaf_request_tasks)).await??;
     let merge_collector = make_merge_collector(&search_request, aggregation_limits)?;
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
     for result in leaf_responses {
@@ -1369,6 +1382,7 @@ pub async fn single_doc_mapping_leaf_search(
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<DocMapper>,
     aggregations_limits: AggregationLimitsGuard,
+    is_broad_search: bool,
 ) -> Result<LeafSearchResponse, SearchError> {
     let num_docs: u64 = splits.iter().map(|split| split.num_docs).sum();
     let num_splits = splits.len();
@@ -1396,10 +1410,12 @@ pub async fn single_doc_mapping_leaf_search(
                 .warmup_single_split_initial_allocation,
         )
     });
-    let permit_futures = searcher_context
-        .search_permit_provider
-        .get_permits(permit_sizes)
-        .await;
+    let permit_provider = if is_broad_search {
+        &searcher_context.secondary_search_permit_provider
+    } else {
+        &searcher_context.search_permit_provider
+    };
+    let permit_futures = permit_provider.get_permits(permit_sizes).await;
 
     let leaf_search_context = Arc::new(LeafSearchContext {
         searcher_context: searcher_context.clone(),
@@ -1435,6 +1451,7 @@ pub async fn single_doc_mapping_leaf_search(
                     split,
                     leaf_split_search_permit,
                     aggregations_limits.clone(),
+                    is_broad_search,
                 )
                 .in_current_span(),
             ),
@@ -1558,9 +1575,11 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     mut search_permit: SearchPermit,
     aggregations_limits: AggregationLimitsGuard,
+    is_broad_search: bool,
 ) {
     let timer = crate::SEARCH_METRICS
         .leaf_search_split_duration_secs
+        .with_label_values([queue_label(is_broad_search)])
         .start_timer();
     let leaf_search_single_split_opt_res: crate::Result<Option<LeafSearchResponse>> =
         leaf_search_single_split(
@@ -1570,6 +1589,7 @@ async fn leaf_search_single_split_wrapper(
             split.clone(),
             aggregations_limits,
             &mut search_permit,
+            is_broad_search,
         )
         .await;
 

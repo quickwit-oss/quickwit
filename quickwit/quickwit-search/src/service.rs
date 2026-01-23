@@ -38,6 +38,7 @@ use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
+use crate::metrics::SEARCH_METRICS;
 use crate::metrics_trackers::LeafSearchMetricsFuture;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
@@ -186,15 +187,27 @@ impl SearchService for SearchServiceImpl {
             .map(|req| req.split_offsets.len())
             .sum::<usize>();
 
+        let is_broad_search = if let Some(threshold) = self
+            .searcher_context
+            .searcher_config
+            .secondary_targeted_split_count_threshold
+        {
+            num_splits >= threshold
+        } else {
+            false
+        };
+
         LeafSearchMetricsFuture {
             tracked: multi_index_leaf_search(
                 self.searcher_context.clone(),
                 leaf_search_request,
                 &self.storage_resolver,
+                is_broad_search,
             ),
             start: Instant::now(),
             targeted_splits: num_splits,
             status: None,
+            is_broad_search,
         }
         .await
     }
@@ -401,8 +414,10 @@ pub struct SearcherContext {
     pub searcher_config: SearcherConfig,
     /// Fast fields cache.
     pub fast_fields_cache: Arc<dyn StorageCache>,
-    /// Counting semaphore to limit concurrent leaf search split requests.
+    /// Limit the concurrency for small snappy interactive searches.
     pub search_permit_provider: SearchPermitProvider,
+    /// Limit the concurrency for larger searches that target many splits.
+    pub secondary_search_permit_provider: SearchPermitProvider,
     /// Split footer cache.
     pub split_footer_cache: MemorySizedCache<String>,
     /// Per-split and per-query cache.
@@ -442,6 +457,12 @@ impl SearcherContext {
         let leaf_search_split_semaphore = SearchPermitProvider::new(
             searcher_config.max_num_concurrent_split_searches,
             searcher_config.warmup_memory_budget,
+            SEARCH_METRICS.search_task_metrics(),
+        );
+        let secondary_leaf_search_split_semaphore = SearchPermitProvider::new(
+            searcher_config.secondary_max_num_concurrent_split_searches,
+            searcher_config.secondary_warmup_memory_budget,
+            SEARCH_METRICS.secondary_search_task_metrics(),
         );
         let storage_long_term_cache =
             Arc::new(QuickwitCache::new(&searcher_config.fast_field_cache));
@@ -458,6 +479,7 @@ impl SearcherContext {
             fast_fields_cache: storage_long_term_cache,
             predicate_cache: predicate_cache.into(),
             search_permit_provider: leaf_search_split_semaphore,
+            secondary_search_permit_provider: secondary_leaf_search_split_semaphore,
             split_footer_cache: global_split_footer_cache,
             leaf_search_cache,
             list_fields_cache,
