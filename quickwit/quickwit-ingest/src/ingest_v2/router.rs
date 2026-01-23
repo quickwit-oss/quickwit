@@ -419,7 +419,6 @@ impl IngestRouter {
                 subrequests,
                 commit_type: commit_type as i32,
             };
-            workbench.record_persist_request(&persist_request);
 
             let persist_future = async move {
                 let persist_result = tokio::time::timeout(
