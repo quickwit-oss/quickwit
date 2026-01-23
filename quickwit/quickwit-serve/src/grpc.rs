@@ -163,7 +163,9 @@ pub(crate) async fn start_grpc_server(
             enabled_grpc_services.insert("otlp-traces");
             let trace_service = TraceServiceServer::new(otlp_traces_service)
                 .accept_compressed(CompressionEncoding::Gzip)
-                .accept_compressed(CompressionEncoding::Zstd);
+                .accept_compressed(CompressionEncoding::Zstd)
+                .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
+                .max_encoding_message_size(grpc_config.max_message_size.0 as usize);
             Some(trace_service)
         } else {
             None
@@ -173,7 +175,9 @@ pub(crate) async fn start_grpc_server(
             enabled_grpc_services.insert("otlp-logs");
             let logs_service = LogsServiceServer::new(otlp_logs_service)
                 .accept_compressed(CompressionEncoding::Gzip)
-                .accept_compressed(CompressionEncoding::Zstd);
+                .accept_compressed(CompressionEncoding::Zstd)
+                .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
+                .max_encoding_message_size(grpc_config.max_message_size.0 as usize);
             Some(logs_service)
         } else {
             None
