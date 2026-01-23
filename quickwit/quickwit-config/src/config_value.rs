@@ -18,7 +18,7 @@ use std::{any, fmt};
 
 use anyhow::{self, Context};
 use serde::{Deserialize, Deserializer};
-
+use tracing::log::warn;
 use crate::qw_env_vars::{QW_ENV_VARS, QW_NONE};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -68,7 +68,14 @@ where
         // QW env vars take precedence over the config file values.
         if E > QW_NONE
             && let Some(env_var_key) = QW_ENV_VARS.get(&E)
-            && let Some(env_var_value) = env_vars.get(*env_var_key).filter(|val| !val.is_empty())
+            && let Some(env_var_value) = env_vars.get(*env_var_key).filter(|val| {
+              if val.is_empty() {
+                warn!("environment variable `{}` is set but value is empty", *env_var_key);
+                false
+              } else {
+                true
+              }
+            })
         {
             let value = env_var_value.parse::<T>().map_err(|error| {
                 anyhow::anyhow!(
