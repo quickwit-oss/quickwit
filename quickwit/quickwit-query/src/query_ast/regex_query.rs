@@ -20,9 +20,8 @@ use serde::{Deserialize, Serialize};
 use tantivy::Term;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 
-use super::{BuildTantivyAst, QueryAst};
+use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst};
 use crate::query_ast::TantivyQueryAst;
-use crate::tokenizers::TokenizerManager;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
 /// A Regex query
@@ -70,7 +69,7 @@ impl RegexQuery {
                     ))
                 })?;
 
-                Ok((field, None, self.regex.clone()))
+                Ok((field, None, self.regex.to_string()))
             }
             FieldType::JsonObject(json_options) => {
                 json_options.get_text_indexing_options().ok_or_else(|| {
@@ -91,7 +90,7 @@ impl RegexQuery {
                 // We skip the 1st byte which is a marker to tell this is json. This isn't present
                 // in the dictionary
                 let byte_path_prefix = value.as_serialized()[1..].to_owned();
-                Ok((field, Some(byte_path_prefix), self.regex.clone()))
+                Ok((field, Some(byte_path_prefix), self.regex.to_string()))
             }
             _ => Err(InvalidQuery::SchemaError(
                 "trying to run a regex query on a non-text field".to_string(),
@@ -103,12 +102,9 @@ impl RegexQuery {
 impl BuildTantivyAst for RegexQuery {
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        _tokenizer_manager: &TokenizerManager,
-        _search_fields: &[String],
-        _with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (field, path, regex) = self.to_field_and_regex(schema)?;
+        let (field, path, regex) = self.to_field_and_regex(context.schema)?;
         let regex = tantivy_fst::Regex::new(&regex).context("failed to parse regex")?;
         let regex_automaton_with_path = JsonPathPrefix {
             prefix: path.unwrap_or_default(),

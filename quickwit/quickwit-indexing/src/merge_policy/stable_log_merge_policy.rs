@@ -297,11 +297,6 @@ impl StableLogMergePolicy {
     }
 }
 
-#[cfg(test)]
-fn is_sorted(elements: &[usize]) -> bool {
-    elements.windows(2).all(|w| w[0] <= w[1])
-}
-
 // Helpers which expose some internal properties of
 // the stable log merge policy to be tested in unit tests.
 #[cfg(test)]
@@ -337,7 +332,8 @@ impl StableLogMergePolicy {
         levels: &[usize],
         sorted: bool,
     ) -> usize {
-        assert!(is_sorted(levels));
+        assert!(levels.is_sorted());
+
         if num_docs == 0 {
             return 0;
         }

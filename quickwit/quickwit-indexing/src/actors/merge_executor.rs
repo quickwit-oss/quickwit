@@ -534,7 +534,7 @@ impl MergeExecutor {
                     parsed_query_ast
                 );
                 let (query, _) =
-                    doc_mapper.query(union_index.schema(), &parsed_query_ast, false)?;
+                    doc_mapper.query(union_index.schema(), parsed_query_ast, false, None)?;
                 index_writer.delete_query(query)?;
             }
             debug!("commit-delete-operations");
@@ -839,7 +839,8 @@ mod tests {
             let documents_left = searcher
                 .search(
                     &tantivy::query::AllQuery,
-                    &tantivy::collector::TopDocs::with_limit(result_docs.len() + 1),
+                    &tantivy::collector::TopDocs::with_limit(result_docs.len() + 1)
+                        .order_by_score(),
                 )?
                 .into_iter()
                 .map(|(_, doc_address)| {

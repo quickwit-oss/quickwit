@@ -14,12 +14,13 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
+use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use fnv::FnvHashSet;
 use quickwit_proto::types::DocMappingUid;
 use quickwit_query::create_default_quickwit_tokenizer_manager;
-use quickwit_query::query_ast::QueryAst;
+use quickwit_query::query_ast::{BuildTantivyAstContext, QueryAst};
 use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
@@ -34,7 +35,7 @@ use super::field_presence::populate_field_presence;
 use super::tantivy_val_to_json::tantivy_value_to_json;
 use crate::doc_mapper::mapping_tree::{
     JsonValueIterator, MappingNode, MappingNodeRoot, build_field_path_from_str, build_mapping_tree,
-    map_primitive_json_to_tantivy,
+    map_primitive_json_to_concatenate_value,
 };
 use crate::doc_mapper::{FieldMappingType, JsonObject, Partition};
 use crate::query_builder::build_query;
@@ -529,7 +530,7 @@ impl DocMapper {
             if !self.concatenate_dynamic_fields.is_empty() {
                 let json_obj_values =
                     JsonValueIterator::new(serde_json::Value::Object(dynamic_json_obj.clone()))
-                        .flat_map(map_primitive_json_to_tantivy);
+                        .flat_map(map_primitive_json_to_concatenate_value);
 
                 for value in json_obj_values {
                     for concatenate_dynamic_field in self.concatenate_dynamic_fields.iter() {
@@ -636,15 +637,19 @@ impl DocMapper {
     pub fn query(
         &self,
         split_schema: Schema,
-        query_ast: &QueryAst,
+        query_ast: QueryAst,
         with_validation: bool,
+        cache_context: Option<(Arc<dyn quickwit_query::query_ast::PredicateCache>, String)>,
     ) -> Result<(Box<dyn Query>, WarmupInfo), QueryParserError> {
         build_query(
             query_ast,
-            split_schema,
-            self.tokenizer_manager(),
-            &self.default_search_field_names[..],
-            with_validation,
+            &BuildTantivyAstContext {
+                schema: &split_schema,
+                tokenizer_manager: self.tokenizer_manager(),
+                search_fields: &self.default_search_field_names[..],
+                with_validation,
+            },
+            cache_context,
         )
     }
 
@@ -1849,7 +1854,8 @@ mod tests {
             }"#,
             "concat",
             r#"{"some_int": 25}"#,
-            vec![25_u64.into()],
+            // i64 comes before u64
+            vec![25_i64.into()],
         );
     }
 
@@ -2068,7 +2074,7 @@ mod tests {
             .parse_user_query(doc_mapper.default_search_fields())
             .map_err(|err| err.to_string())?;
         let (query, _) = doc_mapper
-            .query(doc_mapper.schema(), &query_ast, true)
+            .query(doc_mapper.schema(), query_ast, true, None)
             .map_err(|err| err.to_string())?;
         Ok(format!("{query:?}"))
     }

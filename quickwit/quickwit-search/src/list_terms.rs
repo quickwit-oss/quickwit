@@ -206,6 +206,7 @@ pub fn jobs_to_leaf_requests(
 
 /// Apply a leaf list terms on a single split.
 #[instrument(skip_all, fields(split_id = split.split_id))]
+#[allow(deprecated)]
 async fn leaf_list_terms_single_split(
     searcher_context: &SearcherContext,
     search_request: &ListTermsRequest,
@@ -308,6 +309,7 @@ fn term_from_data(field: Field, field_type: &FieldType, data: &[u8]) -> Term {
     term
 }
 
+#[allow(deprecated)]
 fn term_to_data(field: Field, field_type: &FieldType, field_value: &[u8]) -> Vec<u8> {
     let mut term = Term::from_field_bool(field, false);
     term.clear_with_type(field_type.value_type());

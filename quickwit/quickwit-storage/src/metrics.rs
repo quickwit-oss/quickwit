@@ -14,16 +14,21 @@
 
 // See https://prometheus.io/docs/practices/naming/
 
+use std::collections::HashMap;
+use std::sync::RwLock;
+
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
     new_gauge, new_histogram_vec,
 };
+use quickwit_config::CacheConfig;
 
 /// Counters associated to storage operations.
 pub struct StorageMetrics {
     pub shortlived_cache: CacheMetrics,
     pub partial_request_cache: CacheMetrics,
+    pub predicate_cache: CacheMetrics,
     pub fd_cache_metrics: CacheMetrics,
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
@@ -92,6 +97,7 @@ impl Default for StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
             fd_cache_metrics: CacheMetrics::for_component("fd"),
             partial_request_cache: CacheMetrics::for_component("partial_request"),
+            predicate_cache: CacheMetrics::for_component("predicate"),
             searcher_split_cache: CacheMetrics::for_component("searcher_split"),
             shortlived_cache: CacheMetrics::for_component("shortlived"),
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
@@ -158,9 +164,14 @@ impl Default for StorageMetrics {
 }
 
 /// Counters associated to a cache.
-#[derive(Clone)]
 pub struct CacheMetrics {
     pub component_name: String,
+    pub cache_metrics: SingleCacheMetrics,
+    virtual_caches_metrics: RwLock<HashMap<CacheConfig, SingleCacheMetrics>>,
+}
+
+#[derive(Clone)]
+pub struct SingleCacheMetrics {
     pub in_cache_count: IntGauge,
     pub in_cache_num_bytes: IntGauge,
     pub hits_num_items: IntCounter,
@@ -173,51 +184,122 @@ pub struct CacheMetrics {
 impl CacheMetrics {
     pub fn for_component(component_name: &str) -> Self {
         const CACHE_METRICS_NAMESPACE: &str = "cache";
+        let labels = [("component_name", component_name)];
         CacheMetrics {
             component_name: component_name.to_string(),
+            cache_metrics: SingleCacheMetrics {
+                in_cache_count: new_gauge(
+                    "in_cache_count",
+                    "Count of in cache by component",
+                    CACHE_METRICS_NAMESPACE,
+                    &labels,
+                ),
+                in_cache_num_bytes: new_gauge(
+                    "in_cache_num_bytes",
+                    "Number of bytes in cache by component",
+                    CACHE_METRICS_NAMESPACE,
+                    &labels,
+                ),
+                hits_num_items: new_counter(
+                    "cache_hits_total",
+                    "Number of cache hits by component",
+                    CACHE_METRICS_NAMESPACE,
+                    &labels,
+                ),
+                hits_num_bytes: new_counter(
+                    "cache_hits_bytes",
+                    "Number of cache hits in bytes by component",
+                    CACHE_METRICS_NAMESPACE,
+                    &labels,
+                ),
+                misses_num_items: new_counter(
+                    "cache_misses_total",
+                    "Number of cache misses by component",
+                    CACHE_METRICS_NAMESPACE,
+                    &labels,
+                ),
+                evict_num_items: new_counter(
+                    "cache_evict_total",
+                    "Number of cache entry evicted by component",
+                    CACHE_METRICS_NAMESPACE,
+                    &labels,
+                ),
+                evict_num_bytes: new_counter(
+                    "cache_evict_bytes",
+                    "Number of cache entry evicted in bytes by component",
+                    CACHE_METRICS_NAMESPACE,
+                    &labels,
+                ),
+            },
+            virtual_caches_metrics: RwLock::default(),
+        }
+    }
+
+    pub fn virtual_cache(&self, config: &CacheConfig) -> SingleCacheMetrics {
+        if let Some(virtual_cache_metrics) = self.virtual_caches_metrics.read().unwrap().get(config)
+        {
+            return virtual_cache_metrics.clone();
+        }
+
+        const CACHE_METRICS_NAMESPACE: &str = "cache";
+        let capacity = config.capacity().as_u64().to_string();
+        let policy = config.policy().to_string();
+        let labels = [
+            ("component_name", self.component_name.as_str()),
+            ("capacity", &capacity),
+            ("policy", &policy),
+        ];
+        let new_virtual_cache_metrics = SingleCacheMetrics {
             in_cache_count: new_gauge(
-                "in_cache_count",
+                "virtual_in_cache_count",
                 "Count of in cache by component",
                 CACHE_METRICS_NAMESPACE,
-                &[("component_name", component_name)],
+                &labels,
             ),
             in_cache_num_bytes: new_gauge(
-                "in_cache_num_bytes",
+                "virtual_in_cache_num_bytes",
                 "Number of bytes in cache by component",
                 CACHE_METRICS_NAMESPACE,
-                &[("component_name", component_name)],
+                &labels,
             ),
             hits_num_items: new_counter(
-                "cache_hits_total",
+                "virtual_cache_hits_total",
                 "Number of cache hits by component",
                 CACHE_METRICS_NAMESPACE,
-                &[("component_name", component_name)],
+                &labels,
             ),
             hits_num_bytes: new_counter(
-                "cache_hits_bytes",
+                "virtual_cache_hits_bytes",
                 "Number of cache hits in bytes by component",
                 CACHE_METRICS_NAMESPACE,
-                &[("component_name", component_name)],
+                &labels,
             ),
             misses_num_items: new_counter(
-                "cache_misses_total",
+                "virtual_cache_misses_total",
                 "Number of cache misses by component",
                 CACHE_METRICS_NAMESPACE,
-                &[("component_name", component_name)],
+                &labels,
             ),
             evict_num_items: new_counter(
-                "cache_evict_total",
+                "virtual_cache_evict_total",
                 "Number of cache entry evicted by component",
                 CACHE_METRICS_NAMESPACE,
-                &[("component_name", component_name)],
+                &labels,
             ),
             evict_num_bytes: new_counter(
-                "cache_evict_bytes",
+                "virtual_cache_evict_bytes",
                 "Number of cache entry evicted in bytes by component",
                 CACHE_METRICS_NAMESPACE,
-                &[("component_name", component_name)],
+                &labels,
             ),
-        }
+        };
+
+        self.virtual_caches_metrics
+            .write()
+            .unwrap()
+            .entry(config.clone())
+            .or_insert(new_virtual_cache_metrics)
+            .clone()
     }
 }
 

@@ -217,7 +217,7 @@ impl SplitCacheBackingStorage {
     }
 
     fn record_hit_metrics(&self, result_opt: Option<&OwnedBytes>) {
-        let split_metrics = &crate::STORAGE_METRICS.searcher_split_cache;
+        let split_metrics = &crate::STORAGE_METRICS.searcher_split_cache.cache_metrics;
         if let Some(result) = result_opt {
             split_metrics.hits_num_items.inc();
             split_metrics.hits_num_bytes.inc_by(result.len() as u64);

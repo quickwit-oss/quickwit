@@ -6,6 +6,11 @@ status_code: null
 ---
 method: DELETE
 api_root: http://localhost:7280/api/v1/
+endpoint: indexes/test-index-pattern-11
+status_code: null
+---
+method: DELETE
+api_root: http://localhost:7280/api/v1/
 endpoint: indexes/test-index-pattern-777
 status_code: null
 ---

@@ -17,16 +17,13 @@ use std::ops::Bound;
 use serde::{Deserialize, Serialize};
 use tantivy::fastfield::FastValue;
 use tantivy::query::FastFieldRangeQuery;
-use tantivy::schema::Schema as TantivySchema;
 use tantivy::tokenizer::TextAnalyzer;
 use tantivy::{DateTime, Term};
 
 use super::QueryAst;
 use super::tantivy_query_ast::TantivyBoolQuery;
 use crate::json_literal::InterpretUserInput;
-use crate::query_ast::BuildTantivyAst;
-use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
-use crate::tokenizers::TokenizerManager;
+use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext, TantivyQueryAst};
 use crate::{InvalidQuery, JsonLiteral};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -110,17 +107,14 @@ fn get_normalized_text(normalizer: &mut Option<TextAnalyzer>, text: &str) -> Str
 impl BuildTantivyAst for RangeQuery {
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        _search_fields: &[String],
-        _with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         let (field, field_entry, json_path) =
-            super::utils::find_field_or_hit_dynamic(&self.field, schema).ok_or_else(|| {
-                InvalidQuery::FieldDoesNotExist {
+            super::utils::find_field_or_hit_dynamic(&self.field, context.schema).ok_or_else(
+                || InvalidQuery::FieldDoesNotExist {
                     full_path: self.field.clone(),
-                }
-            })?;
+                },
+            )?;
         if !field_entry.is_fast() {
             return Err(InvalidQuery::SchemaError(format!(
                 "range queries are only supported for fast fields. (`{}` is not a fast field)",
@@ -129,9 +123,12 @@ impl BuildTantivyAst for RangeQuery {
         }
         Ok(match field_entry.field_type() {
             tantivy::schema::FieldType::Str(options) => {
-                let mut normalizer = options
-                    .get_fast_field_tokenizer_name()
-                    .and_then(|tokenizer_name| tokenizer_manager.get_normalizer(tokenizer_name));
+                let mut normalizer =
+                    options
+                        .get_fast_field_tokenizer_name()
+                        .and_then(|tokenizer_name| {
+                            context.tokenizer_manager.get_normalizer(tokenizer_name)
+                        });
 
                 let (lower_bound, upper_bound) =
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
@@ -219,10 +216,17 @@ impl BuildTantivyAst for RangeQuery {
                 } else if let Some(range) = bounds_range_f64 {
                     sub_queries.push(query_from_fast_val_range(&empty_term, range).into());
                 }
-
-                let mut normalizer = options
-                    .get_fast_field_tokenizer_name()
-                    .and_then(|tokenizer_name| tokenizer_manager.get_normalizer(tokenizer_name));
+                let bounds_range_date: Option<(Bound<DateTime>, Bound<DateTime>)> =
+                    convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
+                if let Some(range) = bounds_range_date {
+                    sub_queries.push(query_from_fast_val_range(&empty_term, range).into());
+                }
+                let mut normalizer =
+                    options
+                        .get_fast_field_tokenizer_name()
+                        .and_then(|tokenizer_name| {
+                            context.tokenizer_manager.get_normalizer(tokenizer_name)
+                        });
 
                 let bounds_range_str: Option<(Bound<&str>, Bound<&str>)> =
                     convert_bound(&self.lower_bound).zip(convert_bound(&self.upper_bound));
@@ -288,10 +292,8 @@ mod tests {
     use tantivy::schema::{DateOptions, DateTimePrecision, FAST, STORED, Schema, TEXT};
 
     use super::RangeQuery;
-    use crate::query_ast::BuildTantivyAst;
-    use crate::{
-        InvalidQuery, JsonLiteral, MatchAllOrNone, create_default_quickwit_tokenizer_manager,
-    };
+    use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext};
+    use crate::{InvalidQuery, JsonLiteral, MatchAllOrNone};
 
     fn make_schema(dynamic_mode: bool) -> Schema {
         let mut schema_builder = Schema::builder();
@@ -323,12 +325,7 @@ mod tests {
             upper_bound: Bound::Included(upper_value),
         };
         let tantivy_ast = range_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap()
             .simplify();
         let leaf = tantivy_ast.as_leaf().unwrap();
@@ -371,12 +368,7 @@ mod tests {
         };
         // with validation
         let invalid_query: InvalidQuery = range_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap_err();
         assert!(
             matches!(invalid_query, InvalidQuery::FieldDoesNotExist { full_path } if full_path == "missing_field.toto")
@@ -385,10 +377,7 @@ mod tests {
         assert_eq!(
             range_query
                 .build_tantivy_ast_call(
-                    &schema,
-                    &create_default_quickwit_tokenizer_manager(),
-                    &[],
-                    false
+                    &BuildTantivyAstContext::for_test(&schema).without_validation()
                 )
                 .unwrap()
                 .const_predicate(),
@@ -405,12 +394,7 @@ mod tests {
         };
         let schema = make_schema(true);
         let tantivy_ast = range_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         assert_eq!(
             format!("{tantivy_ast:?}"),
@@ -425,6 +409,34 @@ mod tests {
     }
 
     #[test]
+    fn test_range_dynamic_datetime() {
+        let range_query = RangeQuery {
+            field: "hello".to_string(),
+            lower_bound: Bound::Included(JsonLiteral::String(
+                "2020-12-09T16:09:53+00:00".to_string(),
+            )),
+            upper_bound: Bound::Included(JsonLiteral::String(
+                "2020-12-09T16:09:53+00:00".to_string(),
+            )),
+        };
+        let schema = make_schema(true);
+        let tantivy_ast = range_query
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
+            .unwrap();
+        assert_eq!(
+            format!("{tantivy_ast:?}"),
+            "Bool(TantivyBoolQuery { must: [], must_not: [], should: [Leaf(FastFieldRangeQuery { \
+             bounds: BoundsRange { lower_bound: Included(Term(field=6, type=Json, path=hello, \
+             type=Date, 2020-12-09T16:09:53Z)), upper_bound: Included(Term(field=6, type=Json, \
+             path=hello, type=Date, 2020-12-09T16:09:53Z)) } }), Leaf(FastFieldRangeQuery { \
+             bounds: BoundsRange { lower_bound: Included(Term(field=6, type=Json, path=hello, \
+             type=Str, \"2020-12-09T16:09:53+00:00\")), upper_bound: Included(Term(field=6, \
+             type=Json, path=hello, type=Str, \"2020-12-09T16:09:53+00:00\")) } })], filter: [], \
+             minimum_should_match: None })"
+        );
+    }
+
+    #[test]
     fn test_range_query_not_fast_field() {
         let range_query = RangeQuery {
             field: "my_u64_not_fastfield".to_string(),
@@ -433,12 +445,7 @@ mod tests {
         };
         let schema = make_schema(false);
         let err = range_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap_err();
         assert!(matches!(err, InvalidQuery::SchemaError { .. }));
     }

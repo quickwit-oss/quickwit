@@ -66,6 +66,10 @@ fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
     ConfigValue::with_default(node_id)
 }
 
+fn default_availability_zone() -> ConfigValue<String, QW_AVAILABILITY_ZONE> {
+    ConfigValue::none()
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 struct List(Vec<String>);
 
@@ -169,6 +173,8 @@ struct NodeConfigBuilder {
     cluster_id: ConfigValue<String, QW_CLUSTER_ID>,
     #[serde(default = "default_node_id")]
     node_id: ConfigValue<String, QW_NODE_ID>,
+    #[serde(default = "default_availability_zone")]
+    availability_zone: ConfigValue<String, QW_AVAILABILITY_ZONE>,
     #[serde(default = "default_enabled_services")]
     enabled_services: ConfigValue<List, QW_ENABLED_SERVICES>,
     #[serde(default = "default_listen_address")]
@@ -218,6 +224,7 @@ impl NodeConfigBuilder {
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<NodeConfig> {
         let node_id = self.node_id.resolve(env_vars).map(NodeId::new)?;
+        let availability_zone = self.availability_zone.resolve_optional(env_vars)?;
 
         let enabled_services = self
             .enabled_services
@@ -305,6 +312,7 @@ impl NodeConfigBuilder {
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id,
+            availability_zone,
             enabled_services,
             gossip_listen_addr,
             grpc_listen_addr,
@@ -401,6 +409,7 @@ impl Default for NodeConfigBuilder {
         Self {
             cluster_id: default_cluster_id(),
             node_id: default_node_id(),
+            availability_zone: ConfigValue::none(),
             enabled_services: default_enabled_services(),
             listen_address: default_listen_address(),
             rest_listen_port: None,
@@ -469,6 +478,7 @@ pub fn node_config_for_tests_from_ports(
 ) -> NodeConfig {
     let node_id = NodeId::new(default_node_id().unwrap());
     let enabled_services = QuickwitService::supported_services();
+    let availability_zone = Some(String::from("az-1"));
     let listen_address = Host::default();
     let rest_listen_addr = listen_address
         .with_port(rest_listen_port)
@@ -499,6 +509,7 @@ pub fn node_config_for_tests_from_ports(
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
         node_id,
+        availability_zone,
         enabled_services,
         gossip_advertise_addr: gossip_listen_addr,
         grpc_advertise_addr: grpc_listen_addr,
@@ -531,6 +542,7 @@ mod tests {
     use itertools::Itertools;
 
     use super::*;
+    use crate::CacheConfig;
     use crate::storage_config::StorageBackendFlavor;
 
     fn get_config_filepath(config_filename: &str) -> String {
@@ -553,6 +565,7 @@ mod tests {
         assert!(config.is_service_enabled(QuickwitService::Janitor));
         assert!(config.is_service_enabled(QuickwitService::Metastore));
 
+        assert_eq!(config.availability_zone.unwrap(), "az-1");
         assert_eq!(
             config.rest_config.listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 1111)
@@ -658,10 +671,12 @@ mod tests {
             SearcherConfig {
                 aggregation_memory_limit: ByteSize::gb(1),
                 aggregation_bucket_limit: 500_000,
-                fast_field_cache_capacity: ByteSize::gb(10),
-                split_footer_cache_capacity: ByteSize::gb(1),
-                partial_request_cache_capacity: ByteSize::mb(64),
+                fast_field_cache: CacheConfig::default_with_capacity(ByteSize::gb(10)),
+                split_footer_cache: CacheConfig::default_with_capacity(ByteSize::gb(1)),
+                partial_request_cache: CacheConfig::default_with_capacity(ByteSize::mb(64)),
+                predicate_cache: CacheConfig::default_with_capacity(ByteSize::mb(256)),
                 max_num_concurrent_split_searches: 150,
+                max_splits_per_search: None,
                 _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
@@ -736,6 +751,7 @@ mod tests {
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
         assert_eq!(config.node_id, get_short_hostname().unwrap());
+        assert_eq!(config.availability_zone, None);
         assert_eq!(
             config.enabled_services,
             QuickwitService::supported_services()

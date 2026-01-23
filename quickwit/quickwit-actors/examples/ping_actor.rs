@@ -89,7 +89,7 @@ impl Handler<Loop> for PingSender {
     type Reply = ();
 
     async fn handle(&mut self, _: Loop, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        let random_peer_id_opt = (0..self.peers.len()).choose(&mut rand::thread_rng());
+        let random_peer_id_opt = (0..self.peers.len()).choose(&mut rand::rng());
         if let Some(random_peer_id) = random_peer_id_opt {
             match ctx.ask(&self.peers[random_peer_id], Ping).await {
                 Ok(reply_msg) => {

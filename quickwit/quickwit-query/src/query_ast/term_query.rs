@@ -15,11 +15,9 @@
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
-use tantivy::schema::Schema as TantivySchema;
 
 use super::{BuildTantivyAst, QueryAst};
-use crate::query_ast::{FullTextParams, TantivyQueryAst};
-use crate::tokenizers::TokenizerManager;
+use crate::query_ast::{BuildTantivyAstContext, FullTextParams, TantivyQueryAst};
 use crate::{BooleanOperand, InvalidQuery};
 
 /// The TermQuery acts exactly like a FullTextQuery with
@@ -49,10 +47,7 @@ impl TermQuery {
 impl BuildTantivyAst for TermQuery {
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        _search_fields: &[String],
-        _with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         let full_text_params = FullTextParams {
             tokenizer: Some("raw".to_string()),
@@ -64,8 +59,8 @@ impl BuildTantivyAst for TermQuery {
             &self.field,
             &self.value,
             &full_text_params,
-            schema,
-            tokenizer_manager,
+            context.schema,
+            context.tokenizer_manager,
             false,
         )
     }
@@ -123,8 +118,7 @@ impl From<TermQuery> for HashMap<String, TermQueryValue> {
 mod tests {
     use tantivy::schema::{INDEXED, Schema};
 
-    use crate::create_default_quickwit_tokenizer_manager;
-    use crate::query_ast::{BuildTantivyAst, TermQuery};
+    use crate::query_ast::{BuildTantivyAst, BuildTantivyAstContext, TermQuery};
 
     #[test]
     fn test_term_query_with_ipaddr_ipv4() {
@@ -136,12 +130,7 @@ mod tests {
         schema_builder.add_ip_addr_field("ip", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -160,12 +149,7 @@ mod tests {
         schema_builder.add_ip_addr_field("ip", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -184,12 +168,7 @@ mod tests {
         schema_builder.add_bytes_field("bytes", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -208,12 +187,7 @@ mod tests {
         schema_builder.add_bytes_field("bytes", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -232,12 +206,7 @@ mod tests {
         schema_builder.add_date_field("timestamp", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         // The date should have been truncated to seconds precision.

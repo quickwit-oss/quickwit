@@ -41,18 +41,17 @@ where
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn for_test(value: T) -> Self {
+    pub(crate) fn none() -> Self {
         Self {
-            provided: Some(value),
+            provided: None,
             default: None,
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn none() -> Self {
+    pub(crate) fn for_test(value: T) -> Self {
         Self {
-            provided: None,
+            provided: Some(value),
             default: None,
         }
     }

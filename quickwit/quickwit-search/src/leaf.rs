@@ -29,7 +29,9 @@ use quickwit_proto::search::{
     CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
     SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
-use quickwit_query::query_ast::{BoolQuery, QueryAst, QueryAstTransformer, RangeQuery, TermQuery};
+use quickwit_query::query_ast::{
+    BoolQuery, CacheNode, QueryAst, QueryAstTransformer, RangeQuery, TermQuery,
+};
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     BundleStorage, ByteRangeCache, MemorySizedCache, OwnedBytes, SplitCache, Storage,
@@ -37,6 +39,7 @@ use quickwit_storage::{
 };
 use tantivy::aggregation::agg_req::{AggregationVariants, Aggregations};
 use tantivy::aggregation::{AggContextParams, AggregationLimitsGuard};
+use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::Field;
@@ -447,14 +450,6 @@ async fn leaf_search_single_split(
         &split,
         ctx.doc_mapper.timestamp_field_name(),
     );
-    if let Some(cached_answer) = ctx
-        .searcher_context
-        .leaf_search_cache
-        .get(split.clone(), search_request.clone())
-    {
-        leaf_search_state_guard.set_state(SplitSearchState::CacheHit);
-        return Ok(Some(cached_answer));
-    }
 
     let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
@@ -466,6 +461,15 @@ async fn leaf_search_single_split(
     if is_metadata_count_request_with_ast(&query_ast, &search_request) {
         leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmup);
         return Ok(Some(get_leaf_resp_from_count(split.num_docs)));
+    }
+
+    if let Some(cached_answer) = ctx
+        .searcher_context
+        .leaf_search_cache
+        .get(split.clone(), search_request.clone())
+    {
+        leaf_search_state_guard.set_state(SplitSearchState::CacheHit);
+        return Ok(Some(cached_answer));
     }
 
     let split_id = split.split_id.to_string();
@@ -498,10 +502,22 @@ async fn leaf_search_single_split(
     let mut collector =
         make_collector_for_split(split_id.clone(), &search_request, agg_context_params)?;
 
+    let predicate_cache = if collector.requires_scoring() {
+        // at the moment the predicate cache doesn't support scoring
+        None
+    } else {
+        Some((
+            ctx.searcher_context.predicate_cache.clone() as _,
+            split.split_id.clone(),
+        ))
+    };
     let split_schema = index.schema();
-    let (query, mut warmup_info) = ctx
-        .doc_mapper
-        .query(split_schema.clone(), &query_ast, false)?;
+    let (query, mut warmup_info) = ctx.doc_mapper.query(
+        split_schema.clone(),
+        query_ast.clone(),
+        false,
+        predicate_cache,
+    )?;
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
@@ -608,6 +624,20 @@ fn rewrite_request(
         remove_redundant_timestamp_range(search_request, split, timestamp_field);
     }
     rewrite_aggregation(search_request);
+    // we add a top level cache node when search_after is set, this won't help for this query (which
+    // is the 2nd in its series), but should speedup every other request that comes after
+    if search_request.search_after.is_some() {
+        add_top_cache_node(search_request)
+    }
+}
+
+fn add_top_cache_node(search_request: &mut SearchRequest) {
+    let Ok(query_ast) = serde_json::from_str(search_request.query_ast.as_str()) else {
+        // an error will get raised a bit after anyway
+        return;
+    };
+    let new_ast: QueryAst = CacheNode::new(query_ast).into();
+    search_request.query_ast = serde_json::to_string(&new_ast).unwrap();
 }
 
 /// Rewrite aggregation to make them easier to cache
@@ -1577,7 +1607,7 @@ mod tests {
 
     use bytes::BufMut;
     use quickwit_directories::write_hotcache;
-    use rand::{Rng, thread_rng};
+    use rand::Rng;
     use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
     use tantivy::schema::{
@@ -2059,7 +2089,7 @@ mod tests {
 
         // We use random bytes so that the store can't compress them
         let mut payload = vec![0u8; 1024];
-        thread_rng().fill(&mut payload[..]);
+        rand::rng().fill(&mut payload[..]);
 
         let (hotcache_directory_stored_payload, directory_size_stored_payload) =
             create_tantivy_dir_with_hotcache(

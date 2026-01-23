@@ -358,7 +358,6 @@ mod gcp_pubsub_emulator_tests {
             .unwrap_err();
     }
 
-    #[ignore]
     #[tokio::test]
     async fn test_gcp_pubsub_source() {
         let universe = Universe::with_accelerated_time();

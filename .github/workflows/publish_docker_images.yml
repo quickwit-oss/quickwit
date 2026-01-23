@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - release-0.9
     paths:
       - "quickwit/**"
     tags:
@@ -37,8 +38,18 @@ jobs:
     environment:
       name: production
     steps:
+      - name: Cleanup Disk Space
+        run: |
+          df -h
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/share/swift
+          df -h
+
       - name: Checkout
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Login to Docker Hub
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
@@ -50,11 +61,11 @@ jobs:
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: |
             ${{ env.REGISTRY_IMAGE }}
@@ -96,7 +107,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: digest-${{ matrix.platform_suffix }}
           path: /tmp/digests/*
@@ -112,18 +123,18 @@ jobs:
     environment: production
     steps:
       - name: Download digests
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: digest-*
           path: /tmp/digests
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@318604b99e75e41977312d83839a89be02ca4893 # v5.9.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ env.REGISTRY_IMAGE }}
           flavor: |
@@ -135,6 +146,7 @@ jobs:
             type=semver,pattern={{version}},value=latest
             type=semver,pattern={{version}},suffix=-slim-bookworm
             type=ref,event=tag
+            type=raw,value=v0.9.0-rc,enable=${{ github.ref == 'refs/heads/release-0.9' }}
       - name: Login to Docker Hub
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:

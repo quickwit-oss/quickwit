@@ -134,7 +134,17 @@ impl<'de> Visitor<'de> for FieldSortVecVisitor {
     type Value = Vec<SortField>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("An array containing the sort fields.")
+        formatter.write_str("A string, array, or object containing the sort fields.")
+    }
+
+    fn visit_str<E>(self, field_name: &str) -> Result<Vec<SortField>, E>
+    where E: serde::de::Error {
+        let order = default_elasticsearch_sort_order(field_name);
+        Ok(vec![SortField {
+            field: field_name.to_string(),
+            order,
+            date_format: None,
+        }])
     }
 
     fn visit_seq<A>(self, mut seq: A) -> Result<Vec<SortField>, A::Error>
@@ -229,6 +239,20 @@ mod tests {
         assert_eq!(field_sorts[0].order, SortOrder::Desc);
         assert_eq!(field_sorts[1].field, "uid");
         assert_eq!(field_sorts[1].order, SortOrder::Asc);
+    }
+
+    #[test]
+    fn test_sort_field_str() {
+        let json = r#"
+        {
+            "sort": "timestamp"
+        }
+        "#;
+        let search_body: SearchBody = serde_json::from_str(json).unwrap();
+        let field_sorts = search_body.sort.unwrap();
+        assert_eq!(field_sorts.len(), 1);
+        assert_eq!(field_sorts[0].field, "timestamp");
+        assert_eq!(field_sorts[0].order, SortOrder::Asc);
     }
 
     #[test]

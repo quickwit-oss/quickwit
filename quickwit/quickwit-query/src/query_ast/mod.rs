@@ -19,6 +19,7 @@ use tantivy::schema::Schema as TantivySchema;
 use crate::tokenizers::TokenizerManager;
 
 mod bool_query;
+mod cache_node;
 mod field_presence;
 mod full_text_query;
 mod phrase_prefix_query;
@@ -33,6 +34,7 @@ mod visitor;
 mod wildcard_query;
 
 pub use bool_query::BoolQuery;
+pub use cache_node::{CacheNode, HitSet, PredicateCache, PredicateCacheInjector};
 pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
@@ -67,6 +69,7 @@ pub enum QueryAst {
         underlying: Box<QueryAst>,
         boost: NotNaNf32,
     },
+    Cache(CacheNode),
 }
 
 impl QueryAst {
@@ -115,6 +118,30 @@ impl QueryAst {
                     boost,
                 })
             }
+            QueryAst::Cache(cache_node) => {
+                let inner = cache_node.inner.parse_user_query(default_search_fields)?;
+                let uninitialized =
+                    matches!(cache_node.state, cache_node::CacheState::Uninitialized);
+                debug_assert!(
+                    uninitialized,
+                    "QueryAst::parse_user_query called on initialized CacheNode, this is probably \
+                     a misstake"
+                );
+                if !uninitialized {
+                    tracing::warn!(
+                        "QueryAst::parse_user_query called on initialized CacheNode, cache \
+                         discarded"
+                    );
+                }
+                Ok(CacheNode {
+                    inner: Box::new(inner),
+                    // inner got modified, the result is supposed to be equivalent, but to be safe,
+                    // lets reinitialize the cache in practice this function
+                    // shouldn't ever be called after cache was resolved
+                    state: cache_node::CacheState::Uninitialized,
+                }
+                .into())
+            }
         }
     }
 
@@ -144,6 +171,36 @@ impl QueryAst {
     }
 }
 
+/// Context used when building a tantivy ast.
+pub struct BuildTantivyAstContext<'a> {
+    pub schema: &'a TantivySchema,
+    pub tokenizer_manager: &'a TokenizerManager,
+    pub search_fields: &'a [String],
+    pub with_validation: bool,
+}
+
+impl<'a> BuildTantivyAstContext<'a> {
+    pub fn for_test(schema: &'a TantivySchema) -> Self {
+        use once_cell::sync::Lazy;
+
+        // we do that to have a TokenizerManager with a long enough lifetime
+        static DEFAULT_TOKENIZER_MANAGER: Lazy<TokenizerManager> =
+            Lazy::new(crate::create_default_quickwit_tokenizer_manager);
+
+        BuildTantivyAstContext {
+            schema,
+            tokenizer_manager: &DEFAULT_TOKENIZER_MANAGER,
+            search_fields: &[],
+            with_validation: true,
+        }
+    }
+
+    pub fn without_validation(mut self) -> Self {
+        self.with_validation = false;
+        self
+    }
+}
+
 trait BuildTantivyAst {
     /// Transforms a query Ast node into a TantivyQueryAst.
     ///
@@ -151,23 +208,16 @@ trait BuildTantivyAst {
     /// It can call `into_tantivy_ast_call_me` but should never call `into_tantivy_ast_impl`.
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        search_fields: &[String],
-        with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery>;
 
     /// This method is meant to be called, but should never be overloaded.
     fn build_tantivy_ast_call(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        search_fields: &[String],
-        with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let tantivy_ast_res =
-            self.build_tantivy_ast_impl(schema, tokenizer_manager, search_fields, with_validation);
-        if !with_validation && tantivy_ast_res.is_err() {
+        let tantivy_ast_res = self.build_tantivy_ast_impl(context);
+        if !context.with_validation && tantivy_ast_res.is_err() {
             return match tantivy_ast_res {
                 res @ Ok(_) | res @ Err(InvalidQuery::UserQueryNotParsed) => res,
                 Err(_) => Ok(TantivyQueryAst::match_none()),
@@ -180,80 +230,31 @@ trait BuildTantivyAst {
 impl BuildTantivyAst for QueryAst {
     fn build_tantivy_ast_impl(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        search_fields: &[String],
-        with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         match self {
-            QueryAst::Bool(bool_query) => bool_query.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            ),
-            QueryAst::Term(term_query) => term_query.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            ),
-            QueryAst::Range(range_query) => range_query.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            ),
+            QueryAst::Bool(bool_query) => bool_query.build_tantivy_ast_call(context),
+            QueryAst::Term(term_query) => term_query.build_tantivy_ast_call(context),
+            QueryAst::Range(range_query) => range_query.build_tantivy_ast_call(context),
             QueryAst::MatchAll => Ok(TantivyQueryAst::match_all()),
             QueryAst::MatchNone => Ok(TantivyQueryAst::match_none()),
             QueryAst::Boost { boost, underlying } => {
-                let underlying = underlying.build_tantivy_ast_call(
-                    schema,
-                    tokenizer_manager,
-                    search_fields,
-                    with_validation,
-                )?;
+                let underlying = underlying.build_tantivy_ast_call(context)?.simplify();
                 let boost_query = TantivyBoostQuery::new(underlying.into(), (*boost).into());
                 Ok(boost_query.into())
             }
-            QueryAst::TermSet(term_set) => term_set.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            ),
-            QueryAst::FullText(full_text_query) => full_text_query.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            ),
-            QueryAst::PhrasePrefix(phrase_prefix_query) => phrase_prefix_query
-                .build_tantivy_ast_call(schema, tokenizer_manager, search_fields, with_validation),
-            QueryAst::UserInput(user_text_query) => user_text_query.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            ),
-            QueryAst::FieldPresence(field_presence) => field_presence.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            ),
-            QueryAst::Wildcard(wildcard) => wildcard.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            ),
-            QueryAst::Regex(regex) => regex.build_tantivy_ast_call(
-                schema,
-                tokenizer_manager,
-                search_fields,
-                with_validation,
-            ),
+            QueryAst::TermSet(term_set) => term_set.build_tantivy_ast_call(context),
+            QueryAst::FullText(full_text_query) => full_text_query.build_tantivy_ast_call(context),
+            QueryAst::PhrasePrefix(phrase_prefix_query) => {
+                phrase_prefix_query.build_tantivy_ast_call(context)
+            }
+            QueryAst::UserInput(user_text_query) => user_text_query.build_tantivy_ast_call(context),
+            QueryAst::FieldPresence(field_presence) => {
+                field_presence.build_tantivy_ast_call(context)
+            }
+            QueryAst::Wildcard(wildcard) => wildcard.build_tantivy_ast_call(context),
+            QueryAst::Regex(regex) => regex.build_tantivy_ast_call(context),
+            QueryAst::Cache(cache_node) => cache_node.build_tantivy_ast_call(context),
         }
     }
 }
@@ -261,13 +262,9 @@ impl BuildTantivyAst for QueryAst {
 impl QueryAst {
     pub fn build_tantivy_query(
         &self,
-        schema: &TantivySchema,
-        tokenizer_manager: &TokenizerManager,
-        search_fields: &[String],
-        with_validation: bool,
+        context: &BuildTantivyAstContext,
     ) -> Result<Box<dyn crate::TantivyQuery>, InvalidQuery> {
-        let tantivy_query_ast =
-            self.build_tantivy_ast_call(schema, tokenizer_manager, search_fields, with_validation)?;
+        let tantivy_query_ast = self.build_tantivy_ast_call(context)?;
         Ok(tantivy_query_ast.simplify().into())
     }
 }
@@ -332,9 +329,10 @@ pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<Stri
 mod tests {
     use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
     use crate::query_ast::{
-        BoolQuery, BuildTantivyAst, QueryAst, UserInputQuery, query_ast_from_user_text,
+        BoolQuery, BuildTantivyAst, BuildTantivyAstContext, QueryAst, UserInputQuery,
+        query_ast_from_user_text,
     };
-    use crate::{BooleanOperand, InvalidQuery, create_default_quickwit_tokenizer_manager};
+    use crate::{BooleanOperand, InvalidQuery};
 
     #[test]
     fn test_user_query_not_parsed() {
@@ -347,12 +345,7 @@ mod tests {
         .into();
         let schema = tantivy::schema::Schema::builder().build();
         let build_tantivy_ast_err: InvalidQuery = query_ast
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap_err();
         assert!(matches!(
             build_tantivy_ast_err,
@@ -372,12 +365,7 @@ mod tests {
         let query_ast_with_parsed_user_query: QueryAst = query_ast.parse_user_query(&[]).unwrap();
         let schema = tantivy::schema::Schema::builder().build();
         let tantivy_query_ast = query_ast_with_parsed_user_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         assert_eq!(&tantivy_query_ast, &TantivyQueryAst::match_all(),);
     }
@@ -400,12 +388,7 @@ mod tests {
             bool_query_ast.parse_user_query(&[]).unwrap();
         let schema = tantivy::schema::Schema::builder().build();
         let tantivy_query_ast = query_ast_with_parsed_user_query
-            .build_tantivy_ast_call(
-                &schema,
-                &create_default_quickwit_tokenizer_manager(),
-                &[],
-                true,
-            )
+            .build_tantivy_ast_call(&BuildTantivyAstContext::for_test(&schema))
             .unwrap();
         let tantivy_query_ast_simplified = tantivy_query_ast.simplify();
         // This does not get more simplified than this, because we need the boost 0 score.

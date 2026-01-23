@@ -30,7 +30,7 @@ You will be notified by email from the CI system if any issues are discovered, b
 ### Local Development
 
 1. Install Rust, CMake, Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
-2. Install node@20 and `npm install -g yarn`
+2. Install node@24 and `npm install -g yarn`
 3. Install awslocal https://github.com/localstack/awscli-local
 4. Install protoc https://grpc.io/docs/protoc-installation/ (you may need to install the latest binaries rather than your distro's flavor)
 5. Install nextest https://nexte.st/docs/installation/pre-built-binaries/
@@ -48,7 +48,7 @@ Run `make test-all` to run all tests.
 * `make test-all` - starts necessary Docker services and runs all tests.
 * `make -k test-all docker-compose-down` - the same as above, but tears down the Docker services after running all the tests.
 * `make fmt` - runs formatter, this command requires the nightly toolchain to be installed by running `rustup toolchain install nightly`.
-* `make fix` - runs formatter and clippy checks.
+* `make fix` - runs formatter and clippy checks as well as removing unused dependencies (requires `cargo install cargo-machete`).
 * `make typos` - runs the spellcheck tool over the codebase. (Install by running `cargo install typos-cli`)
 * `make doc` - builds docs.
 * `make docker-compose-up` - starts Docker services.

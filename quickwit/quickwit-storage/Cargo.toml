@@ -22,10 +22,11 @@ http-body-util = { workspace = true}
 hyper = { workspace = true }
 lru = { workspace = true }
 md5 = { workspace = true }
+mini-moka = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
-rand = { workspace = true }
+quick_cache = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -54,10 +55,10 @@ quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 
 opendal = { workspace = true, optional = true }
-reqsign = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 
 [dev-dependencies]
+http = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 tokio = { workspace = true }
@@ -86,8 +87,6 @@ integration-testsuite = [
   "azure_core/azurite_workaround",
   "azure_storage_blobs/azurite_workaround",
   "gcs",                                    # Stands for Google cloud storage.
-  "dep:reqsign",
-  "reqsign/services-google",
   "dep:reqwest",
 ]
 testsuite = ["mockall"]

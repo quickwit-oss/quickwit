@@ -13,7 +13,7 @@ pub struct ExportMetricsServiceRequest {
     >,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExportMetricsServiceResponse {
     /// The details of a partially successful export request.
     ///
@@ -27,14 +27,14 @@ pub struct ExportMetricsServiceResponse {
     /// In such cases, the `rejected_<signal>` MUST have a value of `0` and
     /// the `error_message` MUST be non-empty.
     ///
-    /// A `partial_success` message with an empty value (rejected_<signal> = 0 and
+    /// A `partial_success` message with an empty value (rejected\_<signal> = 0 and
     /// `error_message` = "") is equivalent to it not being set/present. Senders
     /// SHOULD interpret it the same way as in the full success case.
     #[prost(message, optional, tag = "1")]
     pub partial_success: ::core::option::Option<ExportMetricsPartialSuccess>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExportMetricsPartialSuccess {
     /// The number of rejected data points.
     ///
@@ -163,7 +163,7 @@ pub mod metrics_service_client {
                         format!("Service was not ready: {}", e.into()),
                     )
                 })?;
-            let codec = tonic::codec::ProstCodec::default();
+            let codec = tonic_prost::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
                 "/opentelemetry.proto.collector.metrics.v1.MetricsService/Export",
             );
@@ -311,7 +311,7 @@ pub mod metrics_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = ExportSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
+                        let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
                                 accept_compression_encodings,

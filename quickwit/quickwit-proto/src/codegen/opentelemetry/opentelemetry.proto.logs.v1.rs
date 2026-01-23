@@ -73,7 +73,8 @@ pub struct LogRecord {
     /// For converting OpenTelemetry log data to formats that support only one timestamp or
     /// when receiving OpenTelemetry log data by recipients that support only one timestamp
     /// internally the following logic is recommended:
-    ///    - Use time_unix_nano if it is present, otherwise use observed_time_unix_nano.
+    ///
+    /// * Use time_unix_nano if it is present, otherwise use observed_time_unix_nano.
     ///
     /// Value is UNIX Epoch time in nanoseconds since 00:00:00 UTC on 1 January 1970.
     /// Value of 0 indicates unknown or missing timestamp.

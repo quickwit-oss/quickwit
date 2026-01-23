@@ -19,7 +19,7 @@ env:
   AWS_ACCESS_KEY_ID: "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
   CARGO_INCREMENTAL: 0
-  PUBSUB_EMULATOR_HOST: "localhost:9898"
+  PUBSUB_EMULATOR_HOST: "localhost:8681"
   QW_DISABLE_TELEMETRY: 1
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   QW_S3_FORCE_PATH_STYLE_ACCESS: 1
@@ -65,51 +65,50 @@ jobs:
           --health-retries 5
 
       kafka-broker:
-        image: confluentinc/cp-kafka:7.2.1
+        image: confluentinc/confluent-local:7.4.11
         ports:
           - "9092:9092"
           - "9101:9101"
         env:
-          KAFKA_BROKER_ID: 1
-          KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092
+          # Mode KRaft (Single Node)
+          KAFKA_NODE_ID: 1
+          KAFKA_PROCESS_ROLES: 'broker,controller'
+          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@localhost:9093'
+          KAFKA_LOG4J_LOGGERS: "org.apache.kafka.image.loader.MetadataLoader=WARN"
+
+          # Listeners
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT'
+          KAFKA_LISTENERS: 'EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093'
+          KAFKA_ADVERTISED_LISTENERS: 'EXTERNAL://localhost:9092'
+          KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+          KAFKA_INTER_BROKER_LISTENER_NAME: 'EXTERNAL'
+
+          # Configuration simplifiée
           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
           KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
           KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-          KAFKA_JMX_PORT: 9101
-          KAFKA_JMX_HOSTNAME: localhost
-          KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
-        options: >-
-          --health-cmd "cub kafka-ready -b localhost:9092 1 5"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
 
-      zookeeper:
-        image: confluentinc/cp-zookeeper:7.2.1
-        ports:
-          - "2181:2181"
-        env:
+          # ID du Cluster (Nécessaire pour KRaft)
+          CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+
           KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
-          ZOOKEEPER_CLIENT_PORT: 2181
-          ZOOKEEPER_TICK_TIME: 2000
+
         options: >-
-          --health-cmd "cub zk-ready localhost:2181 5"
+          --health-cmd "ub kafka-ready -b localhost:9092 1 5"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
       gcp-pubsub-emulator:
-        image: thekevjames/gcloud-pubsub-emulator:7555256f2c
+        image: thekevjames/gcloud-pubsub-emulator:550.0.0
         ports:
-          - "9898:8681"
+          - "8681:8681"
         env:
           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
 
     steps:
-      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Install lib libsasl2
         run: |
@@ -117,11 +116,11 @@ jobs:
           sudo apt install libsasl2-dev
           sudo apt install libsasl2-2
 
-      - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v.6.0.0
+      - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v.6.1.0
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      - uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
         with:
           path: |
             ~/.cargo/git
@@ -158,7 +157,7 @@ jobs:
         run: rustup update stable
 
       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
-        uses: taiki-e/install-action@763e3324d4fd026c9bd284c504378585777a87d5 # v2.62.57
+        uses: taiki-e/install-action@90558ad1e179036f31467972b00dec6cb80701fa # v2.66.3
         with:
           tool: cargo-llvm-cov,nextest,protoc
 
@@ -173,7 +172,7 @@ jobs:
         working-directory: ./quickwit
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@5a1091511ad55cbe89839c7260b706298ca349f7 # v5.5.1
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5.5.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
           files: ./quickwit/lcov.info
@@ -185,7 +184,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send Message
-        uses: sarisia/actions-status-discord@b8381b25576cb341b2af39926ab42c5056cc44ed # v1.15.5
+        uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1.16.0
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           nodetail: true

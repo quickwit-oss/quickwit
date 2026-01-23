@@ -189,6 +189,32 @@ pub fn no_color() -> bool {
 }
 
 #[macro_export]
+macro_rules! assert_eventually {
+    ($cond:expr, $timeout:expr, $interval:expr) => {
+        let start = std::time::Instant::now();
+        loop {
+            if $cond {
+                break;
+            }
+            if start.elapsed() > $timeout {
+                panic!(
+                    "assertion failed: condition `{}` never became true within {} ms",
+                    stringify!($cond),
+                    $timeout.as_millis()
+                );
+            }
+            tokio::time::sleep($interval).await;
+        }
+    };
+    ($cond:expr, $timeout:expr) => {
+        assert_eventually!($cond, $timeout, std::time::Duration::from_millis(50));
+    };
+    ($cond:expr) => {
+        assert_eventually!($cond, std::time::Duration::from_secs(1));
+    };
+}
+
+#[macro_export]
 macro_rules! ignore_error_kind {
     ($kind:path, $expr:expr) => {
         match $expr {

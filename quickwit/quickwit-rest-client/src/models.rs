@@ -73,7 +73,7 @@ impl ApiResponse {
     }
 }
 
-/// A cousin of [`quickwit_search::SearchResponseRest`] that implements [`Deserialize`]
+/// A cousin of `quickwit_search::SearchResponseRest` that implements [`Deserialize`]
 ///
 /// This version of the response is necessary because
 /// `serde_json_borrow::OwnedValue` is not deserializeable.

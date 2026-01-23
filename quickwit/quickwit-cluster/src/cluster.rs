@@ -39,9 +39,9 @@ use tracing::{info, warn};
 use crate::change::{ClusterChange, ClusterChangeStreamFactory, compute_cluster_change_events};
 use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
-    ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, NodeStateExt,
-    PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
-    build_cluster_member,
+    AVAILABILITY_ZONE_KEY, ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY,
+    NodeStateExt, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
+    READINESS_VALUE_READY, build_cluster_member,
 };
 use crate::metrics::spawn_metrics_task;
 use crate::{ClusterChangeStream, ClusterNode};
@@ -150,25 +150,26 @@ impl Cluster {
             catchup_callback: Some(Box::new(catchup_callback)),
             extra_liveness_predicate: Some(Box::new(extra_liveness_predicate)),
         };
-        let chitchat_handle = spawn_chitchat(
-            chitchat_config,
-            vec![
-                (
-                    ENABLED_SERVICES_KEY.to_string(),
-                    self_node.enabled_services.iter().join(","),
-                ),
-                (
-                    GRPC_ADVERTISE_ADDR_KEY.to_string(),
-                    self_node.grpc_advertise_addr.to_string(),
-                ),
-                (
-                    READINESS_KEY.to_string(),
-                    READINESS_VALUE_NOT_READY.to_string(),
-                ),
-            ],
-            transport,
-        )
-        .await?;
+        let mut initial_key_values = vec![
+            (
+                ENABLED_SERVICES_KEY.to_string(),
+                self_node.enabled_services.iter().join(","),
+            ),
+            (
+                GRPC_ADVERTISE_ADDR_KEY.to_string(),
+                self_node.grpc_advertise_addr.to_string(),
+            ),
+            (
+                READINESS_KEY.to_string(),
+                READINESS_VALUE_NOT_READY.to_string(),
+            ),
+        ];
+
+        if let Some(az) = &self_node.availability_zone {
+            initial_key_values.push((AVAILABILITY_ZONE_KEY.to_string(), az.clone()));
+        }
+        let chitchat_handle =
+            spawn_chitchat(chitchat_config, initial_key_values, transport).await?;
 
         let chitchat = chitchat_handle.chitchat();
         let chitchat_guard = chitchat.lock().await;
@@ -706,6 +707,7 @@ pub async fn create_cluster_for_test_with_id(
         grpc_advertise_addr: grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
         indexing_tasks: Vec::new(),
         indexing_cpu_capacity: PIPELINE_FULL_CAPACITY,
+        availability_zone: None,
     };
     let failure_detector_config = create_failure_detector_config_for_test();
     let cluster = Cluster::join(
@@ -1046,12 +1048,12 @@ mod tests {
             .await
             .unwrap(),
         );
-        let mut random_generator = rand::thread_rng();
+        let mut random_generator = rand::rng();
         // TODO: increase it back to 1000 when https://github.com/quickwit-oss/chitchat/issues/81 is fixed
         let indexing_tasks = (0..500)
             .map(|pipeline_id| {
-                let index_id = random_generator.gen_range(0..=10_000);
-                let source_id = random_generator.gen_range(0..=100);
+                let index_id = random_generator.random_range(0..=10_000);
+                let source_id = random_generator.random_range(0..=100);
                 IndexingTask {
                     pipeline_uid: Some(PipelineUid::for_test(pipeline_id as u128)),
                     index_uid: Some(
