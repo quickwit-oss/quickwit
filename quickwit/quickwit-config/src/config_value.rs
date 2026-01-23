@@ -18,6 +18,7 @@ use std::{any, fmt};
 
 use anyhow::{self, Context};
 use serde::{Deserialize, Deserializer};
+use tracing::log::warn;
 
 use crate::qw_env_vars::{QW_ENV_VARS, QW_NONE};
 
@@ -68,7 +69,17 @@ where
         // QW env vars take precedence over the config file values.
         if E > QW_NONE
             && let Some(env_var_key) = QW_ENV_VARS.get(&E)
-            && let Some(env_var_value) = env_vars.get(*env_var_key)
+            && let Some(env_var_value) = env_vars.get(*env_var_key).filter(|val| {
+                if val.is_empty() {
+                    warn!(
+                        "environment variable `{}` is set but value is empty",
+                        *env_var_key
+                    );
+                    false
+                } else {
+                    true
+                }
+            })
         {
             let value = env_var_value.parse::<T>().map_err(|error| {
                 anyhow::anyhow!(
@@ -118,7 +129,7 @@ where T: Deserialize<'de>
 mod tests {
     use super::*;
     use crate::qw_env_vars::{
-        QW_CLUSTER_ID, QW_GOSSIP_LISTEN_PORT, QW_NODE_ID, QW_REST_LISTEN_PORT,
+        QW_AVAILABILITY_ZONE, QW_CLUSTER_ID, QW_GOSSIP_LISTEN_PORT, QW_NODE_ID, QW_REST_LISTEN_PORT,
     };
 
     #[test]
@@ -189,6 +200,14 @@ mod tests {
         let env_vars = HashMap::new();
         let rest_listen_port = ConfigValue::<usize, QW_REST_LISTEN_PORT>::none();
         rest_listen_port.resolve(&env_vars).unwrap_err();
+    }
+
+    #[test]
+    fn test_config_value_resolve_optional_empty_string() {
+        let mut env_vars = HashMap::new();
+        env_vars.insert("QW_AVAILABILITY_ZONE".to_string(), "".to_string());
+        let az = ConfigValue::<usize, QW_AVAILABILITY_ZONE>::none();
+        assert!(az.resolve_optional(&env_vars).unwrap().is_none());
     }
 
     #[test]
