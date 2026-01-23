@@ -24,7 +24,7 @@ use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{FollowerId, LeaderId};
+use crate::{FollowerId, Ingester, LeaderId};
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -32,7 +32,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::{IngesterStatus, PersistFailureReason};
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, split_queue_id};
+use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, split_queue_id, ShardId};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tracing::{error, info};
 
@@ -73,7 +73,7 @@ impl InnerIngesterState {
     }
 
     /// Returns the shard with the most available permits for this Source/Index.
-    pub fn find_most_capacity_shard(
+    pub fn find_highest_capacity_shard(
         &mut self,
         index_id: IndexUid,
         source_id: String,
@@ -95,6 +95,16 @@ impl InnerIngesterState {
                 },
             )
             .map(|(_, queue_id, shard)| (queue_id, shard))
+    }
+
+    pub fn find_all_shard_ids_for_source(&self, index_id: IndexUid, source_id: String) -> Vec<ShardId> {
+        self.shards.iter().filter_map(|(queue_id, _)| {
+            let (shard_index_id, shard_source_id, shard_id) = split_queue_id(queue_id).unwrap();
+            if !(shard_index_id == index_id && shard_source_id == source_id) {
+                return None;
+            }
+            Some(shard_id)
+        }).collect()
     }
 }
 

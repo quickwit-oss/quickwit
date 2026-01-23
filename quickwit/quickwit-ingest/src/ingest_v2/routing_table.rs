@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
-
+use itertools::Itertools;
 use quickwit_proto::ingest::{Shard, ShardIds, ShardState};
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
 use serde_json::{Value as JsonValue, json};
-use tracing::{info, warn};
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
+use tracing::info;
 
 use crate::IngesterPool;
 
@@ -49,16 +48,12 @@ impl From<Shard> for RoutingEntry {
 /// The set of shards the router is aware of for the given index and source.
 #[derive(Debug, Default)]
 pub(super) struct RoutingTableEntry {
+    pub self_node_id: NodeId,
     /// Index UID of the shards.
     pub index_uid: IndexUid,
     /// Source ID of the shards.
     pub source_id: SourceId,
-    /// Shards located on this node.
-    pub local_shards: Vec<RoutingEntry>,
-    pub local_round_robin_idx: AtomicUsize,
-    /// Shards located on remote nodes.
-    pub remote_shards: Vec<RoutingEntry>,
-    pub remote_round_robin_idx: AtomicUsize,
+    pub shards_by_node: HashMap<NodeId, Vec<RoutingEntry>>,
 }
 
 impl RoutingTableEntry {
@@ -69,26 +64,25 @@ impl RoutingTableEntry {
         source_id: SourceId,
         mut shards: Vec<Shard>,
     ) -> Self {
-        let num_shards = shards.len();
-
         shards.sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
         shards.dedup_by(|left, right| left.shard_id == right.shard_id);
 
-        let (local_shards, remote_shards): (Vec<_>, Vec<_>) = shards
+        let shards_by_node: HashMap<NodeId, Vec<RoutingEntry>> = shards
             .into_iter()
             .filter(|shard| shard.is_open())
-            .map(RoutingEntry::from)
-            .partition(|shard| *self_node_id == shard.leader_id);
-
-        if num_shards > local_shards.len() + remote_shards.len() {
-            warn!("input shards should not contain closed shards or duplicates");
-        }
+            .map(|shard| {
+                (
+                    NodeId::new(shard.leader_id.clone()),
+                    RoutingEntry::from(shard),
+                )
+            })
+            .into_group_map();
 
         Self {
+            self_node_id: self_node_id.clone(),
             index_uid,
             source_id,
-            local_shards,
-            remote_shards,
+            shards_by_node,
             ..Default::default()
         }
     }
@@ -111,7 +105,7 @@ impl RoutingTableEntry {
         closed_shard_ids: &mut Vec<ShardId>,
         unavailable_leaders: &mut HashSet<NodeId>,
     ) -> bool {
-        let shards = self.local_shards.iter().chain(self.remote_shards.iter());
+        let shards: Vec<&RoutingEntry> = self.shards_by_node.values().flatten().collect();
 
         for shard in shards {
             match shard.shard_state {
@@ -138,44 +132,17 @@ impl RoutingTableEntry {
         false
     }
 
-    /// Returns the next open and available shard in the table entry in a round-robin fashion.
-    pub fn next_open_shard_round_robin(
-        &self,
-        ingester_pool: &IngesterPool,
-        rate_limited_shards: &HashSet<ShardId>,
-    ) -> Result<&RoutingEntry, NextOpenShardError> {
-        let mut error = NextOpenShardError::NoShardsAvailable;
-
-        for (shards, round_robin_idx) in [
-            (&self.local_shards, &self.local_round_robin_idx),
-            (&self.remote_shards, &self.remote_round_robin_idx),
-        ] {
-            if shards.is_empty() {
-                continue;
-            }
-            for _attempt in 0..shards.len() {
-                let shard_idx = round_robin_idx.fetch_add(1, Ordering::Relaxed);
-                let shard_routing_entry: &RoutingEntry = &shards[shard_idx % shards.len()];
-
-                if !shard_routing_entry.shard_state.is_open() {
-                    continue;
-                }
-                if rate_limited_shards.contains(&shard_routing_entry.shard_id) {
-                    error = NextOpenShardError::RateLimited;
-                    continue;
-                }
-                if ingester_pool.contains_key(&shard_routing_entry.leader_id) {
-                    return Ok(shard_routing_entry);
-                }
-            }
-        }
-        Err(error)
+    pub fn find_open_node(&self, ingester_pool: &IngesterPool) -> Option<(&NodeId, &IndexUid, &SourceId)> {
+        self.shards_by_node
+            .iter()
+            .filter(|&(node_id, _)| ingester_pool.contains_key(node_id))
+            .max_by_key(|&(_, shards)| shards.len())
+            .map(|(node_id, shards)| (node_id, &shards[0].index_uid, &shards[0].source_id))
     }
 
     /// Inserts the open shards the routing table is not aware of.
     fn insert_open_shards(
         &mut self,
-        self_node_id: &NodeId,
         leader_id: &NodeId,
         index_uid: &IndexUid,
         shard_ids: &[ShardId],
@@ -193,11 +160,8 @@ impl RoutingTableEntry {
             }
             std::cmp::Ordering::Equal => {}
         };
-        let target_shards = if self_node_id == leader_id {
-            &mut self.local_shards
-        } else {
-            &mut self.remote_shards
-        };
+        let target_shards = self.shards_by_node.entry(leader_id.clone()).or_default();
+
         let mut num_inserted_shards = 0;
         let num_target_shards = target_shards.len();
 
@@ -246,12 +210,9 @@ impl RoutingTableEntry {
         }
     }
 
-    /// Clears local and remote shards.
+    /// Clears all shards counts.
     fn clear_shards(&mut self) {
-        self.local_shards.clear();
-        self.local_round_robin_idx = AtomicUsize::default();
-        self.remote_shards.clear();
-        self.remote_round_robin_idx = AtomicUsize::default();
+        self.shards_by_node.clear();
     }
 
     /// Closes the shards identified by their shard IDs.
@@ -261,7 +222,7 @@ impl RoutingTableEntry {
         if self.index_uid != *index_uid {
             return;
         }
-        for shards in [&mut self.local_shards, &mut self.remote_shards] {
+        for (_, shards) in self.shards_by_node.iter_mut() {
             if shards.is_empty() {
                 continue;
             }
@@ -281,14 +242,14 @@ impl RoutingTableEntry {
         }
     }
 
-    /// Shards the shards identified by their shard IDs.
+    /// Deletes the shards identified by their shard IDs.
     fn delete_shards(&mut self, index_uid: &IndexUid, shard_ids: &[ShardId]) {
         // If the shard table was just recently updated with shards for a new index UID, then we can
         // safely discard this request.
         if self.index_uid != *index_uid {
             return;
         }
-        for shards in [&mut self.local_shards, &mut self.remote_shards] {
+        for (_, shards) in self.shards_by_node.iter_mut() {
             if shards.is_empty() {
                 continue;
             }
@@ -316,15 +277,12 @@ impl RoutingTableEntry {
 
     #[cfg(test)]
     pub fn len(&self) -> usize {
-        self.local_shards.len() + self.remote_shards.len()
+        self.shards_by_node.values().flatten().count()
     }
 
     #[cfg(test)]
     pub fn all_shards(&self) -> Vec<&RoutingEntry> {
-        let mut shards = Vec::with_capacity(self.len());
-        shards.extend(&self.local_shards);
-        shards.extend(&self.remote_shards);
-        shards
+        self.shards_by_node.values().flatten().collect()
     }
 }
 
@@ -435,7 +393,7 @@ impl RoutingTable {
         self.table
             .entry(key.clone())
             .or_insert_with(|| RoutingTableEntry::empty(index_uid.clone(), source_id))
-            .insert_open_shards(&self.self_node_id, leader_id, &index_uid, shard_ids);
+            .insert_open_shards(leader_id, &index_uid, shard_ids);
     }
 
     /// Closes the targeted shards.
@@ -468,7 +426,7 @@ impl RoutingTable {
         let mut per_index_shards_json: HashMap<IndexId, Vec<JsonValue>> = HashMap::new();
 
         for ((index_id, source_id), entry) in &self.table {
-            for (shards, is_local) in &[(&entry.local_shards, true), (&entry.remote_shards, false)]
+            for (node_id, shards) in entry.shards_by_node.iter()
             {
                 let shards_json = shards.iter().map(|shard| {
                     json!({
@@ -476,7 +434,7 @@ impl RoutingTable {
                         "source_id": source_id,
                         "shard_id": shard.shard_id,
                         "shard_state": shard.shard_state.as_json_str_name(),
-                        "is_local": is_local,
+                        "leader_id": node_id,
                     })
                 });
                 per_index_shards_json

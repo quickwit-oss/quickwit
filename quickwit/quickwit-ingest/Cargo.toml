@@ -18,6 +18,7 @@ bytesize = { workspace = true }
 fail = { workspace = true, optional = true }
 futures = { workspace = true }
 http = { workspace = true }
+itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 mrecordlog = { workspace = true }
 once_cell = { workspace = true }
@@ -43,7 +44,6 @@ quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
-itertools = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }

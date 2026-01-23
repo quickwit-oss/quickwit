@@ -279,7 +279,6 @@ impl IngestRouter {
     ) {
         let mut closed_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
         let mut deleted_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
-        let mut unavailable_nodes =
 
         while let Some((persist_summary, persist_result)) = persist_futures.next().await {
             match persist_result {
@@ -291,24 +290,23 @@ impl IngestRouter {
                         workbench.record_persist_failure(&persist_failure);
 
                         match persist_failure.reason() {
-
                             PersistFailureReason::ShardClosed => {
-                                let shard_id = persist_failure.shard_id().clone();
+                                let shard_ids = persist_failure.shard_ids.clone();
                                 let index_uid: IndexUid = persist_failure.index_uid().clone();
                                 let source_id: SourceId = persist_failure.source_id;
                                 closed_shards
                                     .entry((index_uid, source_id))
                                     .or_default()
-                                    .push(shard_id);
+                                    .extend(shard_ids);
                             }
                             PersistFailureReason::ShardNotFound => {
-                                let shard_id = persist_failure.shard_id().clone();
+                                let shard_ids = persist_failure.shard_ids.clone();
                                 let index_uid: IndexUid = persist_failure.index_uid().clone();
                                 let source_id: SourceId = persist_failure.source_id;
                                 deleted_shards
                                     .entry((index_uid, source_id))
                                     .or_default()
-                                    .push(shard_id);
+                                    .extend(shard_ids);
                             }
                             PersistFailureReason::WalFull
                             | PersistFailureReason::ShardRateLimited => {
@@ -317,8 +315,8 @@ impl IngestRouter {
                                 //
                                 // That way we will avoid to retry the persist request on the very
                                 // same node.
-                                let shard_id = persist_failure.shard_id().clone();
-                                workbench.rate_limited_shards.insert(shard_id);
+                                let shard_ids = persist_failure.shard_ids;
+                                workbench.rate_limited_shards.extend(shard_ids);
                             }
                             _ => {}
                         }
@@ -379,31 +377,24 @@ impl IngestRouter {
         let state_guard = self.state.lock().await;
 
         for subrequest in pending_subrequests(&workbench.subworkbenches) {
-            let next_open_shard_res_opt = state_guard
+            let next_node_opt = state_guard
                 .routing_table
                 .find_entry(&subrequest.index_id, &subrequest.source_id)
-                .map(|entry| {
-                    entry.next_open_shard_round_robin(&self.ingester_pool, rate_limited_shards)
-                });
-            let next_open_shard = match next_open_shard_res_opt {
-                Some(Ok(next_open_shard)) => next_open_shard,
-                Some(Err(NextOpenShardError::RateLimited)) => {
-                    rate_limited_subrequest_ids.push(subrequest.subrequest_id);
-                    continue;
-                }
-                Some(Err(NextOpenShardError::NoShardsAvailable)) | None => {
-                    no_shards_available_subrequest_ids.push(subrequest.subrequest_id);
-                    continue;
-                }
+                .map(|entry| entry.find_open_node(&self.ingester_pool))
+                .flatten();
+
+            let Some((node_id, index_uid, source_id)) = next_node_opt else {
+                rate_limited_subrequest_ids.push(subrequest.subrequest_id);
+                continue;
             };
             let persist_subrequest = PersistSubrequest {
                 subrequest_id: subrequest.subrequest_id,
-                index_uid: next_open_shard.index_uid.clone().into(),
-                source_id: next_open_shard.source_id.clone(),
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
                 doc_batch: subrequest.doc_batch.clone(),
             };
             per_leader_persist_subrequests
-                .entry(&next_open_shard.leader_id)
+                .entry(node_id)
                 .or_default()
                 .push(persist_subrequest);
         }

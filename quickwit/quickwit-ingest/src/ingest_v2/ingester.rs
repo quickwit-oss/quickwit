@@ -464,13 +464,22 @@ impl Ingester {
 
         if state_guard.status() != IngesterStatus::Ready {
             persist_failures.reserve_exact(persist_request.subrequests.len());
+            let all_shards_on_node: Vec<ShardId> = state_guard
+                .shards
+                .keys()
+                .map(|queue_id| {
+                    let (_, _, shard_id) = split_queue_id(queue_id).unwrap();
+                    shard_id
+                })
+                .collect();
 
             for subrequest in persist_request.subrequests {
                 let persist_failure = PersistFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
-                    reason: PersistFailureReason::NodeUnavailable as i32,
+                    shard_ids: all_shards_on_node.clone(),
+                    reason: PersistFailureReason::ShardClosed as i32,
                 };
                 persist_failures.push(persist_failure);
             }
@@ -510,21 +519,27 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
+                        shard_ids: Vec::new(),
                         reason: PersistFailureReason::WalFull as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
                 };
 
-                let Some((queue_id, shard)) = state_guard.find_most_capacity_shard(
+                let Some((queue_id, shard)) = state_guard.find_highest_capacity_shard(
                     subrequest.index_uid.clone().unwrap(),
                     subrequest.source_id.clone(),
                 ) else {
+                    let all_shards_for_queue = state_guard.find_all_shard_ids_for_source(
+                        subrequest.index_uid.clone().unwrap(),
+                        subrequest.source_id.clone(),
+                    );
                     let persist_failure = PersistFailure {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        reason: PersistFailureReason::NoShardsAvailable as i32,
+                        shard_ids: all_shards_for_queue,
+                        reason: PersistFailureReason::ShardRateLimited as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
@@ -549,7 +564,7 @@ impl Ingester {
                     .expect("rate limiter should be initialized");
 
                 // Because we return the shard with the most available capacity, if this hits, it
-                // means that no shard can receive this request, and it should be retried.
+                // means that this node cannot persist this request, and it should be retried.
                 if !rate_limiter.acquire_bytes(requested_capacity) {
                     debug!("failed to persist records to shard `{queue_id}`: rate limited");
 
@@ -557,7 +572,8 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        reason: PersistFailureReason::NoShardsAvailable as i32,
+                        shard_ids: vec![shard_id.unwrap()],
+                        reason: PersistFailureReason::ShardRateLimited as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
@@ -700,6 +716,8 @@ impl Ingester {
                         subrequest_id: replicate_failure.subrequest_id,
                         index_uid: replicate_failure.index_uid,
                         source_id: replicate_failure.source_id,
+                        //todo: figure this out?
+                        shard_ids: Vec::new(),
                         reason: persist_failure_reason as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -733,7 +751,7 @@ impl Ingester {
                                 error!(
                                     "failed to persist records to shard `{queue_id}`: {io_error}"
                                 );
-                                shards_to_close.insert(queue_id);
+                                shards_to_close.insert(queue_id.clone());
                                 PersistFailureReason::ShardClosed
                             }
                             AppendDocBatchError::QueueNotFound(_) => {
@@ -741,14 +759,20 @@ impl Ingester {
                                     "failed to persist records to shard `{queue_id}`: WAL queue \
                                      not found"
                                 );
-                                shards_to_delete.insert(queue_id);
+                                shards_to_delete.insert(queue_id.clone());
                                 PersistFailureReason::ShardNotFound
                             }
+                        };
+                        let shard_id = match split_queue_id(&queue_id) {
+                            Some((_, _, shard_id)) => Some(shard_id),
+                            None => None,
                         };
                         let persist_failure = PersistFailure {
                             subrequest_id: subrequest.subrequest_id,
                             index_uid: subrequest.index_uid,
                             source_id: subrequest.source_id,
+                            //todo: fix
+                            shard_ids: vec![shard_id.unwrap()],
                             reason: reason as i32,
                         };
                         persist_failures.push(persist_failure);

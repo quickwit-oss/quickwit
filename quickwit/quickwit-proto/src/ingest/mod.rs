@@ -313,13 +313,11 @@ impl From<PersistFailureReason> for IngestFailureReason {
     fn from(reason: PersistFailureReason) -> Self {
         match reason {
             PersistFailureReason::Unspecified => IngestFailureReason::Unspecified,
-            PersistFailureReason::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::ShardNotFound => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::WalFull => IngestFailureReason::WalFull,
             PersistFailureReason::ShardRateLimited => IngestFailureReason::ShardRateLimited,
             PersistFailureReason::Timeout => IngestFailureReason::Timeout,
-            PersistFailureReason::NodeUnavailable => IngestFailureReason::Internal,
         }
     }
 }
