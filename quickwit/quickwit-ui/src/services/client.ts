@@ -184,9 +184,10 @@ export class Client {
       const interval = histogram.interval;
       let extended_bounds: any;
       if (request.startTimestamp && request.endTimestamp) {
+	// extended_bounds are ms
         extended_bounds = {
-          min: request.startTimestamp,
-          max: request.endTimestamp,
+          min: request.startTimestamp * 1000,
+          max: request.endTimestamp * 1000,
         };
       } else {
         extended_bounds = undefined;
