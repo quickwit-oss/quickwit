@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import styled from "@emotion/styled";
-import { Paper } from "@mui/material";
+import { Alert, Paper } from "@mui/material";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import { FC, ReactNode } from "react";
@@ -75,6 +75,12 @@ export function IndexSummary({ index }: { index: Index }) {
   return (
     <Paper variant="outlined">
       <ItemContainer>
+        {index.split_limit_reached && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Split limit reached. Only the first 10,000 splits were retrieved.
+            The actual total may be higher. Statistics shown are incomplete.
+          </Alert>
+        )}
         <IndexRow title="Created at:">
           {dayjs
             .unix(index.metadata.create_timestamp)
