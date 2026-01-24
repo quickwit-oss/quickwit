@@ -282,6 +282,7 @@ export type Range = {
 export type Index = {
   metadata: IndexMetadata;
   splits: SplitMetadata[];
+  split_limit_reached: boolean;
 };
 
 export type Cluster = {
