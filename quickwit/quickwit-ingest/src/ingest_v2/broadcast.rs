@@ -562,7 +562,7 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let (_temp_dir, state) = IngesterState::for_test(cluster.clone()).await;
         let weak_state = state.weak();
         let mut task = BroadcastLocalShardsTask {
             cluster,

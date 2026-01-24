@@ -31,7 +31,6 @@ use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
-use quickwit_common::tower::Pool;
 use quickwit_common::{ServiceStream, rate_limited_error, rate_limited_warn};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
@@ -39,13 +38,13 @@ use quickwit_proto::control_plane::{
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
-    DecommissionResponse, FetchMessage, IngesterService, IngesterServiceClient,
-    IngesterServiceStream, IngesterStatus, InitShardFailure, InitShardSuccess, InitShardsRequest,
-    InitShardsResponse, ObservationMessage, OpenFetchStreamRequest, OpenObservationStreamRequest,
-    OpenReplicationStreamRequest, OpenReplicationStreamResponse, PersistFailure,
-    PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, ReplicateFailureReason,
-    ReplicateSubrequest, RetainShardsForSource, RetainShardsRequest, RetainShardsResponse,
-    SynReplicationMessage, TruncateShardsRequest, TruncateShardsResponse,
+    DecommissionResponse, FetchMessage, IngesterService, IngesterServiceStream, IngesterStatus,
+    InitShardFailure, InitShardSuccess, InitShardsRequest, InitShardsResponse, ObservationMessage,
+    OpenFetchStreamRequest, OpenObservationStreamRequest, OpenReplicationStreamRequest,
+    OpenReplicationStreamResponse, PersistFailure, PersistFailureReason, PersistRequest,
+    PersistResponse, PersistSuccess, ReplicateFailureReason, ReplicateSubrequest,
+    RetainShardsForSource, RetainShardsRequest, RetainShardsResponse, SynReplicationMessage,
+    TruncateShardsRequest, TruncateShardsResponse,
 };
 use quickwit_proto::ingest::{
     CommitTypeV2, DocBatchV2, IngestV2Error, IngestV2Result, ParseFailure, Shard, ShardIds,
@@ -132,7 +131,7 @@ impl Ingester {
     pub async fn try_new(
         cluster: Cluster,
         control_plane: ControlPlaneServiceClient,
-        ingester_pool: Pool<NodeId, IngesterServiceClient>,
+        ingester_pool: IngesterPool,
         wal_dir_path: &Path,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
@@ -141,7 +140,7 @@ impl Ingester {
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
+        let state = IngesterState::load(cluster.clone(), wal_dir_path, rate_limiter_settings).await;
 
         let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster, weak_state.clone());
@@ -164,12 +163,12 @@ impl Ingester {
     }
 
     /// Checks whether the ingester is fully decommissioned and updates its status accordingly.
-    fn check_decommissioning_status(&self, state: &mut InnerIngesterState) {
+    async fn check_decommissioning_status(&self, state: &mut InnerIngesterState) {
         if state.status() != IngesterStatus::Decommissioning {
             return;
         }
         if state.shards.values().all(|shard| shard.is_indexed()) {
-            state.set_status(IngesterStatus::Decommissioned);
+            state.set_status(IngesterStatus::Decommissioned).await;
         }
     }
 
@@ -454,30 +453,17 @@ impl Ingester {
 
         let commit_type = persist_request.commit_type();
         let force_commit = commit_type == CommitTypeV2::Force;
-        let leader_id: NodeId = persist_request.leader_id.into();
 
         let mut state_guard =
             with_lock_metrics!(self.state.lock_fully().await, "persist", "write")?;
+        let status = state_guard.status();
 
         if state_guard.status() != IngesterStatus::Ready {
-            persist_failures.reserve_exact(persist_request.subrequests.len());
-
-            for subrequest in persist_request.subrequests {
-                let persist_failure = PersistFailure {
-                    subrequest_id: subrequest.subrequest_id,
-                    index_uid: subrequest.index_uid,
-                    source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
-                    reason: PersistFailureReason::ShardClosed as i32,
-                };
-                persist_failures.push(persist_failure);
-            }
-            let persist_response = PersistResponse {
-                leader_id: leader_id.into(),
-                successes: Vec::new(),
-                failures: persist_failures,
-            };
-            return Ok(persist_response);
+            let error = IngestV2Error::Unavailable(format!(
+                "ingester {} is not ready: {status}",
+                self.self_node_id
+            ));
+            return Err(error);
         }
         // first verify if we would locally accept each subrequest
         {
@@ -844,9 +830,13 @@ impl Ingester {
         let follower_id: NodeId = open_replication_stream_request.follower_id.into();
 
         let mut state_guard = self.state.lock_partially().await?;
+        let status = state_guard.status();
 
-        if state_guard.status() != IngesterStatus::Ready {
-            return Err(IngestV2Error::Internal("node decommissioned".to_string()));
+        if status != IngesterStatus::Ready {
+            let error = IngestV2Error::Unavailable(format!(
+                "ingester {follower_id} is not ready: {status}",
+            ));
+            return Err(error);
         }
         let Entry::Vacant(entry) = state_guard.replication_tasks.entry(leader_id.clone()) else {
             return Err(IngestV2Error::Internal(format!(
@@ -929,9 +919,14 @@ impl Ingester {
     ) -> IngestV2Result<InitShardsResponse> {
         let mut state_guard =
             with_lock_metrics!(self.state.lock_fully().await, "init_shards", "write")?;
+        let status = state_guard.status();
 
-        if state_guard.status() != IngesterStatus::Ready {
-            return Err(IngestV2Error::Internal("node decommissioned".to_string()));
+        if status != IngesterStatus::Ready {
+            let error = IngestV2Error::Unavailable(format!(
+                "ingester {} is not ready: {status}",
+                self.self_node_id
+            ));
+            return Err(error);
         }
         let mut successes = Vec::with_capacity(init_shards_request.subrequests.len());
         let mut failures = Vec::new();
@@ -1000,7 +995,7 @@ impl Ingester {
         let wal_usage = state_guard.mrecordlog.resource_usage();
         report_wal_usage(wal_usage);
 
-        self.check_decommissioning_status(&mut state_guard);
+        self.check_decommissioning_status(&mut state_guard).await;
         let truncate_response = TruncateShardsResponse {};
         Ok(truncate_response)
     }
@@ -1034,11 +1029,28 @@ impl Ingester {
         info!("decommissioning ingester");
         let mut state_guard = self.state.lock_partially().await?;
 
+        // It's important to set the status to "Decommissioning" before closing the shards, because
+        // it ensures that the ingester status is propagated to the control plane via gossip before
+        // the new state of the shards.
+        state_guard
+            .set_status(IngesterStatus::Decommissioning)
+            .await;
+
+        // Wait for the status to be propagated to the control plane via gossip.
+        const WAIT_FOR_PROPAGATION: Duration = if cfg!(any(test, feature = "testsuite")) {
+            Duration::ZERO
+        } else {
+            Duration::from_secs(3)
+        };
+        tokio::time::sleep(WAIT_FOR_PROPAGATION).await;
+
         for shard in state_guard.shards.values_mut() {
             shard.close();
         }
-        state_guard.set_status(IngesterStatus::Decommissioning);
-        self.check_decommissioning_status(&mut state_guard);
+        state_guard
+            .set_status(IngesterStatus::Decommissioning)
+            .await;
+        self.check_decommissioning_status(&mut state_guard).await;
 
         Ok(DecommissionResponse {})
     }
@@ -1179,7 +1191,7 @@ impl IngesterService for Ingester {
                 .delete_shard(&queue_id, "control-plane-retain-shards-rpc")
                 .await;
         }
-        self.check_decommissioning_status(&mut state_guard);
+        self.check_decommissioning_status(&mut state_guard).await;
         Ok(RetainShardsResponse {})
     }
 
@@ -1298,8 +1310,8 @@ mod tests {
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::control_plane::{AdviseResetShardsResponse, MockControlPlaneService};
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter, InitShardSubrequest,
-        PersistSubrequest, TruncateShardsSubrequest,
+        IngesterServiceClient, IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter,
+        InitShardSubrequest, PersistSubrequest, TruncateShardsSubrequest,
     };
     use quickwit_proto::ingest::{
         DocBatchV2, ParseFailureReason, ShardIdPosition, ShardIdPositions, ShardIds, ShardPKey,
@@ -1514,7 +1526,7 @@ mod tests {
             .await
             .unwrap();
 
-        state_guard.set_status(IngesterStatus::Initializing);
+        state_guard.set_status(IngesterStatus::Initializing).await;
 
         drop(state_guard);
 
@@ -3514,7 +3526,9 @@ mod tests {
         assert_eq!(observation.status(), IngesterStatus::Ready);
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
-        state_guard.set_status(IngesterStatus::Decommissioning);
+        state_guard
+            .set_status(IngesterStatus::Decommissioning)
+            .await;
         drop(state_guard);
 
         let observation = observation_stream.next().await.unwrap().unwrap();
@@ -3528,18 +3542,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingester_decommission() {
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let mut state_guard = ingester.state.lock_fully().await.unwrap();
+        let index_uid = IndexUid::for_test("test-index", 0);
+
+        let solo_shard =
+            IngesterShard::new_solo(index_uid, "test-source".to_string(), ShardId::from(1)).build();
+        let queue_id = solo_shard.queue_id();
+
+        state_guard.shards.insert(queue_id.clone(), solo_shard);
+        drop(state_guard);
+
+        ingester.decommission(DecommissionRequest {}).await.unwrap();
+
+        let state_guard = ingester.state.lock_fully().await.unwrap();
+        let shard = state_guard.shards.get(&queue_id).unwrap();
+        shard.assert_is_closed();
+
+        assert_eq!(state_guard.status(), IngesterStatus::Decommissioning);
+    }
+
+    #[tokio::test]
     async fn test_check_decommissioning_status() {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
-        ingester.check_decommissioning_status(&mut state_guard);
+        ingester
+            .check_decommissioning_status(&mut state_guard)
+            .await;
         assert_eq!(state_guard.status(), IngesterStatus::Ready);
 
-        state_guard.set_status(IngesterStatus::Decommissioning);
-        ingester.check_decommissioning_status(&mut state_guard);
+        state_guard
+            .set_status(IngesterStatus::Decommissioning)
+            .await;
+        ingester
+            .check_decommissioning_status(&mut state_guard)
+            .await;
         assert_eq!(state_guard.status(), IngesterStatus::Decommissioned);
 
-        state_guard.set_status(IngesterStatus::Decommissioning);
+        state_guard
+            .set_status(IngesterStatus::Decommissioning)
+            .await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
 
@@ -3554,13 +3599,17 @@ mod tests {
         let queue_id = solo_shard.queue_id();
 
         state_guard.shards.insert(queue_id.clone(), solo_shard);
-        ingester.check_decommissioning_status(&mut state_guard);
+        ingester
+            .check_decommissioning_status(&mut state_guard)
+            .await;
         assert_eq!(state_guard.status(), IngesterStatus::Decommissioning);
 
         let shard = state_guard.shards.get_mut(&queue_id).unwrap();
         shard.truncation_position_inclusive = Position::Beginning.as_eof();
 
-        ingester.check_decommissioning_status(&mut state_guard);
+        ingester
+            .check_decommissioning_status(&mut state_guard)
+            .await;
         assert_eq!(state_guard.status(), IngesterStatus::Decommissioned);
     }
 
