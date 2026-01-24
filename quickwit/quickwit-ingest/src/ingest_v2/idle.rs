@@ -78,6 +78,8 @@ impl CloseIdleShardsTask {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_config::service::QuickwitService;
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::{IndexUid, Position, ShardId, queue_id};
 
@@ -87,7 +89,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_close_idle_shards_run() {
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let weak_state = state.weak();
         let idle_shard_timeout = Duration::from_millis(200);
         let join_handle = CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
