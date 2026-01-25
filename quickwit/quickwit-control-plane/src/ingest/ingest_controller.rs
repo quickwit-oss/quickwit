@@ -350,8 +350,10 @@ impl IngestController {
         let operation: String = format!("retain shards `{ingester}`");
         fire_and_forget(
             async move {
-                if let Err(retain_shards_err) =
-                    ingester_client.retain_shards(retain_shards_req).await
+                if let Err(retain_shards_err) = ingester_client
+                    .client
+                    .retain_shards(retain_shards_req)
+                    .await
                 {
                     error!(%retain_shards_err, "retain shards error");
                 }
@@ -648,7 +650,7 @@ impl IngestController {
             let init_shards_future = async move {
                 let init_shards_result = tokio::time::timeout(
                     INIT_SHARDS_REQUEST_TIMEOUT,
-                    leader.init_shards(init_shards_request),
+                    leader.client.init_shards(init_shards_request),
                 )
                 .await;
                 (leader_id.clone(), init_shards_result, init_shard_failures)
@@ -910,7 +912,7 @@ impl IngestController {
         let close_shards_request = CloseShardsRequest { shard_pkeys };
 
         if let Err(error) = progress
-            .protect_future(ingester.close_shards(close_shards_request))
+            .protect_future(ingester.client.close_shards(close_shards_request))
             .await
         {
             warn!("failed to scale down number of shards: {error}");
@@ -1219,7 +1221,7 @@ impl IngestController {
             let close_shards_future = async move {
                 tokio::time::timeout(
                     CLOSE_SHARDS_REQUEST_TIMEOUT,
-                    ingester.close_shards(shards_to_close_request),
+                    ingester.client.close_shards(shards_to_close_request),
                 )
                 .await
             };

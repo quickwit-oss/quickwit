@@ -72,6 +72,7 @@ impl IngesterStatus {
             Self::Unspecified => "unspecified",
             Self::Initializing => "initializing",
             Self::Ready => "ready",
+            Self::Retiring => "retiring",
             Self::Decommissioning => "decommissioning",
             Self::Decommissioned => "decommissioned",
             Self::Failed => "failed",
@@ -83,6 +84,7 @@ impl IngesterStatus {
             "unspecified" => Some(Self::Unspecified),
             "initializing" => Some(Self::Initializing),
             "ready" => Some(Self::Ready),
+            "retiring" => Some(Self::Retiring),
             "decommissioning" => Some(Self::Decommissioning),
             "decommissioned" => Some(Self::Decommissioned),
             "failed" => Some(Self::Failed),
@@ -91,7 +93,11 @@ impl IngesterStatus {
     }
 
     pub fn is_ready(&self) -> bool {
-        *self == Self::Ready
+        matches!(self, Self::Ready)
+    }
+
+    pub fn accepts_write_requests(&self) -> bool {
+        matches!(self, Self::Ready | Self::Retiring)
     }
 }
 

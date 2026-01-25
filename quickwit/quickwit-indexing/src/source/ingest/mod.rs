@@ -361,6 +361,7 @@ impl IngestSource {
                 };
                 for num_attempts in 1..=retry_params.max_attempts {
                     let Err(error) = ingester
+                        .client
                         .truncate_shards(truncate_shards_request.clone())
                         .await
                     else {

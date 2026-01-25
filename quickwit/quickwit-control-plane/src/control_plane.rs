@@ -1157,7 +1157,7 @@ async fn watcher_indexers(
                     error!(%error, "failed to forward `IndexerLeft` event to control plane");
                 }
             }
-            ClusterChange::Update(_) => {
+            ClusterChange::Update { .. } => {
                 // We are not interested in updates (yet).
             }
         }

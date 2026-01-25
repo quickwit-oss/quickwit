@@ -434,7 +434,7 @@ impl IngestRouter {
             let persist_future = async move {
                 let persist_result = tokio::time::timeout(
                     PERSIST_REQUEST_TIMEOUT,
-                    ingester.persist(persist_request),
+                    ingester.client.persist(persist_request),
                 )
                 .await
                 .unwrap_or_else(|_| {
@@ -709,7 +709,8 @@ mod tests {
         GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess, MockControlPlaneService,
     };
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceClient, MockIngesterService, PersistFailure, PersistResponse, PersistSuccess,
+        IngesterServiceClient, IngesterStatus, MockIngesterService, PersistFailure,
+        PersistResponse, PersistSuccess,
     };
     use quickwit_proto::ingest::router::IngestSubrequest;
     use quickwit_proto::ingest::{
@@ -720,6 +721,7 @@ mod tests {
 
     use super::*;
     use crate::RateMibPerSec;
+    use crate::ingest_v2::IngesterPoolEntry;
     use crate::ingest_v2::broadcast::ShardInfo;
     use crate::ingest_v2::routing_table::{RoutingEntry, RoutingTableEntry};
     use crate::ingest_v2::workbench::SubworkbenchFailure;
@@ -841,7 +843,12 @@ mod tests {
         drop(rendezvous_1);
         drop(rendezvous_2);
 
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+        let client_0 = IngesterServiceClient::mocked();
+        let ingester_0 = IngesterPoolEntry {
+            client: client_0,
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester_0);
         {
             // Ingester-0 has been marked as unavailable due to the previous requests.
             let (get_or_create_open_shard_request_opt, _rendezvous) = router
@@ -1359,8 +1366,19 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
 
         let ingester_pool = IngesterPool::default();
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
-        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
+        let client_0 = IngesterServiceClient::mocked();
+        let ingester_0 = IngesterPoolEntry {
+            client: client_0,
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-0".into(), ingester_0);
+
+        let client_1 = IngesterServiceClient::mocked();
+        let ingester_1 = IngesterPoolEntry {
+            client: client_1,
+            status: IngesterStatus::Ready,
+        };
+        ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let replication_factor = 1;
         let router = IngestRouter::new(
@@ -1589,7 +1607,11 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let client_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = IngesterPoolEntry {
+            client: client_0,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let mut mock_ingester_1 = MockIngesterService::new();
@@ -1626,7 +1648,11 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
+        let client_1 = IngesterServiceClient::from_mock(mock_ingester_1);
+        let ingester_1 = IngesterPoolEntry {
+            client: client_1,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let ingest_request = IngestRequestV2 {
@@ -1774,7 +1800,11 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let client_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = IngesterPoolEntry {
+            client: client_0,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let ingest_request = IngestRequestV2 {
@@ -2077,7 +2107,11 @@ mod tests {
             })
             .in_sequence(&mut seq);
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let client_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = IngesterPoolEntry {
+            client: client_0,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let ingest_request = IngestRequestV2 {
@@ -2153,7 +2187,11 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let client_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = IngesterPoolEntry {
+            client: client_0,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let ingest_request = IngestRequestV2 {

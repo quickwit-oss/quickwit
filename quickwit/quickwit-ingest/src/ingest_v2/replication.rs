@@ -1490,7 +1490,15 @@ mod tests {
 
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
