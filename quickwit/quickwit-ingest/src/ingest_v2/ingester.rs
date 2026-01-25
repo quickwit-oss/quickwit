@@ -19,7 +19,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
 use async_trait::async_trait;
 use bytesize::ByteSize;
 use futures::StreamExt;
@@ -1044,14 +1043,6 @@ impl Ingester {
             .set_status(IngesterStatus::Decommissioning)
             .await;
 
-        // Wait for the status to be propagated to the control plane via gossip.
-        const WAIT_FOR_PROPAGATION: Duration = if cfg!(any(test, feature = "testsuite")) {
-            Duration::ZERO
-        } else {
-            Duration::from_secs(3)
-        };
-        tokio::time::sleep(WAIT_FOR_PROPAGATION).await;
-
         for shard in state_guard.shards.values_mut() {
             shard.close();
         }
@@ -1253,43 +1244,6 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
     }
 }
 
-pub async fn wait_for_ingester_status(
-    ingester: impl IngesterService,
-    status: IngesterStatus,
-) -> anyhow::Result<()> {
-    let mut observation_stream = ingester
-        .open_observation_stream(OpenObservationStreamRequest {})
-        .await
-        .context("failed to open observation stream")?;
-
-    while let Some(observation_message_result) = observation_stream.next().await {
-        let observation_message =
-            observation_message_result.context("observation stream ended unexpectedly")?;
-
-        if observation_message.status() == status {
-            break;
-        }
-    }
-    Ok(())
-}
-
-pub async fn wait_for_ingester_decommission(ingester: Ingester) -> anyhow::Result<()> {
-    let now = Instant::now();
-
-    ingester
-        .decommission(DecommissionRequest {})
-        .await
-        .context("failed to initiate ingester decommission")?;
-
-    wait_for_ingester_status(ingester, IngesterStatus::Decommissioned).await?;
-
-    info!(
-        "successfully decommissioned ingester in {}",
-        now.elapsed().pretty_display()
-    );
-    Ok(())
-}
-
 struct PendingPersistSubrequest {
     queue_id: QueueId,
     subrequest_id: u32,
@@ -1334,6 +1288,7 @@ mod tests {
     use crate::ingest_v2::broadcast::ShardInfos;
     use crate::ingest_v2::doc_mapper::try_build_doc_mapper;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
+    use crate::ingest_v2::helpers::wait_for_ingester_status;
 
     const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
@@ -1449,7 +1404,7 @@ mod tests {
             .await
             .unwrap();
 
-            wait_for_ingester_status(ingester.clone(), IngesterStatus::Ready)
+            wait_for_ingester_status(&ingester, IngesterStatus::Ready)
                 .await
                 .unwrap();
 
