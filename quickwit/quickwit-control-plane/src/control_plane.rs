@@ -1157,7 +1157,7 @@ async fn watcher_indexers(
                     error!(%error, "failed to forward `IndexerLeft` event to control plane");
                 }
             }
-            ClusterChange::Update(_) => {
+            ClusterChange::Update { .. } => {
                 // We are not interested in updates (yet).
             }
         }
@@ -1186,9 +1186,10 @@ mod tests {
         ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, CpuCapacity, IndexingServiceClient,
         MockIndexingService,
     };
+    use quickwit_ingest::IngesterPoolEntry;
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceClient, InitShardSuccess, InitShardsResponse, MockIngesterService,
-        RetainShardsResponse,
+        IngesterServiceClient, IngesterStatus, InitShardSuccess, InitShardsResponse,
+        MockIngesterService, RetainShardsResponse,
     };
     use quickwit_proto::ingest::{Shard, ShardPKey, ShardState};
     use quickwit_proto::metastore::{
@@ -2210,7 +2211,11 @@ mod tests {
                 assert!(&retain_shards_for_source.shard_ids.is_empty());
                 Ok(RetainShardsResponse {})
             });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let client = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterPoolEntry {
+            client,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("node1".into(), ingester);
 
         let cluster_config = ClusterConfig::for_test();
@@ -2256,7 +2261,11 @@ mod tests {
                 );
                 Ok(RetainShardsResponse {})
             });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let client = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterPoolEntry {
+            client,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("node1".into(), ingester);
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
@@ -2552,7 +2561,11 @@ mod tests {
             };
             Ok(response)
         });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let client = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterPoolEntry {
+            client,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert(ingester_id, ingester);
 
         let mut mock_metastore = MockMetastoreService::new();
@@ -2706,7 +2719,11 @@ mod tests {
             };
             Ok(response)
         });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let client = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterPoolEntry {
+            client,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert(ingester_id, ingester);
 
         let mut mock_metastore = MockMetastoreService::new();
