@@ -16,10 +16,10 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::{any, fmt};
 
+use crate::qw_env_vars::{QW_ENV_VARS, QW_NONE};
 use anyhow::{self, Context};
 use serde::{Deserialize, Deserializer};
 use tracing::warn;
-use crate::qw_env_vars::{QW_ENV_VARS, QW_NONE};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct ConfigValue<T, const E: usize> {
@@ -101,7 +101,8 @@ where
 }
 
 impl<T, const E: usize> Default for ConfigValue<T, E>
-where T: Default
+where
+    T: Default,
 {
     fn default() -> Self {
         Self {
@@ -112,10 +113,13 @@ where T: Default
 }
 
 impl<'de, T, const E: usize> Deserialize<'de> for ConfigValue<T, E>
-where T: Deserialize<'de>
+where
+    T: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<ConfigValue<T, E>, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let value: Option<T> = Deserialize::deserialize(deserializer)?;
         Ok(ConfigValue {
             provided: value,

@@ -19,6 +19,27 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::IngesterPool;
+use super::broadcast::BroadcastLocalShardsTask;
+use super::doc_mapper::validate_doc_batch;
+use super::fetch::FetchStreamTask;
+use super::idle::CloseIdleShardsTask;
+use super::metrics::INGEST_V2_METRICS;
+use super::models::IngesterShard;
+use super::mrecordlog_utils::{
+    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity,
+};
+use super::rate_meter::RateMeter;
+use super::replication::{
+    ReplicationClient, ReplicationStreamTask, ReplicationStreamTaskHandle, ReplicationTask,
+    SYN_REPLICATION_STREAM_CAPACITY,
+};
+use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
+use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
+use crate::ingest_v2::metrics::report_wal_usage;
+use crate::ingest_v2::models::IngesterShardType;
+use crate::mrecordlog_async::MultiRecordLogAsync;
+use crate::{FollowerId, estimate_size, with_lock_metrics};
 use anyhow::Context;
 use async_trait::async_trait;
 use bytesize::ByteSize;
@@ -52,33 +73,13 @@ use quickwit_proto::ingest::{
     ShardState,
 };
 use quickwit_proto::types::{
-    IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId, queue_id, split_queue_id,
+    IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId,
+    get_shard_id_from_queue_id, queue_id, split_queue_id,
 };
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
-use super::IngesterPool;
-use super::broadcast::BroadcastLocalShardsTask;
-use super::doc_mapper::validate_doc_batch;
-use super::fetch::FetchStreamTask;
-use super::idle::CloseIdleShardsTask;
-use super::metrics::INGEST_V2_METRICS;
-use super::models::IngesterShard;
-use super::mrecordlog_utils::{
-    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity,
-};
-use super::rate_meter::RateMeter;
-use super::replication::{
-    ReplicationClient, ReplicationStreamTask, ReplicationStreamTaskHandle, ReplicationTask,
-    SYN_REPLICATION_STREAM_CAPACITY,
-};
-use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
-use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
-use crate::ingest_v2::metrics::report_wal_usage;
-use crate::ingest_v2::models::IngesterShardType;
-use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{FollowerId, estimate_size, with_lock_metrics};
 
 /// Minimum interval between two reset shards operations.
 const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -486,7 +487,10 @@ impl Ingester {
             let mut total_requested_capacity = ByteSize::b(0);
 
             for subrequest in persist_request.subrequests {
-                let (queue_id, shard) = match state_guard.find_most_capacity_shard(subrequest.index_uid.clone().unwrap(), subrequest.source_id.clone()) {
+                let (queue_id, shard) = match state_guard.find_most_capacity_shard(
+                    subrequest.index_uid.clone().unwrap(),
+                    subrequest.source_id.clone(),
+                ) {
                     Some((queue_id, ingester_shard)) => (queue_id.clone(), ingester_shard),
                     None => {
                         let persist_failure = PersistFailure {
@@ -500,6 +504,8 @@ impl Ingester {
                         continue;
                     }
                 };
+                let shard_id = get_shard_id_from_queue_id(&queue_id)
+                    .expect("queue_id should be splittable into parts");
 
                 // A router can only know about a newly opened shard if it has been informed by the
                 // control plane, which confirms that the shard was correctly opened in the
@@ -534,7 +540,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
+                        shard_id: Some(shard_id),
                         reason: PersistFailureReason::WalFull as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -554,7 +560,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
+                        shard_id: Some(shard_id),
                         reason: PersistFailureReason::ShardRateLimited as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -581,7 +587,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: None,
+                        shard_id: Some(shard_id),
                         replication_position_inclusive: Some(from_position_exclusive),
                         num_persisted_docs: 0,
                         parse_failures,
@@ -617,7 +623,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid.clone(),
                         source_id: subrequest.source_id.clone(),
-                        shard_id: None,
+                        shard_id: Some(shard_id.clone()),
                         from_position_exclusive: Some(from_position_exclusive),
                         doc_batch: Some(valid_doc_batch.clone()),
                     };
@@ -631,7 +637,7 @@ impl Ingester {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
-                    shard_id: None,
+                    shard_id: Some(shard_id),
                     doc_batch: valid_doc_batch,
                     parse_failures,
                     expected_position_inclusive: None,
@@ -747,8 +753,8 @@ impl Ingester {
                         let persist_failure = PersistFailure {
                             subrequest_id: subrequest.subrequest_id,
                             index_uid: subrequest.index_uid,
-                            source_id: subrequest.source_id,shard_id: subrequest.shard_id,
-
+                            source_id: subrequest.source_id,
+                            shard_id: subrequest.shard_id,
                             reason: reason as i32,
                         };
                         persist_failures.push(persist_failure);

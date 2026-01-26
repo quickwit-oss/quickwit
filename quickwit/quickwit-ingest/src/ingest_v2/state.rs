@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-use std::fmt;
 
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;

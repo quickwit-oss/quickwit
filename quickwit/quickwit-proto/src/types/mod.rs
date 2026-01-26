@@ -67,6 +67,16 @@ pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
     parts_opt
 }
 
+pub fn get_shard_id_from_queue_id(queue_id: &str) -> Option<ShardId> {
+    match split_queue_id_inner(queue_id) {
+        Some((_, _, shard_id)) => Some(shard_id),
+        None => {
+            warn!("failed to parse queue ID `{queue_id}`: this should never happen, please report");
+            None
+        }
+    }
+}
+
 fn split_queue_id_inner(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
     let mut parts = queue_id.split('/');
     let index_uid = parts.next()?;
