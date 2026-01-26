@@ -219,7 +219,7 @@ impl IngestSource {
         for mrecord in decoded_mrecords(mrecord_batch) {
             match mrecord {
                 MRecord::Doc(doc) => {
-                    batch_builder.add_doc(doc);
+                    batch_builder.add_doc(doc, None);
                 }
                 MRecord::Commit => {
                     batch_builder.force_commit();
@@ -495,7 +495,7 @@ impl Source for IngestSource {
         }
         if !batch_builder.checkpoint_delta.is_empty() {
             debug!(
-                num_docs=%batch_builder.docs.len(),
+                num_docs=%batch_builder.raw_docs.len(),
                 num_bytes=%batch_builder.num_bytes,
                 num_millis=%now.elapsed().as_millis(),
                 "Sending doc batch to indexer."
@@ -1475,10 +1475,10 @@ mod tests {
             .recv_typed_message::<RawDocBatch>()
             .await
             .unwrap();
-        assert_eq!(doc_batch.docs.len(), 3);
-        assert_eq!(doc_batch.docs[0], "test-doc-foo");
-        assert_eq!(doc_batch.docs[1], "test-doc-bar");
-        assert_eq!(doc_batch.docs[2], "test-doc-qux");
+        assert_eq!(doc_batch.raw_docs.len(), 3);
+        assert_eq!(doc_batch.raw_docs[0].doc, "test-doc-foo");
+        assert_eq!(doc_batch.raw_docs[1].doc, "test-doc-bar");
+        assert_eq!(doc_batch.raw_docs[2].doc, "test-doc-qux");
         assert!(doc_batch.force_commit);
 
         let partition_deltas = doc_batch

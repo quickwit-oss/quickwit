@@ -44,7 +44,7 @@ pub use processed_doc::{ProcessedDoc, ProcessedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitsUpdate;
 use quickwit_proto::types::PublishToken;
-pub use raw_doc_batch::RawDocBatch;
+pub use raw_doc_batch::{RawDoc, RawDocBatch};
 pub(crate) use shard_positions::LocalShardPositionsUpdate;
 pub use shard_positions::ShardPositionsService;
 pub use split_attrs::{SplitAttrs, create_split_metadata};
