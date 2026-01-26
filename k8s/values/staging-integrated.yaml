@@ -10,7 +10,7 @@ image:
 
 cloudprem:
   index:
-    minShards: 240 # number of indexers * number of * vCPUs * 2
+    minShards: 120 # number of indexers * number of * vCPUs * 2 (half of staging)
   reverseConnection:
     enabled: false
 
@@ -61,62 +61,62 @@ affinity:
               - arm64
 
 metastore:
-  replicaCount: 2
+  replicaCount: 1
 
   resources:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: 1
+      memory: 2Gi
     requests:
-      cpu: 2
-      memory: 4Gi
+      cpu: 1
+      memory: 2Gi
 
   # No initContainers needed - using S3-based metastore instead of PostgreSQL
 
 control_plane:
   resources:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: 1
+      memory: 2Gi
     requests:
-      cpu: 2
-      memory: 4Gi
+      cpu: 1
+      memory: 2Gi
 
 indexer:
-  replicaCount: 40
+  replicaCount: 20
 
   resources:
     limits:
-      cpu: 4
-      memory: 16Gi
+      cpu: 2
+      memory: 8Gi
     requests:
-      cpu: 4
-      memory: 16Gi
+      cpu: 2
+      memory: 8Gi
 
   persistentVolume:
     enabled: true
-    storage: 200Gi
+    storage: 100Gi
     storageClass: gp3
 
 searcher:
-  replicaCount: 4
+  replicaCount: 2
 
   resources:
     limits:
-      cpu: 4
-      memory: 16Gi
+      cpu: 2
+      memory: 8Gi
     requests:
-      cpu: 4
-      memory: 16Gi
+      cpu: 2
+      memory: 8Gi
 
 janitor:
   resources:
     limits:
-      cpu: 2
-      memory: 4Gi
+      cpu: 1
+      memory: 2Gi
     requests:
-      cpu: 2
-      memory: 4Gi
+      cpu: 1
+      memory: 2Gi
 
 config:
   # S3-based storage paths for integrated staging
@@ -126,5 +126,5 @@ config:
   metastore_uri: s3://logs-cloudprem-staging/integrated/metastore
 
   ingest_api:
-    max_queue_memory_usage: 5GiB # memory capacity * 0.3
-    max_queue_disk_usage: 10GiB # max queue mem usage * 2
+    max_queue_memory_usage: 2GiB # memory capacity * 0.3 (half of staging)
+    max_queue_disk_usage: 5GiB # max queue mem usage * 2 (half of staging)
