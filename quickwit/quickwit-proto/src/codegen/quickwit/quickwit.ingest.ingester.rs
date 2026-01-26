@@ -402,6 +402,7 @@ pub enum PersistFailureReason {
     ShardRateLimited = 3,
     WalFull = 4,
     Timeout = 5,
+    NoShardsAvailable = 6,
 }
 impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -416,6 +417,7 @@ impl PersistFailureReason {
             Self::ShardRateLimited => "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED",
             Self::WalFull => "PERSIST_FAILURE_REASON_WAL_FULL",
             Self::Timeout => "PERSIST_FAILURE_REASON_TIMEOUT",
+            Self::NoShardsAvailable => "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -427,6 +429,7 @@ impl PersistFailureReason {
             "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED" => Some(Self::ShardRateLimited),
             "PERSIST_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
             "PERSIST_FAILURE_REASON_TIMEOUT" => Some(Self::Timeout),
+            "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
             _ => None,
         }
     }

@@ -498,7 +498,7 @@ impl Ingester {
                             index_uid: subrequest.index_uid,
                             source_id: subrequest.source_id,
                             shard_id: subrequest.shard_id,
-                            reason: PersistFailureReason::ShardNotFound as i32,
+                            reason: PersistFailureReason::NoShardsAvailable as i32,
                         };
                         persist_failures.push(persist_failure);
                         continue;
@@ -2693,7 +2693,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingester_persist_shard_closed() {
+    async fn test_ingester_persist_no_available_shards() {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
@@ -2734,7 +2734,10 @@ mod tests {
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
-        assert_eq!(persist_failure.reason(), PersistFailureReason::ShardClosed);
+        assert_eq!(
+            persist_failure.reason(),
+            PersistFailureReason::NoShardsAvailable
+        );
 
         let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);

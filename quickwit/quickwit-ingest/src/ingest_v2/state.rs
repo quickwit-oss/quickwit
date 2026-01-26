@@ -86,6 +86,9 @@ impl InnerIngesterState {
                 if !(shard_index_id == index_id && shard_source_id == source_id) {
                     return None;
                 }
+                if shard.is_closed() {
+                    return None;
+                }
                 let (rate_limiter, _) = self.rate_trackers.get(queue_id).unwrap();
                 let available_permits = rate_limiter.available_permits();
                 Some((available_permits, queue_id, shard))
@@ -479,9 +482,10 @@ impl WeakIngesterState {
 
 #[cfg(test)]
 mod tests {
-    use tokio::time::timeout;
-
     use super::*;
+    use bytesize::ByteSize;
+    use quickwit_proto::types::{ShardId, queue_id};
+    use tokio::time::timeout;
 
     #[tokio::test]
     async fn test_ingester_state_does_not_lock_while_initializing() {
@@ -529,5 +533,131 @@ mod tests {
         let locked_state = state.lock_fully().await.unwrap();
         assert_eq!(locked_state.status(), IngesterStatus::Ready);
         assert_eq!(*locked_state.status_tx.borrow(), IngesterStatus::Ready);
+    }
+
+    fn insert_shard_with_used_capacity(
+        state: &mut InnerIngesterState,
+        index_uid: &IndexUid,
+        source_id: &str,
+        shard_id: ShardId,
+        used_capacity: ByteSize,
+        shard_state: ShardState,
+    ) {
+        let queue_id = queue_id(index_uid, source_id, &shard_id);
+        let shard = IngesterShard::new_solo(
+            shard_state,
+            Position::Beginning,
+            Position::Beginning,
+            None,
+            Instant::now(),
+            false,
+        );
+        state.shards.insert(queue_id.clone(), shard);
+
+        let mut rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
+        rate_limiter.acquire_bytes(used_capacity);
+        state
+            .rate_trackers
+            .insert(queue_id, (rate_limiter, RateMeter::default()));
+    }
+
+    #[tokio::test]
+    async fn test_find_most_capacity_shard_returns_shard_with_least_used_capacity() {
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let mut locked_state = state.lock_partially().await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source";
+
+        // Shard 1: 1KB used (most available capacity)
+        // Shard 2: 2KB used
+        // ...
+        // Shard 5: 5KB used (least available capacity)
+        for i in 1..=5u64 {
+            insert_shard_with_used_capacity(
+                &mut locked_state,
+                &index_uid,
+                source_id,
+                ShardId::from(i),
+                ByteSize::kb(i),
+                ShardState::Open,
+            );
+        }
+
+        let (selected_queue_id, _) = locked_state
+            .find_most_capacity_shard(index_uid.clone(), source_id.to_string())
+            .expect("should find a shard");
+
+        let expected_queue_id = queue_id(&index_uid, source_id, &ShardId::from(1));
+        assert_eq!(*selected_queue_id, expected_queue_id);
+    }
+
+    #[tokio::test]
+    async fn test_find_most_capacity_shard_skips_closed_shards() {
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let mut locked_state = state.lock_partially().await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source";
+
+        insert_shard_with_used_capacity(
+            &mut locked_state,
+            &index_uid,
+            source_id,
+            ShardId::from(1),
+            ByteSize::kb(1),
+            ShardState::Open,
+        );
+        insert_shard_with_used_capacity(
+            &mut locked_state,
+            &index_uid,
+            source_id,
+            ShardId::from(2),
+            ByteSize::kb(2),
+            ShardState::Open,
+        );
+
+        insert_shard_with_used_capacity(
+            &mut locked_state,
+            &index_uid,
+            source_id,
+            ShardId::from(3),
+            ByteSize::kb(0),
+            ShardState::Closed,
+        );
+
+        let (selected_queue_id, _) = locked_state
+            .find_most_capacity_shard(index_uid.clone(), source_id.to_string())
+            .expect("should find a shard");
+
+        // Should pick shard 1 (most capacity among open shards), not shard 3 (closed)
+        let expected_queue_id = queue_id(&index_uid, source_id, &ShardId::from(1));
+        assert_eq!(*selected_queue_id, expected_queue_id);
+    }
+
+    #[tokio::test]
+    async fn test_find_most_capacity_shard_returns_none_for_unknown_index_or_source() {
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let mut locked_state = state.lock_partially().await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source";
+
+        insert_shard_with_used_capacity(
+            &mut locked_state,
+            &index_uid,
+            source_id,
+            ShardId::from(1),
+            ByteSize::kb(0),
+            ShardState::Open,
+        );
+
+        let result = locked_state
+            .find_most_capacity_shard(IndexUid::for_test("other-index", 0), source_id.to_string());
+        assert!(result.is_none());
+
+        let result =
+            locked_state.find_most_capacity_shard(index_uid.clone(), "other-source".to_string());
+        assert!(result.is_none());
     }
 }

@@ -309,6 +309,7 @@ impl IngestRouter {
                                     .push(shard_id);
                             }
                             PersistFailureReason::WalFull
+                            | PersistFailureReason::NoShardsAvailable
                             | PersistFailureReason::ShardRateLimited => {
                                 // Let's record that the shard is rate limited or that the ingester
                                 // that hosts has its wal full.
