@@ -482,10 +482,11 @@ impl WeakIngesterState {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use bytesize::ByteSize;
     use quickwit_proto::types::{ShardId, queue_id};
     use tokio::time::timeout;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_ingester_state_does_not_lock_while_initializing() {

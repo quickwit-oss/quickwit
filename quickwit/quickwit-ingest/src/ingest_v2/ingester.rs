@@ -19,27 +19,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::IngesterPool;
-use super::broadcast::BroadcastLocalShardsTask;
-use super::doc_mapper::validate_doc_batch;
-use super::fetch::FetchStreamTask;
-use super::idle::CloseIdleShardsTask;
-use super::metrics::INGEST_V2_METRICS;
-use super::models::IngesterShard;
-use super::mrecordlog_utils::{
-    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity,
-};
-use super::rate_meter::RateMeter;
-use super::replication::{
-    ReplicationClient, ReplicationStreamTask, ReplicationStreamTaskHandle, ReplicationTask,
-    SYN_REPLICATION_STREAM_CAPACITY,
-};
-use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
-use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
-use crate::ingest_v2::metrics::report_wal_usage;
-use crate::ingest_v2::models::IngesterShardType;
-use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{FollowerId, estimate_size, with_lock_metrics};
 use anyhow::Context;
 use async_trait::async_trait;
 use bytesize::ByteSize;
@@ -80,6 +59,28 @@ use serde_json::{Value as JsonValue, json};
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
+
+use super::IngesterPool;
+use super::broadcast::BroadcastLocalShardsTask;
+use super::doc_mapper::validate_doc_batch;
+use super::fetch::FetchStreamTask;
+use super::idle::CloseIdleShardsTask;
+use super::metrics::INGEST_V2_METRICS;
+use super::models::IngesterShard;
+use super::mrecordlog_utils::{
+    AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity,
+};
+use super::rate_meter::RateMeter;
+use super::replication::{
+    ReplicationClient, ReplicationStreamTask, ReplicationStreamTaskHandle, ReplicationTask,
+    SYN_REPLICATION_STREAM_CAPACITY,
+};
+use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
+use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
+use crate::ingest_v2::metrics::report_wal_usage;
+use crate::ingest_v2::models::IngesterShardType;
+use crate::mrecordlog_async::MultiRecordLogAsync;
+use crate::{FollowerId, estimate_size, with_lock_metrics};
 
 /// Minimum interval between two reset shards operations.
 const MIN_RESET_SHARDS_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
