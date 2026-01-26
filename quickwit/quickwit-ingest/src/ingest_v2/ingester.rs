@@ -58,7 +58,6 @@ use serde_json::{Value as JsonValue, json};
 use tokio::sync::Semaphore;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
-
 use super::IngesterPool;
 use super::broadcast::BroadcastLocalShardsTask;
 use super::doc_mapper::validate_doc_batch;
@@ -470,6 +469,7 @@ impl Ingester {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
+                    shard_id: subrequest.shard_id,
                     reason: PersistFailureReason::ShardClosed as i32,
                 };
                 persist_failures.push(persist_failure);
@@ -486,20 +486,20 @@ impl Ingester {
             let mut total_requested_capacity = ByteSize::b(0);
 
             for subrequest in persist_request.subrequests {
-                let queue_id = match state_guard.find_open_queue(subrequest.index_uid.clone().unwrap(), subrequest.source_id.clone()) {
-                    Err(err) => {
+                let (queue_id, shard) = match state_guard.find_most_capacity_shard(subrequest.index_uid.clone().unwrap(), subrequest.source_id.clone()) {
+                    Some((queue_id, ingester_shard)) => (queue_id.clone(), ingester_shard),
+                    None => {
                         let persist_failure = PersistFailure {
                             subrequest_id: subrequest.subrequest_id,
                             index_uid: subrequest.index_uid,
                             source_id: subrequest.source_id,
-                            reason: err as i32,
+                            shard_id: subrequest.shard_id,
+                            reason: PersistFailureReason::ShardNotFound as i32,
                         };
                         persist_failures.push(persist_failure);
                         continue;
                     }
-                    Ok(shard) => shard
                 };
-                let shard = state_guard.shards.get_mut(&queue_id).unwrap();
 
                 // A router can only know about a newly opened shard if it has been informed by the
                 // control plane, which confirms that the shard was correctly opened in the
@@ -534,6 +534,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
+                        shard_id: subrequest.shard_id,
                         reason: PersistFailureReason::WalFull as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -553,6 +554,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
+                        shard_id: subrequest.shard_id,
                         reason: PersistFailureReason::ShardRateLimited as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -696,6 +698,7 @@ impl Ingester {
                         subrequest_id: replicate_failure.subrequest_id,
                         index_uid: replicate_failure.index_uid,
                         source_id: replicate_failure.source_id,
+                        shard_id: replicate_failure.shard_id,
                         reason: persist_failure_reason as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -744,7 +747,8 @@ impl Ingester {
                         let persist_failure = PersistFailure {
                             subrequest_id: subrequest.subrequest_id,
                             index_uid: subrequest.index_uid,
-                            source_id: subrequest.source_id,
+                            source_id: subrequest.source_id,shard_id: subrequest.shard_id,
+
                             reason: reason as i32,
                         };
                         persist_failures.push(persist_failure);
