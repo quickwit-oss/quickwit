@@ -20,8 +20,6 @@ use anyhow::{self, Context};
 use serde::{Deserialize, Deserializer};
 use tracing::warn;
 
-
-
 use crate::qw_env_vars::{QW_ENV_VARS, QW_NONE};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
