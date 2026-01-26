@@ -7,4 +7,4 @@ update_at_most_every: 15m
 reset_pattern: "0 12 * * Mon"
 contacts:
   - type: slack
-    contact: logs-cloudprem-ops
+    contact: logs-cloudprem-ops-staging
