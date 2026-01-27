@@ -464,13 +464,21 @@ impl Ingester {
 
         if state_guard.status() != IngesterStatus::Ready {
             persist_failures.reserve_exact(persist_request.subrequests.len());
+            let all_shards_on_node: Vec<ShardId> = state_guard
+                .shards
+                .keys()
+                .map(|queue_id| {
+                    let (_, _, shard_id) = split_queue_id(queue_id).unwrap();
+                    shard_id
+                })
+                .collect();
 
             for subrequest in persist_request.subrequests {
                 let persist_failure = PersistFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
+                    shard_ids: all_shards_on_node.clone(),
                     reason: PersistFailureReason::ShardClosed as i32,
                 };
                 persist_failures.push(persist_failure);
@@ -487,40 +495,6 @@ impl Ingester {
             let mut total_requested_capacity = ByteSize::b(0);
 
             for subrequest in persist_request.subrequests {
-                let queue_id = subrequest.queue_id();
-
-                let Some(shard) = state_guard.shards.get_mut(&queue_id) else {
-                    let persist_failure = PersistFailure {
-                        subrequest_id: subrequest.subrequest_id,
-                        index_uid: subrequest.index_uid,
-                        source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
-                        reason: PersistFailureReason::ShardNotFound as i32,
-                    };
-                    persist_failures.push(persist_failure);
-                    continue;
-                };
-                // A router can only know about a newly opened shard if it has been informed by the
-                // control plane, which confirms that the shard was correctly opened in the
-                // metastore.
-                shard.is_advertisable = true;
-
-                if shard.is_closed() {
-                    let persist_failure = PersistFailure {
-                        subrequest_id: subrequest.subrequest_id,
-                        index_uid: subrequest.index_uid,
-                        source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
-                        reason: PersistFailureReason::ShardClosed as i32,
-                    };
-                    persist_failures.push(persist_failure);
-                    continue;
-                }
-                let doc_mapper = shard.doc_mapper_opt.clone().expect("shard should be open");
-                let validate_docs = shard.validate_docs;
-                let follower_id_opt = shard.follower_id_opt().cloned();
-                let from_position_exclusive = shard.replication_position_inclusive.clone();
-
                 let doc_batch = match subrequest.doc_batch {
                     Some(doc_batch) if !doc_batch.is_empty() => doc_batch,
                     _ => {
@@ -545,17 +519,52 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
+                        shard_ids: Vec::new(),
                         reason: PersistFailureReason::WalFull as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
                 };
+
+                let Some((queue_id, shard)) = state_guard.find_highest_capacity_shard(
+                    subrequest.index_uid.clone().unwrap(),
+                    subrequest.source_id.clone(),
+                ) else {
+                    let all_shards_for_queue = state_guard.find_all_shard_ids_for_source(
+                        subrequest.index_uid.clone().unwrap(),
+                        subrequest.source_id.clone(),
+                    );
+                    let persist_failure = PersistFailure {
+                        subrequest_id: subrequest.subrequest_id,
+                        index_uid: subrequest.index_uid,
+                        source_id: subrequest.source_id,
+                        shard_ids: all_shards_for_queue,
+                        reason: PersistFailureReason::ShardRateLimited as i32,
+                    };
+                    persist_failures.push(persist_failure);
+                    continue;
+                };
+                let queue_id = queue_id.clone();
+                // A router can only know about a newly opened shard if it has been informed by the
+                // control plane, which confirms that the shard was correctly opened in the
+                // metastore.
+                shard.is_advertisable = true;
+                let doc_mapper = shard.doc_mapper_opt.clone().expect("shard should be open");
+                let validate_docs = shard.validate_docs;
+                let follower_id_opt = shard.follower_id_opt().cloned();
+                let from_position_exclusive = shard.replication_position_inclusive.clone();
+                let shard_id = match split_queue_id(&queue_id) {
+                    Some((_, _, shard_id)) => Some(shard_id),
+                    None => None,
+                };
+
                 let (rate_limiter, rate_meter) = state_guard
                     .rate_trackers
                     .get_mut(&queue_id)
                     .expect("rate limiter should be initialized");
 
+                // Because we return the shard with the most available capacity, if this hits, it
+                // means that this node cannot persist this request, and it should be retried.
                 if !rate_limiter.acquire_bytes(requested_capacity) {
                     debug!("failed to persist records to shard `{queue_id}`: rate limited");
 
@@ -563,7 +572,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
+                        shard_ids: vec![shard_id.unwrap()],
                         reason: PersistFailureReason::ShardRateLimited as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -590,7 +599,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
+                        shard_id,
                         replication_position_inclusive: Some(from_position_exclusive),
                         num_persisted_docs: 0,
                         parse_failures,
@@ -626,7 +635,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid.clone(),
                         source_id: subrequest.source_id.clone(),
-                        shard_id: subrequest.shard_id.clone(),
+                        shard_id: shard_id.clone(),
                         from_position_exclusive: Some(from_position_exclusive),
                         doc_batch: Some(valid_doc_batch.clone()),
                     };
@@ -636,11 +645,11 @@ impl Ingester {
                         .push(replicate_subrequest);
                 }
                 let pending_persist_subrequest = PendingPersistSubrequest {
-                    queue_id,
+                    queue_id: queue_id.clone(),
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
+                    shard_id,
                     doc_batch: valid_doc_batch,
                     parse_failures,
                     expected_position_inclusive: None,
@@ -707,7 +716,8 @@ impl Ingester {
                         subrequest_id: replicate_failure.subrequest_id,
                         index_uid: replicate_failure.index_uid,
                         source_id: replicate_failure.source_id,
-                        shard_id: replicate_failure.shard_id,
+                        //todo: figure this out?
+                        shard_ids: Vec::new(),
                         reason: persist_failure_reason as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -741,7 +751,7 @@ impl Ingester {
                                 error!(
                                     "failed to persist records to shard `{queue_id}`: {io_error}"
                                 );
-                                shards_to_close.insert(queue_id);
+                                shards_to_close.insert(queue_id.clone());
                                 PersistFailureReason::ShardClosed
                             }
                             AppendDocBatchError::QueueNotFound(_) => {
@@ -749,15 +759,20 @@ impl Ingester {
                                     "failed to persist records to shard `{queue_id}`: WAL queue \
                                      not found"
                                 );
-                                shards_to_delete.insert(queue_id);
+                                shards_to_delete.insert(queue_id.clone());
                                 PersistFailureReason::ShardNotFound
                             }
+                        };
+                        let shard_id = match split_queue_id(&queue_id) {
+                            Some((_, _, shard_id)) => Some(shard_id),
+                            None => None,
                         };
                         let persist_failure = PersistFailure {
                             subrequest_id: subrequest.subrequest_id,
                             index_uid: subrequest.index_uid,
                             source_id: subrequest.source_id,
-                            shard_id: subrequest.shard_id,
+                            //todo: fix
+                            shard_ids: vec![shard_id.unwrap()],
                             reason: reason as i32,
                         };
                         persist_failures.push(persist_failure);
@@ -1787,14 +1802,12 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
                     index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([
                         r#"{"doc": "test-doc-110"}"#,
                         r#"{"doc": "test-doc-111"}"#,
@@ -1908,7 +1921,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: None,
             }],
         };
@@ -1969,7 +1981,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test([
                     "",                           // invalid
                     "[]",                         // invalid
@@ -2044,7 +2055,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test([
                     "",                           // invalid
                     "[]",                         // invalid
@@ -2107,7 +2117,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#])),
             }],
         };
@@ -2168,7 +2177,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#])),
             }],
         };
@@ -2291,7 +2299,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-foo"}"#])),
             }],
         };
@@ -2304,7 +2311,6 @@ mod tests {
         assert_eq!(persist_failure.subrequest_id, 0);
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
-        assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(
             persist_failure.reason(),
             PersistFailureReason::ShardNotFound
@@ -2388,14 +2394,12 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
                     index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([
                         r#"{"doc": "test-doc-110"}"#,
                         r#"{"doc": "test-doc-111"}"#,
@@ -2596,14 +2600,12 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
                     index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([
                         r#"{"doc": "test-doc-110"}"#,
                         r#"{"doc": "test-doc-111"}"#,
@@ -2723,7 +2725,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
         };
@@ -2736,7 +2737,6 @@ mod tests {
         assert_eq!(persist_failure.subrequest_id, 0);
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
-        assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(persist_failure.reason(), PersistFailureReason::ShardClosed);
 
         let state_guard = ingester.state.lock_fully().await.unwrap();
@@ -2799,7 +2799,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
         };
@@ -2812,7 +2811,6 @@ mod tests {
         assert_eq!(persist_failure.subrequest_id, 0);
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
-        assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(
             persist_failure.reason(),
             PersistFailureReason::ShardRateLimited
@@ -2880,7 +2878,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
         };
@@ -2893,7 +2890,6 @@ mod tests {
         assert_eq!(persist_failure.subrequest_id, 0);
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
-        assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(persist_failure.reason(), PersistFailureReason::WalFull);
 
         let state_guard = ingester.state.lock_fully().await.unwrap();

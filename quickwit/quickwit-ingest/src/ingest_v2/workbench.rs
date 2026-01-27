@@ -19,9 +19,7 @@ use quickwit_common::rate_limited_error;
 use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
 };
-use quickwit_proto::ingest::ingester::{
-    PersistFailure, PersistFailureReason, PersistRequest, PersistSuccess,
-};
+use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, PersistSuccess};
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
@@ -126,16 +124,6 @@ impl IngestWorkbench {
         self.subworkbenches
             .values()
             .all(|subworbench| !subworbench.is_pending())
-    }
-
-    pub fn record_persist_request(&self, persist_request: &PersistRequest) {
-        if let Some(publish_tracker) = &self.publish_tracker {
-            let shards = persist_request
-                .subrequests
-                .iter()
-                .map(|subrequest| subrequest.shard_id());
-            publish_tracker.register_requested_shards(shards);
-        }
     }
 
     pub fn record_get_or_create_open_shards_failure(

@@ -209,8 +209,6 @@ generate_getters! {
     InitShardFailure,
     OpenFetchStreamRequest,
     OpenShardSubrequest,
-    PersistFailure,
-    PersistSubrequest,
     PersistSuccess,
     ReplicateFailure,
     ReplicateSubrequest,
