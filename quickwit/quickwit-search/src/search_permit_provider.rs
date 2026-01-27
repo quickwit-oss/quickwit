@@ -80,7 +80,7 @@ pub fn compute_initial_memory_allocation(
 impl SearchPermitProvider {
     pub fn new(
         num_download_slots: usize,
-        num_concurrent_query: usize,
+        num_concurrent_queries: usize,
         memory_budget: ByteSize,
     ) -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
@@ -90,7 +90,7 @@ impl SearchPermitProvider {
             msg_receiver: message_receiver,
             msg_sender: message_sender.downgrade(),
             num_warmup_slots_available: num_download_slots,
-            num_concurrent_query,
+            num_concurrent_queries,
             next_query_to_serve: 0,
             total_memory_budget: memory_budget.as_u64(),
             permits_requests: VecDeque::new(),
@@ -135,7 +135,7 @@ struct SearchPermitActor {
     msg_receiver: mpsc::UnboundedReceiver<SearchPermitMessage>,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     num_warmup_slots_available: usize,
-    num_concurrent_query: usize,
+    num_concurrent_queries: usize,
     next_query_to_serve: usize,
     /// Note it is possible for memory_allocated to exceed memory_budget temporarily,
     /// if and only if a split leaf search task ended up using more than `initial_allocation`.
@@ -258,7 +258,7 @@ impl SearchPermitActor {
             if leaf.is_empty() {
                 self.permits_requests.remove(leaf_position);
             } else {
-                self.next_query_to_serve = (leaf_position + 1) % self.num_concurrent_query;
+                self.next_query_to_serve = (leaf_position + 1) % self.num_concurrent_queries;
             }
             return Some(permit_request);
         }
