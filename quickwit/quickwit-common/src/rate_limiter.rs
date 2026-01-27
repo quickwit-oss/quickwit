@@ -64,6 +64,12 @@ pub struct RateLimiter {
     refill_at: Instant,
 }
 
+impl Default for RateLimiter {
+    fn default() -> Self {
+        Self::from_settings(RateLimiterSettings::default())
+    }
+}
+
 impl RateLimiter {
     /// Creates a new rate limiter from the given settings.
     pub fn from_settings(settings: RateLimiterSettings) -> Self {
