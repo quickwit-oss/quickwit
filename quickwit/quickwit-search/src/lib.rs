@@ -29,6 +29,7 @@ mod list_fields;
 mod list_fields_cache;
 mod list_terms;
 mod metrics_trackers;
+mod remote_function;
 mod retry;
 mod root;
 mod scroll_context;
@@ -79,6 +80,7 @@ pub use crate::client::{
 };
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{SearchError, parse_grpc_error};
+pub use crate::remote_function::RemoteFunctionInvoker;
 use crate::fetch_docs::fetch_docs;
 pub use crate::root::{
     IndexMetasForLeafSearch, SearchJob, check_all_index_metadata_found, jobs_to_leaf_request,
@@ -298,6 +300,7 @@ pub async fn single_node_search(
         search_request,
         metastore,
         &cluster_client,
+        None, // No Lambda for single node search
     )
     .await
 }
