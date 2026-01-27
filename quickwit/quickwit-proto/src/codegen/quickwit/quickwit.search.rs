@@ -185,6 +185,11 @@ pub struct SearchRequest {
     /// that index is not found and this parameter is set to `false`.
     #[prost(bool, tag = "18")]
     pub ignore_missing_indexes: bool,
+    /// Execution mode for leaf search operations.
+    /// When set to EXECUTION_MODE_REMOTE_FUNCTION, leaf search is executed via
+    /// serverless functions (e.g., AWS Lambda) instead of gRPC to searcher nodes.
+    #[prost(enumeration = "ExecutionMode", tag = "19")]
+    pub execution_mode: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -611,6 +616,37 @@ impl ListFieldType {
             "BYTES" => Some(Self::Bytes),
             "IP_ADDR" => Some(Self::IpAddr),
             "JSON" => Some(Self::Json),
+            _ => None,
+        }
+    }
+}
+/// Execution mode for leaf search operations.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ExecutionMode {
+    /// Default: use gRPC to searcher nodes (existing behavior).
+    Grpc = 0,
+    /// Execute leaf search via remote serverless functions (e.g., AWS Lambda).
+    RemoteFunction = 1,
+}
+impl ExecutionMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Grpc => "EXECUTION_MODE_GRPC",
+            Self::RemoteFunction => "EXECUTION_MODE_REMOTE_FUNCTION",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "EXECUTION_MODE_GRPC" => Some(Self::Grpc),
+            "EXECUTION_MODE_REMOTE_FUNCTION" => Some(Self::RemoteFunction),
             _ => None,
         }
     }
