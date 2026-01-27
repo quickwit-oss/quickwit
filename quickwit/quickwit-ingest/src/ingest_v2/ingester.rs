@@ -494,12 +494,23 @@ impl Ingester {
                 ) {
                     Some((queue_id, ingester_shard)) => (queue_id.clone(), ingester_shard),
                     None => {
+                        let all_shards_on_node = state_guard.shards.keys().collect::<Vec<_>>();
+                        let index_uid = subrequest
+                            .index_uid
+                            .clone()
+                            .expect("index_uid should be present in request");
+                        let source_id = subrequest.source_id.clone();
+                        error!(
+                            "no shard found on ingester for index_id {} and source_id {}. All \
+                             shards on ingester: {:?}",
+                            index_uid, source_id, all_shards_on_node
+                        );
                         let persist_failure = PersistFailure {
                             subrequest_id: subrequest.subrequest_id,
                             index_uid: subrequest.index_uid,
                             source_id: subrequest.source_id,
                             shard_id: subrequest.shard_id,
-                            reason: PersistFailureReason::NoShardsAvailable as i32,
+                            reason: PersistFailureReason::ShardNotFound as i32,
                         };
                         persist_failures.push(persist_failure);
                         continue;
@@ -2737,7 +2748,7 @@ mod tests {
         assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(
             persist_failure.reason(),
-            PersistFailureReason::NoShardsAvailable
+            PersistFailureReason::ShardNotFound
         );
 
         let state_guard = ingester.state.lock_fully().await.unwrap();

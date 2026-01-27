@@ -41,7 +41,7 @@ use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use super::broadcast::LocalShardsUpdate;
 use super::debouncing::{
@@ -309,7 +309,6 @@ impl IngestRouter {
                                     .push(shard_id);
                             }
                             PersistFailureReason::WalFull
-                            | PersistFailureReason::NoShardsAvailable
                             | PersistFailureReason::ShardRateLimited => {
                                 // Let's record that the shard is rate limited or that the ingester
                                 // that hosts has its wal full.
