@@ -12,13 +12,13 @@ extensions:
   datadoghq.com/devflow:
     integrate:
       env:
-        staging:
+        staging-integrated:
           branch: pomsky/staging
   datadoghq.com/sdp:
     workday_team: Logs CloudPrem
     conductor:
         targets:
-          - name: staging
+          - name: staging-integrated
             branch: pomsky/staging
             schedule: '* 13-21 * * 1-5'
-            slack: logs-cloudprem-ops
+            slack: logs-cloudprem-ops-staging

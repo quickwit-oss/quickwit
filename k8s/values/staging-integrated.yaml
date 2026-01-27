@@ -1,0 +1,130 @@
+# Pomsky Integrated Staging Configuration
+# Deploys to: pomsky-staging.logs-cloudprem.vaporeon-b.us1.staging.dog
+# Branch: pomsky-staging
+# Uses S3-based metastore (no PostgreSQL dependency)
+
+image:
+  repository: 727006795293.dkr.ecr.us-east-1.amazonaws.com/pomsky
+  tag: edge
+  pullPolicy: Always
+
+cloudprem:
+  index:
+    minShards: 4 # number of indexers * number of vCPUs * 2 (1 * 2 * 2)
+  reverseConnection:
+    enabled: false
+
+environment:
+  QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
+  # disable mtls verification: we don't have a reverse-proxy doing decapsulation
+  # and putting the certificate into a header in staging
+  CP_DISABLE_CERTIFICATE_VERIFICATION: true
+
+podAnnotations:
+  # https://docs.datadoghq.com/containers/kubernetes/prometheus/?tab=kubernetesadv2
+  # https://docs.datadoghq.com/containers/guide/template_variables/
+  ad.datadoghq.com/pomsky.checks: |
+      {
+        "openmetrics": {
+          "instances": [
+            {
+              "openmetrics_endpoint": "http://%%host%%:7280/metrics",
+              "namespace": "cloudprem",
+              "metrics": [".*"]
+            }
+          ]
+        }
+      }
+  emissary.datadoghq.com/inject-lifecycle: "inject"
+
+tolerations:
+  - key: node
+    operator: Equal
+    effect: NoSchedule
+    value: nodeless
+
+  - key: cpu_arch
+    operator: Equal
+    effect: NoSchedule
+    value: arm64
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+          - key: "node-role.kubernetes.io/nodeless"
+            operator: Exists
+          - key: "node.datadoghq.com/cpu_arch"
+            operator: In
+            values:
+              - arm64
+
+metastore:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 1
+      memory: 2Gi
+
+  # No initContainers needed - using S3-based metastore instead of PostgreSQL
+
+control_plane:
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 1
+      memory: 2Gi
+
+indexer:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 2
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 8Gi
+
+  persistentVolume:
+    enabled: true
+    storage: 100Gi
+    storageClass: gp3
+
+searcher:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 2
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 8Gi
+
+janitor:
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 1
+      memory: 2Gi
+
+config:
+  # S3-based storage paths for integrated staging
+  default_index_root_uri: s3://logs-cloudprem-staging/integrated/indexes
+
+  # S3-based metastore (no PostgreSQL dependency)
+  metastore_uri: s3://logs-cloudprem-staging/integrated/metastore
+
+  ingest_api:
+    max_queue_memory_usage: 2GiB # memory capacity * 0.3 (half of staging)
+    max_queue_disk_usage: 5GiB # max queue mem usage * 2 (half of staging)

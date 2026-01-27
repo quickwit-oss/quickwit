@@ -56,3 +56,29 @@ cnab_workflow(
     ],
     visibility = ["//visibility:public"],
 )
+
+# Integrated Staging deployment (pomsky-staging branch)
+dd_helm_cnab_installation(
+    name = "pomsky-staging.logs-cloudprem.vaporeon-b.us1.staging.dog",
+    bundle = ":pomsky",
+    description = "Pomsky Integrated Staging",
+    parameters = default_params,
+    value_files = [
+        "k8s/values/staging-integrated.yaml"
+    ],
+)
+
+cnab_workflow(
+    name = "staging-integrated",
+    description = "Deploy Pomsky to integrated staging",
+    parallel = True,
+    tasks = [
+        ":pomsky-staging.logs-cloudprem.vaporeon-b.us1.staging.dog",
+    ],
+    tags = [
+        "env:staging",
+        "service:pomsky",
+        "team:logs-cloudprem",
+    ],
+    visibility = ["//visibility:public"],
+)
