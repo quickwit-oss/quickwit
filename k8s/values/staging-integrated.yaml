@@ -10,7 +10,7 @@ image:
 
 cloudprem:
   index:
-    minShards: 120 # number of indexers * number of * vCPUs * 2 (half of staging)
+    minShards: 4 # number of indexers * number of vCPUs * 2 (1 * 2 * 2)
   reverseConnection:
     enabled: false
 
@@ -83,7 +83,7 @@ control_plane:
       memory: 2Gi
 
 indexer:
-  replicaCount: 20
+  replicaCount: 1
 
   resources:
     limits:
@@ -99,7 +99,7 @@ indexer:
     storageClass: gp3
 
 searcher:
-  replicaCount: 2
+  replicaCount: 1
 
   resources:
     limits:
