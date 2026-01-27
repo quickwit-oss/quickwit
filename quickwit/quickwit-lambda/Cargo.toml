@@ -1,0 +1,49 @@
+[package]
+name = "quickwit-lambda"
+description = "AWS Lambda support for Quickwit leaf search"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+bytesize = { workspace = true }
+lambda_runtime = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+
+aws-config = { workspace = true }
+aws-sdk-lambda = { workspace = true }
+
+quickwit-aws = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-search = { workspace = true }
+quickwit-storage = { workspace = true }
+
+[dev-dependencies]
+mockall = { workspace = true }
+tempfile = { workspace = true }
+
+[[bin]]
+name = "quickwit-lambda-leaf-search"
+path = "src/bin/leaf_search.rs"
+
+[features]
+default = []
+testsuite = []
