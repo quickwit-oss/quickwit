@@ -460,6 +460,14 @@ pub struct LeafSearchResponse {
     #[prost(message, optional, tag = "8")]
     pub resource_stats: ::core::option::Option<ResourceStats>,
 }
+/// Wrapper for multiple LeafSearchResponse messages, used by Lambda to return
+/// per-split results.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafSearchResponses {
+    #[prost(message, repeated, tag = "1")]
+    pub responses: ::prost::alloc::vec::Vec<LeafSearchResponse>,
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SnippetRequest {

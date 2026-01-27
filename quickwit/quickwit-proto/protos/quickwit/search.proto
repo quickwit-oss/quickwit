@@ -497,6 +497,12 @@ message LeafSearchResponse {
   ResourceStats resource_stats = 8;
 }
 
+// Wrapper for multiple LeafSearchResponse messages, used by Lambda to return
+// per-split results.
+message LeafSearchResponses {
+  repeated LeafSearchResponse responses = 1;
+}
+
 message SnippetRequest {
   repeated string snippet_fields = 1;
   string query_ast_resolved = 2;
