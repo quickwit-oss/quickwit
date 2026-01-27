@@ -28,6 +28,7 @@ service CloudPremService {
   // These are endpoints to use the capabilities of the underlying quickwit searcher
   rpc RootSearch(quickwit.search.SearchRequest) returns (quickwit.search.SearchResponse);
   rpc RootListTerms(quickwit.search.ListTermsRequest) returns (quickwit.search.ListTermsResponse);
+  rpc RootListFields(quickwit.search.ListFieldsRequest) returns (quickwit.search.ListFieldsResponse);
 
   // Returns the list of indexes
   rpc GetIndexes(GetIndexesRequest) returns (GetIndexesResponse);
@@ -65,6 +66,8 @@ message AnyRequest {
         CreateIndexRequest create_index = 23;
         UpdateIndexRequest update_index = 24;
         DeleteIndexRequest delete_index = 25;
+        quickwit.search.ListFieldsRequest root_list_fields = 26;
+
     }
 }
 
@@ -94,6 +97,8 @@ message AnyResponse {
         CreateIndexResponse create_index = 23;
         UpdateIndexResponse update_index = 24;
         DeleteIndexResponse delete_index = 25;
+        quickwit.search.ListFieldsResponse root_list_fields = 26;
+
     }
 }
 
