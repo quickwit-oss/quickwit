@@ -19,9 +19,9 @@ use aws_sdk_lambda::Client as LambdaClient;
 use base64::prelude::*;
 use prost::Message;
 use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
+use quickwit_search::{RemoteFunctionInvoker, SearchError};
 use tracing::{debug, instrument};
 
-use super::RemoteFunctionInvoker;
 use crate::config::LambdaConfig;
 use crate::error::{LambdaError, LambdaResult};
 use crate::handler::{LeafSearchPayload, LeafSearchResponsePayload};
@@ -71,14 +71,15 @@ impl RemoteFunctionInvoker for AwsLambdaInvoker {
     async fn invoke_leaf_search(
         &self,
         request: LeafSearchRequest,
-    ) -> LambdaResult<LeafSearchResponse> {
+    ) -> Result<LeafSearchResponse, SearchError> {
         // Serialize request to protobuf bytes, then base64 encode
         let request_bytes = request.encode_to_vec();
         let payload = LeafSearchPayload {
             payload: BASE64_STANDARD.encode(&request_bytes),
         };
 
-        let payload_json = serde_json::to_vec(&payload)?;
+        let payload_json = serde_json::to_vec(&payload)
+            .map_err(|e| SearchError::Internal(format!("JSON serialization error: {}", e)))?;
 
         debug!(
             payload_size = payload_json.len(),
@@ -100,7 +101,7 @@ impl RemoteFunctionInvoker for AwsLambdaInvoker {
         let response = invoke_builder
             .send()
             .await
-            .map_err(|e| LambdaError::Invocation(e.to_string()))?;
+            .map_err(|e| SearchError::Internal(format!("Lambda invocation error: {}", e)))?;
 
         // Check for function error
         if let Some(error) = response.function_error() {
@@ -108,8 +109,8 @@ impl RemoteFunctionInvoker for AwsLambdaInvoker {
                 .payload()
                 .map(|b| String::from_utf8_lossy(b.as_ref()).to_string())
                 .unwrap_or_default();
-            return Err(LambdaError::FunctionError(format!(
-                "{}: {}",
+            return Err(SearchError::Internal(format!(
+                "Lambda function error: {}: {}",
                 error, error_payload
             )));
         }
@@ -117,16 +118,18 @@ impl RemoteFunctionInvoker for AwsLambdaInvoker {
         // Deserialize response
         let response_payload = response
             .payload()
-            .ok_or_else(|| LambdaError::Invocation("No response payload".into()))?;
+            .ok_or_else(|| SearchError::Internal("No response payload from Lambda".into()))?;
 
         let lambda_response: LeafSearchResponsePayload =
-            serde_json::from_slice(response_payload.as_ref())?;
+            serde_json::from_slice(response_payload.as_ref())
+                .map_err(|e| SearchError::Internal(format!("JSON deserialization error: {}", e)))?;
 
         let response_bytes = BASE64_STANDARD
             .decode(&lambda_response.payload)
-            .map_err(|e| LambdaError::Serialization(format!("Base64 decode error: {}", e)))?;
+            .map_err(|e| SearchError::Internal(format!("Base64 decode error: {}", e)))?;
 
-        let leaf_response = LeafSearchResponse::decode(&response_bytes[..])?;
+        let leaf_response = LeafSearchResponse::decode(&response_bytes[..])
+            .map_err(|e| SearchError::Internal(format!("Protobuf decode error: {}", e)))?;
 
         debug!(
             num_hits = leaf_response.num_hits,
@@ -134,21 +137,5 @@ impl RemoteFunctionInvoker for AwsLambdaInvoker {
         );
 
         Ok(leaf_response)
-    }
-
-    async fn health_check(&self) -> LambdaResult<()> {
-        // Try to get function configuration to verify it exists
-        let mut get_function = self.client.get_function().function_name(&self.function_name);
-
-        if let Some(qualifier) = &self.qualifier {
-            get_function = get_function.qualifier(qualifier);
-        }
-
-        get_function
-            .send()
-            .await
-            .map_err(|e| LambdaError::Configuration(format!("Lambda health check failed: {}", e)))?;
-
-        Ok(())
     }
 }

@@ -167,6 +167,7 @@ impl SearchService for SearchServiceImpl {
             search_request,
             self.metastore.clone(),
             &self.cluster_client,
+            None, // TODO: Initialize lambda_invoker when Lambda is enabled
         )
         .await?;
         Ok(search_result)
