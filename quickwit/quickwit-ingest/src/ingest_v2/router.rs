@@ -41,7 +41,7 @@ use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info};
 
 use super::broadcast::LocalShardsUpdate;
 use super::debouncing::{
