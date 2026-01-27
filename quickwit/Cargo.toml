@@ -19,6 +19,7 @@ members = [
   "quickwit-integration-tests",
   "quickwit-jaeger",
   "quickwit-janitor",
+  "quickwit-lambda",
   "quickwit-macros",
   "quickwit-metastore",
 
@@ -56,6 +57,7 @@ default-members = [
   "quickwit-integration-tests",
   "quickwit-jaeger",
   "quickwit-janitor",
+  "quickwit-lambda",
   "quickwit-macros",
   "quickwit-metastore",
   "quickwit-opentelemetry",
@@ -135,6 +137,7 @@ hyper-util = { version = "0.1", features = ["full"] }
 indexmap = { version = "2.12", features = ["serde"] }
 indicatif = "0.18"
 itertools = "0.14"
+lambda_runtime = "0.13"
 json_comments = "0.2"
 libz-sys = "1.1"
 # Lindera tokenizer 0.30+ versions (tested up to 0.32.3) are currently broken due to upstream build failures.
@@ -306,6 +309,7 @@ aws-credential-types = { version = "1.2", features = ["hardcoded-credentials"] }
 aws-runtime = "1.5"
 aws-sdk-kinesis = "1.97"
 aws-sdk-s3 = "=1.62"
+aws-sdk-lambda = "1"
 aws-sdk-sqs = "1.91"
 aws-smithy-async = "1.2"
 aws-smithy-http-client = { version = "1.1", features = ["default-client"] }
@@ -346,6 +350,7 @@ quickwit-ingest = { path = "quickwit-ingest" }
 quickwit-integration-tests = { path = "quickwit-integration-tests" }
 quickwit-jaeger = { path = "quickwit-jaeger" }
 quickwit-janitor = { path = "quickwit-janitor" }
+quickwit-lambda = { path = "quickwit-lambda" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }

@@ -300,6 +300,58 @@ pub struct SearcherConfig {
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
+    /// Lambda configuration for serverless leaf search execution.
+    #[serde(default)]
+    pub lambda: LambdaConfig,
+}
+
+/// Configuration for AWS Lambda leaf search execution.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct LambdaConfig {
+    /// Enable Lambda execution mode for leaf search.
+    #[serde(default)]
+    pub enabled: bool,
+    /// AWS Lambda function name or ARN.
+    #[serde(default)]
+    pub function_name: Option<String>,
+    /// Optional function qualifier (alias or version).
+    #[serde(default)]
+    pub function_qualifier: Option<String>,
+    /// Maximum number of splits per Lambda invocation.
+    #[serde(default = "LambdaConfig::default_max_splits_per_invocation")]
+    pub max_splits_per_invocation: usize,
+    /// Timeout for Lambda invocations in seconds.
+    #[serde(default = "LambdaConfig::default_invocation_timeout_secs")]
+    pub invocation_timeout_secs: u64,
+    /// Maximum number of concurrent Lambda invocations.
+    #[serde(default = "LambdaConfig::default_max_concurrent_invocations")]
+    pub max_concurrent_invocations: usize,
+}
+
+impl Default for LambdaConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            function_name: None,
+            function_qualifier: None,
+            max_splits_per_invocation: Self::default_max_splits_per_invocation(),
+            invocation_timeout_secs: Self::default_invocation_timeout_secs(),
+            max_concurrent_invocations: Self::default_max_concurrent_invocations(),
+        }
+    }
+}
+
+impl LambdaConfig {
+    fn default_max_splits_per_invocation() -> usize {
+        10
+    }
+    fn default_invocation_timeout_secs() -> u64 {
+        30
+    }
+    fn default_max_concurrent_invocations() -> usize {
+        100
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -435,6 +487,7 @@ impl Default for SearcherConfig {
             storage_timeout_policy: None,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::gb(1),
+            lambda: LambdaConfig::default(),
         }
     }
 }
