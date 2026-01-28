@@ -61,6 +61,9 @@ affinity:
             values:
               - arm64
 
+# Common init container config for DD_API_KEY injection (used by all components when reverse connection is enabled)
+# Each component needs this because CP_ENABLE_REVERSE_CONNECTION=true triggers validation on ALL pods
+
 metastore:
   replicaCount: 1
 
@@ -72,7 +75,51 @@ metastore:
       cpu: 1
       memory: 2Gi
 
-  # No initContainers needed - using S3-based metastore instead of PostgreSQL
+  command:
+    - sh
+    - -c
+    - |
+      export DD_API_KEY=$(cat /quickwit/dd-api-key.env)
+      exec quickwit run --service metastore
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /quickwit
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /quickwit/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
 
 control_plane:
   resources:
@@ -82,6 +129,52 @@ control_plane:
     requests:
       cpu: 1
       memory: 2Gi
+
+  command:
+    - sh
+    - -c
+    - |
+      export DD_API_KEY=$(cat /quickwit/dd-api-key.env)
+      exec quickwit run --service control_plane
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /quickwit
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /quickwit/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
 
 indexer:
   replicaCount: 1
@@ -98,6 +191,52 @@ indexer:
     enabled: true
     storage: 100Gi
     storageClass: gp3
+
+  command:
+    - sh
+    - -c
+    - |
+      export DD_API_KEY=$(cat /quickwit/dd-api-key.env)
+      exec quickwit run --service indexer
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /quickwit
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /quickwit/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
 
 searcher:
   replicaCount: 1
@@ -116,7 +255,7 @@ searcher:
     - -c
     - |
       export DD_API_KEY=$(cat /quickwit/dd-api-key.env)
-      exec quickwit run searcher
+      exec quickwit run --service searcher
 
   initContainers:
     # Loads dd-api-key.tpl and injects the API key (loaded from Vault) for the reverse connection
@@ -147,7 +286,7 @@ searcher:
         medium: Memory
     - name: dd-api-key-template
       configMap:
-        name: pomsky-staging-dd-api-key-template
+        name: pomsky-staging-cloudprem-dd-api-key-template
         items:
           - key: dd-api-key.tpl
             path: dd-api-key.tpl
@@ -166,6 +305,52 @@ janitor:
     requests:
       cpu: 1
       memory: 2Gi
+
+  command:
+    - sh
+    - -c
+    - |
+      export DD_API_KEY=$(cat /quickwit/dd-api-key.env)
+      exec quickwit run --service janitor
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /quickwit
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /quickwit/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
 
 config:
   # S3-based storage paths for integrated staging
