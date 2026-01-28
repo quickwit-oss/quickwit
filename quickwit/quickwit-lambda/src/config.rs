@@ -14,8 +14,8 @@
 
 use anyhow::Context as _;
 use bytesize::ByteSize;
-// Re-export LambdaConfig from quickwit-config
-pub use quickwit_config::LambdaConfig;
+// Re-export LambdaConfig and LambdaDeployConfig from quickwit-config
+pub use quickwit_config::{LambdaConfig, LambdaDeployConfig};
 
 /// Configuration for the Lambda handler's SearcherContext.
 /// These settings are optimized for Lambda's memory constraints.

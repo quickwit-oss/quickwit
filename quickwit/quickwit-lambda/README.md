@@ -22,29 +22,40 @@ When the `auto-deploy` feature is enabled, Quickwit can automatically create or 
 
 ## Configuration
 
-Add the following to your Quickwit configuration:
+Add the following to your Quickwit configuration. Lambda is enabled by including the `lambda` section under `searcher`:
 
 ```yaml
 searcher:
   lambda:
-    enabled: true
+    # Lambda function settings
+    function_name: "quickwit-lambda-search"
+    max_splits_per_invocation: 10
+
     # Auto-deploy settings (requires auto-deploy feature)
-    auto_deploy: true
-    execution_role_arn: "arn:aws:iam::123456789:role/quickwit-lambda-role"
+    auto_deploy:
+      execution_role_arn: "arn:aws:iam::123456789:role/quickwit-lambda-role"
+      memory_size_mb: 1024
+      invocation_timeout_secs: 30
 ```
 
 ### Configuration Options
 
+#### LambdaConfig (under `searcher.lambda`)
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `enabled` | bool | `false` | Enable Lambda execution for leaf search |
 | `function_name` | string | `"quickwit-lambda-search"` | Lambda function name or ARN |
 | `function_qualifier` | string | `null` | Optional alias or version qualifier |
 | `max_splits_per_invocation` | int | `10` | Maximum splits per Lambda invocation |
-| `invocation_timeout_secs` | int | `30` | Timeout in seconds (used for both client-side and Lambda function timeout when auto-deploying) |
-| `auto_deploy` | bool | `false` | Enable automatic Lambda deployment |
-| `execution_role_arn` | string | `null` | IAM role ARN (required for auto-deploy) |
+| `auto_deploy` | object | `null` | Auto-deploy configuration (see below) |
+
+#### LambdaDeployConfig (under `searcher.lambda.auto_deploy`)
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `execution_role_arn` | string | required | IAM role ARN for the Lambda function |
 | `memory_size_mb` | int | `1024` | Lambda memory allocation in MB |
+| `invocation_timeout_secs` | int | `30` | Timeout for Lambda invocations in seconds |
 
 ## Auto-Deploy Feature
 
@@ -82,7 +93,7 @@ cargo build --release --features auto-deploy
 
 ### Startup Behavior
 
-When `auto_deploy: true` is configured, the following happens at Quickwit startup:
+When `auto_deploy` is configured, the following happens at Quickwit startup:
 
 1. **Function Check**: Quickwit checks if the Lambda function exists
 2. **Create or Update**:
@@ -203,7 +214,7 @@ The Lambda function:
 
 If Quickwit fails to start with Lambda enabled:
 
-1. **"execution_role_arn required for auto_deploy"**: You enabled `auto_deploy` but didn't provide an IAM role ARN
+1. **"execution_role_arn required"**: The `auto_deploy` section is present but the `execution_role_arn` field is empty
 2. **"failed to create function"**: Check IAM permissions for the Quickwit process
 3. **"Lambda function validation failed"**: The function exists but isn't invocable - check the function's execution role
 

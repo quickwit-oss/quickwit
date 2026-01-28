@@ -749,6 +749,7 @@ pub(crate) async fn search_partial_hits_phase(
             get_count_from_metadata(split_metadatas)
         } else if search_request.execution_mode == ExecutionMode::RemoteFunction as i32
             && lambda_invoker.is_some()
+            && searcher_context.searcher_config.lambda.is_some()
         {
             // Execute via Lambda
             execute_leaf_search_via_lambda(
@@ -756,7 +757,7 @@ pub(crate) async fn search_partial_hits_phase(
                 indexes_metas_for_leaf_search,
                 split_metadatas,
                 lambda_invoker.as_ref().unwrap().as_ref(),
-                &searcher_context.searcher_config.lambda,
+                searcher_context.searcher_config.lambda.as_ref().unwrap(),
             )
             .await?
         } else {
