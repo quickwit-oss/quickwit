@@ -63,6 +63,29 @@ impl AwsLambdaInvoker {
             qualifier,
         }
     }
+
+    /// Validate that the Lambda function exists and is invocable.
+    /// Uses DryRun invocation type - validates without executing.
+    pub async fn validate(&self) -> LambdaResult<()> {
+        let mut request = self
+            .client
+            .invoke()
+            .function_name(&self.function_name)
+            .invocation_type(InvocationType::DryRun);
+
+        if let Some(qualifier) = &self.qualifier {
+            request = request.qualifier(qualifier);
+        }
+
+        request.send().await.map_err(|e| {
+            LambdaError::Configuration(format!(
+                "Failed to validate Lambda function '{}': {}",
+                self.function_name, e
+            ))
+        })?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]

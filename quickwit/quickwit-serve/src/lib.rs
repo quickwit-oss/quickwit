@@ -1026,6 +1026,13 @@ async fn setup_searcher(
             let invoker = AwsLambdaInvoker::new(&node_config.searcher_config.lambda)
                 .await
                 .context("failed to initialize AWS Lambda invoker")?;
+
+            // Validate function exists and is accessible
+            invoker
+                .validate()
+                .await
+                .context("Lambda function validation failed")?;
+
             Some(Arc::new(invoker))
         } else {
             None
