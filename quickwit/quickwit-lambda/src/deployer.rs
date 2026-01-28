@@ -141,7 +141,7 @@ impl LambdaDeployer {
         info!(
             function_name = %name,
             role = %role,
-            memory_mb = config.memory_size_mb,
+            memory_size = %config.memory_size,
             timeout_secs = config.invocation_timeout_secs,
             "creating Lambda function"
         );
@@ -162,7 +162,7 @@ impl LambdaDeployer {
                     .zip_file(Blob::new(LAMBDA_BINARY))
                     .build(),
             )
-            .memory_size(config.memory_size_mb as i32)
+            .memory_size((config.memory_size.as_u64() / (1024 * 1024)) as i32)
             .timeout(config.invocation_timeout_secs as i32)
             .environment(environment)
             .description(format!(
@@ -245,7 +245,7 @@ impl LambdaDeployer {
         self.client
             .update_function_configuration()
             .function_name(name)
-            .memory_size(config.memory_size_mb as i32)
+            .memory_size((config.memory_size.as_u64() / (1024 * 1024)) as i32)
             .timeout(config.invocation_timeout_secs as i32)
             .environment(self.build_environment())
             .description(format!(

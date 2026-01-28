@@ -302,13 +302,17 @@ pub struct SearcherConfig {
     pub warmup_single_split_initial_allocation: ByteSize,
     /// Lambda configuration for serverless leaf search execution.
     /// If set, enables Lambda execution for leaf search.
+    ///
+    /// If set, and Quickwit cannot access the Lambda (after a deploy attempt if
+    /// auto deploy is set up), Quickwit will log an error and
+    /// fail on startup.
     #[serde(default)]
     pub lambda: Option<LambdaConfig>,
 }
 
 /// Configuration for AWS Lambda leaf search execution.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, default)]
+#[serde(deny_unknown_fields)]
 pub struct LambdaConfig {
     /// AWS Lambda function name or ARN.
     #[serde(default = "LambdaConfig::default_function_name")]
@@ -321,37 +325,29 @@ pub struct LambdaConfig {
     pub max_splits_per_invocation: usize,
     /// Auto-deploy configuration. If set, Quickwit will automatically deploy
     /// the Lambda function at startup.
+    /// If deploying a lambda fails, Quickwit will log an error and fail.
     #[serde(default)]
     pub auto_deploy: Option<LambdaDeployConfig>,
 }
 
 /// Configuration for automatic Lambda function deployment.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, default)]
+#[serde(deny_unknown_fields)]
 pub struct LambdaDeployConfig {
     /// IAM execution role ARN for the Lambda function.
     pub execution_role_arn: String,
-    /// Memory size for the Lambda function in MB.
-    #[serde(default = "LambdaDeployConfig::default_memory_size_mb")]
-    pub memory_size_mb: u32,
+    /// Memory size for the Lambda function. It will be rounded up to the nearest multiple of 1MiB.
+    #[serde(default = "LambdaDeployConfig::default_memory_size")]
+    pub memory_size: ByteSize,
     /// Timeout for Lambda invocations in seconds.
     #[serde(default = "LambdaDeployConfig::default_invocation_timeout_secs")]
     pub invocation_timeout_secs: u64,
 }
 
-impl Default for LambdaDeployConfig {
-    fn default() -> Self {
-        Self {
-            execution_role_arn: String::new(),
-            memory_size_mb: Self::default_memory_size_mb(),
-            invocation_timeout_secs: Self::default_invocation_timeout_secs(),
-        }
-    }
-}
-
 impl LambdaDeployConfig {
-    fn default_memory_size_mb() -> u32 {
-        1024
+    fn default_memory_size() -> ByteSize {
+        // Empirically this implies between 4 and 6 vCPUs.
+        ByteSize::gib(5)
     }
     fn default_invocation_timeout_secs() -> u64 {
         30

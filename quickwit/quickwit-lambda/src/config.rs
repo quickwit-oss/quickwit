@@ -29,10 +29,10 @@ pub struct LambdaSearcherConfig {
 }
 
 impl LambdaSearcherConfig {
-
     pub fn try_from_env() -> anyhow::Result<LambdaSearcherConfig> {
-        let memory_mb: usize = quickwit_common::get_from_env_opt("AWS_LAMBDA_FUNCTION_MEMORY_SIZE", false)
-            .context("could not get aws lambda function memory size from ENV")?;
+        let memory_mb: usize =
+            quickwit_common::get_from_env_opt("AWS_LAMBDA_FUNCTION_MEMORY_SIZE", false)
+                .context("could not get aws lambda function memory size from ENV")?;
         Ok(LambdaSearcherConfig::for_memory(memory_mb))
     }
     /// Create a Lambda-optimized searcher config based on the allocated memory.
@@ -47,9 +47,9 @@ impl LambdaSearcherConfig {
     }
 }
 
-impl Default for LambdaSearcherConfig {
-    fn default() -> Self {
-        // Default to 1024 MB Lambda
-        Self::for_memory(1024)
-    }
-}
+// impl Default for LambdaSearcherConfig {
+//     fn default() -> Self {
+//         // Default to 1024 MB Lambda
+//         Self::for_memory(1024)
+//     }
+// }
