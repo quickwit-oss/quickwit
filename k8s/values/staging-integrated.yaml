@@ -12,7 +12,8 @@ cloudprem:
   index:
     minShards: 4 # number of indexers * number of vCPUs * 2 (1 * 2 * 2)
   reverseConnection:
-    enabled: false
+    enabled: true
+    site: "dd.datad0g.com"  # Staging environment
 
 environment:
   QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
@@ -109,6 +110,54 @@ searcher:
       cpu: 2
       memory: 8Gi
 
+  # Override command to load DD_API_KEY from Vault-injected file before starting
+  command:
+    - sh
+    - -c
+    - |
+      export DD_API_KEY=$(cat /quickwit/dd-api-key.env)
+      exec quickwit run searcher
+
+  initContainers:
+    # Loads dd-api-key.tpl and injects the API key (loaded from Vault) for the reverse connection
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /quickwit
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /quickwit/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
+
 janitor:
   resources:
     limits:
@@ -128,3 +177,11 @@ config:
   ingest_api:
     max_queue_memory_usage: 2GiB # memory capacity * 0.3 (half of staging)
     max_queue_disk_usage: 5GiB # max queue mem usage * 2 (half of staging)
+
+# ConfigMap entry that is rendered by consul-template into the DD_API_KEY file for reverse connection
+# Secret stored at: kv/k8s/logs-cloudprem/pomsky-staging/credentials with key dd_api_key
+extraConfigMaps:
+  - name: dd-api-key-template
+    data:
+      dd-api-key.tpl: |
+        {% with secret "kv/k8s/logs-cloudprem/pomsky-staging/credentials" %}{% .Data.data.dd_api_key %}{% end %}
