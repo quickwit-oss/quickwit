@@ -39,6 +39,7 @@ use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::metrics_trackers::LeafSearchMetricsFuture;
+use crate::remote_function::RemoteFunctionInvoker;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_permit_provider::SearchPermitProvider;
@@ -52,6 +53,7 @@ pub struct SearchServiceImpl {
     cluster_client: ClusterClient,
     searcher_context: Arc<SearcherContext>,
     local_kv_store: MiniKV,
+    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
 }
 
 /// Trait representing a search service.
@@ -141,6 +143,7 @@ impl SearchServiceImpl {
         storage_resolver: StorageResolver,
         cluster_client: ClusterClient,
         searcher_context: Arc<SearcherContext>,
+        lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
     ) -> Self {
         SearchServiceImpl {
             metastore,
@@ -148,6 +151,7 @@ impl SearchServiceImpl {
             cluster_client,
             searcher_context,
             local_kv_store: MiniKV::default(),
+            lambda_invoker,
         }
     }
 }
@@ -167,7 +171,7 @@ impl SearchService for SearchServiceImpl {
             search_request,
             self.metastore.clone(),
             &self.cluster_client,
-            None, // TODO: Initialize lambda_invoker when Lambda is enabled
+            self.lambda_invoker.clone(),
         )
         .await?;
         Ok(search_result)

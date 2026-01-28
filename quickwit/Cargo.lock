@@ -7632,6 +7632,7 @@ dependencies = [
  "quickwit-ingest",
  "quickwit-jaeger",
  "quickwit-janitor",
+ "quickwit-lambda",
  "quickwit-metastore",
  "quickwit-opentelemetry",
  "quickwit-proto",
