@@ -53,10 +53,10 @@ pub async fn handle_leaf_search(
     let num_splits: usize = leaf_search_request
         .leaf_requests
         .iter()
-        .map(|r| r.split_offsets.len())
+        .map(|leaf_request_ref| leaf_request_ref.split_offsets.len())
         .sum();
 
-    info!(num_splits, "Processing leaf search request");
+    info!(num_splits, "processing leaf search request");
 
     // Execute leaf search
     let leaf_search_response = multi_index_leaf_search(
@@ -70,7 +70,7 @@ pub async fn handle_leaf_search(
     info!(
         num_hits = leaf_search_response.num_hits,
         num_successful_splits = leaf_search_response.num_successful_splits,
-        "Leaf search completed"
+        "leaf search completed"
     );
 
     // Serialize response
