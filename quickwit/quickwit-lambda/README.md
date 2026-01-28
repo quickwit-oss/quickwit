@@ -41,12 +41,11 @@ searcher:
 | `function_name` | string | `"quickwit-lambda-search"` | Lambda function name or ARN |
 | `function_qualifier` | string | `null` | Optional alias or version qualifier |
 | `max_splits_per_invocation` | int | `10` | Maximum splits per Lambda invocation |
-| `invocation_timeout_secs` | int | `30` | Client-side timeout for invocations |
+| `invocation_timeout_secs` | int | `30` | Timeout in seconds (used for both client-side and Lambda function timeout when auto-deploying) |
 | `max_concurrent_invocations` | int | `100` | Maximum concurrent Lambda invocations |
 | `auto_deploy` | bool | `false` | Enable automatic Lambda deployment |
 | `execution_role_arn` | string | `null` | IAM role ARN (required for auto-deploy) |
 | `memory_size_mb` | int | `1024` | Lambda memory allocation in MB |
-| `timeout_secs` | int | `30` | Lambda function timeout in seconds |
 
 ## Auto-Deploy Feature
 
@@ -211,7 +210,7 @@ If Quickwit fails to start with Lambda enabled:
 
 ### Runtime Issues
 
-1. **Timeouts**: Increase `invocation_timeout_secs` and/or `timeout_secs`
+1. **Timeouts**: Increase `invocation_timeout_secs`
 2. **Memory errors**: Increase `memory_size_mb`
 3. **Throttling**: AWS Lambda has concurrency limits - check your account limits
 

@@ -64,8 +64,7 @@ pub async fn handle_leaf_search(
         leaf_search_request,
         &ctx.storage_resolver,
     )
-    .await
-    .map_err(LambdaError::from)?;
+    .await?;
 
     info!(
         num_hits = leaf_search_response.num_hits,
