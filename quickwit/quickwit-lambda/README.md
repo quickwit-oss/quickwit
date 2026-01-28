@@ -34,7 +34,7 @@ searcher:
     # Auto-deploy settings (requires auto-deploy feature)
     auto_deploy:
       execution_role_arn: "arn:aws:iam::123456789:role/quickwit-lambda-role"
-      memory_size_mb: 1024
+      memory_size: 5GiB
       invocation_timeout_secs: 30
 ```
 
@@ -54,7 +54,7 @@ searcher:
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `execution_role_arn` | string | required | IAM role ARN for the Lambda function |
-| `memory_size_mb` | int | `1024` | Lambda memory allocation in MB |
+| `memory_size` | ByteSize | `5GiB` | Lambda memory allocation |
 | `invocation_timeout_secs` | int | `30` | Timeout for Lambda invocations in seconds |
 
 ## Auto-Deploy Feature
@@ -221,7 +221,7 @@ If Quickwit fails to start with Lambda enabled:
 ### Runtime Issues
 
 1. **Timeouts**: Increase `invocation_timeout_secs`
-2. **Memory errors**: Increase `memory_size_mb`
+2. **Memory errors**: Increase `memory_size`
 3. **Throttling**: AWS Lambda has concurrency limits - check your account limits
 
 ### Build Issues
