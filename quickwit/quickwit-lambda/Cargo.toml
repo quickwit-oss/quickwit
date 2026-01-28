@@ -44,6 +44,13 @@ tempfile = { workspace = true }
 name = "quickwit-lambda-leaf-search"
 path = "src/bin/leaf_search.rs"
 
+[build-dependencies]
+# Build dependencies for auto-deploy feature.
+zip = { workspace = true, optional = true }
+
 [features]
 default = []
 testsuite = []
+# Enable automatic Lambda function deployment at startup.
+# When enabled, the Lambda binary is embedded at compile time.
+auto-deploy = ["dep:zip"]
