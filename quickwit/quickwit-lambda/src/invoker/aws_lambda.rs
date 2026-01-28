@@ -13,9 +13,9 @@
 // limitations under the License.
 
 use async_trait::async_trait;
+use aws_sdk_lambda::Client as LambdaClient;
 use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::InvocationType;
-use aws_sdk_lambda::Client as LambdaClient;
 use base64::prelude::*;
 use prost::Message;
 use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};

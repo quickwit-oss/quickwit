@@ -27,7 +27,7 @@ pub mod invoker;
 pub use config::{LambdaConfig, LambdaSearcherConfig};
 pub use context::LambdaSearcherContext;
 pub use error::{LambdaError, LambdaResult};
-pub use handler::{handle_leaf_search, LeafSearchPayload, LeafSearchResponsePayload};
+pub use handler::{LeafSearchPayload, LeafSearchResponsePayload, handle_leaf_search};
 pub use invoker::AwsLambdaInvoker;
 // Re-export RemoteFunctionInvoker trait from quickwit-search for convenience
 pub use quickwit_search::RemoteFunctionInvoker;

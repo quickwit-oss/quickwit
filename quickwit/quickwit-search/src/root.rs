@@ -13,9 +13,8 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -52,11 +51,11 @@ use tracing::{debug, info, info_span, instrument};
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
 use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
+use crate::remote_function::RemoteFunctionInvoker;
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
 use crate::search_response_rest::StorageRequestCount;
 use crate::service::SearcherContext;
-use crate::remote_function::RemoteFunctionInvoker;
 use crate::{
     SearchError, SearchJobPlacer, SearchPlanResponseRest, SearchServiceClient,
     extract_split_and_footer_offsets, list_relevant_splits,
@@ -857,7 +856,8 @@ async fn execute_leaf_search_via_lambda(
     let lambda_tasks: Vec<_> = batches
         .into_iter()
         .map(|batch_jobs| {
-            let request = jobs_to_leaf_request(search_request, indexes_metas_for_leaf_search, batch_jobs);
+            let request =
+                jobs_to_leaf_request(search_request, indexes_metas_for_leaf_search, batch_jobs);
             async move {
                 let leaf_request = request?;
                 lambda_invoker.invoke_leaf_search(leaf_request).await
@@ -2734,7 +2734,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -2804,7 +2805,8 @@ mod tests {
             &searcher_context,
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -2896,7 +2898,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -2980,7 +2983,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3112,7 +3116,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request.clone(),
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await?;
 
@@ -3294,7 +3299,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request.clone(),
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await?;
 
@@ -3418,7 +3424,8 @@ mod tests {
             &searcher_context,
             search_request,
             mock_metastore_client.clone(),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3437,7 +3444,8 @@ mod tests {
             &searcher_context,
             search_request,
             mock_metastore_client,
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap_err();
@@ -3562,7 +3570,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3702,7 +3711,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3783,7 +3793,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3850,7 +3861,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3940,7 +3952,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -4022,7 +4035,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -4071,7 +4085,8 @@ mod tests {
                     ..Default::default()
                 },
                 metastore.clone(),
-                &cluster_client, None,
+                &cluster_client,
+                None,
             )
             .await
             .is_err()
@@ -4087,7 +4102,8 @@ mod tests {
                     ..Default::default()
                 },
                 metastore,
-                &cluster_client, None,
+                &cluster_client,
+                None,
             )
             .await
             .is_err()
@@ -4152,7 +4168,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await;
         assert!(search_response.is_err());
@@ -4202,7 +4219,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             metastore.clone(),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await;
         assert!(search_response.is_err());
@@ -4222,7 +4240,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             metastore,
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await;
         assert!(search_response.is_err());
@@ -4740,7 +4759,8 @@ mod tests {
                 &searcher_context,
                 search_request,
                 MetastoreServiceClient::from_mock(mock_metastore),
-                &cluster_client, None,
+                &cluster_client,
+                None,
             )
             .await
             .unwrap();
@@ -5006,7 +5026,8 @@ mod tests {
                 &searcher_context,
                 search_request,
                 MetastoreServiceClient::from_mock(mock_metastore),
-                &cluster_client, None,
+                &cluster_client,
+                None,
             )
             .await
             .unwrap();
@@ -5188,7 +5209,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -5309,7 +5331,8 @@ mod tests {
             &SearcherContext::for_test(),
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -5362,7 +5385,8 @@ mod tests {
             &searcher_context,
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
-            &cluster_client, None,
+            &cluster_client,
+            None,
         )
         .await
         .unwrap_err();

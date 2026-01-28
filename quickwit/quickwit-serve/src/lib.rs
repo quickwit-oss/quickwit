@@ -87,6 +87,7 @@ use quickwit_ingest::{
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
+use quickwit_lambda::AwsLambdaInvoker;
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
@@ -106,8 +107,8 @@ use quickwit_proto::metastore::{
 use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::types::NodeId;
 use quickwit_search::{
-    SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
-    create_search_client_from_channel, start_searcher_service,
+    RemoteFunctionInvoker, SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext,
+    SearcherPool, create_search_client_from_channel, start_searcher_service,
 };
 use quickwit_storage::{SplitCache, StorageResolver};
 use tcp_listener::TcpListenerResolver;
@@ -1017,11 +1018,25 @@ async fn setup_searcher(
 ) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>)> {
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
+
+    // Initialize Lambda invoker if enabled
+    let lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>> =
+        if node_config.searcher_config.lambda.enabled {
+            info!("initializing AWS Lambda invoker for leaf search");
+            let invoker = AwsLambdaInvoker::new(&node_config.searcher_config.lambda)
+                .await
+                .context("failed to initialize AWS Lambda invoker")?;
+            Some(Arc::new(invoker))
+        } else {
+            None
+        };
+
     let search_service = start_searcher_service(
         metastore,
         storage_resolver,
         search_job_placer.clone(),
         searcher_context,
+        lambda_invoker,
     )
     .await?;
     let search_service_clone = search_service.clone();
