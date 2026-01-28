@@ -181,6 +181,7 @@ pub fn convert_to_es_field_capabilities_response(
 /// Returns `Ok(None)` if the index_filter is null or empty.
 /// Returns `Ok(Some(QueryAst))` if the index_filter is valid.
 /// Returns `Err` if the index_filter is invalid or cannot be converted.
+#[allow(clippy::result_large_err)]
 pub fn parse_index_filter_to_query_ast(
     index_filter: serde_json::Value,
 ) -> Result<Option<QueryAst>, ElasticsearchError> {
