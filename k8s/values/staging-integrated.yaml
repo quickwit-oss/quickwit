@@ -116,7 +116,7 @@ searcher:
     - -c
     - |
       export DD_API_KEY=$(cat /quickwit/dd-api-key.env)
-      exec quickwit run searcher
+      exec quickwit run --service searcher
 
   initContainers:
     # Loads dd-api-key.tpl and injects the API key (loaded from Vault) for the reverse connection
@@ -147,7 +147,7 @@ searcher:
         medium: Memory
     - name: dd-api-key-template
       configMap:
-        name: pomsky-staging-dd-api-key-template
+        name: pomsky-staging-cloudprem-dd-api-key-template
         items:
           - key: dd-api-key.tpl
             path: dd-api-key.tpl
