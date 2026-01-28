@@ -313,8 +313,8 @@ pub struct LambdaConfig {
     #[serde(default)]
     pub enabled: bool,
     /// AWS Lambda function name or ARN.
-    #[serde(default)]
-    pub function_name: Option<String>,
+    #[serde(default = "LambdaConfig::default_function_name")]
+    pub function_name: String,
     /// Optional function qualifier (alias or version).
     #[serde(default)]
     pub function_qualifier: Option<String>,
@@ -327,22 +327,41 @@ pub struct LambdaConfig {
     /// Maximum number of concurrent Lambda invocations.
     #[serde(default = "LambdaConfig::default_max_concurrent_invocations")]
     pub max_concurrent_invocations: usize,
+    /// Enable automatic Lambda function deployment at startup.
+    #[serde(default)]
+    pub auto_deploy: bool,
+    /// IAM execution role ARN for the Lambda function (required if auto_deploy=true).
+    #[serde(default)]
+    pub execution_role_arn: Option<String>,
+    /// Memory size for the Lambda function in MB (default: 1024).
+    #[serde(default = "LambdaConfig::default_memory_size_mb")]
+    pub memory_size_mb: u32,
+    /// Timeout for the Lambda function in seconds (default: 30).
+    #[serde(default = "LambdaConfig::default_timeout_secs")]
+    pub timeout_secs: u32,
 }
 
 impl Default for LambdaConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            function_name: None,
+            function_name: Self::default_function_name(),
             function_qualifier: None,
             max_splits_per_invocation: Self::default_max_splits_per_invocation(),
             invocation_timeout_secs: Self::default_invocation_timeout_secs(),
             max_concurrent_invocations: Self::default_max_concurrent_invocations(),
+            auto_deploy: false,
+            execution_role_arn: None,
+            memory_size_mb: Self::default_memory_size_mb(),
+            timeout_secs: Self::default_timeout_secs(),
         }
     }
 }
 
 impl LambdaConfig {
+    fn default_function_name() -> String {
+        "quickwit-lambda-search".to_string()
+    }
     fn default_max_splits_per_invocation() -> usize {
         10
     }
@@ -351,6 +370,12 @@ impl LambdaConfig {
     }
     fn default_max_concurrent_invocations() -> usize {
         100
+    }
+    fn default_memory_size_mb() -> u32 {
+        1024
+    }
+    fn default_timeout_secs() -> u32 {
+        30
     }
 }
 

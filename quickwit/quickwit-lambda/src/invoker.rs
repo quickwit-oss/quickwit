@@ -36,17 +36,12 @@ pub struct AwsLambdaInvoker {
 impl AwsLambdaInvoker {
     /// Create a new AWS Lambda invoker with the given configuration.
     pub async fn new(config: &LambdaConfig) -> LambdaResult<Self> {
-        let function_name = config
-            .function_name
-            .clone()
-            .ok_or_else(|| LambdaError::Configuration("Lambda function_name is required".into()))?;
-
         let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = LambdaClient::new(&aws_config);
 
         Ok(Self {
             client,
-            function_name,
+            function_name: config.function_name.clone(),
             qualifier: config.function_qualifier.clone(),
         })
     }
