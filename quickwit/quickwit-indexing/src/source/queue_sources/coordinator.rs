@@ -565,6 +565,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_checkpoint_delta_of_existing_messages() {
+        let (dummy_doc_file_1, _) = generate_dummy_doc_file(false, 10).await;
+        let test_uri_1 = Uri::from_str(dummy_doc_file_1.path().to_str().unwrap()).unwrap();
+        let partition_id_1 = PreProcessedPayload::ObjectUri(test_uri_1.clone()).partition_id();
+
+        let (dummy_doc_file_2, _) = generate_dummy_doc_file(false, 10).await;
+        let test_uri_2 = Uri::from_str(dummy_doc_file_2.path().to_str().unwrap()).unwrap();
+        let partition_id_2 = PreProcessedPayload::ObjectUri(test_uri_2.clone()).partition_id();
+
+        let queue = Arc::new(MemoryQueueForTests::new());
+        let shared_state = init_state(
+            "test-index",
+            &[
+                (
+                    partition_id_1.clone(),
+                    ("existing_token_1".to_string(), Position::Beginning, true),
+                ),
+                (
+                    partition_id_2.clone(),
+                    (
+                        "existing_token_2".to_string(),
+                        Position::offset((DUMMY_DOC.len() + 1) * 2),
+                        true,
+                    ),
+                ),
+            ],
+        );
+        let mut coordinator = setup_coordinator(queue.clone(), shared_state.clone());
+        let batches = process_messages(
+            &mut coordinator,
+            queue,
+            &[(&test_uri_1, "ack-id-1"), (&test_uri_2, "ack-id-2")],
+        )
+        .await;
+        assert_eq!(batches.len(), 2);
+        let deltas = batches[0].checkpoint_delta.iter().collect::<Vec<_>>();
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].1.from, Position::Beginning);
+        assert_eq!(deltas[0].1.to, Position::eof(350u64));
+        let deltas = batches[1].checkpoint_delta.iter().collect::<Vec<_>>();
+        assert_eq!(deltas.len(), 1);
+        assert_eq!(deltas[0].1.from, Position::Offset(70u64.into()));
+        assert_eq!(deltas[0].1.to, Position::eof(350u64));
+    }
+
+    #[tokio::test]
     async fn test_process_multiple_coordinator() {
         let queue = Arc::new(MemoryQueueForTests::new());
         let shared_state = init_state("test-index", Default::default());
