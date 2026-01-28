@@ -442,6 +442,7 @@ impl SearcherContext {
         );
         let leaf_search_split_semaphore = SearchPermitProvider::new(
             searcher_config.max_num_concurrent_split_searches,
+            searcher_config.max_num_concurrent_leaf_searches,
             searcher_config.warmup_memory_budget,
         );
         let storage_long_term_cache =
