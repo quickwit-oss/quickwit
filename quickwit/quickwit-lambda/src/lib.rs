@@ -22,12 +22,10 @@ mod config;
 mod context;
 mod error;
 mod handler;
-pub mod invoker;
+mod invoker;
 
 pub use config::{LambdaConfig, LambdaSearcherConfig};
 pub use context::LambdaSearcherContext;
 pub use error::{LambdaError, LambdaResult};
 pub use handler::{LeafSearchPayload, LeafSearchResponsePayload, handle_leaf_search};
 pub use invoker::AwsLambdaInvoker;
-// Re-export RemoteFunctionInvoker trait from quickwit-search for convenience
-pub use quickwit_search::RemoteFunctionInvoker;
