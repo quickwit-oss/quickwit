@@ -347,7 +347,7 @@ impl LambdaDeployConfig {
         ByteSize::gib(5)
     }
     fn default_invocation_timeout_secs() -> u64 {
-        30
+        15
     }
 }
 
