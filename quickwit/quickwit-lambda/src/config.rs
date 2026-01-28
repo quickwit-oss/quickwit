@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use anyhow::Context as _;
 use bytesize::ByteSize;
 // Re-export LambdaConfig from quickwit-config
 pub use quickwit_config::LambdaConfig;
@@ -28,6 +29,12 @@ pub struct LambdaSearcherConfig {
 }
 
 impl LambdaSearcherConfig {
+
+    pub fn try_from_env() -> anyhow::Result<LambdaSearcherConfig> {
+        let memory_mb: usize = quickwit_common::get_from_env_opt("AWS_LAMBDA_FUNCTION_MEMORY_SIZE", false)
+            .context("could not get aws lambda function memory size from ENV")?;
+        Ok(LambdaSearcherConfig::for_memory(memory_mb))
+    }
     /// Create a Lambda-optimized searcher config based on the allocated memory.
     pub fn for_memory(memory_mb: usize) -> Self {
         // Warmup budget is about half of memory
