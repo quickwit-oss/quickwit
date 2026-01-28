@@ -87,7 +87,7 @@ use quickwit_ingest::{
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
-use quickwit_lambda::{AwsLambdaInvoker, LambdaDeployer};
+
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
@@ -107,8 +107,8 @@ use quickwit_proto::metastore::{
 use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::types::NodeId;
 use quickwit_search::{
-    RemoteFunctionInvoker, SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext,
-    SearcherPool, create_search_client_from_channel, start_searcher_service,
+    SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
+    create_search_client_from_channel, start_searcher_service,
 };
 use quickwit_storage::{SplitCache, StorageResolver};
 use tcp_listener::TcpListenerResolver;
@@ -1020,31 +1020,27 @@ async fn setup_searcher(
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
 
     // Initialize Lambda invoker if enabled
-    let lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>> =
-        if let Some(lambda_config) = &node_config.searcher_config.lambda {
-            info!("initializing AWS Lambda invoker for leaf search");
+    let lambda_invoker = if let Some(lambda_config) = &node_config.searcher_config.lambda {
+        info!("initializing AWS Lambda invoker for leaf search");
 
-            // Auto-deploy Lambda function if configured
-            if let Some(deploy_config) = &lambda_config.auto_deploy {
-                info!("auto-deploying Lambda function");
-                quickwit_lambda::deploy(&lambda_config.function_name, deploy_config)
-                    .context("failed to deploy lambda function")?;
-            }
-
-            let invoker = AwsLambdaInvoker::new(lambda_config)
+        // Auto-deploy Lambda function if configured
+        if let Some(deploy_config) = &lambda_config.auto_deploy {
+            info!("auto-deploying Lambda function");
+            use anyhow::Context;
+            quickwit_lambda::deploy(&lambda_config.function_name, deploy_config)
                 .await
-                .context("failed to initialize AWS Lambda invoker")?;
+                .context("failed to deploy lambda function")?;
+        }
 
-            // Validate function exists and is accessible
-            invoker
-                .validate()
-                .await
-                .context("Lambda function validation failed")?;
+        use anyhow::Context;
+        let invoker = quickwit_lambda::create_lambda_invoker(lambda_config)
+            .await
+            .context("failed to initialize AWS Lambda invoker")?;
 
-            Some(Arc::new(invoker))
-        } else {
-            None
-        };
+        Some(invoker)
+    } else {
+        None
+    };
 
     let search_service = start_searcher_service(
         metastore,

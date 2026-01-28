@@ -21,27 +21,19 @@
 
 mod config;
 mod context;
-mod deployer;
 mod error;
 mod handler;
 mod invoker;
 
-pub use config::{LambdaConfig, LambdaSearcherConfig};
 pub use context::LambdaSearcherContext;
 
 #[cfg(feature = "auto-deploy")]
 mod deployer;
 #[cfg(feature = "auto-deploy")]
-pub use deployer::LambdaDeployer;
-
-#[cfg(feature = "auto-deploy")]
-mod deployer;
-#[cfg(feature = "auto-deploy")]
 pub use deployer::deploy;
-
 pub use error::{LambdaError, LambdaResult};
 pub use handler::{LeafSearchPayload, LeafSearchResponsePayload, handle_leaf_search};
-pub use invoker::AwsLambdaInvoker;
+pub use invoker::create_lambda_invoker;
 
 /// Deploy is a no-op when auto-deploy feature is not enabled.
 #[cfg(not(feature = "auto-deploy"))]
