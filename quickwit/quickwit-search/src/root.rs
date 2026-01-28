@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -31,9 +31,10 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef, LeafSearchRequest,
-    LeafSearchResponse, PartialHit, SearchPlanResponse, SearchRequest, SearchResponse,
-    SnippetRequest, SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
+    ExecutionMode, FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafRequestRef,
+    LeafSearchRequest, LeafSearchResponse, PartialHit, SearchPlanResponse, SearchRequest,
+    SearchResponse, SnippetRequest, SortDatetimeFormat, SortField, SortValue,
+    SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -50,6 +51,7 @@ use tracing::{debug, info, info_span, instrument};
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
 use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
+use crate::remote_function::RemoteFunctionInvoker;
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
 use crate::search_response_rest::StorageRequestCount;
@@ -372,6 +374,8 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // to recompute it afterward.
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
         ignore_missing_indexes: req.ignore_missing_indexes,
+        // Scroll requests don't support Lambda execution
+        execution_mode: ExecutionMode::Grpc as i32,
     })
 }
 
@@ -568,6 +572,7 @@ async fn search_partial_hits_phase_with_scroll(
     mut search_request: SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
+    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
 ) -> crate::Result<(LeafSearchResponse, Option<ScrollKeyAndStartOffset>)> {
     let scroll_ttl_opt = get_scroll_ttl_duration(&search_request)?;
 
@@ -586,6 +591,7 @@ async fn search_partial_hits_phase_with_scroll(
             &search_request,
             split_metadatas,
             cluster_client,
+            lambda_invoker.clone(),
         )
         .await?;
         let cached_partial_hits = leaf_search_resp.partial_hits.clone();
@@ -631,6 +637,7 @@ async fn search_partial_hits_phase_with_scroll(
             &search_request,
             split_metadatas,
             cluster_client,
+            lambda_invoker,
         )
         .await?;
         Ok((leaf_search_resp, None))
@@ -735,10 +742,24 @@ pub(crate) async fn search_partial_hits_phase(
     search_request: &SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
+    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
 ) -> crate::Result<LeafSearchResponse> {
     let leaf_search_responses: Vec<LeafSearchResponse> =
         if is_metadata_count_request(search_request) {
             get_count_from_metadata(split_metadatas)
+        } else if search_request.execution_mode == ExecutionMode::RemoteFunction as i32
+            && lambda_invoker.is_some()
+            && searcher_context.searcher_config.lambda.is_some()
+        {
+            // Execute via Lambda
+            execute_leaf_search_via_lambda(
+                search_request,
+                indexes_metas_for_leaf_search,
+                split_metadatas,
+                lambda_invoker.as_ref().unwrap().as_ref(),
+                searcher_context.searcher_config.lambda.as_ref().unwrap(),
+            )
+            .await?
         } else {
             let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
             let assigned_leaf_search_jobs = cluster_client
@@ -803,6 +824,50 @@ pub(crate) async fn search_partial_hits_phase(
     }
 
     Ok(leaf_search_response)
+}
+
+/// Execute leaf search operations via remote serverless functions (e.g., AWS Lambda).
+///
+/// This function batches splits into groups and invokes Lambda functions in parallel.
+/// The batch size is controlled by `LambdaConfig::max_splits_per_invocation`.
+async fn execute_leaf_search_via_lambda(
+    search_request: &SearchRequest,
+    indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
+    split_metadatas: &[SplitMetadata],
+    lambda_invoker: &dyn RemoteFunctionInvoker,
+    lambda_config: &quickwit_config::LambdaConfig,
+) -> crate::Result<Vec<LeafSearchResponse>> {
+    let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+
+    // Batch splits for Lambda invocations
+    let batch_size = lambda_config.max_splits_per_invocation;
+    let batches: Vec<Vec<SearchJob>> = jobs
+        .chunks(batch_size)
+        .map(|chunk| chunk.to_vec())
+        .collect();
+
+    debug!(
+        num_splits = split_metadatas.len(),
+        num_batches = batches.len(),
+        batch_size,
+        "Executing leaf search via Lambda"
+    );
+
+    // Invoke Lambda functions in parallel for each batch
+    let lambda_tasks: Vec<_> = batches
+        .into_iter()
+        .map(|batch_jobs| {
+            let request =
+                jobs_to_leaf_request(search_request, indexes_metas_for_leaf_search, batch_jobs);
+            async move {
+                let leaf_request = request?;
+                lambda_invoker.invoke_leaf_search(leaf_request).await
+            }
+        })
+        .collect();
+
+    let responses = try_join_all(lambda_tasks).await?;
+    Ok(responses)
 }
 
 pub(crate) fn get_snippet_request(search_request: &SearchRequest) -> Option<SnippetRequest> {
@@ -975,6 +1040,7 @@ async fn root_search_aux(
     search_request: SearchRequest,
     split_metadatas: Vec<SplitMetadata>,
     cluster_client: &ClusterClient,
+    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
 ) -> crate::Result<SearchResponse> {
     debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
     let (first_phase_result, scroll_key_and_start_offset_opt): (
@@ -986,6 +1052,7 @@ async fn root_search_aux(
         search_request.clone(),
         &split_metadatas[..],
         cluster_client,
+        lambda_invoker,
     )
     .await?;
 
@@ -1204,6 +1271,7 @@ pub async fn root_search(
     mut search_request: SearchRequest,
     mut metastore: MetastoreServiceClient,
     cluster_client: &ClusterClient,
+    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
 ) -> crate::Result<SearchResponse> {
     let start_instant = Instant::now();
 
@@ -1253,6 +1321,7 @@ pub async fn root_search(
             search_request,
             split_metadatas,
             cluster_client,
+            lambda_invoker,
         ),
         is_success: None,
         step: RootSearchMetricsStep::Exec {
@@ -2667,6 +2736,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -2737,6 +2807,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -2829,6 +2900,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -2913,6 +2985,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3045,6 +3118,7 @@ mod tests {
             search_request.clone(),
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await?;
 
@@ -3227,6 +3301,7 @@ mod tests {
             search_request.clone(),
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await?;
 
@@ -3351,6 +3426,7 @@ mod tests {
             search_request,
             mock_metastore_client.clone(),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3370,6 +3446,7 @@ mod tests {
             search_request,
             mock_metastore_client,
             &cluster_client,
+            None,
         )
         .await
         .unwrap_err();
@@ -3495,6 +3572,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3635,6 +3713,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3716,6 +3795,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3783,6 +3863,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3873,6 +3954,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -3955,6 +4037,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -4004,6 +4087,7 @@ mod tests {
                 },
                 metastore.clone(),
                 &cluster_client,
+                None,
             )
             .await
             .is_err()
@@ -4020,6 +4104,7 @@ mod tests {
                 },
                 metastore,
                 &cluster_client,
+                None,
             )
             .await
             .is_err()
@@ -4085,6 +4170,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await;
         assert!(search_response.is_err());
@@ -4135,6 +4221,7 @@ mod tests {
             search_request,
             metastore.clone(),
             &cluster_client,
+            None,
         )
         .await;
         assert!(search_response.is_err());
@@ -4155,6 +4242,7 @@ mod tests {
             search_request,
             metastore,
             &cluster_client,
+            None,
         )
         .await;
         assert!(search_response.is_err());
@@ -4673,6 +4761,7 @@ mod tests {
                 search_request,
                 MetastoreServiceClient::from_mock(mock_metastore),
                 &cluster_client,
+                None,
             )
             .await
             .unwrap();
@@ -4939,6 +5028,7 @@ mod tests {
                 search_request,
                 MetastoreServiceClient::from_mock(mock_metastore),
                 &cluster_client,
+                None,
             )
             .await
             .unwrap();
@@ -5121,6 +5211,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -5242,6 +5333,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap();
@@ -5295,6 +5387,7 @@ mod tests {
             search_request,
             MetastoreServiceClient::from_mock(mock_metastore),
             &cluster_client,
+            None,
         )
         .await
         .unwrap_err();
