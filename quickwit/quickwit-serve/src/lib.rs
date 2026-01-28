@@ -87,7 +87,7 @@ use quickwit_ingest::{
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
-use quickwit_lambda::AwsLambdaInvoker;
+use quickwit_lambda::{AwsLambdaInvoker, LambdaDeployer};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
@@ -1023,6 +1023,19 @@ async fn setup_searcher(
     let lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>> =
         if node_config.searcher_config.lambda.enabled {
             info!("initializing AWS Lambda invoker for leaf search");
+
+            // Auto-deploy Lambda function if configured
+            if node_config.searcher_config.lambda.auto_deploy {
+                info!("auto-deploying Lambda function");
+                let deployer = LambdaDeployer::new()
+                    .await
+                    .context("failed to create Lambda deployer")?;
+                deployer
+                    .deploy(&node_config.searcher_config.lambda)
+                    .await
+                    .context("failed to deploy Lambda function")?;
+            }
+
             let invoker = AwsLambdaInvoker::new(&node_config.searcher_config.lambda)
                 .await
                 .context("failed to initialize AWS Lambda invoker")?;

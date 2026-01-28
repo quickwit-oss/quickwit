@@ -34,6 +34,12 @@ pub enum LambdaError {
     Configuration(String),
     /// Internal error.
     Internal(String),
+    /// Resource conflict (e.g., function already exists during concurrent create).
+    ResourceConflict,
+    /// Error during Lambda function deployment.
+    Deployment(String),
+    /// Lambda function not found.
+    NotFound(String),
 }
 
 impl fmt::Display for LambdaError {
@@ -45,6 +51,9 @@ impl fmt::Display for LambdaError {
             LambdaError::FunctionError(msg) => write!(f, "Lambda function error: {}", msg),
             LambdaError::Configuration(msg) => write!(f, "Configuration error: {}", msg),
             LambdaError::Internal(msg) => write!(f, "Internal error: {}", msg),
+            LambdaError::ResourceConflict => write!(f, "Resource conflict: function already exists"),
+            LambdaError::Deployment(msg) => write!(f, "Deployment error: {}", msg),
+            LambdaError::NotFound(name) => write!(f, "Lambda function not found: {}", name),
         }
     }
 }

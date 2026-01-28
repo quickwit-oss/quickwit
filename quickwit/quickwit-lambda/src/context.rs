@@ -30,10 +30,7 @@ pub struct LambdaSearcherContext {
 
 impl LambdaSearcherContext {
     pub async fn new(config: LambdaSearcherConfig) -> LambdaResult<Self> {
-        info!(
-            memory_mb = config.memory_mb,
-            "Initializing Lambda searcher context"
-        );
+        info!("Initializing Lambda searcher context");
 
         let searcher_config = create_searcher_config(&config);
         let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));

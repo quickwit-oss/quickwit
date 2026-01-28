@@ -23,6 +23,8 @@ mod collector;
 mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
+
+/// Leaf search operations.
 pub mod leaf;
 mod leaf_cache;
 mod list_fields;

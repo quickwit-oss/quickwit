@@ -17,15 +17,18 @@
 //! This crate provides:
 //! - A Lambda handler that executes leaf search requests
 //! - An AWS Lambda implementation of the `RemoteFunctionInvoker` trait
+//! - Auto-deployment functionality for Lambda functions
 
 mod config;
 mod context;
+mod deployer;
 mod error;
 mod handler;
 mod invoker;
 
 pub use config::{LambdaConfig, LambdaSearcherConfig};
 pub use context::LambdaSearcherContext;
+pub use deployer::LambdaDeployer;
 pub use error::{LambdaError, LambdaResult};
 pub use handler::{LeafSearchPayload, LeafSearchResponsePayload, handle_leaf_search};
 pub use invoker::AwsLambdaInvoker;
