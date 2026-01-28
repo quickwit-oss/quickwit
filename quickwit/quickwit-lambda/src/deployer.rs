@@ -34,7 +34,7 @@ use aws_sdk_lambda::types::{Architecture, Environment, FunctionCode, Runtime};
 #[cfg(feature = "auto-deploy")]
 use tracing::{debug, info, warn};
 
-use crate::config::LambdaConfig;
+use crate::config::LambdaDeployConfig;
 use crate::error::{LambdaError, LambdaResult};
 
 /// Embedded Lambda binary (arm64, compressed).
@@ -78,20 +78,24 @@ impl LambdaDeployer {
     /// Safe for concurrent calls from multiple Quickwit nodes - CreateFunction is idempotent.
     /// Returns the function ARN.
     #[cfg(feature = "auto-deploy")]
-    pub async fn deploy(&self, config: &LambdaConfig) -> LambdaResult<String> {
-        let function_name = &config.function_name;
-        let role_arn = config.execution_role_arn.as_ref().ok_or_else(|| {
-            LambdaError::Configuration("execution_role_arn required for auto_deploy".into())
-        })?;
+    pub async fn deploy(
+        &self,
+        function_name: &str,
+        deploy_config: &LambdaDeployConfig,
+    ) -> LambdaResult<String> {
+        let role_arn = &deploy_config.execution_role_arn;
 
         match self.get_function(function_name).await {
             Ok(existing) => {
-                self.update_function_if_needed(function_name, &existing, config)
+                self.update_function_if_needed(function_name, &existing, deploy_config)
                     .await
             }
             Err(LambdaError::NotFound(_)) => {
                 // Function doesn't exist, try to create it
-                match self.create_function(function_name, role_arn, config).await {
+                match self
+                    .create_function(function_name, role_arn, deploy_config)
+                    .await
+                {
                     Ok(arn) => Ok(arn),
                     Err(LambdaError::ResourceConflict) => {
                         // Another node created the function concurrently, update instead
@@ -100,7 +104,7 @@ impl LambdaDeployer {
                             "function was created concurrently by another node, updating instead"
                         );
                         let existing = self.get_function(function_name).await?;
-                        self.update_function_if_needed(function_name, &existing, config)
+                        self.update_function_if_needed(function_name, &existing, deploy_config)
                             .await
                     }
                     Err(e) => Err(e),
@@ -112,7 +116,11 @@ impl LambdaDeployer {
 
     /// Deploy is a no-op when auto-deploy feature is not enabled.
     #[cfg(not(feature = "auto-deploy"))]
-    pub async fn deploy(&self, _config: &LambdaConfig) -> LambdaResult<String> {
+    pub async fn deploy(
+        &self,
+        _function_name: &str,
+        _deploy_config: &LambdaDeployConfig,
+    ) -> LambdaResult<String> {
         Err(LambdaError::Configuration(
             "auto-deploy feature is not enabled at compile time".into(),
         ))
@@ -128,7 +136,7 @@ impl LambdaDeployer {
         &self,
         name: &str,
         role: &str,
-        config: &LambdaConfig,
+        config: &LambdaDeployConfig,
     ) -> LambdaResult<String> {
         info!(
             function_name = %name,
@@ -196,7 +204,7 @@ impl LambdaDeployer {
         &self,
         name: &str,
         existing: &GetFunctionOutput,
-        config: &LambdaConfig,
+        config: &LambdaDeployConfig,
     ) -> LambdaResult<String> {
         let function_arn = existing
             .configuration()

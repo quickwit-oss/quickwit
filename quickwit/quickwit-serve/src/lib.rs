@@ -1021,22 +1021,22 @@ async fn setup_searcher(
 
     // Initialize Lambda invoker if enabled
     let lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>> =
-        if node_config.searcher_config.lambda.enabled {
+        if let Some(lambda_config) = &node_config.searcher_config.lambda {
             info!("initializing AWS Lambda invoker for leaf search");
 
             // Auto-deploy Lambda function if configured
-            if node_config.searcher_config.lambda.auto_deploy {
+            if let Some(deploy_config) = &lambda_config.auto_deploy {
                 info!("auto-deploying Lambda function");
                 let deployer = LambdaDeployer::new()
                     .await
                     .context("failed to create Lambda deployer")?;
                 deployer
-                    .deploy(&node_config.searcher_config.lambda)
+                    .deploy(&lambda_config.function_name, deploy_config)
                     .await
                     .context("failed to deploy Lambda function")?;
             }
 
-            let invoker = AwsLambdaInvoker::new(&node_config.searcher_config.lambda)
+            let invoker = AwsLambdaInvoker::new(lambda_config)
                 .await
                 .context("failed to initialize AWS Lambda invoker")?;
 

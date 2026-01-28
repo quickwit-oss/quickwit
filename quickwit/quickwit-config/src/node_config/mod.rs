@@ -301,17 +301,15 @@ pub struct SearcherConfig {
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
     /// Lambda configuration for serverless leaf search execution.
+    /// If set, enables Lambda execution for leaf search.
     #[serde(default)]
-    pub lambda: LambdaConfig,
+    pub lambda: Option<LambdaConfig>,
 }
 
 /// Configuration for AWS Lambda leaf search execution.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct LambdaConfig {
-    /// Enable Lambda execution mode for leaf search.
-    #[serde(default)]
-    pub enabled: bool,
     /// AWS Lambda function name or ARN.
     #[serde(default = "LambdaConfig::default_function_name")]
     pub function_name: String,
@@ -321,31 +319,52 @@ pub struct LambdaConfig {
     /// Maximum number of splits per Lambda invocation.
     #[serde(default = "LambdaConfig::default_max_splits_per_invocation")]
     pub max_splits_per_invocation: usize,
-    /// Timeout for Lambda invocations in seconds.
-    #[serde(default = "LambdaConfig::default_invocation_timeout_secs")]
-    pub invocation_timeout_secs: u64,
-    /// Enable automatic Lambda function deployment at startup.
+    /// Auto-deploy configuration. If set, Quickwit will automatically deploy
+    /// the Lambda function at startup.
     #[serde(default)]
-    pub auto_deploy: bool,
-    /// IAM execution role ARN for the Lambda function (required if auto_deploy=true).
-    #[serde(default)]
-    pub execution_role_arn: Option<String>,
-    /// Memory size for the Lambda function in MB (default: 1024).
-    #[serde(default = "LambdaConfig::default_memory_size_mb")]
+    pub auto_deploy: Option<LambdaDeployConfig>,
+}
+
+/// Configuration for automatic Lambda function deployment.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct LambdaDeployConfig {
+    /// IAM execution role ARN for the Lambda function.
+    pub execution_role_arn: String,
+    /// Memory size for the Lambda function in MB.
+    #[serde(default = "LambdaDeployConfig::default_memory_size_mb")]
     pub memory_size_mb: u32,
+    /// Timeout for Lambda invocations in seconds.
+    #[serde(default = "LambdaDeployConfig::default_invocation_timeout_secs")]
+    pub invocation_timeout_secs: u64,
+}
+
+impl Default for LambdaDeployConfig {
+    fn default() -> Self {
+        Self {
+            execution_role_arn: String::new(),
+            memory_size_mb: Self::default_memory_size_mb(),
+            invocation_timeout_secs: Self::default_invocation_timeout_secs(),
+        }
+    }
+}
+
+impl LambdaDeployConfig {
+    fn default_memory_size_mb() -> u32 {
+        1024
+    }
+    fn default_invocation_timeout_secs() -> u64 {
+        30
+    }
 }
 
 impl Default for LambdaConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
             function_name: Self::default_function_name(),
             function_qualifier: None,
             max_splits_per_invocation: Self::default_max_splits_per_invocation(),
-            invocation_timeout_secs: Self::default_invocation_timeout_secs(),
-            auto_deploy: false,
-            execution_role_arn: None,
-            memory_size_mb: Self::default_memory_size_mb(),
+            auto_deploy: None,
         }
     }
 }
@@ -356,12 +375,6 @@ impl LambdaConfig {
     }
     fn default_max_splits_per_invocation() -> usize {
         10
-    }
-    fn default_invocation_timeout_secs() -> u64 {
-        30
-    }
-    fn default_memory_size_mb() -> u32 {
-        1024
     }
 }
 
@@ -498,7 +511,7 @@ impl Default for SearcherConfig {
             storage_timeout_policy: None,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::gb(1),
-            lambda: LambdaConfig::default(),
+            lambda: None,
         }
     }
 }
