@@ -92,8 +92,8 @@ fn create_lambda_zip(binary_path: &std::path::Path, zip_path: &std::path::Path) 
     use std::fs::File;
     use std::io::Read;
 
-    use zip::write::FileOptions;
     use zip::ZipWriter;
+    use zip::write::FileOptions;
 
     let mut binary_data = Vec::new();
     File::open(binary_path)
@@ -127,8 +127,8 @@ fn create_lambda_zip(binary_path: &std::path::Path, zip_path: &std::path::Path) 
 fn create_placeholder_zip(zip_path: &std::path::Path) {
     use std::fs::File;
 
-    use zip::write::FileOptions;
     use zip::ZipWriter;
+    use zip::write::FileOptions;
 
     let zip_file = File::create(zip_path).expect("Failed to create placeholder zip file");
     let mut zip = ZipWriter::new(zip_file);

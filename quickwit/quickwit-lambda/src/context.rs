@@ -30,7 +30,7 @@ pub struct LambdaSearcherContext {
 impl LambdaSearcherContext {
     /// Create a new Lambda searcher context from environment variables.
     pub fn try_from_env() -> anyhow::Result<Self> {
-        info!("Initializing Lambda searcher context");
+        info!("initializing Lambda searcher context");
 
         let config = LambdaSearcherConfig::try_from_env()?;
         let searcher_config = create_searcher_config(&config);
