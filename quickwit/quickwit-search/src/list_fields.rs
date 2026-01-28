@@ -25,7 +25,6 @@ use quickwit_common::rate_limited_warn;
 use quickwit_common::shared_consts::{FIELD_PRESENCE_FIELD_NAME, SPLIT_FIELDS_FILE_NAME};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
-use quickwit_doc_mapper::DocMapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
@@ -35,10 +34,9 @@ use quickwit_proto::search::{
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_query::query_ast::QueryAst;
-use quickwit_storage::{ByteRangeCache, Storage};
-use tantivy::ReloadPolicy;
+use quickwit_storage::Storage;
 
-use crate::leaf::{open_index_with_caches, open_split_bundle, warmup};
+use crate::leaf::open_split_bundle;
 use crate::search_job_placer::group_jobs_by_index_id;
 use crate::service::SearcherContext;
 use crate::{
@@ -314,75 +312,15 @@ impl FieldPattern {
     }
 }
 
-/// Checks if any documents in the split match the query.
-/// Returns true if at least one document matches, false otherwise.
-///
-/// This is a lightweight query execution that only counts matches without
-/// materializing documents, used for split-level filtering in field capabilities.
-async fn split_matches_query(
-    searcher_context: &SearcherContext,
-    index_storage: Arc<dyn Storage>,
-    split: &SplitIdAndFooterOffsets,
-    doc_mapper: &DocMapper,
-    query_ast: &QueryAst,
-) -> crate::Result<bool> {
-    let byte_range_cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
-    // Open split with caches
-    let (index, _hot_directory) = open_index_with_caches(
-        searcher_context,
-        index_storage,
-        split,
-        Some(doc_mapper.tokenizer_manager()),
-        Some(byte_range_cache),
-    )
-    .await?;
-
-    // Create searcher with manual reload policy
-    let reader = index
-        .reader_builder()
-        .reload_policy(ReloadPolicy::Manual)
-        .try_into()
-        .map_err(|err| SearchError::Internal(format!("failed to create index reader: {err}")))?;
-    let searcher = reader.searcher();
-
-    // Build query from QueryAst
-    let (query, mut warmup_info) = doc_mapper
-        .query(searcher.schema().clone(), query_ast.clone(), false, None)
-        .map_err(|err| SearchError::InvalidQuery(format!("failed to build query: {err}")))?;
-
-    // Warmup to ensure all bytes are fetched asynchronously before sync search
-    warmup_info.simplify();
-    warmup(&searcher, &warmup_info)
-        .await
-        .map_err(|err| SearchError::Internal(format!("failed to warmup query: {err}")))?;
-
-    // Check if any docs match (lightweight count)
-    let count = search_thread_pool()
-        .run_cpu_intensive(move || {
-            query
-                .count(&searcher)
-                .map_err(|err| SearchError::Internal(format!("failed to count matches: {err}")))
-        })
-        .await
-        .map_err(|_| SearchError::Internal("split matches query panicked".to_string()))??;
-
-    Ok(count > 0)
-}
-
 /// `leaf` step of list fields.
 ///
-/// Returns field metadata from the assigned splits. When `query_ast` and `doc_mapper_str`
-/// are provided, splits are filtered to only include those containing at least one
-/// matching document (lightweight query execution for split-level filtering).
+/// Returns field metadata from the assigned splits.
 pub async fn leaf_list_fields(
     index_id: IndexId,
     index_storage: Arc<dyn Storage>,
     searcher_context: &SearcherContext,
     split_ids: &[SplitIdAndFooterOffsets],
     field_patterns_str: &[String],
-    query_ast_str: Option<&str>,
-    doc_mapper_str: Option<&str>,
 ) -> crate::Result<ListFieldsResponse> {
     let field_patterns: Vec<FieldPattern> = field_patterns_str
         .iter()
@@ -394,47 +332,8 @@ pub async fn leaf_list_fields(
         return Ok(ListFieldsResponse { fields: Vec::new() });
     }
 
-    // Filter splits based on query if both query_ast and doc_mapper are provided
-    let matching_splits: Vec<&SplitIdAndFooterOffsets> = match (query_ast_str, doc_mapper_str) {
-        (Some(ast_json), Some(mapper_json)) => {
-            let query_ast: QueryAst = serde_json::from_str(ast_json)
-                .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
-            let doc_mapper = crate::service::deserialize_doc_mapper(mapper_json)?;
-
-            let split_match_tasks: Vec<_> = split_ids
-                .iter()
-                .map(|split| {
-                    let index_storage = index_storage.clone();
-                    async {
-                        split_matches_query(
-                            searcher_context,
-                            index_storage,
-                            split,
-                            &doc_mapper,
-                            &query_ast,
-                        )
-                        .await
-                    }
-                })
-                .collect();
-
-            let matches_vec = try_join_all(split_match_tasks).await?;
-            split_ids
-                .iter()
-                .zip(matches_vec)
-                .filter_map(|(split, matches)| matches.then_some(split))
-                .collect()
-        }
-        _ => split_ids.iter().collect(),
-    };
-
-    // If no splits match, return empty response
-    if matching_splits.is_empty() {
-        return Ok(ListFieldsResponse { fields: Vec::new() });
-    }
-
-    // Get fields from matching splits
-    let single_split_list_fields_futures: Vec<_> = matching_splits
+    // Get fields from all splits
+    let single_split_list_fields_futures: Vec<_> = split_ids
         .iter()
         .map(|split_id| {
             get_fields_from_split(
@@ -494,8 +393,6 @@ pub struct IndexMetasForLeafSearch {
     pub index_id: IndexId,
     /// Index URI.
     pub index_uri: Uri,
-    /// Serialized DocMapper for query execution (only set when query_ast is provided).
-    pub doc_mapper_str: Option<String>,
 }
 
 /// Performs a distributed list fields request.
@@ -514,37 +411,26 @@ pub async fn root_list_fields(
         return Ok(ListFieldsResponse { fields: Vec::new() });
     }
 
-    // Build index metadata map, including doc_mapper if query_ast is provided
-    let has_query_ast = list_fields_req.query_ast.is_some();
+    // Build index metadata map and extract timestamp field for time range refinement
     let mut index_uid_to_index_meta: HashMap<IndexUid, IndexMetasForLeafSearch> = HashMap::new();
     let mut index_uids: Vec<IndexUid> = Vec::new();
     let mut timestamp_field_opt: Option<String> = None;
 
     for index_metadata in indexes_metadata {
-        // Only build doc_mapper when query_ast is provided (needed for split-level filtering)
-        let doc_mapper_str = if has_query_ast {
-            let doc_mapper = build_doc_mapper(
+        // Extract timestamp field for time range refinement (use first index's field)
+        if timestamp_field_opt.is_none()
+            && list_fields_req.query_ast.is_some()
+            && let Ok(doc_mapper) = build_doc_mapper(
                 &index_metadata.index_config.doc_mapping,
                 &index_metadata.index_config.search_settings,
             )
-            .map_err(|err| SearchError::Internal(format!("failed to build doc mapper: {err}")))?;
-
-            // Capture timestamp field for time range extraction (use first index's field)
-            if timestamp_field_opt.is_none() {
-                timestamp_field_opt = doc_mapper.timestamp_field_name().map(|s| s.to_string());
-            }
-
-            Some(serde_json::to_string(&doc_mapper).map_err(|err| {
-                SearchError::Internal(format!("failed to serialize doc mapper: {err}"))
-            })?)
-        } else {
-            None
-        };
+        {
+            timestamp_field_opt = doc_mapper.timestamp_field_name().map(|s| s.to_string());
+        }
 
         let index_metadata_for_leaf_search = IndexMetasForLeafSearch {
             index_uri: index_metadata.index_uri().clone(),
             index_id: index_metadata.index_config.index_id.to_string(),
-            doc_mapper_str,
         };
 
         index_uids.push(index_metadata.index_uid.clone());
@@ -637,8 +523,6 @@ pub fn jobs_to_leaf_requests(
             index_uri: index_meta.index_uri.to_string(),
             fields: search_request_for_leaf.fields.clone(),
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
-            query_ast: search_request_for_leaf.query_ast.clone(),
-            doc_mapper: index_meta.doc_mapper_str.clone(),
         };
         leaf_search_requests.push(leaf_search_request);
         Ok(())
