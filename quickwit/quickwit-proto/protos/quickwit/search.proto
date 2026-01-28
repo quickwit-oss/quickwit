@@ -145,14 +145,6 @@ message LeafListFieldsRequest {
   // Optional limit query to a list of fields
   // Wildcard expressions are supported.
   repeated string fields = 4;
-
-  // JSON-serialized QueryAst for index_filter support.
-  // When provided, only splits containing documents matching this query are included.
-  optional string query_ast = 5;
-
-  // JSON-serialized DocMapper for query execution.
-  // Required when query_ast is provided to build and execute the query.
-  optional string doc_mapper = 6;
 }
 
 message ListFieldsResponse {
