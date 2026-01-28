@@ -27,8 +27,6 @@ async fn main() -> Result<(), Error> {
         .json()
         .init();
 
-    info!("starting Quickwit Lambda leaf search handler");
-
     // Pre-initialize context on cold start
     let context = LambdaSearcherContext::get_or_init().await;
 
