@@ -336,9 +336,6 @@ pub struct LambdaConfig {
     /// Memory size for the Lambda function in MB (default: 1024).
     #[serde(default = "LambdaConfig::default_memory_size_mb")]
     pub memory_size_mb: u32,
-    /// Timeout for the Lambda function in seconds (default: 30).
-    #[serde(default = "LambdaConfig::default_timeout_secs")]
-    pub timeout_secs: u32,
 }
 
 impl Default for LambdaConfig {
@@ -353,7 +350,6 @@ impl Default for LambdaConfig {
             auto_deploy: false,
             execution_role_arn: None,
             memory_size_mb: Self::default_memory_size_mb(),
-            timeout_secs: Self::default_timeout_secs(),
         }
     }
 }
@@ -373,9 +369,6 @@ impl LambdaConfig {
     }
     fn default_memory_size_mb() -> u32 {
         1024
-    }
-    fn default_timeout_secs() -> u32 {
-        30
     }
 }
 
