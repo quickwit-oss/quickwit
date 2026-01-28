@@ -255,7 +255,7 @@ impl NodeConfigBuilder {
         self.grpc_config.validate()?;
 
         self.cloudprem_config.datadog_config = self.cloudprem_config.datadog_config.resolve();
-        self.cloudprem_config.validate()?;
+        self.cloudprem_config.validate(&enabled_services)?;
 
         let gossip_listen_port = self
             .gossip_listen_port

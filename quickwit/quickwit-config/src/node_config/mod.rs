@@ -613,10 +613,11 @@ impl WebsocketConfig {
         }
     }
 
-    fn validate(&self, enable_reverse_connection: bool) -> anyhow::Result<()> {
+    fn validate(&self, enable_reverse_connection: bool, enabled_services: &HashSet<QuickwitService>) -> anyhow::Result<()> {
         ensure!(self.site.is_some(), "Datadog site should be set");
 
-        if enable_reverse_connection {
+        let need_api_key = enable_reverse_connection && enabled_services.contains(&QuickwitService::Searcher);
+        if need_api_key {
             ensure!(
                 self.dd_api_key.is_some(),
                 "reverse connection is enabled, but Datadog API key is not set"
@@ -681,10 +682,10 @@ pub struct CloudPremConfig {
 }
 
 impl CloudPremConfig {
-    pub fn validate(&self) -> anyhow::Result<()> {
+    pub fn validate(&self, enabled_services: &HashSet<QuickwitService>) -> anyhow::Result<()> {
         self.grpc_config.validate()?;
         self.datadog_config
-            .validate(self.enable_reverse_connection)?;
+            .validate(self.enable_reverse_connection, enabled_services)?;
 
         Ok(())
     }
