@@ -102,11 +102,11 @@ colored = "3.0"
 console-subscriber = "0.5"
 criterion = { version = "0.8", features = ["async_tokio"] }
 cron = "0.15"
-dialoguer = "0.12"
+dialoguer = { version = "0.12", default-features = false }
 dotenvy = "0.15"
 dyn-clone = "1.0"
 enum-iterator = "2.3"
-env_logger = "0.11"
+env_logger = { version = "0.11", default-features = false, features = ["auto-color"] }
 fail = "0.5"
 flate2 = "1.1"
 flume = "0.12"
@@ -131,7 +131,13 @@ http-serde = "2.1"
 humantime = "2.3"
 hyper = { version = "1.8", features = ["client", "http1", "http2", "server"] }
 hyper-rustls = "0.27"
-hyper-util = { version = "0.1", features = ["full"] }
+hyper-util = { version = "0.1", default-features = false, features = [
+  "client-legacy",
+  "server-auto",
+  "server-graceful",
+  "service",
+  "tokio",
+] }
 indexmap = { version = "2.12", features = ["serde"] }
 indicatif = "0.18"
 itertools = "0.14"
@@ -176,7 +182,7 @@ pprof = { version = "0.15", features = ["flamegraph"] }
 predicates = "3"
 prettyplease = "0.2"
 proc-macro2 = "1.0"
-prometheus = { version = "0.14", features = ["process"] }
+prometheus = { version = "0.14", default-features = false, features = ["process"] }
 proptest = "1"
 prost = { version = "0.14", default-features = false, features = [
   "derive",
@@ -247,7 +253,10 @@ tokio = { version = "1.48", features = ["full"] }
 tokio-metrics = { version = "0.4", features = ["rt"] }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-util = { version = "0.7", features = ["full"] }
+tokio-util = { version = "0.7", default-features = false, features = [
+  "compat",
+  "io-util",
+] }
 toml = "0.9"
 tonic = { version = "0.14", features = [
   "_tls-any",
@@ -299,7 +308,7 @@ vrl = { version = "0.29", default-features = false, features = [
 warp = { version = "0.4", features = ["server", "test"] }
 whichlang = "0.1"
 wiremock = "0.6"
-zstd = "0.13"
+zstd = { version = "0.13", default-features = false }
 
 aws-config = "1.8"
 aws-credential-types = { version = "1.2", features = ["hardcoded-credentials"] }
