@@ -14,8 +14,6 @@
 
 use anyhow::Context as _;
 use bytesize::ByteSize;
-// Re-export LambdaConfig and LambdaDeployConfig from quickwit-config
-pub use quickwit_config::{LambdaConfig, LambdaDeployConfig};
 
 /// Configuration for the Lambda handler's SearcherContext.
 /// These settings are optimized for Lambda's memory constraints.
@@ -23,33 +21,30 @@ pub use quickwit_config::{LambdaConfig, LambdaDeployConfig};
 pub struct LambdaSearcherConfig {
     /// Maximum concurrent split searches within a single Lambda invocation.
     pub max_concurrent_split_searches: usize,
-
     /// Warmup memory budget.
     pub warmup_memory_budget: ByteSize,
 }
 
 impl LambdaSearcherConfig {
     pub fn try_from_env() -> anyhow::Result<LambdaSearcherConfig> {
-        let memory_mb: usize =
+        let lambda_memory_mib: u64 =
             quickwit_common::get_from_env_opt("AWS_LAMBDA_FUNCTION_MEMORY_SIZE", false)
                 .context("could not get aws lambda function memory size from ENV")?;
-        Ok(LambdaSearcherConfig::for_memory(memory_mb))
+        let lambda_memory = ByteSize::mib(lambda_memory_mib);
+        Self::for_memory(lambda_memory)
     }
     /// Create a Lambda-optimized searcher config based on the allocated memory.
-    pub fn for_memory(memory_mb: usize) -> Self {
+    pub fn for_memory(lambda_memory: ByteSize) -> anyhow::Result<Self> {
         // Warmup budget is about half of memory
-        let warmup_memory_budget = ByteSize::mb((memory_mb / 2) as u64);
-
-        Self {
+        anyhow::ensure!(
+            lambda_memory >= ByteSize::gib(1u64),
+            "lambda memory must be at least 500MB"
+        );
+        let warmup_memory_budget =
+            ByteSize::b(lambda_memory.as_u64() - ByteSize::mib(500).as_u64());
+        Ok(Self {
             max_concurrent_split_searches: 20,
             warmup_memory_budget,
-        }
+        })
     }
 }
-
-// impl Default for LambdaSearcherConfig {
-//     fn default() -> Self {
-//         // Default to 1024 MB Lambda
-//         Self::for_memory(1024)
-//     }
-// }

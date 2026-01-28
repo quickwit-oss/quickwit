@@ -7386,6 +7386,7 @@ dependencies = [
  "bytesize",
  "lambda_runtime",
  "mockall",
+ "openssl",
  "prost 0.14.1",
  "quickwit-aws",
  "quickwit-common",

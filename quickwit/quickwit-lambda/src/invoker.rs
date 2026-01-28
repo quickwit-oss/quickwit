@@ -12,29 +12,42 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use aws_sdk_lambda::Client as LambdaClient;
 use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::InvocationType;
 use base64::prelude::*;
 use prost::Message;
+use quickwit_config::LambdaConfig;
 use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
 use quickwit_search::{RemoteFunctionInvoker, SearchError};
 use tracing::{debug, instrument};
 
-use crate::config::LambdaConfig;
 use crate::error::{LambdaError, LambdaResult};
 use crate::handler::{LeafSearchPayload, LeafSearchResponsePayload};
 
+/// Create a Lambda invoker for remote leaf search execution.
+///
+/// This creates and validates an AWS Lambda invoker that implements `RemoteFunctionInvoker`.
+pub async fn create_lambda_invoker(
+    config: &LambdaConfig,
+) -> LambdaResult<Arc<dyn RemoteFunctionInvoker>> {
+    let invoker = AwsLambdaInvoker::new(config).await?;
+    invoker.validate().await?;
+    Ok(Arc::new(invoker))
+}
+
 /// AWS Lambda implementation of RemoteFunctionInvoker.
-pub struct AwsLambdaInvoker {
+struct AwsLambdaInvoker {
     client: LambdaClient,
     function_name: String,
 }
 
 impl AwsLambdaInvoker {
     /// Create a new AWS Lambda invoker with the given configuration.
-    pub async fn new(config: &LambdaConfig) -> LambdaResult<Self> {
+    async fn new(config: &LambdaConfig) -> LambdaResult<Self> {
         let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = LambdaClient::new(&aws_config);
 
@@ -45,10 +58,8 @@ impl AwsLambdaInvoker {
     }
 
     /// Create a new AWS Lambda invoker with a custom client.
-    pub fn with_client(
-        client: LambdaClient,
-        function_name: String,
-    ) -> Self {
+    #[cfg(test)]
+    fn with_client(client: LambdaClient, function_name: String) -> Self {
         Self {
             client,
             function_name,
@@ -57,17 +68,12 @@ impl AwsLambdaInvoker {
 
     /// Validate that the Lambda function exists and is invocable.
     /// Uses DryRun invocation type - validates without executing.
-    pub async fn validate(&self) -> LambdaResult<()> {
-        let mut request = self
+    async fn validate(&self) -> LambdaResult<()> {
+        let request = self
             .client
             .invoke()
             .function_name(&self.function_name)
             .invocation_type(InvocationType::DryRun);
-
-        if let Some(qualifier) = &self.qualifier {
-            request = request.qualifier(qualifier);
-        }
-
         request.send().await.map_err(|e| {
             LambdaError::Configuration(format!(
                 "Failed to validate Lambda function '{}': {}",
@@ -101,17 +107,12 @@ impl RemoteFunctionInvoker for AwsLambdaInvoker {
         );
 
         // Invoke Lambda synchronously (RequestResponse)
-        let mut invoke_builder = self
+        let invoke_builder = self
             .client
             .invoke()
             .function_name(&self.function_name)
             .invocation_type(InvocationType::RequestResponse)
             .payload(Blob::new(payload_json));
-
-        if let Some(qualifier) = &self.qualifier {
-            invoke_builder = invoke_builder.qualifier(qualifier);
-        }
-
         let response = invoke_builder
             .send()
             .await

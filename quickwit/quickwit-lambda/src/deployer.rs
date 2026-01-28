@@ -28,7 +28,6 @@ use aws_sdk_lambda::types::{Architecture, Environment, FunctionCode, Runtime};
 use quickwit_config::LambdaDeployConfig;
 use tracing::{debug, info, warn};
 
-use crate::config::LambdaDeployConfig;
 use crate::error::{LambdaError, LambdaResult};
 
 /// Embedded Lambda binary (arm64, compressed).
@@ -101,8 +100,6 @@ impl LambdaDeployer {
             Err(e) => Err(e),
         }
     }
-
-
 
     /// Create the Lambda function.
     ///
@@ -324,7 +321,6 @@ impl LambdaDeployer {
     }
 
     /// Get function details from AWS.
-    #[cfg(feature = "auto-deploy")]
     async fn get_function(&self, name: &str) -> LambdaResult<GetFunctionOutput> {
         self.client
             .get_function()
