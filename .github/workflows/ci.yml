@@ -95,11 +95,11 @@ jobs:
           tool: cargo-nextest
       - name: cargo nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo nextest run --release --features=postgres --retries 1
+        run: cargo nextest run --features=postgres --retries 1
         working-directory: ./quickwit
       - name: cargo build
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo build --release --features=postgres --bin quickwit
+        run: cargo build --features=postgres --bin quickwit
         working-directory: ./quickwit
       - name: Install python packages
         if: always() && steps.modified.outputs.rust_src == 'true'
