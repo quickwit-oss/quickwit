@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use bytesize::ByteSize;
-
 // Re-export LambdaConfig from quickwit-config
 pub use quickwit_config::LambdaConfig;
 

@@ -14,8 +14,8 @@
 
 //! AWS Lambda binary entry point for Quickwit leaf search.
 
-use lambda_runtime::{service_fn, Error, LambdaEvent};
-use quickwit_lambda::{handle_leaf_search, LambdaSearcherContext, LeafSearchPayload};
+use lambda_runtime::{Error, LambdaEvent, service_fn};
+use quickwit_lambda::{LambdaSearcherContext, LeafSearchPayload, handle_leaf_search};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -27,19 +27,21 @@ async fn main() -> Result<(), Error> {
         .json()
         .init();
 
-    info!("Starting Quickwit Lambda leaf search handler");
+    info!("starting Quickwit Lambda leaf search handler");
 
     // Pre-initialize context on cold start
     let context = LambdaSearcherContext::get_or_init().await;
 
-    info!("Lambda context initialized, starting handler loop");
+    info!("lambda context initialized, starting handler loop");
 
     // Run the Lambda handler
-    lambda_runtime::run(service_fn(|event: LambdaEvent<LeafSearchPayload>| async move {
-        let (payload, _lambda_ctx) = event.into_parts();
-        handle_leaf_search(payload, context)
-            .await
-            .map_err(|e| lambda_runtime::Error::from(e.to_string()))
-    }))
+    lambda_runtime::run(service_fn(
+        |event: LambdaEvent<LeafSearchPayload>| async move {
+            let (payload, _lambda_ctx) = event.into_parts();
+            handle_leaf_search(payload, context)
+                .await
+                .map_err(|e| lambda_runtime::Error::from(e.to_string()))
+        },
+    ))
     .await
 }
