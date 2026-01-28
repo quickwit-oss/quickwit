@@ -30,7 +30,6 @@ use crate::handler::{LeafSearchPayload, LeafSearchResponsePayload};
 pub struct AwsLambdaInvoker {
     client: LambdaClient,
     function_name: String,
-    qualifier: Option<String>,
 }
 
 impl AwsLambdaInvoker {
@@ -42,7 +41,6 @@ impl AwsLambdaInvoker {
         Ok(Self {
             client,
             function_name: config.function_name.clone(),
-            qualifier: config.function_qualifier.clone(),
         })
     }
 
@@ -50,12 +48,10 @@ impl AwsLambdaInvoker {
     pub fn with_client(
         client: LambdaClient,
         function_name: String,
-        qualifier: Option<String>,
     ) -> Self {
         Self {
             client,
             function_name,
-            qualifier,
         }
     }
 

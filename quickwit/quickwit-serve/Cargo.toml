@@ -110,6 +110,9 @@ pprof = [
 jemalloc-profiled = [
   "quickwit-common/jemalloc-profiled"
 ]
+lambda-auto-deploy = [
+  "quickwit-lambda/auto-deploy"
+]
 testsuite = []
 sqs-for-tests = [
   "quickwit-indexing/sqs",

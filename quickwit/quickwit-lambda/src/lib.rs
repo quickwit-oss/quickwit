@@ -28,7 +28,28 @@ mod invoker;
 
 pub use config::{LambdaConfig, LambdaSearcherConfig};
 pub use context::LambdaSearcherContext;
+
+#[cfg(feature = "auto-deploy")]
+mod deployer;
+#[cfg(feature = "auto-deploy")]
 pub use deployer::LambdaDeployer;
+
+#[cfg(feature = "auto-deploy")]
+mod deployer;
+#[cfg(feature = "auto-deploy")]
+pub use deployer::deploy;
+
 pub use error::{LambdaError, LambdaResult};
 pub use handler::{LeafSearchPayload, LeafSearchResponsePayload, handle_leaf_search};
 pub use invoker::AwsLambdaInvoker;
+
+/// Deploy is a no-op when auto-deploy feature is not enabled.
+#[cfg(not(feature = "auto-deploy"))]
+pub async fn deploy(
+    _function_name: &str,
+    _deploy_config: &quickwit_config::LambdaDeployConfig,
+) -> LambdaResult<String> {
+    Err(LambdaError::Configuration(
+        "auto-deploy feature is not enabled at compile time".into(),
+    ))
+}

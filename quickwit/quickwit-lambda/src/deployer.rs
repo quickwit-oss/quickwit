@@ -17,21 +17,15 @@
 //! This module provides functionality to automatically deploy or update
 //! the Lambda function used for leaf search operations.
 
-#[cfg(feature = "auto-deploy")]
 use std::collections::HashMap;
 
 use aws_sdk_lambda::Client as LambdaClient;
-#[cfg(feature = "auto-deploy")]
 use aws_sdk_lambda::error::SdkError;
-#[cfg(feature = "auto-deploy")]
 use aws_sdk_lambda::operation::create_function::CreateFunctionError;
-#[cfg(feature = "auto-deploy")]
 use aws_sdk_lambda::operation::get_function::GetFunctionOutput;
-#[cfg(feature = "auto-deploy")]
 use aws_sdk_lambda::primitives::Blob;
-#[cfg(feature = "auto-deploy")]
 use aws_sdk_lambda::types::{Architecture, Environment, FunctionCode, Runtime};
-#[cfg(feature = "auto-deploy")]
+use quickwit_config::LambdaDeployConfig;
 use tracing::{debug, info, warn};
 
 use crate::config::LambdaDeployConfig;
@@ -39,15 +33,12 @@ use crate::error::{LambdaError, LambdaResult};
 
 /// Embedded Lambda binary (arm64, compressed).
 /// This is included at compile time when the `auto-deploy` feature is enabled.
-#[cfg(feature = "auto-deploy")]
 const LAMBDA_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/lambda_bootstrap.zip"));
 
 /// Version tag key used to track deployed Quickwit version.
-#[cfg(feature = "auto-deploy")]
 const VERSION_TAG_KEY: &str = "quickwit_version";
 
 /// Description prefix for auto-deployed Lambda functions.
-#[cfg(feature = "auto-deploy")]
 const FUNCTION_DESCRIPTION: &str = "Quickwit Lambda leaf search handler";
 
 /// Lambda function deployer.
@@ -55,7 +46,6 @@ const FUNCTION_DESCRIPTION: &str = "Quickwit Lambda leaf search handler";
 /// Handles creating and updating Lambda functions for the auto-deploy feature.
 /// Safe for concurrent calls from multiple Quickwit nodes - CreateFunction is idempotent.
 pub struct LambdaDeployer {
-    #[allow(dead_code)]
     client: LambdaClient,
 }
 
@@ -68,7 +58,6 @@ impl LambdaDeployer {
     }
 
     /// Create a new Lambda deployer with a custom client.
-    #[allow(dead_code)]
     pub fn with_client(client: LambdaClient) -> Self {
         Self { client }
     }
@@ -77,7 +66,6 @@ impl LambdaDeployer {
     ///
     /// Safe for concurrent calls from multiple Quickwit nodes - CreateFunction is idempotent.
     /// Returns the function ARN.
-    #[cfg(feature = "auto-deploy")]
     pub async fn deploy(
         &self,
         function_name: &str,
@@ -114,24 +102,13 @@ impl LambdaDeployer {
         }
     }
 
-    /// Deploy is a no-op when auto-deploy feature is not enabled.
-    #[cfg(not(feature = "auto-deploy"))]
-    pub async fn deploy(
-        &self,
-        _function_name: &str,
-        _deploy_config: &LambdaDeployConfig,
-    ) -> LambdaResult<String> {
-        Err(LambdaError::Configuration(
-            "auto-deploy feature is not enabled at compile time".into(),
-        ))
-    }
+
 
     /// Create the Lambda function.
     ///
     /// Note: CreateFunction is idempotent - if the function already exists, AWS returns
     /// ResourceConflictException. Multiple Quickwit nodes starting simultaneously is safe;
     /// one will succeed and others will fall back to update_function.
-    #[cfg(feature = "auto-deploy")]
     async fn create_function(
         &self,
         name: &str,
@@ -199,7 +176,6 @@ impl LambdaDeployer {
     ///
     /// Compares the deployed version tag with the current Quickwit version
     /// and updates if they differ.
-    #[cfg(feature = "auto-deploy")]
     async fn update_function_if_needed(
         &self,
         name: &str,
@@ -278,7 +254,6 @@ impl LambdaDeployer {
     }
 
     /// Wait for function update to complete.
-    #[cfg(feature = "auto-deploy")]
     async fn wait_for_update_complete(&self, name: &str) -> LambdaResult<()> {
         // Poll until the function state is Active and LastUpdateStatus is Successful
         for _ in 0..60 {
@@ -319,7 +294,6 @@ impl LambdaDeployer {
     }
 
     /// Check if the function needs to be updated based on version tag.
-    #[cfg(feature = "auto-deploy")]
     fn needs_update(&self, existing: &GetFunctionOutput) -> bool {
         let current_version = env!("CARGO_PKG_VERSION");
 
@@ -370,7 +344,6 @@ impl LambdaDeployer {
     }
 
     /// Build environment variables for the Lambda function.
-    #[cfg(feature = "auto-deploy")]
     fn build_environment(&self) -> Environment {
         let mut env_vars = HashMap::new();
         // Set reasonable defaults for logging
@@ -381,7 +354,6 @@ impl LambdaDeployer {
     }
 
     /// Build tags for the Lambda function.
-    #[cfg(feature = "auto-deploy")]
     fn build_tags(&self) -> HashMap<String, String> {
         let mut tags = HashMap::new();
         tags.insert(
@@ -393,7 +365,17 @@ impl LambdaDeployer {
     }
 }
 
-#[cfg(all(test, feature = "auto-deploy"))]
+pub async fn deploy(
+    function_name: &str,
+    deploy_config: &LambdaDeployConfig,
+) -> LambdaResult<String> {
+    let lambda_deployer = LambdaDeployer::new().await?;
+    let lambda_arn = lambda_deployer.deploy(function_name, deploy_config).await?;
+    info!("successfully deployed lambda function `{}`", lambda_arn);
+    Ok(lambda_arn)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
