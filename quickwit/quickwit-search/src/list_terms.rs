@@ -61,7 +61,7 @@ pub async fn root_list_terms(
             errors: Vec::new(),
         });
     }
-
+    // for testing
     for index_metadata in indexes_metadata.iter() {
         let index_config = &index_metadata.index_config;
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
