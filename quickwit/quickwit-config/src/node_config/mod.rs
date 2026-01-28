@@ -317,9 +317,6 @@ pub struct LambdaConfig {
     /// AWS Lambda function name or ARN.
     #[serde(default = "LambdaConfig::default_function_name")]
     pub function_name: String,
-    /// Optional function qualifier (alias or version).
-    #[serde(default)]
-    pub function_qualifier: Option<String>,
     /// Maximum number of splits per Lambda invocation.
     #[serde(default = "LambdaConfig::default_max_splits_per_invocation")]
     pub max_splits_per_invocation: usize,
@@ -358,7 +355,6 @@ impl Default for LambdaConfig {
     fn default() -> Self {
         Self {
             function_name: Self::default_function_name(),
-            function_qualifier: None,
             max_splits_per_invocation: Self::default_max_splits_per_invocation(),
             auto_deploy: None,
         }

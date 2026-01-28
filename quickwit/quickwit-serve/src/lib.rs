@@ -1027,13 +1027,8 @@ async fn setup_searcher(
             // Auto-deploy Lambda function if configured
             if let Some(deploy_config) = &lambda_config.auto_deploy {
                 info!("auto-deploying Lambda function");
-                let deployer = LambdaDeployer::new()
-                    .await
-                    .context("failed to create Lambda deployer")?;
-                deployer
-                    .deploy(&lambda_config.function_name, deploy_config)
-                    .await
-                    .context("failed to deploy Lambda function")?;
+                quickwit_lambda::deploy(&lambda_config.function_name, deploy_config)
+                    .context("failed to deploy lambda function")?;
             }
 
             let invoker = AwsLambdaInvoker::new(lambda_config)
