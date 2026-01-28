@@ -21,6 +21,12 @@ use quickwit_lambda::{LambdaSearcherContext, LeafSearchPayload, handle_leaf_sear
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
+#[cfg(feature = "auto-deploy")]
+compile_error!(
+    "auto-deploy is forbidden when building the Lambda binary. (The deployer includes the Lambda \
+     binary)"
+);
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     // Initialize tracing with JSON output for CloudWatch

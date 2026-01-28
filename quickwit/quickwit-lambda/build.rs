@@ -15,12 +15,10 @@
 //! Build script for quickwit-lambda.
 //!
 //! When the `auto-deploy` feature is enabled, this script:
-//! 1. Looks for a pre-built Lambda binary at a known location
-//! 2. Creates a zip file containing the binary named "bootstrap"
-//! 3. Places the zip in OUT_DIR for embedding via include_bytes!
+//! 1. Downloads the pre-built Lambda zip from a GitHub release
+//! 2. Places the zip in OUT_DIR for embedding via include_bytes!
 //!
-//! The Lambda binary should be pre-built in CI for the aarch64-unknown-linux-musl
-//! target and placed in the expected location.
+//! The Lambda binary is built separately in CI and published as a GitHub release.
 
 fn main() {
     #[cfg(feature = "auto-deploy")]
@@ -30,127 +28,68 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 }
 
+/// URL to download the pre-built Lambda zip from GitHub releases.
+/// This should be updated when a new Lambda binary is released.
+#[cfg(feature = "auto-deploy")]
+const LAMBDA_ZIP_URL: &str =
+    "https://github.com/quickwit-oss/quickwit/releases/download/lambda-c07a00b0/quickwit-aws-lambda--aarch64.zip";
+
+/// AWS Lambda direct upload limit is 50MB.
+/// Larger artifacts must be uploaded via S3.
+#[cfg(feature = "auto-deploy")]
+const MAX_LAMBDA_ZIP_SIZE: usize = 50 * 1024 * 1024;
+
 #[cfg(feature = "auto-deploy")]
 fn auto_deploy_build() {
     use std::env;
+    use std::fs::File;
+    use std::io::Write;
     use std::path::PathBuf;
 
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-env-changed=QUICKWIT_LAMBDA_BINARY_PATH");
+    println!("cargo:rerun-if-env-changed=QUICKWIT_LAMBDA_ZIP_URL");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
     let zip_path = out_dir.join("lambda_bootstrap.zip");
 
-    // Look for the pre-built Lambda binary in order of preference:
-    // 1. Environment variable QUICKWIT_LAMBDA_BINARY_PATH
-    // 2. Target directory (for local builds with cross-compilation)
-    // 3. Fallback to creating a placeholder for development
+    // Allow overriding the URL via environment variable
+    let url = env::var("QUICKWIT_LAMBDA_ZIP_URL").unwrap_or_else(|_| LAMBDA_ZIP_URL.to_string());
 
-    let binary_path = if let Ok(path) = env::var("QUICKWIT_LAMBDA_BINARY_PATH") {
-        println!(
-            "cargo:warning=Using Lambda binary from QUICKWIT_LAMBDA_BINARY_PATH: {}",
-            path
-        );
-        Some(PathBuf::from(path))
-    } else {
-        // Try to find in target directory
-        let workspace_root = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap())
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .to_path_buf();
+    println!("cargo:warning=Downloading Lambda zip from: {}", url);
 
-        let potential_paths = [
-            workspace_root
-                .join("target/aarch64-unknown-linux-musl/release/quickwit-lambda-leaf-search"),
-            workspace_root.join("target/lambda/quickwit-lambda-leaf-search/bootstrap"),
-            workspace_root.join("lambda_bootstrap"),
-        ];
-
-        potential_paths.into_iter().find(|p| p.exists())
-    };
-
-    match binary_path {
-        Some(path) => {
-            println!("cargo:warning=Packaging Lambda binary from: {:?}", path);
-            create_lambda_zip(&path, &zip_path);
+    match download_lambda_zip(&url) {
+        Ok(data) => {
+            let mut file = File::create(&zip_path).expect("Failed to create zip file");
+            file.write_all(&data).expect("Failed to write zip file");
+            println!(
+                "cargo:warning=Downloaded Lambda zip to {:?} ({} bytes)",
+                zip_path,
+                data.len()
+            );
         }
-        None => {
-            // Create a placeholder zip for development builds
-            // This allows compilation to succeed, but deploy() will fail at runtime
-            // if someone tries to use auto-deploy without a proper binary
-            println!("cargo:warning=No Lambda binary found, creating placeholder zip");
-            println!("cargo:warning=Set QUICKWIT_LAMBDA_BINARY_PATH or build the binary first");
-            create_placeholder_zip(&zip_path);
+        Err(e) => {
+            panic!("Failed to download Lambda zip: {}", e);
         }
     }
 }
 
 #[cfg(feature = "auto-deploy")]
-fn create_lambda_zip(binary_path: &std::path::Path, zip_path: &std::path::Path) {
-    use std::fs::File;
-    use std::io::Read;
-
-    use zip::ZipWriter;
-    use zip::write::FileOptions;
-
-    let mut binary_data = Vec::new();
-    File::open(binary_path)
-        .expect("Failed to open Lambda binary")
-        .read_to_end(&mut binary_data)
-        .expect("Failed to read Lambda binary");
-
-    let zip_file = File::create(zip_path).expect("Failed to create zip file");
-    let mut zip = ZipWriter::new(zip_file);
-
-    // Lambda requires the binary to be named "bootstrap" with executable permissions
-    let options = FileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated)
-        .unix_permissions(0o755);
-
-    zip.start_file("bootstrap", options)
-        .expect("Failed to start zip file entry");
-
-    std::io::Write::write_all(&mut zip, &binary_data).expect("Failed to write binary to zip");
-
-    zip.finish().expect("Failed to finalize zip file");
-
-    println!(
-        "cargo:warning=Created Lambda zip at {:?} ({} bytes)",
-        zip_path,
-        std::fs::metadata(zip_path).unwrap().len()
-    );
-}
-
-#[cfg(feature = "auto-deploy")]
-fn create_placeholder_zip(zip_path: &std::path::Path) {
-    use std::fs::File;
-
-    use zip::ZipWriter;
-    use zip::write::FileOptions;
-
-    let zip_file = File::create(zip_path).expect("Failed to create placeholder zip file");
-    let mut zip = ZipWriter::new(zip_file);
-
-    // Create a placeholder script that returns an error
-    let placeholder_script = r#"#!/bin/sh
-echo "ERROR: This is a placeholder Lambda binary."
-echo "The auto-deploy feature requires a properly built Lambda binary."
-echo "Please build the quickwit-lambda-leaf-search binary for aarch64-unknown-linux-musl"
-echo "and set QUICKWIT_LAMBDA_BINARY_PATH environment variable."
-exit 1
-"#;
-
-    let options = FileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated)
-        .unix_permissions(0o755);
-
-    zip.start_file("bootstrap", options)
-        .expect("Failed to start zip file entry");
-
-    std::io::Write::write_all(&mut zip, placeholder_script.as_bytes())
-        .expect("Failed to write placeholder to zip");
-
-    zip.finish().expect("Failed to finalize zip file");
+fn download_lambda_zip(url: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let response = ureq::get(url).call()?;
+    // Set limit higher than MAX_LAMBDA_ZIP_SIZE so we can provide a better error message
+    let data = response
+        .into_body()
+        .with_config()
+        .limit(MAX_LAMBDA_ZIP_SIZE as u64 + 1) // We download one more byte to trigger the panic below.
+        .read_to_vec()?;
+    if data.len() > MAX_LAMBDA_ZIP_SIZE {
+        panic!(
+            "Lambda zip is too large ({} bytes, max {} bytes).\nAWS Lambda does not support \
+             direct upload of binaries larger than 50MB.\nWorkaround: upload the Lambda zip to S3 \
+             and deploy from there instead.",
+            data.len(),
+            MAX_LAMBDA_ZIP_SIZE
+        );
+    }
+    Ok(data)
 }

@@ -28,6 +28,8 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 aws-config = { workspace = true }
 aws-sdk-lambda = { workspace = true }
 
+openssl = { workspace = true, optional = true }
+
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
@@ -41,16 +43,26 @@ mockall = { workspace = true }
 tempfile = { workspace = true }
 
 [[bin]]
-name = "quickwit-lambda-leaf-search"
+name = "quickwit-aws-lambda-leaf-search"
 path = "src/bin/leaf_search.rs"
 
 [build-dependencies]
 # Build dependencies for auto-deploy feature.
-zip = { workspace = true, optional = true }
+ureq = { workspace = true, optional = true }
 
 [features]
 default = []
 testsuite = []
+
 # Enable automatic Lambda function deployment at startup.
 # When enabled, the Lambda binary is embedded at compile time.
-auto-deploy = ["dep:zip"]
+auto-deploy = ["dep:ureq"]
+
+# Keep this in sync with quickwit-cli!
+lambda-release = [
+    # The vendored OpenSSL will be compiled from source during the
+    # build, avoiding the pkg-config dependency issue during
+    # cross-compilation.
+    "openssl/vendored",
+    # "quickwit-doc-mapper/multilang",
+]

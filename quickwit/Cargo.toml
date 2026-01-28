@@ -296,6 +296,7 @@ tracing-subscriber = { version = "0.3", features = [
 ttl_cache = "0.5"
 typetag = "0.2"
 ulid = "1.2"
+ureq = "3"
 username = "0.2"
 # We cannot upgrade to utoipa 5.0+ due to significant breaking changes:
 # 1. The `OpenApi` struct structure changed (fields are private), breaking our manual merging logic in openapi.rs
