@@ -42,7 +42,6 @@ searcher:
 | `function_qualifier` | string | `null` | Optional alias or version qualifier |
 | `max_splits_per_invocation` | int | `10` | Maximum splits per Lambda invocation |
 | `invocation_timeout_secs` | int | `30` | Timeout in seconds (used for both client-side and Lambda function timeout when auto-deploying) |
-| `max_concurrent_invocations` | int | `100` | Maximum concurrent Lambda invocations |
 | `auto_deploy` | bool | `false` | Enable automatic Lambda deployment |
 | `execution_role_arn` | string | `null` | IAM role ARN (required for auto-deploy) |
 | `memory_size_mb` | int | `1024` | Lambda memory allocation in MB |

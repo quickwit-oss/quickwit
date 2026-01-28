@@ -324,9 +324,6 @@ pub struct LambdaConfig {
     /// Timeout for Lambda invocations in seconds.
     #[serde(default = "LambdaConfig::default_invocation_timeout_secs")]
     pub invocation_timeout_secs: u64,
-    /// Maximum number of concurrent Lambda invocations.
-    #[serde(default = "LambdaConfig::default_max_concurrent_invocations")]
-    pub max_concurrent_invocations: usize,
     /// Enable automatic Lambda function deployment at startup.
     #[serde(default)]
     pub auto_deploy: bool,
@@ -346,7 +343,6 @@ impl Default for LambdaConfig {
             function_qualifier: None,
             max_splits_per_invocation: Self::default_max_splits_per_invocation(),
             invocation_timeout_secs: Self::default_invocation_timeout_secs(),
-            max_concurrent_invocations: Self::default_max_concurrent_invocations(),
             auto_deploy: false,
             execution_role_arn: None,
             memory_size_mb: Self::default_memory_size_mb(),
@@ -363,9 +359,6 @@ impl LambdaConfig {
     }
     fn default_invocation_timeout_secs() -> u64 {
         30
-    }
-    fn default_max_concurrent_invocations() -> usize {
-        100
     }
     fn default_memory_size_mb() -> u32 {
         1024
