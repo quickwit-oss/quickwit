@@ -58,6 +58,9 @@ service ControlPlaneService {
   // Removes a source from an index.
   rpc DeleteSource(quickwit.metastore.DeleteSourceRequest) returns (quickwit.metastore.EmptyResponse);
 
+  // Sets the index routing table. The control plane validates invariants and gossips the change.
+  rpc SetIndexRoutingTable(quickwit.metastore.SetIndexRoutingTableRequest) returns (quickwit.metastore.EmptyResponse);
+
   // Shard API
 
   // Returns the list of open shards for one or several sources. If the control plane is not able to find any

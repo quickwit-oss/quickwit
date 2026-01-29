@@ -36,7 +36,9 @@ use tokio_stream::StreamExt;
 use tokio_stream::wrappers::WatchStream;
 use tracing::{info, warn};
 
-use crate::change::{ClusterChange, ClusterChangeStreamFactory, compute_cluster_change_events};
+use crate::change::{
+    ClusterChange, ClusterChangeStreamFactory, ClusterKvPublisher, compute_cluster_change_events,
+};
 use crate::grpc_gossip::spawn_catchup_callback_task;
 use crate::member::{
     ClusterMember, ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, NodeStateExt,
@@ -452,6 +454,13 @@ impl Cluster {
 impl ClusterChangeStreamFactory for Cluster {
     fn create(&self) -> ClusterChangeStream {
         self.change_stream()
+    }
+}
+
+#[async_trait::async_trait]
+impl ClusterKvPublisher for Cluster {
+    async fn set_self_key_value(&self, key: String, value: String) {
+        self.set_self_key_value(key, value).await
     }
 }
 

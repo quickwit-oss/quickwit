@@ -13,6 +13,7 @@
 // limitations under the License.
 
 pub mod control_plane;
+pub mod index_routing_table;
 pub mod indexing_plan;
 pub mod indexing_scheduler;
 pub mod ingest;

@@ -1386,6 +1386,7 @@ mod tests {
                     },
                     enable_reverse_connection: false,
                     create_datadog_index: false,
+                    enforce_index_routing_table_consistency: false,
                 },
                 ..NodeConfigBuilder::default()
                     .build_and_validate(&HashMap::new())

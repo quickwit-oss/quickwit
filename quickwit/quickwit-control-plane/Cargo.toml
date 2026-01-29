@@ -49,6 +49,7 @@ quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 testsuite = ["mockall"]

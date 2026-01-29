@@ -28,6 +28,7 @@ mod store_operations;
 use core::fmt;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::mem;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -45,9 +46,10 @@ use quickwit_proto::metastore::{
     DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
     DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
     FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    GetClusterIdentityResponse, GetIndexRoutingTableRequest, GetIndexRoutingTableResponse,
+    GetIndexTemplateRequest, GetIndexTemplateResponse, IndexMetadataFailure,
+    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch,
+    IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
     ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
     ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
@@ -55,8 +57,9 @@ use quickwit_proto::metastore::{
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
     MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
     OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
+    SetIndexRoutingTableRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -1274,6 +1277,37 @@ impl MetastoreService for FileBackedMetastore {
         Ok(GetClusterIdentityResponse {
             uuid: state_wlock_guard.identity.hyphenated().to_string(),
         })
+    }
+
+    // Index Routing Table API
+
+    async fn get_index_routing_table(
+        &self,
+        _request: GetIndexRoutingTableRequest,
+    ) -> MetastoreResult<GetIndexRoutingTableResponse> {
+        let state_rlock_guard = self.state.read().await;
+        Ok(GetIndexRoutingTableResponse {
+            rules: state_rlock_guard.index_routing_table.clone(),
+        })
+    }
+
+    async fn set_index_routing_table(
+        &self,
+        request: SetIndexRoutingTableRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let mut state_wlock_guard = self.state.write().await;
+
+        let previous_routing_table =
+            mem::replace(&mut state_wlock_guard.index_routing_table, request.rules);
+
+        let manifest = state_wlock_guard.as_manifest();
+
+        if let Err(error) = save_manifest(&*self.storage, &manifest).await {
+            // Rollback on error.
+            state_wlock_guard.index_routing_table = previous_routing_table;
+            return Err(error);
+        }
+        Ok(EmptyResponse {})
     }
 }
 
