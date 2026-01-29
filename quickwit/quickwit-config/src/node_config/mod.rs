@@ -604,7 +604,21 @@ impl WebsocketConfig {
             .map(Self::normalize_site_url)
             .unwrap_or("app.datadoghq.com".to_string());
 
+        // Try DD_API_KEY env var first, then DD_API_KEY_FILE (read from file path)
         let dd_api_key_opt = quickwit_common::get_from_env_opt::<String>("DD_API_KEY", true)
+            .or_else(|| {
+                // If DD_API_KEY_FILE is set, read the API key from that file
+                quickwit_common::get_from_env_opt::<String>("DD_API_KEY_FILE", false)
+                    .and_then(|path| {
+                        std::fs::read_to_string(&path)
+                            .map_err(|e| {
+                                tracing::warn!(path = %path, error = %e, "failed to read DD_API_KEY_FILE");
+                                e
+                            })
+                            .ok()
+                    })
+                    .map(|s| s.trim().to_string())
+            })
             .or(self.dd_api_key.clone());
 
         Self {
