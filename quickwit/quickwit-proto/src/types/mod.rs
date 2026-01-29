@@ -20,7 +20,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::error;
 pub use ulid::Ulid;
 
 mod doc_mapping_uid;
@@ -62,7 +62,7 @@ pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
     let parts_opt = split_queue_id_inner(queue_id);
 
     if parts_opt.is_none() {
-        warn!("failed to parse queue ID `{queue_id}`: this should never happen, please report");
+        error!("failed to parse queue ID `{queue_id}`: this should never happen, please report");
     }
     parts_opt
 }

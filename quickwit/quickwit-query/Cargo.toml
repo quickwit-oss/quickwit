@@ -54,6 +54,7 @@ multilang = [
     "lindera-dictionary",
     "lindera-tokenizer",
     "whichlang",
+    "tantivy/stemmer",
 ]
 
 [[bench]]

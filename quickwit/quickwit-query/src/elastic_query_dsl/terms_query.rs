@@ -39,15 +39,34 @@ struct TermsQueryForSerialization {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum OneOrMany {
-    One(String),
-    Many(Vec<String>),
+enum TermValue {
+    I64(i64),
+    U64(u64),
+    Str(String),
 }
+
+impl From<TermValue> for String {
+    fn from(term_value: TermValue) -> String {
+        match term_value {
+            TermValue::I64(val) => val.to_string(),
+            TermValue::U64(val) => val.to_string(),
+            TermValue::Str(val) => val,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OneOrMany {
+    One(TermValue),
+    Many(Vec<TermValue>),
+}
+
 impl From<OneOrMany> for Vec<String> {
     fn from(one_or_many: OneOrMany) -> Vec<String> {
         match one_or_many {
-            OneOrMany::One(one_value) => vec![one_value],
-            OneOrMany::Many(values) => values,
+            OneOrMany::One(one_value) => vec![String::from(one_value)],
+            OneOrMany::Many(values) => values.into_iter().map(String::from).collect(),
         }
     }
 }
@@ -107,6 +126,14 @@ mod tests {
         let terms_query: TermsQuery = serde_json::from_str(terms_query_json).unwrap();
         assert_eq!(&terms_query.field, "user.id");
         assert_eq!(&terms_query.values[..], &["hello".to_string()]);
+    }
+
+    #[test]
+    fn test_terms_query_not_string() {
+        let terms_query_json = r#"{ "user.id": [1, 2] }"#;
+        let terms_query: TermsQuery = serde_json::from_str(terms_query_json).unwrap();
+        assert_eq!(&terms_query.field, "user.id");
+        assert_eq!(&terms_query.values[..], &["1".to_string(), "2".to_string()]);
     }
 
     #[test]

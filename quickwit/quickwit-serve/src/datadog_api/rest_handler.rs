@@ -29,7 +29,7 @@ use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::Deserialize;
 use serde_with::formats::CommaSeparator;
 use serde_with::{StringWithSeparator, serde_as};
-use tracing::{debug, error};
+use tracing::debug;
 use warp::{Filter, Rejection};
 
 use super::index_router::IndexRouter;

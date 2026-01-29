@@ -17,7 +17,7 @@ use std::collections::HashSet;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
-use quickwit_opentelemetry::otlp::TraceId;
+use quickwit_proto::search::TraceId;
 use serde::{Deserialize, Serialize};
 use tantivy::collector::{Collector, SegmentCollector};
 use tantivy::columnar::BytesColumn;
