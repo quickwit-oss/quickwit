@@ -76,14 +76,14 @@ metastore:
       memory: 2Gi
 
   extraEnv:
-    DD_API_KEY_FILE: /quickwit/dd-api-key.env
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
 
   initContainers:
     - name: consul-template-init
       image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
       args:
         - -once
-        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
       resources:
         limits:
           cpu: 200m
@@ -98,7 +98,7 @@ metastore:
           mountPath: /template/dd-api-key.tpl
           subPath: dd-api-key.tpl
         - name: dd-api-key
-          mountPath: /quickwit
+          mountPath: /secrets
 
   extraVolumes:
     - name: dd-api-key
@@ -113,7 +113,7 @@ metastore:
 
   extraVolumeMounts:
     - name: dd-api-key
-      mountPath: /quickwit/dd-api-key.env
+      mountPath: /secrets/dd-api-key.env
       subPath: dd-api-key.env
       readOnly: true
 
@@ -127,14 +127,14 @@ control_plane:
       memory: 2Gi
 
   extraEnv:
-    DD_API_KEY_FILE: /quickwit/dd-api-key.env
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
 
   initContainers:
     - name: consul-template-init
       image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
       args:
         - -once
-        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
       resources:
         limits:
           cpu: 200m
@@ -149,7 +149,7 @@ control_plane:
           mountPath: /template/dd-api-key.tpl
           subPath: dd-api-key.tpl
         - name: dd-api-key
-          mountPath: /quickwit
+          mountPath: /secrets
 
   extraVolumes:
     - name: dd-api-key
@@ -164,7 +164,7 @@ control_plane:
 
   extraVolumeMounts:
     - name: dd-api-key
-      mountPath: /quickwit/dd-api-key.env
+      mountPath: /secrets/dd-api-key.env
       subPath: dd-api-key.env
       readOnly: true
 
@@ -185,14 +185,14 @@ indexer:
     storageClass: gp3
 
   extraEnv:
-    DD_API_KEY_FILE: /quickwit/dd-api-key.env
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
 
   initContainers:
     - name: consul-template-init
       image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
       args:
         - -once
-        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
       resources:
         limits:
           cpu: 200m
@@ -207,7 +207,7 @@ indexer:
           mountPath: /template/dd-api-key.tpl
           subPath: dd-api-key.tpl
         - name: dd-api-key
-          mountPath: /quickwit
+          mountPath: /secrets
 
   extraVolumes:
     - name: dd-api-key
@@ -222,7 +222,7 @@ indexer:
 
   extraVolumeMounts:
     - name: dd-api-key
-      mountPath: /quickwit/dd-api-key.env
+      mountPath: /secrets/dd-api-key.env
       subPath: dd-api-key.env
       readOnly: true
 
@@ -238,7 +238,7 @@ searcher:
       memory: 8Gi
 
   extraEnv:
-    DD_API_KEY_FILE: /quickwit/dd-api-key.env
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
 
   initContainers:
     # Loads dd-api-key.tpl and injects the API key (loaded from Vault) for the reverse connection
@@ -246,7 +246,7 @@ searcher:
       image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
       args:
         - -once
-        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
       resources:
         limits:
           cpu: 200m
@@ -261,7 +261,7 @@ searcher:
           mountPath: /template/dd-api-key.tpl
           subPath: dd-api-key.tpl
         - name: dd-api-key
-          mountPath: /quickwit
+          mountPath: /secrets
 
   extraVolumes:
     - name: dd-api-key
@@ -276,7 +276,7 @@ searcher:
 
   extraVolumeMounts:
     - name: dd-api-key
-      mountPath: /quickwit/dd-api-key.env
+      mountPath: /secrets/dd-api-key.env
       subPath: dd-api-key.env
       readOnly: true
 
@@ -290,14 +290,14 @@ janitor:
       memory: 2Gi
 
   extraEnv:
-    DD_API_KEY_FILE: /quickwit/dd-api-key.env
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
 
   initContainers:
     - name: consul-template-init
       image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
       args:
         - -once
-        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
       resources:
         limits:
           cpu: 200m
@@ -312,7 +312,7 @@ janitor:
           mountPath: /template/dd-api-key.tpl
           subPath: dd-api-key.tpl
         - name: dd-api-key
-          mountPath: /quickwit
+          mountPath: /secrets
 
   extraVolumes:
     - name: dd-api-key
@@ -327,7 +327,7 @@ janitor:
 
   extraVolumeMounts:
     - name: dd-api-key
-      mountPath: /quickwit/dd-api-key.env
+      mountPath: /secrets/dd-api-key.env
       subPath: dd-api-key.env
       readOnly: true
 
