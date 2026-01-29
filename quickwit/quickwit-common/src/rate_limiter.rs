@@ -64,6 +64,7 @@ pub struct RateLimiter {
     refill_at: Instant,
 }
 
+#[cfg(any(test, feature = "testsuite"))]
 impl Default for RateLimiter {
     fn default() -> Self {
         Self::from_settings(RateLimiterSettings::default())
