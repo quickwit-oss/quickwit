@@ -5,8 +5,7 @@
 
 image:
   repository: 727006795293.dkr.ecr.us-east-1.amazonaws.com/pomsky
-  # Pin to image with DD_API_KEY_FILE support (from branch cong.xie/pomsky-staging-reverse-connection)
-  tag: edge@sha256:babfd92dd2b04c70e7d5d25ee3c97bc885c07918fc7bf481fae9da035172d52f
+  tag: edge
   pullPolicy: Always
 
 # Datadog site for reverse connection
@@ -18,7 +17,6 @@ cloudprem:
     minShards: 4 # number of indexers * number of vCPUs * 2 (1 * 2 * 2)
   reverseConnection:
     enabled: true
-    site: "dd.datad0g.com"  # Staging environment
 
 environment:
   QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
