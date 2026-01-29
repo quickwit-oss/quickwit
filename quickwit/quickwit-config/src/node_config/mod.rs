@@ -605,7 +605,6 @@ impl WebsocketConfig {
             .unwrap_or("app.datadoghq.com".to_string());
 
         // Try DD_API_KEY env var first, then DD_API_KEY_FILE (read from file path)
-        // This is to support reading API key from file for staging setup
         let dd_api_key_opt = quickwit_common::get_from_env_opt::<String>("DD_API_KEY", true)
             .or_else(|| {
                 // If DD_API_KEY_FILE is set, read the API key from that file
