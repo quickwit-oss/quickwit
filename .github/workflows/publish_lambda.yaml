@@ -1,4 +1,9 @@
-name: Build Lambda binary
+# This workflow creates a new release for a quickwit search aws lambda.
+# The artifact is a zip file containing a binary for ARM 64,
+# ready to be deployed by the deployer.
+#
+# See quickwit-lambda/README.md
+name: Release Lambda binary
 
 on:
   push:
