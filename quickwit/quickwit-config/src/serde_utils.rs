@@ -18,6 +18,25 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+/// Custom serde module for ByteSize that serializes as raw byte count (u64).
+/// This ensures perfect roundtrip consistency regardless of display format changes
+/// in the bytesize crate. Deserialization still accepts human-readable strings
+/// like "2 GB" via bytesize's default deserializer.
+pub mod bytesize_serde {
+    use bytesize::ByteSize;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(byte_size: &ByteSize, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        serializer.serialize_u64(byte_size.as_u64())
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<ByteSize, D::Error>
+    where D: Deserializer<'de> {
+        ByteSize::deserialize(deserializer)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(try_from = "String", into = "String")]
 pub struct DurationAsStr {

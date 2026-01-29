@@ -555,23 +555,23 @@ impl IngestApiConfig {
         ensure!(
             self.max_queue_disk_usage > ByteSize::mib(256),
             "max_queue_disk_usage must be at least 256 MiB, got `{}`",
-            self.max_queue_disk_usage
+            self.max_queue_disk_usage.display().si()
         );
         ensure!(
             self.max_queue_disk_usage >= self.max_queue_memory_usage,
             "max_queue_disk_usage ({}) must be at least max_queue_memory_usage ({})",
-            self.max_queue_disk_usage,
-            self.max_queue_memory_usage
+            self.max_queue_disk_usage.display().si(),
+            self.max_queue_memory_usage.display().si()
         );
         info!(
             "ingestion shard throughput limit: {}",
-            self.shard_throughput_limit
+            self.shard_throughput_limit.display().si()
         );
         ensure!(
             self.shard_throughput_limit >= ByteSize::mib(1)
                 && self.shard_throughput_limit <= ByteSize::mib(20),
             "shard_throughput_limit ({}) must be within 1mb and 20mb",
-            self.shard_throughput_limit
+            self.shard_throughput_limit.display().si()
         );
         // The newline delimited format is persisted as something a bit larger
         // (lines prefixed with their length)
