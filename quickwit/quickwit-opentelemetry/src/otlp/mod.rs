@@ -29,21 +29,18 @@ use serde_json::{Number as JsonNumber, Value as JsonValue};
 
 mod logs;
 mod metrics;
-mod span_id;
 #[cfg(any(test, feature = "testsuite"))]
 mod test_utils;
-mod trace_id;
 mod traces;
 
 pub use logs::{
     JsonLogIterator, OTEL_LOGS_INDEX_ID, OtlpGrpcLogsService, OtlpLogsError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf,
 };
-pub use span_id::{SpanId, TryFromSpanIdError};
+pub use quickwit_proto::search::{SpanId, TraceId, TryFromSpanIdError, TryFromTraceIdError};
 #[cfg(any(test, feature = "testsuite"))]
 pub use test_utils::make_resource_spans_for_test;
 use tonic::Status;
-pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     Event, JsonSpanIterator, Link, OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
     OtlpGrpcTracesService, OtlpTracesError, Span, SpanFingerprint, SpanKind, SpanStatus,
@@ -80,18 +77,6 @@ impl From<OtlpLogsError> for tonic::Status {
 
 impl From<OtlpTracesError> for tonic::Status {
     fn from(error: OtlpTracesError) -> Self {
-        tonic::Status::invalid_argument(error.to_string())
-    }
-}
-
-impl From<TryFromSpanIdError> for tonic::Status {
-    fn from(error: TryFromSpanIdError) -> Self {
-        tonic::Status::invalid_argument(error.to_string())
-    }
-}
-
-impl From<TryFromTraceIdError> for tonic::Status {
-    fn from(error: TryFromTraceIdError) -> Self {
         tonic::Status::invalid_argument(error.to_string())
     }
 }

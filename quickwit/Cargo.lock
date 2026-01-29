@@ -7336,7 +7336,6 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "hex",
  "once_cell",
  "prost 0.14.1",
  "quickwit-common",
@@ -7364,6 +7363,7 @@ dependencies = [
  "bytestring",
  "futures",
  "glob",
+ "hex",
  "http 1.4.0",
  "mockall",
  "opentelemetry",
@@ -7473,7 +7473,6 @@ dependencies = [
  "quickwit-doc-mapper",
  "quickwit-indexing",
  "quickwit-metastore",
- "quickwit-opentelemetry",
  "quickwit-proto",
  "quickwit-query",
  "quickwit-storage",

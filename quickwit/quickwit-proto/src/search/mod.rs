@@ -12,12 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod span_id;
+mod trace_id;
+
 use std::cmp::Ordering;
 use std::fmt;
 use std::io::{self, Read};
 
 use prost::Message;
 pub use sort_by_value::SortValue;
+pub use span_id::{SpanId, TryFromSpanIdError};
+pub use trace_id::{TraceId, TryFromTraceIdError};
 
 include!("../codegen/quickwit/quickwit.search.rs");
 
