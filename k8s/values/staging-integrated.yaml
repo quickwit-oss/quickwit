@@ -364,9 +364,9 @@ config:
     max_queue_disk_usage: 5GiB # max queue mem usage * 2 (half of staging)
 
 # ConfigMap entry that is rendered by consul-template into the DD_API_KEY file for reverse connection
-# Secret stored at: kv/k8s/logs-cloudprem/pomsky-staging/credentials with key dd_api_key
+# Secret stored at: kv/k8s/logs-cloudprem/cloudprem/pomsky-staging/dd_api_key with key dd_api_key
 extraConfigMaps:
   - name: dd-api-key-template
     data:
       dd-api-key.tpl: |
-        {% with secret "kv/k8s/logs-cloudprem/pomsky-staging/credentials" %}{% .Data.data.dd_api_key %}{% end %}
+        {% with secret "kv/k8s/logs-cloudprem/cloudprem/pomsky-staging/dd_api_key" %}{% .Data.data.dd_api_key %}{% end %}
