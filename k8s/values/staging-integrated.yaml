@@ -8,6 +8,10 @@ image:
   tag: edge
   pullPolicy: Always
 
+# Datadog site for reverse connection
+datadog:
+  site: dd.datad0g.com  # Staging environment
+
 cloudprem:
   index:
     minShards: 4 # number of indexers * number of vCPUs * 2 (1 * 2 * 2)
