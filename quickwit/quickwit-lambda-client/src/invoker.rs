@@ -21,19 +21,19 @@ use aws_sdk_lambda::types::InvocationType;
 use base64::prelude::*;
 use prost::Message;
 use quickwit_config::LambdaConfig;
+use quickwit_lambda_server::{LeafSearchPayload, LeafSearchResponsePayload};
 use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
 use quickwit_search::{RemoteFunctionInvoker, SearchError};
 use tracing::{debug, instrument};
 
-use crate::error::{LambdaError, LambdaResult};
-use crate::handler::{LeafSearchPayload, LeafSearchResponsePayload};
+use crate::error::{LambdaClientError, LambdaClientResult};
 
 /// Create a Lambda invoker for remote leaf search execution.
 ///
 /// This creates and validates an AWS Lambda invoker that implements `RemoteFunctionInvoker`.
 pub async fn create_lambda_invoker(
     config: &LambdaConfig,
-) -> LambdaResult<Arc<dyn RemoteFunctionInvoker>> {
+) -> LambdaClientResult<Arc<dyn RemoteFunctionInvoker>> {
     let invoker = AwsLambdaInvoker::new(config).await?;
     invoker.validate().await?;
     Ok(Arc::new(invoker))
@@ -47,7 +47,7 @@ struct AwsLambdaInvoker {
 
 impl AwsLambdaInvoker {
     /// Create a new AWS Lambda invoker with the given configuration.
-    async fn new(config: &LambdaConfig) -> LambdaResult<Self> {
+    async fn new(config: &LambdaConfig) -> LambdaClientResult<Self> {
         let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = LambdaClient::new(&aws_config);
 
@@ -57,25 +57,16 @@ impl AwsLambdaInvoker {
         })
     }
 
-    /// Create a new AWS Lambda invoker with a custom client.
-    #[cfg(test)]
-    fn with_client(client: LambdaClient, function_name: String) -> Self {
-        Self {
-            client,
-            function_name,
-        }
-    }
-
     /// Validate that the Lambda function exists and is invocable.
     /// Uses DryRun invocation type - validates without executing.
-    async fn validate(&self) -> LambdaResult<()> {
+    async fn validate(&self) -> LambdaClientResult<()> {
         let request = self
             .client
             .invoke()
             .function_name(&self.function_name)
             .invocation_type(InvocationType::DryRun);
         request.send().await.map_err(|e| {
-            LambdaError::Configuration(format!(
+            LambdaClientError::Configuration(format!(
                 "Failed to validate Lambda function '{}': {}",
                 self.function_name, e
             ))

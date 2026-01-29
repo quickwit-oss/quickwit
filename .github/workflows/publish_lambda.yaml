@@ -45,7 +45,7 @@ jobs:
           echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
 
       - name: Build Lambda binary
-        run: cross build --release --features lambda-release --target aarch64-unknown-linux-gnu -p quickwit-lambda --bin quickwit-aws-lambda-leaf-search
+        run: cross build --release --features lambda-release --target aarch64-unknown-linux-gnu -p quickwit-lambda-server --bin quickwit-aws-lambda-leaf-search
         env:
           QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
           QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}

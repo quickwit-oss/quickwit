@@ -17,15 +17,9 @@
 use std::sync::Arc;
 
 use lambda_runtime::{Error, LambdaEvent, service_fn};
-use quickwit_lambda::{LambdaSearcherContext, LeafSearchPayload, handle_leaf_search};
+use quickwit_lambda_server::{LambdaSearcherContext, LeafSearchPayload, handle_leaf_search};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
-
-#[cfg(feature = "auto-deploy")]
-compile_error!(
-    "auto-deploy is forbidden when building the Lambda binary. (The deployer includes the Lambda \
-     binary)"
-);
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {

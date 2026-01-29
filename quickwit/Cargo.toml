@@ -19,7 +19,8 @@ members = [
   "quickwit-integration-tests",
   "quickwit-jaeger",
   "quickwit-janitor",
-  "quickwit-lambda",
+  "quickwit-lambda-client",
+  "quickwit-lambda-server",
   "quickwit-macros",
   "quickwit-metastore",
 
@@ -57,7 +58,8 @@ default-members = [
   "quickwit-integration-tests",
   "quickwit-jaeger",
   "quickwit-janitor",
-  "quickwit-lambda",
+  "quickwit-lambda-client",
+  "quickwit-lambda-server",
   "quickwit-macros",
   "quickwit-metastore",
   "quickwit-opentelemetry",
@@ -361,7 +363,8 @@ quickwit-ingest = { path = "quickwit-ingest" }
 quickwit-integration-tests = { path = "quickwit-integration-tests" }
 quickwit-jaeger = { path = "quickwit-jaeger" }
 quickwit-janitor = { path = "quickwit-janitor" }
-quickwit-lambda = { path = "quickwit-lambda" }
+quickwit-lambda-client = { path = "quickwit-lambda-client" }
+quickwit-lambda-server = { path = "quickwit-lambda-server" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }

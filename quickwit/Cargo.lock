@@ -7348,35 +7348,44 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-lambda"
+name = "quickwit-lambda-client"
 version = "0.8.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "aws-config",
  "aws-sdk-lambda",
  "base64 0.22.1",
- "bytes",
+ "prost 0.14.1",
+ "quickwit-config",
+ "quickwit-lambda-server",
+ "quickwit-proto",
+ "quickwit-search",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "ureq 3.1.4",
+]
+
+[[package]]
+name = "quickwit-lambda-server"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
  "bytesize",
  "lambda_runtime",
- "mockall",
  "openssl",
  "prost 0.14.1",
- "quickwit-aws",
  "quickwit-common",
  "quickwit-config",
- "quickwit-doc-mapper",
  "quickwit-proto",
  "quickwit-search",
  "quickwit-storage",
  "serde",
  "serde_json",
- "tempfile",
- "thiserror 2.0.17",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "ureq 3.1.4",
 ]
 
 [[package]]
@@ -7634,7 +7643,7 @@ dependencies = [
  "quickwit-ingest",
  "quickwit-jaeger",
  "quickwit-janitor",
- "quickwit-lambda",
+ "quickwit-lambda-client",
  "quickwit-metastore",
  "quickwit-opentelemetry",
  "quickwit-proto",

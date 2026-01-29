@@ -1,6 +1,6 @@
 [package]
-name = "quickwit-lambda"
-description = "AWS Lambda support for Quickwit leaf search"
+name = "quickwit-lambda-server"
+description = "AWS Lambda handler for Quickwit leaf search"
 
 version.workspace = true
 edition.workspace = true
@@ -10,53 +10,38 @@ repository.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[package.metadata.cargo-machete]
+# Its here even though it is not useful, in order to enable its "vendor" feature,
+# allowing the cross-build.
+ignored = ["openssl"]
+
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { workspace = true }
 base64 = { workspace = true }
-bytes = { workspace = true }
 bytesize = { workspace = true }
 lambda_runtime = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
 
-aws-config = { workspace = true }
-aws-sdk-lambda = { workspace = true }
-
 openssl = { workspace = true, optional = true }
 
-quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-doc-mapper = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
-
-[dev-dependencies]
-mockall = { workspace = true }
-tempfile = { workspace = true }
 
 [[bin]]
 name = "quickwit-aws-lambda-leaf-search"
 path = "src/bin/leaf_search.rs"
 
-[build-dependencies]
-# Build dependencies for auto-deploy feature.
-ureq = { workspace = true, optional = true }
-
 [features]
 default = []
 testsuite = []
-
-# Enable automatic Lambda function deployment at startup.
-# When enabled, the Lambda binary is embedded at compile time.
-auto-deploy = ["dep:ureq"]
 
 # Keep this in sync with quickwit-cli!
 lambda-release = [
