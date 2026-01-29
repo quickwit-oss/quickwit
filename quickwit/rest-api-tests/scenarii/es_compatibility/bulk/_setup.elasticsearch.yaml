@@ -1,10 +1,6 @@
 # Delete possibly remaining index
 method: DELETE
-endpoint: test-index
-status_code: null
----
-method: DELETE
-endpoint: test-index-pattern-777
+endpoint: test-index*
 status_code: null
 ---
 method: PUT

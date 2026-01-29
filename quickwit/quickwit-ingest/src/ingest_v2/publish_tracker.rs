@@ -62,16 +62,6 @@ impl PublishTracker {
         }
     }
 
-    pub fn register_requested_shards<'a>(
-        &'a self,
-        shard_ids: impl IntoIterator<Item = &'a ShardId>,
-    ) {
-        let mut publish_states = self.state.lock().unwrap();
-        for shard_id in shard_ids {
-            publish_states.shard_tracked(shard_id.clone());
-        }
-    }
-
     pub fn track_persisted_shard_position(&self, shard_id: ShardId, new_position: Position) {
         let mut publish_states = self.state.lock().unwrap();
         publish_states.position_persisted(&shard_id, &new_position)
@@ -91,8 +81,6 @@ impl PublishTracker {
 }
 
 enum PublishState {
-    /// The persist request for this shard has been sent
-    Tracked,
     /// The persist request for this shard success response has been received
     /// but the position has not yet been published
     AwaitingPublish(Position),
@@ -108,68 +96,44 @@ struct ShardPublishStates {
 }
 
 impl ShardPublishStates {
-    fn shard_tracked(&mut self, shard_id: ShardId) {
-        self.states.entry(shard_id).or_insert(PublishState::Tracked);
-    }
-
     fn position_published(
         &mut self,
         shard_id: &ShardId,
         new_position: &Position,
         publish_complete_notifier: &Notify,
     ) {
-        if let Some(publish_state) = self.states.get_mut(shard_id) {
-            match publish_state {
-                PublishState::AwaitingPublish(shard_position) if new_position >= shard_position => {
-                    *publish_state = PublishState::Published(new_position.clone());
-                    self.awaiting_count -= 1;
-                    if self.awaiting_count == 0 {
-                        // The notification is only relevant once
-                        // `self.wait_publish_complete()` is called.
-                        // Before that, `state.awaiting_publish` might
-                        // still be re-populated.
-                        publish_complete_notifier.notify_waiters();
-                    }
-                }
-                PublishState::Published(current_position) if new_position > current_position => {
-                    *current_position = new_position.clone();
-                }
-                PublishState::Tracked => {
-                    *publish_state = PublishState::Published(new_position.clone());
-                }
-                PublishState::Published(_) => {
-                    // looks like a duplicate or out-of-order event
-                }
-                PublishState::AwaitingPublish(_) => {
-                    // the shard made some progress but we are waiting for more
+        let Some(publish_state) = self.states.get_mut(shard_id) else {
+            return;
+        };
+
+        match publish_state {
+            PublishState::AwaitingPublish(shard_position) if new_position >= shard_position => {
+                *publish_state = PublishState::Published(new_position.clone());
+                self.awaiting_count -= 1;
+                if self.awaiting_count == 0 {
+                    publish_complete_notifier.notify_waiters();
                 }
             }
+            PublishState::Published(current_position) if new_position > current_position => {
+                *current_position = new_position.clone();
+            }
+            PublishState::Published(_) | PublishState::AwaitingPublish(_) => {
+                // duplicate/out-of-order or not enough progress yet
+            }
         }
-        // else: this shard is not being tracked here
     }
 
     fn position_persisted(&mut self, shard_id: &ShardId, new_position: &Position) {
-        if let Some(publish_state) = self.states.get_mut(shard_id) {
-            match publish_state {
-                PublishState::Published(current_position) if new_position <= current_position => {
-                    // new position already published, no need to track it
-                }
-                PublishState::AwaitingPublish(old_position) => {
-                    error!(
-                        %old_position,
-                        %new_position,
-                        %shard_id,
-                        "shard persisted positions should not be tracked multiple times"
-                    );
-                }
-                PublishState::Tracked | PublishState::Published(_) => {
-                    *publish_state = PublishState::AwaitingPublish(new_position.clone());
-                    self.awaiting_count += 1;
-                }
-            }
-        } else {
-            error!(%shard_id, "requested shards should be registered before their position is tracked")
+        if self.states.contains_key(shard_id) {
+            error!(%shard_id, "shard persisted positions should not be tracked multiple times");
+            return;
         }
+
+        self.states.insert(
+            shard_id.clone(),
+            PublishState::AwaitingPublish(new_position.clone()),
+        );
+        self.awaiting_count += 1;
     }
 }
 
@@ -188,12 +152,7 @@ mod tests {
 
         let shard_id_1 = ShardId::from("test-shard-1");
         let shard_id_2 = ShardId::from("test-shard-2");
-        let shard_id_3 = ShardId::from("test-shard-3");
-        let shard_id_4 = ShardId::from("test-shard-4"); // not tracked
-
-        shard_publish_states.shard_tracked(shard_id_1.clone());
-        shard_publish_states.shard_tracked(shard_id_2.clone());
-        shard_publish_states.shard_tracked(shard_id_3.clone());
+        let shard_id_3 = ShardId::from("test-shard-3"); // not tracked
 
         let notifier_receiver = notifier.clone();
         let notified_subscription = notifier_receiver.notified();
@@ -215,19 +174,10 @@ mod tests {
             .await
             .unwrap();
 
-        let notified_subscription = notifier_receiver.notified();
+        // shard 3 is not tracked
         shard_publish_states.position_published(&shard_id_3, &Position::offset(10usize), &notifier);
         assert_eq!(shard_publish_states.awaiting_count, 0);
-        shard_publish_states.position_persisted(&shard_id_3, &Position::offset(10usize));
-        assert_eq!(shard_publish_states.awaiting_count, 0);
-        // no notification expected here as the shard never becomes AwaitingPublish
-        tokio::time::timeout(Duration::from_millis(100), notified_subscription)
-            .await
-            .unwrap_err();
-        // shard 4 is not tracked
-        shard_publish_states.position_published(&shard_id_4, &Position::offset(10usize), &notifier);
-        assert_eq!(shard_publish_states.awaiting_count, 0);
-        assert!(!shard_publish_states.states.contains_key(&shard_id_4));
+        assert!(!shard_publish_states.states.contains_key(&shard_id_3));
     }
 
     #[tokio::test]
@@ -240,8 +190,6 @@ mod tests {
         let shard_id_3 = ShardId::from("test-shard-3");
         let shard_id_4 = ShardId::from("test-shard-4");
         let shard_id_5 = ShardId::from("test-shard-5"); // not tracked
-
-        tracker.register_requested_shards([&shard_id_1, &shard_id_2, &shard_id_3, &shard_id_4]);
 
         tracker.track_persisted_shard_position(shard_id_1.clone(), Position::offset(42usize));
         tracker.track_persisted_shard_position(shard_id_2.clone(), Position::offset(42usize));
@@ -292,7 +240,6 @@ mod tests {
         {
             let event_broker = EventBroker::default();
             let tracker = PublishTracker::new(event_broker.clone());
-            tracker.register_requested_shards([&shard_id_1, &shard_id_2]);
             tracker.track_persisted_shard_position(shard_id_1.clone(), position.clone());
             tracker.track_persisted_shard_position(shard_id_2.clone(), position.clone());
 
@@ -313,7 +260,6 @@ mod tests {
         {
             let event_broker = EventBroker::default();
             let tracker = PublishTracker::new(event_broker.clone());
-            tracker.register_requested_shards([&shard_id_1, &shard_id_2]);
             tracker.track_persisted_shard_position(shard_id_1.clone(), position.clone());
             event_broker.publish(ShardPositionsUpdate {
                 source_uid: SourceUid {
