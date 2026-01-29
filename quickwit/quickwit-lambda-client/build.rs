@@ -12,40 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Build script for quickwit-lambda.
+//! Build script for quickwit-lambda-client.
 //!
-//! When the `auto-deploy` feature is enabled, this script:
-//! 1. Downloads the pre-built Lambda zip from a GitHub release
-//! 2. Places the zip in OUT_DIR for embedding via include_bytes!
+//! This script downloads the pre-built Lambda zip from a GitHub release
+//! and places it in OUT_DIR for embedding via include_bytes!
 //!
 //! The Lambda binary is built separately in CI and published as a GitHub release.
 
-fn main() {
-    #[cfg(feature = "auto-deploy")]
-    auto_deploy_build();
-
-    #[cfg(not(feature = "auto-deploy"))]
-    println!("cargo:rerun-if-changed=build.rs");
-}
+use std::env;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
 
 /// URL to download the pre-built Lambda zip from GitHub releases.
 /// This should be updated when a new Lambda binary is released.
-#[cfg(feature = "auto-deploy")]
 const LAMBDA_ZIP_URL: &str =
     "https://github.com/quickwit-oss/quickwit/releases/download/lambda-506751fb/quickwit-aws-lambda--aarch64.zip";
 
 /// AWS Lambda direct upload limit is 50MB.
 /// Larger artifacts must be uploaded via S3.
-#[cfg(feature = "auto-deploy")]
 const MAX_LAMBDA_ZIP_SIZE: usize = 50 * 1024 * 1024;
 
-#[cfg(feature = "auto-deploy")]
-fn auto_deploy_build() {
-    use std::env;
-    use std::fs::File;
-    use std::io::Write;
-    use std::path::PathBuf;
-
+fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=QUICKWIT_LAMBDA_ZIP_URL");
 
@@ -73,11 +61,10 @@ fn auto_deploy_build() {
     }
 }
 
-#[cfg(feature = "auto-deploy")]
 fn download_lambda_zip(url: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let response = ureq::get(url).call()?;
+    let response = ureq::get(url).call();
     // Set limit higher than MAX_LAMBDA_ZIP_SIZE so we can provide a better error message
-    let data = response
+    let data = response?
         .into_body()
         .with_config()
         .limit(MAX_LAMBDA_ZIP_SIZE as u64 + 1) // We download one more byte to trigger the panic below.

@@ -12,36 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! AWS Lambda support for Quickwit leaf search operations.
+//! AWS Lambda client for Quickwit leaf search operations.
 //!
 //! This crate provides:
-//! - A Lambda handler that executes leaf search requests
 //! - An AWS Lambda implementation of the `RemoteFunctionInvoker` trait
 //! - Auto-deployment functionality for Lambda functions
 
-mod config;
-mod context;
+mod deployer;
 mod error;
-mod handler;
 mod invoker;
 
-pub use context::LambdaSearcherContext;
-
-#[cfg(feature = "auto-deploy")]
-mod deployer;
-#[cfg(feature = "auto-deploy")]
 pub use deployer::deploy;
-pub use error::{LambdaError, LambdaResult};
-pub use handler::{LeafSearchPayload, LeafSearchResponsePayload, handle_leaf_search};
+pub use error::{LambdaClientError, LambdaClientResult};
 pub use invoker::create_lambda_invoker;
-
-/// Deploy is a no-op when auto-deploy feature is not enabled.
-#[cfg(not(feature = "auto-deploy"))]
-pub async fn deploy(
-    _function_name: &str,
-    _deploy_config: &quickwit_config::LambdaDeployConfig,
-) -> LambdaResult<String> {
-    Err(LambdaError::Configuration(
-        "auto-deploy feature is not enabled at compile time".into(),
-    ))
-}
+// Re-export payload types from server crate for convenience
+pub use quickwit_lambda_server::{LeafSearchPayload, LeafSearchResponsePayload};

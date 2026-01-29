@@ -1026,13 +1026,13 @@ async fn setup_searcher(
         if let Some(deploy_config) = &lambda_config.auto_deploy {
             info!("auto-deploying Lambda function");
             use anyhow::Context;
-            quickwit_lambda::deploy(&lambda_config.function_name, deploy_config)
+            quickwit_lambda_client::deploy(&lambda_config.function_name, deploy_config)
                 .await
                 .context("failed to deploy lambda function")?;
         }
 
         use anyhow::Context;
-        let invoker = quickwit_lambda::create_lambda_invoker(lambda_config)
+        let invoker = quickwit_lambda_client::create_lambda_invoker(lambda_config)
             .await
             .context("failed to initialize AWS Lambda invoker")?;
 

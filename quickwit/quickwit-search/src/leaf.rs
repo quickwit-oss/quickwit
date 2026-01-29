@@ -1355,7 +1355,7 @@ fn disable_search_request_hits(search_request: &mut SearchRequest) {
 /// Searches multiple splits for a specific index and a single doc mapping
 ///
 /// The leaf search collects all kind of information, and returns a set of
-/// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
+/// [PartialHit] candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn single_doc_mapping_leaf_search(

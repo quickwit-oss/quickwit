@@ -19,43 +19,23 @@ use quickwit_search::SearchError;
 /// Result type for Lambda operations.
 pub type LambdaResult<T> = Result<T, LambdaError>;
 
-/// Errors that can occur during Lambda operations.
+/// Errors that can occur during Lambda handler operations.
 #[derive(Debug)]
 pub enum LambdaError {
-    /// Error during Lambda invocation.
-    Invocation(String),
     /// Error serializing/deserializing protobuf.
     Serialization(String),
     /// Error from the search operation.
     Search(SearchError),
-    /// Lambda function returned an error.
-    FunctionError(String),
-    /// Configuration error.
-    Configuration(String),
     /// Internal error.
     Internal(String),
-    /// Resource conflict (e.g., function already exists during concurrent create).
-    ResourceConflict,
-    /// Error during Lambda function deployment.
-    Deployment(String),
-    /// Lambda function not found.
-    NotFound(String),
 }
 
 impl fmt::Display for LambdaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LambdaError::Invocation(msg) => write!(f, "Lambda invocation error: {}", msg),
             LambdaError::Serialization(msg) => write!(f, "Serialization error: {}", msg),
             LambdaError::Search(err) => write!(f, "Search error: {}", err),
-            LambdaError::FunctionError(msg) => write!(f, "Lambda function error: {}", msg),
-            LambdaError::Configuration(msg) => write!(f, "Configuration error: {}", msg),
             LambdaError::Internal(msg) => write!(f, "Internal error: {}", msg),
-            LambdaError::ResourceConflict => {
-                write!(f, "Resource conflict: function already exists")
-            }
-            LambdaError::Deployment(msg) => write!(f, "Deployment error: {}", msg),
-            LambdaError::NotFound(name) => write!(f, "Lambda function not found: {}", name),
         }
     }
 }
