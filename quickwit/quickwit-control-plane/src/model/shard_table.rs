@@ -1096,7 +1096,7 @@ mod tests {
 
         let previous_available_permits = shard_table
             .table_entries
-            .get(&source_uid)
+            .get_mut(&source_uid)
             .unwrap()
             .scaling_up_rate_limiter
             .available_permits();
@@ -1109,7 +1109,7 @@ mod tests {
 
         let new_available_permits = shard_table
             .table_entries
-            .get(&source_uid)
+            .get_mut(&source_uid)
             .unwrap()
             .scaling_up_rate_limiter
             .available_permits();
@@ -1138,7 +1138,7 @@ mod tests {
 
         let previous_available_permits = shard_table
             .table_entries
-            .get(&source_uid)
+            .get_mut(&source_uid)
             .unwrap()
             .scaling_down_rate_limiter
             .available_permits();
@@ -1151,7 +1151,7 @@ mod tests {
 
         let new_available_permits = shard_table
             .table_entries
-            .get(&source_uid)
+            .get_mut(&source_uid)
             .unwrap()
             .scaling_down_rate_limiter
             .available_permits();
@@ -1174,7 +1174,7 @@ mod tests {
         };
         let previous_available_permits = shard_table
             .table_entries
-            .get(&source_uid)
+            .get_mut(&source_uid)
             .unwrap()
             .scaling_up_rate_limiter
             .available_permits();
@@ -1189,7 +1189,7 @@ mod tests {
 
         let new_available_permits = shard_table
             .table_entries
-            .get(&source_uid)
+            .get_mut(&source_uid)
             .unwrap()
             .scaling_up_rate_limiter
             .available_permits();
@@ -1212,7 +1212,7 @@ mod tests {
         };
         let previous_available_permits = shard_table
             .table_entries
-            .get(&source_uid)
+            .get_mut(&source_uid)
             .unwrap()
             .scaling_up_rate_limiter
             .available_permits();
@@ -1227,7 +1227,7 @@ mod tests {
 
         let new_available_permits = shard_table
             .table_entries
-            .get(&source_uid)
+            .get_mut(&source_uid)
             .unwrap()
             .scaling_up_rate_limiter
             .available_permits();

@@ -96,7 +96,7 @@
           "maturation_period": "2days"
         },
         "resources": {
-          "heap_size": "50.0 MB"
+          "heap_size": 50000000
         }
       },
       "ingest_settings": {
