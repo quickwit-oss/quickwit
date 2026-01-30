@@ -685,7 +685,8 @@ fn visit_aggregation_mut(
     modified_something
 }
 
-// equivalent to Bound::map, which is unstable
+/// Maps a `Bound<T>` to a `Bound<U>` by applying a function to the contained value.
+/// Equivalent to `Bound::map`, which is currently unstable.
 pub fn map_bound<T, U>(bound: Bound<T>, f: impl FnOnce(T) -> U) -> Bound<U> {
     use Bound::*;
     match bound {
@@ -1354,7 +1355,7 @@ fn disable_search_request_hits(search_request: &mut SearchRequest) {
 /// Searches multiple splits for a specific index and a single doc mapping
 ///
 /// The leaf search collects all kind of information, and returns a set of
-/// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
+/// [PartialHit] candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn single_doc_mapping_leaf_search(

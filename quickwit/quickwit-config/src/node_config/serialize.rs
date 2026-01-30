@@ -542,8 +542,8 @@ mod tests {
     use itertools::Itertools;
 
     use super::*;
-    use crate::CacheConfig;
     use crate::storage_config::StorageBackendFlavor;
+    use crate::{CacheConfig, LambdaConfig, LambdaDeployConfig};
 
     fn get_config_filepath(config_filename: &str) -> String {
         format!(
@@ -687,6 +687,16 @@ mod tests {
                 }),
                 warmup_memory_budget: ByteSize::gb(100),
                 warmup_single_split_initial_allocation: ByteSize::gb(1),
+                lambda: Some(LambdaConfig {
+                    function_name: "quickwit-lambda-leaf-search".to_string(),
+                    max_splits_per_invocation: 10,
+                    auto_deploy: Some(LambdaDeployConfig {
+                        execution_role_arn: "arn:aws:iam::123456789012:role/quickwit-lambda-role"
+                            .to_string(),
+                        memory_size: ByteSize::gib(5),
+                        invocation_timeout_secs: 15,
+                    }),
+                }),
             }
         );
         assert_eq!(

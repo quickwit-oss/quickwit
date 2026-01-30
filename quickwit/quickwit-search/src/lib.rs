@@ -23,12 +23,15 @@ mod collector;
 mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
-mod leaf;
+
+/// Leaf search operations.
+pub mod leaf;
 mod leaf_cache;
 mod list_fields;
 mod list_fields_cache;
 mod list_terms;
 mod metrics_trackers;
+mod remote_function;
 mod retry;
 mod root;
 mod scroll_context;
@@ -80,6 +83,7 @@ pub use crate::client::{
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
+pub use crate::remote_function::RemoteFunctionInvoker;
 pub use crate::root::{
     IndexMetasForLeafSearch, SearchJob, check_all_index_metadata_found, jobs_to_leaf_request,
     root_search, search_plan,
@@ -260,6 +264,7 @@ pub async fn start_searcher_service(
     storage_resolver: StorageResolver,
     search_job_placer: SearchJobPlacer,
     searcher_context: Arc<SearcherContext>,
+    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
 ) -> anyhow::Result<Arc<dyn SearchService>> {
     let cluster_client = ClusterClient::new(search_job_placer);
     let search_service = Arc::new(SearchServiceImpl::new(
@@ -267,6 +272,7 @@ pub async fn start_searcher_service(
         storage_resolver,
         cluster_client,
         searcher_context,
+        lambda_invoker,
     ));
     Ok(search_service)
 }
@@ -289,6 +295,7 @@ pub async fn single_node_search(
         storage_resolver,
         cluster_client.clone(),
         searcher_context.clone(),
+        None, // No Lambda for single node search
     ));
     let search_service_client =
         SearchServiceClient::from_service(search_service.clone(), socket_addr);
@@ -298,6 +305,7 @@ pub async fn single_node_search(
         search_request,
         metastore,
         &cluster_client,
+        None, // No Lambda for single node search
     )
     .await
 }

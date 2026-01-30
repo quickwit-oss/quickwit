@@ -64,6 +64,13 @@ searcher:
     min_throughtput_bytes_per_secs: 100000
     timeout_millis: 2000
     max_num_retries: 2
+  lambda:
+    function_name: quickwit-lambda-leaf-search
+    max_splits_per_invocation: 10
+    auto_deploy:
+      execution_role_arn: arn:aws:iam::123456789012:role/quickwit-lambda-role
+      memory_size: 5 GiB
+      invocation_timeout_secs: 15
 
 jaeger:
   enable_endpoint: true

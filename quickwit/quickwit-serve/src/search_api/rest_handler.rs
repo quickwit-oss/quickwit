@@ -265,6 +265,7 @@ pub fn search_request_from_api_request(
         search_after: None,
         count_hits: search_request.count_all.into(),
         ignore_missing_indexes: false,
+        execution_mode: 0, // Default to gRPC
     };
     Ok(search_request)
 }
