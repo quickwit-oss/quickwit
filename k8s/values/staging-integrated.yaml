@@ -8,12 +8,15 @@ image:
   tag: edge
   pullPolicy: Always
 
+# Datadog site for reverse connection
+datadog:
+  site: dd.datad0g.com  # Staging environment
+
 cloudprem:
   index:
     minShards: 4 # number of indexers * number of vCPUs * 2 (1 * 2 * 2)
   reverseConnection:
     enabled: true
-    site: "dd.datad0g.com"  # Staging environment
 
 environment:
   QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
@@ -61,6 +64,9 @@ affinity:
             values:
               - arm64
 
+# DD_API_KEY injection via DD_API_KEY_FILE env var (reads API key from file created by consul-template)
+# All components need this because CP_ENABLE_REVERSE_CONNECTION=true triggers validation on ALL pods
+
 metastore:
   replicaCount: 1
 
@@ -72,7 +78,47 @@ metastore:
       cpu: 1
       memory: 2Gi
 
-  # No initContainers needed - using S3-based metastore instead of PostgreSQL
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
 
 control_plane:
   resources:
@@ -82,6 +128,48 @@ control_plane:
     requests:
       cpu: 1
       memory: 2Gi
+
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
 
 indexer:
   replicaCount: 1
@@ -99,32 +187,15 @@ indexer:
     storage: 100Gi
     storageClass: gp3
 
-searcher:
-  replicaCount: 1
-
-  resources:
-    limits:
-      cpu: 2
-      memory: 8Gi
-    requests:
-      cpu: 2
-      memory: 8Gi
-
-  # Override command to load DD_API_KEY from Vault-injected file before starting
-  command:
-    - sh
-    - -c
-    - |
-      export DD_API_KEY=$(cat /quickwit/dd-api-key.env)
-      exec quickwit run --service searcher
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
 
   initContainers:
-    # Loads dd-api-key.tpl and injects the API key (loaded from Vault) for the reverse connection
     - name: consul-template-init
       image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
       args:
         - -once
-        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key.env:chmod 600 /quickwit/dd-api-key.env
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
       resources:
         limits:
           cpu: 200m
@@ -139,7 +210,7 @@ searcher:
           mountPath: /template/dd-api-key.tpl
           subPath: dd-api-key.tpl
         - name: dd-api-key
-          mountPath: /quickwit
+          mountPath: /secrets
 
   extraVolumes:
     - name: dd-api-key
@@ -154,7 +225,61 @@ searcher:
 
   extraVolumeMounts:
     - name: dd-api-key
-      mountPath: /quickwit/dd-api-key.env
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
+
+searcher:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 2
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 8Gi
+
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
+
+  initContainers:
+    # Loads dd-api-key.tpl and injects the API key (loaded from Vault) for the reverse connection
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
       subPath: dd-api-key.env
       readOnly: true
 
@@ -166,6 +291,48 @@ janitor:
     requests:
       cpu: 1
       memory: 2Gi
+
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
 
 config:
   # S3-based storage paths for integrated staging
@@ -179,9 +346,9 @@ config:
     max_queue_disk_usage: 5GiB # max queue mem usage * 2 (half of staging)
 
 # ConfigMap entry that is rendered by consul-template into the DD_API_KEY file for reverse connection
-# Secret stored at: kv/k8s/logs-cloudprem/pomsky-staging/credentials with key dd_api_key
+# Secret stored at: kv/k8s/logs-cloudprem/cloudprem/pomsky-staging/dd_api_key with key dd_api_key
 extraConfigMaps:
   - name: dd-api-key-template
     data:
       dd-api-key.tpl: |
-        {% with secret "kv/k8s/logs-cloudprem/pomsky-staging/credentials" %}{% .Data.data.dd_api_key %}{% end %}
+        {% with secret "kv/k8s/logs-cloudprem/cloudprem/pomsky-staging/dd_api_key" %}{% .Data.data.dd_api_key %}{% end %}
