@@ -29,6 +29,7 @@ pub(crate) mod delete_task;
 pub(crate) mod get_identity;
 pub(crate) mod index;
 pub(crate) mod list_splits;
+pub(crate) mod routing_table;
 pub(crate) mod shard;
 pub(crate) mod source;
 pub(crate) mod split;
@@ -567,6 +568,26 @@ macro_rules! metastore_test_suite {
             #[serial_test::file_serial]
             async fn test_metastore_delete_index_templates() {
                 $crate::tests::template::test_metastore_delete_index_templates::<$metastore_type>().await;
+            }
+
+            /// Index Routing Table API tests
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_get_routing_table_empty() {
+                $crate::tests::routing_table::test_metastore_get_routing_table_empty::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_set_and_get_routing_table() {
+                $crate::tests::routing_table::test_metastore_set_and_get_routing_table::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_set_routing_table_overwrites() {
+                $crate::tests::routing_table::test_metastore_set_routing_table_overwrites::<$metastore_type>().await;
             }
 
             #[tokio::test]

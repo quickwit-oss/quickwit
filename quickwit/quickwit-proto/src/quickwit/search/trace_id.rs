@@ -97,6 +97,12 @@ impl TryFrom<Vec<u8>> for TraceId {
     }
 }
 
+impl From<TryFromTraceIdError> for tonic::Status {
+    fn from(error: TryFromTraceIdError) -> Self {
+        tonic::Status::invalid_argument(error.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

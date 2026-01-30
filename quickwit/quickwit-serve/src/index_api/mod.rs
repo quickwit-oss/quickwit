@@ -13,10 +13,12 @@
 // limitations under the License.
 
 mod index_resource;
+mod index_routing_table_resource;
 mod rest_handler;
 mod source_resource;
 mod split_resource;
 
 pub use self::index_resource::get_index_metadata_handler;
+pub use self::index_routing_table_resource::index_routing_table_handlers;
 pub use self::rest_handler::{IndexApi, index_management_handlers};
 pub use self::split_resource::{ListSplitsQueryParams, ListSplitsResponse};

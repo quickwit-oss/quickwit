@@ -18,7 +18,7 @@ use std::path::Path;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexTemplate, IndexTemplateId};
-use quickwit_proto::metastore::{MetastoreError, MetastoreResult, serde_utils};
+use quickwit_proto::metastore::{IndexRoutingRule, MetastoreError, MetastoreResult, serde_utils};
 use quickwit_proto::types::{DocMappingUid, IndexId};
 use quickwit_storage::{OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResult};
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,7 @@ impl LegacyManifest {
             indexes: self.indexes,
             templates: HashMap::new(),
             identity: Uuid::nil(),
+            index_routing_table: Vec::new(),
         }
     }
 }
@@ -67,6 +68,7 @@ pub(crate) struct Manifest {
     // unnecessary here and we can pass the hash map as is to the `MetastoreState`
     pub templates: HashMap<IndexTemplateId, IndexTemplate>,
     pub identity: Uuid,
+    pub index_routing_table: Vec<IndexRoutingRule>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -108,6 +110,8 @@ struct ManifestV0_8 {
     templates: Vec<IndexTemplate>,
     #[serde(default, skip_serializing_if = "Uuid::is_nil")]
     identity: Uuid,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    index_routing_table: Vec<IndexRoutingRule>,
 }
 
 impl From<Manifest> for ManifestV0_8 {
@@ -121,6 +125,7 @@ impl From<Manifest> for ManifestV0_8 {
             indexes: manifest.indexes,
             templates,
             identity: manifest.identity,
+            index_routing_table: manifest.index_routing_table,
         }
     }
 }
@@ -137,6 +142,7 @@ impl From<ManifestV0_8> for Manifest {
             indexes,
             templates,
             identity: manifest.identity,
+            index_routing_table: manifest.index_routing_table,
         }
     }
 }
@@ -158,12 +164,14 @@ impl quickwit_config::TestableForRegression for Manifest {
             indexes,
             templates,
             identity: Uuid::nil(),
+            index_routing_table: Vec::new(),
         }
     }
 
     fn assert_equality(&self, other: &Self) {
         assert_eq!(self.indexes, other.indexes);
         assert_eq!(self.templates, other.templates);
+        assert_eq!(self.index_routing_table, other.index_routing_table);
     }
 }
 
@@ -338,6 +346,7 @@ mod tests {
             indexes,
             templates,
             identity: Uuid::nil(),
+            index_routing_table: Vec::new(),
         };
         let manifest_json = serde_json::to_string_pretty(&manifest).unwrap();
         let manifest_deserialized: Manifest = serde_json::from_str(&manifest_json).unwrap();

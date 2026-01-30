@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 
 use tantivy::directory::OwnedBytes;
 
-use crate::metrics::CacheMetrics;
+use crate::metrics::{CacheMetrics, SingleCacheMetrics};
 
 #[derive(Clone, PartialOrd, Ord, PartialEq, Eq)]
 struct CacheKey<'a, T: ToOwned + ?Sized> {
@@ -58,7 +58,7 @@ struct NeedMutByteRangeCache<T: 'static + ToOwned + ?Sized> {
     // this is hardly significant as items can get merged if they overlap
     num_items: u64,
     num_bytes: u64,
-    cache_counters: &'static CacheMetrics,
+    cache_counters: &'static SingleCacheMetrics,
 }
 
 impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
@@ -67,7 +67,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             cache: BTreeMap::new(),
             num_items: 0,
             num_bytes: 0,
-            cache_counters,
+            cache_counters: &cache_counters.cache_metrics,
         }
     }
 

@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Formatter;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -28,7 +29,7 @@ use quickwit_actors::{
     Supervisor, Universe, WeakMailbox,
 };
 use quickwit_cluster::{
-    ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory, ClusterNode,
+    ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory, ClusterKvPublisher, ClusterNode,
 };
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
@@ -86,6 +87,8 @@ struct RebuildPlan;
 pub struct ControlPlane {
     cluster_config: ClusterConfig,
     cluster_change_stream_opt: Option<ClusterChangeStream>,
+    // Used to broadcast routing table changes to other nodes via Chitchat.
+    pub(crate) cluster_kv_publisher: Arc<dyn ClusterKvPublisher>,
     // The control plane state is split into to independent functions, that we naturally isolated
     // code wise and state wise.
     //
@@ -95,8 +98,8 @@ pub struct ControlPlane {
     // the different ingesters.
     indexing_scheduler: IndexingScheduler,
     ingest_controller: IngestController,
-    metastore: MetastoreServiceClient,
-    model: ControlPlaneModel,
+    pub(crate) metastore: MetastoreServiceClient,
+    pub(crate) model: ControlPlaneModel,
     prune_shard_cooldown: CooldownMap<(IndexId, SourceId)>,
     rebuild_plan_debouncer: Debouncer,
     readiness_tx: watch::Sender<bool>,
@@ -115,7 +118,7 @@ impl ControlPlane {
         universe: &Universe,
         cluster_config: ClusterConfig,
         self_node_id: NodeId,
-        cluster_change_stream_factory: impl ClusterChangeStreamFactory,
+        cluster_change_stream_factory: impl ClusterChangeStreamFactory + ClusterKvPublisher,
         indexer_pool: IndexerPool,
         ingester_pool: IngesterPool,
         metastore: MetastoreServiceClient,
@@ -125,11 +128,14 @@ impl ControlPlane {
         watch::Receiver<bool>,
     ) {
         let disable_control_loop = false;
+        let cluster_kv_publisher: Arc<dyn ClusterKvPublisher> =
+            Arc::new(cluster_change_stream_factory.clone());
         Self::spawn_inner(
             universe,
             cluster_config,
             self_node_id,
             cluster_change_stream_factory,
+            cluster_kv_publisher,
             indexer_pool,
             ingester_pool,
             metastore,
@@ -143,6 +149,7 @@ impl ControlPlane {
         cluster_config: ClusterConfig,
         self_node_id: NodeId,
         cluster_change_stream_factory: impl ClusterChangeStreamFactory,
+        cluster_kv_publisher: Arc<dyn ClusterKvPublisher>,
         indexer_pool: IndexerPool,
         ingester_pool: IngesterPool,
         metastore: MetastoreServiceClient,
@@ -178,6 +185,7 @@ impl ControlPlane {
                 ControlPlane {
                     cluster_config: cluster_config.clone(),
                     cluster_change_stream_opt: Some(cluster_change_stream_factory.create()),
+                    cluster_kv_publisher: cluster_kv_publisher.clone(),
                     indexing_scheduler,
                     ingest_controller,
                     metastore: metastore.clone(),
@@ -226,6 +234,14 @@ impl Actor for ControlPlane {
             .load_from_metastore(&mut self.metastore, ctx.progress())
             .await
             .context("failed to initialize control plane model")?;
+
+        // Initialize routing table if consistency is enforced and it doesn't exist yet
+        if self.cluster_config.enforce_index_routing_table_consistency {
+            self.model
+                .initialize_routing_table_if_necessary(&mut self.metastore)
+                .await
+                .context("failed to initialize routing table")?;
+        }
 
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
 
@@ -530,7 +546,7 @@ impl Handler<ControlPlanLoop> for ControlPlane {
 /// the metastore.
 ///
 /// This function also logs errors.
-fn convert_metastore_error<T>(
+pub(crate) fn convert_metastore_error<T>(
     metastore_error: MetastoreError,
 ) -> Result<ControlPlaneResult<T>, ActorExitStatus> {
     // If true, we know that the transactions has not been recorded in the Metastore.
@@ -598,6 +614,19 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
         // index and source config templates.
         let should_rebuild_plan = !index_metadata.sources.is_empty();
         self.model.add_index(index_metadata);
+
+        // Update routing table if consistency is enforced.
+        if self.cluster_config.enforce_index_routing_table_consistency
+            && let Err(metastore_error) = crate::index_routing_table::consistency::on_create_index(
+                &self.metastore,
+                &index_uid.index_id,
+                &*self.cluster_kv_publisher,
+            )
+            .await
+        {
+            reply(convert_metastore_error(metastore_error)?);
+            return Ok(());
+        }
 
         if should_rebuild_plan {
             let rebuild_plan_notifier = self.rebuild_plan_debounced(ctx);
@@ -667,6 +696,19 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid().clone();
         debug!(%index_uid, "deleting index");
+
+        // Check routing table consistency BEFORE deleting.
+        // This validates and updates the routing table, ensuring we don't leave it invalid.
+        if self.cluster_config.enforce_index_routing_table_consistency
+            && let Err(metastore_error) = crate::index_routing_table::consistency::on_delete_index(
+                &self.metastore,
+                &index_uid.index_id,
+                &*self.cluster_kv_publisher,
+            )
+            .await
+        {
+            return convert_metastore_error(metastore_error);
+        }
 
         if let Err(metastore_error) = ctx
             .protect_future(self.metastore.delete_index(request))
@@ -2487,6 +2529,7 @@ mod tests {
                 cluster_config,
                 node_id,
                 cluster_change_stream_factory.clone(),
+                Arc::new(cluster_change_stream_factory.clone()),
                 indexer_pool.clone(),
                 ingester_pool,
                 metastore,

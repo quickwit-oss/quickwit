@@ -24,19 +24,18 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestRouterService, IngestRouterServiceClient,
     IngestSubrequest,
 };
-use quickwit_proto::types::{DocUidGenerator, IndexId};
+use quickwit_proto::types::DocUidGenerator;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::Deserialize;
 use serde_with::formats::CommaSeparator;
 use serde_with::{StringWithSeparator, serde_as};
-use tracing::{debug, error};
+use tracing::debug;
 use warp::{Filter, Rejection};
 
+use super::index_router::IndexRouter;
 use crate::decompression::get_body_bytes;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{Body, BodyFormat, with_arg};
-
-const DATADOG_INDEX_ID: &str = "datadog";
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(datadog_logs,))]
@@ -44,9 +43,10 @@ pub struct DatadogApi;
 
 pub(crate) fn datadog_api_handlers(
     ingest_router: IngestRouterServiceClient,
+    index_router: IndexRouter,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     datadog_healthcheck()
-        .or(datadog_logs(ingest_router.clone()))
+        .or(datadog_logs(ingest_router, index_router))
         .boxed()
 }
 
@@ -105,13 +105,15 @@ pub(crate) fn datadog_logs_filter()
 )]
 pub(crate) fn datadog_logs(
     ingest_router: IngestRouterServiceClient,
+    index_router: IndexRouter,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     datadog_logs_filter()
         .and(with_arg(ingest_router))
+        .and(with_arg(index_router))
         .and(warp::post())
         .then(
-            |body: Body, query: DatadogLogsQueryParams, ingest_router| async move {
-                datadog_ingest_logs(ingest_router, DATADOG_INDEX_ID.to_string(), body, query).await
+            |body: Body, query: DatadogLogsQueryParams, ingest_router, index_router| async move {
+                datadog_ingest_logs(ingest_router, index_router, body, query).await
             },
         )
         .and(with_arg(BodyFormat::default()))
@@ -208,7 +210,7 @@ fn try_parse_datadog_log_messages(body: &Body) -> Result<Vec<DatadogLogMsg>, Dat
 
 async fn datadog_ingest_logs(
     ingest_router: IngestRouterServiceClient,
-    index_id: IndexId,
+    index_router: IndexRouter,
     body: Body,
     query: DatadogLogsQueryParams,
 ) -> Result<(), DatadogApiError> {
@@ -260,6 +262,14 @@ async fn datadog_ingest_logs(
     let doc_batch = doc_batch_fut.await.map_err(|_panicked| {
         DatadogApiError::Internal("task panicked while processing log events payload".to_string())
     })??;
+
+    // Route to determine the target index.
+    // TODO: implement per-document routing when filter matching is implemented.
+    let index_id = index_router.get_catch_all_index_id().ok_or_else(|| {
+        DatadogApiError::Internal(
+            "no routing rule matched, cannot determine target index".to_string(),
+        )
+    })?;
 
     let subrequest = IngestSubrequest {
         subrequest_id: 0,
@@ -344,9 +354,19 @@ mod tests {
         IngestFailure, IngestResponseV2, IngestRouterServiceClient, IngestSuccess,
         MockIngestRouterService,
     };
+    use quickwit_proto::metastore::IndexRoutingRule;
     use quickwit_proto::types::{IndexUid, Position, ShardId};
 
     use super::*;
+
+    const DATADOG_INDEX_ID: &str = "datadog";
+
+    fn test_index_router() -> IndexRouter {
+        IndexRouter::for_test(vec![IndexRoutingRule {
+            index_id: DATADOG_INDEX_ID.to_string(),
+            filter: "*".to_string(),
+        }])
+    }
 
     #[tokio::test]
     async fn test_datadog_ingest_logs() {
@@ -381,7 +401,7 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = datadog_logs(ingest_router);
+        let handler = datadog_logs(ingest_router, test_index_router());
         let payload = r#"
             [
               {
@@ -402,7 +422,7 @@ mod tests {
     #[tokio::test]
     async fn test_datadog_ingest_logs_empty_payload() {
         let ingest_router = IngestRouterServiceClient::mocked();
-        let handler = datadog_logs(ingest_router);
+        let handler = datadog_logs(ingest_router, test_index_router());
 
         let response = warp::test::request()
             .path("/api/v2/logs")
@@ -447,7 +467,7 @@ mod tests {
                 ))
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = datadog_logs(ingest_router);
+        let handler = datadog_logs(ingest_router, test_index_router());
         let payload = r#"
             [
               {
@@ -495,7 +515,7 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = datadog_logs(ingest_router);
+        let handler = datadog_logs(ingest_router, test_index_router());
         let payload = r#"
             [
               {

@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod index_router;
 mod rest_handler;
 
+pub use index_router::IndexRouter;
 pub use rest_handler::DatadogApi;
 pub(crate) use rest_handler::datadog_api_handlers;

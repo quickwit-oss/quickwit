@@ -22,9 +22,11 @@ use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse, Event,
-    EventTracker, FetchOneRequest, FetchOneResponse, GetIndexesRequest, GetIndexesResponse,
-    ListRequest, ListResponse, NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
-    Statistics, UpdateIndexRequest, UpdateIndexResponse,
+    EventTracker, FetchOneRequest, FetchOneResponse, GetIndexRoutingTableRequest,
+    GetIndexRoutingTableResponse, GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse,
+    NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
+    SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest,
+    UpdateIndexResponse,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, PullMetricsRequest, PullMetricsResponse,
@@ -626,6 +628,45 @@ impl CloudPremService for CloudPremServiceImpl {
             .await?;
 
         Ok(DeleteIndexResponse {})
+    }
+
+    async fn get_index_routing_table(
+        &self,
+        _request: GetIndexRoutingTableRequest,
+    ) -> CloudPremResult<GetIndexRoutingTableResponse> {
+        info!("received GetIndexRoutingTable request");
+
+        let metastore_request = quickwit_proto::metastore::GetIndexRoutingTableRequest {};
+        let metastore_response = self
+            .metastore_client
+            .clone()
+            .get_index_routing_table(metastore_request)
+            .await?;
+
+        let routing_table = metastore_response
+            .rules
+            .into_iter()
+            .map(Into::into)
+            .collect();
+
+        Ok(GetIndexRoutingTableResponse { routing_table })
+    }
+
+    async fn set_index_routing_table(
+        &self,
+        request: SetIndexRoutingTableRequest,
+    ) -> CloudPremResult<SetIndexRoutingTableResponse> {
+        info!("received SetIndexRoutingTable request");
+
+        let metastore_request = quickwit_proto::metastore::SetIndexRoutingTableRequest {
+            rules: request.routing_table.into_iter().map(Into::into).collect(),
+        };
+        self.metastore_client
+            .clone()
+            .set_index_routing_table(metastore_request)
+            .await?;
+
+        Ok(SetIndexRoutingTableResponse {})
     }
 }
 

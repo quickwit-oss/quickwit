@@ -78,7 +78,8 @@ use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ClusterConfig, IndexConfig, IngestApiConfig, IngestSettings, NodeConfig, RetentionPolicy,
+    CloudPremConfig, ClusterConfig, IndexConfig, IngestApiConfig, IngestSettings, NodeConfig,
+    RetentionPolicy,
 };
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
@@ -338,6 +339,7 @@ async fn start_control_plane_if_needed(
             metastore_client.clone(),
             node_config.default_index_root_uri.clone(),
             &node_config.ingest_api_config,
+            &node_config.cloudprem_config,
         )
         .await?;
 
@@ -1107,6 +1109,7 @@ async fn setup_control_plane(
     metastore: MetastoreServiceClient,
     default_index_root_uri: Uri,
     ingest_api_config: &IngestApiConfig,
+    cloudprem_config: &CloudPremConfig,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let cluster_id = cluster.cluster_id().to_string();
     let replication_factor = ingest_api_config
@@ -1120,6 +1123,8 @@ async fn setup_control_plane(
         replication_factor,
         shard_throughput_limit: ingest_api_config.shard_throughput_limit,
         shard_scale_up_factor: ingest_api_config.shard_scale_up_factor,
+        enforce_index_routing_table_consistency: cloudprem_config
+            .enforce_index_routing_table_consistency,
     };
     let (control_plane_mailbox, _control_plane_handle, mut readiness_rx) = ControlPlane::spawn(
         universe,

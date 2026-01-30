@@ -30,7 +30,7 @@ You will be notified by email from the CI system if any issues are discovered, b
 ### Local Development
 
 1. Install Rust, CMake, Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
-2. Install node@20 and `npm install -g yarn`
+2. Install node@24 and `npm install -g yarn`
 3. Install awslocal https://github.com/localstack/awscli-local
 4. Install protoc https://grpc.io/docs/protoc-installation/ (you may need to install the latest binaries rather than your distro's flavor)
 5. Install nextest https://nexte.st/docs/installation/pre-built-binaries/

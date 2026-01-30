@@ -20,10 +20,9 @@ use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::TestSandbox;
-use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::search::{
     LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField, SortOrder,
-    SortValue,
+    SortValue, TraceId,
 };
 use quickwit_query::query_ast::{
     QueryAst, qast_helper, qast_json_helper, query_ast_from_user_text,

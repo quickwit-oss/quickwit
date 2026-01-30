@@ -23,17 +23,18 @@ use quickwit_proto::metastore::{
     DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
     DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
     FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataRequest, IndexesMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
-    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    GetClusterIdentityResponse, GetIndexRoutingTableRequest, GetIndexRoutingTableResponse,
+    GetIndexTemplateRequest, GetIndexTemplateResponse, IndexMetadataRequest, IndexMetadataResponse,
+    IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse,
+    PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    SetIndexRoutingTableRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 
 /// A [`MetastoreService`] implementation that proxies some requests to the control plane so it can
@@ -288,5 +289,23 @@ impl MetastoreService for ControlPlaneMetastore {
         request: GetClusterIdentityRequest,
     ) -> MetastoreResult<GetClusterIdentityResponse> {
         self.metastore.get_cluster_identity(request).await
+    }
+
+    // Index Routing Table API
+
+    async fn get_index_routing_table(
+        &self,
+        request: GetIndexRoutingTableRequest,
+    ) -> MetastoreResult<GetIndexRoutingTableResponse> {
+        self.metastore.get_index_routing_table(request).await
+    }
+
+    // Proxied through control plane so it can validate invariants and gossip changes.
+    async fn set_index_routing_table(
+        &self,
+        request: SetIndexRoutingTableRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let response = self.control_plane.set_index_routing_table(request).await?;
+        Ok(response)
     }
 }

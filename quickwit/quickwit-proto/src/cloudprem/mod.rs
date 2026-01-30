@@ -106,3 +106,23 @@ impl From<crate::metastore::MetastoreError> for CloudPremError {
         }
     }
 }
+
+// Conversions between cloudprem and metastore IndexRoutingTable types.
+
+impl From<crate::metastore::IndexRoutingRule> for IndexRoutingRule {
+    fn from(rule: crate::metastore::IndexRoutingRule) -> Self {
+        Self {
+            filter: rule.filter,
+            index_id: rule.index_id,
+        }
+    }
+}
+
+impl From<IndexRoutingRule> for crate::metastore::IndexRoutingRule {
+    fn from(rule: IndexRoutingRule) -> Self {
+        Self {
+            filter: rule.filter,
+            index_id: rule.index_id,
+        }
+    }
+}

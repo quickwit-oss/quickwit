@@ -41,7 +41,9 @@ use time::OffsetDateTime;
 
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::change::for_test::*;
-pub use crate::change::{ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory};
+pub use crate::change::{
+    ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory, ClusterKvPublisher,
+};
 pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::cluster::{
@@ -143,6 +145,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         grpc_advertise_addr: node_config.grpc_advertise_addr,
         indexing_tasks,
         indexing_cpu_capacity,
+        availability_zone: node_config.availability_zone.clone(),
     };
     let failure_detector_config = FailureDetectorConfig {
         dead_node_grace_period: Duration::from_secs(2 * 60 * 60), // 2 hours

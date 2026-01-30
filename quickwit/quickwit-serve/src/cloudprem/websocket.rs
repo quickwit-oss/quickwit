@@ -93,6 +93,20 @@ async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest
         Request::CreateIndex(create_index) => {
             Response::CreateIndex(handle_err!(server.create_index(create_index).await))
         }
+        Request::GetIndexRoutingTable(get_index_routing_table) => {
+            Response::GetIndexRoutingTable(handle_err!(
+                server
+                    .get_index_routing_table(get_index_routing_table)
+                    .await
+            ))
+        }
+        Request::SetIndexRoutingTable(set_index_routing_table) => {
+            Response::SetIndexRoutingTable(handle_err!(
+                server
+                    .set_index_routing_table(set_index_routing_table)
+                    .await
+            ))
+        }
 
         _ => return unimplemented("Unimplemented request"),
     };

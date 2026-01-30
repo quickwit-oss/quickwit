@@ -112,16 +112,16 @@ jobs:
 
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@25ef9892608d184944df486ae09ffae168b3cda3 # v3.0.0
+        uses: taiki-e/cache-cargo-install-action@34ce5120836e5f9f1508d8713d7fdea0e8facd6f # v3.0.1
         with:
           tool: cargo-nextest
+      - name: cargo build
+        if: always() && steps.modified.outputs.rust_src == 'true'
+        run: cargo build --features=postgres --tests --bin quickwit
+        working-directory: ./quickwit
       - name: cargo nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo nextest run --features=postgres --retries 1
-        working-directory: ./quickwit
-      - name: cargo build
-        if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo build --features=postgres --bin quickwit
         working-directory: ./quickwit
       - name: Install python packages
         if: always() && steps.modified.outputs.rust_src == 'true'
@@ -191,13 +191,13 @@ jobs:
           workspaces: "./quickwit -> target"
       - name: Install cargo deny
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@25ef9892608d184944df486ae09ffae168b3cda3 # v3.0.0
+        uses: taiki-e/cache-cargo-install-action@34ce5120836e5f9f1508d8713d7fdea0e8facd6f # v3.0.1
         with:
           # 0.18 requires rustc 1.85
           tool: cargo-deny@0.17.0
       - name: Install cargo machete
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@25ef9892608d184944df486ae09ffae168b3cda3 # v3.0.0
+        uses: taiki-e/cache-cargo-install-action@34ce5120836e5f9f1508d8713d7fdea0e8facd6f # v3.0.1
         with:
           tool: cargo-machete
       - name: cargo clippy
@@ -214,7 +214,7 @@ jobs:
         working-directory: ./quickwit
       - name: cargo doc
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo doc
+        run: cargo doc --no-deps
         working-directory: ./quickwit
       - name: License headers check
         if: always()

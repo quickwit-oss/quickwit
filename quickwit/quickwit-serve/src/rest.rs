@@ -39,13 +39,13 @@ use warp::{Filter, Rejection, Reply, redirect};
 use crate::cloudprem_ui_api::cloudprem_ui_api_handlers;
 use crate::cloudprem_ui_handler::cloudprem_ui_handler;
 use crate::cluster_api::cluster_handler;
-use crate::datadog_api::datadog_api_handlers;
+use crate::datadog_api::{IndexRouter, datadog_api_handlers};
 use crate::decompression::{CorruptedData, UnsupportedEncoding};
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::developer_api::developer_api_routes;
 use crate::elasticsearch_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
-use crate::index_api::index_management_handlers;
+use crate::index_api::{index_management_handlers, index_routing_table_handlers};
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
@@ -177,6 +177,13 @@ pub(crate) async fn start_rest_server(
     )
     .boxed();
 
+    // Create the index router for Datadog API.
+    let index_router = IndexRouter::create_and_subscribe(
+        quickwit_services.metastore_client.clone(),
+        &quickwit_services.cluster,
+    )
+    .await?;
+
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
@@ -198,6 +205,7 @@ pub(crate) async fn start_rest_server(
     let rest_routes = api_v1_root_route
         .or(datadog_api_handlers(
             quickwit_services.ingest_router_service.clone(),
+            index_router,
         ))
         .or(cloudprem_ui_api_handlers(
             quickwit_services.search_service.clone(),
@@ -355,6 +363,10 @@ fn api_v1_routes(
         ))
         .boxed()
         .or(index_template_api_handlers(
+            quickwit_services.metastore_client.clone(),
+        ))
+        .boxed()
+        .or(index_routing_table_handlers(
             quickwit_services.metastore_client.clone(),
         ))
         .boxed(),
