@@ -15,7 +15,10 @@
 use std::collections::HashMap;
 
 use quickwit_proto::search::{ListFieldType, ListFieldsEntryResponse, ListFieldsResponse};
+use quickwit_query::ElasticQueryDsl;
+use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
+use warp::hyper::StatusCode;
 
 use super::ElasticsearchError;
 use super::search_query_params::*;
@@ -173,16 +176,227 @@ pub fn convert_to_es_field_capabilities_response(
     FieldCapabilityResponse { indices, fields }
 }
 
+/// Parses an Elasticsearch index_filter JSON value into a Quickwit QueryAst.
+///
+/// Returns `Ok(None)` if the index_filter is null.
+/// Returns `Ok(Some(QueryAst))` if the index_filter is valid.
+/// Returns `Err` if the index_filter is invalid or cannot be converted (including empty object).
+#[allow(clippy::result_large_err)]
+pub fn parse_index_filter_to_query_ast(
+    index_filter: serde_json::Value,
+) -> Result<Option<QueryAst>, ElasticsearchError> {
+    if index_filter.is_null() {
+        return Ok(None);
+    }
+
+    // Parse ES Query DSL to internal QueryAst
+    let elastic_query_dsl: ElasticQueryDsl =
+        serde_json::from_value(index_filter).map_err(|err| {
+            ElasticsearchError::new(
+                StatusCode::BAD_REQUEST,
+                format!("Invalid index_filter: {err}"),
+                None,
+            )
+        })?;
+
+    let query_ast: QueryAst = elastic_query_dsl.try_into().map_err(|err: anyhow::Error| {
+        ElasticsearchError::new(
+            StatusCode::BAD_REQUEST,
+            format!("Failed to convert index_filter: {err}"),
+            None,
+        )
+    })?;
+
+    Ok(Some(query_ast))
+}
+
 #[allow(clippy::result_large_err)]
 pub fn build_list_field_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: FieldCapabilityQueryParams,
-    _search_body: FieldCapabilityRequestBody,
+    search_body: FieldCapabilityRequestBody,
 ) -> Result<quickwit_proto::search::ListFieldsRequest, ElasticsearchError> {
+    let query_ast = parse_index_filter_to_query_ast(search_body.index_filter)?;
+    let query_ast_json = query_ast
+        .map(|ast| serde_json::to_string(&ast).expect("QueryAst should be JSON serializable"));
+
     Ok(quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
         fields: search_params.fields.unwrap_or_default(),
         start_timestamp: search_params.start_timestamp,
         end_timestamp: search_params.end_timestamp,
+        query_ast: query_ast_json,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_build_list_field_request_empty_index_filter() {
+        let result = build_list_field_request_for_es_api(
+            vec!["test_index".to_string()],
+            FieldCapabilityQueryParams::default(),
+            FieldCapabilityRequestBody::default(),
+        )
+        .unwrap();
+
+        assert_eq!(result.index_id_patterns, vec!["test_index".to_string()]);
+        assert!(result.query_ast.is_none());
+    }
+
+    #[test]
+    fn test_build_list_field_request_with_term_index_filter() {
+        let search_body = FieldCapabilityRequestBody {
+            index_filter: json!({
+                "term": {
+                    "status": "active"
+                }
+            }),
+            runtime_mappings: serde_json::Value::Null,
+        };
+
+        let result = build_list_field_request_for_es_api(
+            vec!["test_index".to_string()],
+            FieldCapabilityQueryParams::default(),
+            search_body,
+        )
+        .unwrap();
+
+        assert_eq!(result.index_id_patterns, vec!["test_index".to_string()]);
+        assert!(result.query_ast.is_some());
+
+        // Verify the query_ast is valid JSON
+        let query_ast: serde_json::Value =
+            serde_json::from_str(&result.query_ast.unwrap()).unwrap();
+        assert!(query_ast.is_object());
+    }
+
+    #[test]
+    fn test_build_list_field_request_with_bool_index_filter() {
+        let search_body = FieldCapabilityRequestBody {
+            index_filter: json!({
+                "bool": {
+                    "must": [
+                        { "term": { "status": "active" } }
+                    ],
+                    "filter": [
+                        { "range": { "age": { "gte": 18 } } }
+                    ]
+                }
+            }),
+            runtime_mappings: serde_json::Value::Null,
+        };
+
+        let result = build_list_field_request_for_es_api(
+            vec!["test_index".to_string()],
+            FieldCapabilityQueryParams::default(),
+            search_body,
+        )
+        .unwrap();
+
+        assert!(result.query_ast.is_some());
+    }
+
+    #[test]
+    fn test_build_list_field_request_with_invalid_index_filter() {
+        let search_body = FieldCapabilityRequestBody {
+            index_filter: json!({
+                "invalid_query_type": {
+                    "field": "value"
+                }
+            }),
+            runtime_mappings: serde_json::Value::Null,
+        };
+
+        let result = build_list_field_request_for_es_api(
+            vec!["test_index".to_string()],
+            FieldCapabilityQueryParams::default(),
+            search_body,
+        );
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn test_build_list_field_request_with_null_index_filter() {
+        let search_body = FieldCapabilityRequestBody {
+            index_filter: serde_json::Value::Null,
+            runtime_mappings: serde_json::Value::Null,
+        };
+
+        let result = build_list_field_request_for_es_api(
+            vec!["test_index".to_string()],
+            FieldCapabilityQueryParams::default(),
+            search_body,
+        )
+        .unwrap();
+
+        assert!(result.query_ast.is_none());
+    }
+
+    #[test]
+    fn test_build_list_field_request_preserves_other_params() {
+        let search_params = FieldCapabilityQueryParams {
+            fields: Some(vec!["field1".to_string(), "field2".to_string()]),
+            start_timestamp: Some(1000),
+            end_timestamp: Some(2000),
+            ..Default::default()
+        };
+
+        let search_body = FieldCapabilityRequestBody {
+            index_filter: json!({ "match_all": {} }),
+            runtime_mappings: serde_json::Value::Null,
+        };
+
+        let result = build_list_field_request_for_es_api(
+            vec!["test_index".to_string()],
+            search_params,
+            search_body,
+        )
+        .unwrap();
+
+        assert_eq!(
+            result.fields,
+            vec!["field1".to_string(), "field2".to_string()]
+        );
+        assert_eq!(result.start_timestamp, Some(1000));
+        assert_eq!(result.end_timestamp, Some(2000));
+        assert!(result.query_ast.is_some());
+    }
+
+    #[test]
+    fn test_parse_index_filter_to_query_ast_null() {
+        let result = parse_index_filter_to_query_ast(serde_json::Value::Null).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_parse_index_filter_to_query_ast_empty_object() {
+        // Empty object {} should return error to match ES behavior
+        let result = parse_index_filter_to_query_ast(json!({}));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_index_filter_to_query_ast_valid_term() {
+        let result = parse_index_filter_to_query_ast(json!({
+            "term": { "status": "active" }
+        }))
+        .unwrap();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_index_filter_to_query_ast_invalid() {
+        let result = parse_index_filter_to_query_ast(json!({
+            "invalid_query_type": { "field": "value" }
+        }));
+        assert!(result.is_err());
+    }
 }
