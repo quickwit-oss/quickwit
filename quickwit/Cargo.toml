@@ -356,7 +356,7 @@ quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
 
-tantivy = { git = "https://github.com/SekoiaLab/tantivy/", rev = "cfa7087", default-features = false, features = [
+tantivy = { git = "https://github.com/SekoiaLab/tantivy/", rev = "e9aede4", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
