@@ -437,7 +437,7 @@ json:
       field: "value"
 status_code: 400
 ---
-# Test _field_caps API with empty index_filter (should work like no filter)
+# Test _field_caps API with empty index_filter (should return 400 like ES)
 method: [POST]
 engines:
   - quickwit
@@ -445,6 +445,17 @@ engines:
 endpoint: fieldcaps/_field_caps?fields=name
 json:
   index_filter: {}
+status_code: 400
+---
+# Test _field_caps API with index_filter using tag field for split pruning (QW-only)
+method: [POST]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=name
+json:
+  index_filter:
+    term:
+      tags: "nice"
 expected:
   indices:
   - fieldcaps

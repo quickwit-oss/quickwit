@@ -178,14 +178,14 @@ pub fn convert_to_es_field_capabilities_response(
 
 /// Parses an Elasticsearch index_filter JSON value into a Quickwit QueryAst.
 ///
-/// Returns `Ok(None)` if the index_filter is null or empty.
+/// Returns `Ok(None)` if the index_filter is null.
 /// Returns `Ok(Some(QueryAst))` if the index_filter is valid.
-/// Returns `Err` if the index_filter is invalid or cannot be converted.
+/// Returns `Err` if the index_filter is invalid or cannot be converted (including empty object).
 #[allow(clippy::result_large_err)]
 pub fn parse_index_filter_to_query_ast(
     index_filter: serde_json::Value,
 ) -> Result<Option<QueryAst>, ElasticsearchError> {
-    if index_filter.is_null() || index_filter == serde_json::Value::Object(Default::default()) {
+    if index_filter.is_null() {
         return Ok(None);
     }
 
@@ -378,8 +378,9 @@ mod tests {
 
     #[test]
     fn test_parse_index_filter_to_query_ast_empty_object() {
-        let result = parse_index_filter_to_query_ast(json!({})).unwrap();
-        assert!(result.is_none());
+        // Empty object {} should return error to match ES behavior
+        let result = parse_index_filter_to_query_ast(json!({}));
+        assert!(result.is_err());
     }
 
     #[test]
