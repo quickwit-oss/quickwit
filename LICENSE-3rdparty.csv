@@ -181,6 +181,7 @@ futures-util,https://github.com/rust-lang/futures-rs,MIT OR Apache-2.0,The futur
 generic-array,https://github.com/fizyk20/generic-array,MIT,"Bartłomiej Kamiński <fizyk20@gmail.com>, Aaron Trent <novacrazy@gmail.com>"
 getrandom,https://github.com/rust-random/getrandom,MIT OR Apache-2.0,The Rand Project Developers
 glob,https://github.com/rust-lang/glob,MIT OR Apache-2.0,The Rust Project Developers
+governor,https://github.com/boinkor-net/governor,MIT,Andreas Fuchs <asf@boinkor.net>
 group,https://github.com/zkcrypto/group,MIT OR Apache-2.0,"Sean Bowe <ewillbefull@gmail.com>, Jack Grigg <jack@z.cash>"
 h2,https://github.com/hyperium/h2,MIT,"Carl Lerche <me@carllerche.com>, Sean McArthur <sean@seanmonstar.com>"
 half,https://github.com/VoidStarKat/half-rs,MIT OR Apache-2.0,Kathryn Long <squeeself@gmail.com>
@@ -284,6 +285,7 @@ new_string_template,https://github.com/hasezoey/new_string_template,MIT,hasezoey
 no-std-net,https://github.com/dunmatt/no-std-net,MIT,M@ Dunlap <mattdunlap@gmail.com>
 nom,https://github.com/Geal/nom,MIT,contact@geoffroycouprie.com
 nom,https://github.com/rust-bakery/nom,MIT,contact@geoffroycouprie.com
+nonzero_ext,https://github.com/antifuchs/nonzero_ext,Apache-2.0,Andreas Fuchs <asf@boinkor.net>
 normalize-line-endings,https://github.com/derekdreery/normalize-line-endings,Apache-2.0,Richard Dodd <richdodj@gmail.com>
 nu-ansi-term,https://github.com/nushell/nu-ansi-term,MIT,"ogham@bsago.me, Ryan Scheel (Havvy) <ryan.havvy@gmail.com>, Josh Triplett <josh@joshtriplett.org>, The Nushell Project Developers"
 num-bigint,https://github.com/rust-num/num-bigint,MIT OR Apache-2.0,The Rust Project Developers
@@ -445,6 +447,7 @@ slab,https://github.com/tokio-rs/slab,MIT,Carl Lerche <me@carllerche.com>
 smallvec,https://github.com/servo/rust-smallvec,MIT OR Apache-2.0,The Servo Project Developers
 socket2,https://github.com/rust-lang/socket2,MIT OR Apache-2.0,"Alex Crichton <alex@alexcrichton.com>, Thomas de Zeeuw <thomasdezeeuw@gmail.com>"
 spin,https://github.com/mvdnes/spin-rs,MIT,"Mathijs van de Nes <git@mathijs.vd-nes.nl>, John Ericson <git@JohnEricson.me>, Joshua Barretto <joshua.s.barretto@gmail.com>"
+spinning_top,https://github.com/rust-osdev/spinning_top,MIT OR Apache-2.0,Philipp Oppermann <dev@phil-opp.com>
 spki,https://github.com/RustCrypto/formats/tree/master/spki,Apache-2.0 OR MIT,RustCrypto Developers
 stable_deref_trait,https://github.com/storyyeller/stable_deref_trait,MIT OR Apache-2.0,Robert Grosse <n210241048576@gmail.com>
 static_assertions,https://github.com/nvzqz/static-assertions-rs,MIT OR Apache-2.0,Nikolai Vazquez
