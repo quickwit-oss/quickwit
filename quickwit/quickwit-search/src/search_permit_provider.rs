@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::collections::BinaryHeap;
+use std::collections::binary_heap::PeekMut;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -265,10 +266,7 @@ impl SearchPermitActor {
             peeked.pop_if_smaller_than(self.total_memory_budget - self.total_memory_allocated)
         {
             if peeked.is_empty() {
-                drop(peeked);
-                // our modification can only have made our peeked element "higher priority", so the
-                // element we'll pop must be the one we just put back
-                self.permits_requests.pop();
+                PeekMut::pop(peeked);
             }
             return Some(permit_request);
         }
