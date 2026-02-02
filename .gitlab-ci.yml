@@ -55,8 +55,6 @@ build_image_staging:
     DDSIGN_ID_TOKEN:
       aud: image-integrity
   script:
-    # push an unsigned image for public use, identify it with it's SHA to prevent race condition between pipelines
-    - scripts/image-tool.sh --push --platform linux/amd64,linux/arm64 --repo cloudprem --tag $CI_COMMIT_SHA
     # push a signed image to pomsky with staging tag for staging-integrated deployments
     - scripts/image-tool.sh --push --sign --repo pomsky --tag staging
 
