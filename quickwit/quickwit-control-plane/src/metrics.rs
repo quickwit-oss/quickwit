@@ -44,8 +44,8 @@ pub struct ControlPlaneMetrics {
     pub remote_shards: IntGauge,
 
     // Per-shard ingestion rate metrics.
-    pub shard_short_term_ingestion_rate_mib: IntGaugeVec<4>,
-    pub shard_long_term_ingestion_rate_mib: IntGaugeVec<4>,
+    pub shard_short_term_ingestion_rate_mib: IntGaugeVec<3>,
+    pub shard_long_term_ingestion_rate_mib: IntGaugeVec<3>,
 }
 
 impl ControlPlaneMetrics {
@@ -88,14 +88,14 @@ impl Default for ControlPlaneMetrics {
             "Short-term ingestion rate in MiB/s per shard (5s window)",
             "control_plane",
             &[],
-            ["index_id", "source_id", "shard_id", "leader_id"],
+            ["index_id", "source_id", "shard_id"],
         );
         let shard_long_term_ingestion_rate_mib = new_gauge_vec(
             "shard_long_term_ingestion_rate_mib",
             "Long-term ingestion rate in MiB/s per shard (60s average)",
             "control_plane",
             &[],
-            ["index_id", "source_id", "shard_id", "leader_id"],
+            ["index_id", "source_id", "shard_id"],
         );
 
         ControlPlaneMetrics {

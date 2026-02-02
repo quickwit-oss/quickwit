@@ -520,15 +520,14 @@ impl ShardTable {
                 // Emit per-shard metrics (respects QW_DISABLE_PER_INDEX_METRICS).
                 if index_label_val == index_id {
                     let shard_id_str = shard_id.to_string();
-                    let leader_id = &shard_entry.leader_id;
 
                     crate::metrics::CONTROL_PLANE_METRICS
                         .shard_short_term_ingestion_rate_mib
-                        .with_label_values([index_id, source_id, &shard_id_str, leader_id])
+                        .with_label_values([index_id, source_id, &shard_id_str])
                         .set(short_term_ingestion_rate.0 as i64);
                     crate::metrics::CONTROL_PLANE_METRICS
                         .shard_long_term_ingestion_rate_mib
-                        .with_label_values([index_id, source_id, &shard_id_str, leader_id])
+                        .with_label_values([index_id, source_id, &shard_id_str])
                         .set(long_term_ingestion_rate.0 as i64);
                 }
 
