@@ -500,6 +500,11 @@ impl ShardTable {
         let Some(table_entry) = self.table_entries.get_mut(source_uid) else {
             return ShardStats::default();
         };
+
+        let index_id = source_uid.index_uid.index_id.as_str();
+        let source_id = source_uid.source_id.as_str();
+        let index_label_val = index_label(index_id);
+
         for shard_info in shard_infos {
             let ShardInfo {
                 shard_id,
@@ -511,6 +516,22 @@ impl ShardTable {
             if let Some(shard_entry) = table_entry.shard_entries.get_mut(shard_id) {
                 shard_entry.short_term_ingestion_rate = *short_term_ingestion_rate;
                 shard_entry.long_term_ingestion_rate = *long_term_ingestion_rate;
+
+                // Emit per-shard metrics (respects QW_DISABLE_PER_INDEX_METRICS).
+                if index_label_val == index_id {
+                    let shard_id_str = shard_id.to_string();
+                    let leader_id = &shard_entry.leader_id;
+
+                    crate::metrics::CONTROL_PLANE_METRICS
+                        .shard_short_term_ingestion_rate_mib
+                        .with_label_values([index_id, source_id, &shard_id_str, leader_id])
+                        .set(short_term_ingestion_rate.0 as i64);
+                    crate::metrics::CONTROL_PLANE_METRICS
+                        .shard_long_term_ingestion_rate_mib
+                        .with_label_values([index_id, source_id, &shard_id_str, leader_id])
+                        .set(long_term_ingestion_rate.0 as i64);
+                }
+
                 // `ShardInfos` are broadcasted via Chitchat and eventually consistent. As a
                 // result, we can only trust the `Closed` state, which is final.
                 if shard_state.is_closed() {

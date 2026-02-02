@@ -372,6 +372,9 @@ impl ControlPlane {
             BTreeMap<String, Vec<JsonValue>>,
         > = BTreeMap::new();
 
+        // Track per-index aggregate ingestion rates (open shards only).
+        let mut per_index_ingestion_rates: BTreeMap<IndexUid, (u64, u64)> = BTreeMap::new();
+
         for (source_uid, shard_entries) in self.model.all_shards_with_source() {
             for shard_entry in shard_entries {
                 let shard_json = json!({
@@ -382,6 +385,8 @@ impl ControlPlane {
                     "leader_id": shard_entry.leader_id,
                     "follower_id": shard_entry.follower_id,
                     "publish_position_inclusive": shard_entry.publish_position_inclusive(),
+                    "short_term_ingestion_rate_mib_per_sec": shard_entry.short_term_ingestion_rate.0,
+                    "long_term_ingestion_rate_mib_per_sec": shard_entry.long_term_ingestion_rate.0,
                 });
                 per_index_and_leader_shards_json
                     .entry(source_uid.index_uid.clone())
@@ -389,11 +394,35 @@ impl ControlPlane {
                     .entry(shard_entry.leader_id.clone())
                     .or_default()
                     .push(shard_json);
+
+                // Aggregate rates for open shards only.
+                if shard_entry.is_open() {
+                    let (short_term, long_term) = per_index_ingestion_rates
+                        .entry(source_uid.index_uid.clone())
+                        .or_default();
+                    *short_term += shard_entry.short_term_ingestion_rate.0 as u64;
+                    *long_term += shard_entry.long_term_ingestion_rate.0 as u64;
+                }
             }
         }
+
+        let index_ingestion_rates: BTreeMap<String, JsonValue> = per_index_ingestion_rates
+            .into_iter()
+            .map(|(index_uid, (short_term, long_term))| {
+                (
+                    index_uid.to_string(),
+                    json!({
+                        "short_term_ingestion_rate_mib_per_sec": short_term,
+                        "long_term_ingestion_rate_mib_per_sec": long_term,
+                    }),
+                )
+            })
+            .collect();
+
         json!({
             "physical_indexing_plan": physical_indexing_plan,
             "shard_table": per_index_and_leader_shards_json,
+            "index_ingestion_rates": index_ingestion_rates,
         })
     }
 
