@@ -110,7 +110,7 @@ publish_public_images:
   variables:
     IMG_SOURCES: registry.ddbuild.io/cloudprem:$CI_COMMIT_SHA
     IMG_DESTINATIONS: $IMG_DESTINATIONS
-    IMG_REGISTRIES: dockerhub,ecr-public
+    IMG_REGISTRIES: public
     IMG_SIGNING: "false"
 
 deploy_to_staging:
