@@ -17,8 +17,13 @@ extensions:
   datadoghq.com/sdp:
     workday_team: Logs CloudPrem
     conductor:
-        targets:
-          - name: staging-integrated
-            branch: pomsky/staging
-            schedule: '* 13-21 * * 1-5'
-            slack: logs-cloudprem-ops-staging
+      slack: logs-cloudprem-ops-staging
+      schedule: '* * * * 1-5'
+      targets:
+        - name: staging-integrated
+          branch: pomsky/staging
+          parent_environments:
+            - staging
+          deploy_only: true
+          artifacts:
+            - pomsky/staging-integrated
