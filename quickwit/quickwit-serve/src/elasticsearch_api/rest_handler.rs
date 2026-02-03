@@ -412,7 +412,7 @@ fn build_request_for_es_api(
             search_after,
             count_hits,
             ignore_missing_indexes,
-            execution_mode: 0, // Default to gRPC
+            execution_mode: 1, // Default to Lambda (RemoteFunction)
         },
         has_doc_id_field,
     ))

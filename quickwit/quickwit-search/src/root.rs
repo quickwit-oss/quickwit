@@ -46,7 +46,7 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tracing::{debug, info, info_span, instrument};
+use tracing::{debug, error, info, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
@@ -752,6 +752,10 @@ pub(crate) async fn search_partial_hits_phase(
             && searcher_context.searcher_config.lambda.is_some()
         {
             // Execute via Lambda
+            info!(
+                num_splits = split_metadatas.len(),
+                "Starting lambda execution for leaf search"
+            );
             execute_leaf_search_via_lambda(
                 search_request,
                 indexes_metas_for_leaf_search,
@@ -861,7 +865,11 @@ async fn execute_leaf_search_via_lambda(
                 jobs_to_leaf_request(search_request, indexes_metas_for_leaf_search, batch_jobs);
             async move {
                 let leaf_request = request?;
-                lambda_invoker.invoke_leaf_search(leaf_request).await
+                let response = lambda_invoker.invoke_leaf_search(leaf_request).await;
+                if let Err(err) = &response {
+                    error!(error = %err, "Lambda invocation failed");
+                }
+                response
             }
         })
         .collect();
@@ -1301,7 +1309,7 @@ pub async fn root_search(
     if let Some(max_total_split_searches) = searcher_context.searcher_config.max_splits_per_search
         && max_total_split_searches < num_splits
     {
-        tracing::error!(
+        error!(
             num_splits,
             max_total_split_searches,
             index=?search_request.index_id_patterns,
