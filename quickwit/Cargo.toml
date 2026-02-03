@@ -70,7 +70,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.18"
+version = "0.1.19"
 edition = "2024"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
@@ -357,7 +357,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 # Fork: removed quickwit-telemetry (present in upstream)
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "d904630", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "98ebbf9", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
