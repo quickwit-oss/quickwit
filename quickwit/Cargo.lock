@@ -4799,6 +4799,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4_flex"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab6473172471198271ff72e9379150e9dfd70d8e533e0752a27e515b48dd375e"
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5427,9 +5433,9 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "oneshot"
-version = "0.1.11"
+version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4ce411919553d3f9fa53a0880544cda985a112117a0444d5ff1e870a893d6ea"
+checksum = "269bca4c2591a28585d6bf10d9ed0332b7d76900a1b02bec41bdc3a2cdcda107"
 
 [[package]]
 name = "onig"
@@ -5728,7 +5734,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 [[package]]
 name = "ownedbytes"
 version = "0.9.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=98ebbf9#98ebbf922d5715941afa5afd1fc817a8c81ded97"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -6812,7 +6818,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-actors"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6832,7 +6838,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-aws"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "aws-config",
  "aws-runtime",
@@ -6847,7 +6853,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cli"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "backtrace",
@@ -6904,7 +6910,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cluster"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6930,7 +6936,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "futures",
@@ -6946,7 +6952,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen-example"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6971,7 +6977,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-common"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-speed-limit",
@@ -7020,7 +7026,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-config"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "bytes",
@@ -7054,7 +7060,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-control-plane"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7085,7 +7091,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-datetime"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "itertools 0.14.0",
  "serde",
@@ -7097,7 +7103,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-directories"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7114,7 +7120,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-doc-mapper"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7146,7 +7152,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-index-management"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "futures",
@@ -7166,7 +7172,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-indexing"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -7233,7 +7239,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-ingest"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7272,7 +7278,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-integration-tests"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "aws-sdk-sqs",
@@ -7311,7 +7317,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-jaeger"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "async-trait",
  "itertools 0.14.0",
@@ -7344,7 +7350,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-janitor"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7379,7 +7385,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-macros"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7388,7 +7394,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metastore"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7434,7 +7440,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-opentelemetry"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7457,7 +7463,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-proto"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7495,7 +7501,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-query"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7531,7 +7537,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-remote-api"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7553,7 +7559,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-rest-client"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "bytes",
@@ -7579,7 +7585,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-search"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -7624,7 +7630,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-serve"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -7713,7 +7719,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-storage"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -9726,7 +9732,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.26.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=98ebbf9#98ebbf922d5715941afa5afd1fc817a8c81ded97"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -9748,8 +9754,8 @@ dependencies = [
  "itertools 0.14.0",
  "levenshtein_automata",
  "log",
- "lru 0.12.5",
- "lz4_flex",
+ "lru 0.16.3",
+ "lz4_flex 0.12.0",
  "measure_time",
  "memmap2",
  "once_cell",
@@ -9782,7 +9788,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.9.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=98ebbf9#98ebbf922d5715941afa5afd1fc817a8c81ded97"
 dependencies = [
  "bitpacking",
 ]
@@ -9790,7 +9796,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=98ebbf9#98ebbf922d5715941afa5afd1fc817a8c81ded97"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -9805,7 +9811,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.10.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=98ebbf9#98ebbf922d5715941afa5afd1fc817a8c81ded97"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -9828,7 +9834,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.25.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=98ebbf9#98ebbf922d5715941afa5afd1fc817a8c81ded97"
 dependencies = [
  "fnv",
  "nom 7.1.3",
@@ -9840,7 +9846,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=98ebbf9#98ebbf922d5715941afa5afd1fc817a8c81ded97"
 dependencies = [
  "futures-util",
  "itertools 0.14.0",
@@ -9853,7 +9859,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=98ebbf9#98ebbf922d5715941afa5afd1fc817a8c81ded97"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -9862,7 +9868,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=d904630#d904630e6a03cb8269f68275392c179304b04d5a"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=98ebbf9#98ebbf922d5715941afa5afd1fc817a8c81ded97"
 dependencies = [
  "serde",
 ]
@@ -10963,7 +10969,7 @@ dependencies = [
  "itertools 0.14.0",
  "lalrpop",
  "lalrpop-util",
- "lz4_flex",
+ "lz4_flex 0.11.5",
  "md-5",
  "nom 7.1.3",
  "ofb",
@@ -11058,7 +11064,7 @@ dependencies = [
  "jsonschema",
  "lalrpop",
  "lalrpop-util",
- "lz4_flex",
+ "lz4_flex 0.11.5",
  "md-5",
  "nom 8.0.0",
  "nom-language",
