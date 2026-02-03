@@ -88,6 +88,7 @@ message GetOrCreateOpenShardsSubrequest {
   uint32 subrequest_id = 1;
   string index_id = 2;
   string source_id = 3;
+  repeated quickwit.ingest.ShardId unavailable_shards = 5;
 }
 
 message GetOrCreateOpenShardsResponse {

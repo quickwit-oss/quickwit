@@ -25,8 +25,10 @@ use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
+use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
+use quickwit_proto::types::{
+    DocMappingUid, IndexUid, Position, QueueId, ShardId, SourceId, split_queue_id,
+};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tracing::{error, info};
 
@@ -88,6 +90,32 @@ impl InnerIngesterState {
                     .available_permits()
                     .cmp(&right.rate_limiter.available_permits())
             })
+    }
+
+    // pub fn all_shards_on_node(&self) -> Vec<ShardIds> {
+    //     self.shards
+    //         .iter()
+    //         .map(|(queue_id, shard)| {
+    //             let (index_uid, source_id, shard_id) = split_queue_id(queue_id);
+    //             ShardIds {
+    //
+    //             }
+    //
+    //         })
+    //         .filter(|&shard| shard.index_uid == *index_uid && shard.source_id == *source_id)
+    //         .collect()
+    // }
+
+    pub fn get_all_shards_for_index_and_source(
+        &self,
+        index_uid: &IndexUid,
+        source_id: &SourceId,
+    ) -> Vec<ShardId> {
+        self.shards
+            .values()
+            .filter(|&shard| shard.index_uid == *index_uid && shard.source_id == *source_id)
+            .map(|shard| shard.shard_id.clone())
+            .collect()
     }
 }
 

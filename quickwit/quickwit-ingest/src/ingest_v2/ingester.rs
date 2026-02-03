@@ -463,12 +463,17 @@ impl Ingester {
             persist_failures.reserve_exact(persist_request.subrequests.len());
 
             for subrequest in persist_request.subrequests {
+                // TODO: This should eventually take into account the node decommissioning changes that are in progress.
+                let related_shards_on_node = state_guard.get_all_shards_for_index_and_source(
+                    subrequest.index_uid(),
+                    &subrequest.source_id,
+                );
                 let persist_failure = PersistFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
-                    reason: PersistFailureReason::ShardClosed as i32,
+                    unavailable_shards: related_shards_on_node,
+                    reason: PersistFailureReason::NodeUnavailable as i32,
                 };
                 persist_failures.push(persist_failure);
             }
@@ -484,6 +489,11 @@ impl Ingester {
             let mut total_requested_capacity = ByteSize::b(0);
 
             for subrequest in persist_request.subrequests {
+                let all_shards_for_index_and_source = state_guard
+                    .get_all_shards_for_index_and_source(
+                        subrequest.index_uid(),
+                        &subrequest.source_id,
+                    );
                 let Some(shard) = state_guard
                     .inner
                     .find_most_capacity_shard_mut(subrequest.index_uid(), &subrequest.source_id)
@@ -497,8 +507,8 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
-                        reason: PersistFailureReason::ShardNotFound as i32,
+                        unavailable_shards: all_shards_for_index_and_source,
+                        reason: PersistFailureReason::NoShardsAvailable as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
@@ -534,18 +544,19 @@ impl Ingester {
                         "failed to persist records to ingester `{}`: {error}",
                         self.self_node_id
                     );
+
                     let persist_failure = PersistFailure {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: Some(shard_id),
+                        unavailable_shards: all_shards_for_index_and_source,
                         reason: PersistFailureReason::WalFull as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
                 };
                 // Because we return the shard with the most available capacity, if this hits, it
-                // means that no shard can receive this request, and it should be retried.
+                // means that no shard on this node can receive this request, and it should be retried.
                 if !shard.rate_limiter.acquire_bytes(requested_capacity) {
                     debug!(
                         "failed to persist records to shard `{}`: rate limited",
@@ -556,8 +567,8 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: Some(shard_id),
-                        reason: PersistFailureReason::ShardRateLimited as i32,
+                        unavailable_shards: all_shards_for_index_and_source,
+                        reason: PersistFailureReason::NoShardsAvailable as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
@@ -685,22 +696,22 @@ impl Ingester {
                     pending_persist_subrequest.expected_position_inclusive =
                         replicate_success.replication_position_inclusive;
                 }
+
+                //TODO: Node-based Replication logic
+
                 for replicate_failure in replicate_response.failures {
                     // TODO: If the replica shard is closed, close the primary shard if it is not
                     // already.
                     let persist_failure_reason = match replicate_failure.reason() {
                         ReplicateFailureReason::Unspecified => PersistFailureReason::Unspecified,
-                        ReplicateFailureReason::ShardNotFound => {
-                            PersistFailureReason::ShardNotFound
-                        }
-                        ReplicateFailureReason::ShardClosed => PersistFailureReason::ShardClosed,
                         ReplicateFailureReason::WalFull => PersistFailureReason::WalFull,
+                        _ => PersistFailureReason::NoShardsAvailable,
                     };
                     let persist_failure = PersistFailure {
                         subrequest_id: replicate_failure.subrequest_id,
                         index_uid: replicate_failure.index_uid,
                         source_id: replicate_failure.source_id,
-                        shard_id: replicate_failure.shard_id,
+                        unavailable_shards: Vec::new(),
                         reason: persist_failure_reason as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -714,7 +725,7 @@ impl Ingester {
                 if !subrequest.successfully_replicated {
                     continue;
                 }
-                let queue_id = subrequest.queue_id;
+                let queue_id = subrequest.queue_id.clone();
 
                 let batch_num_docs = subrequest.doc_batch.num_docs() as u64;
 
@@ -735,7 +746,7 @@ impl Ingester {
                                     "failed to persist records to shard `{queue_id}`: {io_error}"
                                 );
                                 shards_to_close.insert(queue_id);
-                                PersistFailureReason::ShardClosed
+                                PersistFailureReason::NodeUnavailable
                             }
                             AppendDocBatchError::QueueNotFound(_) => {
                                 error!(
@@ -743,14 +754,14 @@ impl Ingester {
                                      not found"
                                 );
                                 shards_to_delete.insert(queue_id);
-                                PersistFailureReason::ShardNotFound
+                                PersistFailureReason::NodeUnavailable
                             }
                         };
                         let persist_failure = PersistFailure {
                             subrequest_id: subrequest.subrequest_id,
                             index_uid: subrequest.index_uid,
                             source_id: subrequest.source_id,
-                            shard_id: subrequest.shard_id,
+                            unavailable_shards: vec![],
                             reason: reason as i32,
                         };
                         persist_failures.push(persist_failure);
@@ -758,7 +769,7 @@ impl Ingester {
                     }
                 };
 
-                if let Some(expected_position_inclusive) = subrequest.expected_position_inclusive
+                if let Some(expected_position_inclusive) = &subrequest.expected_position_inclusive
                     && expected_position_inclusive != current_position_inclusive
                 {
                     return Err(IngestV2Error::Internal(format!(
@@ -1281,6 +1292,13 @@ struct PendingPersistSubrequest {
     parse_failures: Vec<ParseFailure>,
     expected_position_inclusive: Option<Position>,
     successfully_replicated: bool,
+}
+
+impl PendingPersistSubrequest {
+    pub fn index_uid(&self) -> IndexUid {
+        self.index_uid.clone()
+            .expect("index_uid should be present on PendingPersistSubrequest")
+    }
 }
 
 #[cfg(test)]

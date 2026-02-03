@@ -18,7 +18,7 @@ use quickwit_common::tower::{MakeLoadShedError, RpcName, TimeoutExceeded};
 use serde::{Deserialize, Serialize};
 use thiserror;
 
-use crate::metastore::{MetastoreError, OpenShardSubrequest};
+use crate::metastore::MetastoreError;
 use crate::{GrpcServiceError, ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.control_plane.rs");
@@ -150,18 +150,6 @@ impl GetOrCreateOpenShardsFailureReason {
             index_id: subrequest.index_id,
             source_id: subrequest.source_id,
             reason: *self as i32,
-        }
-    }
-}
-
-impl From<crate::metastore::OpenShardSubrequest> for GetOrCreateOpenShardsSubrequest {
-    fn from(metastore_open_shard_subrequest: OpenShardSubrequest) -> Self {
-        let index_id = metastore_open_shard_subrequest.index_uid().index_id.clone();
-
-        Self {
-            subrequest_id: metastore_open_shard_subrequest.subrequest_id,
-            index_id,
-            source_id: metastore_open_shard_subrequest.source_id,
         }
     }
 }

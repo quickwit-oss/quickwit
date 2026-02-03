@@ -259,9 +259,16 @@ fn get_open_shard_from_model(
     let Some(index_uid) = model.index_uid(&get_open_shards_subrequest.index_id) else {
         return Err(GetOrCreateOpenShardsFailureReason::IndexNotFound);
     };
+    let unavailable_shards: FnvHashSet<ShardId> = get_open_shards_subrequest
+        .unavailable_shards
+        .iter()
+        .cloned()
+        .collect();
+
     let Some(open_shard_entries) = model.find_open_shards(
         index_uid,
         &get_open_shards_subrequest.source_id,
+        &unavailable_shards,
         unavailable_leaders,
     ) else {
         return Err(GetOrCreateOpenShardsFailureReason::SourceNotFound);

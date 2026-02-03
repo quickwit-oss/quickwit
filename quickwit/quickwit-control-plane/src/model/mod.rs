@@ -364,10 +364,15 @@ impl ControlPlaneModel {
         &self,
         index_uid: &IndexUid,
         source_id: &SourceId,
+        unavailable_shards: &FnvHashSet<ShardId>,
         unavailable_leaders: &FnvHashSet<NodeId>,
     ) -> Option<Vec<ShardEntry>> {
-        self.shard_table
-            .find_open_shards(index_uid, source_id, unavailable_leaders)
+        self.shard_table.find_open_shards(
+            index_uid,
+            source_id,
+            unavailable_shards,
+            unavailable_leaders,
+        )
     }
 
     /// Updates the state and ingestion rate of the shards according to the given shard infos.

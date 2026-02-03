@@ -15,7 +15,7 @@ pub struct GetOrCreateOpenShardsRequest {
     pub unavailable_leaders: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetOrCreateOpenShardsSubrequest {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
@@ -23,6 +23,8 @@ pub struct GetOrCreateOpenShardsSubrequest {
     pub index_id: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "5")]
+    pub unavailable_shards: ::prost::alloc::vec::Vec<crate::types::ShardId>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]

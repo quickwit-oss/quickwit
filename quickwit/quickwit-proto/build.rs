@@ -44,7 +44,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ".quickwit.common.DocMappingUid",
             "crate::types::DocMappingUid",
         )
-        .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid");
+        .extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid")
+        .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId");
 
     Codegen::builder()
         .with_prost_config(prost_config)

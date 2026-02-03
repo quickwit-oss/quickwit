@@ -313,11 +313,10 @@ impl From<PersistFailureReason> for IngestFailureReason {
     fn from(reason: PersistFailureReason) -> Self {
         match reason {
             PersistFailureReason::Unspecified => IngestFailureReason::Unspecified,
-            PersistFailureReason::ShardNotFound => IngestFailureReason::NoShardsAvailable,
-            PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
+            PersistFailureReason::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
             PersistFailureReason::WalFull => IngestFailureReason::WalFull,
-            PersistFailureReason::ShardRateLimited => IngestFailureReason::ShardRateLimited,
             PersistFailureReason::Timeout => IngestFailureReason::Timeout,
+            PersistFailureReason::NodeUnavailable => IngestFailureReason::Internal,
         }
     }
 }
@@ -326,9 +325,9 @@ impl From<ReplicateFailureReason> for PersistFailureReason {
     fn from(reason: ReplicateFailureReason) -> Self {
         match reason {
             ReplicateFailureReason::Unspecified => PersistFailureReason::Unspecified,
-            ReplicateFailureReason::ShardNotFound => PersistFailureReason::ShardNotFound,
-            ReplicateFailureReason::ShardClosed => PersistFailureReason::ShardClosed,
             ReplicateFailureReason::WalFull => PersistFailureReason::WalFull,
+            // TODO
+            _ => PersistFailureReason::Unspecified,
         }
     }
 }

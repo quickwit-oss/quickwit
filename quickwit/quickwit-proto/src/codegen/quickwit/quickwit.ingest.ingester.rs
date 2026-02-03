@@ -37,8 +37,6 @@ pub struct PersistSubrequest {
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
@@ -71,7 +69,7 @@ pub struct PersistSuccess {
     pub parse_failures: ::prost::alloc::vec::Vec<super::ParseFailure>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistFailure {
     #[prost(uint32, tag = "1")]
     pub subrequest_id: u32,
@@ -79,8 +77,8 @@ pub struct PersistFailure {
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
+    #[prost(message, repeated, tag = "4")]
+    pub unavailable_shards: ::prost::alloc::vec::Vec<crate::types::ShardId>,
     #[prost(enumeration = "PersistFailureReason", tag = "5")]
     pub reason: i32,
 }
@@ -397,11 +395,10 @@ pub struct ObservationMessage {
 #[repr(i32)]
 pub enum PersistFailureReason {
     Unspecified = 0,
-    ShardNotFound = 1,
-    ShardClosed = 2,
-    ShardRateLimited = 3,
-    WalFull = 4,
-    Timeout = 5,
+    NoShardsAvailable = 1,
+    WalFull = 2,
+    Timeout = 3,
+    NodeUnavailable = 4,
 }
 impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -411,22 +408,20 @@ impl PersistFailureReason {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "PERSIST_FAILURE_REASON_UNSPECIFIED",
-            Self::ShardNotFound => "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND",
-            Self::ShardClosed => "PERSIST_FAILURE_REASON_SHARD_CLOSED",
-            Self::ShardRateLimited => "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED",
+            Self::NoShardsAvailable => "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE",
             Self::WalFull => "PERSIST_FAILURE_REASON_WAL_FULL",
             Self::Timeout => "PERSIST_FAILURE_REASON_TIMEOUT",
+            Self::NodeUnavailable => "PERSIST_FAILURE_REASON_NODE_UNAVAILABLE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "PERSIST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
-            "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND" => Some(Self::ShardNotFound),
-            "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
-            "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED" => Some(Self::ShardRateLimited),
+            "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
             "PERSIST_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
             "PERSIST_FAILURE_REASON_TIMEOUT" => Some(Self::Timeout),
+            "PERSIST_FAILURE_REASON_NODE_UNAVAILABLE" => Some(Self::NodeUnavailable),
             _ => None,
         }
     }

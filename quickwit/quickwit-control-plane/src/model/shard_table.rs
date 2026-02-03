@@ -432,6 +432,7 @@ impl ShardTable {
         &self,
         index_uid: &IndexUid,
         source_id: &SourceId,
+        unavailable_shards: &FnvHashSet<ShardId>,
         unavailable_leaders: &FnvHashSet<NodeId>,
     ) -> Option<Vec<ShardEntry>> {
         let source_uid = SourceUid {
@@ -443,7 +444,9 @@ impl ShardTable {
             .shard_entries
             .values()
             .filter(|shard_entry| {
-                shard_entry.shard.is_open() && !unavailable_leaders.contains(&shard_entry.leader_id)
+                shard_entry.shard.is_open()
+                    && !unavailable_leaders.contains(&shard_entry.leader_id)
+                    && !unavailable_shards.contains(shard_entry.shard_id())
             })
             .cloned()
             .collect();
@@ -642,13 +645,17 @@ mod tests {
             source_id: &SourceId,
             unavailable_leaders: &FnvHashSet<NodeId>,
         ) -> Option<Vec<ShardEntry>> {
-            self.find_open_shards(index_uid, source_id, unavailable_leaders)
-                .map(|mut shards| {
-                    shards.sort_unstable_by(|left, right| {
-                        left.shard.shard_id.cmp(&right.shard.shard_id)
-                    });
-                    shards
-                })
+            self.find_open_shards(
+                index_uid,
+                source_id,
+                &FnvHashSet::default(),
+                unavailable_leaders,
+            )
+            .map(|mut shards| {
+                shards
+                    .sort_unstable_by(|left, right| left.shard.shard_id.cmp(&right.shard.shard_id));
+                shards
+            })
         }
     }
 

@@ -20,6 +20,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
+use itertools::Itertools;
+use serde::__private228::de::IdentifierDeserializer;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
@@ -35,7 +37,7 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
 };
 use quickwit_proto::ingest::{
-    CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause, ShardState,
+    CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause, Shard, ShardState,
 };
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use serde_json::{Value as JsonValue, json};
@@ -51,7 +53,7 @@ use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::metrics::IngestResultMetrics;
 use super::routing_table::{NextOpenShardError, RoutingTable};
 use super::workbench::IngestWorkbench;
-use super::{IngesterPool, pending_subrequests};
+use super::{IngesterPool, pending_subrequests, workbench};
 use crate::{LeaderId, get_ingest_router_buffer_size};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
@@ -166,7 +168,8 @@ impl IngestRouter {
 
         // `closed_shards` and `unavailable_leaders` are populated by calls to `has_open_shards`
         // as we're looking for open shards to route the subrequests to.
-        let unavailable_leaders: &mut HashSet<NodeId> = &mut workbench.unavailable_leaders;
+        let unavailable_leaders = &workbench.unavailable_leaders;
+        let unavailable_shards = &workbench.unavailable_shards;
 
         let mut state_guard = self.state.lock().await;
 
@@ -175,7 +178,7 @@ impl IngestRouter {
                 &subrequest.index_id,
                 &subrequest.source_id,
                 ingester_pool,
-                &mut debounced_request.closed_shards,
+                unavailable_shards,
                 unavailable_leaders,
             ) {
                 // No shard available! Let's attempt to create one.
@@ -185,10 +188,12 @@ impl IngestRouter {
 
                 match acquire_result {
                     Ok(permit) => {
+                        let unavailable_shards = unavailable_shards.iter().map(|shard_id| shard_id.clone()).collect_vec();
                         let subrequest = GetOrCreateOpenShardsSubrequest {
                             subrequest_id: subrequest.subrequest_id,
                             index_id: subrequest.index_id.clone(),
                             source_id: subrequest.source_id.clone(),
+                            unavailable_shards,
                         };
                         debounced_request.push_subrequest(subrequest, permit);
                     }
@@ -277,8 +282,8 @@ impl IngestRouter {
         workbench: &mut IngestWorkbench,
         mut persist_futures: FuturesUnordered<impl Future<Output = PersistResult>>,
     ) {
-        let mut closed_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
-        let mut deleted_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
+        let mut unavailable_shards = HashSet::new();
+        let mut unavailable_leaders = HashSet::new();
 
         while let Some((persist_summary, persist_result)) = persist_futures.next().await {
             match persist_result {
@@ -290,33 +295,17 @@ impl IngestRouter {
                         workbench.record_persist_failure(&persist_failure);
 
                         match persist_failure.reason() {
-                            PersistFailureReason::ShardClosed => {
-                                let shard_id = persist_failure.shard_id().clone();
-                                let index_uid: IndexUid = persist_failure.index_uid().clone();
-                                let source_id: SourceId = persist_failure.source_id;
-                                closed_shards
-                                    .entry((index_uid, source_id))
-                                    .or_default()
-                                    .push(shard_id);
+                            PersistFailureReason::NoShardsAvailable => {
+                                // We weren't able to find a shard to persist the request to. For the duration of this workbench, mark all of those shards as unavailable
+                                // so that they're not retried.
+                                unavailable_shards.extend(persist_failure.unavailable_shards);
                             }
-                            PersistFailureReason::ShardNotFound => {
-                                let shard_id = persist_failure.shard_id().clone();
-                                let index_uid: IndexUid = persist_failure.index_uid().clone();
-                                let source_id: SourceId = persist_failure.source_id;
-                                deleted_shards
-                                    .entry((index_uid, source_id))
-                                    .or_default()
-                                    .push(shard_id);
-                            }
-                            PersistFailureReason::WalFull
-                            | PersistFailureReason::ShardRateLimited => {
-                                // Let's record that the shard is rate limited or that the ingester
-                                // that hosts has its wal full.
-                                //
-                                // That way we will avoid to retry the persist request on the very
-                                // same node.
-                                let shard_id = persist_failure.shard_id().clone();
-                                workbench.rate_limited_shards.insert(shard_id);
+                            PersistFailureReason::NodeUnavailable
+                            | PersistFailureReason::WalFull
+                            | PersistFailureReason::Timeout => {
+                                // Disqualify the shards, and the node itself, from further retries during this workbench.
+                                unavailable_shards.extend(persist_failure.unavailable_shards);
+                                unavailable_leaders.insert(NodeId::new(persist_response.leader_id.clone()));
                             }
                             _ => {}
                         }
@@ -340,20 +329,8 @@ impl IngestRouter {
                 }
             };
         }
-        if !closed_shards.is_empty() || !deleted_shards.is_empty() {
-            let mut state_guard = self.state.lock().await;
-
-            for ((index_uid, source_id), shard_ids) in closed_shards {
-                state_guard
-                    .routing_table
-                    .close_shards(&index_uid, source_id, &shard_ids);
-            }
-            for ((index_uid, source_id), shard_ids) in deleted_shards {
-                state_guard
-                    .routing_table
-                    .delete_shards(&index_uid, source_id, &shard_ids);
-            }
-        }
+        workbench.unavailable_shards.extend(unavailable_shards);
+        workbench.unavailable_leaders.extend(unavailable_leaders);
     }
 
     async fn batch_persist(&self, workbench: &mut IngestWorkbench, commit_type: CommitTypeV2) {
@@ -365,47 +342,40 @@ impl IngestRouter {
         self.populate_routing_table_debounced(workbench, debounced_request)
             .await;
 
-        // Subrequests for which no shards are available to route the subrequests to.
+        let unavailable_shards: &HashSet<ShardId> = &workbench.unavailable_shards;
+        let unavailable_nodes: &HashSet<NodeId> = &workbench.unavailable_leaders;
         let mut no_shards_available_subrequest_ids: Vec<SubrequestId> = Vec::new();
-        // Subrequests for which the shards are rate limited.
-        let mut rate_limited_subrequest_ids: Vec<SubrequestId> = Vec::new();
 
         let mut per_leader_persist_subrequests: HashMap<&LeaderId, Vec<PersistSubrequest>> =
             HashMap::new();
 
-        let rate_limited_shards: &HashSet<ShardId> = &workbench.rate_limited_shards;
         let state_guard = self.state.lock().await;
 
         for subrequest in pending_subrequests(&workbench.subworkbenches) {
-            let next_open_shard_res_opt = state_guard
+            let node_opt = state_guard
                 .routing_table
                 .find_entry(&subrequest.index_id, &subrequest.source_id)
                 .map(|entry| {
-                    entry.next_open_shard_round_robin(&self.ingester_pool, rate_limited_shards)
-                });
-            let next_open_shard = match next_open_shard_res_opt {
-                Some(Ok(next_open_shard)) => next_open_shard,
-                Some(Err(NextOpenShardError::RateLimited)) => {
-                    rate_limited_subrequest_ids.push(subrequest.subrequest_id);
-                    continue;
-                }
-                Some(Err(NextOpenShardError::NoShardsAvailable)) | None => {
+                    // todo improve this so index uid comes from elsewhere
+                    entry.find_open_node(&self.ingester_pool, unavailable_nodes, unavailable_shards)
+                })
+                .flatten();
+
+            let (node_id, index_uid) = match node_opt {
+                Some(some) => some,
+                None => {
                     no_shards_available_subrequest_ids.push(subrequest.subrequest_id);
                     continue;
                 }
             };
             let persist_subrequest = PersistSubrequest {
                 subrequest_id: subrequest.subrequest_id,
-                index_uid: next_open_shard.index_uid.clone().into(),
-                source_id: next_open_shard.source_id.clone(),
-                // We don't necessarily persist to this shard. We persist to the shard with the most
-                // capacity on that node.
-                // TODO: Clean this up.
-                shard_id: Some(next_open_shard.shard_id.clone()),
+                index_uid: Some(index_uid),
+                source_id: subrequest.source_id.clone(),
                 doc_batch: subrequest.doc_batch.clone(),
             };
             per_leader_persist_subrequests
-                .entry(&next_open_shard.leader_id)
+                .entry(&node_id)
                 .or_default()
                 .push(persist_subrequest);
         }
@@ -452,9 +422,6 @@ impl IngestRouter {
 
         for subrequest_id in no_shards_available_subrequest_ids {
             workbench.record_no_shards_available(subrequest_id);
-        }
-        for subrequest_id in rate_limited_subrequest_ids {
-            workbench.record_rate_limited(subrequest_id);
         }
         self.process_persist_results(workbench, persist_futures)
             .await;

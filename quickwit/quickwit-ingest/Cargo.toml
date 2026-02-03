@@ -16,6 +16,7 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 fail = { workspace = true, optional = true }
+itertools = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 mockall = { workspace = true, optional = true }
@@ -48,7 +49,7 @@ mockall = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["test-util"]}
+tokio = { workspace = true, features = ["test-util"] }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }

@@ -85,12 +85,6 @@ impl OpenFetchStreamRequest {
     }
 }
 
-impl PersistSubrequest {
-    pub fn queue_id(&self) -> QueueId {
-        queue_id(self.index_uid(), &self.source_id, self.shard_id())
-    }
-}
-
 impl PersistSuccess {
     pub fn queue_id(&self) -> QueueId {
         queue_id(self.index_uid(), &self.source_id, self.shard_id())

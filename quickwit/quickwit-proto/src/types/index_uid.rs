@@ -86,7 +86,9 @@ impl FromStr for IndexUid {
 
 impl<'de> Deserialize<'de> for IndexUid {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let index_uid_str: Cow<'de, str> = Cow::deserialize(deserializer)?;
         let index_uid = IndexUid::from_str(&index_uid_str).map_err(D::Error::custom)?;
         Ok(index_uid)
@@ -95,7 +97,9 @@ impl<'de> Deserialize<'de> for IndexUid {
 
 impl Serialize for IndexUid {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         serializer.collect_str(&self)
     }
 }

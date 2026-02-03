@@ -57,7 +57,9 @@ impl DocUid {
 
 impl<'de> Deserialize<'de> for DocUid {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let doc_uid_str: Cow<'de, str> = Cow::deserialize(deserializer)?;
         let doc_uid = Ulid::from_string(&doc_uid_str).map_err(D::Error::custom)?;
         Ok(Self(doc_uid))
@@ -66,7 +68,9 @@ impl<'de> Deserialize<'de> for DocUid {
 
 impl Serialize for DocUid {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         serializer.collect_str(&self.0)
     }
 }

@@ -1916,8 +1916,8 @@ mod tests {
         assert_eq!(indexing_tasks[0].shard_ids, [ShardId::from(17)]);
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard = &control_plane_debug_info["shard_table"]
-            ["test-index-0:00000000000000000000000000"]["test-ingester"][0];
+        let shard = &control_plane_debug_info["shard_table"]["test-index-0:00000000000000000000000000"]
+            ["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000017");
         assert_eq!(shard["publish_position_inclusive"], "00000000000000001000");
 
@@ -2021,8 +2021,8 @@ mod tests {
             MetastoreServiceClient::from_mock(mock_metastore),
         );
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard = &control_plane_debug_info["shard_table"]
-            ["test-index:00000000000000000000000000"]["test-ingester"][0];
+        let shard = &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"]
+            ["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000017");
         assert_eq!(shard["publish_position_inclusive"], "00000000000000001234");
 
@@ -2656,8 +2656,8 @@ mod tests {
         control_plane_mailbox.ask(callback).await.unwrap();
 
         let control_plane_debug_info = control_plane_mailbox.ask(GetDebugInfo).await.unwrap();
-        let shard = &control_plane_debug_info["shard_table"]
-            ["test-index:00000000000000000000000000"]["test-ingester"][0];
+        let shard = &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"]
+            ["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000000");
         assert_eq!(shard["shard_state"], "closed");
 
@@ -2795,8 +2795,8 @@ mod tests {
             control_plane_debug_info["physical_indexing_plan"][0]["node_id"],
             "test-ingester"
         );
-        let shard = &control_plane_debug_info["shard_table"]
-            ["test-index:00000000000000000000000000"]["test-ingester"][0];
+        let shard = &control_plane_debug_info["shard_table"]["test-index:00000000000000000000000000"]
+            ["test-ingester"][0];
         assert_eq!(shard["index_uid"], "test-index:00000000000000000000000000");
         assert_eq!(shard["source_id"], INGEST_V2_SOURCE_ID);
         assert_eq!(shard["shard_id"], "00000000000000000000");

@@ -35,7 +35,6 @@ use super::router::PersistRequestSummary;
 #[derive(Default)]
 pub(super) struct IngestWorkbench {
     pub subworkbenches: BTreeMap<SubrequestId, IngestSubworkbench>,
-    pub rate_limited_shards: HashSet<ShardId>,
     pub num_successes: usize,
     /// The number of batch persist attempts. This is not sum of the number of attempts for each
     /// subrequest.
@@ -48,6 +47,7 @@ pub(super) struct IngestWorkbench {
     /// (The point here is to make sure we do not wait for the failure detection to kick the node
     /// out of the ingest node.)
     pub unavailable_leaders: HashSet<NodeId>,
+    pub unavailable_shards: HashSet<ShardId>,
     publish_tracker: Option<PublishTracker>,
 }
 

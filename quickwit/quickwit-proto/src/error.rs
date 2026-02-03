@@ -85,7 +85,8 @@ impl ServiceError for Infallible {
 }
 
 impl<E> ServiceError for AskError<E>
-where E: ServiceError
+where
+    E: ServiceError,
 {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
@@ -117,7 +118,9 @@ pub trait GrpcServiceError: ServiceError + Serialize + DeserializeOwned + Send +
 
 /// Converts a service error into a gRPC status.
 pub fn grpc_error_to_grpc_status<E>(service_error: E) -> tonic::Status
-where E: GrpcServiceError {
+where
+    E: GrpcServiceError,
+{
     let code = service_error.error_code().grpc_status_code();
     let message = service_error.to_string();
     let mut status = tonic::Status::new(code, message);
@@ -137,7 +140,9 @@ where E: GrpcServiceError {
 
 /// Converts a gRPC status into a service error.
 pub fn grpc_status_to_service_error<E>(status: tonic::Status, rpc_name: &'static str) -> E
-where E: GrpcServiceError {
+where
+    E: GrpcServiceError,
+{
     if let Some(header_value) = status.metadata().get_bin(QW_ERROR_HEADER_NAME) {
         let service_error = match decode_error(header_value) {
             Ok(service_error) => service_error,
