@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use aws_sdk_lambda::Client as LambdaClient;
 use aws_sdk_lambda::error::SdkError;
 use aws_sdk_lambda::operation::create_function::CreateFunctionError;
-use aws_sdk_lambda::operation::get_function::GetFunctionOutput;
+use aws_sdk_lambda::operation::get_function::{GetFunctionError, GetFunctionOutput};
 use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::{Architecture, Environment, FunctionCode, Runtime};
 use quickwit_config::LambdaDeployConfig;
@@ -332,21 +332,27 @@ impl LambdaDeployer {
 
     /// Get function details from AWS.
     async fn get_function(&self, name: &str) -> LambdaClientResult<GetFunctionOutput> {
-        self.client
+        match self
+            .client
             .get_function()
             .function_name(name)
             .send()
             .await
-            .map_err(|e| {
-                // Check if it's a not found error
-                if e.to_string().contains("ResourceNotFoundException")
-                    || e.to_string().contains("Function not found")
-                {
-                    LambdaClientError::NotFound(name.to_string())
-                } else {
-                    LambdaClientError::Deployment(format!("failed to get function: {}", e))
-                }
-            })
+        {
+            Ok(output) => Ok(output),
+            Err(SdkError::ServiceError(err))
+                if matches!(err.err(), GetFunctionError::ResourceNotFoundException(_)) =>
+            {
+                Err(LambdaClientError::NotFound(name.to_string()))
+            }
+            Err(e) => {
+                error!(e=?e, "get function failed");
+                Err(LambdaClientError::Deployment(format!(
+                    "failed to get function: {}",
+                    e
+                )))
+            }
+        }
     }
 
     /// Build environment variables for the Lambda function.
