@@ -26,7 +26,7 @@ use aws_sdk_lambda::operation::get_function::GetFunctionOutput;
 use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::{Architecture, Environment, FunctionCode, Runtime};
 use quickwit_config::LambdaDeployConfig;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::error::{LambdaClientError, LambdaClientResult};
 
@@ -50,10 +50,10 @@ pub struct LambdaDeployer {
 
 impl LambdaDeployer {
     /// Create a new Lambda deployer using default AWS configuration.
-    pub async fn new() -> LambdaClientResult<Self> {
+    pub async fn new() -> Self {
         let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = LambdaClient::new(&aws_config);
-        Ok(Self { client })
+        Self { client }
     }
 
     /// Deploy or update the Lambda function.
@@ -69,10 +69,12 @@ impl LambdaDeployer {
 
         match self.get_function(function_name).await {
             Ok(existing) => {
+                info!("update function if needed");
                 self.update_function_if_needed(function_name, &existing, deploy_config)
                     .await
             }
             Err(LambdaClientError::NotFound(_)) => {
+                error!("function not found");
                 // Function doesn't exist, try to create it
                 match self
                     .create_function(function_name, role_arn, deploy_config)
@@ -89,10 +91,16 @@ impl LambdaDeployer {
                         self.update_function_if_needed(function_name, &existing, deploy_config)
                             .await
                     }
-                    Err(e) => Err(e),
+                    Err(e) => {
+                        tracing::error!(e=?e, "lambda client error on creation");
+                        Err(e)
+                    }
                 }
             }
-            Err(e) => Err(e),
+            Err(e) => {
+                tracing::error!(e=?e, "lambda client error on get");
+                Err(e)
+            }
         }
     }
 
@@ -367,7 +375,7 @@ pub async fn deploy(
     function_name: &str,
     deploy_config: &LambdaDeployConfig,
 ) -> LambdaClientResult<String> {
-    let lambda_deployer = LambdaDeployer::new().await?;
+    let lambda_deployer = LambdaDeployer::new().await;
     let lambda_arn = lambda_deployer.deploy(function_name, deploy_config).await?;
     info!("successfully deployed lambda function `{}`", lambda_arn);
     Ok(lambda_arn)

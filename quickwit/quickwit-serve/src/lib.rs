@@ -1028,7 +1028,8 @@ async fn setup_searcher(
             use anyhow::Context;
             quickwit_lambda_client::deploy(&lambda_config.function_name, deploy_config)
                 .await
-                .context("failed to deploy lambda function")?;
+                .context("failed to deploy lambda function")
+                .inspect_err(|err| error!(err=?err, "deploy lambda failed"))?;
         }
 
         use anyhow::Context;
