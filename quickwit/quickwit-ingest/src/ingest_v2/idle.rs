@@ -89,7 +89,7 @@ mod tests {
     async fn test_close_idle_shards_run() {
         let (_temp_dir, state) = IngesterState::for_test().await;
         let weak_state = state.weak();
-        let idle_shard_timeout = Duration::from_millis(200);
+        let idle_shard_timeout = RUN_INTERVAL_PERIOD * 4;
         let join_handle = CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
         let mut state_guard = state.lock_partially().await.unwrap();
@@ -111,7 +111,6 @@ mod tests {
             "test-source".to_string(),
             ShardId::from(2),
         )
-        .with_last_write(now - idle_shard_timeout / 2)
         .build();
         let queue_id_02 = shard_02.queue_id();
         state_guard.shards.insert(queue_id_02.clone(), shard_02);
