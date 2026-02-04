@@ -170,6 +170,7 @@ oneshot = "0.1"
 openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.1"
 opentelemetry = "0.31"
+opentelemetry-appender-tracing = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
 ouroboros = "0.18"
