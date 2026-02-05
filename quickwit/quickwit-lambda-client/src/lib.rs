@@ -23,7 +23,7 @@ mod error;
 mod invoker;
 
 pub use deployer::deploy;
-pub use error::{LambdaClientError, LambdaClientResult};
+pub use error::{InvokerError, InvokerResult, LambdaDeployError, LambdaDeployResult};
 pub use invoker::create_lambda_invoker;
 // Re-export payload types from server crate for convenience
 pub use quickwit_lambda_server::{LeafSearchPayload, LeafSearchResponsePayload};

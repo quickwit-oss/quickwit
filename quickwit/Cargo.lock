@@ -7351,6 +7351,7 @@ dependencies = [
 name = "quickwit-lambda-client"
 version = "0.8.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "aws-config",
  "aws-sdk-lambda",
@@ -7361,6 +7362,7 @@ dependencies = [
  "quickwit-proto",
  "quickwit-search",
  "serde_json",
+ "thiserror 2.0.17",
  "tokio",
  "tracing",
  "ureq 3.1.4",

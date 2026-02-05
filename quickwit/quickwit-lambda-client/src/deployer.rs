@@ -28,7 +28,7 @@ use aws_sdk_lambda::types::{Architecture, Environment, FunctionCode, Runtime};
 use quickwit_config::LambdaDeployConfig;
 use tracing::{debug, error, info, warn};
 
-use crate::error::{LambdaClientError, LambdaClientResult};
+use crate::error::{LambdaDeployError, LambdaDeployResult};
 
 /// Embedded Lambda binary (arm64, compressed).
 /// This is included at compile time.
@@ -64,30 +64,45 @@ impl LambdaDeployer {
         &self,
         function_name: &str,
         deploy_config: &LambdaDeployConfig,
-    ) -> LambdaClientResult<String> {
+    ) -> LambdaDeployResult<String> {
         let role_arn = &deploy_config.execution_role_arn;
 
-        match self.get_function(function_name).await {
-            Ok(existing) => {
+        let function_info_opt = self.get_function(function_name).await.map_err(|err| {
+            tracing::error!(err=?err, "lambda client error on get");
+            LambdaDeployError::Other(format!("failed to get function: {}", err))
+        })?;
+
+        match function_info_opt {
+            Some(existing) => {
                 info!("update function if needed");
                 self.update_function_if_needed(function_name, &existing, deploy_config)
                     .await
             }
-            Err(LambdaClientError::NotFound(_)) => {
-                error!("function not found");
+            None => {
+                info!("function not found, creating");
                 // Function doesn't exist, try to create it
                 match self
                     .create_function(function_name, role_arn, deploy_config)
                     .await
                 {
                     Ok(arn) => Ok(arn),
-                    Err(LambdaClientError::ResourceConflict) => {
+                    Err(LambdaDeployError::ResourceConflict) => {
                         // Another node created the function concurrently, update instead
-                        info!(
+                        warn!(
                             function_name = %function_name,
                             "function was created concurrently by another node, updating instead"
                         );
-                        let existing = self.get_function(function_name).await?;
+                        let existing = self
+                            .get_function(function_name)
+                            .await
+                            .map_err(|e| {
+                                LambdaDeployError::Other(format!("failed to get function: {}", e))
+                            })?
+                            .ok_or_else(|| {
+                                LambdaDeployError::Other(
+                                    "function not found after concurrent creation".into(),
+                                )
+                            })?;
                         self.update_function_if_needed(function_name, &existing, deploy_config)
                             .await
                     }
@@ -96,10 +111,6 @@ impl LambdaDeployer {
                         Err(e)
                     }
                 }
-            }
-            Err(e) => {
-                tracing::error!(e=?e, "lambda client error on get");
-                Err(e)
             }
         }
     }
@@ -114,7 +125,7 @@ impl LambdaDeployer {
         name: &str,
         role: &str,
         config: &LambdaDeployConfig,
-    ) -> LambdaClientResult<String> {
+    ) -> LambdaDeployResult<String> {
         info!(
             function_name = %name,
             role = %role,
@@ -155,9 +166,7 @@ impl LambdaDeployer {
             Ok(output) => {
                 let arn = output
                     .function_arn()
-                    .ok_or_else(|| {
-                        LambdaClientError::Deployment("no function ARN returned".into())
-                    })?
+                    .ok_or_else(|| LambdaDeployError::Other("no function ARN returned".into()))?
                     .to_string();
                 info!(function_arn = %arn, "Lambda function created successfully");
                 Ok(arn)
@@ -165,9 +174,9 @@ impl LambdaDeployer {
             Err(SdkError::ServiceError(err))
                 if matches!(err.err(), CreateFunctionError::ResourceConflictException(_)) =>
             {
-                Err(LambdaClientError::ResourceConflict)
+                Err(LambdaDeployError::ResourceConflict)
             }
-            Err(e) => Err(LambdaClientError::Deployment(format!(
+            Err(e) => Err(LambdaDeployError::Other(format!(
                 "failed to create function: {}",
                 e
             ))),
@@ -183,13 +192,11 @@ impl LambdaDeployer {
         name: &str,
         existing: &GetFunctionOutput,
         config: &LambdaDeployConfig,
-    ) -> LambdaClientResult<String> {
+    ) -> LambdaDeployResult<String> {
         let function_arn = existing
             .configuration()
             .and_then(|c| c.function_arn())
-            .ok_or_else(|| {
-                LambdaClientError::Deployment("no function ARN in existing config".into())
-            })?
+            .ok_or_else(|| LambdaDeployError::Other("no function ARN in existing config".into()))?
             .to_string();
 
         if !self.needs_update(existing) {
@@ -215,7 +222,7 @@ impl LambdaDeployer {
             .send()
             .await
             .map_err(|e| {
-                LambdaClientError::Deployment(format!("failed to update function code: {}", e))
+                LambdaDeployError::Other(format!("failed to update function code: {}", e))
             })?;
 
         // Wait for the update to complete before updating configuration
@@ -236,10 +243,7 @@ impl LambdaDeployer {
             .send()
             .await
             .map_err(|e| {
-                LambdaClientError::Deployment(format!(
-                    "failed to update function configuration: {}",
-                    e
-                ))
+                LambdaDeployError::Other(format!("failed to update function configuration: {}", e))
             })?;
 
         // Wait for config update to complete before updating tags
@@ -253,7 +257,7 @@ impl LambdaDeployer {
             .send()
             .await
             .map_err(|e| {
-                LambdaClientError::Deployment(format!("failed to update function tags: {}", e))
+                LambdaDeployError::Other(format!("failed to update function tags: {}", e))
             })?;
 
         info!(function_arn = %function_arn, "Lambda function updated successfully");
@@ -261,10 +265,16 @@ impl LambdaDeployer {
     }
 
     /// Wait for function update to complete.
-    async fn wait_for_update_complete(&self, name: &str) -> LambdaClientResult<()> {
+    async fn wait_for_update_complete(&self, name: &str) -> LambdaDeployResult<()> {
         // Poll until the function state is Active and LastUpdateStatus is Successful
         for _ in 0..60 {
-            let output = self.get_function(name).await?;
+            let output = self
+                .get_function(name)
+                .await
+                .map_err(|e| LambdaDeployError::Other(format!("failed to get function: {}", e)))?
+                .ok_or_else(|| {
+                    LambdaDeployError::Other("function not found while waiting for update".into())
+                })?;
             if let Some(config) = output.configuration() {
                 let state = config.state();
                 let last_update_status = config.last_update_status();
@@ -278,7 +288,7 @@ impl LambdaDeployer {
                         let reason = config
                             .last_update_status_reason()
                             .unwrap_or("unknown reason");
-                        return Err(LambdaClientError::Deployment(format!(
+                        return Err(LambdaDeployError::Other(format!(
                             "function update failed: {}",
                             reason
                         )));
@@ -295,7 +305,7 @@ impl LambdaDeployer {
                 }
             }
         }
-        Err(LambdaClientError::Deployment(
+        Err(LambdaDeployError::Other(
             "timeout waiting for function update to complete".into(),
         ))
     }
@@ -304,53 +314,42 @@ impl LambdaDeployer {
     fn needs_update(&self, existing: &GetFunctionOutput) -> bool {
         let current_version = env!("CARGO_PKG_VERSION");
 
-        let deployed_version = existing.tags().and_then(|t| t.get(VERSION_TAG_KEY));
+        let Some(tags) = existing.tags() else {
+            warn!("no tags found on deployed function, update needed");
+            return true;
+        };
 
-        match deployed_version {
-            Some(version) if version == current_version => {
-                debug!(
-                    deployed_version = %version,
-                    current_version = %current_version,
-                    "versions match, no update needed"
-                );
-                false
-            }
-            Some(version) => {
-                info!(
-                    deployed_version = %version,
-                    current_version = %current_version,
-                    "version mismatch, update needed"
-                );
-                true
-            }
-            None => {
-                warn!("no version tag found on deployed function, update needed");
-                true
-            }
+        let Some(deployed_version) = tags.get(VERSION_TAG_KEY) else {
+            warn!("no version tag found on deployed function, update needed");
+            return true;
+        };
+
+        if deployed_version == current_version {
+            info!(
+                version = %deployed_version,
+                "versions match, no update needed"
+            );
+            return false;
         }
+
+        // TODO
+        true
     }
 
     /// Get function details from AWS.
-    async fn get_function(&self, name: &str) -> LambdaClientResult<GetFunctionOutput> {
-        match self
-            .client
-            .get_function()
-            .function_name(name)
-            .send()
-            .await
-        {
-            Ok(output) => Ok(output),
+    ///
+    /// Returns `Ok(None)` if the function does not exist.
+    async fn get_function(&self, name: &str) -> anyhow::Result<Option<GetFunctionOutput>> {
+        match self.client.get_function().function_name(name).send().await {
+            Ok(output) => Ok(Some(output)),
             Err(SdkError::ServiceError(err))
                 if matches!(err.err(), GetFunctionError::ResourceNotFoundException(_)) =>
             {
-                Err(LambdaClientError::NotFound(name.to_string()))
+                Ok(None)
             }
             Err(e) => {
                 error!(e=?e, "get function failed");
-                Err(LambdaClientError::Deployment(format!(
-                    "failed to get function: {}",
-                    e
-                )))
+                anyhow::bail!("failed to get function: {}", e)
             }
         }
     }
@@ -380,7 +379,7 @@ impl LambdaDeployer {
 pub async fn deploy(
     function_name: &str,
     deploy_config: &LambdaDeployConfig,
-) -> LambdaClientResult<String> {
+) -> LambdaDeployResult<String> {
     let lambda_deployer = LambdaDeployer::new().await;
     let lambda_arn = lambda_deployer.deploy(function_name, deploy_config).await?;
     info!("successfully deployed lambda function `{}`", lambda_arn);
