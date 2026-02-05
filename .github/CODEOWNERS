@@ -1,3 +1,7 @@
 * @DataDog/logs-cloudprem
 
 /.adms/ @DataDog/dependency-management
+
+# Runtime Orchestration Platform (cnab-tools)
+# https://datadoghq.atlassian.net/wiki/spaces/OPLAT/pages/3196518787/Rolling+out+cnab-tools+via+Campaigns
+/rules/cnab @DataDog/runtime-orchestration-platform

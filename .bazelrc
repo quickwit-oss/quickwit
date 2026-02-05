@@ -1,5 +1,9 @@
 # Print all `.bazelrc` option at startup
 
+# We're not ready to turn on bzlmod.
+common --enable_bzlmod=false
+common --enable_workspace=true
+
 # Ensure we can access our internal artifact repositories
 import %workspace%/.adms/adms.bazelrc
 --announce_rc
