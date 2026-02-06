@@ -183,7 +183,7 @@ async fn find_matching_version(
         let response = match request.send().await {
             Ok(resp) => resp,
             Err(SdkError::ServiceError(err)) if err.err().is_resource_not_found_exception() => {
-                debug!(
+                info!(
                     function_name = %function_name,
                     "Lambda function does not exist yet"
                 );
@@ -597,4 +597,378 @@ fn build_tags() -> HashMap<String, String> {
     let mut tags = HashMap::new();
     tags.insert("managed_by".to_string(), "quickwit".to_string());
     tags
+}
+
+#[cfg(test)]
+mod tests {
+    use aws_sdk_lambda::operation::create_function::{CreateFunctionError, CreateFunctionOutput};
+    use aws_sdk_lambda::operation::delete_function::DeleteFunctionOutput;
+    use aws_sdk_lambda::operation::get_function::GetFunctionOutput;
+    use aws_sdk_lambda::operation::list_versions_by_function::{
+        ListVersionsByFunctionError, ListVersionsByFunctionOutput,
+    };
+    use aws_sdk_lambda::operation::publish_version::PublishVersionOutput;
+    use aws_sdk_lambda::operation::update_function_code::UpdateFunctionCodeOutput;
+    use aws_sdk_lambda::types::FunctionConfiguration;
+    use aws_sdk_lambda::types::error::{ResourceConflictException, ResourceNotFoundException};
+    use aws_smithy_mocks::{RuleMode, mock, mock_client};
+    use bytesize::ByteSize;
+
+    use super::*;
+
+    fn make_version(version: &str, description: &str) -> FunctionConfiguration {
+        FunctionConfiguration::builder()
+            .version(version)
+            .description(description)
+            .build()
+    }
+
+    fn test_deploy_config() -> LambdaDeployConfig {
+        LambdaDeployConfig {
+            execution_role_arn: "arn:aws:iam::123456789:role/test-role".to_string(),
+            memory_size: ByteSize::gib(5),
+            invocation_timeout_secs: 60,
+        }
+    }
+
+    // --- find_matching_version tests ---
+
+    #[tokio::test]
+    async fn test_find_matching_version_found() {
+        let target = "quickwit:test_version";
+        let rule = mock!(aws_sdk_lambda::Client::list_versions_by_function).then_output(|| {
+            ListVersionsByFunctionOutput::builder()
+                .versions(make_version("$LATEST", ""))
+                .versions(make_version("1", "quickwit:old_version"))
+                .versions(make_version("7", "quickwit:test_version"))
+                .build()
+        });
+        let client = mock_client!(aws_sdk_lambda, [&rule]);
+
+        let matching_version_opt = find_matching_version(&client, "my-fn", target)
+            .await
+            .unwrap();
+        assert_eq!(matching_version_opt, Some("7".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_find_matching_version_not_found() {
+        let rule = mock!(aws_sdk_lambda::Client::list_versions_by_function).then_output(|| {
+            ListVersionsByFunctionOutput::builder()
+                .versions(make_version("$LATEST", ""))
+                .versions(make_version("1", "quickwit:other"))
+                .build()
+        });
+        let client = mock_client!(aws_sdk_lambda, [&rule]);
+
+        let result = find_matching_version(&client, "my-fn", "quickwit:no_match")
+            .await
+            .unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_find_matching_version_function_does_not_exist() {
+        let rule = mock!(aws_sdk_lambda::Client::list_versions_by_function).then_error(|| {
+            ListVersionsByFunctionError::ResourceNotFoundException(
+                ResourceNotFoundException::builder().build(),
+            )
+        });
+        let client = mock_client!(aws_sdk_lambda, [&rule]);
+
+        let result = find_matching_version(&client, "no-such-fn", "quickwit:x")
+            .await
+            .unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
+    async fn test_find_matching_version_skips_latest_even_if_description_matches() {
+        let rule = mock!(aws_sdk_lambda::Client::list_versions_by_function).then_output(|| {
+            ListVersionsByFunctionOutput::builder()
+                .versions(make_version("$LATEST", "quickwit:match"))
+                .build()
+        });
+        let client = mock_client!(aws_sdk_lambda, [&rule]);
+
+        let result = find_matching_version(&client, "my-fn", "quickwit:match")
+            .await
+            .unwrap();
+        assert_eq!(result, None);
+    }
+
+    // --- try_create_function tests ---
+
+    #[tokio::test]
+    async fn test_try_create_function_success() {
+        let rule = mock!(aws_sdk_lambda::Client::create_function).then_output(|| {
+            CreateFunctionOutput::builder()
+                .version("1")
+                .function_name("my-fn")
+                .build()
+        });
+        let client = mock_client!(aws_sdk_lambda, [&rule]);
+        let config = test_deploy_config();
+
+        let result = try_create_function(&client, "my-fn", &config)
+            .await
+            .unwrap();
+        assert_eq!(result, Some("1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_try_create_function_already_exists() {
+        let rule = mock!(aws_sdk_lambda::Client::create_function).then_error(|| {
+            CreateFunctionError::ResourceConflictException(
+                ResourceConflictException::builder().build(),
+            )
+        });
+        let client = mock_client!(aws_sdk_lambda, [&rule]);
+        let config = test_deploy_config();
+
+        let result = try_create_function(&client, "my-fn", &config)
+            .await
+            .unwrap();
+        assert_eq!(result, None);
+    }
+
+    // --- deploy (update path) tests ---
+
+    #[tokio::test]
+    async fn test_deploy_update_path() {
+        // create_function → conflict (function exists)
+        let create_rule = mock!(aws_sdk_lambda::Client::create_function).then_error(|| {
+            CreateFunctionError::ResourceConflictException(
+                ResourceConflictException::builder().build(),
+            )
+        });
+        // update_function_code → success with code_sha256
+        let update_rule = mock!(aws_sdk_lambda::Client::update_function_code).then_output(|| {
+            UpdateFunctionCodeOutput::builder()
+                .code_sha256("abc123hash")
+                .build()
+        });
+        // get_function → active and ready (for wait_for_function_ready)
+        let get_rule = mock!(aws_sdk_lambda::Client::get_function).then_output(|| {
+            GetFunctionOutput::builder()
+                .configuration(
+                    FunctionConfiguration::builder()
+                        .state(State::Active)
+                        .last_update_status(LastUpdateStatus::Successful)
+                        .build(),
+                )
+                .build()
+        });
+        // publish_version → success
+        let publish_rule = mock!(aws_sdk_lambda::Client::publish_version)
+            .then_output(|| PublishVersionOutput::builder().version("8").build());
+
+        let client = mock_client!(
+            aws_sdk_lambda,
+            RuleMode::MatchAny,
+            [&create_rule, &update_rule, &get_rule, &publish_rule]
+        );
+        let config = test_deploy_config();
+
+        tokio::time::pause();
+        let version = deploy_lambda_function_inner(&client, "my-fn", &config)
+            .await
+            .unwrap();
+        assert_eq!(version, "8");
+    }
+
+    // --- wait_for_function_ready tests ---
+
+    #[tokio::test]
+    async fn test_wait_for_function_ready_immediate() {
+        let rule = mock!(aws_sdk_lambda::Client::get_function).then_output(|| {
+            GetFunctionOutput::builder()
+                .configuration(
+                    FunctionConfiguration::builder()
+                        .state(State::Active)
+                        .last_update_status(LastUpdateStatus::Successful)
+                        .build(),
+                )
+                .build()
+        });
+        let client = mock_client!(aws_sdk_lambda, [&rule]);
+
+        tokio::time::pause();
+        wait_for_function_ready(&client, "my-fn").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_function_ready_after_update_in_progress() {
+        let rule = mock!(aws_sdk_lambda::Client::get_function)
+            .sequence()
+            .output(|| {
+                GetFunctionOutput::builder()
+                    .configuration(
+                        FunctionConfiguration::builder()
+                            .state(State::Active)
+                            .last_update_status(LastUpdateStatus::InProgress)
+                            .build(),
+                    )
+                    .build()
+            })
+            .output(|| {
+                GetFunctionOutput::builder()
+                    .configuration(
+                        FunctionConfiguration::builder()
+                            .state(State::Active)
+                            .last_update_status(LastUpdateStatus::Successful)
+                            .build(),
+                    )
+                    .build()
+            })
+            .build();
+        let client = mock_client!(aws_sdk_lambda, RuleMode::Sequential, [&rule]);
+
+        tokio::time::pause();
+        wait_for_function_ready(&client, "my-fn").await.unwrap();
+        assert_eq!(rule.num_calls(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_function_ready_fails_on_failed_state() {
+        let rule = mock!(aws_sdk_lambda::Client::get_function).then_output(|| {
+            GetFunctionOutput::builder()
+                .configuration(
+                    FunctionConfiguration::builder()
+                        .state(State::Failed)
+                        .state_reason("Something broke")
+                        .build(),
+                )
+                .build()
+        });
+        let client = mock_client!(aws_sdk_lambda, [&rule]);
+
+        tokio::time::pause();
+        let err = wait_for_function_ready(&client, "my-fn").await.unwrap_err();
+        assert!(
+            err.to_string().contains("Failed state"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_function_ready_fails_on_last_update_failed() {
+        let rule = mock!(aws_sdk_lambda::Client::get_function).then_output(|| {
+            GetFunctionOutput::builder()
+                .configuration(
+                    FunctionConfiguration::builder()
+                        .state(State::Active)
+                        .last_update_status(LastUpdateStatus::Failed)
+                        .last_update_status_reason("Update broke")
+                        .build(),
+                )
+                .build()
+        });
+        let client = mock_client!(aws_sdk_lambda, [&rule]);
+
+        tokio::time::pause();
+        let err = wait_for_function_ready(&client, "my-fn").await.unwrap_err();
+        assert!(
+            err.to_string().contains("last update failed"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    // --- garbage_collect_old_versions tests ---
+
+    #[tokio::test]
+    async fn test_gc_deletes_old_versions_keeps_recent() {
+        // 8 quickwit versions (1..=8) + $LATEST + one non-quickwit version
+        let list_rule =
+            mock!(aws_sdk_lambda::Client::list_versions_by_function).then_output(|| {
+                let mut builder = ListVersionsByFunctionOutput::builder()
+                    .versions(make_version("$LATEST", ""))
+                    .versions(make_version("99", "not-quickwit"));
+                for i in 1..=8 {
+                    builder = builder
+                        .versions(make_version(&i.to_string(), &format!("quickwit:ver_{}", i)));
+                }
+                builder.build()
+            });
+
+        let delete_rule = mock!(aws_sdk_lambda::Client::delete_function)
+            .then_output(|| DeleteFunctionOutput::builder().build());
+
+        let client = mock_client!(
+            aws_sdk_lambda,
+            RuleMode::MatchAny,
+            [&list_rule, &delete_rule]
+        );
+
+        // Current version is "7", so keep 7 + the 5 most recent (4,5,6,7,8).
+        // Should delete versions 1, 2, 3.
+        garbage_collect_old_versions(&client, "my-fn", "7")
+            .await
+            .unwrap();
+
+        assert_eq!(delete_rule.num_calls(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_gc_nothing_to_delete() {
+        // Only 3 quickwit versions — below the GC_KEEP_RECENT_VERSIONS threshold.
+        let list_rule =
+            mock!(aws_sdk_lambda::Client::list_versions_by_function).then_output(|| {
+                ListVersionsByFunctionOutput::builder()
+                    .versions(make_version("$LATEST", ""))
+                    .versions(make_version("1", "quickwit:v1"))
+                    .versions(make_version("2", "quickwit:v2"))
+                    .versions(make_version("3", "quickwit:v3"))
+                    .build()
+            });
+
+        let delete_rule = mock!(aws_sdk_lambda::Client::delete_function)
+            .then_output(|| DeleteFunctionOutput::builder().build());
+
+        let client = mock_client!(
+            aws_sdk_lambda,
+            RuleMode::MatchAny,
+            [&list_rule, &delete_rule]
+        );
+
+        garbage_collect_old_versions(&client, "my-fn", "3")
+            .await
+            .unwrap();
+
+        assert_eq!(delete_rule.num_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_gc_does_not_delete_current_version() {
+        // 7 quickwit versions, current is "1" (the oldest).
+        // Without the current-version guard, version 1 would be deleted.
+        let list_rule =
+            mock!(aws_sdk_lambda::Client::list_versions_by_function).then_output(|| {
+                let mut builder =
+                    ListVersionsByFunctionOutput::builder().versions(make_version("$LATEST", ""));
+                for i in 1..=7 {
+                    builder = builder
+                        .versions(make_version(&i.to_string(), &format!("quickwit:ver_{}", i)));
+                }
+                builder.build()
+            });
+
+        let delete_rule = mock!(aws_sdk_lambda::Client::delete_function)
+            .then_output(|| DeleteFunctionOutput::builder().build());
+
+        let client = mock_client!(
+            aws_sdk_lambda,
+            RuleMode::MatchAny,
+            [&list_rule, &delete_rule]
+        );
+
+        // Current version is "1". Without guard: would delete 1,2. With guard: only deletes 2.
+        garbage_collect_old_versions(&client, "my-fn", "1")
+            .await
+            .unwrap();
+
+        assert_eq!(delete_rule.num_calls(), 1);
+    }
 }

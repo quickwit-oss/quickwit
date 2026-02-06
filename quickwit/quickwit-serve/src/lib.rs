@@ -1565,7 +1565,7 @@ mod tests {
     async fn test_setup_searcher() {
         let node_config = NodeConfig::for_test();
         let searcher_context =
-            Arc::new(SearcherContext::new(SearcherConfig::default(), None, None));
+            Arc::new(SearcherContext::new(SearcherConfig::default(), None));
         let metastore = metastore_for_test();
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();

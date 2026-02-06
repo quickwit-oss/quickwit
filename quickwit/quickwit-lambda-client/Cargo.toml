@@ -29,11 +29,18 @@ quickwit-lambda-server = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 
+[dev-dependencies]
+aws-smithy-mocks = { workspace = true }
+aws-sdk-lambda = { workspace = true, features = ["test-util"] }
+bytesize = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }
+
+# Required for complicated reasons. quickwit-storage checks that we
+# do use preserve order with serde. aws forces that feature. We disable
+# the check by switching on its testsuite feature.
+quickwit-storage = { workspace = true, features = ["testsuite"] }
+
 [build-dependencies]
 hex = { workspace = true }
 sha1 = "0.10"
 ureq = { workspace = true }
-
-[features]
-default = []
-testsuite = []
