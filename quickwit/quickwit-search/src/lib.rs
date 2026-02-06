@@ -23,7 +23,10 @@ mod collector;
 mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
-mod leaf;
+
+mod invoker;
+/// Leaf search operations.
+pub mod leaf;
 mod leaf_cache;
 mod list_fields;
 mod list_fields_cache;
@@ -80,6 +83,7 @@ pub use crate::client::{
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
+pub use crate::invoker::LambdaLeafSearchInvoker;
 pub use crate::root::{
     IndexMetasForLeafSearch, SearchJob, check_all_index_metadata_found, jobs_to_leaf_request,
     root_search, search_plan,
@@ -283,7 +287,7 @@ pub async fn single_node_search(
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
     let cluster_client = ClusterClient::new(search_job_placer);
     let searcher_config = SearcherConfig::default();
-    let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));
+    let searcher_context = Arc::new(SearcherContext::new(searcher_config, None, None));
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore.clone(),
         storage_resolver,

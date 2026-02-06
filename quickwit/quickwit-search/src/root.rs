@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -45,7 +45,7 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tracing::{debug, info, info_span, instrument};
+use tracing::{debug, error, info, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
@@ -1233,7 +1233,7 @@ pub async fn root_search(
     if let Some(max_total_split_searches) = searcher_context.searcher_config.max_splits_per_search
         && max_total_split_searches < num_splits
     {
-        tracing::error!(
+        error!(
             num_splits,
             max_total_split_searches,
             index=?search_request.index_id_patterns,
