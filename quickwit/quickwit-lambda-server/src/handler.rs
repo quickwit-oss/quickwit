@@ -14,9 +14,12 @@
 
 use base64::prelude::*;
 use prost::Message;
-use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
+use quickwit_proto::search::{
+    LeafSearchRequest, LeafSearchResponse, LeafSearchResponses, SplitIdAndFooterOffsets,
+};
 use quickwit_search::leaf::multi_index_leaf_search;
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
 use tracing::{info, instrument};
 
 use crate::context::LambdaSearcherContext;
@@ -32,11 +35,14 @@ pub struct LeafSearchPayload {
 /// Response from leaf search Lambda invocation.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LeafSearchResponsePayload {
-    /// Base64-encoded serialized LeafSearchResponse protobuf.
+    /// Base64-encoded serialized `LeafSearchResponses` protobuf (one per split).
     pub payload: String,
 }
 
 /// Handle a leaf search request in Lambda.
+///
+/// Returns one `LeafSearchResponse` per split. Each split is processed
+/// independently so that the caller can cache and merge results individually.
 #[instrument(skip(ctx), fields(request_id))]
 pub async fn handle_leaf_search(
     event: LeafSearchPayload,
@@ -50,30 +56,68 @@ pub async fn handle_leaf_search(
     // Deserialize LeafSearchRequest
     let leaf_search_request = LeafSearchRequest::decode(&request_bytes[..])?;
 
-    let num_splits: usize = leaf_search_request
-        .leaf_requests
-        .iter()
-        .map(|leaf_request_ref| leaf_request_ref.split_offsets.len())
-        .sum();
+    let all_splits: Vec<(usize, SplitIdAndFooterOffsets)> =
+        leaf_search_request
+            .leaf_requests
+            .iter()
+            .enumerate()
+            .flat_map(|(leaf_req_idx, leaf_request_ref)| {
+                leaf_request_ref.split_offsets.iter().cloned().map(
+                    move |split_id_and_footer_offsets| (leaf_req_idx, split_id_and_footer_offsets),
+                )
+            })
+            .collect();
 
-    info!(num_splits, "processing leaf search request");
+    let num_splits = all_splits.len();
+    info!(num_splits, "processing leaf search request (per-split)");
 
-    // Execute leaf search
-    let leaf_search_response = multi_index_leaf_search(
-        ctx.searcher_context.clone(),
-        leaf_search_request,
-        &ctx.storage_resolver,
-    )
-    .await?;
+    // Process each split in parallel. The SearchPermitProvider inside
+    // SearcherContext gates concurrency based on memory budget.
+    let mut join_set = JoinSet::new();
+    for (split_idx, (leaf_req_idx, split)) in all_splits.into_iter().enumerate() {
+        let leaf_request_ref = &leaf_search_request.leaf_requests[leaf_req_idx];
+        let single_split_request = LeafSearchRequest {
+            search_request: leaf_search_request.search_request.clone(),
+            doc_mappers: leaf_search_request.doc_mappers.clone(),
+            index_uris: leaf_search_request.index_uris.clone(),
+            leaf_requests: vec![quickwit_proto::search::LeafRequestRef {
+                index_uri_ord: leaf_request_ref.index_uri_ord,
+                doc_mapper_ord: leaf_request_ref.doc_mapper_ord,
+                split_offsets: vec![split],
+            }],
+        };
+
+        let searcher_context = ctx.searcher_context.clone();
+        let storage_resolver = ctx.storage_resolver.clone();
+        join_set.spawn(async move {
+            let response =
+                multi_index_leaf_search(searcher_context, single_split_request, &storage_resolver)
+                    .await;
+            (split_idx, response)
+        });
+    }
+
+    // Collect results, preserving split order.
+    let mut indexed_responses: Vec<(usize, LeafSearchResponse)> = Vec::with_capacity(num_splits);
+    while let Some(join_result) = join_set.join_next().await {
+        let (split_idx, search_result) = join_result
+            .map_err(|e| LambdaError::Internal(format!("split search task failed: {e}")))?;
+        let response =
+            search_result.map_err(|e| LambdaError::Internal(format!("leaf search failed: {e}")))?;
+        indexed_responses.push((split_idx, response));
+    }
+    indexed_responses.sort_by_key(|(idx, _)| *idx);
+    let responses: Vec<LeafSearchResponse> =
+        indexed_responses.into_iter().map(|(_, r)| r).collect();
 
     info!(
-        num_hits = leaf_search_response.num_hits,
-        num_successful_splits = leaf_search_response.num_successful_splits,
-        "leaf search completed"
+        num_responses = responses.len(),
+        "leaf search completed (per-split)"
     );
 
-    // Serialize response
-    let response_bytes = leaf_search_response.encode_to_vec();
+    // Serialize as LeafSearchResponses wrapper
+    let wrapper = LeafSearchResponses { responses };
+    let response_bytes = wrapper.encode_to_vec();
     let payload = BASE64_STANDARD.encode(&response_bytes);
 
     Ok(LeafSearchResponsePayload { payload })

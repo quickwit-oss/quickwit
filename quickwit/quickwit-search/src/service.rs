@@ -53,7 +53,6 @@ pub struct SearchServiceImpl {
     cluster_client: ClusterClient,
     searcher_context: Arc<SearcherContext>,
     local_kv_store: MiniKV,
-    lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
 }
 
 /// Trait representing a search service.
@@ -143,7 +142,6 @@ impl SearchServiceImpl {
         storage_resolver: StorageResolver,
         cluster_client: ClusterClient,
         searcher_context: Arc<SearcherContext>,
-        lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
     ) -> Self {
         SearchServiceImpl {
             metastore,
@@ -151,7 +149,6 @@ impl SearchServiceImpl {
             cluster_client,
             searcher_context,
             local_kv_store: MiniKV::default(),
-            lambda_invoker,
         }
     }
 }
@@ -171,7 +168,6 @@ impl SearchService for SearchServiceImpl {
             search_request,
             self.metastore.clone(),
             &self.cluster_client,
-            self.lambda_invoker.clone(),
         )
         .await?;
         Ok(search_result)
@@ -421,6 +417,8 @@ pub struct SearcherContext {
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
     pub aggregation_limit: AggregationLimitsGuard,
+    /// Optional Lambda invoker for offloading leaf search to serverless functions.
+    pub lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -436,11 +434,15 @@ impl SearcherContext {
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();
-        SearcherContext::new(searcher_config, None)
+        SearcherContext::new(searcher_config, None, None)
     }
 
     /// Creates a new searcher context, given a searcher config, and an optional `SplitCache`.
-    pub fn new(searcher_config: SearcherConfig, split_cache_opt: Option<Arc<SplitCache>>) -> Self {
+    pub fn new(
+        searcher_config: SearcherConfig,
+        split_cache_opt: Option<Arc<SplitCache>>,
+        lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
+    ) -> Self {
         let global_split_footer_cache = MemorySizedCache::from_config(
             &searcher_config.split_footer_cache,
             &quickwit_storage::STORAGE_METRICS.split_footer_cache,
@@ -469,6 +471,7 @@ impl SearcherContext {
             list_fields_cache,
             split_cache_opt,
             aggregation_limit,
+            lambda_invoker,
         }
     }
 

@@ -314,12 +314,18 @@ pub struct SearcherConfig {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LambdaConfig {
-    /// AWS Lambda function name or ARN.
+    /// AWS Lambda function name.
     #[serde(default = "LambdaConfig::default_function_name")]
     pub function_name: String,
     /// Maximum number of splits per Lambda invocation.
     #[serde(default = "LambdaConfig::default_max_splits_per_invocation")]
-    pub max_splits_per_invocation: usize,
+    pub max_splits_per_invocation: NonZeroUsize,
+    /// Maximum number of splits to process locally before offloading to Lambda.
+    /// When the number of pending split searches exceeds this threshold,
+    /// new splits are offloaded to Lambda instead of being queued locally.
+    /// A value of 0 offloads everything to Lambda.
+    #[serde(default = "LambdaConfig::default_offload_threshold")]
+    pub offload_threshold: usize,
     /// Auto-deploy configuration. If set, Quickwit will automatically deploy
     /// the Lambda function at startup.
     /// If deploying a lambda fails, Quickwit will log an error and fail.
@@ -332,8 +338,10 @@ pub struct LambdaConfig {
 #[serde(deny_unknown_fields)]
 pub struct LambdaDeployConfig {
     /// IAM execution role ARN for the Lambda function.
+    /// The role only requires GetObject permission to the targeted S3 bucket.
     pub execution_role_arn: String,
-    /// Memory size for the Lambda function. It will be rounded up to the nearest multiple of 1MiB.
+    /// Memory size for the Lambda function.
+    /// It will be rounded up to the nearest multiple of 1MiB.
     #[serde(default = "LambdaDeployConfig::default_memory_size")]
     pub memory_size: ByteSize,
     /// Timeout for Lambda invocations in seconds.
@@ -356,6 +364,7 @@ impl Default for LambdaConfig {
         Self {
             function_name: Self::default_function_name(),
             max_splits_per_invocation: Self::default_max_splits_per_invocation(),
+            offload_threshold: Self::default_offload_threshold(),
             auto_deploy: None,
         }
     }
@@ -365,8 +374,11 @@ impl LambdaConfig {
     fn default_function_name() -> String {
         "quickwit-lambda-search".to_string()
     }
-    fn default_max_splits_per_invocation() -> usize {
-        10
+    fn default_max_splits_per_invocation() -> NonZeroUsize {
+        NonZeroUsize::new(10).unwrap()
+    }
+    fn default_offload_threshold() -> usize {
+        100
     }
 }
 

@@ -74,6 +74,7 @@
         "lambda": {
             "function_name": "quickwit-lambda-leaf-search",
             "max_splits_per_invocation": 10,
+            "offload_threshold": 30,
             "auto_deploy": {
                 "execution_role_arn": "arn:aws:iam::123456789012:role/quickwit-lambda-role",
                 "memory_size": "5 GiB",

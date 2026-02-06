@@ -43,6 +43,12 @@ pub enum SearchPermitMessage {
         permit_sender: oneshot::Sender<Vec<SearchPermitFuture>>,
         permit_sizes: Vec<u64>,
     },
+    RequestWithOffload {
+        permit_sender: oneshot::Sender<PermitPartition>,
+        permit_sizes: Vec<u64>,
+        /// Maximum number of additional pending requests before offloading.
+        offload_threshold: usize,
+    },
     UpdateMemory {
         memory_delta: i64,
     },
@@ -51,6 +57,16 @@ pub enum SearchPermitMessage {
         memory_size: u64,
         warmup_slot_freed: bool,
     },
+}
+
+/// Result of a permit request that supports offloading some splits to Lambda.
+pub struct PermitPartition {
+    /// Permits for splits to process locally.
+    /// Each entry is (split_index, permit_future) where split_index
+    /// refers to the position in the original request.
+    pub local: Vec<(usize, SearchPermitFuture)>,
+    /// Indices of splits that should be offloaded to Lambda.
+    pub offloaded: Vec<usize>,
 }
 
 /// Makes very pessimistic estimate of the memory allocation required for a split search
@@ -123,6 +139,32 @@ impl SearchPermitProvider {
             .await
             .expect("Receiver lives longer than sender")
     }
+
+    /// Returns permits for local splits and a list of split indices to offload.
+    ///
+    /// The actor checks the current pending queue depth. If adding all splits
+    /// would exceed `offload_threshold` pending requests, only enough splits
+    /// to fill up to the threshold are processed locally; the rest are offloaded.
+    ///
+    /// If `offload_threshold` is 0, all splits are offloaded.
+    pub async fn get_permits_with_offload(
+        &self,
+        splits: impl IntoIterator<Item = ByteSize>,
+        offload_threshold: usize,
+    ) -> PermitPartition {
+        let (permit_sender, permit_receiver) = oneshot::channel();
+        let permit_sizes = splits.into_iter().map(|size| size.as_u64()).collect();
+        self.message_sender
+            .send(SearchPermitMessage::RequestWithOffload {
+                permit_sender,
+                permit_sizes,
+                offload_threshold,
+            })
+            .expect("Receiver lives longer than sender");
+        permit_receiver
+            .await
+            .expect("Receiver lives longer than sender")
+    }
 }
 
 struct SearchPermitActor {
@@ -162,10 +204,32 @@ impl SearchPermitActor {
                     permits.push(SearchPermitFuture(rx));
                 }
                 self.assign_available_permits();
-                // The receiver could be dropped in the (unlikely) situation
-                // where the future requesting these permits is cancelled before
-                // this message is processed.
                 let _ = permit_sender.send(permits);
+            }
+            SearchPermitMessage::RequestWithOffload {
+                permit_sizes,
+                permit_sender,
+                offload_threshold,
+            } => {
+                let current_pending = self.permits_requests.len();
+                // How many new splits can we accept locally before hitting the threshold.
+                let local_capacity = offload_threshold.saturating_sub(current_pending);
+                let num_local = permit_sizes.len().min(local_capacity);
+
+                let mut local = Vec::with_capacity(num_local);
+                let mut offloaded = Vec::with_capacity(permit_sizes.len() - num_local);
+
+                for (idx, permit_size) in permit_sizes.into_iter().enumerate() {
+                    if idx < num_local {
+                        let (tx, rx) = oneshot::channel();
+                        self.permits_requests.push_back((tx, permit_size));
+                        local.push((idx, SearchPermitFuture(rx)));
+                    } else {
+                        offloaded.push(idx);
+                    }
+                }
+                self.assign_available_permits();
+                let _ = permit_sender.send(PermitPartition { local, offloaded });
             }
             SearchPermitMessage::UpdateMemory { memory_delta } => {
                 if self.total_memory_allocated as i64 + memory_delta < 0 {

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::ops::Bound;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -53,6 +54,54 @@ use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
 use crate::service::{SearcherContext, deserialize_doc_mapper};
 use crate::{QuickwitAggregations, SearchError};
+
+/// Distributes items across batches using a greedy LPT (Longest Processing Time)
+/// algorithm to balance total weight across batches.
+///
+/// Items are sorted by weight descending, then each item is assigned to the
+/// batch with the smallest current total weight. This produces a good
+/// approximation of balanced batches.
+fn greedy_batch_split<T>(
+    items: Vec<T>,
+    weight_fn: impl Fn(&T) -> u64,
+    max_items_per_batch: NonZeroUsize,
+) -> Vec<Vec<T>> {
+    if items.is_empty() {
+        return Vec::new();
+    }
+
+    let num_items = items.len();
+    let max_items_per_batch: usize = max_items_per_batch.get();
+    let num_batches = num_items.div_ceil(max_items_per_batch);
+
+    // Compute weights, then sort descending by weight
+    let mut weighted_items: Vec<(u64, T)> = Vec::with_capacity(num_items);
+    for item in items {
+        let weight = weight_fn(&item);
+        weighted_items.push((weight, item));
+    }
+    weighted_items.sort_unstable_by_key(|(weight, _)| std::cmp::Reverse(*weight));
+
+    // Invariant: batch_weights[i] is the sum of weights in batches[i]
+    let mut batches: Vec<Vec<T>> = std::iter::repeat_with(Vec::new).take(num_batches).collect();
+    let mut batch_weights: Vec<u64> = vec![0; num_batches];
+
+    // Greedily assign each item to the lightest batch.
+    // Ties are broken by count to help balance item counts when weights are equal.
+    for (weight, item) in weighted_items {
+        let lightest_batch_idx = batch_weights
+            .iter()
+            .zip(batches.iter())
+            .enumerate()
+            .min_by_key(|(_, (batch_weight, batch))| (**batch_weight, batch.len()))
+            .map(|(idx, _)| idx)
+            .unwrap();
+        batch_weights[lightest_batch_idx] += weight;
+        batches[lightest_batch_idx].push(item);
+    }
+
+    batches
+}
 
 async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
@@ -1379,20 +1428,91 @@ pub async fn single_doc_mapping_leaf_search(
     let incremental_merge_collector = IncrementalCollector::new(merge_collector);
     let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
 
-    // We acquire all of the leaf search permits to make sure our single split search tasks
-    // do no interleave with other leaf search requests.
-    let permit_sizes = split_with_req.iter().map(|(split, _)| {
-        compute_initial_memory_allocation(
-            split,
-            searcher_context
-                .searcher_config
-                .warmup_single_split_initial_allocation,
-        )
-    });
-    let permit_futures = searcher_context
-        .search_permit_provider
-        .get_permits(permit_sizes)
-        .await;
+    // Step 1: Check cache for each split before acquiring permits.
+    let mut uncached_splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
+        Vec::with_capacity(split_with_req.len());
+    for (split, search_request) in split_with_req {
+        let mut rewritten_request = search_request.clone();
+        rewrite_request(
+            &mut rewritten_request,
+            &split,
+            doc_mapper.timestamp_field_name(),
+        );
+        if let Some(cached_response) = searcher_context
+            .leaf_search_cache
+            .get(split.clone(), rewritten_request)
+        {
+            incremental_merge_collector
+                .lock()
+                .unwrap()
+                .add_result(cached_response)
+                .ok();
+        } else {
+            uncached_splits.push((split, search_request));
+        }
+    }
+
+    if uncached_splits.is_empty() {
+        let incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
+            Ok(filter_merger) => filter_merger.into_inner().unwrap(),
+            Err(filter_merger) => filter_merger.lock().unwrap().clone(),
+        };
+        return crate::search_thread_pool()
+            .run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+            .instrument(info_span!("incremental_merge_intermediate"))
+            .await
+            .context("failed to merge split search responses")?;
+    }
+
+    // Step 2: Determine which uncached splits to process locally vs offload.
+    let lambda_available = searcher_context.lambda_invoker.is_some()
+        && searcher_context.searcher_config.lambda.is_some();
+
+    let offload_threshold = if lambda_available {
+        searcher_context
+            .searcher_config
+            .lambda
+            .as_ref()
+            .unwrap()
+            .offload_threshold
+    } else {
+        0
+    };
+
+    let permit_sizes: Vec<ByteSize> = uncached_splits
+        .iter()
+        .map(|(split, _)| {
+            compute_initial_memory_allocation(
+                split,
+                searcher_context
+                    .searcher_config
+                    .warmup_single_split_initial_allocation,
+            )
+        })
+        .collect();
+
+    let (local_splits_with_permits, offloaded_splits) = if lambda_available {
+        let partition = searcher_context
+            .search_permit_provider
+            .get_permits_with_offload(permit_sizes, offload_threshold)
+            .await;
+        (partition.local, partition.offloaded)
+    } else {
+        let permit_futures = searcher_context
+            .search_permit_provider
+            .get_permits(permit_sizes)
+            .await;
+        let local: Vec<(usize, _)> = permit_futures.into_iter().enumerate().collect();
+        (local, Vec::new())
+    };
+
+    if !offloaded_splits.is_empty() {
+        info!(
+            num_local = local_splits_with_permits.len(),
+            num_offloaded = offloaded_splits.len(),
+            "partitioned splits between local and Lambda"
+        );
+    }
 
     let leaf_search_context = Arc::new(LeafSearchContext {
         searcher_context: searcher_context.clone(),
@@ -1402,17 +1522,17 @@ pub async fn single_doc_mapping_leaf_search(
         split_filter: split_filter.clone(),
     });
 
+    // Step 3: Spawn local split search tasks.
     let mut split_search_futures = JoinSet::new();
-    let mut task_id_to_split_id_map = HashMap::with_capacity(split_with_req.len());
-    for ((split, search_request), permit_fut) in
-        split_with_req.into_iter().zip(permit_futures.into_iter())
-    {
+    let mut task_id_to_split_id_map = HashMap::with_capacity(local_splits_with_permits.len());
+    for (idx, permit_fut) in local_splits_with_permits {
+        let (split, search_request) = &uncached_splits[idx];
         let leaf_split_search_permit = permit_fut
             .instrument(info_span!("waiting_for_leaf_search_split_semaphore"))
             .await;
 
         let Some(simplified_search_request) =
-            simplify_search_request(search_request, &split, &split_filter)
+            simplify_search_request(search_request.clone(), split, &split_filter)
         else {
             let mut leaf_search_state_guard =
                 SplitSearchStateGuard::new(leaf_search_context.split_outcome_counters.clone());
@@ -1425,7 +1545,7 @@ pub async fn single_doc_mapping_leaf_search(
                 simplified_search_request,
                 leaf_search_context.clone(),
                 index_storage.clone(),
-                split,
+                split.clone(),
                 leaf_split_search_permit,
                 aggregations_limits.clone(),
             )
@@ -1434,15 +1554,81 @@ pub async fn single_doc_mapping_leaf_search(
         task_id_to_split_id_map.insert(handle.id(), split_id);
     }
 
-    // TODO we could cancel running splits when !run_all_splits and the running split can no
-    // longer give better results after some other split answered.
+    // Step 4: Offload splits to Lambda.
+    if !offloaded_splits.is_empty() {
+        let lambda_invoker = searcher_context.lambda_invoker.as_ref().unwrap();
+        let lambda_config = searcher_context.searcher_config.lambda.as_ref().unwrap();
+
+        let doc_mapper_str = serde_json::to_string(doc_mapper.as_ref())
+            .map_err(|e| SearchError::Internal(format!("failed to serialize doc mapper: {e}")))?;
+
+        // Build LeafSearchRequest with offloaded splits in batches.
+        let offloaded_split_offsets: Vec<SplitIdAndFooterOffsets> = offloaded_splits
+            .iter()
+            .map(|&idx| uncached_splits[idx].0.clone())
+            .collect();
+
+        // Distribute splits across batches balanced by num_docs using greedy LPT.
+        let batches = greedy_batch_split(
+            offloaded_split_offsets,
+            |split| split.num_docs,
+            lambda_config.max_splits_per_invocation,
+        );
+
+        let index_uri = index_storage.uri().to_string();
+
+        let mut search_request_for_leaf = (*request).clone();
+        search_request_for_leaf.start_offset = 0;
+        search_request_for_leaf.max_hits += request.start_offset;
+
+        let mut lambda_tasks = Vec::new();
+        for batch in &batches {
+            let leaf_request = LeafSearchRequest {
+                search_request: Some(search_request_for_leaf.clone()),
+                doc_mappers: vec![doc_mapper_str.clone()],
+                index_uris: vec![index_uri.clone()],
+                leaf_requests: vec![quickwit_proto::search::LeafRequestRef {
+                    index_uri_ord: 0,
+                    doc_mapper_ord: 0,
+                    split_offsets: batch.clone(),
+                }],
+            };
+            let invoker = lambda_invoker.clone();
+            lambda_tasks.push(async move { invoker.invoke_leaf_search(leaf_request).await });
+        }
+
+        let lambda_results = try_join_all(lambda_tasks).await;
+        match lambda_results {
+            Ok(batch_results) => {
+                let mut locked = incremental_merge_collector.lock().unwrap();
+                for per_split_results in batch_results {
+                    for response in per_split_results {
+                        if let Err(err) = locked.add_result(response) {
+                            error!(error = %err, "failed to add Lambda result to collector");
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                error!(error = %err, "Lambda invocation failed for offloaded splits");
+                let mut locked = incremental_merge_collector.lock().unwrap();
+                for &idx in &offloaded_splits {
+                    locked.add_failed_split(SplitSearchError {
+                        split_id: uncached_splits[idx].0.split_id.clone(),
+                        error: format!("Lambda invocation error: {err}"),
+                        retryable_error: true,
+                    });
+                }
+            }
+        }
+    }
+
+    // Step 5: Await all local tasks.
     let mut split_search_join_errors: Vec<(String, JoinError)> = Vec::new();
 
     while let Some(leaf_search_join_result) = split_search_futures.join_next().await {
-        // splits that did not panic were already added to the collector
         if let Err(join_error) = leaf_search_join_result {
             if join_error.is_cancelled() {
-                // An explicit task cancellation is not an error.
                 continue;
             }
             let split_id = task_id_to_split_id_map.get(&join_error.id()).unwrap();
@@ -2144,5 +2330,148 @@ mod tests {
 
         assert!(directory_size_larger > directory_size_smaller + 100);
         assert!(larger_size > smaller_size + 100);
+    }
+
+    fn nz(n: usize) -> std::num::NonZeroUsize {
+        std::num::NonZeroUsize::new(n).unwrap()
+    }
+
+    #[test]
+    fn test_greedy_batch_split_empty() {
+        let items: Vec<u64> = vec![];
+        let batches = super::greedy_batch_split(items, |&x| x, nz(5));
+        assert!(batches.is_empty());
+    }
+
+    #[test]
+    fn test_greedy_batch_split_single_batch() {
+        let items = vec![10u64, 20, 30];
+        let batches = super::greedy_batch_split(items, |&x| x, nz(10));
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].len(), 3);
+    }
+
+    #[test]
+    fn test_greedy_batch_split_balances_weights() {
+        // 7 items with weights, max 3 per batch -> 3 batches
+        let items = vec![100u64, 80, 60, 50, 40, 30, 20];
+        let batches = super::greedy_batch_split(items, |&x| x, nz(3));
+
+        assert_eq!(batches.len(), 3);
+
+        // All items should be present
+        let mut all_items: Vec<u64> = batches.iter().flatten().copied().collect();
+        all_items.sort_unstable();
+        assert_eq!(all_items, vec![20, 30, 40, 50, 60, 80, 100]);
+
+        // Check weights are reasonably balanced
+        let weights: Vec<u64> = batches.iter().map(|b| b.iter().sum()).collect();
+        let max_weight = *weights.iter().max().unwrap();
+        let min_weight = *weights.iter().min().unwrap();
+        // With greedy LPT, the imbalance should be bounded
+        assert!(
+            max_weight <= min_weight * 2,
+            "weights should be reasonably balanced: {:?}",
+            weights
+        );
+    }
+
+    #[test]
+    fn test_greedy_batch_split_count_balance() {
+        // 10 items, max 3 per batch -> 4 batches
+        // counts should be either 2 or 3 per batch
+        let items: Vec<u64> = (0..10).collect();
+        let batches = super::greedy_batch_split(items, |&x| x, nz(3));
+
+        assert_eq!(batches.len(), 4);
+        let counts: Vec<usize> = batches.iter().map(|b| b.len()).collect();
+        for count in &counts {
+            assert!(
+                *count >= 2 && *count <= 3,
+                "count should be 2 or 3, got {}",
+                count
+            );
+        }
+        assert_eq!(counts.iter().sum::<usize>(), 10);
+    }
+
+    mod proptest_greedy_batch {
+        use std::num::NonZeroUsize;
+
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn all_items_preserved(
+                items in prop::collection::vec(0u64..1000, 0..100),
+                max_per_batch in 1usize..20
+            ) {
+                let original: Vec<u64> = items.clone();
+                let max_per_batch = NonZeroUsize::new(max_per_batch).unwrap();
+                let batches = super::super::greedy_batch_split(items, |&x| x, max_per_batch);
+
+                // All items should be present exactly once
+                let mut result: Vec<u64> = batches.into_iter().flatten().collect();
+                result.sort_unstable();
+                let mut expected = original;
+                expected.sort_unstable();
+                prop_assert_eq!(result, expected);
+            }
+
+            #[test]
+            fn batch_count_correct(
+                items in prop::collection::vec(0u64..1000, 1..100),
+                max_per_batch in 1usize..20
+            ) {
+                let n = items.len();
+                let max_per_batch_nz = NonZeroUsize::new(max_per_batch).unwrap();
+                let batches = super::super::greedy_batch_split(items, |&x| x, max_per_batch_nz);
+
+                let expected_batches = n.div_ceil(max_per_batch);
+                prop_assert_eq!(batches.len(), expected_batches);
+            }
+
+            #[test]
+            fn total_items_matches(
+                items in prop::collection::vec(0u64..1000, 1..100),
+                max_per_batch in 1usize..20
+            ) {
+                let n = items.len();
+                let max_per_batch = NonZeroUsize::new(max_per_batch).unwrap();
+                let batches = super::super::greedy_batch_split(items, |&x| x, max_per_batch);
+
+                // Total items across all batches equals input
+                let total: usize = batches.iter().map(|b| b.len()).sum();
+                prop_assert_eq!(total, n);
+            }
+
+            #[test]
+            fn greedy_balances_by_weight_not_count(
+                // Use items with significant weights to test weight balancing
+                items in prop::collection::vec(100u64..1000, 4..30),
+                max_per_batch in 2usize..10
+            ) {
+                let max_per_batch = NonZeroUsize::new(max_per_batch).unwrap();
+                let batches = super::super::greedy_batch_split(items, |&x| x, max_per_batch);
+
+                if batches.len() >= 2 {
+                    let weights: Vec<u64> = batches.iter().map(|b| b.iter().sum()).collect();
+                    let total_weight: u64 = weights.iter().sum();
+                    let avg_weight = total_weight / batches.len() as u64;
+
+                    // LPT guarantees max makespan <= (4/3) * optimal
+                    // With balanced input, max should be close to average
+                    let max_weight = *weights.iter().max().unwrap();
+
+                    // Max weight should be at most 2x average (generous bound)
+                    prop_assert!(
+                        max_weight <= avg_weight * 2 + 1000, // +1000 for rounding slack
+                        "max weight {} too far from average {}",
+                        max_weight,
+                        avg_weight
+                    );
+                }
+            }
+        }
     }
 }

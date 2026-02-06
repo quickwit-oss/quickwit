@@ -21,7 +21,7 @@ use aws_sdk_lambda::types::InvocationType;
 use base64::prelude::*;
 use prost::Message;
 use quickwit_lambda_server::{LeafSearchPayload, LeafSearchResponsePayload};
-use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
+use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse, LeafSearchResponses};
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
 use tracing::{debug, info, instrument};
 
@@ -36,7 +36,7 @@ pub(crate) async fn create_lambda_invoker_for_version(
     function_name: &str,
     version: &str,
 ) -> InvokerResult<Arc<dyn LambdaLeafSearchInvoker>> {
-    let invoker = AwsLambdaInvoker::new(function_name, version).await?;
+    let invoker = AwsLambdaInvoker::new(function_name, version).await;
     invoker.validate().await?;
     Ok(Arc::new(invoker))
 }
@@ -51,15 +51,15 @@ struct AwsLambdaInvoker {
 
 impl AwsLambdaInvoker {
     /// Create a new AWS Lambda invoker for a specific version.
-    async fn new(function_name: &str, version: &str) -> InvokerResult<Self> {
+    async fn new(function_name: &str, version: &str) -> Self {
         let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = LambdaClient::new(&aws_config);
 
-        Ok(Self {
+        Self {
             client,
             function_name: function_name.to_string(),
             version: version.to_string(),
-        })
+        }
     }
 
     /// Validate that the Lambda function version exists and is invocable.
@@ -91,7 +91,7 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
     async fn invoke_leaf_search(
         &self,
         request: LeafSearchRequest,
-    ) -> Result<LeafSearchResponse, SearchError> {
+    ) -> Result<Vec<LeafSearchResponse>, SearchError> {
         let start = std::time::Instant::now();
 
         let result = self.invoke_leaf_search_inner(request).await;
@@ -115,7 +115,7 @@ impl AwsLambdaInvoker {
     async fn invoke_leaf_search_inner(
         &self,
         request: LeafSearchRequest,
-    ) -> Result<LeafSearchResponse, SearchError> {
+    ) -> Result<Vec<LeafSearchResponse>, SearchError> {
         // Serialize request to protobuf bytes, then base64 encode
         let request_bytes = request.encode_to_vec();
         let payload = LeafSearchPayload {
@@ -178,14 +178,14 @@ impl AwsLambdaInvoker {
             .decode(&lambda_response.payload)
             .map_err(|e| SearchError::Internal(format!("Base64 decode error: {}", e)))?;
 
-        let leaf_response = LeafSearchResponse::decode(&response_bytes[..])
+        let leaf_responses = LeafSearchResponses::decode(&response_bytes[..])
             .map_err(|e| SearchError::Internal(format!("Protobuf decode error: {}", e)))?;
 
         debug!(
-            num_hits = leaf_response.num_hits,
+            num_responses = leaf_responses.responses.len(),
             "Lambda invocation completed"
         );
 
-        Ok(leaf_response)
+        Ok(leaf_responses.responses)
     }
 }

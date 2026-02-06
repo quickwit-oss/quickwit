@@ -689,7 +689,8 @@ mod tests {
                 warmup_single_split_initial_allocation: ByteSize::gb(1),
                 lambda: Some(LambdaConfig {
                     function_name: "quickwit-lambda-leaf-search".to_string(),
-                    max_splits_per_invocation: 10,
+                    max_splits_per_invocation: NonZeroUsize::new(10).unwrap(),
+                    offload_threshold: 30,
                     auto_deploy: Some(LambdaDeployConfig {
                         execution_role_arn: "arn:aws:iam::123456789012:role/quickwit-lambda-role"
                             .to_string(),

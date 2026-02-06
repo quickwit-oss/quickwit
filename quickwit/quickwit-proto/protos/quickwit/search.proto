@@ -182,14 +182,6 @@ message ListFields {
 }
 // -- Search -------------------
 
-// Execution mode for leaf search operations.
-enum ExecutionMode {
-  // Default: use gRPC to searcher nodes (existing behavior).
-  EXECUTION_MODE_GRPC = 0;
-  // Execute leaf search via remote serverless functions (e.g., AWS Lambda).
-  EXECUTION_MODE_REMOTE_FUNCTION = 1;
-}
-
 message SearchRequest {
   // Index ID patterns
   repeated string index_id_patterns = 1;
@@ -255,11 +247,6 @@ message SearchRequest {
   // When an exact index ID is provided (not a pattern), the query fails only if
   // that index is not found and this parameter is set to `false`.
   bool ignore_missing_indexes = 18;
-
-  // Execution mode for leaf search operations.
-  // When set to EXECUTION_MODE_REMOTE_FUNCTION, leaf search is executed via
-  // serverless functions (e.g., AWS Lambda) instead of gRPC to searcher nodes.
-  ExecutionMode execution_mode = 19;
 }
 
 enum CountHits {
@@ -504,6 +491,12 @@ message LeafSearchResponse {
   optional bytes intermediate_aggregation_result = 6;
 
   ResourceStats resource_stats = 8;
+}
+
+// Wrapper for multiple LeafSearchResponse messages, used by Lambda to return
+// per-split results.
+message LeafSearchResponses {
+  repeated LeafSearchResponse responses = 1;
 }
 
 message SnippetRequest {

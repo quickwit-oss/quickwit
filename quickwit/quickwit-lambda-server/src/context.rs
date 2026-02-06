@@ -34,7 +34,7 @@ impl LambdaSearcherContext {
 
         let config = LambdaSearcherConfig::try_from_env()?;
         let searcher_config = create_searcher_config(&config);
-        let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));
+        let searcher_context = Arc::new(SearcherContext::new(searcher_config, None, None));
         let storage_resolver = StorageResolver::configured(&Default::default());
 
         Ok(Self {
