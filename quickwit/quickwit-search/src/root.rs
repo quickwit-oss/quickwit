@@ -372,7 +372,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // to recompute it afterward.
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
         ignore_missing_indexes: req.ignore_missing_indexes,
-        skip_aggregation_finalization: None,
+        skip_aggregation_finalization: false,
     })
 }
 
@@ -1063,7 +1063,7 @@ fn finalize_aggregation_if_any(
     let Some(aggregations_json) = search_request.aggregation_request.as_ref() else {
         return Ok(None);
     };
-    if search_request.skip_aggregation_finalization == Some(true) {
+    if search_request.skip_aggregation_finalization {
         return Ok(intermediate_aggregation_result_bytes_opt);
     }
     let aggregations: QuickwitAggregations = serde_json::from_str(aggregations_json)?;
@@ -5310,7 +5310,7 @@ mod tests {
     fn test_finalize_aggregation_if_any_no_aggregation_request() {
         let search_request = SearchRequest {
             aggregation_request: None,
-            skip_aggregation_finalization: None,
+            skip_aggregation_finalization: false,
             ..Default::default()
         };
         let searcher_context = SearcherContext::for_test();
@@ -5326,7 +5326,7 @@ mod tests {
         let intermediate_bytes = vec![42, 43, 44];
         let search_request = SearchRequest {
             aggregation_request: Some(agg_req.to_string()),
-            skip_aggregation_finalization: Some(true),
+            skip_aggregation_finalization: true,
             ..Default::default()
         };
         let searcher_context = SearcherContext::for_test();
@@ -5344,7 +5344,7 @@ mod tests {
         let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
         let search_request = SearchRequest {
             aggregation_request: Some(agg_req.to_string()),
-            skip_aggregation_finalization: Some(true),
+            skip_aggregation_finalization: true,
             ..Default::default()
         };
         let searcher_context = SearcherContext::for_test();
@@ -5359,7 +5359,7 @@ mod tests {
         let intermediate_bytes = postcard::to_stdvec(&intermediate_results).unwrap();
         let search_request = SearchRequest {
             aggregation_request: Some(agg_req.to_string()),
-            skip_aggregation_finalization: None,
+            skip_aggregation_finalization: false,
             ..Default::default()
         };
         let searcher_context = SearcherContext::for_test();
@@ -5381,7 +5381,7 @@ mod tests {
         let intermediate_bytes = postcard::to_stdvec(&intermediate_results).unwrap();
         let search_request = SearchRequest {
             aggregation_request: Some(agg_req.to_string()),
-            skip_aggregation_finalization: Some(false),
+            skip_aggregation_finalization: false,
             ..Default::default()
         };
         let searcher_context = SearcherContext::for_test();
