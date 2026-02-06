@@ -412,6 +412,7 @@ fn build_request_for_es_api(
             search_after,
             count_hits,
             ignore_missing_indexes,
+            skip_aggregation_finalization: None,
         },
         has_doc_id_field,
     ))

@@ -372,6 +372,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // to recompute it afterward.
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
         ignore_missing_indexes: req.ignore_missing_indexes,
+        skip_aggregation_finalization: None,
     })
 }
 
@@ -1062,6 +1063,9 @@ fn finalize_aggregation_if_any(
     let Some(aggregations_json) = search_request.aggregation_request.as_ref() else {
         return Ok(None);
     };
+    if search_request.skip_aggregation_finalization == Some(true) {
+        return Ok(intermediate_aggregation_result_bytes_opt);
+    }
     let aggregations: QuickwitAggregations = serde_json::from_str(aggregations_json)?;
     let aggregation_result_postcard = finalize_aggregation(
         intermediate_aggregation_result_bytes_opt,
