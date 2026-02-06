@@ -5306,8 +5306,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_finalize_aggregation_if_any_no_aggregation_request() {
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_no_aggregation_request() {
         let search_request = SearchRequest {
             aggregation_request: None,
             skip_aggregation_finalization: false,
@@ -5320,8 +5320,8 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_finalize_aggregation_if_any_skip_finalization_returns_intermediate_bytes() {
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_skip_finalization_returns_intermediate_bytes() {
         let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
         let intermediate_bytes = vec![42, 43, 44];
         let search_request = SearchRequest {
@@ -5339,8 +5339,8 @@ mod tests {
         assert_eq!(result, Some(intermediate_bytes));
     }
 
-    #[test]
-    fn test_finalize_aggregation_if_any_skip_finalization_none_bytes() {
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_skip_finalization_none_bytes() {
         let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
         let search_request = SearchRequest {
             aggregation_request: Some(agg_req.to_string()),
@@ -5352,8 +5352,8 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
-    fn test_finalize_aggregation_if_any_default_finalizes() {
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_default_finalizes() {
         let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
         let intermediate_results = IntermediateAggregationResults::default();
         let intermediate_bytes = postcard::to_stdvec(&intermediate_results).unwrap();
@@ -5374,8 +5374,8 @@ mod tests {
         assert_ne!(result.unwrap(), intermediate_bytes);
     }
 
-    #[test]
-    fn test_finalize_aggregation_if_any_false_flag_finalizes() {
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_false_flag_finalizes() {
         let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
         let intermediate_results = IntermediateAggregationResults::default();
         let intermediate_bytes = postcard::to_stdvec(&intermediate_results).unwrap();
