@@ -247,6 +247,10 @@ message SearchRequest {
   // When an exact index ID is provided (not a pattern), the query fails only if
   // that index is not found and this parameter is set to `false`.
   bool ignore_missing_indexes = 18;
+
+  // When true, skip finalization of aggregation results and return
+  // the raw IntermediateAggregationResults bytes instead.
+  optional bool skip_aggregation_finalization = 19;
 }
 
 enum CountHits {
