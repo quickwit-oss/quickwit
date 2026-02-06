@@ -17,13 +17,25 @@
 //! This crate provides:
 //! - An AWS Lambda implementation of the `RemoteFunctionInvoker` trait
 //! - Auto-deployment functionality for Lambda functions
+//!
+//! # Usage
+//!
+//! Use `get_or_deploy_invoker` to get an invoker that will automatically deploy
+//! the Lambda function if needed:
+//!
+//! ```ignore
+//! let invoker = get_or_deploy_invoker(&function_name, &deploy_config).await?;
+//! ```
 
-mod deployer;
+// mod deploy;
 mod error;
 mod invoker;
+mod metrics;
 
-pub use deployer::deploy;
 pub use error::{InvokerError, InvokerResult, LambdaDeployError, LambdaDeployResult};
-pub use invoker::create_lambda_invoker;
+pub use metrics::LAMBDA_METRICS;
 // Re-export payload types from server crate for convenience
 pub use quickwit_lambda_server::{LeafSearchPayload, LeafSearchResponsePayload};
+mod deploy;
+
+pub use deploy::try_get_or_deploy_invoker;

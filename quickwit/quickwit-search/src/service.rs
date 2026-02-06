@@ -33,13 +33,13 @@ use quickwit_storage::{
 };
 use tantivy::aggregation::AggregationLimitsGuard;
 
+use crate::invoker::LambdaLeafSearchInvoker;
 use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
 use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::metrics_trackers::LeafSearchMetricsFuture;
-use crate::remote_function::RemoteFunctionInvoker;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_permit_provider::SearchPermitProvider;
@@ -53,7 +53,7 @@ pub struct SearchServiceImpl {
     cluster_client: ClusterClient,
     searcher_context: Arc<SearcherContext>,
     local_kv_store: MiniKV,
-    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
+    lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
 }
 
 /// Trait representing a search service.
@@ -143,7 +143,7 @@ impl SearchServiceImpl {
         storage_resolver: StorageResolver,
         cluster_client: ClusterClient,
         searcher_context: Arc<SearcherContext>,
-        lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
+        lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
     ) -> Self {
         SearchServiceImpl {
             metastore,

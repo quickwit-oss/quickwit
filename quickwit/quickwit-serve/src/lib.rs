@@ -1019,22 +1019,9 @@ async fn setup_searcher(
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
 
     // Initialize Lambda invoker if enabled
-    let lambda_invoker = if let Some(lambda_config) = &node_config.searcher_config.lambda {
+    let lambda_invoker_opt = if let Some(lambda_config) = &node_config.searcher_config.lambda {
         info!("initializing AWS Lambda invoker for leaf search");
-
-        // Auto-deploy Lambda function if configured
-        if let Some(deploy_config) = &lambda_config.auto_deploy {
-            info!("auto-deploying Lambda function");
-            quickwit_lambda_client::deploy(&lambda_config.function_name, deploy_config)
-                .await
-                .context("failed to deploy lambda function")
-                .inspect_err(|err| error!(err=?err, "deploy lambda failed"))?;
-        }
-
-        let invoker = quickwit_lambda_client::create_lambda_invoker(lambda_config)
-            .await
-            .context("failed to initialize AWS Lambda invoker")?;
-
+        let invoker = quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
         Some(invoker)
     } else {
         None
@@ -1045,7 +1032,7 @@ async fn setup_searcher(
         storage_resolver,
         search_job_placer.clone(),
         searcher_context,
-        lambda_invoker,
+        lambda_invoker_opt,
     )
     .await?;
     let search_service_clone = search_service.clone();
@@ -1577,7 +1564,8 @@ mod tests {
     #[tokio::test]
     async fn test_setup_searcher() {
         let node_config = NodeConfig::for_test();
-        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None));
+        let searcher_context =
+            Arc::new(SearcherContext::new(SearcherConfig::default(), None, None));
         let metastore = metastore_for_test();
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();

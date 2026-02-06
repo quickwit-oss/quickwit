@@ -24,6 +24,8 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
+use sha1::{Digest, Sha1};
+
 /// URL to download the pre-built Lambda zip from GitHub releases.
 /// This should be updated when a new Lambda binary is released.
 const LAMBDA_ZIP_URL: &str =
@@ -54,6 +56,15 @@ fn main() {
                 zip_path,
                 data.len()
             );
+
+            // Compute SHA1 hash of the zip and export as environment variable.
+            // This is used to create a unique qualifier for Lambda versioning.
+            let mut hasher = Sha1::new();
+            hasher.update(&data);
+            let sha1_hash = hasher.finalize();
+            let sha1_short = hex::encode(&sha1_hash[..4]); // First 8 hex chars
+            println!("cargo:rustc-env=LAMBDA_BINARY_SHA1={}", sha1_short);
+            println!("cargo:warning=Lambda binary SHA1 (short): {}", sha1_short);
         }
         Err(e) => {
             panic!("Failed to download Lambda zip: {}", e);

@@ -50,8 +50,8 @@ use tracing::{debug, error, info, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
+use crate::invoker::LambdaLeafSearchInvoker;
 use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
-use crate::remote_function::RemoteFunctionInvoker;
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
 use crate::search_response_rest::StorageRequestCount;
@@ -572,7 +572,7 @@ async fn search_partial_hits_phase_with_scroll(
     mut search_request: SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
-    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
+    lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
 ) -> crate::Result<(LeafSearchResponse, Option<ScrollKeyAndStartOffset>)> {
     let scroll_ttl_opt = get_scroll_ttl_duration(&search_request)?;
 
@@ -742,7 +742,7 @@ pub(crate) async fn search_partial_hits_phase(
     search_request: &SearchRequest,
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
-    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
+    lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
 ) -> crate::Result<LeafSearchResponse> {
     let leaf_search_responses: Vec<LeafSearchResponse> =
         if is_metadata_count_request(search_request) {
@@ -838,7 +838,7 @@ async fn execute_leaf_search_via_lambda(
     search_request: &SearchRequest,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
     split_metadatas: &[SplitMetadata],
-    lambda_invoker: &dyn RemoteFunctionInvoker,
+    lambda_invoker: &dyn LambdaLeafSearchInvoker,
     lambda_config: &quickwit_config::LambdaConfig,
 ) -> crate::Result<Vec<LeafSearchResponse>> {
     let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
@@ -1048,7 +1048,7 @@ async fn root_search_aux(
     search_request: SearchRequest,
     split_metadatas: Vec<SplitMetadata>,
     cluster_client: &ClusterClient,
-    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
+    lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
 ) -> crate::Result<SearchResponse> {
     debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
     let (first_phase_result, scroll_key_and_start_offset_opt): (
@@ -1279,7 +1279,7 @@ pub async fn root_search(
     mut search_request: SearchRequest,
     mut metastore: MetastoreServiceClient,
     cluster_client: &ClusterClient,
-    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
+    lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
 ) -> crate::Result<SearchResponse> {
     let start_instant = Instant::now();
 

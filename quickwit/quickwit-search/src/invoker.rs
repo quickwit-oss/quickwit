@@ -24,7 +24,7 @@ use crate::SearchError;
 /// This abstraction allows different cloud providers to be supported.
 /// Implementations are provided by the `quickwit-lambda` crate.
 #[async_trait]
-pub trait RemoteFunctionInvoker: Send + Sync + 'static {
+pub trait LambdaLeafSearchInvoker: Send + Sync + 'static {
     /// Invoke the remote function with a LeafSearchRequest.
     async fn invoke_leaf_search(
         &self,

@@ -20,21 +20,23 @@ use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::InvocationType;
 use base64::prelude::*;
 use prost::Message;
-use quickwit_config::LambdaConfig;
 use quickwit_lambda_server::{LeafSearchPayload, LeafSearchResponsePayload};
 use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
-use quickwit_search::{RemoteFunctionInvoker, SearchError};
-use tracing::{debug, instrument};
+use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
+use tracing::{debug, info, instrument};
 
 use crate::error::{InvokerError, InvokerResult};
+use crate::metrics::LAMBDA_METRICS;
 
-/// Create a Lambda invoker for remote leaf search execution.
+/// Create a Lambda invoker for a specific version.
 ///
-/// This creates and validates an AWS Lambda invoker that implements `RemoteFunctionInvoker`.
-pub async fn create_lambda_invoker(
-    config: &LambdaConfig,
-) -> InvokerResult<Arc<dyn RemoteFunctionInvoker>> {
-    let invoker = AwsLambdaInvoker::new(config).await?;
+/// The version number is used as the qualifier when invoking, ensuring we call
+/// the exact published version (not $LATEST).
+pub(crate) async fn create_lambda_invoker_for_version(
+    function_name: &str,
+    version: &str,
+) -> InvokerResult<Arc<dyn LambdaLeafSearchInvoker>> {
+    let invoker = AwsLambdaInvoker::new(function_name, version).await?;
     invoker.validate().await?;
     Ok(Arc::new(invoker))
 }
@@ -43,43 +45,74 @@ pub async fn create_lambda_invoker(
 struct AwsLambdaInvoker {
     client: LambdaClient,
     function_name: String,
+    /// The version number to invoke (e.g., "7", "12").
+    version: String,
 }
 
 impl AwsLambdaInvoker {
-    /// Create a new AWS Lambda invoker with the given configuration.
-    async fn new(config: &LambdaConfig) -> InvokerResult<Self> {
+    /// Create a new AWS Lambda invoker for a specific version.
+    async fn new(function_name: &str, version: &str) -> InvokerResult<Self> {
         let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
         let client = LambdaClient::new(&aws_config);
 
         Ok(Self {
             client,
-            function_name: config.function_name.clone(),
+            function_name: function_name.to_string(),
+            version: version.to_string(),
         })
     }
 
-    /// Validate that the Lambda function exists and is invocable.
+    /// Validate that the Lambda function version exists and is invocable.
     /// Uses DryRun invocation type - validates without executing.
     async fn validate(&self) -> InvokerResult<()> {
+        info!("lambda invoker dry run");
         let request = self
             .client
             .invoke()
             .function_name(&self.function_name)
+            .qualifier(&self.version)
             .invocation_type(InvocationType::DryRun);
+
         request.send().await.map_err(|e| {
             InvokerError::Configuration(format!(
-                "Failed to validate Lambda function '{}': {}",
-                self.function_name, e
+                "Failed to validate Lambda function '{}:{}': {}",
+                self.function_name, self.version, e
             ))
         })?;
 
+        info!("the lambda invoker dry run was successful");
         Ok(())
     }
 }
 
 #[async_trait]
-impl RemoteFunctionInvoker for AwsLambdaInvoker {
-    #[instrument(skip(self, request), fields(function_name = %self.function_name))]
+impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
+    #[instrument(skip(self, request), fields(function_name = %self.function_name, version = %self.version))]
     async fn invoke_leaf_search(
+        &self,
+        request: LeafSearchRequest,
+    ) -> Result<LeafSearchResponse, SearchError> {
+        let start = std::time::Instant::now();
+
+        let result = self.invoke_leaf_search_inner(request).await;
+
+        let elapsed = start.elapsed().as_secs_f64();
+        let status = if result.is_ok() { "success" } else { "error" };
+        LAMBDA_METRICS
+            .leaf_search_requests_total
+            .with_label_values([status])
+            .inc();
+        LAMBDA_METRICS
+            .leaf_search_duration_seconds
+            .with_label_values([status])
+            .observe(elapsed);
+
+        result
+    }
+}
+
+impl AwsLambdaInvoker {
+    async fn invoke_leaf_search_inner(
         &self,
         request: LeafSearchRequest,
     ) -> Result<LeafSearchResponse, SearchError> {
@@ -92,18 +125,25 @@ impl RemoteFunctionInvoker for AwsLambdaInvoker {
         let payload_json = serde_json::to_vec(&payload)
             .map_err(|e| SearchError::Internal(format!("JSON serialization error: {}", e)))?;
 
+        LAMBDA_METRICS
+            .leaf_search_request_payload_size_bytes
+            .observe(payload_json.len() as f64);
+
         debug!(
             payload_size = payload_json.len(),
+            version = %self.version,
             "Invoking Lambda function"
         );
 
-        // Invoke Lambda synchronously (RequestResponse)
+        // Invoke the specific version
         let invoke_builder = self
             .client
             .invoke()
             .function_name(&self.function_name)
+            .qualifier(&self.version)
             .invocation_type(InvocationType::RequestResponse)
             .payload(Blob::new(payload_json));
+
         let response = invoke_builder
             .send()
             .await
@@ -125,6 +165,10 @@ impl RemoteFunctionInvoker for AwsLambdaInvoker {
         let response_payload = response
             .payload()
             .ok_or_else(|| SearchError::Internal("No response payload from Lambda".into()))?;
+
+        LAMBDA_METRICS
+            .leaf_search_response_payload_size_bytes
+            .observe(response_payload.as_ref().len() as f64);
 
         let lambda_response: LeafSearchResponsePayload =
             serde_json::from_slice(response_payload.as_ref())

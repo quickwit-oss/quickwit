@@ -24,6 +24,7 @@ mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
 
+mod invoker;
 /// Leaf search operations.
 pub mod leaf;
 mod leaf_cache;
@@ -31,7 +32,6 @@ mod list_fields;
 mod list_fields_cache;
 mod list_terms;
 mod metrics_trackers;
-mod remote_function;
 mod retry;
 mod root;
 mod scroll_context;
@@ -83,7 +83,7 @@ pub use crate::client::{
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
-pub use crate::remote_function::RemoteFunctionInvoker;
+pub use crate::invoker::LambdaLeafSearchInvoker;
 pub use crate::root::{
     IndexMetasForLeafSearch, SearchJob, check_all_index_metadata_found, jobs_to_leaf_request,
     root_search, search_plan,
@@ -264,7 +264,7 @@ pub async fn start_searcher_service(
     storage_resolver: StorageResolver,
     search_job_placer: SearchJobPlacer,
     searcher_context: Arc<SearcherContext>,
-    lambda_invoker: Option<Arc<dyn RemoteFunctionInvoker>>,
+    lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
 ) -> anyhow::Result<Arc<dyn SearchService>> {
     let cluster_client = ClusterClient::new(search_job_placer);
     let search_service = Arc::new(SearchServiceImpl::new(

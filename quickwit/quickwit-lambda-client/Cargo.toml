@@ -19,15 +19,19 @@ aws-sdk-lambda = { workspace = true }
 base64 = { workspace = true }
 prost = { workspace = true }
 serde_json = { workspace = true }
+once_cell = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 
+quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-lambda-server = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-search = { workspace = true }
 
 [build-dependencies]
+hex = { workspace = true }
+sha1 = "0.10"
 ureq = { workspace = true }
 
 [features]
