@@ -147,7 +147,7 @@ async fn perform_grpc_gossip_rounds<ClusterServiceClientFactory, Fut>(
                     },
                 )
             });
-            chitchat_guard.reset_node_state(
+            chitchat_guard.reset_node_state_if_update(
                 &chitchat_id,
                 key_values,
                 proto_node_state.max_version,
