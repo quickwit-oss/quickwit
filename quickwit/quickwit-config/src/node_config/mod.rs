@@ -320,6 +320,11 @@ pub struct LambdaConfig {
     /// Maximum number of splits per Lambda invocation.
     #[serde(default = "LambdaConfig::default_max_splits_per_invocation")]
     pub max_splits_per_invocation: usize,
+    /// When the number of pending split searches exceeds this threshold,
+    /// new splits are offloaded to Lambda instead of being queued locally.
+    /// A value of 0 disables offloading (all splits are processed locally).
+    #[serde(default = "LambdaConfig::default_offload_threshold")]
+    pub offload_threshold: usize,
     /// Auto-deploy configuration. If set, Quickwit will automatically deploy
     /// the Lambda function at startup.
     /// If deploying a lambda fails, Quickwit will log an error and fail.
@@ -356,6 +361,7 @@ impl Default for LambdaConfig {
         Self {
             function_name: Self::default_function_name(),
             max_splits_per_invocation: Self::default_max_splits_per_invocation(),
+            offload_threshold: Self::default_offload_threshold(),
             auto_deploy: None,
         }
     }
@@ -367,6 +373,9 @@ impl LambdaConfig {
     }
     fn default_max_splits_per_invocation() -> usize {
         10
+    }
+    fn default_offload_threshold() -> usize {
+        20
     }
 }
 

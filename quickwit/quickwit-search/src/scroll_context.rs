@@ -113,7 +113,6 @@ impl ScrollContext {
             &self.search_request,
             &self.split_metadatas[..],
             cluster_client,
-            None, // Lambda not supported for scroll queries
         )
         .await?;
         self.cached_partial_hits_start_offset = start_offset;

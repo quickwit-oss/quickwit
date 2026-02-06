@@ -630,9 +630,19 @@ pub async fn serve_quickwit(
             None
         };
 
+    // Initialize Lambda invoker if enabled
+    let lambda_invoker_opt = if let Some(lambda_config) = &node_config.searcher_config.lambda {
+        info!("initializing AWS Lambda invoker for leaf search");
+        let invoker = quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
+        Some(invoker)
+    } else {
+        None
+    };
+
     let searcher_context = Arc::new(SearcherContext::new(
         node_config.searcher_config.clone(),
         split_cache_opt,
+        lambda_invoker_opt,
     ));
 
     let (search_job_placer, search_service) = setup_searcher(
@@ -1018,21 +1028,11 @@ async fn setup_searcher(
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
 
-    // Initialize Lambda invoker if enabled
-    let lambda_invoker_opt = if let Some(lambda_config) = &node_config.searcher_config.lambda {
-        info!("initializing AWS Lambda invoker for leaf search");
-        let invoker = quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
-        Some(invoker)
-    } else {
-        None
-    };
-
     let search_service = start_searcher_service(
         metastore,
         storage_resolver,
         search_job_placer.clone(),
         searcher_context,
-        lambda_invoker_opt,
     )
     .await?;
     let search_service_clone = search_service.clone();
@@ -1565,7 +1565,7 @@ mod tests {
     async fn test_setup_searcher() {
         let node_config = NodeConfig::for_test();
         let searcher_context =
-            Arc::new(SearcherContext::new(SearcherConfig::default(), None));
+            Arc::new(SearcherContext::new(SearcherConfig::default(), None, None));
         let metastore = metastore_for_test();
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();

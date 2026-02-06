@@ -26,8 +26,10 @@ use crate::SearchError;
 #[async_trait]
 pub trait LambdaLeafSearchInvoker: Send + Sync + 'static {
     /// Invoke the remote function with a LeafSearchRequest.
+    ///
+    /// Returns one `LeafSearchResponse` per split in the request.
     async fn invoke_leaf_search(
         &self,
         request: LeafSearchRequest,
-    ) -> Result<LeafSearchResponse, SearchError>;
+    ) -> Result<Vec<LeafSearchResponse>, SearchError>;
 }
