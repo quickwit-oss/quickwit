@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Formatter;
@@ -43,6 +44,7 @@ use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
@@ -350,6 +352,28 @@ impl ControlPlane {
     }
 
     fn debug_info(&self) -> JsonValue {
+        // Build the union of ingesters tracked by ingester pool and the model.
+        let mut ingesters: BTreeMap<NodeId, JsonValue> = BTreeMap::new();
+
+        for (ingester_id, ingester) in self.ingest_controller.ingester_pool.keys_values() {
+            let ingester_json = json!({
+                "available": true,
+                "status": ingester.status.as_json_str_name(),
+            });
+            ingesters.insert(ingester_id.clone(), ingester_json);
+        }
+        for shard in self.model.all_shards() {
+            let ingester_id = NodeId::from(shard.leader_id.clone());
+
+            if let Entry::Vacant(entry) = ingesters.entry(ingester_id.clone()) {
+                let ingester_json = json!({
+                    "available": false,
+                    "status": IngesterStatus::default(),
+                });
+                entry.insert(ingester_json);
+            }
+        }
+
         let physical_indexing_plan: Vec<JsonValue> = self
             .indexing_scheduler
             .observable_state()
@@ -392,6 +416,7 @@ impl ControlPlane {
             }
         }
         json!({
+            "ingesters": ingesters,
             "physical_indexing_plan": physical_indexing_plan,
             "shard_table": per_index_and_leader_shards_json,
         })
@@ -1040,61 +1065,25 @@ fn apply_index_template_match(
     Ok(index_config)
 }
 
-/// The indexer joined the cluster.
 #[derive(Debug)]
-struct IndexerJoined(ClusterNode);
+struct RebalanceShards;
 
 #[async_trait]
-impl Handler<IndexerJoined> for ControlPlane {
+impl Handler<RebalanceShards> for ControlPlane {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        message: IndexerJoined,
+        _message: RebalanceShards,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        info!(
-            "indexer `{}` joined the cluster: rebalancing shards and rebuilding indexing plan",
-            message.0.node_id()
-        );
-        // TODO: Update shard table.
-        if let Err(metastore_error) = self
+        if let Err(error) = self
             .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
             .await
         {
-            return convert_metastore_error::<()>(metastore_error).map(|_| ());
-        }
-        self.indexing_scheduler.rebuild_plan(&self.model);
-        Ok(())
-    }
-}
-
-/// The indexer left the cluster.
-#[derive(Debug)]
-struct IndexerLeft(ClusterNode);
-
-#[async_trait]
-impl Handler<IndexerLeft> for ControlPlane {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        message: IndexerLeft,
-        ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        info!(
-            "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing plan",
-            message.0.node_id()
-        );
-        // TODO: Update shard table.
-        if let Err(metastore_error) = self
-            .ingest_controller
-            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await
-        {
-            return convert_metastore_error::<()>(metastore_error).map(|_| ());
-        }
+            return convert_metastore_error::<()>(error).map(|_| ());
+        };
         self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
@@ -1142,23 +1131,44 @@ async fn watcher_indexers(
         let Some(mailbox) = weak_mailbox.upgrade() else {
             return;
         };
+        let mut trigger_rebalance = false;
+
         match cluster_change {
-            ClusterChange::Add(node) => {
-                if node.enabled_services().contains(&QuickwitService::Indexer)
-                    && let Err(error) = mailbox.send_message(IndexerJoined(node)).await
-                {
-                    error!(%error, "failed to forward `IndexerJoined` event to control plane");
+            ClusterChange::Add(node) if node.is_indexer() => {
+                info!(
+                    "indexer `{}` joined the cluster: rebalancing shards and rebuilding indexing \
+                     plan",
+                    node.node_id()
+                );
+                trigger_rebalance = true;
+            }
+            ClusterChange::Remove(node) if node.is_indexer() => {
+                info!(
+                    "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing \
+                     plan",
+                    node.node_id()
+                );
+                trigger_rebalance = true
+            }
+            ClusterChange::Update { previous, updated } if updated.is_indexer() => {
+                let was_ready = previous.ingester_status().is_ready();
+                let is_ready = updated.ingester_status().is_ready();
+
+                if was_ready ^ is_ready {
+                    info!(
+                        "indexer `{}` status changed to `{}`: rebalancing shards and rebuilding \
+                         indexing plan",
+                        updated.node_id(),
+                        updated.ingester_status().as_json_str_name()
+                    );
+                    trigger_rebalance = true;
                 }
             }
-            ClusterChange::Remove(node) => {
-                if node.enabled_services().contains(&QuickwitService::Indexer)
-                    && let Err(error) = mailbox.send_message(IndexerLeft(node)).await
-                {
-                    error!(%error, "failed to forward `IndexerLeft` event to control plane");
-                }
-            }
-            ClusterChange::Update { .. } => {
-                // We are not interested in updates (yet).
+            _ => {}
+        }
+        if trigger_rebalance {
+            if mailbox.send_message(RebalanceShards).await.is_err() {
+                return;
             }
         }
     }
@@ -1176,6 +1186,7 @@ mod tests {
         CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, KafkaSourceParams, SourceParams,
     };
     use quickwit_indexing::IndexingService;
+    use quickwit_ingest::IngesterPoolEntry;
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
@@ -1187,8 +1198,8 @@ mod tests {
         MockIndexingService,
     };
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceClient, InitShardSuccess, InitShardsResponse, MockIngesterService,
-        RetainShardsResponse,
+        IngesterServiceClient, IngesterStatus, InitShardSuccess, InitShardsResponse,
+        MockIngesterService, RetainShardsResponse,
     };
     use quickwit_proto::ingest::{Shard, ShardPKey, ShardState};
     use quickwit_proto::metastore::{
@@ -2210,7 +2221,11 @@ mod tests {
                 assert!(&retain_shards_for_source.shard_ids.is_empty());
                 Ok(RetainShardsResponse {})
             });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let client = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterPoolEntry {
+            client,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("node1".into(), ingester);
 
         let cluster_config = ClusterConfig::for_test();
@@ -2256,7 +2271,11 @@ mod tests {
                 );
                 Ok(RetainShardsResponse {})
             });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let client = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterPoolEntry {
+            client,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert("node1".into(), ingester);
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
@@ -2456,11 +2475,8 @@ mod tests {
         let cluster_change = ClusterChange::Remove(indexer_node.clone());
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
-        let IndexerJoined(joined) = control_plane_inbox.recv_typed_message().await.unwrap();
-        assert_eq!(joined.grpc_advertise_addr().port(), 1516);
-
-        let IndexerLeft(left) = control_plane_inbox.recv_typed_message().await.unwrap();
-        assert_eq!(left.grpc_advertise_addr().port(), 1516);
+        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
+        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
 
         universe.assert_quit().await;
     }
@@ -2552,7 +2568,11 @@ mod tests {
             };
             Ok(response)
         });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let client = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterPoolEntry {
+            client,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert(ingester_id, ingester);
 
         let mut mock_metastore = MockMetastoreService::new();
@@ -2706,7 +2726,11 @@ mod tests {
             };
             Ok(response)
         });
-        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        let client = IngesterServiceClient::from_mock(mock_ingester);
+        let ingester = IngesterPoolEntry {
+            client,
+            status: IngesterStatus::Ready,
+        };
         ingester_pool.insert(ingester_id, ingester);
 
         let mut mock_metastore = MockMetastoreService::new();

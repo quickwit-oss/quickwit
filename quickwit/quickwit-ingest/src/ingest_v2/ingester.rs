@@ -1444,9 +1444,10 @@ mod tests {
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
-        let queue_id_03 = queue_id(&index_uid, "test-source", &ShardId::from(3));
+        let source_id = SourceId::from("test-source");
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
+        let queue_id_02 = queue_id(&index_uid, &source_id, &ShardId::from(2));
+        let queue_id_03 = queue_id(&index_uid, &source_id, &ShardId::from(3));
 
         state_guard
             .mrecordlog
@@ -1530,22 +1531,15 @@ mod tests {
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
-        let shard_00 = IngesterShard::new_solo(
-            index_uid.clone(),
-            "test-source".to_string(),
-            ShardId::from(0),
-        )
-        .build();
+        let shard_00 =
+            IngesterShard::new_solo(index_uid.clone(), source_id.clone(), ShardId::from(0)).build();
         state_guard.shards.insert(shard_00.queue_id(), shard_00);
 
-        let shard_01 = IngesterShard::new_solo(
-            index_uid.clone(),
-            "test-source".to_string(),
-            ShardId::from(1),
-        )
-        .advertisable()
-        .build();
+        let shard_01 = IngesterShard::new_solo(index_uid.clone(), source_id, ShardId::from(1))
+            .advertisable()
+            .build();
         let queue_id_01 = shard_01.queue_id();
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
         drop(state_guard);
@@ -1599,6 +1593,7 @@ mod tests {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -1612,7 +1607,7 @@ mod tests {
         );
         let primary_shard = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             leader_id: ingester_ctx.node_id.to_string(),
@@ -1633,7 +1628,7 @@ mod tests {
             .await
             .unwrap();
 
-        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
         let shard = state_guard.shards.get(&queue_id).unwrap();
         shard.assert_is_solo();
         shard.assert_is_open();
@@ -1647,6 +1642,7 @@ mod tests {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -1656,7 +1652,7 @@ mod tests {
         );
         let shard = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             leader_id: ingester_ctx.node_id.to_string(),
@@ -1684,7 +1680,7 @@ mod tests {
 
         let state_guard = ingester.state.lock_fully().await.unwrap();
 
-        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
         let shard = state_guard.shards.get(&queue_id).unwrap();
         shard.assert_is_solo();
         shard.assert_is_open();
@@ -1698,8 +1694,9 @@ mod tests {
     async fn test_ingester_persist() {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
-        let index_uid = IndexUid::for_test("test-index", 0);
-        let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
+        let index_uid_0 = IndexUid::for_test("test-index", 0);
+        let index_uid_1 = IndexUid::for_test("test-index", 1);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -1712,8 +1709,8 @@ mod tests {
                 InitShardSubrequest {
                     subrequest_id: 0,
                     shard: Some(Shard {
-                        index_uid: Some(index_uid.clone()),
-                        source_id: "test-source".to_string(),
+                        index_uid: Some(index_uid_0.clone()),
+                        source_id: source_id.clone(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
                         leader_id: ingester_ctx.node_id.to_string(),
@@ -1726,8 +1723,8 @@ mod tests {
                 InitShardSubrequest {
                     subrequest_id: 1,
                     shard: Some(Shard {
-                        index_uid: Some(index_uid2.clone()),
-                        source_id: "test-source".to_string(),
+                        index_uid: Some(index_uid_1.clone()),
+                        source_id: source_id.clone(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
                         leader_id: ingester_ctx.node_id.to_string(),
@@ -1747,15 +1744,15 @@ mod tests {
             subrequests: vec![
                 PersistSubrequest {
                     subrequest_id: 0,
-                    index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    index_uid: Some(index_uid_0.clone()),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
-                    index_uid: Some(index_uid2.clone()),
-                    source_id: "test-source".to_string(),
+                    index_uid: Some(index_uid_1.clone()),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([
                         r#"{"doc": "test-doc-110"}"#,
@@ -1771,7 +1768,7 @@ mod tests {
 
         let persist_success_0 = &persist_response.successes[0];
         assert_eq!(persist_success_0.subrequest_id, 0);
-        assert_eq!(persist_success_0.index_uid(), &index_uid);
+        assert_eq!(persist_success_0.index_uid(), &index_uid_0);
         assert_eq!(persist_success_0.source_id, "test-source");
         assert_eq!(persist_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1781,7 +1778,7 @@ mod tests {
 
         let persist_success_1 = &persist_response.successes[1];
         assert_eq!(persist_success_1.subrequest_id, 1);
-        assert_eq!(persist_success_1.index_uid(), &index_uid2);
+        assert_eq!(persist_success_1.index_uid(), &index_uid_1);
         assert_eq!(persist_success_1.source_id, "test-source");
         assert_eq!(persist_success_1.shard_id(), ShardId::from(1));
         assert_eq!(
@@ -1792,7 +1789,7 @@ mod tests {
         let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 2);
 
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid_0, &source_id, &ShardId::from(1));
         let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         solo_shard_01.assert_is_solo();
         solo_shard_01.assert_is_open();
@@ -1804,7 +1801,7 @@ mod tests {
             &[(0, [0, 0], r#"{"doc": "test-doc-010"}"#), (1, [0, 1], "")],
         );
 
-        let queue_id_11 = queue_id(&index_uid2, "test-source", &ShardId::from(1));
+        let queue_id_11 = queue_id(&index_uid_1, &source_id, &ShardId::from(1));
         let solo_shard_11 = state_guard.shards.get(&queue_id_11).unwrap();
         solo_shard_11.assert_is_solo();
         solo_shard_11.assert_is_open();
@@ -1826,6 +1823,7 @@ mod tests {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -1838,7 +1836,7 @@ mod tests {
                 subrequest_id: 0,
                 shard: Some(Shard {
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(0)),
                     shard_state: ShardState::Open as i32,
                     leader_id: ingester_ctx.node_id.to_string(),
@@ -1869,7 +1867,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: None,
             }],
@@ -1895,6 +1893,7 @@ mod tests {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -1909,7 +1908,7 @@ mod tests {
                 subrequest_id: 0,
                 shard: Some(Shard {
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(0)),
                     shard_state: ShardState::Open as i32,
                     leader_id: ingester_ctx.node_id.to_string(),
@@ -1930,7 +1929,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test([
                     "",                           // invalid
@@ -1970,6 +1969,7 @@ mod tests {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -1984,7 +1984,7 @@ mod tests {
                 subrequest_id: 0,
                 shard: Some(Shard {
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(0)),
                     shard_state: ShardState::Open as i32,
                     leader_id: ingester_ctx.node_id.to_string(),
@@ -2005,7 +2005,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test([
                     "",                           // invalid
@@ -2033,6 +2033,7 @@ mod tests {
             .await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -2047,7 +2048,7 @@ mod tests {
                 subrequest_id: 0,
                 shard: Some(Shard {
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(0)),
                     shard_state: ShardState::Open as i32,
                     leader_id: ingester_ctx.node_id.to_string(),
@@ -2068,7 +2069,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#])),
             }],
@@ -2094,6 +2095,7 @@ mod tests {
             .await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -2108,7 +2110,7 @@ mod tests {
                 subrequest_id: 0,
                 shard: Some(Shard {
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(0)),
                     shard_state: ShardState::Open as i32,
                     leader_id: ingester_ctx.node_id.to_string(),
@@ -2129,7 +2131,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#])),
             }],
@@ -2161,13 +2163,10 @@ mod tests {
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid = IndexUid::for_test("test-index", 0);
-        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let solo_shard = IngesterShard::new_solo(
-            index_uid.clone(),
-            "test-source".to_string(),
-            ShardId::from(1),
-        )
-        .build();
+        let source_id = SourceId::from("test-source");
+        let solo_shard =
+            IngesterShard::new_solo(index_uid.clone(), source_id, ShardId::from(1)).build();
+        let queue_id = solo_shard.queue_id();
         state_guard.shards.insert(queue_id.clone(), solo_shard);
 
         state_guard
@@ -2190,7 +2189,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"test-doc-foo"#])),
             }],
@@ -2220,17 +2219,15 @@ mod tests {
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapper = try_build_doc_mapper("{}").unwrap();
 
         // Insert a dangling shard, i.e. a shard without a corresponding queue.
-        let solo_shard = IngesterShard::new_solo(
-            index_uid.clone(),
-            "test-source".to_string(),
-            ShardId::from(1),
-        )
-        .with_doc_mapper(doc_mapper)
-        .build();
+        let solo_shard =
+            IngesterShard::new_solo(index_uid.clone(), source_id.clone(), ShardId::from(1))
+                .with_doc_mapper(doc_mapper)
+                .build();
         state_guard.shards.insert(solo_shard.queue_id(), solo_shard);
         drop(state_guard);
 
@@ -2240,7 +2237,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-foo"}"#])),
             }],
@@ -2288,7 +2285,8 @@ mod tests {
         );
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
+        let index_uid2 = IndexUid::for_test("test-index", 1);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -2302,7 +2300,7 @@ mod tests {
                     subrequest_id: 0,
                     shard: Some(Shard {
                         index_uid: Some(index_uid.clone()),
-                        source_id: "test-source".to_string(),
+                        source_id: source_id.clone(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
                         leader_id: leader_ctx.node_id.to_string(),
@@ -2317,7 +2315,7 @@ mod tests {
                     subrequest_id: 1,
                     shard: Some(Shard {
                         index_uid: Some(index_uid2.clone()),
-                        source_id: "test-source".to_string(),
+                        source_id: source_id.clone(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
                         leader_id: leader_ctx.node_id.to_string(),
@@ -2339,14 +2337,14 @@ mod tests {
                 PersistSubrequest {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
                     index_uid: Some(index_uid2.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([
                         r#"{"doc": "test-doc-110"}"#,
@@ -2383,7 +2381,7 @@ mod tests {
         let leader_state_guard = leader.state.lock_fully().await.unwrap();
         assert_eq!(leader_state_guard.shards.len(), 2);
 
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
         let primary_shard_01 = leader_state_guard.shards.get(&queue_id_01).unwrap();
         primary_shard_01.assert_is_primary();
         primary_shard_01.assert_is_open();
@@ -2395,7 +2393,7 @@ mod tests {
             &[(0, [0, 0], r#"{"doc": "test-doc-010"}"#), (1, [0, 1], "")],
         );
 
-        let queue_id_11 = queue_id(&index_uid2, "test-source", &ShardId::from(1));
+        let queue_id_11 = queue_id(&index_uid2, &source_id, &ShardId::from(1));
         let primary_shard_11 = leader_state_guard.shards.get(&queue_id_11).unwrap();
         primary_shard_11.assert_is_primary();
         primary_shard_11.assert_is_open();
@@ -2499,7 +2497,8 @@ mod tests {
             .insert(follower_ctx.node_id.clone(), follower_ingester);
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
+        let index_uid2 = IndexUid::for_test("test-index", 1);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -2513,7 +2512,7 @@ mod tests {
                     subrequest_id: 0,
                     shard: Some(Shard {
                         index_uid: Some(index_uid.clone()),
-                        source_id: "test-source".to_string(),
+                        source_id: source_id.clone(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
                         leader_id: leader_ctx.node_id.to_string(),
@@ -2528,7 +2527,7 @@ mod tests {
                     subrequest_id: 1,
                     shard: Some(Shard {
                         index_uid: Some(index_uid2.clone()),
-                        source_id: "test-source".to_string(),
+                        source_id: source_id.clone(),
                         shard_id: Some(ShardId::from(1)),
                         shard_state: ShardState::Open as i32,
                         leader_id: leader_ctx.node_id.to_string(),
@@ -2550,14 +2549,14 @@ mod tests {
                 PersistSubrequest {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
                     index_uid: Some(index_uid2.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([
                         r#"{"doc": "test-doc-110"}"#,
@@ -2594,7 +2593,7 @@ mod tests {
         let leader_state_guard = leader.state.lock_fully().await.unwrap();
         assert_eq!(leader_state_guard.shards.len(), 2);
 
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
         let primary_shard_01 = leader_state_guard.shards.get(&queue_id_01).unwrap();
         primary_shard_01.assert_is_primary();
         primary_shard_01.assert_is_open();
@@ -2606,7 +2605,7 @@ mod tests {
             &[(0, [0, 0], r#"{"doc": "test-doc-010"}"#)],
         );
 
-        let queue_id_11 = queue_id(&index_uid2, "test-source", &ShardId::from(1));
+        let queue_id_11 = queue_id(&index_uid2, &source_id, &ShardId::from(1));
         let primary_shard_11 = leader_state_guard.shards.get(&queue_id_11).unwrap();
         primary_shard_11.assert_is_primary();
         primary_shard_11.assert_is_open();
@@ -2654,13 +2653,11 @@ mod tests {
     async fn test_ingester_persist_no_available_shards() {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
         let index_uid = IndexUid::for_test("test-index", 0);
-        let solo_shard = IngesterShard::new_solo(
-            index_uid.clone(),
-            "test-source".to_string(),
-            ShardId::from(1),
-        )
-        .with_state(ShardState::Closed)
-        .build();
+        let source_id = SourceId::from("test-source");
+        let solo_shard =
+            IngesterShard::new_solo(index_uid.clone(), source_id.clone(), ShardId::from(1))
+                .with_state(ShardState::Closed)
+                .build();
         let queue_id = solo_shard.queue_id();
         ingester
             .state
@@ -2676,7 +2673,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
@@ -2717,6 +2714,7 @@ mod tests {
             .await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -2726,7 +2724,7 @@ mod tests {
         );
         let primary_shard = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             leader_id: ingester_ctx.node_id.to_string(),
@@ -2755,7 +2753,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id.clone(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
@@ -2778,7 +2776,7 @@ mod tests {
         let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);
 
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
         let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         solo_shard_01.assert_is_solo();
@@ -2798,6 +2796,7 @@ mod tests {
             .await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -2807,7 +2806,7 @@ mod tests {
         );
         let primary_shard = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             leader_id: ingester_ctx.node_id.to_string(),
@@ -2836,7 +2835,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id.clone(),
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
@@ -2856,7 +2855,7 @@ mod tests {
         let state_guard = ingester.state.lock_fully().await.unwrap();
         assert_eq!(state_guard.shards.len(), 1);
 
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
         let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         solo_shard_01.assert_is_solo();
         solo_shard_01.assert_is_open();
@@ -2906,10 +2905,11 @@ mod tests {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: "test-client".to_string(),
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1337)),
             from_position_exclusive: Some(Position::Beginning),
         };
@@ -2929,13 +2929,13 @@ mod tests {
         );
         let shard = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
             ..Default::default()
         };
-        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
 
@@ -2964,7 +2964,7 @@ mod tests {
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: "test-client".to_string(),
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id,
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
         };
@@ -3029,8 +3029,9 @@ mod tests {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
-        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
+        let source_id = SourceId::from("test-source");
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
+        let queue_id_02 = queue_id(&index_uid, &source_id, &ShardId::from(2));
 
         let doc_mapping_uid_01 = DocMappingUid::random();
         let doc_mapping_json_01 = format!(
@@ -3040,7 +3041,7 @@ mod tests {
         );
         let shard_01 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid_01),
@@ -3055,7 +3056,7 @@ mod tests {
         );
         let shard_02 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Closed as i32,
             doc_mapping_uid: Some(doc_mapping_uid_02),
@@ -3117,19 +3118,19 @@ mod tests {
             subrequests: vec![
                 TruncateShardsSubrequest {
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(1)),
                     truncate_up_to_position_inclusive: Some(Position::offset(0u64)),
                 },
                 TruncateShardsSubrequest {
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(2)),
                     truncate_up_to_position_inclusive: Some(Position::eof(0u64)),
                 },
                 TruncateShardsSubrequest {
                     index_uid: Some(IndexUid::for_test("test-index", 1337)),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id,
                     shard_id: Some(ShardId::from(1337)),
                     truncate_up_to_position_inclusive: Some(Position::offset(1337u64)),
                 },
@@ -3164,14 +3165,11 @@ mod tests {
         let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
-        let solo_shard = IngesterShard::new_solo(
-            index_uid.clone(),
-            "test-source".to_string(),
-            ShardId::from(1),
-        )
-        .build();
+        let solo_shard =
+            IngesterShard::new_solo(index_uid.clone(), source_id.clone(), ShardId::from(1)).build();
         state_guard.shards.insert(solo_shard.queue_id(), solo_shard);
         drop(state_guard);
 
@@ -3179,7 +3177,7 @@ mod tests {
             ingester_id: ingester_ctx.node_id.to_string(),
             subrequests: vec![TruncateShardsSubrequest {
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_id: Some(ShardId::from(1)),
                 truncate_up_to_position_inclusive: Some(Position::offset(0u64)),
             }],
@@ -3239,6 +3237,7 @@ mod tests {
             .await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -3248,7 +3247,7 @@ mod tests {
         );
         let shard_01 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
@@ -3256,13 +3255,13 @@ mod tests {
         };
         let shard_02 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
             ..Default::default()
         };
-        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
+        let queue_id_02 = queue_id(&index_uid, &source_id, &ShardId::from(2));
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let now = Instant::now();
@@ -3318,6 +3317,7 @@ mod tests {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -3327,7 +3327,7 @@ mod tests {
         );
         let shard_17 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(17)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
@@ -3336,7 +3336,7 @@ mod tests {
 
         let shard_18 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(18)),
             shard_state: ShardState::Closed as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
@@ -3385,7 +3385,7 @@ mod tests {
         let retain_shards_request = RetainShardsRequest {
             retain_shards_for_sources: vec![RetainShardsForSource {
                 index_uid: Some(index_uid.clone()),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
                 shard_ids: vec![ShardId::from(17u64)],
             }],
         };
@@ -3403,7 +3403,8 @@ mod tests {
         let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let queue_id = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let source_id = SourceId::from("test-source");
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -3413,7 +3414,7 @@ mod tests {
         );
         let shard = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
@@ -3437,7 +3438,7 @@ mod tests {
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: "test-client".to_string(),
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
         };
@@ -3450,12 +3451,12 @@ mod tests {
             shard_pkeys: vec![
                 ShardPKey {
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id.clone(),
                     shard_id: Some(ShardId::from(1)),
                 },
                 ShardPKey {
                     index_uid: Some(index_uid.clone()),
-                    source_id: "test-source".to_string(),
+                    source_id: source_id,
                     shard_id: Some(ShardId::from(1337)),
                 },
             ],
@@ -3525,12 +3526,12 @@ mod tests {
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
-        let solo_shard =
-            IngesterShard::new_solo(index_uid, "test-source".to_string(), ShardId::from(1)).build();
-        let queue_id = solo_shard.queue_id();
+        let shard = IngesterShard::new_solo(index_uid, source_id, ShardId::from(1)).build();
+        let queue_id = shard.queue_id();
 
-        state_guard.shards.insert(queue_id.clone(), solo_shard);
+        state_guard.shards.insert(queue_id.clone(), shard);
         drop(state_guard);
 
         let mut observation_stream = ingester
@@ -3580,15 +3581,12 @@ mod tests {
             .await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
-        let solo_shard = IngesterShard::new_solo(
-            index_uid.clone(),
-            "test-source".to_string(),
-            ShardId::from(1),
-        )
-        .with_state(ShardState::Closed)
-        .with_replication_position_inclusive(Position::offset(12u64))
-        .build();
+        let solo_shard = IngesterShard::new_solo(index_uid.clone(), source_id, ShardId::from(1))
+            .with_state(ShardState::Closed)
+            .with_replication_position_inclusive(Position::offset(12u64))
+            .build();
         let queue_id = solo_shard.queue_id();
 
         state_guard.shards.insert(queue_id.clone(), solo_shard);
@@ -3613,6 +3611,7 @@ mod tests {
         ingester.subscribe(&event_broker);
 
         let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -3622,23 +3621,23 @@ mod tests {
         );
         let shard_01 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
             ..Default::default()
         };
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
         let shard_02 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Closed as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
             ..Default::default()
         };
-        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
+        let queue_id_02 = queue_id(&index_uid, &source_id, &ShardId::from(2));
 
         let mut state_guard = ingester.state.lock_fully().await.unwrap();
         let now = Instant::now();
@@ -3691,7 +3690,7 @@ mod tests {
         let shard_position_update = ShardPositionsUpdate {
             source_uid: SourceUid {
                 index_uid: index_uid.clone(),
-                source_id: "test-source".to_string(),
+                source_id: source_id,
             },
             updated_shard_positions: vec![
                 (ShardId::from(1), Position::offset(0u64)),
@@ -3731,7 +3730,8 @@ mod tests {
             .await;
 
         let index_uid = IndexUid::for_test("test-index", 0);
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let source_id = SourceId::from("test-source");
+        let queue_id_01 = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -3741,7 +3741,7 @@ mod tests {
         );
         let shard_01 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id,
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
@@ -3784,6 +3784,7 @@ mod tests {
 
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
+        let source_id = SourceId::from("test-source");
 
         let doc_mapping_uid = DocMappingUid::random();
         let doc_mapping_json = format!(
@@ -3793,7 +3794,7 @@ mod tests {
         );
         let shard_01 = Shard {
             index_uid: Some(index_uid_0.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
@@ -3801,7 +3802,7 @@ mod tests {
         };
         let shard_02 = Shard {
             index_uid: Some(index_uid_0.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id.clone(),
             shard_id: Some(ShardId::from(2)),
             shard_state: ShardState::Closed as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
@@ -3809,7 +3810,7 @@ mod tests {
         };
         let shard_03 = Shard {
             index_uid: Some(index_uid_1.clone()),
-            source_id: "test-source".to_string(),
+            source_id: source_id,
             shard_id: Some(ShardId::from(3)),
             shard_state: ShardState::Closed as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
