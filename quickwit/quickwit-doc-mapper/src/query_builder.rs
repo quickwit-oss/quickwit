@@ -185,17 +185,16 @@ fn extract_term_set_query_fields(
 }
 
 fn prefix_term_to_range(prefix: Term) -> (Bound<Term>, Bound<Term>) {
-    let mut end_bound = prefix.serialized_term().to_vec();
-    while !end_bound.is_empty() {
-        let last_byte = end_bound.last_mut().unwrap();
+    let mut end_bound = prefix.clone();
+    let mut end_bound_value_bytes = prefix.serialized_value_bytes().to_vec();
+    while !end_bound_value_bytes.is_empty() {
+        let last_byte = end_bound_value_bytes.last_mut().unwrap();
         if *last_byte != u8::MAX {
             *last_byte += 1;
-            return (
-                Bound::Included(prefix),
-                Bound::Excluded(Term::wrap(end_bound)),
-            );
+            end_bound.set_bytes(&end_bound_value_bytes);
+            return (Bound::Included(prefix), Bound::Excluded(end_bound));
         }
-        end_bound.pop();
+        end_bound_value_bytes.pop();
     }
     // prefix is something like [255, 255, ..]
     (Bound::Included(prefix), Bound::Unbounded)
