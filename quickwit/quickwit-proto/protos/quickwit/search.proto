@@ -250,7 +250,7 @@ message SearchRequest {
 
   // When true, skip finalization of aggregation results and return
   // the raw IntermediateAggregationResults bytes instead.
-  optional bool skip_aggregation_finalization = 19;
+  bool skip_aggregation_finalization = 19;
 }
 
 enum CountHits {

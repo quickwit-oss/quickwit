@@ -187,8 +187,8 @@ pub struct SearchRequest {
     pub ignore_missing_indexes: bool,
     /// When true, skip finalization of aggregation results and return
     /// the raw IntermediateAggregationResults bytes instead.
-    #[prost(bool, optional, tag = "19")]
-    pub skip_aggregation_finalization: ::core::option::Option<bool>,
+    #[prost(bool, tag = "19")]
+    pub skip_aggregation_finalization: bool,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
