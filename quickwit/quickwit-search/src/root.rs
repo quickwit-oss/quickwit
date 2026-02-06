@@ -5314,12 +5314,9 @@ mod tests {
             ..Default::default()
         };
         let searcher_context = SearcherContext::for_test();
-        let result = finalize_aggregation_if_any(
-            &search_request,
-            Some(vec![1, 2, 3]),
-            &searcher_context,
-        )
-        .unwrap();
+        let result =
+            finalize_aggregation_if_any(&search_request, Some(vec![1, 2, 3]), &searcher_context)
+                .unwrap();
         assert!(result.is_none());
     }
 
@@ -5351,12 +5348,7 @@ mod tests {
             ..Default::default()
         };
         let searcher_context = SearcherContext::for_test();
-        let result = finalize_aggregation_if_any(
-            &search_request,
-            None,
-            &searcher_context,
-        )
-        .unwrap();
+        let result = finalize_aggregation_if_any(&search_request, None, &searcher_context).unwrap();
         assert!(result.is_none());
     }
 
