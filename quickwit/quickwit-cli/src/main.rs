@@ -113,8 +113,11 @@ async fn main_impl() -> anyhow::Result<()> {
         0
     };
 
-    if let Some(provider) = tracer_provider_opt {
-        provider
+    if let Some((trace_provider, logs_provider)) = tracer_provider_opt {
+        trace_provider
+            .shutdown()
+            .context("failed to shutdown OpenTelemetry tracer provider")?;
+        logs_provider
             .shutdown()
             .context("failed to shutdown OpenTelemetry tracer provider")?;
     }
