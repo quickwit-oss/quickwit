@@ -372,6 +372,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // to recompute it afterward.
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
         ignore_missing_indexes: req.ignore_missing_indexes,
+        skip_aggregation_finalization: false,
     })
 }
 
@@ -1062,6 +1063,9 @@ fn finalize_aggregation_if_any(
     let Some(aggregations_json) = search_request.aggregation_request.as_ref() else {
         return Ok(None);
     };
+    if search_request.skip_aggregation_finalization {
+        return Ok(intermediate_aggregation_result_bytes_opt);
+    }
     let aggregations: QuickwitAggregations = serde_json::from_str(aggregations_json)?;
     let aggregation_result_postcard = finalize_aggregation(
         intermediate_aggregation_result_bytes_opt,
@@ -5300,5 +5304,94 @@ mod tests {
         .unwrap_err();
         assert!(matches!(search_error, SearchError::InvalidArgument { .. }));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_no_aggregation_request() {
+        let search_request = SearchRequest {
+            aggregation_request: None,
+            skip_aggregation_finalization: false,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result =
+            finalize_aggregation_if_any(&search_request, Some(vec![1, 2, 3]), &searcher_context)
+                .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_skip_finalization_returns_intermediate_bytes() {
+        let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
+        let intermediate_bytes = vec![42, 43, 44];
+        let search_request = SearchRequest {
+            aggregation_request: Some(agg_req.to_string()),
+            skip_aggregation_finalization: true,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result = finalize_aggregation_if_any(
+            &search_request,
+            Some(intermediate_bytes.clone()),
+            &searcher_context,
+        )
+        .unwrap();
+        assert_eq!(result, Some(intermediate_bytes));
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_skip_finalization_none_bytes() {
+        let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
+        let search_request = SearchRequest {
+            aggregation_request: Some(agg_req.to_string()),
+            skip_aggregation_finalization: true,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result = finalize_aggregation_if_any(&search_request, None, &searcher_context).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_default_finalizes() {
+        let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
+        let intermediate_results = IntermediateAggregationResults::default();
+        let intermediate_bytes = postcard::to_stdvec(&intermediate_results).unwrap();
+        let search_request = SearchRequest {
+            aggregation_request: Some(agg_req.to_string()),
+            skip_aggregation_finalization: false,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result = finalize_aggregation_if_any(
+            &search_request,
+            Some(intermediate_bytes.clone()),
+            &searcher_context,
+        )
+        .unwrap();
+        // Result should be Some (finalized), but different from intermediate bytes
+        assert!(result.is_some());
+        assert_ne!(result.unwrap(), intermediate_bytes);
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_false_flag_finalizes() {
+        let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
+        let intermediate_results = IntermediateAggregationResults::default();
+        let intermediate_bytes = postcard::to_stdvec(&intermediate_results).unwrap();
+        let search_request = SearchRequest {
+            aggregation_request: Some(agg_req.to_string()),
+            skip_aggregation_finalization: false,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result = finalize_aggregation_if_any(
+            &search_request,
+            Some(intermediate_bytes.clone()),
+            &searcher_context,
+        )
+        .unwrap();
+        assert!(result.is_some());
+        assert_ne!(result.unwrap(), intermediate_bytes);
     }
 }
