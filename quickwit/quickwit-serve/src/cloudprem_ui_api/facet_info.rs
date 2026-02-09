@@ -71,6 +71,7 @@ impl FacetInfoRequest {
             snippet_fields: Vec::new(),
             count_hits: CountHits::CountAll as i32,
             ignore_missing_indexes: false,
+            skip_aggregation_finalization: false,
         };
         Ok(search_request)
     }

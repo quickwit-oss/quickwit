@@ -15,12 +15,14 @@ use tantivy::aggregation::agg_req::{
 use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
 };
+use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::bucket::{CustomOrder, IncludeExcludeParam, Order, OrderTarget};
 use tantivy::aggregation::{bucket, metric};
 
 use super::{internal_error, missing_required, unsupported_query_error};
 use crate::InvalidQuery;
 use crate::aggregations::AggregationResults as QuickwitAggregationResults;
+
 
 const CALC_NODE_TYPE_URL: &str = "type.googleapis.com/calcfieldspb.CalcNode";
 
@@ -422,6 +424,7 @@ fn extract_field_name(
     Ok(field_name)
 }
 
+
 /// Event query has a feature that is not available in elasticsearch.
 /// It offers the possibility to, in group by, accumulate all documents being
 /// seen in a "virtual bucket".
@@ -486,103 +489,58 @@ fn timezone_and_ts_to_offset(timezone: &str, ts_secs: i64) -> Result<i32, Invali
     Ok(offset.fix().local_minus_utc())
 }
 
-pub fn aggregation_result_to_proto(
-    aggregation_results: QuickwitAggregationResults,
-    aggregations_def: &quickwit_proto::cloudprem::Aggregation,
-    parent_count: u64,
-) -> Result<Vec<EvpAggregationResult>, CloudPremError> {
-    let mut mapper = ResultMapper {
-        results: Vec::new(),
-    };
-    mapper.consume_agg(aggregation_results.into(), aggregations_def, parent_count)?;
-    Ok(mapper.results)
+// --- Unified aggregation result handling via AggResultSource trait ---
+
+/// A unified terms bucket entry for generic handling of both finalized and intermediate results.
+struct GenericTermsBucket<S> {
+    key: String,
+    doc_count: u64,
+    sub_aggregation: S,
 }
 
-struct ResultMapper {
-    results: Vec<EvpAggregationResult>,
+/// A unified histogram bucket entry for generic handling.
+struct GenericHistogramBucket<S> {
+    key_as_string: String,
+    doc_count: u64,
+    sub_aggregation: S,
 }
 
-impl ResultMapper {
-    fn consume_agg(
+/// Trait abstracting over finalized (`TantivyAggregationResults`) and intermediate
+/// (`IntermediateAggregationResults`) aggregation result sources.
+///
+/// This allows `ResultMapper` to use shared traversal logic for both paths,
+/// with only the data extraction and metric handling differing.
+trait AggResultSource: Sized {
+    fn extract_terms_buckets(
         &mut self,
-        mut agg_result: TantivyAggregationResults,
-        aggregations_def: &quickwit_proto::cloudprem::Aggregation,
-        parent_count: u64,
-    ) -> Result<(), CloudPremError> {
-        let mut state = EvpAggregationResult::default();
-        self.consume_agg_aux(
-            &mut agg_result,
-            &mut state,
-            aggregations_def
-                .aggregation
-                .as_ref()
-                .ok_or_else(|| missing_required("aggregation"))?,
-            parent_count,
-        )?;
-        // handle the case of a root metric aggregation
-        if !state.value.is_empty() {
-            self.results.push(state);
-        }
-        Ok(())
-    }
+        key: &str,
+    ) -> Result<(Vec<GenericTermsBucket<Self>>, u64), CloudPremError>;
 
-    fn consume_agg_aux(
+    fn extract_histogram_buckets(
         &mut self,
-        agg_result: &mut TantivyAggregationResults,
-        state: &mut EvpAggregationResult,
-        aggregations_def: &quickwit_proto::cloudprem::aggregation::Aggregation,
-        parent_count: u64,
-    ) -> Result<(), CloudPremError> {
-        match aggregations_def {
-            AggregationNode::AttributeGroupBy(attribute_group_by) => {
-                self.handle_attribute_group_by(agg_result, state, attribute_group_by)?;
-            }
-            AggregationNode::TimeGroupBy(time_grouping) => {
-                self.handle_time_group_by(agg_result, state, time_grouping)?;
-            }
-            AggregationNode::HistogramGroupBy(_) => {
-                return Err(unsupported_query_error("histogram group by").into());
-            }
-            AggregationNode::FlatFieldsGroupBy(_) => {
-                return Err(unsupported_query_error("flat fields group by").into());
-            }
-            AggregationNode::Computes(computes) => {
-                for agg in &computes.aggregation {
-                    let agg = agg
-                        .aggregation
-                        .as_ref()
-                        .ok_or_else(|| missing_required("attribute_fields.child.aggregation"))?;
-                    self.consume_agg_aux(agg_result, state, agg, parent_count)?;
-                }
-                for time_grouping in &computes.time_grouping {
-                    self.handle_time_group_by(agg_result, state, time_grouping)?;
-                }
-            }
-            AggregationNode::ListCompute(_) => {
-                return Err(unsupported_query_error("list compute").into());
-            }
-            AggregationNode::AnyCompute(_) => {
-                return Err(unsupported_query_error("any compute").into());
-            }
-            AggregationNode::MetricCompute(metric_compute) => {
-                self.handle_metric_compute(agg_result, state, metric_compute, parent_count)?;
-            }
-        }
-        Ok(())
-    }
+        key: &str,
+    ) -> Result<Vec<GenericHistogramBucket<Self>>, CloudPremError>;
 
-    fn handle_attribute_group_by(
+    fn handle_metric_compute(
         &mut self,
-        agg_result: &mut TantivyAggregationResults,
         state: &mut EvpAggregationResult,
-        attribute_group_by: &quickwit_proto::cloudprem::AttributeGroupBy,
-    ) -> Result<(), CloudPremError> {
+        metric_compute: &quickwit_proto::cloudprem::MetricCompute,
+        parent_count: u64,
+    ) -> Result<(), CloudPremError>;
+
+    fn extract_total_siblings(&mut self, agg_name: &str) -> Self;
+}
+
+impl AggResultSource for TantivyAggregationResults {
+    fn extract_terms_buckets(
+        &mut self,
+        key: &str,
+    ) -> Result<(Vec<GenericTermsBucket<Self>>, u64), CloudPremError> {
         use tantivy::aggregation::agg_result::BucketResult;
 
-        let key = extract_field_name(attribute_group_by.expression.as_ref())?;
-        let agg = agg_result
+        let agg = self
             .0
-            .remove(&key)
+            .remove(key)
             .ok_or_else(|| internal_error("result content missmatch"))?;
         match agg {
             TantivyAggregationResult::BucketResult(BucketResult::Terms {
@@ -590,110 +548,48 @@ impl ResultMapper {
                 sum_other_doc_count,
                 ..
             }) => {
-                let child_agg_def_opt = attribute_group_by
-                    .child
-                    .as_ref()
-                    .ok_or_else(|| missing_required("attribute_fields.child"))?
-                    .aggregation
-                    .as_ref()
-                    .ok_or_else(|| missing_required("attribute_fields.child.aggregation"))?;
-
-                let state_key_len = state.key.len();
-                debug_assert!(state.value.is_empty());
-
-                let mut total_in_buckets = 0u64;
-                for mut bucket in buckets {
-                    total_in_buckets += bucket.doc_count;
-                    state.key.push(bucket.key.to_string());
-                    self.consume_agg_aux(
-                        &mut bucket.sub_aggregation,
-                        state,
-                        child_agg_def_opt,
-                        bucket.doc_count,
-                    )?;
-                    if !state.value.is_empty() {
-                        self.results.push(state.clone());
-                        state.value.clear();
-                    }
-                    // clear both key and value, metric sub-aggregations leave values out
-                    state.key.truncate(state_key_len);
-                }
-                // Now we need to append the results for the "TOTAL" virtual bucket.
-                if let Some(total_field) = attribute_group_by.total.as_ref() {
-                    let total_count: u64 = total_in_buckets + sum_other_doc_count;
-                    let mut total_agg_results = extract_total_siblings_results(agg_result, &key);
-                    state.key.push(total_field.to_string());
-                    self.consume_agg_aux(
-                        &mut total_agg_results,
-                        state,
-                        child_agg_def_opt,
-                        total_count,
-                    )?;
-                    if !state.value.is_empty() {
-                        self.results.push(state.clone());
-                        state.value.clear();
-                    }
-                    state.key.truncate(state_key_len);
-                }
+                let entries = buckets
+                    .into_iter()
+                    .map(|b| GenericTermsBucket {
+                        key: b.key.to_string(),
+                        doc_count: b.doc_count,
+                        sub_aggregation: b.sub_aggregation,
+                    })
+                    .collect();
+                Ok((entries, sum_other_doc_count))
             }
-            _ => return Err(internal_error("result content missmatch").into()),
+            _ => Err(internal_error("result content missmatch").into()),
         }
-        Ok(())
     }
 
-    fn handle_time_group_by(
+    fn extract_histogram_buckets(
         &mut self,
-        agg_result: &mut TantivyAggregationResults,
-        state: &mut EvpAggregationResult,
-        time_grouping: &quickwit_proto::cloudprem::TimeGrouping,
-    ) -> Result<(), CloudPremError> {
+        key: &str,
+    ) -> Result<Vec<GenericHistogramBucket<Self>>, CloudPremError> {
         use tantivy::aggregation::agg_result::BucketResult;
 
-        let agg = agg_result
+        let agg = self
             .0
-            .remove(&time_grouping.output)
+            .remove(key)
             .ok_or_else(|| internal_error("result content missmatch"))?;
-
         match agg {
             TantivyAggregationResult::BucketResult(BucketResult::Histogram { buckets }) => {
-                let child_agg_def_opt = time_grouping
-                    .child
-                    .as_ref()
-                    .ok_or_else(|| missing_required("attribute_fields.child"))?
-                    .aggregation
-                    .as_ref()
-                    .ok_or_else(|| missing_required("attribute_fields.child.aggregation"))?;
-
-                let state_key_len = state.key.len();
-                debug_assert!(state.value.is_empty());
-
-                for mut bucket in bucket_iter(buckets) {
-                    state.key.push(
-                        bucket
+                Ok(bucket_iter(buckets)
+                    .map(|b| GenericHistogramBucket {
+                        key_as_string: b
                             .key_as_string
-                            .unwrap_or_else(|| bucket.key.to_string()),
-                    );
-                    self.consume_agg_aux(
-                        &mut bucket.sub_aggregation,
-                        state,
-                        child_agg_def_opt,
-                        bucket.doc_count,
-                    )?;
-                    if !state.value.is_empty() {
-                        self.results.push(state.clone());
-                        state.value.clear();
-                    }
-                    state.key.truncate(state_key_len);
-                }
+                            .unwrap_or_else(|| b.key.to_string()),
+                        doc_count: b.doc_count,
+                        sub_aggregation: b.sub_aggregation,
+                    })
+                    .collect())
             }
-            _ => return Err(internal_error("result content missmatch").into()),
+            _ => Err(internal_error("result content missmatch").into()),
         }
-        Ok(())
     }
 
     fn handle_metric_compute(
         &mut self,
-        agg_result: &mut TantivyAggregationResults,
         state: &mut EvpAggregationResult,
         metric_compute: &quickwit_proto::cloudprem::MetricCompute,
         parent_count: u64,
@@ -705,7 +601,7 @@ impl ResultMapper {
             return Ok(());
         }
 
-        let agg = agg_result
+        let agg = self
             .0
             .remove(&metric_compute.id)
             .ok_or_else(|| internal_error("result content missmatch"))?;
@@ -715,7 +611,7 @@ impl ResultMapper {
         };
 
         match (metric_compute.r#type.as_str(), metric_result) {
-            ("CARDINALITY_SKETCH", MetricResult::Cardinality(cardinality)) => {
+            ("CARDINALITY_SKETCH" | "CARDINALITY", MetricResult::Cardinality(cardinality)) => {
                 state
                     .value
                     .push(generate_sketch(cardinality.value.unwrap_or_default() as u64));
@@ -728,6 +624,8 @@ impl ResultMapper {
                     .push(u64_to_agg_value(metric_res.value.unwrap_or_default() as u64));
             }
             ("AVG", MetricResult::Average(avg)) => {
+                // Finalized path - return computed average (non-mergeable)
+                // For mergeable results, use intermediate_aggregation_result_to_proto
                 state
                     .value
                     .push(generate_avg(avg.value.unwrap_or_default()));
@@ -742,31 +640,389 @@ impl ResultMapper {
 
         Ok(())
     }
+
+    fn extract_total_siblings(&mut self, agg_name: &str) -> Self {
+        let mut results = TantivyAggregationResults(Default::default());
+        let total_sibling_prefix = total_subaggregation_sibling_names(agg_name, "");
+        let total_sibling_keys: Vec<String> = self
+            .0
+            .keys()
+            .filter(|key| key.starts_with(&total_sibling_prefix))
+            .cloned()
+            .collect();
+        for total_sibling_key in total_sibling_keys {
+            let Some(sub_agg_results) = self.0.remove(&total_sibling_key) else {
+                continue;
+            };
+            let Some(sub_agg_key) = total_sibling_key.strip_prefix(&total_sibling_prefix) else {
+                continue;
+            };
+            results.0.insert(sub_agg_key.to_string(), sub_agg_results);
+        }
+        results
+    }
 }
 
-fn extract_total_siblings_results(
-    aggregations: &mut TantivyAggregationResults,
-    agg_name: &str,
-) -> TantivyAggregationResults {
-    let mut results = TantivyAggregationResults(Default::default());
-    let total_sibling_prefix = total_subaggregation_sibling_names(agg_name, "");
-    let total_sibling_keys: Vec<String> = aggregations
-        .0
-        .keys()
-        .filter(|key| key.starts_with(&total_sibling_prefix))
-        .cloned()
-        .collect();
-    for total_sibling_key in total_sibling_keys {
-        let Some(sub_agg_results) = aggregations.0.remove(&total_sibling_key) else {
-            continue;
+impl AggResultSource for IntermediateAggregationResults {
+    fn extract_terms_buckets(
+        &mut self,
+        key: &str,
+    ) -> Result<(Vec<GenericTermsBucket<Self>>, u64), CloudPremError> {
+        use tantivy::aggregation::intermediate_agg_result::{
+            IntermediateAggregationResult as TantivyIntermediateAggResult,
+            IntermediateBucketResult,
         };
-        let Some(sub_agg_key) = total_sibling_key.strip_prefix(&total_sibling_prefix) else {
-            continue;
-        };
-        results.0.insert(sub_agg_key.to_string(), sub_agg_results);
+
+        let agg = self
+            .remove(key)
+            .ok_or_else(|| internal_error("result content missmatch"))?;
+        match agg {
+            TantivyIntermediateAggResult::Bucket(IntermediateBucketResult::Terms {
+                buckets,
+            }) => {
+                let sum_other_doc_count = buckets.sum_other_doc_count();
+                let entries = buckets
+                    .entries()
+                    .iter()
+                    .map(|(bucket_key, entry)| GenericTermsBucket {
+                        key: bucket_key.to_string(),
+                        doc_count: entry.doc_count as u64,
+                        sub_aggregation: entry.sub_aggregation.clone(),
+                    })
+                    .collect();
+                Ok((entries, sum_other_doc_count))
+            }
+            _ => Err(internal_error("result content missmatch").into()),
+        }
     }
-    results
+
+    fn extract_histogram_buckets(
+        &mut self,
+        key: &str,
+    ) -> Result<Vec<GenericHistogramBucket<Self>>, CloudPremError> {
+        use tantivy::aggregation::intermediate_agg_result::{
+            IntermediateAggregationResult as TantivyIntermediateAggResult,
+            IntermediateBucketResult,
+        };
+
+        let agg = self
+            .remove(key)
+            .ok_or_else(|| internal_error("result content missmatch"))?;
+        match agg {
+            TantivyIntermediateAggResult::Bucket(IntermediateBucketResult::Histogram {
+                buckets,
+                is_date_agg,
+            }) => Ok(buckets
+                .into_iter()
+                .map(|b| {
+                    let key_as_string = if is_date_agg {
+                        use time::format_description::well_known::Rfc3339;
+                        time::OffsetDateTime::from_unix_timestamp_nanos(b.key as i128)
+                            .ok()
+                            .and_then(|dt| dt.format(&Rfc3339).ok())
+                            .unwrap_or_else(|| b.key.to_string())
+                    } else {
+                        b.key.to_string()
+                    };
+                    GenericHistogramBucket {
+                        key_as_string,
+                        doc_count: b.doc_count,
+                        sub_aggregation: b.sub_aggregation,
+                    }
+                })
+                .collect()),
+            _ => Err(internal_error("result content missmatch").into()),
+        }
+    }
+
+    fn handle_metric_compute(
+        &mut self,
+        state: &mut EvpAggregationResult,
+        metric_compute: &quickwit_proto::cloudprem::MetricCompute,
+        parent_count: u64,
+    ) -> Result<(), CloudPremError> {
+        use tantivy::aggregation::intermediate_agg_result::{
+            IntermediateAggregationResult as TantivyIntermediateAggResult,
+            IntermediateMetricResult,
+        };
+
+        if metric_compute.r#type.as_str() == "COUNT" {
+            state.value.push(u64_to_agg_value(parent_count));
+            return Ok(());
+        }
+
+        let agg = self
+            .remove(&metric_compute.id)
+            .ok_or_else(|| internal_error("result content missmatch"))?;
+
+        let TantivyIntermediateAggResult::Metric(metric_result) = agg else {
+            return Err(internal_error("result content missmatch").into());
+        };
+
+        match (metric_compute.r#type.as_str(), metric_result) {
+            // AVG: extract raw sum/count for mergeable results
+            ("AVG", IntermediateMetricResult::Average(avg)) => {
+                let stats = avg.stats();
+                state.value.push(EvpAggValue {
+                    value: Some(quickwit_proto::cloudprem::agg_value::Value::AvgValue(
+                        quickwit_proto::cloudprem::Avg {
+                            sum: stats.sum(),
+                            count: stats.count(),
+                        },
+                    )),
+                });
+            }
+            // CARDINALITY: finalize and return HLL estimate
+            // TODO: Return actual HLL sketch for proper merging
+            ("CARDINALITY_SKETCH" | "CARDINALITY", IntermediateMetricResult::Cardinality(cardinality)) => {
+                state
+                    .value
+                    .push(generate_sketch(cardinality.finalize().unwrap_or_default() as u64));
+            }
+            // SUM/MIN/MAX: finalize and extract value
+            ("SUM", IntermediateMetricResult::Sum(m)) => {
+                state
+                    .value
+                    .push(u64_to_agg_value(m.finalize().unwrap_or_default() as u64));
+            }
+            ("MIN", IntermediateMetricResult::Min(m)) => {
+                state
+                    .value
+                    .push(u64_to_agg_value(m.finalize().unwrap_or_default() as u64));
+            }
+            ("MAX", IntermediateMetricResult::Max(m)) => {
+                state
+                    .value
+                    .push(u64_to_agg_value(m.finalize().unwrap_or_default() as u64));
+            }
+            (agg_name, _) => {
+                return Err(InvalidQuery::Other(anyhow::anyhow!(
+                    "aggregation type mismatch for {agg_name}"
+                ))
+                .into());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn extract_total_siblings(&mut self, agg_name: &str) -> Self {
+        let mut results = IntermediateAggregationResults::default();
+        let total_sibling_prefix = total_subaggregation_sibling_names(agg_name, "");
+        let total_sibling_keys: Vec<String> = self
+            .keys()
+            .filter(|key| key.starts_with(&total_sibling_prefix))
+            .cloned()
+            .collect();
+        for total_sibling_key in total_sibling_keys {
+            let Some(sub_agg_results) = self.remove(&total_sibling_key) else {
+                continue;
+            };
+            let Some(sub_agg_key) = total_sibling_key.strip_prefix(&total_sibling_prefix) else {
+                continue;
+            };
+            let _ = results.push(sub_agg_key.to_string(), sub_agg_results);
+        }
+        results
+    }
 }
+
+// --- Public API ---
+
+pub fn aggregation_result_to_proto(
+    aggregation_results: QuickwitAggregationResults,
+    aggregations_def: &quickwit_proto::cloudprem::Aggregation,
+    parent_count: u64,
+) -> Result<Vec<EvpAggregationResult>, CloudPremError> {
+    let mut mapper = ResultMapper {
+        results: Vec::new(),
+    };
+    let mut source: TantivyAggregationResults = aggregation_results.into();
+    mapper.consume_agg(&mut source, aggregations_def, parent_count)?;
+    Ok(mapper.results)
+}
+
+/// Convert intermediate aggregation results to CloudPrem proto format.
+/// Uses the same traversal logic as `aggregation_result_to_proto`, but extracts
+/// raw sum/count for AVG from IntermediateAverage.stats instead of the finalized average.
+pub fn intermediate_aggregation_result_to_proto(
+    mut intermediate_results: IntermediateAggregationResults,
+    aggregations_def: &quickwit_proto::cloudprem::Aggregation,
+    parent_count: u64,
+) -> Result<Vec<EvpAggregationResult>, CloudPremError> {
+    let mut mapper = ResultMapper {
+        results: Vec::new(),
+    };
+    mapper.consume_agg(&mut intermediate_results, aggregations_def, parent_count)?;
+    Ok(mapper.results)
+}
+
+// --- Generic ResultMapper ---
+
+struct ResultMapper {
+    results: Vec<EvpAggregationResult>,
+}
+
+impl ResultMapper {
+    fn consume_agg<S: AggResultSource>(
+        &mut self,
+        source: &mut S,
+        aggregations_def: &quickwit_proto::cloudprem::Aggregation,
+        parent_count: u64,
+    ) -> Result<(), CloudPremError> {
+        let mut state = EvpAggregationResult::default();
+        self.consume_agg_aux(
+            source,
+            &mut state,
+            aggregations_def
+                .aggregation
+                .as_ref()
+                .ok_or_else(|| missing_required("aggregation"))?,
+            parent_count,
+        )?;
+        if !state.value.is_empty() {
+            self.results.push(state);
+        }
+        Ok(())
+    }
+
+    fn consume_agg_aux<S: AggResultSource>(
+        &mut self,
+        source: &mut S,
+        state: &mut EvpAggregationResult,
+        aggregations_def: &quickwit_proto::cloudprem::aggregation::Aggregation,
+        parent_count: u64,
+    ) -> Result<(), CloudPremError> {
+        match aggregations_def {
+            AggregationNode::AttributeGroupBy(attribute_group_by) => {
+                self.handle_attribute_group_by(source, state, attribute_group_by)?;
+            }
+            AggregationNode::TimeGroupBy(time_grouping) => {
+                self.handle_time_group_by(source, state, time_grouping)?;
+            }
+            AggregationNode::HistogramGroupBy(_) => {
+                return Err(unsupported_query_error("histogram group by").into());
+            }
+            AggregationNode::FlatFieldsGroupBy(_) => {
+                return Err(unsupported_query_error("flat fields group by").into());
+            }
+            AggregationNode::Computes(computes) => {
+                for agg in &computes.aggregation {
+                    let agg = agg
+                        .aggregation
+                        .as_ref()
+                        .ok_or_else(|| missing_required("attribute_fields.child.aggregation"))?;
+                    self.consume_agg_aux(source, state, agg, parent_count)?;
+                }
+                for time_grouping in &computes.time_grouping {
+                    self.handle_time_group_by(source, state, time_grouping)?;
+                }
+            }
+            AggregationNode::ListCompute(_) => {
+                return Err(unsupported_query_error("list compute").into());
+            }
+            AggregationNode::AnyCompute(_) => {
+                return Err(unsupported_query_error("any compute").into());
+            }
+            AggregationNode::MetricCompute(metric_compute) => {
+                source.handle_metric_compute(state, metric_compute, parent_count)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_attribute_group_by<S: AggResultSource>(
+        &mut self,
+        source: &mut S,
+        state: &mut EvpAggregationResult,
+        attribute_group_by: &quickwit_proto::cloudprem::AttributeGroupBy,
+    ) -> Result<(), CloudPremError> {
+        let key = extract_field_name(attribute_group_by.expression.as_ref())?;
+        let (buckets, sum_other_doc_count) = source.extract_terms_buckets(&key)?;
+
+        let child_agg_def_opt = attribute_group_by
+            .child
+            .as_ref()
+            .ok_or_else(|| missing_required("attribute_fields.child"))?
+            .aggregation
+            .as_ref()
+            .ok_or_else(|| missing_required("attribute_fields.child.aggregation"))?;
+
+        let state_key_len = state.key.len();
+        debug_assert!(state.value.is_empty());
+
+        let mut total_in_buckets = 0u64;
+        for mut bucket in buckets {
+            total_in_buckets += bucket.doc_count;
+            state.key.push(bucket.key);
+            self.consume_agg_aux(
+                &mut bucket.sub_aggregation,
+                state,
+                child_agg_def_opt,
+                bucket.doc_count,
+            )?;
+            if !state.value.is_empty() {
+                self.results.push(state.clone());
+                state.value.clear();
+            }
+            state.key.truncate(state_key_len);
+        }
+        if let Some(total_field) = attribute_group_by.total.as_ref() {
+            let total_count: u64 = total_in_buckets + sum_other_doc_count;
+            let mut total_agg = source.extract_total_siblings(&key);
+            state.key.push(total_field.to_string());
+            self.consume_agg_aux(
+                &mut total_agg,
+                state,
+                child_agg_def_opt,
+                total_count,
+            )?;
+            if !state.value.is_empty() {
+                self.results.push(state.clone());
+                state.value.clear();
+            }
+            state.key.truncate(state_key_len);
+        }
+        Ok(())
+    }
+
+    fn handle_time_group_by<S: AggResultSource>(
+        &mut self,
+        source: &mut S,
+        state: &mut EvpAggregationResult,
+        time_grouping: &quickwit_proto::cloudprem::TimeGrouping,
+    ) -> Result<(), CloudPremError> {
+        let buckets = source.extract_histogram_buckets(&time_grouping.output)?;
+
+        let child_agg_def_opt = time_grouping
+            .child
+            .as_ref()
+            .ok_or_else(|| missing_required("attribute_fields.child"))?
+            .aggregation
+            .as_ref()
+            .ok_or_else(|| missing_required("attribute_fields.child.aggregation"))?;
+
+        let state_key_len = state.key.len();
+        debug_assert!(state.value.is_empty());
+
+        for mut bucket in buckets {
+            state.key.push(bucket.key_as_string);
+            self.consume_agg_aux(
+                &mut bucket.sub_aggregation,
+                state,
+                child_agg_def_opt,
+                bucket.doc_count,
+            )?;
+            if !state.value.is_empty() {
+                self.results.push(state.clone());
+                state.value.clear();
+            }
+            state.key.truncate(state_key_len);
+        }
+        Ok(())
+    }
+}
+
 
 fn u64_to_agg_value(val: u64) -> EvpAggValue {
     EvpAggValue {
@@ -786,6 +1042,8 @@ fn bucket_iter<T>(
         BucketEntries::HashMap(map) => Either::Right(map.into_values()),
     }
 }
+
+
 
 fn generate_sketch(count: u64) -> EvpAggValue {
     const VERSION: u8 = 0x10;
@@ -826,6 +1084,7 @@ fn generate_avg(avg_float: f64) -> EvpAggValue {
         )),
     }
 }
+
 
 #[cfg(test)]
 mod test_helpers {
@@ -1800,4 +2059,5 @@ mod tests {
             })
         );
     }
+
 }

@@ -285,6 +285,10 @@ pub struct ListRequest {
     pub search_after: ::core::option::Option<EventTracker>,
     #[prost(message, optional, tag = "8")]
     pub scope: ::core::option::Option<Scope>,
+    /// When true, return intermediate aggregation results (sum/count for avg, HLL sketch for cardinality)
+    /// that can be merged across multiple query steps. When false (default), return finalized values.
+    #[prost(bool, tag = "10")]
+    pub return_intermediate_result: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SortKv {
@@ -375,6 +379,10 @@ pub struct AggregationRequest {
     pub org_id: i64,
     #[prost(message, optional, tag = "4")]
     pub scope: ::core::option::Option<Scope>,
+    /// When true, return intermediate aggregation results (sum/count for avg, HLL sketch for cardinality)
+    /// that can be merged across multiple query steps. When false (default), return finalized values.
+    #[prost(bool, tag = "5")]
+    pub return_intermediate_result: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Aggregation {

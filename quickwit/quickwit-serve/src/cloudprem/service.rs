@@ -164,6 +164,7 @@ impl CloudPremService for CloudPremServiceImpl {
             search_after,
             count_hits: count_hits.into(),
             ignore_missing_indexes: false,
+            skip_aggregation_finalization: false,
         };
 
         let response = self
@@ -247,6 +248,7 @@ impl CloudPremService for CloudPremServiceImpl {
             search_after: None,
             count_hits: CountHits::Underestimate.into(),
             ignore_missing_indexes: false,
+            skip_aggregation_finalization: false,
         };
 
         let search_response: SearchResponse =
@@ -332,6 +334,11 @@ impl CloudPremService for CloudPremServiceImpl {
             // aggregation ast)
             count_hits: CountHits::CountAll.into(),
             ignore_missing_indexes: false,
+            // Always skip finalization so we get IntermediateAggregationResults.
+            // This is required because event-query needs raw sum/count for AVG
+            // (for proper weighted-average merging across query steps) and will
+            // need DDSketch bytes for percentiles in the future.
+            skip_aggregation_finalization: true,
         };
 
         let response = self
@@ -345,15 +352,18 @@ impl CloudPremService for CloudPremServiceImpl {
             response.aggregation_postcard.ok_or_else(|| {
                 CloudPremError::Internal("request generated no aggregation result".to_string())
             })?;
-        let quickwit_aggregation_result = postcard::from_bytes(&aggregation_postcard_bytes)
-            .map_err(|err| {
-                CloudPremError::Internal(format!("failed to deserialize agg result: {err}"))
-            })?;
-        let cloudprem_aggregation_result = quickwit_query::cloudprem::aggregation_result_to_proto(
-            quickwit_aggregation_result,
-            &evp_aggregation_ast,
-            response.num_hits,
-        )?;
+
+        let intermediate_results: tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults =
+            postcard::from_bytes(&aggregation_postcard_bytes)
+                .map_err(|err| {
+                    CloudPremError::Internal(format!("failed to deserialize intermediate agg result: {err}"))
+                })?;
+        let cloudprem_aggregation_result =
+            quickwit_query::cloudprem::intermediate_aggregation_result_to_proto(
+                intermediate_results,
+                &evp_aggregation_ast,
+                response.num_hits,
+            )?;
         tracing::trace!("aggregation result: {cloudprem_aggregation_result:?}");
 
         let statistics = Statistics {

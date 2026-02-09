@@ -170,6 +170,10 @@ pub struct SearchRequest {
     /// that index is not found and this parameter is set to `false`.
     #[prost(bool, tag = "18")]
     pub ignore_missing_indexes: bool,
+    /// When true, skip finalization of aggregation results and return
+    /// the raw IntermediateAggregationResults bytes instead.
+    #[prost(bool, tag = "19")]
+    pub skip_aggregation_finalization: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SortField {
