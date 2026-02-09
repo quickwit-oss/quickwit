@@ -2,18 +2,22 @@ name: Build and publish Docker images
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Docker image tag"
+        required: true
+        default: "manual-build"
+        type: string
   push:
     branches:
       - main
     paths:
       - "quickwit/**"
     tags:
-      - airmail
-      - happy-plazza
       - qw*
       - v*
 env:
-  REGISTRY_IMAGE: quickwit/quickwit
+  REGISTRY_IMAGE: brevan2/quickwit
 
 jobs:
   docker:
@@ -23,7 +27,7 @@ jobs:
           - os: ubuntu-latest
             platform: linux/amd64
             platform_suffix: amd64
-          - os: gh-ubuntu-arm64
+          - os: ubuntu-24.04-arm
             platform: linux/arm64
             platform_suffix: arm64
     runs-on: ${{ matrix.os }}
@@ -116,6 +120,7 @@ jobs:
             type=semver,pattern={{version}},value=latest
             type=semver,pattern={{version}},suffix=-slim-bookworm
             type=ref,event=tag
+            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:

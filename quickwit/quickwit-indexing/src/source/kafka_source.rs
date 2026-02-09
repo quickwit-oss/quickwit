@@ -463,6 +463,13 @@ impl Source for KafkaSource {
         let deadline = time::sleep(*EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
+        info!(
+            index_id=%self.source_runtime.index_id(),
+            source_id=%self.source_runtime.source_id(),
+            topic=%self.topic,
+            group_id=%self.group_id,
+            "starting Kafka source emit_batches"
+        );
         loop {
             tokio::select! {
                 event_opt = self.events_rx.recv() => {
@@ -484,6 +491,15 @@ impl Source for KafkaSource {
             }
             ctx.record_progress();
         }
+
+        info!(
+            index_id=%self.source_runtime.index_id(),
+            source_id=%self.source_runtime.source_id(),
+            topic=%self.topic,
+            group_id=%self.group_id,
+            num_docs=%batch_builder.docs.len(),
+            "ending Kafka source emit_batches"
+        );
         if !batch_builder.checkpoint_delta.is_empty() {
             debug!(
                 num_docs=%batch_builder.docs.len(),

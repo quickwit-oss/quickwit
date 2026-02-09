@@ -1,23 +1,23 @@
-name: "Dependency Review"
-on: [pull_request]
+# name: "Dependency Review"
+# on: [pull_request]
 
-permissions:
-  contents: read
+# permissions:
+#   contents: read
 
-# Ensures that we cancel running jobs for the same PR / same workflow.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+# # Ensures that we cancel running jobs for the same PR / same workflow.
+# concurrency:
+#   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+#   cancel-in-progress: true
 
-jobs:
-  dependency-review:
-    runs-on: ubuntu-latest
-    steps:
-      - name: "Checkout Repository"
-        uses: actions/checkout@v4
-      - name: "Dependency Review"
-        uses: actions/dependency-review-action@v4
-        with:
-          # This is an minor vuln on the rsa crate, used for
-          # google storage.
-          allow-ghsas: GHSA-c38w-74pg-36hr,GHSA-4grx-2x9w-596c
+# jobs:
+#   dependency-review:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: "Checkout Repository"
+#         uses: actions/checkout@v4
+#       - name: "Dependency Review"
+#         uses: actions/dependency-review-action@v4
+#         with:
+#           # This is an minor vuln on the rsa crate, used for
+#           # google storage.
+#           allow-ghsas: GHSA-c38w-74pg-36hr,GHSA-4grx-2x9w-596c

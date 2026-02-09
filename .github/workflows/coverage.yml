@@ -1,195 +1,195 @@
-name: Code coverage
+# name: Code coverage
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-      - trigger-coverage-workflow
-    paths:
-      - quickwit/Cargo.toml
-      - quickwit/Cargo.lock
-      - quickwit/quickwit-*/**
+# on:
+#   workflow_dispatch:
+#   push:
+#     branches:
+#       - main
+#       - trigger-coverage-workflow
+#     paths:
+#       - quickwit/Cargo.toml
+#       - quickwit/Cargo.lock
+#       - quickwit/quickwit-*/**
 
-env:
-  AWS_REGION: us-east-1
-  AWS_ACCESS_KEY_ID: "placeholder"
-  AWS_SECRET_ACCESS_KEY: "placeholder"
-  CARGO_INCREMENTAL: 0
-  PUBSUB_EMULATOR_HOST: "localhost:9898"
-  QW_DISABLE_TELEMETRY: 1
-  QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
-  QW_S3_FORCE_PATH_STYLE_ACCESS: 1
-  QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
-  RUSTFLAGS: -Dwarnings --cfg tokio_unstable
+# env:
+#   AWS_REGION: us-east-1
+#   AWS_ACCESS_KEY_ID: "placeholder"
+#   AWS_SECRET_ACCESS_KEY: "placeholder"
+#   CARGO_INCREMENTAL: 0
+#   PUBSUB_EMULATOR_HOST: "localhost:9898"
+#   QW_DISABLE_TELEMETRY: 1
+#   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
+#   QW_S3_FORCE_PATH_STYLE_ACCESS: 1
+#   QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
+#   RUSTFLAGS: -Dwarnings --cfg tokio_unstable
 
-jobs:
-  test:
-    name: Coverage
-    runs-on: gh-ubuntu-arm64
-    timeout-minutes: 40
-    # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
-    services:
-      localstack:
-        image: localstack/localstack:latest
-        ports:
-          - "4566:4566"
-          - "4571:4571"
-          - "8080:8080"
-        env:
-          SERVICES: kinesis,s3,sqs
-        options: >-
-          --health-cmd "curl -k https://localhost:4566"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+# jobs:
+#   test:
+#     name: Coverage
+#     runs-on: gh-ubuntu-arm64
+#     timeout-minutes: 40
+#     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
+#     services:
+#       localstack:
+#         image: localstack/localstack:latest
+#         ports:
+#           - "4566:4566"
+#           - "4571:4571"
+#           - "8080:8080"
+#         env:
+#           SERVICES: kinesis,s3,sqs
+#         options: >-
+#           --health-cmd "curl -k https://localhost:4566"
+#           --health-interval 10s
+#           --health-timeout 5s
+#           --health-retries 5
 
-      postgres:
-        image: postgres:latest
-        ports:
-          - "5432:5432"
-        env:
-          POSTGRES_USER: quickwit-dev
-          POSTGRES_PASSWORD: quickwit-dev
-          POSTGRES_DB: quickwit-metastore-dev
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+#       postgres:
+#         image: postgres:latest
+#         ports:
+#           - "5432:5432"
+#         env:
+#           POSTGRES_USER: quickwit-dev
+#           POSTGRES_PASSWORD: quickwit-dev
+#           POSTGRES_DB: quickwit-metastore-dev
+#         options: >-
+#           --health-cmd pg_isready
+#           --health-interval 10s
+#           --health-timeout 5s
+#           --health-retries 5
 
-      kafka-broker:
-        image: confluentinc/cp-kafka:7.2.1
-        ports:
-          - "9092:9092"
-          - "9101:9101"
-        env:
-          KAFKA_BROKER_ID: 1
-          KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
-          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092
-          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-          KAFKA_JMX_PORT: 9101
-          KAFKA_JMX_HOSTNAME: localhost
-          KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
-        options: >-
-          --health-cmd "cub kafka-ready -b localhost:9092 1 5"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+#       kafka-broker:
+#         image: confluentinc/cp-kafka:7.2.1
+#         ports:
+#           - "9092:9092"
+#           - "9101:9101"
+#         env:
+#           KAFKA_BROKER_ID: 1
+#           KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+#           KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+#           KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092
+#           KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+#           KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+#           KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+#           KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+#           KAFKA_JMX_PORT: 9101
+#           KAFKA_JMX_HOSTNAME: localhost
+#           KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
+#         options: >-
+#           --health-cmd "cub kafka-ready -b localhost:9092 1 5"
+#           --health-interval 10s
+#           --health-timeout 5s
+#           --health-retries 5
 
-      zookeeper:
-        image: confluentinc/cp-zookeeper:7.2.1
-        ports:
-          - "2181:2181"
-        env:
-          KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
-          ZOOKEEPER_CLIENT_PORT: 2181
-          ZOOKEEPER_TICK_TIME: 2000
-        options: >-
-          --health-cmd "cub zk-ready localhost:2181 5"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+#       zookeeper:
+#         image: confluentinc/cp-zookeeper:7.2.1
+#         ports:
+#           - "2181:2181"
+#         env:
+#           KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
+#           ZOOKEEPER_CLIENT_PORT: 2181
+#           ZOOKEEPER_TICK_TIME: 2000
+#         options: >-
+#           --health-cmd "cub zk-ready localhost:2181 5"
+#           --health-interval 10s
+#           --health-timeout 5s
+#           --health-retries 5
 
-      gcp-pubsub-emulator:
-        image: thekevjames/gcloud-pubsub-emulator:7555256f2c
-        ports:
-          - "9898:8681"
-        env:
-          PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
+#       gcp-pubsub-emulator:
+#         image: thekevjames/gcloud-pubsub-emulator:7555256f2c
+#         ports:
+#           - "9898:8681"
+#         env:
+#           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
 
-    steps:
-      - uses: actions/checkout@v4
+#     steps:
+#       - uses: actions/checkout@v4
 
-      - name: Install lib libsasl2
-        run: |
-          sudo apt update
-          sudo apt install libsasl2-dev
-          sudo apt install libsasl2-2
+#       - name: Install lib libsasl2
+#         run: |
+#           sudo apt update
+#           sudo apt install libsasl2-dev
+#           sudo apt install libsasl2-2
 
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/git
-            ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
-            ${{ runner.os }}-cargo-test
+#       - uses: actions/cache@v4
+#         with:
+#           path: |
+#             ~/.cargo/git
+#             ~/.cargo/registry
+#           key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+#           restore-keys: |
+#             ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
+#             ${{ runner.os }}-cargo-test
 
-      - name: Install awslocal
-        run: pip install awscli-local
+#       - name: Install awslocal
+#         run: pip install awscli-local
 
-      - name: Prepare LocalStack S3
-        run: ./quickwit-cli/tests/prepare_tests.sh
-        working-directory: ./quickwit
+#       - name: Prepare LocalStack S3
+#         run: ./quickwit-cli/tests/prepare_tests.sh
+#         working-directory: ./quickwit
 
-      # GitHub Actions does not allow services to be started with a custom command,
-      # so we are running Azurite as a container manually.
-      - name: Run Azurite service
-        run: DOCKER_SERVICES=azurite make docker-compose-up
+#       # GitHub Actions does not allow services to be started with a custom command,
+#       # so we are running Azurite as a container manually.
+#       - name: Run Azurite service
+#         run: DOCKER_SERVICES=azurite make docker-compose-up
 
-      # GitHub Actions does not allow services to be started with a custom command,
-      # so we are running fake gcs server as a container manually.
-      - name: Run Fake GCS Server service
-        run: DOCKER_SERVICES=fake-gcs-server make docker-compose-up
+#       # GitHub Actions does not allow services to be started with a custom command,
+#       # so we are running fake gcs server as a container manually.
+#       - name: Run Fake GCS Server service
+#         run: DOCKER_SERVICES=fake-gcs-server make docker-compose-up
 
-      - name: Run Pulsar service
-        run: DOCKER_SERVICES=pulsar make docker-compose-up
+#       - name: Run Pulsar service
+#         run: DOCKER_SERVICES=pulsar make docker-compose-up
 
-      - name: Install Rust
-        run: rustup update stable
+#       - name: Install Rust
+#         run: rustup update stable
 
-      - name: Install cargo-llvm-cov, cargo-nextest, and protoc
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov,nextest,protoc
+#       - name: Install cargo-llvm-cov, cargo-nextest, and protoc
+#         uses: taiki-e/install-action@v2
+#         with:
+#           tool: cargo-llvm-cov,nextest,protoc
 
-      # We limit the number of jobs to 4 to avoid OOM errors when linking the binary.
-      - name: Generate code coverage
-        run: |
-          cargo llvm-cov clean --workspace
-          cargo llvm-cov nextest --no-report --test failpoints --features fail/failpoints --retries 4
-          # increase stack size for test_all_with_s3_localstack_cli, see quickwit#4963
-          RUST_MIN_STACK=67108864 CARGO_BUILD_JOBS=4 cargo llvm-cov nextest --no-report --all-features --retries 4
-          cargo llvm-cov report --lcov --output-path lcov.info
-        working-directory: ./quickwit
+#       # We limit the number of jobs to 4 to avoid OOM errors when linking the binary.
+#       - name: Generate code coverage
+#         run: |
+#           cargo llvm-cov clean --workspace
+#           cargo llvm-cov nextest --no-report --test failpoints --features fail/failpoints --retries 4
+#           # increase stack size for test_all_with_s3_localstack_cli, see quickwit#4963
+#           RUST_MIN_STACK=67108864 CARGO_BUILD_JOBS=4 cargo llvm-cov nextest --no-report --all-features --retries 4
+#           cargo llvm-cov report --lcov --output-path lcov.info
+#         working-directory: ./quickwit
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
-          files: ./quickwit/lcov.info
+#       - name: Upload coverage to Codecov
+#         uses: codecov/codecov-action@v5
+#         with:
+#           token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
+#           files: ./quickwit/lcov.info
 
-  on-failure:
-    if: ${{ github.repository_owner == 'quickwit-oss' && failure() }}
-    name: On Failure
-    needs: [test]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send Message
-        uses: sarisia/actions-status-discord@v1
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          nodetail: true
-          color: "#FF0000"
-          title: ""
-          description: |
-            ### ❌ [${{ github.event.pull_request.title }}](${{ github.event.pull_request.html_url }})
+#   on-failure:
+#     if: ${{ github.repository_owner == 'quickwit-oss' && failure() }}
+#     name: On Failure
+#     needs: [test]
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Send Message
+#         uses: sarisia/actions-status-discord@v1
+#         with:
+#           webhook: ${{ secrets.DISCORD_WEBHOOK }}
+#           nodetail: true
+#           color: "#FF0000"
+#           title: ""
+#           description: |
+#             ### ❌ [${{ github.event.pull_request.title }}](${{ github.event.pull_request.html_url }})
 
-            @${{ github.actor }} quickwit coverage CI failed on your PR.
+#             @${{ github.actor }} quickwit coverage CI failed on your PR.
 
-            Coverage CI contains tests that are not running in the regular CI because they are too lengthy.
-            For this reason it is possible for it to break even if the tests were passing on your PR.
-            This is not a catastrophy, but you are responsible for fixing it!
+#             Coverage CI contains tests that are not running in the regular CI because they are too lengthy.
+#             For this reason it is possible for it to break even if the tests were passing on your PR.
+#             This is not a catastrophy, but you are responsible for fixing it!
 
-            You can run the full test suite locally with `make test-all`.
+#             You can run the full test suite locally with `make test-all`.
 
-            Please report in this channel that you are working on it/fixed it/or if it is a flaky test/
-            or if you need help.
+#             Please report in this channel that you are working on it/fixed it/or if it is a flaky test/
+#             or if you need help.
 
-            **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**
+#             **[View logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})**

@@ -1,40 +1,40 @@
-name: Build and publish release packages
+# name: Build and publish release packages
 
-on:
-  push:
-    tags:
-      - "v*"
+# on:
+#   push:
+#     tags:
+#       - "v*"
 
-jobs:
-  build-macos-binaries:
-    name: Build ${{ matrix.target }}
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        target: [x86_64-apple-darwin, aarch64-apple-darwin]
+# jobs:
+#   build-macos-binaries:
+#     name: Build ${{ matrix.target }}
+#     runs-on: macos-latest
+#     strategy:
+#       matrix:
+#         target: [x86_64-apple-darwin, aarch64-apple-darwin]
 
-    steps:
-      - uses: actions/checkout@v4
-      - name: Extract asset version
-        run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
-      - uses: ./.github/actions/cargo-build-macos-binary
-        with:
-          target: ${{ matrix.target }}
-          version: ${{ env.ASSET_VERSION }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Extract asset version
+#         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+#       - uses: ./.github/actions/cargo-build-macos-binary
+#         with:
+#           target: ${{ matrix.target }}
+#           version: ${{ env.ASSET_VERSION }}
+#           token: ${{ secrets.GITHUB_TOKEN }}
 
-  build-linux-binaries:
-    strategy:
-      matrix:
-        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
-    name: Build ${{ matrix.target }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Extract asset version
-        run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
-      - uses: ./.github/actions/cross-build-binary
-        with:
-          target: ${{ matrix.target }}
-          version: ${{ env.ASSET_VERSION }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+#   build-linux-binaries:
+#     strategy:
+#       matrix:
+#         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+#     name: Build ${{ matrix.target }}
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - name: Extract asset version
+#         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+#       - uses: ./.github/actions/cross-build-binary
+#         with:
+#           target: ${{ matrix.target }}
+#           version: ${{ env.ASSET_VERSION }}
+#           token: ${{ secrets.GITHUB_TOKEN }}
