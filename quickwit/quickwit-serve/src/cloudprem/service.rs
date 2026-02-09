@@ -334,10 +334,6 @@ impl CloudPremService for CloudPremServiceImpl {
             // aggregation ast)
             count_hits: CountHits::CountAll.into(),
             ignore_missing_indexes: false,
-            // Always skip finalization so we get IntermediateAggregationResults.
-            // This is required because event-query needs raw sum/count for AVG
-            // (for proper weighted-average merging across query steps) and will
-            // need DDSketch bytes for percentiles in the future.
             skip_aggregation_finalization: true,
         };
 

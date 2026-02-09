@@ -253,9 +253,6 @@ message ListRequest {
   int64 org_id = 6;
   optional EventTracker search_after = 7;
   Scope scope = 8;
-  // When true, return intermediate aggregation results (sum/count for avg, HLL sketch for cardinality)
-  // that can be merged across multiple query steps. When false (default), return finalized values.
-  bool return_intermediate_result = 10;
 }
 
 message SortKV {
@@ -322,9 +319,6 @@ message AggregationRequest {
   // org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
   int64 org_id = 3;
   Scope scope = 4;
-  // When true, return intermediate aggregation results (sum/count for avg, HLL sketch for cardinality)
-  // that can be merged across multiple query steps. When false (default), return finalized values.
-  bool return_intermediate_result = 5;
 }
 
 message Aggregation {
