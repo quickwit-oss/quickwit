@@ -36,6 +36,7 @@ const MIN_HEALTHY_CONN_DURATION: Duration = Duration::from_secs(60);
 struct PendingRequests {
     join_set: JoinSet<AnyResponse>,
     abort_handles: HashMap<u64, AbortHandle>,
+    task_to_req: HashMap<tokio::task::Id, u64>,
 }
 
 impl PendingRequests {
@@ -43,6 +44,7 @@ impl PendingRequests {
         Self {
             join_set: JoinSet::new(),
             abort_handles: HashMap::new(),
+            task_to_req: HashMap::new(),
         }
     }
 
@@ -53,12 +55,14 @@ impl PendingRequests {
         future: impl std::future::Future<Output = AnyResponse> + Send + 'static,
     ) {
         let abort_handle = self.join_set.spawn(future);
+        let task_id = abort_handle.id();
         self.abort_handles.insert(req_id, abort_handle);
+        self.task_to_req.insert(task_id, req_id);
     }
 
     /// Cancels a request by its ID if it exists.
     fn cancel(&mut self, req_id: u64) -> bool {
-        if let Some(handle) = self.abort_handles.remove(&req_id) {
+        if let Some(handle) = self.abort_handles.get(&req_id) {
             handle.abort();
             true
         } else {
@@ -68,22 +72,43 @@ impl PendingRequests {
 
     /// Awaits the next completed task and cleans up its abort handle.
     async fn join_next(&mut self) -> Option<AnyResponse> {
-        let Some(result) = self.join_set.join_next().await else {
+        let Some(result) = self.join_set.join_next_with_id().await else {
             // if there are not futures to await completion, wait eternally.
             // the select at a higher level will end up cancelling us and add
             // some tasks eventually
             std::future::pending().await
         };
         match result {
-            Ok(response) => {
-                self.abort_handles.remove(&response.req_id);
+            Ok((task_id, response)) => {
+                let req_id = response.req_id;
+                self.abort_handles.remove(&req_id);
+                self.task_to_req.remove(&task_id);
                 Some(response)
             }
-            // some task finished, but it panicked? Sadly this means we can't recover
-            // its request id to reply with an error and cleanup the handles map
-            // we could have a map<task_id -> request_id> and use join_next_with_id to handle
-            // this case better
-            Err(_) => None,
+            // task was cancelled or panicked, recover the request id using the task_id
+            Err(join_error) => {
+                let task_id = join_error.id();
+                if let Some(req_id) = self.task_to_req.remove(&task_id) {
+                    self.abort_handles.remove(&req_id);
+                    // Return appropriate error response based on the error type
+                    let (grpc_code, message) = if join_error.is_cancelled() {
+                        (Code::Cancelled as u32, "Request cancelled".to_string())
+                    } else {
+                        (
+                            Code::Internal as u32,
+                            "Internal error: request handler panicked".to_string(),
+                        )
+                    };
+                    Some(AnyResponse {
+                        req_id,
+                        grpc_code,
+                        response: Some(any_response::Response::GrpcMessage(message)),
+                    })
+                } else {
+                    // This shouldn't happen, but if it does, just return None
+                    None
+                }
+            }
         }
     }
 }
