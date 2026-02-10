@@ -83,11 +83,9 @@ impl InnerIngesterState {
             .filter(|shard| {
                 shard.is_open() && shard.index_uid == *index_uid && shard.source_id == *source_id
             })
-            .max_by(|left, right| {
-                left.rate_limiter
-                    .available_permits()
-                    .cmp(&right.rate_limiter.available_permits())
-            })
+            .map(|shard| (shard.rate_limiter.available_permits(), shard))
+            .max_by_key(|(available_permits, _)| *available_permits)
+            .map(|(_, shard)| shard)
     }
 }
 
