@@ -7,8 +7,8 @@ name: Release Lambda binary
 
 on:
   push:
-    branches:
-      - lambda # This is temporary
+    tags:
+      - 'lambda-*'
   workflow_dispatch:
     inputs:
       version:
@@ -31,10 +31,13 @@ jobs:
 
       - name: Set version
         run: |
-          if [ "${{ github.event.inputs.version }}" = "dev" ]; then
-            echo "ASSET_VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          else
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            # Extract version from tag (e.g., lambda-v0.8.0 -> v0.8.0)
+            echo "ASSET_VERSION=${GITHUB_REF_NAME#lambda-}" >> $GITHUB_ENV
+          elif [ -n "${{ github.event.inputs.version }}" ] && [ "${{ github.event.inputs.version }}" != "dev" ]; then
             echo "ASSET_VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          else
+            echo "ASSET_VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           fi
 
       - name: Install rustup

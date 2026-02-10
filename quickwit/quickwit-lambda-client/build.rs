@@ -28,8 +28,7 @@ use sha1::{Digest, Sha1};
 
 /// URL to download the pre-built Lambda zip from GitHub releases.
 /// This should be updated when a new Lambda binary is released.
-const LAMBDA_ZIP_URL: &str =
-    "https://github.com/quickwit-oss/quickwit/releases/download/lambda-506751fb/quickwit-aws-lambda--aarch64.zip";
+const LAMBDA_ZIP_URL: &str = "https://github.com/quickwit-oss/quickwit/releases/download/lambda-ff6fdfa5/quickwit-aws-lambda--aarch64.zip";
 
 /// AWS Lambda direct upload limit is 50MB.
 /// Larger artifacts must be uploaded via S3.
