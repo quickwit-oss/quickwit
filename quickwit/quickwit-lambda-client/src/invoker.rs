@@ -14,6 +14,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use async_trait::async_trait;
 use aws_sdk_lambda::Client as LambdaClient;
 use aws_sdk_lambda::primitives::Blob;
@@ -25,7 +26,6 @@ use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse, LeafSearchRe
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
 use tracing::{debug, info, instrument};
 
-use crate::error::{InvokerError, InvokerResult};
 use crate::metrics::LAMBDA_METRICS;
 
 /// Create a Lambda invoker for a specific version.
@@ -35,7 +35,7 @@ use crate::metrics::LAMBDA_METRICS;
 pub(crate) async fn create_lambda_invoker_for_version(
     function_name: &str,
     version: &str,
-) -> InvokerResult<Arc<dyn LambdaLeafSearchInvoker>> {
+) -> anyhow::Result<Arc<dyn LambdaLeafSearchInvoker>> {
     let invoker = AwsLambdaInvoker::new(function_name, version).await;
     invoker.validate().await?;
     Ok(Arc::new(invoker))
@@ -64,7 +64,7 @@ impl AwsLambdaInvoker {
 
     /// Validate that the Lambda function version exists and is invocable.
     /// Uses DryRun invocation type - validates without executing.
-    async fn validate(&self) -> InvokerResult<()> {
+    async fn validate(&self) -> anyhow::Result<()> {
         info!("lambda invoker dry run");
         let request = self
             .client
@@ -73,11 +73,11 @@ impl AwsLambdaInvoker {
             .qualifier(&self.version)
             .invocation_type(InvocationType::DryRun);
 
-        request.send().await.map_err(|e| {
-            InvokerError::Configuration(format!(
-                "failed to validate Lambda function '{}:{}': {}",
-                self.function_name, self.version, e
-            ))
+        request.send().await.with_context(|| {
+            format!(
+                "failed to validate Lambda function '{}:{}'",
+                self.function_name, self.version
+            )
         })?;
 
         info!("the lambda invoker dry run was successful");

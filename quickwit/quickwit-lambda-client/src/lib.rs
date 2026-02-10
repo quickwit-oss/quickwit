@@ -27,15 +27,11 @@
 //! let invoker = get_or_deploy_invoker(&function_name, &deploy_config).await?;
 //! ```
 
-// mod deploy;
-mod error;
+mod deploy;
 mod invoker;
 mod metrics;
 
-pub use error::{InvokerError, InvokerResult};
+pub use deploy::try_get_or_deploy_invoker;
 pub use metrics::LAMBDA_METRICS;
 // Re-export payload types from server crate for convenience
 pub use quickwit_lambda_server::{LeafSearchPayload, LeafSearchResponsePayload};
-mod deploy;
-
-pub use deploy::try_get_or_deploy_invoker;
