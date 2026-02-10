@@ -15,14 +15,13 @@ use tantivy::aggregation::agg_req::{
 use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
 };
-use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::bucket::{CustomOrder, IncludeExcludeParam, Order, OrderTarget};
+use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::{bucket, metric};
 
 use super::{internal_error, missing_required, unsupported_query_error};
 use crate::InvalidQuery;
 use crate::aggregations::AggregationResults as QuickwitAggregationResults;
-
 
 const CALC_NODE_TYPE_URL: &str = "type.googleapis.com/calcfieldspb.CalcNode";
 
@@ -424,7 +423,6 @@ fn extract_field_name(
     Ok(field_name)
 }
 
-
 /// Event query has a feature that is not available in elasticsearch.
 /// It offers the possibility to, in group by, accumulate all documents being
 /// seen in a "virtual bucket".
@@ -624,8 +622,7 @@ impl ResultMapper {
                 }
                 if let Some(total_field) = attribute_group_by.total.as_ref() {
                     let total_count: u64 = total_in_buckets + sum_other_doc_count;
-                    let mut total_agg_results =
-                        extract_total_siblings_results(agg_result, &key);
+                    let mut total_agg_results = extract_total_siblings_results(agg_result, &key);
                     state.key.push(total_field.to_string());
                     self.consume_agg_aux(
                         &mut total_agg_results,
@@ -772,7 +769,8 @@ fn extract_total_siblings_results(
     results
 }
 
-// --- Intermediate aggregation result handling (standalone, for skip_aggregation_finalization=true) ---
+// --- Intermediate aggregation result handling (standalone, for skip_aggregation_finalization=true)
+// ---
 
 /// Convert intermediate aggregation results to CloudPrem proto format.
 /// Returns raw sum/count for AVG (for proper weighted-average merging across query steps).
@@ -867,8 +865,7 @@ impl IntermediateResultMapper {
         attribute_group_by: &quickwit_proto::cloudprem::AttributeGroupBy,
     ) -> Result<(), CloudPremError> {
         use tantivy::aggregation::intermediate_agg_result::{
-            IntermediateAggregationResult as TantivyIntermediateAggResult,
-            IntermediateBucketResult,
+            IntermediateAggregationResult as TantivyIntermediateAggResult, IntermediateBucketResult,
         };
 
         let key = extract_field_name(attribute_group_by.expression.as_ref())?;
@@ -876,9 +873,7 @@ impl IntermediateResultMapper {
             .remove(&key)
             .ok_or_else(|| internal_error("result content missmatch"))?;
         match agg {
-            TantivyIntermediateAggResult::Bucket(IntermediateBucketResult::Terms {
-                buckets,
-            }) => {
+            TantivyIntermediateAggResult::Bucket(IntermediateBucketResult::Terms { buckets }) => {
                 let child_agg_def_opt = attribute_group_by
                     .child
                     .as_ref()
@@ -897,12 +892,7 @@ impl IntermediateResultMapper {
                     total_in_buckets += doc_count;
                     state.key.push(bucket_key.to_string());
                     let mut sub_agg = entry.sub_aggregation.clone();
-                    self.consume_agg_aux(
-                        &mut sub_agg,
-                        state,
-                        child_agg_def_opt,
-                        doc_count,
-                    )?;
+                    self.consume_agg_aux(&mut sub_agg, state, child_agg_def_opt, doc_count)?;
                     if !state.value.is_empty() {
                         self.results.push(state.clone());
                         state.value.clear();
@@ -911,15 +901,9 @@ impl IntermediateResultMapper {
                 }
                 if let Some(total_field) = attribute_group_by.total.as_ref() {
                     let total_count: u64 = total_in_buckets + sum_other_doc_count;
-                    let mut total_agg =
-                        extract_intermediate_total_siblings(agg_result, &key);
+                    let mut total_agg = extract_intermediate_total_siblings(agg_result, &key);
                     state.key.push(total_field.to_string());
-                    self.consume_agg_aux(
-                        &mut total_agg,
-                        state,
-                        child_agg_def_opt,
-                        total_count,
-                    )?;
+                    self.consume_agg_aux(&mut total_agg, state, child_agg_def_opt, total_count)?;
                     if !state.value.is_empty() {
                         self.results.push(state.clone());
                         state.value.clear();
@@ -939,8 +923,7 @@ impl IntermediateResultMapper {
         time_grouping: &quickwit_proto::cloudprem::TimeGrouping,
     ) -> Result<(), CloudPremError> {
         use tantivy::aggregation::intermediate_agg_result::{
-            IntermediateAggregationResult as TantivyIntermediateAggResult,
-            IntermediateBucketResult,
+            IntermediateAggregationResult as TantivyIntermediateAggResult, IntermediateBucketResult,
         };
 
         let agg = agg_result
@@ -1000,8 +983,7 @@ impl IntermediateResultMapper {
         parent_count: u64,
     ) -> Result<(), CloudPremError> {
         use tantivy::aggregation::intermediate_agg_result::{
-            IntermediateAggregationResult as TantivyIntermediateAggResult,
-            IntermediateMetricResult,
+            IntermediateAggregationResult as TantivyIntermediateAggResult, IntermediateMetricResult,
         };
 
         if metric_compute.r#type.as_str() == "COUNT" {
@@ -1030,10 +1012,13 @@ impl IntermediateResultMapper {
                 });
             }
             // TODO: Return actual HLL sketch for proper merging
-            ("CARDINALITY_SKETCH" | "CARDINALITY", IntermediateMetricResult::Cardinality(cardinality)) => {
-                state
-                    .value
-                    .push(generate_sketch(cardinality.finalize().unwrap_or_default() as u64));
+            (
+                "CARDINALITY_SKETCH" | "CARDINALITY",
+                IntermediateMetricResult::Cardinality(cardinality),
+            ) => {
+                state.value.push(generate_sketch(
+                    cardinality.finalize().unwrap_or_default() as u64
+                ));
             }
             ("SUM", IntermediateMetricResult::Sum(m)) => {
                 state
@@ -1085,7 +1070,6 @@ fn extract_intermediate_total_siblings(
     results
 }
 
-
 fn u64_to_agg_value(val: u64) -> EvpAggValue {
     EvpAggValue {
         value: Some(quickwit_proto::cloudprem::agg_value::Value::Uint64Value(
@@ -1104,8 +1088,6 @@ fn bucket_iter<T>(
         BucketEntries::HashMap(map) => Either::Right(map.into_values()),
     }
 }
-
-
 
 fn generate_sketch(count: u64) -> EvpAggValue {
     const VERSION: u8 = 0x10;
@@ -1146,7 +1128,6 @@ fn generate_avg(avg_float: f64) -> EvpAggValue {
         )),
     }
 }
-
 
 #[cfg(test)]
 mod test_helpers {
@@ -2150,8 +2131,11 @@ mod tests {
             value: vec![2u64.to_value()],
         }];
 
-        let intermediate = tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults::default();
-        let res = super::intermediate_aggregation_result_to_proto(intermediate, &agg_def, 2).unwrap();
+        let intermediate =
+            tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults::default(
+            );
+        let res =
+            super::intermediate_aggregation_result_to_proto(intermediate, &agg_def, 2).unwrap();
         assert_eq!(res, expected);
     }
 
@@ -2312,10 +2296,7 @@ mod tests {
         let avg_value = host_3.value[1].value.as_ref().unwrap();
         assert_eq!(
             avg_value,
-            &agg_value::Value::AvgValue(Avg {
-                sum: 9.0,
-                count: 3
-            })
+            &agg_value::Value::AvgValue(Avg { sum: 9.0, count: 3 })
         );
     }
 
@@ -2401,5 +2382,4 @@ mod tests {
             })
         );
     }
-
 }
