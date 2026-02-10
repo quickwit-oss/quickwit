@@ -2122,4 +2122,284 @@ mod tests {
         );
     }
 
+    // --- Intermediate aggregation result tests ---
+    // These mirror the finalized result tests above but use DistributedAggregationCollector
+    // to produce IntermediateAggregationResults and call intermediate_aggregation_result_to_proto.
+    // Key differences vs finalized:
+    //   - AVG returns raw {sum, count} instead of {computed_avg, 1}
+    //   - Terms buckets are NOT sorted or limited (all buckets returned, order is unspecified)
+
+    fn find_result_by_key<'a>(
+        results: &'a [AggregationResult],
+        key: &str,
+    ) -> &'a AggregationResult {
+        results
+            .iter()
+            .find(|r| r.key.first().map(|k| k.as_str()) == Some(key))
+            .unwrap_or_else(|| panic!("expected result with key '{key}'"))
+    }
+
+    #[test]
+    fn test_intermediate_count_response() {
+        let agg_def_inner = count_metric();
+        let agg_def = quickwit_proto::cloudprem::Aggregation {
+            aggregation: Some(agg_def_inner),
+        };
+        let expected = vec![AggregationResult {
+            key: vec![],
+            value: vec![2u64.to_value()],
+        }];
+
+        let intermediate = tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults::default();
+        let res = super::intermediate_aggregation_result_to_proto(intermediate, &agg_def, 2).unwrap();
+        assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_intermediate_aggregation_with_total() {
+        let child = quickwit_proto::cloudprem::aggregation::Aggregation::Computes(Computes {
+            aggregation: vec![Aggregation {
+                aggregation: Some(count_metric()),
+            }],
+            time_grouping: vec![],
+        });
+
+        let attribute_group_by = AttributeGroupBy {
+            include: None,
+            expression: Some(host_expr()),
+            limit: 2,
+            sort: Some(SortByExprAndAgg {
+                ascending: false,
+                expr_and_agg: Some(ExprAndAgg {
+                    expr: Some(count_expr()),
+                    agg_function: "count".to_string(),
+                }),
+                r#type: SortType::Metric as i32,
+            }),
+            missing: None,
+            total: Some("__TOTAL__".to_string()),
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+        };
+
+        let agg_inner = quickwit_proto::cloudprem::aggregation::Aggregation::AttributeGroupBy(
+            Box::new(attribute_group_by),
+        );
+        let agg = Aggregation {
+            aggregation: Some(agg_inner),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
+                .unwrap();
+
+        // Intermediate results include all 12 host buckets + 1 __TOTAL__ row
+        assert_eq!(evp_agg_results.len(), 13);
+
+        // Verify host_12 bucket (12 docs)
+        let host_12 = find_result_by_key(&evp_agg_results, "host_12");
+        let val = host_12.value[0].value.as_ref().unwrap();
+        assert_eq!(val, &agg_value::Value::Uint64Value(12));
+
+        // Verify host_1 bucket (1 doc)
+        let host_1 = find_result_by_key(&evp_agg_results, "host_1");
+        let val = host_1.value[0].value.as_ref().unwrap();
+        assert_eq!(val, &agg_value::Value::Uint64Value(1));
+
+        let total = find_result_by_key(&evp_agg_results, "__TOTAL__");
+        let total_val = total.value[0].value.as_ref().unwrap();
+        assert_eq!(total_val, &agg_value::Value::Uint64Value(12 * 13 / 2));
+    }
+
+    #[test]
+    fn test_intermediate_aggregation_multiple_metrics() {
+        let child = quickwit_proto::cloudprem::aggregation::Aggregation::Computes(Computes {
+            aggregation: vec![
+                Aggregation {
+                    aggregation: Some(
+                        quickwit_proto::cloudprem::aggregation::Aggregation::MetricCompute(
+                            MetricCompute {
+                                expression: Some(ExpressionNode {
+                                    calc_node: Some(Any {
+                                        type_url: "type.googleapis.com/calcfieldspb.CalcNode"
+                                            .to_string(),
+                                        value: vec![18u8, 7, 10, 5, 99, 111, 117, 110, 116],
+                                    }),
+                                }),
+                                id: "count:count".to_string(),
+                                r#type: "COUNT".to_string(),
+                            },
+                        ),
+                    ),
+                },
+                Aggregation {
+                    aggregation: Some(avg_value_metric()),
+                },
+            ],
+            time_grouping: vec![],
+        });
+
+        let attribute_group_by = AttributeGroupBy {
+            include: None,
+            expression: Some(host_expr()),
+            limit: 2,
+            sort: Some(SortByExprAndAgg {
+                ascending: false,
+                expr_and_agg: Some(ExprAndAgg {
+                    expr: Some(count_expr()),
+                    agg_function: "count".to_string(),
+                }),
+                r#type: SortType::Metric as i32,
+            }),
+            missing: None,
+            total: None,
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+        };
+
+        let agg_inner = quickwit_proto::cloudprem::aggregation::Aggregation::AttributeGroupBy(
+            Box::new(attribute_group_by),
+        );
+        let agg = Aggregation {
+            aggregation: Some(agg_inner),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
+                .unwrap();
+
+        // All 12 host buckets returned (limit not applied to intermediate results)
+        assert_eq!(evp_agg_results.len(), 12);
+
+        let host_12 = find_result_by_key(&evp_agg_results, "host_12");
+        let count = host_12.value[0].value.as_ref().unwrap();
+        assert_eq!(count, &agg_value::Value::Uint64Value(12));
+        let avg_value = host_12.value[1].value.as_ref().unwrap();
+        // Intermediate AVG returns raw sum and count for proper merging.
+        // host_12 has 12 docs, all with value=12, so sum=144.0, count=12.
+        assert_eq!(
+            avg_value,
+            &agg_value::Value::AvgValue(Avg {
+                sum: 144.0,
+                count: 12
+            })
+        );
+
+        // Also verify a smaller bucket: host_3 has 3 docs with value=3
+        let host_3 = find_result_by_key(&evp_agg_results, "host_3");
+        let count = host_3.value[0].value.as_ref().unwrap();
+        assert_eq!(count, &agg_value::Value::Uint64Value(3));
+        let avg_value = host_3.value[1].value.as_ref().unwrap();
+        assert_eq!(
+            avg_value,
+            &agg_value::Value::AvgValue(Avg {
+                sum: 9.0,
+                count: 3
+            })
+        );
+    }
+
+    #[test]
+    fn test_intermediate_aggregation_with_total_and_multiple_metrics() {
+        let child = quickwit_proto::cloudprem::aggregation::Aggregation::Computes(Computes {
+            aggregation: vec![
+                Aggregation {
+                    aggregation: Some(count_metric()),
+                },
+                Aggregation {
+                    aggregation: Some(avg_value_metric()),
+                },
+            ],
+            time_grouping: vec![],
+        });
+
+        let attribute_group_by = AttributeGroupBy {
+            include: None,
+            expression: Some(host_expr()),
+            limit: 2,
+            sort: Some(SortByExprAndAgg {
+                ascending: false,
+                expr_and_agg: Some(ExprAndAgg {
+                    expr: Some(count_expr()),
+                    agg_function: "count".to_string(),
+                }),
+                r#type: SortType::Metric as i32,
+            }),
+            missing: None,
+            total: Some("__TOTAL__".to_string()),
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+        };
+
+        let agg_inner = quickwit_proto::cloudprem::aggregation::Aggregation::AttributeGroupBy(
+            Box::new(attribute_group_by),
+        );
+        let agg = Aggregation {
+            aggregation: Some(agg_inner),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 10)
+                .unwrap();
+
+        // 12 host buckets + 1 __TOTAL__ row
+        assert_eq!(evp_agg_results.len(), 13);
+
+        let host_12 = find_result_by_key(&evp_agg_results, "host_12");
+        let count = host_12.value[0].value.as_ref().unwrap();
+        assert_eq!(count, &agg_value::Value::Uint64Value(12));
+        let avg_value = host_12.value[1].value.as_ref().unwrap();
+        // Intermediate: host_12 has 12 docs with value=12, so sum=144.0, count=12
+        assert_eq!(
+            avg_value,
+            &agg_value::Value::AvgValue(Avg {
+                sum: 144.0,
+                count: 12
+            })
+        );
+
+        let total = find_result_by_key(&evp_agg_results, "__TOTAL__");
+        let count_value = total.value[0].value.as_ref().unwrap();
+        assert_eq!(count_value, &agg_value::Value::Uint64Value(78));
+        let avg_value = total.value[1].value.as_ref().unwrap();
+        // Intermediate: total is sum of k*k for k=1..12 = 650, count = 78
+        assert_eq!(
+            avg_value,
+            &agg_value::Value::AvgValue(Avg {
+                sum: 650.0,
+                count: 78
+            })
+        );
+    }
+
 }
