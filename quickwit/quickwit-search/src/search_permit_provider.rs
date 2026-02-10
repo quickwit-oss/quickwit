@@ -201,15 +201,11 @@ impl LeafPermitRequest {
 
     fn pop_if_smaller_than(&mut self, max_size: u64) -> Option<SingleSplitPermitRequest> {
         // IntoIter::as_slice() allows us to peek at the next element without consuming it
-        if self
-            .single_split_permit_requests
-            .as_slice()
-            .first()
-            .is_some_and(|request| request.permit_size <= max_size)
-        {
-            self.single_split_permit_requests.next()
-        } else {
-            None
+        match self.single_split_permit_requests.as_slice().first() {
+            Some(request) if request.permit_size <= max_size => {
+                self.single_split_permit_requests.next()
+            }
+            _ => None,
         }
     }
 
@@ -275,12 +271,9 @@ impl SearchPermitActor {
         if self.num_warmup_slots_available == 0 {
             return None;
         }
-        let Some(available_memory) = self
+        let available_memory = self
             .total_memory_budget
-            .checked_sub(self.total_memory_allocated)
-        else {
-            return None;
-        };
+            .checked_sub(self.total_memory_allocated)?;
         let mut peeked = self.permits_requests.peek_mut()?;
 
         if let Some(permit_request) = peeked.pop_if_smaller_than(available_memory) {
