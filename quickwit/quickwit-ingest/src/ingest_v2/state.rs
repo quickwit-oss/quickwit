@@ -26,7 +26,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::{DocMappingUid, Position, QueueId};
+use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tracing::{error, info};
 
@@ -54,7 +54,6 @@ pub(super) struct IngesterState {
 pub(super) struct InnerIngesterState {
     pub shards: HashMap<QueueId, IngesterShard>,
     pub doc_mappers: HashMap<DocMappingUid, Weak<DocMapper>>,
-    pub rate_trackers: HashMap<QueueId, (RateLimiter, RateMeter)>,
     // Replication stream opened with followers.
     pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
     // Replication tasks running for each replication stream opened with leaders.
@@ -72,6 +71,22 @@ impl InnerIngesterState {
         self.status = status;
         self.status_tx.send(status).expect("channel should be open");
     }
+
+    /// Returns the shard with the most available permits for this index and source.
+    pub fn find_most_capacity_shard_mut(
+        &mut self,
+        index_uid: &IndexUid,
+        source_id: &SourceId,
+    ) -> Option<&mut IngesterShard> {
+        self.shards
+            .values_mut()
+            .filter(|shard| {
+                shard.is_open() && shard.index_uid == *index_uid && shard.source_id == *source_id
+            })
+            .map(|shard| (shard.rate_limiter.available_permits(), shard))
+            .max_by_key(|(available_permits, _)| *available_permits)
+            .map(|(_, shard)| shard)
+    }
 }
 
 impl IngesterState {
@@ -81,7 +96,6 @@ impl IngesterState {
         let inner = InnerIngesterState {
             shards: Default::default(),
             doc_mappers: Default::default(),
-            rate_trackers: Default::default(),
             replication_streams: Default::default(),
             replication_tasks: Default::default(),
             status,
@@ -172,6 +186,10 @@ impl IngesterState {
 
         for queue_id in queue_ids {
             if let Some(position_range) = queue_position_range(&mrecordlog, &queue_id) {
+                let Some((index_uid, source_id, shard_id)) = split_queue_id(&queue_id) else {
+                    // `split_queue_id` already logs an error.
+                    continue;
+                };
                 // The queue is not empty: recover it.
                 let replication_position_inclusive = Position::offset(*position_range.end());
                 let truncation_position_inclusive = if *position_range.start() == 0 {
@@ -179,23 +197,20 @@ impl IngesterState {
                 } else {
                     Position::offset(*position_range.start() - 1)
                 };
-                let mut solo_shard = IngesterShard::new_solo(
-                    ShardState::Closed,
-                    replication_position_inclusive,
-                    truncation_position_inclusive,
-                    None,
-                    now,
-                    false,
-                );
-                // We want to advertise the shard as read-only right away.
-                solo_shard.is_advertisable = true;
-                inner_guard.shards.insert(queue_id.clone(), solo_shard);
-
                 let rate_limiter = RateLimiter::from_settings(rate_limiter_settings);
                 let rate_meter = RateMeter::default();
-                inner_guard
-                    .rate_trackers
-                    .insert(queue_id, (rate_limiter, rate_meter));
+                // We want to advertise the shard as read-only right away.
+                let solo_shard =
+                    IngesterShard::new_solo(index_uid.clone(), source_id.clone(), shard_id.clone())
+                        .with_state(ShardState::Closed)
+                        .with_replication_position_inclusive(replication_position_inclusive)
+                        .with_truncation_position_inclusive(truncation_position_inclusive)
+                        .with_rate_limiter(rate_limiter)
+                        .with_rate_meter(rate_meter)
+                        .with_last_write(now)
+                        .advertisable() // We want to advertise the shard as read-only right away.
+                        .build();
+                inner_guard.shards.insert(queue_id.clone(), solo_shard);
 
                 num_closed_shards += 1;
             } else {
@@ -339,8 +354,6 @@ impl FullyLockedIngesterState<'_> {
     pub async fn delete_shard(&mut self, queue_id: &QueueId, initiator: &'static str) {
         match self.mrecordlog.delete_queue(queue_id).await {
             Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => {
-                self.rate_trackers.remove(queue_id);
-
                 // Log only if the shard was actually removed.
                 if let Some(shard) = self.shards.remove(queue_id) {
                     info!("deleted shard `{queue_id}` initiated via `{initiator}`");
@@ -399,7 +412,6 @@ impl FullyLockedIngesterState<'_> {
             Err(TruncateError::MissingQueue(_)) => {
                 error!("failed to truncate shard `{queue_id}`: WAL queue not found");
                 self.shards.remove(queue_id);
-                self.rate_trackers.remove(queue_id);
                 info!("deleted dangling shard `{queue_id}`");
             }
             Err(TruncateError::IoError(io_error)) => {
@@ -454,6 +466,8 @@ impl WeakIngesterState {
 
 #[cfg(test)]
 mod tests {
+    use bytesize::ByteSize;
+    use quickwit_proto::types::ShardId;
     use tokio::time::timeout;
 
     use super::*;
@@ -504,5 +518,128 @@ mod tests {
         let locked_state = state.lock_fully().await.unwrap();
         assert_eq!(locked_state.status(), IngesterStatus::Ready);
         assert_eq!(*locked_state.status_tx.borrow(), IngesterStatus::Ready);
+    }
+
+    fn insert_shard_with_used_capacity(
+        state: &mut InnerIngesterState,
+        index_uid: IndexUid,
+        source_id: SourceId,
+        shard_id: ShardId,
+        shard_state: ShardState,
+        used_capacity: ByteSize,
+    ) {
+        let mut shard = IngesterShard::new_solo(index_uid, source_id, shard_id)
+            .with_state(shard_state)
+            .build();
+        shard.rate_limiter.acquire_bytes(used_capacity);
+
+        let queue_id = shard.queue_id();
+        state.shards.insert(queue_id, shard);
+    }
+
+    #[tokio::test]
+    async fn test_find_most_capacity_shard_returns_shard_with_least_used_capacity() {
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let mut state_guard = state.lock_partially().await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        // Shard 1: 1KB used (most available capacity)
+        // Shard 2: 2KB used
+        // ...
+        // Shard 5: 5KB used (least available capacity)
+        for i in 1..=5u64 {
+            insert_shard_with_used_capacity(
+                &mut state_guard,
+                index_uid.clone(),
+                source_id.clone(),
+                ShardId::from(i),
+                ShardState::Open,
+                ByteSize::kb(i),
+            );
+        }
+
+        let shard = state_guard
+            .find_most_capacity_shard_mut(&index_uid, &source_id)
+            .unwrap();
+
+        assert_eq!(shard.shard_id, ShardId::from(1));
+        assert_eq!(shard.shard_state, ShardState::Open);
+
+        let expected_available_permits =
+            RateLimiterSettings::default().burst_limit - ByteSize::kb(1).as_u64();
+        assert_eq!(
+            shard.rate_limiter.available_permits(),
+            expected_available_permits
+        );
+    }
+
+    #[tokio::test]
+    async fn test_find_most_capacity_shard_skips_closed_shards() {
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let mut locked_state = state.lock_partially().await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        insert_shard_with_used_capacity(
+            &mut locked_state,
+            index_uid.clone(),
+            source_id.clone(),
+            ShardId::from(1),
+            ShardState::Open,
+            ByteSize::kb(1),
+        );
+        insert_shard_with_used_capacity(
+            &mut locked_state,
+            index_uid.clone(),
+            source_id.clone(),
+            ShardId::from(2),
+            ShardState::Open,
+            ByteSize::kb(2),
+        );
+
+        insert_shard_with_used_capacity(
+            &mut locked_state,
+            index_uid.clone(),
+            source_id.clone(),
+            ShardId::from(3),
+            ShardState::Closed,
+            ByteSize::kb(0),
+        );
+
+        let shard = locked_state
+            .find_most_capacity_shard_mut(&index_uid, &source_id)
+            .unwrap();
+
+        // Should pick shard 1 (most capacity among open shards), not shard 3 (closed)
+        assert_eq!(shard.shard_id, ShardId::from(1));
+    }
+
+    #[tokio::test]
+    async fn test_find_most_capacity_shard_returns_none_for_unknown_index_or_source() {
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let mut locked_state = state.lock_partially().await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_id = SourceId::from("test-source");
+
+        insert_shard_with_used_capacity(
+            &mut locked_state,
+            index_uid.clone(),
+            source_id.clone(),
+            ShardId::from(1),
+            ShardState::Open,
+            ByteSize::kb(0),
+        );
+
+        let shard_opt = locked_state
+            .find_most_capacity_shard_mut(&IndexUid::for_test("other-index", 0), &source_id);
+        assert!(shard_opt.is_none());
+
+        let shard_opt =
+            locked_state.find_most_capacity_shard_mut(&index_uid, &SourceId::from("other-source"));
+        assert!(shard_opt.is_none());
     }
 }

@@ -43,6 +43,7 @@ use crate::merge_policy_config::MergePolicyConfig;
 pub struct IndexingResources {
     #[schema(value_type = String, default = "2 GB")]
     #[serde(default = "IndexingResources::default_heap_size")]
+    #[serde(with = "crate::serde_utils::bytesize_serde")]
     pub heap_size: ByteSize,
     // DEPRECATED: See #4439
     #[schema(value_type = String)]

@@ -16,6 +16,7 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 bytestring = { workspace = true }
 futures = { workspace = true, optional = true }
+hex = { workspace = true  }
 http = { workspace = true }
 mockall = { workspace = true, optional = true }
 opentelemetry = { workspace = true }

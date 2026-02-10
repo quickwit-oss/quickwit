@@ -78,8 +78,8 @@ impl CloseIdleShardsTask {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::types::{IndexUid, Position, ShardId, queue_id};
+
+    use quickwit_proto::types::{IndexUid, ShardId};
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;
@@ -89,7 +89,7 @@ mod tests {
     async fn test_close_idle_shards_run() {
         let (_temp_dir, state) = IngesterState::for_test().await;
         let weak_state = state.weak();
-        let idle_shard_timeout = Duration::from_millis(200);
+        let idle_shard_timeout = RUN_INTERVAL_PERIOD * 4;
         let join_handle = CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
         let mut state_guard = state.lock_partially().await.unwrap();
@@ -97,25 +97,22 @@ mod tests {
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let shard_01 = IngesterShard::new_solo(
-            ShardState::Open,
-            Position::Beginning,
-            Position::Beginning,
-            None,
-            now - idle_shard_timeout,
-            false,
-        );
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+            index_uid.clone(),
+            "test-source".to_string(),
+            ShardId::from(1),
+        )
+        .with_last_write(now - idle_shard_timeout)
+        .build();
+        let queue_id_01 = shard_01.queue_id();
         state_guard.shards.insert(queue_id_01.clone(), shard_01);
 
         let shard_02 = IngesterShard::new_solo(
-            ShardState::Open,
-            Position::Beginning,
-            Position::Beginning,
-            None,
-            now - idle_shard_timeout / 2,
-            false,
-        );
-        let queue_id_02 = queue_id(&index_uid, "test-source", &ShardId::from(2));
+            index_uid.clone(),
+            "test-source".to_string(),
+            ShardId::from(2),
+        )
+        .build();
+        let queue_id_02 = shard_02.queue_id();
         state_guard.shards.insert(queue_id_02.clone(), shard_02);
         drop(state_guard);
 

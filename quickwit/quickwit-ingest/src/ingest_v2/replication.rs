@@ -27,7 +27,7 @@ use quickwit_proto::ingest::ingester::{
     syn_replication_message,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
-use quickwit_proto::types::{NodeId, Position, QueueId};
+use quickwit_proto::types::{NodeId, QueueId};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -465,13 +465,13 @@ impl ReplicationTask {
                 return Err(IngestV2Error::Internal(message));
             }
         };
-        let replica_shard = IngesterShard::new_replica(
-            replica_shard.leader_id.into(),
-            ShardState::Open,
-            Position::Beginning,
-            Position::Beginning,
-            Instant::now(),
-        );
+        let index_uid = replica_shard.index_uid().clone();
+        let shard_id = replica_shard.shard_id().clone();
+        let source_id = replica_shard.source_id;
+        let leader_id = NodeId::from(replica_shard.leader_id);
+
+        let replica_shard =
+            IngesterShard::new_replica(index_uid, source_id, shard_id, leader_id).build();
         state_guard.shards.insert(queue_id, replica_shard);
 
         let init_replica_response = InitReplicaResponse {
@@ -698,7 +698,6 @@ impl ReplicationTask {
         if !shards_to_delete.is_empty() {
             for queue_id in &shards_to_delete {
                 state_guard.shards.remove(queue_id);
-                state_guard.rate_trackers.remove(queue_id);
                 warn!("deleted dangling shard `{queue_id}`");
             }
         }
@@ -764,7 +763,7 @@ mod tests {
 
     use quickwit_proto::ingest::ingester::{ReplicateSubrequest, ReplicateSuccess};
     use quickwit_proto::ingest::{DocBatchV2, Shard};
-    use quickwit_proto::types::{IndexUid, ShardId, queue_id};
+    use quickwit_proto::types::{IndexUid, Position, ShardId, queue_id};
 
     use super::*;
 
@@ -851,7 +850,7 @@ mod tests {
         };
         tokio::spawn(dummy_replication_task_future);
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let replica_shard = Shard {
             index_uid: Some(index_uid.clone()),
             source_id: "test-source".to_string(),
@@ -923,7 +922,7 @@ mod tests {
         };
         tokio::spawn(dummy_replication_task_future);
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
 
         let subrequests = vec![
@@ -1056,7 +1055,7 @@ mod tests {
             memory_capacity,
         );
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
 
         // Init shard 01.
@@ -1319,21 +1318,21 @@ mod tests {
             memory_capacity,
         );
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let index_uid = IndexUid::for_test("test-index", 0);
         let replica_shard = IngesterShard::new_replica(
+            index_uid.clone(),
+            "test-source".to_string(),
+            ShardId::from(1),
             leader_id,
-            ShardState::Closed,
-            Position::Beginning,
-            Position::Beginning,
-            Instant::now(),
-        );
+        )
+        .with_state(ShardState::Closed)
+        .build();
         state
             .lock_fully()
             .await
             .unwrap()
             .shards
-            .insert(queue_id_01.clone(), replica_shard);
+            .insert(replica_shard.queue_id(), replica_shard);
 
         let replicate_request = ReplicateRequest {
             leader_id: "test-leader".to_string(),
@@ -1396,15 +1395,15 @@ mod tests {
             memory_capacity,
         );
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let index_uid = IndexUid::for_test("test-index", 0);
         let replica_shard = IngesterShard::new_replica(
+            index_uid.clone(),
+            "test-source".to_string(),
+            ShardId::from(1),
             leader_id,
-            ShardState::Open,
-            Position::Beginning,
-            Position::Beginning,
-            Instant::now(),
-        );
+        )
+        .build();
+        let queue_id_01 = replica_shard.queue_id();
         state
             .lock_fully()
             .await
@@ -1484,15 +1483,15 @@ mod tests {
             memory_capacity,
         );
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
         let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
         let replica_shard = IngesterShard::new_replica(
+            index_uid.clone(),
+            "test-source".to_string(),
+            ShardId::from(1),
             leader_id,
-            ShardState::Open,
-            Position::Beginning,
-            Position::Beginning,
-            Instant::now(),
-        );
+        )
+        .build();
         let mut state_guard = state.lock_fully().await.unwrap();
 
         state_guard
@@ -1573,15 +1572,15 @@ mod tests {
             memory_capacity,
         );
 
-        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let queue_id_01 = queue_id(&index_uid, "test-source", &ShardId::from(1));
+        let index_uid = IndexUid::for_test("test-index", 0);
         let replica_shard = IngesterShard::new_replica(
+            index_uid.clone(),
+            "test-source".to_string(),
+            ShardId::from(1),
             leader_id,
-            ShardState::Open,
-            Position::Beginning,
-            Position::Beginning,
-            Instant::now(),
-        );
+        )
+        .build();
+        let queue_id_01 = replica_shard.queue_id();
         state
             .lock_fully()
             .await
