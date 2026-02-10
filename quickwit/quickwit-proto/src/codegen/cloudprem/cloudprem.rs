@@ -7,7 +7,7 @@ pub struct AnyRequest {
     pub context: ::core::option::Option<Context>,
     #[prost(
         oneof = "any_request::Request",
-        tags = "11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 28, 27"
+        tags = "11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 99"
     )]
     pub request: ::core::option::Option<any_request::Request>,
 }
@@ -42,10 +42,12 @@ pub mod any_request {
         DeleteIndex(super::DeleteIndexRequest),
         #[prost(message, tag = "26")]
         RootListFields(super::super::quickwit::search::ListFieldsRequest),
-        #[prost(message, tag = "28")]
-        SetIndexRoutingTable(super::SetIndexRoutingTableRequest),
         #[prost(message, tag = "27")]
         GetIndexRoutingTable(super::GetIndexRoutingTableRequest),
+        #[prost(message, tag = "28")]
+        SetIndexRoutingTable(super::SetIndexRoutingTableRequest),
+        #[prost(message, tag = "99")]
+        Cancel(super::CancelRequest),
     }
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -663,6 +665,8 @@ pub struct ExpressionNode {
     #[prost(message, optional, tag = "1")]
     pub calc_node: ::core::option::Option<::prost_types::Any>,
 }
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CancelRequest {}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Scope {
     #[prost(string, repeated, tag = "1")]

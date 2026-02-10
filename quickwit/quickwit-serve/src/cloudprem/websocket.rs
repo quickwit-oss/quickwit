@@ -3,6 +3,7 @@
 //! In it, we create a websocket connection to Datadog's edge, and
 //! wait for pseudo-gRPC calls, we then
 
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -16,8 +17,7 @@ use quickwit_proto::metastore::{
     GetClusterIdentityRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::tonic::Code;
-use tokio::sync::mpsc::{Sender, channel};
-use tokio::task::JoinSet;
+use tokio::task::{AbortHandle, JoinSet};
 use tokio_tungstenite::client_async_tls;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::error::{
@@ -31,6 +31,62 @@ use tracing::{error, info, warn};
 const MIN_HEALTHY_CONN_DURATION: Duration = Duration::from_secs(60);
 
 // TODO we need to add trace id propagation, maybe some form of cancelation too?
+
+/// Manages pending requests with the ability to cancel them by request ID.
+struct PendingRequests {
+    join_set: JoinSet<AnyResponse>,
+    abort_handles: HashMap<u64, AbortHandle>,
+}
+
+impl PendingRequests {
+    fn new() -> Self {
+        Self {
+            join_set: JoinSet::new(),
+            abort_handles: HashMap::new(),
+        }
+    }
+
+    /// Spawns a new request task and stores its abort handle.
+    fn spawn(
+        &mut self,
+        req_id: u64,
+        future: impl std::future::Future<Output = AnyResponse> + Send + 'static,
+    ) {
+        let abort_handle = self.join_set.spawn(future);
+        self.abort_handles.insert(req_id, abort_handle);
+    }
+
+    /// Cancels a request by its ID if it exists.
+    fn cancel(&mut self, req_id: u64) -> bool {
+        if let Some(handle) = self.abort_handles.remove(&req_id) {
+            handle.abort();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Awaits the next completed task and cleans up its abort handle.
+    async fn join_next(&mut self) -> Option<AnyResponse> {
+        let Some(result) = self.join_set.join_next().await else {
+            // if there are not futures to await completion, wait eternally.
+            // the select at a higher level will end up cancelling us and add
+            // some tasks eventually
+            std::future::pending().await
+        };
+        match result {
+            Ok(response) => {
+                self.abort_handles.remove(&response.req_id);
+                Some(response)
+            }
+            // some task finished, but it panicked? Sadly this means we can't recover
+            // its request id to reply with an error and cleanup the handles map
+            // we could have a map<task_id -> request_id> and use join_next_with_id to handle
+            // this case better
+            Err(_) => None,
+        }
+    }
+}
 
 async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest) -> AnyResponse {
     use any_request::Request;
@@ -117,25 +173,33 @@ async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest
     }
 }
 
-async fn handle_single_ws_message_and_reply(
-    server: CloudPremServiceClient,
+enum Never {}
+
+fn handle_single_message(
+    pending_requests: &mut PendingRequests,
+    service: &CloudPremServiceClient,
     buffer: Bytes,
-    response_channel: Sender<Message>,
 ) {
-    let req = match AnyRequest::decode(buffer) {
-        Ok(req) => req,
+    // Decode the request once
+    match AnyRequest::decode(buffer.as_ref()) {
+        Ok(req) => {
+            let req_id = req.req_id;
+
+            // Check if this is a cancel request
+            if matches!(req.request, Some(any_request::Request::Cancel(_))) {
+                if pending_requests.cancel(req_id) {
+                    info!(req_id, "cancelled request");
+                }
+            } else {
+                // Spawn the request handler with the decoded request
+                pending_requests.spawn(req_id, handle_request(service.clone(), req));
+            }
+        }
         Err(e) => {
             warn!("received undecodable protobuf frame: {e:?}");
-            // we can't even reply with an error for that request: we don't know the req_id
-            return;
         }
-    };
-    let response = handle_request(server, req).await;
-    let message = Message::binary(response.encode_to_vec());
-    let _ = response_channel.send(message).await;
+    }
 }
-
-enum Never {}
 
 async fn single_websocket(
     target_domain: &str,
@@ -145,8 +209,7 @@ async fn single_websocket(
     cluster_remote_uid: String,
     cluster_name: String,
 ) -> Result<Never, TungsteniteError> {
-    let mut pending_requests = JoinSet::new();
-    let (sender, mut receiver) = channel(5);
+    let mut pending_requests = PendingRequests::new();
 
     let target_url =
         format!("wss://{target_domain}/api/unstable/cloudprem-connection-gateway/connect");
@@ -175,9 +238,11 @@ async fn single_websocket(
 
     loop {
         tokio::select! {
-                reply = receiver.recv() => {
-                        if let Some(reply) = reply {
-                            ws.send(reply).await?;
+                response = pending_requests.join_next() => {
+                        if let Some(response) = response {
+                            // Encode and send the response
+                            let message = Message::binary(response.encode_to_vec());
+                            ws.send(message).await?;
                         }
                 },
                 message = ws.next() => {
@@ -187,7 +252,7 @@ async fn single_websocket(
                         };
                         match message {
                                 Message::Binary(buffer) => {
-                                        pending_requests.spawn(handle_single_ws_message_and_reply(service.clone(), buffer, sender.clone()));
+                                    handle_single_message(&mut pending_requests, &service, buffer);
                                 },
                                 Message::Text(payload) => {
                                         unreplied_count = 0;
