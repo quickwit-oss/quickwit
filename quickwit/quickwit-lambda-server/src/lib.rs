@@ -17,12 +17,10 @@
 //! This crate provides the Lambda handler that executes leaf search requests.
 //! It is designed to be deployed as an AWS Lambda function.
 
-mod config;
 mod context;
 mod error;
 mod handler;
 
-pub use config::LambdaSearcherConfig;
 pub use context::LambdaSearcherContext;
 pub use error::{LambdaError, LambdaResult};
 pub use handler::{LeafSearchPayload, LeafSearchResponsePayload, handle_leaf_search};

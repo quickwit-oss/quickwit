@@ -32,7 +32,7 @@ mod error;
 mod invoker;
 mod metrics;
 
-pub use error::{InvokerError, InvokerResult, LambdaDeployError, LambdaDeployResult};
+pub use error::{InvokerError, InvokerResult};
 pub use metrics::LAMBDA_METRICS;
 // Re-export payload types from server crate for convenience
 pub use quickwit_lambda_server::{LeafSearchPayload, LeafSearchResponsePayload};

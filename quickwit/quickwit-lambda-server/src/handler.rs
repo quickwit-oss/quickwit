@@ -51,7 +51,7 @@ pub async fn handle_leaf_search(
     // Decode base64 payload
     let request_bytes = BASE64_STANDARD
         .decode(&event.payload)
-        .map_err(|e| LambdaError::Serialization(format!("Base64 decode error: {}", e)))?;
+        .map_err(|e| LambdaError::Serialization(format!("base64 decode error: {}", e)))?;
 
     // Deserialize LeafSearchRequest
     let leaf_search_request = LeafSearchRequest::decode(&request_bytes[..])?;

@@ -12,52 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::fmt;
-
 use quickwit_search::SearchError;
+use thiserror::Error;
 
 /// Result type for Lambda operations.
 pub type LambdaResult<T> = Result<T, LambdaError>;
 
 /// Errors that can occur during Lambda handler operations.
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum LambdaError {
     /// Error serializing/deserializing protobuf.
+    #[error("serialization error: {0}")]
     Serialization(String),
     /// Error from the search operation.
-    Search(SearchError),
+    #[error("search error: {0}")]
+    Search(#[from] SearchError),
     /// Internal error.
+    #[error("internal error: {0}")]
     Internal(String),
-}
-
-impl fmt::Display for LambdaError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            LambdaError::Serialization(msg) => write!(f, "serialization error: {}", msg),
-            LambdaError::Search(err) => write!(f, "search error: {}", err),
-            LambdaError::Internal(msg) => write!(f, "internal error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for LambdaError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            LambdaError::Search(err) => Some(err),
-            _ => None,
-        }
-    }
-}
-
-impl From<SearchError> for LambdaError {
-    fn from(err: SearchError) -> Self {
-        LambdaError::Search(err)
-    }
 }
 
 impl From<prost::DecodeError> for LambdaError {
     fn from(err: prost::DecodeError) -> Self {
-        LambdaError::Serialization(format!("Protobuf decode error: {}", err))
+        LambdaError::Serialization(format!("protobuf decode error: {}", err))
     }
 }
 

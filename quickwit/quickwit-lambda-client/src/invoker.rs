@@ -156,7 +156,7 @@ impl AwsLambdaInvoker {
                 .map(|b| String::from_utf8_lossy(b.as_ref()).to_string())
                 .unwrap_or_default();
             return Err(SearchError::Internal(format!(
-                "Lambda function error: {}: {}",
+                "lambda function error: {}: {}",
                 error, error_payload
             )));
         }
@@ -164,7 +164,7 @@ impl AwsLambdaInvoker {
         // Deserialize response
         let response_payload = response
             .payload()
-            .ok_or_else(|| SearchError::Internal("No response payload from Lambda".into()))?;
+            .ok_or_else(|| SearchError::Internal("no response payload from Lambda".into()))?;
 
         LAMBDA_METRICS
             .leaf_search_response_payload_size_bytes
@@ -172,14 +172,14 @@ impl AwsLambdaInvoker {
 
         let lambda_response: LeafSearchResponsePayload =
             serde_json::from_slice(response_payload.as_ref())
-                .map_err(|e| SearchError::Internal(format!("JSON deserialization error: {}", e)))?;
+                .map_err(|e| SearchError::Internal(format!("json deserialization error: {}", e)))?;
 
         let response_bytes = BASE64_STANDARD
             .decode(&lambda_response.payload)
-            .map_err(|e| SearchError::Internal(format!("Base64 decode error: {}", e)))?;
+            .map_err(|e| SearchError::Internal(format!("base64 decode error: {}", e)))?;
 
         let leaf_responses = LeafSearchResponses::decode(&response_bytes[..])
-            .map_err(|e| SearchError::Internal(format!("Protobuf decode error: {}", e)))?;
+            .map_err(|e| SearchError::Internal(format!("protobuf decode error: {}", e)))?;
 
         debug!(
             num_responses = leaf_responses.responses.len(),

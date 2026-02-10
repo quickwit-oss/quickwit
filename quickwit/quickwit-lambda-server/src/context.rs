@@ -14,12 +14,12 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
+use bytesize::ByteSize;
 use quickwit_config::SearcherConfig;
 use quickwit_search::SearcherContext;
 use quickwit_storage::StorageResolver;
 use tracing::info;
-
-use crate::config::LambdaSearcherConfig;
 
 /// Lambda-specific searcher context that holds resources for search execution.
 pub struct LambdaSearcherContext {
@@ -30,10 +30,9 @@ pub struct LambdaSearcherContext {
 impl LambdaSearcherContext {
     /// Create a new Lambda searcher context from environment variables.
     pub fn try_from_env() -> anyhow::Result<Self> {
-        info!("initializing Lambda searcher context");
+        info!("initializing lambda searcher context");
 
-        let config = LambdaSearcherConfig::try_from_env()?;
-        let searcher_config = create_searcher_config(&config);
+        let searcher_config = try_searcher_config_from_env()?;
         let searcher_context = Arc::new(SearcherContext::new(searcher_config, None, None));
         let storage_resolver = StorageResolver::configured(&Default::default());
 
@@ -44,8 +43,23 @@ impl LambdaSearcherContext {
     }
 }
 
-fn create_searcher_config(config: &LambdaSearcherConfig) -> SearcherConfig {
+/// Create a Lambda-optimized searcher config based on the `AWS_LAMBDA_FUNCTION_MEMORY_SIZE`
+/// environment variable.
+fn try_searcher_config_from_env() -> anyhow::Result<SearcherConfig> {
+    let lambda_memory_mib: u64 = quickwit_common::get_from_env_opt(
+        "AWS_LAMBDA_FUNCTION_MEMORY_SIZE",
+        /* sensitive */ false,
+    )
+    .context("could not get aws lambda function memory size from ENV")?;
+    let lambda_memory = ByteSize::mib(lambda_memory_mib);
+    anyhow::ensure!(
+        lambda_memory >= ByteSize::gib(1u64),
+        "lambda memory must be at least 1GB"
+    );
+    let warmup_memory_budget = ByteSize::b(lambda_memory.as_u64() - ByteSize::mib(500).as_u64());
+
     let mut searcher_config = SearcherConfig::default();
-    searcher_config.max_num_concurrent_split_searches = config.max_concurrent_split_searches;
-    searcher_config
+    searcher_config.max_num_concurrent_split_searches = 20;
+    searcher_config.warmup_memory_budget = warmup_memory_budget;
+    Ok(searcher_config)
 }
