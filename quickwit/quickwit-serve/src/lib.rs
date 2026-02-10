@@ -630,11 +630,16 @@ pub async fn serve_quickwit(
             None
         };
 
-    // Initialize Lambda invoker if enabled
-    let lambda_invoker_opt = if let Some(lambda_config) = &node_config.searcher_config.lambda {
-        info!("initializing AWS Lambda invoker for leaf search");
-        let invoker = quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
-        Some(invoker)
+    // Initialize Lambda invoker if enabled and searcher service is running
+    let lambda_invoker_opt = if node_config.is_service_enabled(QuickwitService::Searcher) {
+        if let Some(lambda_config) = &node_config.searcher_config.lambda {
+            info!("initializing AWS Lambda invoker for search");
+            let invoker =
+                quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
+            Some(invoker)
+        } else {
+            None
+        }
     } else {
         None
     };

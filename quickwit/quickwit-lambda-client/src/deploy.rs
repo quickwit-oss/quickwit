@@ -143,7 +143,7 @@ async fn find_or_deploy_version(
         info!(
             function_name = %function_name,
             version = %version,
-            "Found existing Lambda version"
+            "found existing Lambda version"
         );
         return Ok(version);
     }
@@ -158,7 +158,7 @@ async fn find_or_deploy_version(
 
     info!(
         function_name = %function_name,
-        "No matching version found, deploying Lambda function"
+        "no matching version found, deploying Lambda function"
     );
 
     deploy_lambda_function(client, function_name, deploy_config).await
@@ -185,13 +185,13 @@ async fn find_matching_version(
             Err(SdkError::ServiceError(err)) if err.err().is_resource_not_found_exception() => {
                 info!(
                     function_name = %function_name,
-                    "Lambda function does not exist yet"
+                    "lambda function does not exist yet"
                 );
                 return Ok(None);
             }
             Err(e) => {
                 return Err(anyhow!(
-                    "Failed to list Lambda versions for '{}': {}",
+                    "failed to list Lambda versions for '{}': {}",
                     function_name,
                     e
                 ));
@@ -253,13 +253,27 @@ async fn deploy_lambda_function_inner(
     function_name: &str,
     deploy_config: &LambdaDeployConfig,
 ) -> anyhow::Result<String> {
-    // Fast path: create + publish atomically if the function doesn't exist yet.
+    // This looks overly complicated but this is not AI slop.
+    // The AWS API forces us to go through a bunch of hoops to update our function
+    // in a safe manner.
+
+    // Fast path: if the function does not exist, we can create and publish the function atomically.
     if let Some(version) = try_create_function(client, function_name, deploy_config).await? {
         return Ok(version);
     }
 
-    // Function already exists — update $LATEST, then publish with code_sha256 guard.
+    // Function already exists — we need to update the code.
+    // This will create or update a version called "$LATEST" (that's the actual string)
+    //
+    // We cannot directly publish here, because updating the function code does not allow
+    // use to pass a different description.
     let code_sha256 = update_function_code(client, function_name).await?;
+
+    // We can now publish that new uploaded version.
+    // We use pass the code_sha256 guard to make sure a race condition does not cause
+    // us to publish a different version.
+    //
+    // Publishing will create an actual version (a number as a string) and return it.
     publish_version(client, function_name, &code_sha256).await
 }
 
@@ -343,7 +357,7 @@ async fn update_function_code(
 ) -> anyhow::Result<String> {
     info!(
         function_name = %function_name,
-        "Updating Lambda function code to current binary"
+        "updating Lambda function code to current binary"
     );
 
     let response = client
@@ -382,7 +396,7 @@ async fn publish_version(
     info!(
         function_name = %function_name,
         description = %description,
-        "Publishing new Lambda version"
+        "publishing new Lambda version"
     );
 
     let publish_response = client
@@ -405,7 +419,7 @@ async fn publish_version(
     info!(
         function_name = %function_name,
         version = %version,
-        "Lambda version published successfully"
+        "lambda version published successfully"
     );
 
     Ok(version)
@@ -471,7 +485,7 @@ async fn wait_for_function_ready(client: &LambdaClient, function_name: &str) -> 
             info!(
                 function_name = %function_name,
                 attempts = attempt + 1,
-                "Lambda function is ready"
+                "lambda function is ready"
             );
             return Ok(());
         }
@@ -481,7 +495,7 @@ async fn wait_for_function_ready(client: &LambdaClient, function_name: &str) -> 
             state = ?config.state(),
             last_update_status = ?config.last_update_status(),
             attempt = attempt + 1,
-            "Waiting for Lambda function to be ready"
+            "waiting for Lambda function to be ready"
         );
     }
 
@@ -562,7 +576,7 @@ async fn garbage_collect_old_versions(
         info!(
             function_name = %function_name,
             version = %version_str,
-            "Deleting old Lambda version"
+            "deleting old Lambda version"
         );
 
         if let Err(e) = client

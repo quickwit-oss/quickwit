@@ -75,7 +75,7 @@ impl AwsLambdaInvoker {
 
         request.send().await.map_err(|e| {
             InvokerError::Configuration(format!(
-                "Failed to validate Lambda function '{}:{}': {}",
+                "failed to validate Lambda function '{}:{}': {}",
                 self.function_name, self.version, e
             ))
         })?;
@@ -132,7 +132,7 @@ impl AwsLambdaInvoker {
         debug!(
             payload_size = payload_json.len(),
             version = %self.version,
-            "Invoking Lambda function"
+            "invoking Lambda function"
         );
 
         // Invoke the specific version
@@ -183,7 +183,7 @@ impl AwsLambdaInvoker {
 
         debug!(
             num_responses = leaf_responses.responses.len(),
-            "Lambda invocation completed"
+            "lambda invocation completed"
         );
 
         Ok(leaf_responses.responses)

@@ -33,9 +33,9 @@ pub enum LambdaError {
 impl fmt::Display for LambdaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LambdaError::Serialization(msg) => write!(f, "Serialization error: {}", msg),
-            LambdaError::Search(err) => write!(f, "Search error: {}", err),
-            LambdaError::Internal(msg) => write!(f, "Internal error: {}", msg),
+            LambdaError::Serialization(msg) => write!(f, "serialization error: {}", msg),
+            LambdaError::Search(err) => write!(f, "search error: {}", err),
+            LambdaError::Internal(msg) => write!(f, "internal error: {}", msg),
         }
     }
 }
@@ -63,19 +63,19 @@ impl From<prost::DecodeError> for LambdaError {
 
 impl From<prost::EncodeError> for LambdaError {
     fn from(err: prost::EncodeError) -> Self {
-        LambdaError::Serialization(format!("Protobuf encode error: {}", err))
+        LambdaError::Serialization(format!("protobuf encode error: {}", err))
     }
 }
 
 impl From<base64::DecodeError> for LambdaError {
     fn from(err: base64::DecodeError) -> Self {
-        LambdaError::Serialization(format!("Base64 decode error: {}", err))
+        LambdaError::Serialization(format!("base64 decode error: {}", err))
     }
 }
 
 impl From<serde_json::Error> for LambdaError {
     fn from(err: serde_json::Error) -> Self {
-        LambdaError::Serialization(format!("JSON error: {}", err))
+        LambdaError::Serialization(format!("json error: {}", err))
     }
 }
 

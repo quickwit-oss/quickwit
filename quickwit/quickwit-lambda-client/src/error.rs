@@ -15,21 +15,6 @@
 use quickwit_search::SearchError;
 use thiserror::Error;
 
-/// Result type for Lambda deployment operations.
-pub type LambdaDeployResult<T> = Result<T, LambdaDeployError>;
-
-/// Errors that can occur during Lambda function deployment.
-#[derive(Debug, Error)]
-pub enum LambdaDeployError {
-    /// Resource conflict (e.g., function already exists during concurrent create).
-    #[error("resource conflict: Lambda function already exists")]
-    ResourceConflict,
-
-    /// General deployment error.
-    #[error("failed to deploy Lambda function: {0}")]
-    Other(String),
-}
-
 /// Result type for Lambda invoker operations.
 pub type InvokerResult<T> = Result<T, InvokerError>;
 
@@ -37,11 +22,11 @@ pub type InvokerResult<T> = Result<T, InvokerError>;
 #[derive(Debug, Error)]
 pub enum InvokerError {
     /// Configuration or validation error.
-    #[error("Lambda configuration error: {0}")]
+    #[error("lambda configuration error: {0}")]
     Configuration(String),
 
     /// Error during Lambda invocation.
-    #[error("Lambda invocation failed: {0}")]
+    #[error("lambda invocation failed: {0}")]
     Invocation(String),
 
     /// Error serializing/deserializing data.
@@ -61,7 +46,7 @@ pub enum SerializationError {
     #[error("base64 decode error: {0}")]
     Base64Decode(#[from] base64::DecodeError),
 
-    #[error("JSON error: {0}")]
+    #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
 }
 
