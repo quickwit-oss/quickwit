@@ -140,8 +140,14 @@ struct SearchPermitActor {
     stopped: watch::Sender<bool>,
 }
 
+struct SingleSplitPermitRequest {
+    permit_sender: oneshot::Sender<SearchPermit>,
+    permit_size: u64,
+}
+
 struct LeafPermitRequest {
-    single_split_permit_requests: Vec<(oneshot::Sender<SearchPermit>, u64)>,
+    /// Single split permit requests for this leaf search.
+    single_split_permit_requests: std::vec::IntoIter<SingleSplitPermitRequest>,
 }
 
 impl Ord for LeafPermitRequest {
@@ -150,8 +156,9 @@ impl Ord for LeafPermitRequest {
         // Rust's is a max-heap
         other
             .single_split_permit_requests
+            .as_slice()
             .len()
-            .cmp(&self.single_split_permit_requests.len())
+            .cmp(&self.single_split_permit_requests.as_slice().len())
     }
 }
 
@@ -175,29 +182,39 @@ impl LeafPermitRequest {
         let mut single_split_permit_requests = Vec::with_capacity(permit_sizes.len());
         for permit_size in permit_sizes {
             let (tx, rx) = oneshot::channel();
-            single_split_permit_requests.push((tx, permit_size));
+            // we keep our internal list of permits and the returned wait handles in the
+            // same order to make sure we emit each permit in the right order. Doing otherwise
+            // may cause deadlocks
+            single_split_permit_requests.push(SingleSplitPermitRequest {
+                permit_sender: tx,
+                permit_size,
+            });
             permits.push(SearchPermitFuture(rx));
         }
-        // we do this so we can pop instead of using a vecdeque or continually call remove(0)
-        single_split_permit_requests.reverse();
         (
             LeafPermitRequest {
-                single_split_permit_requests,
+                single_split_permit_requests: single_split_permit_requests.into_iter(),
             },
             permits,
         )
     }
 
-    fn pop_if_smaller_than(
-        &mut self,
-        max_size: u64,
-    ) -> Option<(oneshot::Sender<SearchPermit>, u64)> {
-        self.single_split_permit_requests
-            .pop_if(|(_, permit_size)| *permit_size <= max_size)
+    fn pop_if_smaller_than(&mut self, max_size: u64) -> Option<SingleSplitPermitRequest> {
+        // IntoIter::as_slice() allows us to peek at the next element without consuming it
+        if self
+            .single_split_permit_requests
+            .as_slice()
+            .first()
+            .is_some_and(|request| request.permit_size <= max_size)
+        {
+            self.single_split_permit_requests.next()
+        } else {
+            None
+        }
     }
 
     fn is_empty(&self) -> bool {
-        self.single_split_permit_requests.is_empty()
+        self.single_split_permit_requests.as_slice().is_empty()
     }
 }
 
@@ -254,17 +271,19 @@ impl SearchPermitActor {
         }
     }
 
-    fn pop_next_request_if_serviceable(&mut self) -> Option<(oneshot::Sender<SearchPermit>, u64)> {
-        if self.num_warmup_slots_available == 0
-            || self.total_memory_budget <= self.total_memory_allocated
-        {
+    fn pop_next_request_if_serviceable(&mut self) -> Option<SingleSplitPermitRequest> {
+        if self.num_warmup_slots_available == 0 {
             return None;
         }
+        let Some(available_memory) = self
+            .total_memory_budget
+            .checked_sub(self.total_memory_allocated)
+        else {
+            return None;
+        };
         let mut peeked = self.permits_requests.peek_mut()?;
 
-        if let Some(permit_request) =
-            peeked.pop_if_smaller_than(self.total_memory_budget - self.total_memory_allocated)
-        {
+        if let Some(permit_request) = peeked.pop_if_smaller_than(available_memory) {
             if peeked.is_empty() {
                 PeekMut::pop(peeked);
             }
@@ -274,20 +293,19 @@ impl SearchPermitActor {
     }
 
     fn assign_available_permits(&mut self) {
-        while let Some((permit_requester_tx, next_permit_size)) =
-            self.pop_next_request_if_serviceable()
-        {
+        while let Some(permit_request) = self.pop_next_request_if_serviceable() {
             let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
                 &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
             );
             ongoing_gauge_guard.add(1);
-            self.total_memory_allocated += next_permit_size;
+            self.total_memory_allocated += permit_request.permit_size;
             self.num_warmup_slots_available -= 1;
-            permit_requester_tx
+            permit_request
+                .permit_sender
                 .send(SearchPermit {
                     _ongoing_gauge_guard: ongoing_gauge_guard,
                     msg_sender: self.msg_sender.clone(),
-                    memory_allocation: next_permit_size,
+                    memory_allocation: permit_request.permit_size,
                     warmup_slot_freed: false,
                 })
                 // if the requester dropped its receiver, we drop the newly
