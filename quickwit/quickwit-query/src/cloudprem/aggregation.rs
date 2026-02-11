@@ -869,9 +869,10 @@ impl IntermediateResultMapper {
         };
 
         let key = extract_field_name(attribute_group_by.expression.as_ref())?;
-        let agg = agg_result
-            .remove(&key)
-            .ok_or_else(|| internal_error("result content missmatch"))?;
+        // When no documents match, the key may be absent — return empty results.
+        let Some(agg) = agg_result.remove(&key) else {
+            return Ok(());
+        };
         match agg {
             TantivyIntermediateAggResult::Bucket(IntermediateBucketResult::Terms { buckets }) => {
                 let child_agg_def_opt = attribute_group_by
@@ -926,9 +927,10 @@ impl IntermediateResultMapper {
             IntermediateAggregationResult as TantivyIntermediateAggResult, IntermediateBucketResult,
         };
 
-        let agg = agg_result
-            .remove(&time_grouping.output)
-            .ok_or_else(|| internal_error("result content missmatch"))?;
+        // When no documents match, the key may be absent — return empty results.
+        let Some(agg) = agg_result.remove(&time_grouping.output) else {
+            return Ok(());
+        };
 
         match agg {
             TantivyIntermediateAggResult::Bucket(IntermediateBucketResult::Histogram {
@@ -991,9 +993,14 @@ impl IntermediateResultMapper {
             return Ok(());
         }
 
-        let agg = agg_result
-            .remove(&metric_compute.id)
-            .ok_or_else(|| internal_error("result content missmatch"))?;
+        // When no documents match, the intermediate result map may not contain
+        // the metric key at all. Return sensible defaults instead of erroring.
+        let Some(agg) = agg_result.remove(&metric_compute.id) else {
+            state
+                .value
+                .push(default_agg_value(metric_compute.r#type.as_str()));
+            return Ok(());
+        };
 
         let TantivyIntermediateAggResult::Metric(metric_result) = agg else {
             return Err(internal_error("result content missmatch").into());
@@ -1068,6 +1075,24 @@ fn extract_intermediate_total_siblings(
         let _ = results.push(sub_agg_key.to_string(), sub_agg_results);
     }
     results
+}
+
+/// Return a sensible default `AggValue` for the given aggregation type when no
+/// documents match (i.e. the intermediate result map has no entry for the key).
+fn default_agg_value(agg_type: &str) -> EvpAggValue {
+    match agg_type {
+        "AVG" => EvpAggValue {
+            value: Some(quickwit_proto::cloudprem::agg_value::Value::AvgValue(
+                quickwit_proto::cloudprem::Avg {
+                    sum: 0.0,
+                    count: 0,
+                },
+            )),
+        },
+        "CARDINALITY_SKETCH" | "CARDINALITY" => generate_sketch(0),
+        // SUM, MIN, MAX, and anything else → 0
+        _ => u64_to_agg_value(0),
+    }
 }
 
 fn u64_to_agg_value(val: u64) -> EvpAggValue {
