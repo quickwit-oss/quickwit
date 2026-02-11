@@ -25,9 +25,6 @@ pub struct ClusterConfig {
     pub replication_factor: usize,
     pub shard_throughput_limit: ByteSize,
     pub shard_scale_up_factor: f32,
-    /// When enabled, the control plane automatically updates the index routing table
-    /// when indexes are created or deleted to maintain consistency.
-    pub enforce_index_routing_table_consistency: bool,
 }
 
 impl ClusterConfig {
@@ -40,7 +37,6 @@ impl ClusterConfig {
             replication_factor: 1,
             shard_throughput_limit: quickwit_common::shared_consts::DEFAULT_SHARD_THROUGHPUT_LIMIT,
             shard_scale_up_factor: 1.01,
-            enforce_index_routing_table_consistency: false,
         }
     }
 }

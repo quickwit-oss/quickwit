@@ -31,10 +31,9 @@ use quickwit_metastore::{AddSourceRequestExt, IndexMetadata, ListIndexesMetadata
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::{
-    self, AddSourceRequest, EntityKind, GetIndexRoutingTableRequest, IndexRoutingRule,
-    ListIndexesMetadataRequest, ListShardsSubrequest, ListShardsSubresponse, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, SetIndexRoutingTableRequest,
-    SourceType, ToggleSourceRequest,
+    self, AddSourceRequest, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest,
+    ListShardsSubresponse, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, SourceType, ToggleSourceRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 pub(super) use shard_table::{ScalingMode, ShardEntry, ShardLocations, ShardStats, ShardTable};
@@ -460,44 +459,6 @@ impl ControlPlaneModel {
             .await?;
         self.enable_ingest_v2_sources(sources_to_enable, metastore, progress)
             .await?;
-        Ok(())
-    }
-
-    pub async fn initialize_routing_table_if_necessary(
-        &self,
-        metastore: &mut MetastoreServiceClient,
-    ) -> MetastoreResult<()> {
-        // Check if routing table already exists
-        let get_table_response = metastore
-            .get_index_routing_table(GetIndexRoutingTableRequest {})
-            .await?;
-
-        if !get_table_response.rules.is_empty() {
-            // Routing table already exists, nothing to do
-            return Ok(());
-        }
-
-        // No routing table exists. If we have indexes, create a table with the first one as
-        // catch-all
-        let Some(first_index_id) = self.index_uid_table.keys().min() else {
-            // No indexes exist, no need to create a routing table
-            return Ok(());
-        };
-
-        info!(
-            "initializing index routing table with index `{first_index_id}` as catch-all \
-             (migration)"
-        );
-
-        let rules = vec![IndexRoutingRule {
-            filter: "*".to_string(),
-            index_id: first_index_id.to_string(),
-        }];
-
-        metastore
-            .set_index_routing_table(SetIndexRoutingTableRequest { rules })
-            .await?;
-
         Ok(())
     }
 

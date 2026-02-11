@@ -1,0 +1,23 @@
+# Update routing table to point to an existing index that will remain
+method: PUT
+endpoint: api/v1/index-routing-table
+json:
+  - filter: "*"
+    index_id: datadog
+status_code: null
+---
+method: DELETE
+endpoint: api/v1/indexes/datadog-audit
+status_code: null
+---
+method: DELETE
+endpoint: api/v1/indexes/datadog-error
+status_code: null
+---
+method: DELETE
+endpoint: api/v1/indexes/datadog-web
+status_code: null
+---
+method: DELETE
+endpoint: api/v1/indexes/datadog-main
+status_code: null

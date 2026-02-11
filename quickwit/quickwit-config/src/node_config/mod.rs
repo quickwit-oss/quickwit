@@ -796,12 +796,6 @@ pub struct CloudPremConfig {
     pub enable_reverse_connection: bool,
     #[serde(default = "CloudPremConfig::default_create_datadog_index")]
     pub create_datadog_index: bool,
-
-    /// When true, forces the index_routing_table to exist (created at init if needed) and to stay
-    /// consistent on index creation / deletion. It should always be true for pomsky, except for
-    /// some integration tests inherited from quickwit.
-    #[serde(default = "CloudPremConfig::default_enforce_index_routing_table_consistency")]
-    pub enforce_index_routing_table_consistency: bool,
 }
 
 impl CloudPremConfig {
@@ -834,17 +828,6 @@ impl CloudPremConfig {
             true
         }
     }
-
-    fn default_enforce_index_routing_table_consistency() -> bool {
-        #[cfg(any(test, feature = "testsuite"))]
-        {
-            quickwit_common::get_bool_from_env("CP_ENFORCE_INDEX_ROUTING_TABLE_CONSISTENCY", false)
-        }
-        #[cfg(not(any(test, feature = "testsuite")))]
-        {
-            quickwit_common::get_bool_from_env("CP_ENFORCE_INDEX_ROUTING_TABLE_CONSISTENCY", true)
-        }
-    }
 }
 
 impl Default for CloudPremConfig {
@@ -855,8 +838,6 @@ impl Default for CloudPremConfig {
             datadog_config: WebsocketConfig::default(),
             enable_reverse_connection: Self::default_enable_reverse_connection(),
             create_datadog_index: Self::default_create_datadog_index(),
-            enforce_index_routing_table_consistency:
-                Self::default_enforce_index_routing_table_consistency(),
         }
     }
 }

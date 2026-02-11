@@ -49,14 +49,13 @@ impl Handler<SetIndexRoutingTableRequest> for ControlPlane {
     ) -> Result<Self::Reply, ActorExitStatus> {
         debug!("setting index routing table");
 
-        // Validate: at least one catch-all rule (filter = "*") must exist.
-        let has_catch_all = request.rules.iter().any(|rule| rule.filter == "*");
-        if !has_catch_all {
+        // Validate filter syntax.
+        if let Err(e) =
+            quickwit_datadog_log_router::LogRouter::create_from_rules(request.rules.clone())
+        {
             return Ok(Err(ControlPlaneError::from(
                 MetastoreError::InvalidArgument {
-                    message: "routing table must contain at least one catch-all rule (filter = \
-                              \"*\")"
-                        .to_string(),
+                    message: e.to_string(),
                 },
             )));
         }

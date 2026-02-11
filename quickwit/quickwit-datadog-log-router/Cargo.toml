@@ -1,0 +1,21 @@
+[package]
+name = "quickwit-datadog-log-router"
+description = "Datadog log filter expression parser and routing logic"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+nom = { workspace = true }
+
+quickwit-proto = { workspace = true }
+
+[dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,1338 @@
+[
+  {
+    "index_id": "internal-audit",
+    "filter": "@ddaudit:internal"
+  },
+  {
+    "index_id": "azure-audit",
+    "filter": "source:(azure OR azure.*) OR service:azure"
+  },
+  {
+    "index_id": "cloudtrail",
+    "filter": "source:cloudtrail"
+  },
+  {
+    "index_id": "gcp",
+    "filter": "source:(gcp.* OR gcp OR google.security.command.center) -source:gcp.http.load.balancer -source:gcp.internal.http.lb.rule -(source:gcp.cloudsql.database AND -service:cloudsql.googleapis.com)"
+  },
+  {
+    "index_id": "k8s-audit",
+    "filter": "service:(k8s-audit OR kube-apiserver-audit) -source:(cloud_security_platform OR alert)"
+  },
+  {
+    "index_id": "chrono-audit-logs",
+    "filter": "service:chrono-api @ddsource:audit kube_namespace:chrono @evt.name:\"gRPC Requests\""
+  },
+  {
+    "index_id": "gandalf-audit-logs",
+    "filter": "service:gandalf datacenter:us1.staging.dog @gandalf.audit.action:*"
+  },
+  {
+    "index_id": "billing-auditing",
+    "filter": "@billing_audit:true"
+  },
+  {
+    "index_id": "billing-admin-audit",
+    "filter": "@billing_admin_audit:true"
+  },
+  {
+    "index_id": "meraki-audit",
+    "filter": "source:meraki"
+  },
+  {
+    "index_id": "dockerhubauditlogs",
+    "filter": "source:dockerhub-logs-forwarder @type:audit"
+  },
+  {
+    "index_id": "github-audit-logs",
+    "filter": "source:(github-telemetry OR github.audit.streaming)"
+  },
+  {
+    "index_id": "dd-sts",
+    "filter": "service:dd-sts"
+  },
+  {
+    "index_id": "appsec-signal-triggers",
+    "filter": "(service:appsec-reducer-signal OR @ruleType:application_security) @isSecuritySignalStats:true"
+  },
+  {
+    "index_id": "appsec-triggers",
+    "filter": "service:appsec-span-indexer @appsec_triggers_index:true"
+  },
+  {
+    "index_id": "dd-events",
+    "filter": "(@sourcecategory:monitor_alert OR @evt.source_id:100)"
+  },
+  {
+    "index_id": "flex-qpo-data",
+    "filter": "(service:(event-query OR logs-event-store-api) AND @rateLimitShared:SHARED AND @isFlexRateLimit:true) OR (service:web-ui AND @is_flex_rate_limited_error:true)"
+  },
+  {
+    "index_id": "aaa-core-access",
+    "filter": "    service:aaa-cron\n    OR service:coreaccess-toolbox\n    OR service:rbac-public\n    OR service:ip-allowlist-public\n"
+  },
+  {
+    "index_id": "aaa-granular-access",
+    "filter": "    service:zoltron*\n    OR service:zolcron\n"
+  },
+  {
+    "index_id": "continuous-security",
+    "filter": "service:(cloud-perimeter-api OR cloud-perimeter-jobs OR vuln-metric-shipper)"
+  },
+  {
+    "index_id": "live-debugger-snapshots",
+    "filter": "source:dd_debugger"
+  },
+  {
+    "index_id": "serverless-azure-gcp-e2e",
+    "filter": "service:*e2e-*"
+  },
+  {
+    "index_id": "fcsched-worker",
+    "filter": "service:fcsched-worker \"fcsched-worker:\" status:warn"
+  },
+  {
+    "index_id": "trebuchet-api",
+    "filter": "service:trebuchet-api"
+  },
+  {
+    "index_id": "argo",
+    "filter": "source:(argo-rollouts OR argo_workflows OR kyverno)"
+  },
+  {
+    "index_id": "logsevpworker",
+    "filter": "service:eventplatform-worker @WorkflowType:flex_logs*"
+  },
+  {
+    "index_id": "aws-ints-logs-forwarder",
+    "filter": "@aws.invoked_function_arn:\"arn:aws:lambda:us-east-1:802015701852:function:datadog-forwarder-d0g\" OR @aws.firehose.arn:\"arn:aws:firehose:us-east-1:802015701852:deliverystream/kinesis-firehose-forwarder-DatadogDeliveryStream-mtMYcQejpfoo\" OR @aws.firehose.arn:\"arn:aws:firehose:us-east-1:802015701852:deliverystream/nidoking\""
+  },
+  {
+    "index_id": "network-logs",
+    "filter": "source:(vpc OR netflow OR firewall)"
+  },
+  {
+    "index_id": "streams",
+    "filter": "(service:(consumer-skeleton-go OR kafka*)) (managed_by_team:streams OR team:streams)"
+  },
+  {
+    "index_id": "snmp-traps",
+    "filter": "source:snmp-traps OR @traceroute_source:* OR @destination.hostname:*"
+  },
+  {
+    "index_id": "westesting2",
+    "filter": "source:pranay_wes_test @foo:\"WES World\""
+  },
+  {
+    "index_id": "benjamin-test",
+    "filter": "service:benjamin-test"
+  },
+  {
+    "index_id": "instrumentation-telemetry",
+    "filter": "team:telemetry-and-analytics"
+  },
+  {
+    "index_id": "apm-distributed-tracing",
+    "filter": "team:(apm-trace-intake OR apm-trace-storage) OR env:localhost"
+  },
+  {
+    "index_id": "zoltron",
+    "filter": "service:(zoltron OR zoltron-migration OR zoltron-toolbox)"
+  },
+  {
+    "index_id": "this-is-another-test",
+    "filter": "host:achntrl* status:info"
+  },
+  {
+    "index_id": "squizz-game",
+    "filter": "source:squizz-game"
+  },
+  {
+    "index_id": "skunkwerkz2",
+    "filter": "source:profiling-insights"
+  },
+  {
+    "index_id": "logs-reducer-skeleton",
+    "filter": "service:logs-reducer-skeleton"
+  },
+  {
+    "index_id": "inventories",
+    "filter": "team:(inventories OR resources-apps OR redapl-*) service:(resource-* OR reference-tables-* OR compliance-log-generator OR container-resource-* OR redis-resources OR host-consumer* OR redapl-* OR event-platform-resource-writer OR changelog-example OR iris-* OR resources-*) service:(resource-* OR reference-tables-* OR compliance-log-generator OR container-resource-*)"
+  },
+  {
+    "index_id": "monitors-evaluation",
+    "filter": "service:monitor-results-indexer"
+  },
+  {
+    "index_id": "experiments",
+    "filter": "@team:experiments OR team:experiments"
+  },
+  {
+    "index_id": "dogql",
+    "filter": "service:dogql @event_type:*"
+  },
+  {
+    "index_id": "appsec",
+    "filter": "service:appsec-reducer-signal -@isSecuritySignalStats:true"
+  },
+  {
+    "index_id": "appsec-false-positive",
+    "filter": "service:event-rule-false-positive-worker"
+  },
+  {
+    "index_id": "appsec-go",
+    "filter": "service:(appsec OR appsec-span-indexer OR instrumentation-telemetry-vm-intake)"
+  },
+  {
+    "index_id": "infra-library-logs-test",
+    "filter": "service:vulnerability-detector-reducer @logger.name:com.dd.logs.appsec.vulnerability_detector_reducer.infra.InfraLibraryLogger"
+  },
+  {
+    "index_id": "asm-vm",
+    "filter": "service:(asm-vm-advisories-importer OR vulnerability-detector-reducer OR vulnerability-reducer OR event-jobs-asm-sca OR oss-package-crawler OR code-workload-runner-sca)"
+  },
+  {
+    "index_id": "dd-signals",
+    "filter": "service:signals"
+  },
+  {
+    "index_id": "logs-probe",
+    "filter": "source:logs-probe OR source:synthetics"
+  },
+  {
+    "index_id": "hackathon-wooffer",
+    "filter": "source:browser (team:hackathon-wooffer OR @team:hackathon-wooffer)"
+  },
+  {
+    "index_id": "coscreen-clients",
+    "filter": "service:(coscreen-desktop OR coscreen-web-app)"
+  },
+  {
+    "index_id": "browser-agent",
+    "filter": "source:(browser-agent OR browser OR browser-metrics OR browser-sdk)"
+  },
+  {
+    "index_id": "browser-agent-internal-monitoring",
+    "filter": "source:browser-agent-internal-monitoring"
+  },
+  {
+    "index_id": "timeseries-query",
+    "filter": "service:(federated-querier OR federated-querier-canary OR federated-querier-shadow OR federated-querier-hotdog)"
+  },
+  {
+    "index_id": "damien-test",
+    "filter": "source:damien"
+  },
+  {
+    "index_id": "k8s-platform",
+    "filter": "(role:(kube-node OR kube-etcd OR etcd OR apiserver OR controller OR scheduler) -pod_name:* -service:kubernetes -source:undefined -filename:0.log) OR app:(cluster-autoscaler OR metrics-server OR coredns OR admission-controller OR datadog-kubernetes-watchdog OR kube-proxy-watch OR kube-sync OR kube2iam OR etcd-backup-operator) OR service:k8s-platform-cluster-cni"
+  },
+  {
+    "index_id": "vault",
+    "filter": "vault_cluster:*"
+  },
+  {
+    "index_id": "metrics-query",
+    "filter": "service:(rocky OR royce OR metrics-querier OR mork-intake OR mork-storage OR index-deduper)"
+  },
+  {
+    "index_id": "metrics-storage",
+    "filter": "service:(mindy OR merle)"
+  },
+  {
+    "index_id": "metrics-timeseries",
+    "filter": "service:(spidly OR process-spidly-bhandle OR busly)"
+  },
+  {
+    "index_id": "sandwich",
+    "filter": "service:(delancie-correlations OR delancie-sandwich OR delancie-insights OR synthesizer OR signal-bundler OR data-science-models-cron OR researcher OR watchdog-unified-insights OR internal-watchdoginsights-api OR narrator OR signal-aggregate-matcher OR aggregate-clusterer)"
+  },
+  {
+    "index_id": "data-eng",
+    "filter": "service:(historical-data-query OR historical-data-query-canary OR emr-spark-errors OR *-extract-kafka-connect OR livy OR data-eng-cron OR mortar-luigi-runner OR mortar-kubernetes-job) OR (general_service:pg-extracts AND -service:consul-template) OR general_service:kafka-connect OR spark_job_id:*"
+  },
+  {
+    "index_id": "eclair",
+    "filter": "service:(delancie-crawler_aws OR delancie-crawler OR delancie-crawlerxl OR *crawl-state* OR *harbinger* OR *crawler-status* OR *integration-config* OR resource-crawler OR generic-crawler OR cloudchanges-processor* OR *metronome*)"
+  },
+  {
+    "index_id": "watchdog-lightweight-triggers",
+    "filter": "service:(ds-metrics-workers OR wltstatemachine-worker OR wlt_state_machine_proxy) (@wlt_env:* OR @wlt_workflow_id:*)"
+  },
+  {
+    "index_id": "metrics-intake",
+    "filter": "datacenter:us1.staging.dog team:metrics-intake"
+  },
+  {
+    "index_id": "driveline",
+    "filter": "source:driveline OR team:driveline"
+  },
+  {
+    "index_id": "web-integrations",
+    "filter": "service:(delancie-web_crawler OR delancie-web-crawler)"
+  },
+  {
+    "index_id": "skunkwerkz3",
+    "filter": "source:profiling-insights"
+  },
+  {
+    "index_id": "usage-simulation",
+    "filter": "service:usage-simulation*"
+  },
+  {
+    "index_id": "chatbot",
+    "filter": "service:(chatbot-rpc OR chatbot-rpc-hotdog)"
+  },
+  {
+    "index_id": "wheel-of-misery",
+    "filter": "team:logs service:logs-flood"
+  },
+  {
+    "index_id": "k9-test",
+    "filter": "source:(k9_test_source OR dlttest OR azure) OR host:COMP-F4C3JV42WX"
+  },
+  {
+    "index_id": "mcp-services",
+    "filter": "service:(mcp OR evp-proxy)"
+  },
+  {
+    "index_id": "k9",
+    "filter": "service:(agentless-scanner OR behavior-detection-reducer OR chrono-org-scheduler OR ciem OR ciem-event-processor OR cloud-security-assets-activity-worker OR cloud-security-assets-worker OR cloud-security-platform-admin OR compliance-api OR compliance-framework-api OR compliance_findings_api OR csm-integrations OR csm-metering OR csm-resource-deletion OR csm-stream-processor OR cspm-api OR cspm-rule-validator OR cspm-workers OR cws-drift-reducer OR cws-events-checker OR cws-rule-checker OR cws-secdumps-splitter OR cws-security-dumps-reducer OR deploy-packaged-suggested-actions OR event-context-provider-k9-core OR event-jobs-security-monitoring OR findings-lifecycle-reducer OR graph-delta OR graph-ingest OR graph-svc OR iac-cpfindings-handler OR issue-combiner OR logs-compliance-findings-reducer OR logs-compliance-reducer OR logs-rule-reducer OR memgraph OR memgraph-replica OR misconfigs-api OR mongo-security-analytics OR puppygraph OR rego-processor OR risk-and-priority OR sec-graph-retry-writer OR sec-graph-writer OR sec-graph-writer-b OR security-analytics-metabase-export OR security-context-api OR security-findings-api OR security-graph-api OR security-graph-llm OR security-monitoring-api OR security-triage-consumer OR siem-historical-api OR siem-historical-detections-loader OR siem-queries-reducer OR user-resolution-reducer) -@isSecuritySignalStats:true"
+  },
+  {
+    "index_id": "logs-tee-testing",
+    "filter": "team:logs-tee"
+  },
+  {
+    "index_id": "security-signal-stats",
+    "filter": "service:logs-rule-reducer @isSecuritySignalStats:true"
+  },
+  {
+    "index_id": "rap",
+    "filter": "service:(risk-and-priority OR risk-assessment)"
+  },
+  {
+    "index_id": "sre-arena",
+    "filter": "kube_namespace:sre-arena-*"
+  },
+  {
+    "index_id": "xpq",
+    "filter": "team:(xpq OR ddsql OR query-gateway OR query-planning OR progressive-queries OR query-data-plane OR relational-query-apis OR query-engines-core)"
+  },
+  {
+    "index_id": "progressive-queries",
+    "filter": "team:progressive-queries"
+  },
+  {
+    "index_id": "evpstorage",
+    "filter": "team:(event-platform-io OR event-platform-storage-routing OR event-platform-storage-ingestion OR event-platform-storage-indexing OR event-platform-storage-traffic-control OR husky-indexing OR husky-traffic-control OR husky-ingestion) service:(logs* OR event*)"
+  },
+  {
+    "index_id": "hoang-event-platform-query-comparer",
+    "filter": "service:event-platform-query-comparer"
+  },
+  {
+    "index_id": "evpquery",
+    "filter": "team:(event-platform-query OR event-platform-storage-query-runtime OR event-platform-storage-interactive-queries OR query-engines-core OR interactive-queries) service:(logs* OR event*)"
+  },
+  {
+    "index_id": "sheepdog",
+    "filter": "team:(ramen OR logs) OR dds:event-platform OR service:mongo*"
+  },
+  {
+    "index_id": "marlo",
+    "filter": "service:(marlo OR aggr-query-backfill OR marlo-aggr OR marlo-router)"
+  },
+  {
+    "index_id": "debugger-team",
+    "filter": "team:debugger"
+  },
+  {
+    "index_id": "profiling",
+    "filter": "team:profiling"
+  },
+  {
+    "index_id": "metrics-realtime-index",
+    "filter": "service:reese-*"
+  },
+  {
+    "index_id": "vibioh",
+    "filter": "owner:vibioh"
+  },
+  {
+    "index_id": "sketch",
+    "filter": "service:sketch-*"
+  },
+  {
+    "index_id": "network-edge",
+    "filter": "team:network-edge OR (team:sre service:internal-services-proxy) OR team:fabric-gateways OR source:fastly OR service:(internal-services-proxy OR dest-crossdc-gateway OR source-crossdc-gateway OR sre-prometheus-exporter)"
+  },
+  {
+    "index_id": "staging-ci-visibility-logs",
+    "filter": "datadog.product:cipipeline (@git.repository.id_v2:\"github.com/datadog/ci-visibility-test-github\" OR @git.repository.id_v2:\"github.com/datadog/test-sw-delivery-mcp-server-tools\")"
+  },
+  {
+    "index_id": "dd-trace-doe-index",
+    "filter": "service:dd-trace-doe"
+  },
+  {
+    "index_id": "ci-pipelines-test",
+    "filter": "datadog.product:cipipeline"
+  },
+  {
+    "index_id": "sre-bourbon",
+    "filter": "(team:(sre OR bourbon OR sre-bourbon OR core-resilience) AND (source:lambda OR source:browser)) OR kube_namespace:sre"
+  },
+  {
+    "index_id": "enclave",
+    "filter": "env:(enclave OR gce-enclave)"
+  },
+  {
+    "index_id": "monitor-app",
+    "filter": "service:(monitor-graph-writer OR monitor-history-reader OR monitor-history-writer OR alerting-indexer OR monitor-uptime-writer OR monitor-uptime-writer-canary OR uptime-es-tool)"
+  },
+  {
+    "index_id": "events-pipeline",
+    "filter": "service:(events-indexer OR rate-limiter OR es-events-cron OR events-aggregator OR legacy-events-extractor OR events-to-logs) OR (service:elasticsearch role:es-events-*) OR (service:templeton templeton_role:(events OR events_overflow)) OR service:(inbox* OR templeton-events)"
+  },
+  {
+    "index_id": "notifications-pipeline",
+    "filter": "(service:(alerting-downtime-matcher* OR alerting-state-notifications* OR cleanup-monitor-state OR delancie-downtime OR delancie-notification OR monitor-results-forwarder* OR monitor-state-manager* OR monitor-state-service* OR redis-alerting-watermarks OR notification-router*) -service:(*shadow* OR *benchmark*)) OR (source:postgresql host:monitorstate* -host:monitorstatebenchmark*) OR (source:gcp.cloudsql.database database_id:*monitorstate* -database_id:*monitorstatebenchmark*)"
+  },
+  {
+    "index_id": "serverless-stepfunction",
+    "filter": "service:stepfunction"
+  },
+  {
+    "index_id": "oncall",
+    "filter": "(service:(oncall-admin OR oncall-atlas-worker OR oncall-api OR oncall-cdc-handler* OR oncall-delancie-worker OR oncall-event-handler* OR oncall-grpc* OR oncall-handoff-notifications OR oncall-msteams OR oncall-notification-lifecycle-worker OR oncall-paging-api-* OR oncall-shift-events OR oncall-slack OR oncall-snap-worker OR oncall-speech-worker OR oncall-toolbox OR oncall-webcal OR oncall-webhooks* OR oncall-workflows-worker OR pagepersistence-worker OR oncall-notification-result-handler OR oncall-delivery-worker) OR (source:twilio AND account_name:oncall*) OR @logger.name:(twiliostatus.reporter OR telephony.status OR dd.oncall.observability)) AND -source:gitlab-runner AND -source:junitxml"
+  },
+  {
+    "index_id": "burrito",
+    "filter": "(team:processes OR team:container-intake OR team:container-experiences OR service:(process-* OR network-* OR container-*))"
+  },
+  {
+    "index_id": "mcnulty",
+    "filter": "service:(mcnulty* OR support-admin*)"
+  },
+  {
+    "index_id": "census",
+    "filter": "service:*census*"
+  },
+  {
+    "index_id": "aws-knowledge-bases",
+    "filter": "@event.knowledge_base_arn:*"
+  },
+  {
+    "index_id": "yuzu",
+    "filter": "((service:alerting-composite-evaluator) OR (service:alerting-event-evaluator) OR (service:alerting-metric-evaluator) OR (service:alerting-metric-query) OR (service:alerting-scheduler) OR (service:alerting-scheduler-experimental) OR (service:check-run-intake-reader) OR (service:check-run-intake-resolver) OR (service:monitor-results-indexer) OR (service:monitor-results-service) OR (service:alerting-validator) OR (service:cole-*) OR (service:colvin) OR (service:cutty) OR (service:bubs) OR (service:koutris) OR (service:uptime-widget-syncer) OR (service:events-indexer) OR service:alerting-admin OR service:cole-sla)   AND (short_image:* OR team:monitors-evaluation OR team:yuzu)"
+  },
+  {
+    "index_id": "synthetics",
+    "filter": "kube_deployment:synthetics-* OR service:synthetics*"
+  },
+  {
+    "index_id": "core-observability",
+    "filter": "team:core-observability OR service:dashboard-and-monitor-sync"
+  },
+  {
+    "index_id": "serverless",
+    "filter": "service:xray-converter OR source:(stepfunction OR lambda)"
+  },
+  {
+    "index_id": "ndm-mimic-agent",
+    "filter": "source:agent-logs service:agent-logs environment:mimic"
+  },
+  {
+    "index_id": "agent-core",
+    "filter": "team:agent-core"
+  },
+  {
+    "index_id": "watchdog",
+    "filter": "app.kubernetes.io\\/name:delancieinsights AND service:dogweb"
+  },
+  {
+    "index_id": "core-index",
+    "filter": "service:(host-consumer OR tagdex OR tagdex-client OR feiwriter OR rotom OR host-consumer-v2)"
+  },
+  {
+    "index_id": "security-analytics",
+    "filter": "source:(vpc OR guardduty OR s3 OR waf OR macie OR securityhub OR cbdefense OR citadel OR auth_test OR aws.citadel OR auth_test OR internal_wiki OR okta OR ssh OR vault-audit)"
+  },
+  {
+    "index_id": "ci-app",
+    "filter": "team:ci-app"
+  },
+  {
+    "index_id": "team-aaa",
+    "filter": "service:(account-settings OR terry)"
+  },
+  {
+    "index_id": "aaa-authn",
+    "filter": "service:(terminator OR terminator-fleet-edge OR authenticator OR api-key-usage-tracker)"
+  },
+  {
+    "index_id": "bill-usage",
+    "filter": "app:bill-usage OR service:revenue-usage-evaluator"
+  },
+  {
+    "index_id": "compliance-mvp",
+    "filter": "source:compliance-mvp "
+  },
+  {
+    "index_id": "rca-mvp",
+    "filter": "source:rca-mvp"
+  },
+  {
+    "index_id": "mortar",
+    "filter": "(service:*mortar* AND NOT service:mortar-luigi-runner) OR service:(spark-livy OR flink-dd-operator OR flink-apache-operator OR spark-operator* OR spark_gateway* OR spark-gateway* OR auto_remediation* OR auto-remediation* OR kubernetesjobgateway-worker OR data-eng-trino OR gateway-admission-controller OR pythontaskgateway-worker OR yoshi OR pythontask) OR (service:(argo-server OR argoexec OR workflow-controller) team:(data-eng-infra OR data-eng-multi-cloud OR data-and-analytics-workflows OR data-engineering-developer-experience)) OR kube_service:spark-history-server OR (kube_namespace:shepherd service:shepherd*) OR service:spark-apache-operator OR service:(flinkgateway-worker OR flinkgateway-worker-v1) OR service:rayjobsgateway-worker"
+  },
+  {
+    "index_id": "mortar-devenv",
+    "filter": "kube_namespace:(devenv-martin OR devenv-anton OR devenv-quentin OR devenv-nick OR devenv-haithem OR devenv-dan OR devenv-emeric OR devenv-devin OR devenv-vincent OR devenv-phil OR devenv-craig-rosie OR devenv-kayla OR devenv-alex-meyer)"
+  },
+  {
+    "index_id": "data-science-eng",
+    "filter": "team:data-science-eng service:resource-locker-proxy"
+  },
+  {
+    "index_id": "obs-pipelines-api",
+    "filter": "service:(obs-pipelines-api OR internal-observability-pipelines-api)"
+  },
+  {
+    "index_id": "dd-config",
+    "filter": "service:(cfgdistribution OR config-litmus)"
+  },
+  {
+    "index_id": "florent-clarret-impal-integration",
+    "filter": "source:impala"
+  },
+  {
+    "index_id": "alopez-temporal-integration",
+    "filter": "source:temporal"
+  },
+  {
+    "index_id": "cpg-services",
+    "filter": "service:(prr-survey-relay OR prr-doc-evaluator OR prr-scorecard-sync OR prr-fact-finder OR prr-survey-mcp)"
+  },
+  {
+    "index_id": "search-experiences-pipeline",
+    "filter": "service:search-backend"
+  },
+  {
+    "index_id": "ai-devx",
+    "filter": "(team:ai-devx source:rapid) OR (@framework:snap @tenant:ai-devx)"
+  },
+  {
+    "index_id": "error-tracking",
+    "filter": "team:error-tracking OR service:(errors-api-sentry OR web-ui-sentry OR error-tracking-demo OR com.datadog.android.sample OR florian-test) OR source:sentry-sdk OR git.repository_url:*datadog/error-tracking-setup-examples*"
+  },
+  {
+    "index_id": "rapid",
+    "filter": "source:rapid"
+  },
+  {
+    "index_id": "compliance-agent",
+    "filter": "source:compliance-agent"
+  },
+  {
+    "index_id": "pluto",
+    "filter": "env:staging service:(pluto OR data-deletion OR data-deletion-jobs OR data-deletion-orchestrator)"
+  },
+  {
+    "index_id": "logs-api-haproxy",
+    "filter": "service:logs-api source:haproxy"
+  },
+  {
+    "index_id": "apm-agent-pool",
+    "filter": "@aws.awslogs.logGroup:apm-agent-pool"
+  },
+  {
+    "index_id": "kafka-connector-tests",
+    "filter": "source:kafka-connect"
+  },
+  {
+    "index_id": "task-platform",
+    "filter": "service:(delancie-housekeeper OR delancie-broker)"
+  },
+  {
+    "index_id": "api-managemet",
+    "filter": "service:(apim-endpoint-metrics OR endpoint-expire OR endpoint-matcher) -@caller:(\"monitor/logger.go:83\" OR \"monitor/logger.go:70\") -@context:consumer"
+  },
+  {
+    "index_id": "debugger-logs-track",
+    "filter": "source:debugger"
+  },
+  {
+    "index_id": "mobile",
+    "filter": "source:(android OR ios OR flutter OR react-native OR roku OR unity) OR service:OpenTelemetryDemoApp"
+  },
+  {
+    "index_id": "chrono",
+    "filter": "(service:(chrono-* OR consul-chrono-adapter) AND kube_namespace:chrono) OR service:consul-chrono-adapter-* OR (service:lockness-client AND kube_deployment:chrono-*)"
+  },
+  {
+    "index_id": "remote-config",
+    "filter": "team:remote-config"
+  },
+  {
+    "index_id": "slack-audit-logs",
+    "filter": "source:slack-audit-logs"
+  },
+  {
+    "index_id": "slack-audit-logs-forwarder",
+    "filter": "source:slack-audit-logs-forwarder"
+  },
+  {
+    "index_id": "azure-nsg-flow-logs",
+    "filter": "source:azure-nsg-flow-logs"
+  },
+  {
+    "index_id": "dotnet-xunit",
+    "filter": "source:xunit"
+  },
+  {
+    "index_id": "aws-moose",
+    "filter": "service:amazon-security-lake"
+  },
+  {
+    "index_id": "test-mortar",
+    "filter": "service:*mortar* OR service:(spark-livy OR flink-operator OR spark-operator OR volcano-scheduler OR volcano-controller) OR (service:(argo-server OR argoexec OR workflow-controller) team:data-eng-infra) OR kube_service:spark-history-server"
+  },
+  {
+    "index_id": "test-mortar-2",
+    "filter": "service:*mortar* OR service:(spark-livy OR flink-operator OR spark-operator OR volcano-scheduler OR volcano-controller) OR (service:(argo-server OR argoexec OR workflow-controller) team:data-eng-infra) OR kube_service:spark-history-server"
+  },
+  {
+    "index_id": "flink-applications",
+    "filter": "service:flink-kafka-job OR type:flink-app"
+  },
+  {
+    "index_id": "source-code-integration",
+    "filter": "team:source-code-integration"
+  },
+  {
+    "index_id": "fabric-api",
+    "filter": "(kube_namespace:service-discovery -level:debug service:fabric-management)"
+  },
+  {
+    "index_id": "fabric-dns",
+    "filter": "(kube_namespace:service-discovery -level:debug -team:rpc -service:(dest-crossdc-gateway OR source-crossdc-gateway)) OR service:(azure-proxy OR node-local-dns)"
+  },
+  {
+    "index_id": "reducer-skeleton",
+    "filter": "service:streaming-engine-reducer-skeleton"
+  },
+  {
+    "index_id": "infosec",
+    "filter": "team:(infosec OR compliance-operations OR compliance-engineering OR risk-engineering)"
+  },
+  {
+    "index_id": "data-streams-monitoring",
+    "filter": "service:(data-pipeline-resolver OR data-pipeline-edge OR data-pipeline-map OR data-streams-resolver OR transaction-tracking OR dsm-transaction-*)"
+  },
+  {
+    "index_id": "cws-runtime-security-agent-events",
+    "filter": "source:runtime-security-agent"
+  },
+  {
+    "index_id": "sit-bot",
+    "filter": "service:sit-*"
+  },
+  {
+    "index_id": "data-science-events-custom",
+    "filter": "service:gameday-marcelo-test-1"
+  },
+  {
+    "index_id": "aws-integrations-forwarder",
+    "filter": "forwardername:datadogforwarderstagingawsintegrations"
+  },
+  {
+    "index_id": "tsme-salah",
+    "filter": "service:trace-spans-meta-extractor"
+  },
+  {
+    "index_id": "ndm",
+    "filter": "team:network-device-monitoring"
+  },
+  {
+    "index_id": "instrumentation-telemetry-data",
+    "filter": "service:instrumentation-telemetry-data"
+  },
+  {
+    "index_id": "apm-integrations",
+    "filter": "team:(apm-integrations OR telemetry-and-analytics) OR service:(tracer-telemetry-intake OR instrumentation-telemetry-data)"
+  },
+  {
+    "index_id": "oskars-test-messages",
+    "filter": "source:oskarjung"
+  },
+  {
+    "index_id": "florent-clarret-gitlab",
+    "filter": "source:gitlab"
+  },
+  {
+    "index_id": "metering",
+    "filter": "service:(metering-api OR usage2metrics)"
+  },
+  {
+    "index_id": "security",
+    "filter": "service:(continuous-static-analyzer OR cadet OR supportbot OR sit-* OR cloud-coverage-inventory OR pagerduty-metrics*)"
+  },
+  {
+    "index_id": "notification-platform",
+    "filter": "service:(notification-rules-matcher OR notification-platform-synthetics OR notification-rules-api OR notification-processor OR notification-platform-workers OR notification-processor-validator)"
+  },
+  {
+    "index_id": "meraki-indiex",
+    "filter": "service:meraki OR source:(salesforce OR salesforce-events OR servicenow)"
+  },
+  {
+    "index_id": "registry",
+    "filter": "kube_namespace:(registry-staging OR registry) OR service:oci-load-test* OR kube_app_name:artifact-registry-worker"
+  },
+  {
+    "index_id": "subscriptions",
+    "filter": "team:subscriptions OR team:subscriptions-core OR service:(term OR term-* OR bill OR sub OR reporting OR external-marketplaces OR external-marketplaces-* OR subscriptions-etl OR gringotts OR gringotts-* OR org_hierarchy* OR org-hierarchy* OR marketplace-subs OR marketplace-subs-* OR contracts-event-processor OR internal-billing-api OR producttrial*)"
+  },
+  {
+    "index_id": "vector",
+    "filter": "source:(vector OR op_worker OR op_testing) OR app:obs-pipelines-e2e-tests"
+  },
+  {
+    "index_id": "delancie-web-crawler",
+    "filter": "service:delancie-web-crawler"
+  },
+  {
+    "index_id": "orgstore-index",
+    "filter": "orgstore_cluster:*"
+  },
+  {
+    "index_id": "cloudflare",
+    "filter": "source:cloudflare"
+  },
+  {
+    "index_id": "akamai-siem-connector-logs-index",
+    "filter": "source:akamai-security-events"
+  },
+  {
+    "index_id": "trace-log-correlation-128bit-test",
+    "filter": "service:(log-trace-correlation-log-correlation-go-client OR log-trace-correlation-log-correlation-go-server OR log-trace-correlation_log-correlation-go-server OR log-trace-correlation_log-correlation-go-client)"
+  },
+  {
+    "index_id": "metric-scout",
+    "filter": "service:aws-generic-workers @module:metric_scout"
+  },
+  {
+    "index_id": "shard-orchestrator",
+    "filter": "(team:shard-orchestrator OR team:monitor-intake) AND service:(shard-orchestrator OR shard-orchestrator-test-worker OR shard-orchestrator-test-worker-rs OR shard-orchestrator-test-client OR shard-orchestrator-operator OR shard-orchestrator-api OR shard-orchestrator-worker-group-config OR shard-orchestrator-resharder)"
+  },
+  {
+    "index_id": "florentclarret-torchserve-integration",
+    "filter": "source:torchserve"
+  },
+  {
+    "index_id": "prof-go-execution-trace-converter",
+    "filter": "container_name:prof-go-execution-trace-converter"
+  },
+  {
+    "index_id": "akamai-etp",
+    "filter": "source:(akamai-etp OR akamai-eaa OR akamai-sia)"
+  },
+  {
+    "index_id": "postgres-stack",
+    "filter": "service:(postgres OR postgres-backup OR postgres-proxy OR pgbouncer) OR cloud_service:cloud_sql_postgres OR terraform_module:gcp OR short_image:postgres-haproxy"
+  },
+  {
+    "index_id": "network-application-logs",
+    "filter": "source:(vpc OR cloudflare OR gcp)"
+  },
+  {
+    "index_id": "synapse",
+    "filter": "service:synapse*"
+  },
+  {
+    "index_id": "gsuite2",
+    "filter": "source:(gsuite OR github-telemetry)"
+  },
+  {
+    "index_id": "xpq-load-testing",
+    "filter": "host:GVLYPMXQMX"
+  },
+  {
+    "index_id": "rum-workers",
+    "filter": "service:rum-workers"
+  },
+  {
+    "index_id": "rds-log-forward-staging-org-2",
+    "filter": "forwardername:datadog-forwarder-staging-org-2 source:postgresql"
+  },
+  {
+    "index_id": "ml-obs-services",
+    "filter": "team:ml-observability"
+  },
+  {
+    "index_id": "trust-and-safety",
+    "filter": "service:(enrichment-service OR security-metadata-extract OR feroot OR ui-apps-scanning OR customer-security-reducer OR hibp-data-downloader) OR team:trust-and-safety"
+  },
+  {
+    "index_id": "index-error-tracking-demo",
+    "filter": "service:error-tracking-demo"
+  },
+  {
+    "index_id": "slo-app",
+    "filter": "service:(slodog OR slo-alerting-evaluator OR slo-reporter)"
+  },
+  {
+    "index_id": "coscreen",
+    "filter": "service:(coscreen-firebase-backup OR coscreen-presence-check OR coscreen-presence-worker OR admin.coscreen)"
+  },
+  {
+    "index_id": "workday-integration-index",
+    "filter": "source:workday"
+  },
+  {
+    "index_id": "jessie-test-1",
+    "filter": "@evt.name:(RegisterTargets OR DeregisterTargets)"
+  },
+  {
+    "index_id": "incident-management",
+    "filter": "team:incident-management"
+  },
+  {
+    "index_id": "iains-index",
+    "filter": "send_to_iains_index:true"
+  },
+  {
+    "index_id": "k9-weekly-digest",
+    "filter": "service:delancie-default @task_name:k9report*"
+  },
+  {
+    "index_id": "morpheus",
+    "filter": "source:morpheus-pino OR service:morpheus-*"
+  },
+  {
+    "index_id": "cross-product-sampling-log-trace-correlated-retention",
+    "filter": "service:dddev-java-sample-yuanyuan"
+  },
+  {
+    "index_id": "cross-product-sampling-go-log-correlated-retention",
+    "filter": "service:dddev-go-sample-yuanyuan env:staging"
+  },
+  {
+    "index_id": "zendesk-integration-index",
+    "filter": "source:(zendesk OR sentinelone OR wiz OR twilio OR microsoft-365-defender-alerts OR sentry* OR trend-micro-cloud-one)"
+  },
+  {
+    "index_id": "aiobs-ray",
+    "filter": "@job_id:* AND @worker_id:* AND @node_id:* AND @task_id:*"
+  },
+  {
+    "index_id": "aiobs-ray-2",
+    "filter": "service:ray"
+  },
+  {
+    "index_id": "philippe-test",
+    "filter": "source:python"
+  },
+  {
+    "index_id": "epa-workers",
+    "filter": "kube_namespace:(eventplatform-automation OR logs-storage) service:*worker"
+  },
+  {
+    "index_id": "error-tracking-setup-tests",
+    "filter": "service:*-sentry-sdk"
+  },
+  {
+    "index_id": "okta-test-src-nathan",
+    "filter": "source:(okta-test-src-nathan OR snowflake)"
+  },
+  {
+    "index_id": "burden",
+    "filter": "service:burden"
+  },
+  {
+    "index_id": "event-platform-automation",
+    "filter": "team:event-platform-automation"
+  },
+  {
+    "index_id": "aws-integrations-apigateway",
+    "filter": "source:apigateway"
+  },
+  {
+    "index_id": "sdg-ambassad-logs",
+    "filter": "team:security-design-and-guidance service:ambassad-*"
+  },
+  {
+    "index_id": "dsm-dev",
+    "filter": "service:exporter-s3"
+  },
+  {
+    "index_id": "logic-apps",
+    "filter": "@evt.category:WorkflowRuntime @properties.resource.workflowId:*"
+  },
+  {
+    "index_id": "shard-orchestrator-shadow",
+    "filter": "(team:shard-orchestrator OR team:monitor-intake) AND service:shard-orchestrator-shadow"
+  },
+  {
+    "index_id": "foundationdb",
+    "filter": "source:foundationdb OR service:(foundationdb-toolbox OR foundationdb-backup)"
+  },
+  {
+    "index_id": "version-history-jobs",
+    "filter": "kube_namespace:async-jobs-payload-versions service:payload-versioning-workers"
+  },
+  {
+    "index_id": "delancie-default-apw",
+    "filter": "service:delancie-default @task_id:(integration-dashboard-sync OR dashboard-asset-validator OR asset-library-validator OR monitor-asset-deployer OR monitor-asset-validator OR oauth-clients-validator OR oauth-clients-deployer OR integrations-deployer OR metrics-metadata-sync OR service-checks-validator OR service-checks-deployer OR saved-views-validator OR saved-views-deployer OR apps-deployer)"
+  },
+  {
+    "index_id": "csp-report",
+    "filter": "source:csp-report env:staging"
+  },
+  {
+    "index_id": "change-tracking",
+    "filter": "service:(change-event-processor OR ct-redapl-stream-processor OR version-change-detector)"
+  },
+  {
+    "index_id": "courier",
+    "filter": "kube_namespace:(courier OR fdb-courier OR redis-courier)"
+  },
+  {
+    "index_id": "event-management",
+    "filter": "team:(event-management OR inbox OR case-management) OR pod_name:sobotka-events-* OR service:(event-management-synthetics OR logs-issue-reducer)"
+  },
+  {
+    "index_id": "snap",
+    "filter": "@framework:snap"
+  },
+  {
+    "index_id": "apw-oauth-clients-validator",
+    "filter": "service:delancie-default @task_id:(oauth-clients-validator OR oauth-clients-deployer)"
+  },
+  {
+    "index_id": "apw-dashboards",
+    "filter": "service:delancie-default @task_id:(integration-dashboard-deployer OR integration-dashboard-validator)"
+  },
+  {
+    "index_id": "apw-integrations-deployment",
+    "filter": "service:delancie-default @task_id:integrations-deployer"
+  },
+  {
+    "index_id": "dd-tracer-mismatch",
+    "filter": "service:dd-tracer-mismatch-*"
+  },
+  {
+    "index_id": "onelogin",
+    "filter": "source:(onelogin OR confluent-cloud-audit-logs)"
+  },
+  {
+    "index_id": "trino",
+    "filter": "service:(apm-trino OR trino-gateway) OR team:trino"
+  },
+  {
+    "index_id": "lockness-events",
+    "filter": "@log_type:lockness_event"
+  },
+  {
+    "index_id": "sds",
+    "filter": "team:sensitive-data-scanner OR team:sds"
+  },
+  {
+    "index_id": "flexlogsworker",
+    "filter": "service:eventplatform-worker AND @WorkflowType:flex_logs*"
+  },
+  {
+    "index_id": "k9-asm-vulns-platform-index",
+    "filter": "service:(code-workload-runner-sca)"
+  },
+  {
+    "index_id": "asm-vulns-platform-index",
+    "filter": "service:(asm-vm-advisories-importer OR vulnerability-detector-reducer OR vulnerability-reducer OR event-jobs-asm-sca OR asm-vm-analytics OR oss-package-crawler OR code-workload-runner-sca)"
+  },
+  {
+    "index_id": "terraform-cloud-integration",
+    "filter": "source:(terraform-cloud OR terraform-cloud-logs-api-client-crawler OR hcp-terraform OR velocloud-sd-wan OR fortinet-fortimanager OR ai-week)"
+  },
+  {
+    "index_id": "atlaslite-server",
+    "filter": "app.kubernetes.io/name:atlaslite-server"
+  },
+  {
+    "index_id": "toaster",
+    "filter": "env:toaster"
+  },
+  {
+    "index_id": "apim-spans-to-endpoints",
+    "filter": "service:apim-spans-to-endpoints"
+  },
+  {
+    "index_id": "dbm",
+    "filter": "team:(dbm OR database-monitoring)"
+  },
+  {
+    "index_id": "resource-event-processor-aws",
+    "filter": "service:resource-event-processor-aws"
+  },
+  {
+    "index_id": "delancie-aws",
+    "filter": "service:aws-*-workers"
+  },
+  {
+    "index_id": "metrics-control-plane",
+    "filter": "team:metrics-control-plane"
+  },
+  {
+    "index_id": "chat-integrations",
+    "filter": "service:(datacenter-gateway OR chat-workers OR hermes OR slack-app-core OR slack-app-router OR chat-general OR ms-teams-app-core OR chat-crawler OR chat-scheduler OR ms-teams-app-router)"
+  },
+  {
+    "index_id": "azure-integrations",
+    "filter": "service:(azure-workers OR azure-standby-workers OR azure-resource-workers OR azure-metric-collection OR azure-generic-workers OR azure-resource-consumer)"
+  },
+  {
+    "index_id": "dogmail",
+    "filter": "source:(sendgrid OR mailgun)"
+  },
+  {
+    "index_id": "rum-otel-test",
+    "filter": "service:(OpenTelemetryDemoApp OR otel-demo-app-browser)"
+  },
+  {
+    "index_id": "cloudfront",
+    "filter": "source:cloudfront"
+  },
+  {
+    "index_id": "ddcoterm",
+    "filter": "source:ddcoterm"
+  },
+  {
+    "index_id": "dbm-mongo-log-index",
+    "filter": "source:mongo"
+  },
+  {
+    "index_id": "atlas-servers",
+    "filter": "app.kubernetes.io/name:(temporal-large-payloads OR temporal OR temporal-ui-server) -app.kubernetes.io/instance:airbyte"
+  },
+  {
+    "index_id": "metrics-platform-automation",
+    "filter": "team:metrics-platform-automation"
+  },
+  {
+    "index_id": "logsworker",
+    "filter": "service:eventplatform-worker AND @WorkflowType:flex_logs*"
+  },
+  {
+    "index_id": "pariatur",
+    "filter": "source:python"
+  },
+  {
+    "index_id": "fake-deprecated-siem",
+    "filter": "(@job-id:security-monitoring-* OR @job:security-monitoring-*) service:event-jobs-security-monitoring"
+  },
+  {
+    "index_id": "hmq-io",
+    "filter": "service:(clubber* OR historical-data-query* OR foundationdb* OR hdq-creed) team:historical-metrics-query"
+  },
+  {
+    "index_id": "anna-chang-test",
+    "filter": "service:logs-event-store-writer datacenter:us1.staging.dog"
+  },
+  {
+    "index_id": "metrics-differ",
+    "filter": "service:metrics-differ"
+  },
+  {
+    "index_id": "test-airflow-djm-logs",
+    "filter": "@aws.awslogs.logGroup:airflow-djm-airflow-test-logs-Task"
+  },
+  {
+    "index_id": "oci-logs",
+    "filter": "service:(oci-workers OR cloud-streams-intake-oci-metrics OR cloud-streams-processor-oci-metrics OR oci-hubmanager OR alicloud-workers OR oci.* OR delancie-crawler-generic)"
+  },
+  {
+    "index_id": "cost-obs-index",
+    "filter": "source:aws-cloudtrail-eventdatastore-disabler"
+  },
+  {
+    "index_id": "airflow",
+    "filter": "service:(airflow OR airflow-djm-airflow-test-logs-task OR airflow-task)"
+  },
+  {
+    "index_id": "storage-estimated-costs-debug",
+    "filter": "service:storage-estimated-costs"
+  },
+  {
+    "index_id": "cisco-aci",
+    "filter": "source:cisco-aci"
+  },
+  {
+    "index_id": "petitcl-schema-service-test",
+    "filter": "service:petitcl-schema-test-1 @event_type:dataset_*"
+  },
+  {
+    "index_id": "event-platform-resilience-automation",
+    "filter": "team:event-platform-resilience-automation"
+  },
+  {
+    "index_id": "monitor-results-publisher",
+    "filter": "service:monitor-results-publisher"
+  },
+  {
+    "index_id": "xps-test",
+    "filter": "service:xps-test @event_type:dataset_observed"
+  },
+  {
+    "index_id": "xps-fatcat-test",
+    "filter": "service:event-fatcat-fake"
+  },
+  {
+    "index_id": "event-platform-topology-automation",
+    "filter": "team:event-platform-topology-automation"
+  },
+  {
+    "index_id": "hpc-slurm-test",
+    "filter": "source:slurm"
+  },
+  {
+    "index_id": "fatcat-test",
+    "filter": "service:fatcat-test-debug"
+  },
+  {
+    "index_id": "data-observability-index",
+    "filter": "service:(lineage-processor OR data-observability-intake OR data-quality-evaluator OR do-query-parsing-api)"
+  },
+  {
+    "index_id": "apm-investigator-fake-benchmark",
+    "filter": "service:gensim-fake-benchmark @evaluation_type:*"
+  },
+  {
+    "index_id": "data-observability",
+    "filter": "service:(lineage-processor OR data-observability-intake)"
+  },
+  {
+    "index_id": "brandenclark-test",
+    "filter": "source:windows.events"
+  },
+  {
+    "index_id": "saas-ai-pipeline",
+    "filter": "service:claude-chat-replay"
+  },
+  {
+    "index_id": "fuzzing",
+    "filter": "service:(fuzzing-* OR *-fuzzing)"
+  },
+  {
+    "index_id": "feature-flagging-and-experimentation",
+    "filter": "team:feature-flagging-and-experimentation"
+  },
+  {
+    "index_id": "junitxml-logs",
+    "filter": "source:junitxml"
+  },
+  {
+    "index_id": "hello-ray-with-logs-yakov-testing",
+    "filter": "service:hello-ray-with-logs"
+  },
+  {
+    "index_id": "netskope-saas-ints",
+    "filter": "source:netskope"
+  },
+  {
+    "index_id": "code-gen",
+    "filter": "team:code-gen"
+  },
+  {
+    "index_id": "windows-installer-lab",
+    "filter": "env:windows-installer-lab"
+  },
+  {
+    "index_id": "k9-admin-api-sample-logs",
+    "filter": "service:k9-admin-api-sample-logs"
+  },
+  {
+    "index_id": "audrey-index",
+    "filter": "service:k9-admin-api-sample-logs"
+  },
+  {
+    "index_id": "chrono-schedule-lifecycle",
+    "filter": "service:chrono-* kube_namespace:chrono @schedule_lifecycle:true"
+  },
+  {
+    "index_id": "oci-object-storage",
+    "filter": "source:oci.*"
+  },
+  {
+    "index_id": "ella-index",
+    "filter": "service:\"custom_logs\""
+  },
+  {
+    "index_id": "bitdefender-idx",
+    "filter": "source:bitdefender"
+  },
+  {
+    "index_id": "cursor-logs",
+    "filter": "source:cursor"
+  },
+  {
+    "index_id": "observability-platform",
+    "filter": "team:(observability-platform OR observability-telemetry)"
+  },
+  {
+    "index_id": "amandine-test",
+    "filter": "source:dummy"
+  },
+  {
+    "index_id": "saas-integrations-account-service",
+    "filter": "service:(account-service OR integration-task-service) source:rapid"
+  },
+  {
+    "index_id": "docusign-idx",
+    "filter": "source:docusign"
+  },
+  {
+    "index_id": "recorded-future",
+    "filter": "source:recorded-future"
+  },
+  {
+    "index_id": "query-usage-gold",
+    "filter": "service:this-is-a-test @project:logs-innovation-week-gold-indexes"
+  },
+  {
+    "index_id": "test888",
+    "filter": "@is_encryption_enabled:sds-synthetics"
+  },
+  {
+    "index_id": "error-tracking-debugger",
+    "filter": "service:error-tracking-debugger"
+  },
+  {
+    "index_id": "datadog-code-security",
+    "filter": "source:datadog-code-security AND service:noop"
+  },
+  {
+    "index_id": "test11",
+    "filter": "@ddaudit:internal"
+  },
+  {
+    "index_id": "test-benji",
+    "filter": "service:event-platform-metadata-api"
+  },
+  {
+    "index_id": "test-secure-edge-pm-review",
+    "filter": "source:barracuda_secure_edge"
+  },
+  {
+    "index_id": "name",
+    "filter": "@data.dport:event-workers-alertres"
+  },
+  {
+    "index_id": "jsaf-october-test",
+    "filter": "service:my-service"
+  },
+  {
+    "index_id": "sds-resolve-fingerprint-findings",
+    "filter": "sensitive_data:*"
+  },
+  {
+    "index_id": "prompt-template-test",
+    "filter": "service:prompt-templates-service"
+  },
+  {
+    "index_id": "observability-graph-services",
+    "filter": "team:redapl-observability-graph service:observability-graph-query"
+  },
+  {
+    "index_id": "dsm-expired-transactions",
+    "filter": "service:expired-transactions OR service:transaction-tracking-processor"
+  },
+  {
+    "index_id": "ovhcloud-logs",
+    "filter": "source:ovhcloud_logs"
+  },
+  {
+    "index_id": "aaa-data-deletion",
+    "filter": "service:(kirby OR waddledee)"
+  },
+  {
+    "index_id": "service-remapping-e2e-tests",
+    "filter": "service:*service-remapping*"
+  },
+  {
+    "index_id": "jackie-frozen",
+    "filter": "service:hermes"
+  },
+  {
+    "index_id": "gensim",
+    "filter": "gensim:true OR env:vibecoder-* OR env:episode-* OR env:gensim-*"
+  },
+  {
+    "index_id": "merchrist-test",
+    "filter": "service:mmk-service"
+  },
+  {
+    "index_id": "jonathan-index",
+    "filter": "service:jonathan-test"
+  },
+  {
+    "index_id": "jordan-frosty-web-ui-index",
+    "filter": "status:(warn OR error) service:web-ui"
+  },
+  {
+    "index_id": "bug-bash-please-delete-me-asap",
+    "filter": "service:cassandra"
+  },
+  {
+    "index_id": "hugo-frozen-test",
+    "filter": "service:audit-nlq"
+  },
+  {
+    "index_id": "kelly-frozen-test",
+    "filter": "source:asd"
+  },
+  {
+    "index_id": "frozen-martin-boost",
+    "filter": "service:martin-boost"
+  },
+  {
+    "index_id": "marjolaine-bug-bash-ii",
+    "filter": "service:logs-api status:error"
+  },
+  {
+    "index_id": "marjolaine-bug-bash-ii-2",
+    "filter": "service:logs-api status:error"
+  },
+  {
+    "index_id": "test-brady-3",
+    "filter": "service:brady"
+  },
+  {
+    "index_id": "test-ines-2",
+    "filter": "source:chicken test:test"
+  },
+  {
+    "index_id": "glue-jobs-index",
+    "filter": "service:cloudwatch && (host:/aws-glue/jobs/error || host:/aws-glue/jobs/output || host:/aws-glue/jobs/logs-v2)"
+  },
+  {
+    "index_id": "test-brady-4",
+    "filter": "service:testbrady"
+  },
+  {
+    "index_id": "test-ines-4",
+    "filter": "source:chicken"
+  },
+  {
+    "index_id": "alibaba-cloud-logs-index",
+    "filter": "source:alibaba-cloud"
+  },
+  {
+    "index_id": "atlas-workers",
+    "filter": "atlas_worker:true"
+  },
+  {
+    "index_id": "main",
+    "filter": "*"
+  }
+]

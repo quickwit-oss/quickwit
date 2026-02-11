@@ -12,13 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod index_resource;
-mod index_routing_table_resource;
-mod rest_handler;
-mod source_resource;
-mod split_resource;
+mod doc_router;
+#[cfg(test)]
+mod doc_router_tests;
+mod filter_expr;
+#[cfg(test)]
+mod filter_expr_tests;
 
-pub use self::index_resource::get_index_metadata_handler;
-pub use self::index_routing_table_resource::{IndexRoutingTableApi, index_routing_table_handlers};
-pub use self::rest_handler::{IndexApi, index_management_handlers};
-pub use self::split_resource::{ListSplitsQueryParams, ListSplitsResponse};
+pub use doc_router::LogRouter;

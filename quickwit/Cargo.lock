@@ -7208,6 +7208,7 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-datadog-log-router",
  "quickwit-indexing",
  "quickwit-ingest",
  "quickwit-metastore",
@@ -7220,6 +7221,17 @@ dependencies = [
  "tokio",
  "tracing",
  "ulid",
+]
+
+[[package]]
+name = "quickwit-datadog-log-router"
+version = "0.1.20-dev"
+dependencies = [
+ "anyhow",
+ "nom 8.0.0",
+ "quickwit-proto",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -7769,6 +7781,7 @@ dependencies = [
  "assert-json-diff",
  "async-trait",
  "base64 0.22.1",
+ "binggan",
  "bytes",
  "bytesize",
  "elasticsearch-dsl",
@@ -7807,6 +7820,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-control-plane",
+ "quickwit-datadog-log-router",
  "quickwit-datetime",
  "quickwit-doc-mapper",
  "quickwit-index-management",
@@ -7820,6 +7834,7 @@ dependencies = [
  "quickwit-query",
  "quickwit-search",
  "quickwit-storage",
+ "rand 0.9.2",
  "regex",
  "rust-embed",
  "rustls 0.23.36",

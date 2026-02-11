@@ -252,7 +252,7 @@ async fn test_index_routing_table_crud() {
 
     let mut client = sandbox.cloudprem_client();
 
-    // Step 1: Get routing table - should be empty initially
+    // Step 1: Get routing table - should have default catch-all rule
     let get_response = client
         .get_index_routing_table(authenticated_request(GetIndexRoutingTableRequest {
             org_id: 2,
@@ -261,15 +261,15 @@ async fn test_index_routing_table_crud() {
         .await
         .unwrap()
         .into_inner();
-    assert!(
-        get_response.routing_table.is_empty(),
-        "routing table should be empty initially"
-    );
+    let routing_table = &get_response.routing_table;
+    assert_eq!(routing_table.len(), 1, "should have default catch-all rule");
+    assert_eq!(routing_table[0].filter, "*");
+    assert_eq!(routing_table[0].index_id, "datadog");
 
-    // Step 2: Set routing table with valid rules
+    // Step 2: Set routing table with a specific filter
     let set_request = SetIndexRoutingTableRequest {
         routing_table: vec![IndexRoutingRule {
-            filter: "*".to_string(),
+            filter: "source:nginx".to_string(),
             index_id: "datadog".to_string(),
         }],
         org_id: 2,
@@ -280,7 +280,7 @@ async fn test_index_routing_table_crud() {
         .await
         .expect("set_index_routing_table should succeed");
 
-    // Step 3: Verify routing table was set
+    // Step 3: Verify routing table was updated
     let get_response = client
         .get_index_routing_table(authenticated_request(GetIndexRoutingTableRequest {
             org_id: 2,
@@ -291,38 +291,8 @@ async fn test_index_routing_table_crud() {
         .into_inner();
     let routing_table = &get_response.routing_table;
     assert_eq!(routing_table.len(), 1);
-    assert_eq!(routing_table[0].filter, "*");
+    assert_eq!(routing_table[0].filter, "source:nginx");
     assert_eq!(routing_table[0].index_id, "datadog");
-
-    sandbox.shutdown().await.unwrap();
-}
-
-#[tokio::test]
-async fn test_index_routing_table_error_no_catch_all() {
-    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
-    let sandbox = setup_env(&mut data).await;
-
-    let mut client = sandbox.cloudprem_client();
-
-    // Try to set routing table without catch-all rule - should fail
-    let set_request = SetIndexRoutingTableRequest {
-        routing_table: vec![IndexRoutingRule {
-            filter: "status:error".to_string(),
-            index_id: "datadog".to_string(),
-        }],
-        org_id: 2,
-        cluster_id: "test-cluster".to_string(),
-    };
-    let err = client
-        .set_index_routing_table(authenticated_request(set_request))
-        .await
-        .expect_err("set_index_routing_table should fail without catch-all rule");
-
-    assert!(
-        err.message().contains("catch-all"),
-        "error should mention catch-all rule: {}",
-        err.message()
-    );
 
     sandbox.shutdown().await.unwrap();
 }

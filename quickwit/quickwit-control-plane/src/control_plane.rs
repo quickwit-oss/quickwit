@@ -235,14 +235,6 @@ impl Actor for ControlPlane {
             .await
             .context("failed to initialize control plane model")?;
 
-        // Initialize routing table if consistency is enforced and it doesn't exist yet
-        if self.cluster_config.enforce_index_routing_table_consistency {
-            self.model
-                .initialize_routing_table_if_necessary(&mut self.metastore)
-                .await
-                .context("failed to initialize routing table")?;
-        }
-
         let _rebuild_plan_waiter = self.rebuild_plan_debounced(ctx);
 
         self.ingest_controller.sync_with_all_ingesters(&self.model);
@@ -615,19 +607,6 @@ impl DeferableReplyHandler<CreateIndexRequest> for ControlPlane {
         let should_rebuild_plan = !index_metadata.sources.is_empty();
         self.model.add_index(index_metadata);
 
-        // Update routing table if consistency is enforced.
-        if self.cluster_config.enforce_index_routing_table_consistency
-            && let Err(metastore_error) = crate::index_routing_table::consistency::on_create_index(
-                &self.metastore,
-                &index_uid.index_id,
-                &*self.cluster_kv_publisher,
-            )
-            .await
-        {
-            reply(convert_metastore_error(metastore_error)?);
-            return Ok(());
-        }
-
         if should_rebuild_plan {
             let rebuild_plan_notifier = self.rebuild_plan_debounced(ctx);
             tokio::task::spawn(async move {
@@ -697,15 +676,13 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         let index_uid: IndexUid = request.index_uid().clone();
         debug!(%index_uid, "deleting index");
 
-        // Check routing table consistency BEFORE deleting.
-        // This validates and updates the routing table, ensuring we don't leave it invalid.
-        if self.cluster_config.enforce_index_routing_table_consistency
-            && let Err(metastore_error) = crate::index_routing_table::consistency::on_delete_index(
-                &self.metastore,
-                &index_uid.index_id,
-                &*self.cluster_kv_publisher,
-            )
-            .await
+        // Remove routing rules referencing the deleted index.
+        if let Err(metastore_error) = crate::index_routing_table::consistency::on_delete_index(
+            &self.metastore,
+            &index_uid.index_id,
+            &*self.cluster_kv_publisher,
+        )
+        .await
         {
             return convert_metastore_error(metastore_error);
         }
@@ -1207,7 +1184,7 @@ async fn watcher_indexers(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::num::NonZero;
     use std::sync::Arc;
 
@@ -1235,15 +1212,30 @@ mod tests {
     use quickwit_proto::ingest::{Shard, ShardPKey, ShardState};
     use quickwit_proto::metastore::{
         DeleteShardsResponse, EntityKind, FindIndexTemplateMatchesResponse,
-        ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest,
-        ListShardsResponse, ListShardsSubresponse, MetastoreError, MockMetastoreService,
-        OpenShardSubresponse, OpenShardsResponse, SourceType,
+        GetIndexRoutingTableResponse, IndexRoutingRule, ListIndexesMetadataRequest,
+        ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
+        MetastoreError, MockMetastoreService, OpenShardSubresponse, OpenShardsResponse, SourceType,
     };
     use quickwit_proto::types::{DocMappingUid, Position};
     use tokio::sync::Mutex;
 
     use super::*;
     use crate::IndexerNodeInfo;
+
+    /// Creates a `MockMetastoreService` with `get_index_routing_table` pre-registered
+    /// to return a non-empty routing table.
+    pub(crate) fn mock_metastore() -> MockMetastoreService {
+        let mut mock = MockMetastoreService::new();
+        mock.expect_get_index_routing_table().returning(|_| {
+            Ok(GetIndexRoutingTableResponse {
+                rules: vec![IndexRoutingRule {
+                    filter: "*".to_string(),
+                    index_id: "mock-index".to_string(),
+                }],
+            })
+        });
+        mock
+    }
 
     #[tokio::test]
     async fn test_control_plane_create_index() {
@@ -1252,7 +1244,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let index_uid_clone = index_uid.clone();
         mock_metastore
@@ -1309,11 +1301,14 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         let index_uid_clone = index_uid.clone();
         mock_metastore
             .expect_delete_index()
             .withf(move |delete_index_request| delete_index_request.index_uid() == &index_uid_clone)
+            .returning(|_| Ok(EmptyResponse {}));
+        mock_metastore
+            .expect_set_index_routing_table()
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
             .expect_list_indexes_metadata()
@@ -1355,7 +1350,7 @@ mod tests {
             .add_source(SourceConfig::ingest_v2())
             .unwrap();
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         mock_metastore
             .expect_add_source()
             .withf(|add_source_request| {
@@ -1452,7 +1447,7 @@ mod tests {
             .add_source(test_source_config.clone())
             .unwrap();
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         mock_metastore
             .expect_update_source()
             .withf(move |update_source_request| {
@@ -1519,7 +1514,7 @@ mod tests {
         let test_source_config = SourceConfig::for_test("test-source", SourceParams::void());
         index_metadata.add_source(test_source_config).unwrap();
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata])));
@@ -1589,7 +1584,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         let index_uid_clone = index_uid.clone();
         mock_metastore
@@ -1637,7 +1632,7 @@ mod tests {
 
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
         mock_metastore
             .expect_list_indexes_metadata()
@@ -1715,7 +1710,7 @@ mod tests {
         let node_id = NodeId::new("test_node".to_string());
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let source = SourceConfig::ingest_v2();
@@ -1861,7 +1856,7 @@ mod tests {
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let mut source = SourceConfig::ingest_v2();
@@ -2010,7 +2005,7 @@ mod tests {
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
 
         let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let mut source_config = SourceConfig::ingest_v2();
@@ -2088,7 +2083,7 @@ mod tests {
         };
         indexer_pool.insert(indexer_node_info.node_id.clone(), indexer_node_info);
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let mut source = SourceConfig::ingest_v2();
@@ -2183,7 +2178,7 @@ mod tests {
         let index_uid_clone = index_0.index_uid.clone();
         let index_0_clone = index_0.clone();
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         mock_metastore
             .expect_list_indexes_metadata()
             .times(1)
@@ -2242,6 +2237,9 @@ mod tests {
                 assert_eq!(delete_index_request.index_uid(), &index_uid_clone);
                 Ok(EmptyResponse {})
             });
+        mock_metastore
+            .expect_set_index_routing_table()
+            .returning(|_| Ok(EmptyResponse {}));
         mock_ingester
             .expect_retain_shards()
             .times(1)
@@ -2304,7 +2302,7 @@ mod tests {
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
         let index_uid_clone = index_0.index_uid.clone();
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         mock_metastore.expect_delete_source().return_once(
             move |delete_source_request: DeleteSourceRequest| {
                 assert_eq!(delete_source_request.index_uid(), &index_uid_clone);
@@ -2387,7 +2385,7 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
 
         mock_metastore
             .expect_list_indexes_metadata()
@@ -2517,7 +2515,7 @@ mod tests {
 
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
@@ -2598,7 +2596,7 @@ mod tests {
         let ingester = IngesterServiceClient::from_mock(mock_ingester);
         ingester_pool.insert(ingester_id, ingester);
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
@@ -2752,7 +2750,7 @@ mod tests {
         let ingester = IngesterServiceClient::from_mock(mock_ingester);
         ingester_pool.insert(ingester_id, ingester);
 
-        let mut mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = mock_metastore();
         mock_metastore
             .expect_list_indexes_metadata()
             .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));

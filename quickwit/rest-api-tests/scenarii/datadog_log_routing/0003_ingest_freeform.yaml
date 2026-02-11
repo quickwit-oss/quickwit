@@ -1,0 +1,91 @@
+# Routing edge cases: strategy 2 fallback (no "message" field → MessageValue::Obj),
+# strategy 1 with known fields inside the message object, alternate field names
+# from pomchi create_preprocessing_pipeline(), and nested message chains.
+
+# Clear all indexes
+method: PUT
+endpoint: api/v1/indexes/datadog-audit/clear
+---
+method: PUT
+endpoint: api/v1/indexes/datadog-error/clear
+---
+method: PUT
+endpoint: api/v1/indexes/datadog-web/clear
+---
+method: PUT
+endpoint: api/v1/indexes/datadog-main/clear
+---
+method: POST
+endpoint: /api/v2/logs
+headers:
+  Content-Type: application/json
+data: |
+  [
+    {"service": "audit-pay"},
+    {"message": {"service": "audit-billing"}},
+    {"message": {"dd.service": "audit-B1"}},
+    {"message": {"syslog.appname": "audit-B2"}},
+    {"message": {"message": {"service": "audit-B7"}}},
+
+    {"event": {"result": {"status": "failed"}}},
+    {"message": {"message": {"event": {"result": {"status": "failed"}}}}},
+    {"ddtags": ["my-tag:critical"]},
+    {"message": {"ddtags": ["my-tag:critical"]}},
+
+    {"ddsource": "nginx", "status": "info"},
+    {"host": "web-front-01", "status": "warn"},
+    {"message": {"ddsource": "nginx", "status": "info"}},
+    {"message": {"host": "web-proxy-01", "status": "error"}},
+    {"message": {"syslog.hostname": "web-B3", "status": "info"}},
+    {"message": {"syslog.hostname": "web-B4", "severity": "warn"}},
+    {"message": {"host": "web-B5", "level": "error"}},
+    {"message": {"host": "web-B6", "syslog.severity": "info"}},
+
+    {"status": "debug"}
+  ]
+sleep_after: 10
+---
+# service:audit-* matches:
+#   service in object (strategy 2)
+#   service in message obj (strategy 1)
+#   dd.service in message obj (alternate name)
+#   syslog.appname in message obj (alternate name)
+#   service in message→message chain (nested traversal)
+endpoint: api/v1/datadog-audit/search
+params:
+  query: "*"
+expected:
+  num_hits: 5
+---
+# my-tag:critical OR @event.result.status:failed matches:
+#   @event.result.status:failed via custom_field_accessor
+#   @event.result.status:failed via custom_field_accessor in message chain
+#   ddtags array in object (strategy 2)
+#   ddtags array in message obj (strategy 1)
+endpoint: api/v1/datadog-error/search
+params:
+  query: "*"
+expected:
+  num_hits: 4
+---
+# (source:nginx OR host:web*) status:* matches:
+#   ddsource+status in object (strategy 2)
+#   host+status in object (strategy 2)
+#   ddsource+status in message (strategy 1)
+#   host+status in message (strategy 1)
+#   syslog.hostname+status (alternate host name)
+#   syslog.hostname+severity (both alternate names)
+#   host+level (alternate status name)
+#   host+syslog.severity (alternate status name)
+endpoint: api/v1/datadog-web/search
+params:
+  query: "*"
+expected:
+  num_hits: 8
+---
+# Catch-all: status:debug but no source/host → no rule matches
+endpoint: api/v1/datadog-main/search
+params:
+  query: "*"
+expected:
+  num_hits: 1

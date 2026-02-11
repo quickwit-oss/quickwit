@@ -13,14 +13,11 @@
 // limitations under the License.
 
 //! Helper functions for maintaining routing table consistency during index mutations.
-//!
-//! These functions are called by the control plane handlers when
-//! `enforce_index_routing_table_consistency` is enabled in the cluster config.
 
 use quickwit_cluster::ClusterKvPublisher;
 use quickwit_proto::metastore::{
-    GetIndexRoutingTableRequest, IndexRoutingRule, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, SetIndexRoutingTableRequest,
+    GetIndexRoutingTableRequest, IndexRoutingRule, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, SetIndexRoutingTableRequest,
 };
 
 /// Chitchat key used to broadcast routing table changes to other nodes.
@@ -34,41 +31,7 @@ pub async fn broadcast_routing_table_change(cluster_kv_publisher: &dyn ClusterKv
         .await;
 }
 
-/// Called after creating an index. Appends a catch-all rule for the new index.
-///
-/// This ensures the new index can receive documents even if no explicit routing
-/// rule exists for it.
-pub async fn on_create_index(
-    metastore: &MetastoreServiceClient,
-    index_id: &str,
-    cluster_kv_publisher: &dyn ClusterKvPublisher,
-) -> MetastoreResult<()> {
-    let response = metastore
-        .get_index_routing_table(GetIndexRoutingTableRequest {})
-        .await?;
-
-    let mut rules = response.rules;
-
-    // Append catch-all rule for new index
-    let new_rule = IndexRoutingRule {
-        filter: "*".to_string(),
-        index_id: index_id.to_string(),
-    };
-    rules.push(new_rule);
-
-    metastore
-        .set_index_routing_table(SetIndexRoutingTableRequest { rules })
-        .await?;
-
-    broadcast_routing_table_change(cluster_kv_publisher).await;
-
-    Ok(())
-}
-
 /// Called before deleting an index. Removes rules referencing the index.
-///
-/// Returns an error if removing the rules would leave the routing table without
-/// a catch-all rule, which would violate the routing table invariant.
 pub async fn on_delete_index(
     metastore: &MetastoreServiceClient,
     index_id: &str,
@@ -79,7 +42,6 @@ pub async fn on_delete_index(
         .await?;
 
     if response.rules.is_empty() {
-        // No routing table exists, nothing to do
         return Ok(());
     }
 
@@ -89,17 +51,6 @@ pub async fn on_delete_index(
         .into_iter()
         .filter(|rule| rule.index_id != index_id)
         .collect();
-
-    // Validate: must still have a catch-all rule
-    let has_catch_all = new_rules.iter().any(|rule| rule.filter == "*");
-    if !has_catch_all {
-        return Err(MetastoreError::InvalidArgument {
-            message: format!(
-                "cannot delete index `{index_id}`: it would leave the routing table without a \
-                 catch-all rule"
-            ),
-        });
-    }
 
     metastore
         .set_index_routing_table(SetIndexRoutingTableRequest { rules: new_rules })

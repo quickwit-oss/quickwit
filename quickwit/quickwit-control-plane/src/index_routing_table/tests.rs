@@ -89,8 +89,7 @@ async fn setup_test(
     }
 
     // Spawn control plane
-    let mut cluster_config = ClusterConfig::for_test();
-    cluster_config.enforce_index_routing_table_consistency = true;
+    let cluster_config = ClusterConfig::for_test();
 
     let universe = Universe::with_accelerated_time();
     let (control_plane_mailbox, _handle, mut readiness_rx) = ControlPlane::spawn(
@@ -115,18 +114,17 @@ async fn setup_test(
 }
 
 #[tokio::test]
-async fn test_set_routing_table_rejects_no_catch_all_rule() {
-    let (universe, _, control_plane, _) =
-        setup_test(&["test-index-a", "test-index-b", "test-index-c"], None).await;
+async fn test_set_routing_table_rejects_invalid_filter_syntax() {
+    let (universe, _, control_plane, _) = setup_test(&["test-index-a", "test-index-b"], None).await;
 
     let request = SetIndexRoutingTableRequest {
         rules: vec![
             IndexRoutingRule {
-                filter: "service:a".to_string(),
+                filter: "service:a AND (INVALID".to_string(), // Missing closing parenthesis
                 index_id: "test-index-a".to_string(),
             },
             IndexRoutingRule {
-                filter: "service:b".to_string(),
+                filter: "*".to_string(),
                 index_id: "test-index-b".to_string(),
             },
         ],
@@ -136,7 +134,7 @@ async fn test_set_routing_table_rejects_no_catch_all_rule() {
     assert!(matches!(
         error,
         ControlPlaneError::Metastore(MetastoreError::InvalidArgument { message })
-        if message.contains("catch-all rule")
+        if message.contains("Parse error")
     ));
 
     universe.assert_quit().await;
@@ -205,46 +203,6 @@ async fn test_set_routing_table_accepts_valid_table() {
 }
 
 #[tokio::test]
-async fn test_create_index_appends_catch_all_rule() {
-    let (universe, metastore, control_plane, _) = setup_test(
-        &["existing-index"],
-        Some(vec![IndexRoutingRule {
-            filter: "*".to_string(),
-            index_id: "existing-index".to_string(),
-        }]),
-    )
-    .await;
-
-    let index_config = IndexConfig::for_test("new-index", "ram:///new-index");
-    let request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-    let response = control_plane.ask(request).await.unwrap().unwrap();
-
-    assert_eq!(response.index_uid().index_id, "new-index");
-
-    // Verify routing table has both indexes
-    let routing_response = metastore
-        .get_index_routing_table(GetIndexRoutingTableRequest {})
-        .await
-        .unwrap();
-    let expected_rules = vec![
-        IndexRoutingRule {
-            filter: "*".to_string(),
-            index_id: "existing-index".to_string(),
-        },
-        IndexRoutingRule {
-            filter: "*".to_string(),
-            index_id: "new-index".to_string(),
-        },
-    ];
-    assert_eq!(
-        routing_response.rules, expected_rules,
-        "routing table should have both indexes"
-    );
-
-    universe.assert_quit().await;
-}
-
-#[tokio::test]
 async fn test_delete_index_removes_rules() {
     let (universe, metastore, control_plane, _) = setup_test(
         &["index-a", "index-b"],
@@ -298,34 +256,6 @@ async fn test_delete_index_removes_rules() {
     universe.assert_quit().await;
 }
 
-/// Tests that control plane initializes routing table at startup if it doesn't exist (migration).
-#[tokio::test]
-async fn test_control_plane_initializes_routing_table_at_startup() {
-    // Create indexes but no routing table (migration scenario)
-    let (universe, metastore, _control_plane, _broadcast_count) =
-        setup_test(&["index-a", "index-b", "index-c"], None).await;
-
-    // Give control plane time to initialize
-    tokio::time::sleep(Duration::from_millis(100)).await;
-
-    // Verify routing table was created with first index alphabetically as catch-all
-    let response = metastore
-        .get_index_routing_table(GetIndexRoutingTableRequest {})
-        .await
-        .unwrap();
-
-    let expected_rules = vec![IndexRoutingRule {
-        filter: "*".to_string(),
-        index_id: "index-a".to_string(), // First alphabetically
-    }];
-    assert_eq!(
-        response.rules, expected_rules,
-        "routing table should be initialized with first index as catch-all"
-    );
-
-    universe.assert_quit().await;
-}
-
 /// Tests that control plane doesn't overwrite existing routing table at startup.
 #[tokio::test]
 async fn test_control_plane_preserves_existing_routing_table() {
@@ -359,126 +289,6 @@ async fn test_control_plane_preserves_existing_routing_table() {
         response.rules, initial_rules,
         "routing table should not be modified at startup"
     );
-
-    universe.assert_quit().await;
-}
-
-#[tokio::test]
-async fn test_delete_index_rejects_if_no_catch_all_remains() {
-    let (universe, metastore, control_plane, _) = setup_test(
-        &["index-a"],
-        Some(vec![IndexRoutingRule {
-            filter: "*".to_string(),
-            index_id: "index-a".to_string(),
-        }]),
-    )
-    .await;
-
-    let index_a_uid: IndexUid = metastore
-        .index_metadata(quickwit_proto::metastore::IndexMetadataRequest {
-            index_id: Some("index-a".to_string()),
-            index_uid: None,
-        })
-        .await
-        .unwrap()
-        .deserialize_index_metadata()
-        .unwrap()
-        .index_uid;
-
-    let error: ControlPlaneError = control_plane
-        .ask(DeleteIndexRequest {
-            index_uid: Some(index_a_uid),
-        })
-        .await
-        .unwrap()
-        .unwrap_err();
-
-    assert!(matches!(
-        error,
-        ControlPlaneError::Metastore(MetastoreError::InvalidArgument { message })
-        if message.contains("catch-all") && message.contains("index-a")
-    ));
-
-    // Verify routing table unchanged
-    let routing_response = metastore
-        .get_index_routing_table(GetIndexRoutingTableRequest {})
-        .await
-        .unwrap();
-    assert_eq!(routing_response.rules.len(), 1);
-
-    universe.assert_quit().await;
-}
-
-/// Test that concurrent delete requests are handled correctly.
-/// The control plane actor processes messages sequentially, so even if multiple
-/// delete requests are sent concurrently, they should be processed one by one.
-#[tokio::test]
-async fn test_concurrent_delete_preserves_last_catch_all() {
-    let index_ids: Vec<String> = (0..10).map(|i| format!("index-{i}")).collect();
-    let index_id_refs: Vec<&str> = index_ids.iter().map(|s| s.as_str()).collect();
-
-    let (universe, metastore, control_plane, _) = setup_test(
-        &index_id_refs,
-        Some(
-            index_ids
-                .iter()
-                .map(|id| IndexRoutingRule {
-                    filter: "*".to_string(),
-                    index_id: id.clone(),
-                })
-                .collect(),
-        ),
-    )
-    .await;
-
-    // Get all index UIDs
-    let mut index_uids: Vec<IndexUid> = Vec::new();
-    for index_id in &index_ids {
-        let uid = metastore
-            .index_metadata(quickwit_proto::metastore::IndexMetadataRequest {
-                index_id: Some(index_id.clone()),
-                index_uid: None,
-            })
-            .await
-            .unwrap()
-            .deserialize_index_metadata()
-            .unwrap()
-            .index_uid;
-        index_uids.push(uid);
-    }
-
-    // Send all delete requests concurrently
-    let delete_futures: Vec<_> = index_uids
-        .iter()
-        .map(|uid| {
-            let mailbox = control_plane.clone();
-            let request = DeleteIndexRequest {
-                index_uid: Some(uid.clone()),
-            };
-            async move { mailbox.ask(request).await }
-        })
-        .collect();
-
-    let results = futures::future::join_all(delete_futures).await;
-
-    let successes = results
-        .iter()
-        .filter(|r| r.as_ref().unwrap().is_ok())
-        .count();
-    let failures = results
-        .iter()
-        .filter(|r| r.as_ref().unwrap().is_err())
-        .count();
-
-    assert_eq!(successes, 9, "9 deletes should succeed");
-    assert_eq!(failures, 1, "1 delete should fail (last catch-all)");
-
-    // Verify one rule remains
-    let routing_response = metastore
-        .get_index_routing_table(GetIndexRoutingTableRequest {})
-        .await
-        .unwrap();
-    assert_eq!(routing_response.rules.len(), 1);
 
     universe.assert_quit().await;
 }
@@ -519,42 +329,6 @@ async fn test_set_routing_table_broadcasts_change() {
         broadcast_count.load(Ordering::SeqCst),
         1,
         "expected exactly one broadcast call after set_routing_table"
-    );
-
-    universe.assert_quit().await;
-}
-
-/// Test that when an index is created, the control plane broadcasts the routing table change.
-#[tokio::test]
-async fn test_create_index_broadcasts_change() {
-    let (universe, _, control_plane, broadcast_count) = setup_test(
-        &["existing-index"],
-        Some(vec![IndexRoutingRule {
-            filter: "*".to_string(),
-            index_id: "existing-index".to_string(),
-        }]),
-    )
-    .await;
-
-    // Verify no broadcast during startup
-    assert_eq!(
-        broadcast_count.load(Ordering::SeqCst),
-        0,
-        "expected no broadcast during startup"
-    );
-
-    // Create a new index
-    let index_config = IndexConfig::for_test("new-index", "ram:///new-index");
-    let request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-    let response = control_plane.ask(request).await.unwrap().unwrap();
-
-    assert_eq!(response.index_uid().index_id, "new-index");
-
-    // Verify the broadcast was called exactly once for the index creation
-    assert_eq!(
-        broadcast_count.load(Ordering::SeqCst),
-        1,
-        "expected exactly one broadcast call after create_index"
     );
 
     universe.assert_quit().await;

@@ -13,8 +13,8 @@
 // limitations under the License.
 
 use quickwit_proto::metastore::{
-    GetIndexRoutingTableRequest, IndexRoutingRule, MetastoreResult, MetastoreService,
-    MetastoreServiceClient, SetIndexRoutingTableRequest,
+    IndexRoutingRule, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    SetIndexRoutingTableRequest,
 };
 use serde::{Deserialize, Serialize};
 use warp::reject::Rejection;
@@ -24,6 +24,17 @@ use crate::format::extract_format_from_qs;
 use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::with_arg;
+
+#[derive(utoipa::OpenApi)]
+#[openapi(
+    paths(get_index_routing_table, set_index_routing_table),
+    components(schemas(
+        IndexRoutingTableResponse,
+        IndexRoutingTableRequest,
+        IndexRoutingRuleEntry,
+    ))
+)]
+pub struct IndexRoutingTableApi;
 
 /// Response for GET /api/v1/index-routing-table
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -89,23 +100,22 @@ fn get_index_routing_table_handler(
     tag = "Index Routing Table",
     path = "/index-routing-table",
     responses(
-        (status = 200, description = "The index routing table was successfully retrieved.", body = IndexRoutingTableResponse)
+        (status = 200, description = "The index routing table was successfully retrieved.", body = Vec<IndexRoutingRuleEntry>)
     ),
 )]
 /// Retrieves the current index routing table.
 async fn get_index_routing_table(
     metastore: MetastoreServiceClient,
-) -> MetastoreResult<IndexRoutingTableResponse> {
-    let response = metastore
-        .get_index_routing_table(GetIndexRoutingTableRequest {})
-        .await?;
+) -> MetastoreResult<Vec<IndexRoutingRuleEntry>> {
+    let rules = crate::datadog_api::index_router::get_or_default_routing_rules(&metastore)
+        .await
+        .map_err(|e| quickwit_proto::metastore::MetastoreError::Internal {
+            message: e.to_string(),
+            cause: String::new(),
+        })?;
 
-    let rules = response
-        .rules
-        .into_iter()
-        .map(IndexRoutingRuleEntry::from)
-        .collect();
-    Ok(IndexRoutingTableResponse { rules })
+    let rules = rules.into_iter().map(IndexRoutingRuleEntry::from).collect();
+    Ok(rules)
 }
 
 fn set_index_routing_table_handler(
@@ -124,26 +134,24 @@ fn set_index_routing_table_handler(
     put,
     tag = "Index Routing Table",
     path = "/index-routing-table",
-    request_body = IndexRoutingTableRequest,
+    request_body = Vec<IndexRoutingRuleEntry>,
     responses(
-        (status = 200, description = "The index routing table was successfully updated.", body = IndexRoutingTableResponse)
+        (status = 200, description = "The index routing table was successfully updated.", body = Vec<IndexRoutingRuleEntry>)
     ),
 )]
 /// Sets the index routing table, replacing any existing rules.
 async fn set_index_routing_table(
-    request: IndexRoutingTableRequest,
+    request: Vec<IndexRoutingRuleEntry>,
     metastore: MetastoreServiceClient,
-) -> MetastoreResult<IndexRoutingTableResponse> {
-    let rules: Vec<IndexRoutingRule> = request.rules.iter().cloned().map(Into::into).collect();
+) -> MetastoreResult<Vec<IndexRoutingRuleEntry>> {
+    let rules: Vec<IndexRoutingRule> = request.iter().cloned().map(Into::into).collect();
 
     metastore
         .set_index_routing_table(SetIndexRoutingTableRequest { rules })
         .await?;
 
     // Return the rules that were set
-    Ok(IndexRoutingTableResponse {
-        rules: request.rules,
-    })
+    Ok(request)
 }
 
 #[cfg(test)]
@@ -184,9 +192,9 @@ mod tests {
             .await;
 
         assert_eq!(response.status(), 200);
-        let body: IndexRoutingTableResponse = serde_json::from_slice(response.body()).unwrap();
+        let body: Vec<IndexRoutingRuleEntry> = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(
-            body.rules,
+            body,
             vec![
                 IndexRoutingRuleEntry {
                     filter: "*".to_string(),
@@ -219,12 +227,10 @@ mod tests {
         let metastore = MetastoreServiceClient::from_mock(mock_metastore);
         let handler = index_routing_table_handlers(metastore);
 
-        let request_body = IndexRoutingTableRequest {
-            rules: vec![IndexRoutingRuleEntry {
-                filter: "*".to_string(),
-                index_id: "datadog".to_string(),
-            }],
-        };
+        let request_body = vec![IndexRoutingRuleEntry {
+            filter: "*".to_string(),
+            index_id: "datadog".to_string(),
+        }];
 
         let response = warp::test::request()
             .path("/index-routing-table")
@@ -235,5 +241,46 @@ mod tests {
             .await;
 
         assert_eq!(response.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_set_index_routing_table_rejects_invalid_filter_syntax() {
+        use quickwit_proto::metastore::MetastoreError;
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_set_index_routing_table()
+            .return_once(|_| {
+                Err(MetastoreError::InvalidArgument {
+                    message: "invalid filter syntax in rule for index `test-index-a`: Parse error"
+                        .to_string(),
+                })
+            });
+
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+        let handler = index_routing_table_handlers(metastore);
+
+        let request_body = vec![
+            IndexRoutingRuleEntry {
+                filter: "service:a AND (INVALID".to_string(),
+                index_id: "test-index-a".to_string(),
+            },
+            IndexRoutingRuleEntry {
+                filter: "*".to_string(),
+                index_id: "test-index-b".to_string(),
+            },
+        ];
+
+        let response = warp::test::request()
+            .path("/index-routing-table")
+            .method("PUT")
+            .header("content-type", "application/json")
+            .json(&request_body)
+            .reply(&handler)
+            .await;
+
+        assert_eq!(response.status(), 400);
+        let body = String::from_utf8_lossy(response.body());
+        assert!(body.contains("invalid filter syntax"));
     }
 }

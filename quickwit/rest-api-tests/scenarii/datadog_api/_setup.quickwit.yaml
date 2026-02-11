@@ -18,9 +18,8 @@ json:
 method: PUT
 endpoint: api/v1/index-routing-table
 json:
-  rules:
-    - filter: "*"
-      index_id: datadog
+  - filter: "*"
+    index_id: datadog
 ---
 # Ingest documents
 method: POST

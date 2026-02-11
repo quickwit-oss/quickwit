@@ -636,18 +636,12 @@ impl CloudPremService for CloudPremServiceImpl {
     ) -> CloudPremResult<GetIndexRoutingTableResponse> {
         info!("received GetIndexRoutingTable request");
 
-        let metastore_request = quickwit_proto::metastore::GetIndexRoutingTableRequest {};
-        let metastore_response = self
-            .metastore_client
-            .clone()
-            .get_index_routing_table(metastore_request)
-            .await?;
+        let rules =
+            crate::datadog_api::index_router::get_or_default_routing_rules(&self.metastore_client)
+                .await
+                .map_err(|e| CloudPremError::Internal(e.to_string()))?;
 
-        let routing_table = metastore_response
-            .rules
-            .into_iter()
-            .map(Into::into)
-            .collect();
+        let routing_table = rules.into_iter().map(Into::into).collect();
 
         Ok(GetIndexRoutingTableResponse { routing_table })
     }

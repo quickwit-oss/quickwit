@@ -57,7 +57,6 @@ pub struct TestNodeConfig {
     pub services: HashSet<QuickwitService>,
     pub enable_otlp: bool,
     pub create_datadog_index: bool,
-    pub enforce_index_routing_table_consistency: bool,
 }
 
 pub struct ClusterSandboxBuilder {
@@ -82,7 +81,6 @@ impl ClusterSandboxBuilder {
             services: HashSet::from_iter(services),
             enable_otlp: false,
             create_datadog_index: false,
-            enforce_index_routing_table_consistency: false,
         });
         self
     }
@@ -95,7 +93,6 @@ impl ClusterSandboxBuilder {
             services: HashSet::from_iter(services),
             enable_otlp: true,
             create_datadog_index: false,
-            enforce_index_routing_table_consistency: false,
         });
         self
     }
@@ -108,7 +105,6 @@ impl ClusterSandboxBuilder {
             services: HashSet::from_iter(services),
             enable_otlp: false,
             create_datadog_index: true,
-            enforce_index_routing_table_consistency: true,
         });
         self
     }
@@ -159,10 +155,6 @@ impl ClusterSandboxBuilder {
             config.default_index_root_uri =
                 QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/indexes")).unwrap();
             config.cloudprem_config.create_datadog_index = node_builder.create_datadog_index;
-            config
-                .cloudprem_config
-                .enforce_index_routing_table_consistency =
-                node_builder.enforce_index_routing_table_consistency;
             peers.push(config.gossip_advertise_addr.to_string());
             resolved_node_configs.push((config, node_builder.services.clone()));
         }

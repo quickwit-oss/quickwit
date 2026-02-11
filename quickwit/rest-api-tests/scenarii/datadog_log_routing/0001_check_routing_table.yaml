@@ -1,0 +1,12 @@
+# Verify the routing table is set correctly
+method: GET
+endpoint: api/v1/index-routing-table
+expected:
+  - filter: "service:audit-*"
+    index_id: "datadog-audit"
+  - filter: "my-tag:critical OR @event.result.status:failed"
+    index_id: "datadog-error"
+  - filter: "(source:nginx OR host:web*) status:*"
+    index_id: "datadog-web"
+  - filter: "*"
+    index_id: "datadog-main"

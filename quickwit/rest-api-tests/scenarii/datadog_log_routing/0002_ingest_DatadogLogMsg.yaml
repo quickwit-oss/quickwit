@@ -1,0 +1,81 @@
+method: POST
+endpoint: /api/v2/logs
+headers:
+  Content-Type: application/json
+data: |
+  [
+    {
+      "message": "User login audit event",
+      "service": "audit-login",
+      "status": "info",
+      "timestamp": 1762360556000
+    },
+    {
+      "message": "Payment audit event",
+      "service": "audit-payment",
+      "status": "info",
+      "timestamp": 1762360556100
+    },
+    {
+      "message": "Critical alert from custom tag",
+      "status": "warn",
+      "timestamp": 1762360556200,
+      "ddtags": "env:prod,my-tag:critical"
+    },
+    {
+      "message": { "event": { "result": { "status": "failed" } } },
+      "status": "info",
+      "timestamp": 1762360556300
+    },
+    {
+      "message": "Nginx access log",
+      "status": "info",
+      "timestamp": 1762360556400,
+      "ddsource": "nginx"
+    },
+    {
+      "message": "Web frontend log",
+      "status": "info",
+      "timestamp": 1762360556500,
+      "hostname": "web-frontend-01"
+    },
+    {
+      "message": "Nginx log without status - falls to main",
+      "timestamp": 1762360556600,
+      "ddsource": "nginx"
+    },
+    {
+      "message": "Just a plain log",
+      "status": "debug",
+      "timestamp": 1762360556700
+    }
+  ]
+sleep_after: 10
+---
+# Verify datadog-audit: 2 hits (audit-login + audit-payment)
+endpoint: api/v1/datadog-audit/search
+params:
+  query: "*"
+expected:
+  num_hits: 2
+---
+# Verify datadog-error: 2 hits (my-tag:critical + @event.result.status:failed)
+endpoint: api/v1/datadog-error/search
+params:
+  query: "*"
+expected:
+  num_hits: 2
+---
+# Verify datadog-web: 2 hits (nginx with status + web-frontend-01 with status)
+endpoint: api/v1/datadog-web/search
+params:
+  query: "*"
+expected:
+  num_hits: 2
+---
+# Verify datadog-main: 2 hits (nginx without status + plain log)
+endpoint: api/v1/datadog-main/search
+params:
+  query: "*"
+expected:
+  num_hits: 2
