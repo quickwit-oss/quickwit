@@ -27,11 +27,10 @@ use serde::{Deserialize, Serialize, Serializer};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
+use super::BROADCAST_INTERVAL_PERIOD;
+use crate::RateMibPerSec;
 use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::ingest_v2::state::WeakIngesterState;
-use crate::RateMibPerSec;
-
-use super::BROADCAST_INTERVAL_PERIOD;
 
 const ONE_MIB: ByteSize = ByteSize::mib(1);
 
@@ -430,9 +429,9 @@ mod tests {
     use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 
     use super::*;
+    use crate::RateMibPerSec;
     use crate::ingest_v2::models::IngesterShard;
     use crate::ingest_v2::state::IngesterState;
-    use crate::RateMibPerSec;
 
     #[test]
     fn test_shard_info_serde() {

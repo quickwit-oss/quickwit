@@ -24,9 +24,8 @@ use serde::{Deserialize, Serialize};
 use tokio::task::JoinHandle;
 use tracing::{error, warn};
 
-use crate::ingest_v2::state::WeakIngesterState;
-
 use super::BROADCAST_INTERVAL_PERIOD;
+use crate::ingest_v2::state::WeakIngesterState;
 
 pub type OpenShardCounts = Vec<(IndexUid, SourceId, usize)>;
 
@@ -50,16 +49,16 @@ impl WalCapacityTimeSeries {
     }
 
     fn record(&mut self, wal_used: ByteSize) {
-        let remaining = ByteSize::b(
-            self.wal_capacity.as_u64().saturating_sub(wal_used.as_u64()),
-        );
+        let remaining = ByteSize::b(self.wal_capacity.as_u64().saturating_sub(wal_used.as_u64()));
         self.readings.push_front(remaining);
     }
 
     /// Returns the most recent remaining capacity as a fraction of total WAL capacity,
     /// or `None` if no readings have been recorded yet.
     fn current(&self) -> Option<f64> {
-        self.readings.front().map(|b| self.as_capacity_usage_pct(*b))
+        self.readings
+            .front()
+            .map(|b| self.as_capacity_usage_pct(*b))
     }
 
     fn as_capacity_usage_pct(&self, bytes: ByteSize) -> f64 {
@@ -87,14 +86,14 @@ impl WalCapacityTimeSeries {
 ///
 /// The score has two components:
 ///
-/// - **P (proportional):** How much WAL capacity remains right now.
-///   An ingester with 100% free capacity gets 80 points; 50% gets 40; and so on.
-///   If remaining capacity drops to 5% or below, the score is immediately 0.
+/// - **P (proportional):** How much WAL capacity remains right now. An ingester with 100% free
+///   capacity gets 80 points; 50% gets 40; and so on. If remaining capacity drops to 5% or below,
+///   the score is immediately 0.
 ///
-/// - **I (integral):** A stability bonus worth up to 20 points.
-///   If remaining capacity hasn't changed between the oldest and newest readings,
-///   the full 20 points are awarded. As capacity drains faster, the bonus shrinks
-///   linearly toward 0. A delta of -10% of total capacity (or worse) zeroes it out.
+/// - **I (integral):** A stability bonus worth up to 20 points. If remaining capacity hasn't
+///   changed between the oldest and newest readings, the full 20 points are awarded. As capacity
+///   drains faster, the bonus shrinks linearly toward 0. A delta of -10% of total capacity (or
+///   worse) zeroes it out.
 ///
 /// Putting it together: a completely idle ingester scores 100 (80 + 20).
 /// One that is full but stable scores ~24. One that is draining rapidly scores less.
@@ -137,17 +136,20 @@ impl BroadcastIngesterAffinityTask {
     }
 
     async fn snapshot(&self) -> Result<(ByteSize, OpenShardCounts)> {
-        let state = self.weak_state.upgrade()
+        let state = self
+            .weak_state
+            .upgrade()
             .context("ingester state has been dropped")?;
 
         let wal_lock = state.mrecordlog();
         let wal_guard = wal_lock.read().await;
-        let wal = wal_guard.as_ref()
-            .context("WAL is not initialized")?;
+        let wal = wal_guard.as_ref().context("WAL is not initialized")?;
         let wal_used = ByteSize::b(wal.resource_usage().disk_used_bytes as u64);
         drop(wal_guard);
 
-        let guard = state.lock_partially().await
+        let guard = state
+            .lock_partially()
+            .await
             .map_err(|_| anyhow::anyhow!("failed to acquire ingester state lock"))?;
         let open_shard_counts = guard.get_open_shard_counts();
 
@@ -209,7 +211,7 @@ pub async fn setup_ingester_affinity_update_listener(
             let Ok(affinity) = serde_json::from_str::<IngesterAffinity>(event.value) else {
                 warn!("failed to parse ingester affinity `{}`", event.value);
                 return;
-        };
+            };
             let node_id: NodeId = event.node.node_id.clone().into();
             event_broker.publish(IngesterAffinityUpdate {
                 node_id,

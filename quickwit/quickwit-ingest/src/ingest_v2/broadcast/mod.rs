@@ -28,8 +28,3 @@ pub use local_shards::{
     BroadcastLocalShardsTask, LocalShardsUpdate, ShardInfo, ShardInfos,
     setup_local_shards_update_listener,
 };
-
-pub use ingester_affinity::{
-    BroadcastIngesterAffinityTask, IngesterAffinity, IngesterAffinityUpdate, OpenShardCounts,
-    setup_ingester_affinity_update_listener,
-};
