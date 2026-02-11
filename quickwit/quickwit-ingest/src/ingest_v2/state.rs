@@ -18,7 +18,7 @@ use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
-
+use itertools::Itertools;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -26,7 +26,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
+use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id, SourceUid};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tracing::{error, info};
 
@@ -86,6 +86,14 @@ impl InnerIngesterState {
             .map(|shard| (shard.rate_limiter.available_permits(), shard))
             .max_by_key(|(available_permits, _)| *available_permits)
             .map(|(_, shard)| shard)
+    }
+
+    pub fn get_open_shard_counts(&self) -> HashMap<(IndexUid, SourceId), usize> {
+        self.shards
+            .values()
+            .filter(|shard| shard.is_open())
+            .map(|shard| (shard.index_uid.clone(), shard.source_id.clone()))
+            .counts()
     }
 }
 
