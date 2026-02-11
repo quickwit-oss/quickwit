@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
 
 use bytesize::ByteSize;
@@ -22,21 +22,16 @@ use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::{ConstantRate, Rate};
 use quickwit_proto::ingest::ShardState;
-use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
+use quickwit_proto::types::{NodeId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::task::JoinHandle;
-use anyhow::{Context, Result};
-use tracing::{debug, error, warn};
+use tracing::{debug, warn};
 
-use super::metrics::INGEST_V2_METRICS;
-use super::state::WeakIngesterState;
+use crate::ingest_v2::metrics::INGEST_V2_METRICS;
+use crate::ingest_v2::state::WeakIngesterState;
 use crate::RateMibPerSec;
 
-const BROADCAST_INTERVAL_PERIOD: Duration = if cfg!(test) {
-    Duration::from_millis(50)
-} else {
-    Duration::from_secs(5)
-};
+use super::BROADCAST_INTERVAL_PERIOD;
 
 const ONE_MIB: ByteSize = ByteSize::mib(1);
 
@@ -153,7 +148,7 @@ impl LocalShardsSnapshot {
 
 /// Takes a snapshot of the primary shards hosted by the ingester at regular intervals and
 /// broadcasts it to other nodes via Chitchat.
-pub(super) struct BroadcastLocalShardsTask {
+pub struct BroadcastLocalShardsTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
     shard_throughput_time_series_map: ShardThroughputTimeSeriesMap,
@@ -423,142 +418,6 @@ pub async fn setup_local_shards_update_listener(
         .await
 }
 
-pub type OpenShardCounts = HashMap<(IndexUid, SourceId), usize>;
-
-const WAL_CAPACITY_LOOKBACK_WINDOW_LEN: usize = 6;
-
-struct WalCapacityTimeSeries {
-    wal_capacity: ByteSize,
-    readings: VecDeque<ByteSize>,
-}
-
-impl WalCapacityTimeSeries {
-    fn new(wal_capacity: ByteSize) -> Self {
-        assert!(
-            wal_capacity.as_u64() > 0,
-            "WAL capacity must be greater than zero"
-        );
-        Self {
-            wal_capacity,
-            readings: VecDeque::new(),
-        }
-    }
-
-    fn record(&mut self, wal_used: ByteSize) {
-        let remaining = ByteSize::b(
-            self.wal_capacity.as_u64().saturating_sub(wal_used.as_u64()),
-        );
-        self.readings.push_front(remaining);
-    }
-
-    fn current(&self) -> Option<f64> {
-        self.readings.front().map(|b| self.as_capacity_usage_pct(*b))
-    }
-
-    fn as_capacity_usage_pct(&self, bytes: ByteSize) -> f64 {
-        bytes.as_u64() as f64 / self.wal_capacity.as_u64() as f64
-    }
-
-    fn delta(&mut self) -> Option<f64> {
-        if self.readings.is_empty() {
-            return None;
-        }
-        let oldest = if self.readings.len() > WAL_CAPACITY_LOOKBACK_WINDOW_LEN {
-            self.readings.pop_back().unwrap()
-        } else {
-            *self.readings.back().unwrap()
-        };
-        let current = *self.readings.front().unwrap();
-        Some(self.as_capacity_usage_pct(current) - self.as_capacity_usage_pct(oldest))
-    }
-}
-
-fn compute_affinity_score(remaining_capacity: f64, capacity_delta: f64) -> f32 {
-    if remaining_capacity <= 0.10 {
-        return 0.0;
-    }
-    let p = 80.0 * remaining_capacity;
-    let capacity_lost = (-capacity_delta).max(0.0);
-    let g = 20.0 * (capacity_lost / 0.10).min(1.0);
-    (p - g).clamp(0.0, 100.0) as f32
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct IngesterAffinity {
-    pub affinity_score: f32,
-    pub open_shard_counts: OpenShardCounts,
-}
-
-struct BroadcastIngesterAffinityTask {
-    cluster: Cluster,
-    weak_state: WeakIngesterState,
-    wal_capacity_time_series: WalCapacityTimeSeries,
-}
-
-impl BroadcastIngesterAffinityTask {
-    pub fn spawn(
-        cluster: Cluster,
-        weak_state: WeakIngesterState,
-        wal_capacity: ByteSize,
-    ) -> JoinHandle<()> {
-        let mut broadcaster = Self {
-            cluster,
-            weak_state,
-            wal_capacity_time_series: WalCapacityTimeSeries::new(wal_capacity),
-        };
-        tokio::spawn(async move { broadcaster.run().await })
-    }
-
-    async fn snapshot(&self) -> Result<(ByteSize, OpenShardCounts)> {
-        let state = self.weak_state.upgrade()
-            .context("ingester state has been dropped")?;
-
-        // Read-lock mrecordlog and drop before acquiring inner lock to avoid
-        // deadlock with lock_fully (which acquires mrecordlog write then inner).
-        let wal_lock = state.mrecordlog();
-        let wal_guard = wal_lock.read().await;
-        let wal = wal_guard.as_ref()
-            .context("WAL is not initialized")?;
-        let wal_used = ByteSize::b(wal.resource_usage().disk_used_bytes as u64);
-        drop(wal_guard);
-
-        let guard = state.lock_partially().await
-            .map_err(|_| anyhow::anyhow!("failed to acquire ingester state lock"))?;
-        let open_shard_counts = guard.get_open_shard_counts();
-
-        Ok((wal_used, open_shard_counts))
-    }
-
-    async fn run(&mut self) {
-        let mut interval = tokio::time::interval(BROADCAST_INTERVAL_PERIOD);
-
-        loop {
-            interval.tick().await;
-
-            let (wal_used, open_shard_counts) = match self.snapshot().await {
-                Ok(snapshot) => snapshot,
-                Err(error) => {
-                    error!("failed to snapshot ingester state: {error}");
-                    return;
-                }
-            };
-
-            self.wal_capacity_time_series.record(wal_used);
-
-            let remaining_capacity = self.wal_capacity_time_series.current().unwrap_or(1.0);
-            let capacity_delta = self.wal_capacity_time_series.delta().unwrap_or(0.0);
-
-            let _affinity = IngesterAffinity {
-                affinity_score: compute_affinity_score(remaining_capacity, capacity_delta),
-                open_shard_counts,
-            };
-
-            // TODO: broadcast via Chitchat
-        }
-    }
-}
-
-
 #[cfg(test)]
 mod tests {
 
@@ -566,12 +425,14 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
     use quickwit_proto::ingest::ShardState;
-    use quickwit_proto::types::{IndexUid, SourceId};
+    use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SourceUid};
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;
     use crate::ingest_v2::state::IngesterState;
+    use crate::RateMibPerSec;
 
     #[test]
     fn test_shard_info_serde() {

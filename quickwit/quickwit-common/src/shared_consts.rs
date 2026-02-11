@@ -64,6 +64,9 @@ pub const SCROLL_BATCH_LEN: usize = 1_000;
 /// Prefix used in chitchat to broadcast the list of primary shards hosted by a leader.
 pub const INGESTER_PRIMARY_SHARDS_PREFIX: &str = "ingester.primary_shards:";
 
+/// Key used in chitchat to broadcast the ingester affinity score and open shard counts.
+pub const INGESTER_AFFINITY_PREFIX: &str = "ingester.affinity";
+
 /// File name for the encoded list of fields in the split
 pub const SPLIT_FIELDS_FILE_NAME: &str = "split_fields";
 

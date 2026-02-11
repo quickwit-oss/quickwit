@@ -12,12 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
-use std::fmt;
-use std::ops::{Deref, DerefMut};
-use std::path::Path;
-use std::sync::{Arc, Weak};
-use std::time::{Duration, Instant};
 use itertools::Itertools;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;
@@ -26,7 +20,13 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id, SourceUid};
+use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
+use std::collections::HashMap;
+use std::fmt;
+use std::ops::{Deref, DerefMut};
+use std::path::Path;
+use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tracing::{error, info};
 
@@ -88,12 +88,15 @@ impl InnerIngesterState {
             .map(|(_, shard)| shard)
     }
 
-    pub fn get_open_shard_counts(&self) -> HashMap<(IndexUid, SourceId), usize> {
+    pub fn get_open_shard_counts(&self) -> Vec<(IndexUid, SourceId, usize)> {
         self.shards
             .values()
             .filter(|shard| shard.is_open())
             .map(|shard| (shard.index_uid.clone(), shard.source_id.clone()))
             .counts()
+            .into_iter()
+            .map(|((index_uid, source_id), count)| (index_uid, source_id, count))
+            .collect()
     }
 }
 
