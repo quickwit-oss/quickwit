@@ -98,19 +98,19 @@ impl WalCapacityTimeSeries {
 ///
 /// Putting it together: a completely idle ingester scores 100 (80 + 20).
 /// One that is full but stable scores ~24. One that is draining rapidly scores less.
-fn compute_affinity_score(remaining_capacity: f64, capacity_delta: f64) -> f32 {
+fn compute_affinity_score(remaining_capacity: f64, capacity_delta: f64) -> u32 {
     if remaining_capacity <= 0.05 {
-        return 0.0;
+        return 0;
     }
     let p = 80.0 * remaining_capacity;
     let drain = (-capacity_delta).clamp(0.0, 0.10);
     let i = 20.0 * (1.0 - drain / 0.10);
-    (p + i).clamp(0.0, 100.0) as f32
+    (p + i).clamp(0.0, 100.0) as u32
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IngesterAffinity {
-    pub affinity_score: f32,
+    pub affinity_score: u32,
     pub open_shard_counts: OpenShardCounts,
 }
 
@@ -194,7 +194,7 @@ impl BroadcastIngesterAffinityTask {
 #[derive(Debug, Clone)]
 pub struct IngesterAffinityUpdate {
     pub node_id: NodeId,
-    pub affinity_score: f32,
+    pub affinity_score: u32,
     pub open_shard_counts: OpenShardCounts,
 }
 
@@ -314,10 +314,10 @@ mod tests {
         let b_delta = node_b.delta().unwrap();
         let b_score = compute_affinity_score(b_remaining, b_delta);
 
-        // p=24, i=0 (max drain) => 24.0
-        assert_eq!(a_score, 24.0);
-        // p=40, i=20 (stable) => 60.0
-        assert_eq!(b_score, 60.0);
+        // p=24, i=0 (max drain) => 24
+        assert_eq!(a_score, 24);
+        // p=40, i=20 (stable) => 60
+        assert_eq!(b_score, 60);
         assert!(b_score > a_score);
     }
 
@@ -374,14 +374,14 @@ mod tests {
             affinity_score: compute_affinity_score(remaining, delta),
             open_shard_counts,
         };
-        assert_eq!(affinity.affinity_score, 60.0);
+        assert_eq!(affinity.affinity_score, 60);
 
         let update_counter = Arc::new(AtomicUsize::new(0));
         let update_counter_clone = update_counter.clone();
         let index_uid_clone = index_uid.clone();
         let _sub = event_broker.subscribe(move |event: IngesterAffinityUpdate| {
             update_counter_clone.fetch_add(1, Ordering::Release);
-            assert_eq!(event.affinity_score, 60.0);
+            assert_eq!(event.affinity_score, 60);
             assert_eq!(event.open_shard_counts.len(), 1);
             assert_eq!(event.open_shard_counts[0].0, index_uid_clone);
             assert_eq!(event.open_shard_counts[0].1, "test-source");
@@ -401,7 +401,7 @@ mod tests {
             .await
             .unwrap();
         let deserialized: IngesterAffinity = serde_json::from_str(&value).unwrap();
-        assert_eq!(deserialized.affinity_score, 60.0);
+        assert_eq!(deserialized.affinity_score, 60);
         assert_eq!(deserialized.open_shard_counts.len(), 1);
     }
 
