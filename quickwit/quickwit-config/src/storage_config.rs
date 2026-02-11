@@ -308,6 +308,36 @@ impl fmt::Debug for AzureStorageConfig {
     }
 }
 
+#[derive(Clone, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum S3EncryptionConfig {
+    /// This is the standard AES256 SSE-C header config. Key is expected to be a
+    /// 256bit base64-encoded string, and key_md5 is expected to be the
+    /// base64-encoded MD5 digest of the (binary) key. Akamai gen1 buckets don't
+    /// respect this (only the a 32 hex char key is expected).
+    SseC {
+        key: String,
+        key_md5: String,
+        read_only: bool,
+    },
+}
+
+impl fmt::Debug for S3EncryptionConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            S3EncryptionConfig::SseC {
+                key_md5, read_only, ..
+            } => f
+                .debug_struct("S3EncryptionConfig")
+                .field("type", &"sse_c")
+                .field("key", &"***redacted***")
+                .field("key_md5", key_md5)
+                .field("read_only", read_only)
+                .finish(),
+        }
+    }
+}
+
 #[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct S3StorageConfig {
@@ -329,6 +359,8 @@ pub struct S3StorageConfig {
     pub disable_multi_object_delete: bool,
     #[serde(default)]
     pub disable_multipart_upload: bool,
+    #[serde(default)]
+    pub encryption: Option<S3EncryptionConfig>,
 }
 
 impl S3StorageConfig {
@@ -683,6 +715,33 @@ mod tests {
                 serde_yaml::from_str(s3_storage_config_yaml).unwrap();
 
             assert_eq!(s3_storage_config.flavor, Some(StorageBackendFlavor::MinIO));
+        }
+    }
+
+    #[test]
+    fn test_storage_s3_config_encryption_serde() {
+        {
+            let s3_storage_config_yaml = r#"
+                endpoint: http://localhost:4566
+                encryption:
+                    type: sse_c
+                    key: test-customer-key
+                    key_md5: test-customer-key-md5
+                    read_only: true
+            "#;
+            let s3_storage_config: S3StorageConfig =
+                serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+
+            let expected_s3_config = S3StorageConfig {
+                endpoint: Some("http://localhost:4566".to_string()),
+                encryption: Some(S3EncryptionConfig::SseC {
+                    key: "test-customer-key".to_string(),
+                    key_md5: "test-customer-key-md5".to_string(),
+                    read_only: true,
+                }),
+                ..Default::default()
+            };
+            assert_eq!(s3_storage_config, expected_s3_config);
         }
     }
 }

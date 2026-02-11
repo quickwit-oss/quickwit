@@ -64,7 +64,9 @@ jobs:
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - name: Install Ubuntu packages
-        run: sudo apt-get -y install protobuf-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install protobuf-compiler
       - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v.6.1.0
         with:
           python-version: '3.11'
@@ -132,7 +134,9 @@ jobs:
               - .github/workflows/ci.yml
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: sudo apt-get -y install protobuf-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install protobuf-compiler
       - name: Setup nightly Rust Toolchain (for rustfmt)
         if: steps.modified.outputs.rust_src == 'true'
         uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master
