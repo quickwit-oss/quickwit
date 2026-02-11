@@ -10,3 +10,12 @@ rustdocflags = ["--cfg", "tokio_unstable"]
 # AWS does not seem to disclose the exact CPUs they use.
 rustflags = ["-C", "target-cpu=x86-64-v2", "--cfg", "tokio_unstable"]
 
+[registries]
+datadog = { index = "sparse+https://depot-read-api-rust.us1.ddbuild.io/datadog/rust/" }
+
+[registry]
+default = "datadog"
+
+[source]
+[source.crates-io]
+replace-with = "datadog"
