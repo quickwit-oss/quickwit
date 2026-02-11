@@ -1083,10 +1083,7 @@ fn default_agg_value(agg_type: &str) -> EvpAggValue {
     match agg_type {
         "AVG" => EvpAggValue {
             value: Some(quickwit_proto::cloudprem::agg_value::Value::AvgValue(
-                quickwit_proto::cloudprem::Avg {
-                    sum: 0.0,
-                    count: 0,
-                },
+                quickwit_proto::cloudprem::Avg { sum: 0.0, count: 0 },
             )),
         },
         "CARDINALITY_SKETCH" | "CARDINALITY" => generate_sketch(0),
