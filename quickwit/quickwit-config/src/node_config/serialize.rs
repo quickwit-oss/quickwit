@@ -694,6 +694,7 @@ mod tests {
             JaegerConfig {
                 enable_endpoint: true,
                 lookback_period_hours: NonZeroU64::new(24).unwrap(),
+                lookback_period_traces_hours: NonZeroU64::new(24).unwrap(),
                 max_trace_duration_secs: NonZeroU64::new(600).unwrap(),
                 max_fetch_spans: NonZeroU64::new(1_000).unwrap(),
             }
