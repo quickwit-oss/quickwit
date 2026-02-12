@@ -40,9 +40,16 @@ pub struct SearchPermitProvider {
 }
 
 pub enum SearchPermitMessage {
-    Request {
-        permit_sender: oneshot::Sender<Vec<SearchPermitFuture>>,
+    RequestWithOffload {
         permit_sizes: Vec<u64>,
+        /// Maximum number of pending requests. If granting permits all
+        /// requested permits would cause the number of pending requests to exceed this threshold,
+        /// some permits will be offloaded to Lambda.
+        offload_threshold: usize,
+        /// Channel to return the result message from the actor.
+        /// When offloading permits, the number of futures can be < to the number of requested
+        /// permits.
+        permit_resp_tx: oneshot::Sender<Vec<SearchPermitFuture>>,
     },
     UpdateMemory {
         memory_delta: i64,
@@ -101,23 +108,38 @@ impl SearchPermitProvider {
         }
     }
 
-    /// Returns one permit future for each provided split metadata.
+    /// Returns permits for local splits
     ///
-    /// The permits returned are guaranteed to be resolved in order. In
-    /// addition, the permits are guaranteed to be resolved before permits
-    /// returned by subsequent calls to this function.
+    /// The returned futures are guaranteed to resolve in order.
+    pub async fn get_permits(&self, splits: Vec<ByteSize>) -> Vec<SearchPermitFuture> {
+        self.get_permits_with_offload(splits, usize::MAX).await
+    }
+
+    /// Returns permits for local splits and a list of split indices to offload.
     ///
-    /// The permit memory size is capped by per_permit_initial_memory_allocation.
-    pub async fn get_permits(
+    /// The actor checks the current pending queue depth. If adding all splits
+    /// would exceed `offload_threshold` pending requests, only enough splits
+    /// to fill up to the threshold are processed locally; the rest are offloaded.
+    ///
+    /// The returned futures are guaranteed to resolve in order.
+    ///
+    /// If `offload_threshold` is 0, all splits are offloaded.
+    /// If `offload_threshold` is usize::MAX, all splits are processed locally.
+    pub async fn get_permits_with_offload(
         &self,
-        splits: impl IntoIterator<Item = ByteSize>,
+        splits: Vec<ByteSize>,
+        offload_threshold: usize,
     ) -> Vec<SearchPermitFuture> {
+        if splits.is_empty() {
+            return Vec::new();
+        }
         let (permit_sender, permit_receiver) = oneshot::channel();
         let permit_sizes = splits.into_iter().map(|size| size.as_u64()).collect();
         self.message_sender
-            .send(SearchPermitMessage::Request {
-                permit_sender,
+            .send(SearchPermitMessage::RequestWithOffload {
+                permit_resp_tx: permit_sender,
                 permit_sizes,
+                offload_threshold,
             })
             .expect("Receiver lives longer than sender");
         permit_receiver
@@ -177,7 +199,9 @@ impl PartialEq for LeafPermitRequest {
 impl Eq for LeafPermitRequest {}
 
 impl LeafPermitRequest {
+    // `permit_sizes` must not be empty.
     fn from_estimated_costs(permit_sizes: Vec<u64>) -> (Self, Vec<SearchPermitFuture>) {
+        assert!(!permit_sizes.is_empty(), "permit_sizes must not be empty");
         let mut permits = Vec::with_capacity(permit_sizes.len());
         let mut single_split_permit_requests = Vec::with_capacity(permit_sizes.len());
         for permit_size in permit_sizes {
@@ -200,13 +224,11 @@ impl LeafPermitRequest {
     }
 
     fn pop_if_smaller_than(&mut self, max_size: u64) -> Option<SingleSplitPermitRequest> {
-        // IntoIter::as_slice() allows us to peek at the next element without consuming it
-        match self.single_split_permit_requests.as_slice().first() {
-            Some(request) if request.permit_size <= max_size => {
-                self.single_split_permit_requests.next()
-            }
-            _ => None,
+        let peeked_single_split_req = self.single_split_permit_requests.as_slice().first()?;
+        if peeked_single_split_req.permit_size > max_size {
+            return None;
         }
+        self.single_split_permit_requests.next()
     }
 
     fn is_empty(&self) -> bool {
@@ -226,18 +248,35 @@ impl SearchPermitActor {
 
     fn handle_message(&mut self, msg: SearchPermitMessage) {
         match msg {
-            SearchPermitMessage::Request {
-                permit_sizes,
-                permit_sender,
+            SearchPermitMessage::RequestWithOffload {
+                mut permit_sizes,
+                permit_resp_tx: permit_sender,
+                offload_threshold,
             } => {
-                let (leaf_permit_request, permits) =
+                let current_pending = self
+                    .permits_requests
+                    .iter()
+                    .map(|req| req.single_split_permit_requests.as_slice().len())
+                    .sum();
+                // How many new splits can we accept locally before hitting the threshold.
+                let local_capacity = offload_threshold.saturating_sub(current_pending);
+
+                // If this indeed truncates the permit_sizes vector, other splits will be offloaded
+                // to lambdas.
+                permit_sizes.truncate(local_capacity);
+
+                // We special case here in order to avoid pushing empty request in the queue.
+                // (they would never be removed)
+                if permit_sizes.is_empty() {
+                    let _ = permit_sender.send(Vec::new());
+                    return;
+                }
+
+                let (leaf_permit_request, permit_futures) =
                     LeafPermitRequest::from_estimated_costs(permit_sizes);
                 self.permits_requests.push(leaf_permit_request);
                 self.assign_available_permits();
-                // The receiver could be dropped in the (unlikely) situation
-                // where the future requesting these permits is cancelled before
-                // this message is processed.
-                let _ = permit_sender.send(permits);
+                let _ = permit_sender.send(permit_futures);
             }
             SearchPermitMessage::UpdateMemory { memory_delta } => {
                 if self.total_memory_allocated as i64 + memory_delta < 0 {
@@ -276,6 +315,10 @@ impl SearchPermitActor {
             .checked_sub(self.total_memory_allocated)?;
         let mut peeked = self.permits_requests.peek_mut()?;
 
+        assert!(
+            !peeked.is_empty(),
+            "unexpected empty permits_requests present in the search permit provider queue"
+        );
         if let Some(permit_request) = peeked.pop_if_smaller_than(available_memory) {
             if peeked.is_empty() {
                 PeekMut::pop(peeked);
@@ -380,7 +423,6 @@ impl Future for SearchPermitFuture {
 
 #[cfg(test)]
 mod tests {
-    use std::iter::repeat_n;
     use std::time::Duration;
 
     use futures::StreamExt;
@@ -394,7 +436,7 @@ mod tests {
         let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
         let mut all_futures = Vec::new();
         let first_batch_of_permits = permit_provider
-            .get_permits(repeat_n(ByteSize::mb(10), 10))
+            .get_permits(vec![ByteSize::mb(10); 10])
             .await;
         assert_eq!(first_batch_of_permits.len(), 10);
         all_futures.extend(
@@ -405,7 +447,7 @@ mod tests {
         );
 
         let second_batch_of_permits = permit_provider
-            .get_permits(repeat_n(ByteSize::mb(10), 10))
+            .get_permits(vec![ByteSize::mb(10); 10])
             .await;
         assert_eq!(second_batch_of_permits.len(), 10);
         all_futures.extend(
@@ -443,9 +485,7 @@ mod tests {
     async fn test_search_permit_order_with_concurrent_search() {
         let permit_provider = SearchPermitProvider::new(4, ByteSize::mb(100));
         let mut all_futures = Vec::new();
-        let first_batch_of_permits = permit_provider
-            .get_permits(repeat_n(ByteSize::mb(10), 8))
-            .await;
+        let first_batch_of_permits = permit_provider.get_permits(vec![ByteSize::mb(10); 8]).await;
         assert_eq!(first_batch_of_permits.len(), 8);
         all_futures.extend(
             first_batch_of_permits
@@ -454,9 +494,7 @@ mod tests {
                 .map(move |(i, fut)| ((1, i), fut)),
         );
 
-        let second_batch_of_permits = permit_provider
-            .get_permits(repeat_n(ByteSize::mb(10), 2))
-            .await;
+        let second_batch_of_permits = permit_provider.get_permits(vec![ByteSize::mb(10); 2]).await;
         all_futures.extend(
             second_batch_of_permits
                 .into_iter()
@@ -464,9 +502,7 @@ mod tests {
                 .map(move |(i, fut)| ((2, i), fut)),
         );
 
-        let third_batch_of_permits = permit_provider
-            .get_permits(repeat_n(ByteSize::mb(10), 6))
-            .await;
+        let third_batch_of_permits = permit_provider.get_permits(vec![ByteSize::mb(10); 6]).await;
         all_futures.extend(
             third_batch_of_permits
                 .into_iter()
@@ -518,7 +554,7 @@ mod tests {
             .next()
             .unwrap();
         let permit_fut2 = permit_provider
-            .get_permits([ByteSize::mb(10)])
+            .get_permits(vec![ByteSize::mb(10)])
             .await
             .into_iter()
             .next()
@@ -529,7 +565,7 @@ mod tests {
         assert_eq!(*permit_provider.actor_stopped.borrow(), false);
 
         let _permit_fut3 = permit_provider
-            .get_permits([ByteSize::mb(10)])
+            .get_permits(vec![ByteSize::mb(10)])
             .await
             .into_iter()
             .next()
@@ -553,7 +589,7 @@ mod tests {
     async fn test_memory_budget() {
         let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
         let mut permit_futs = permit_provider
-            .get_permits(repeat_n(ByteSize::mb(10), 14))
+            .get_permits(vec![ByteSize::mb(10); 14])
             .await;
         let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
         assert_eq!(remaining_permit_futs.len(), 4);
@@ -580,11 +616,84 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_permits_with_offload_threshold_max_returns_all() {
+        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
+        let permits = permit_provider
+            .get_permits_with_offload(vec![ByteSize::mb(1); 8], usize::MAX)
+            .await;
+        assert_eq!(permits.len(), 8);
+    }
+
+    #[tokio::test]
+    async fn test_get_permits_with_offload_threshold_zero_returns_none() {
+        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
+        let permits = permit_provider
+            .get_permits_with_offload(vec![ByteSize::mb(1); 5], 0)
+            .await;
+        assert!(permits.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_permits_with_offload_truncates_to_threshold() {
+        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
+        let permits = permit_provider
+            .get_permits_with_offload(vec![ByteSize::mb(1); 10], 4)
+            .await;
+        assert_eq!(permits.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_get_permits_with_offload_futures_resolve_in_order() {
+        // We use a search permit provider with a capacity of 1 to make sure that the permits are
+        // resolved in order.
+        let permit_provider = SearchPermitProvider::new(1, ByteSize::mb(100));
+        let permits = permit_provider
+            .get_permits_with_offload(vec![ByteSize::mb(1); 4], 10)
+            .await;
+        assert_eq!(permits.len(), 4);
+        let mut futs: Vec<_> = permits
+            .into_iter()
+            .enumerate()
+            .map(|(i, permit_fut)| async move {
+                permit_fut.await;
+                i
+            })
+            .collect();
+        futs.shuffle(&mut rand::rng());
+        let mut join_set = JoinSet::new();
+        for fut in futs {
+            join_set.spawn(fut);
+        }
+        let mut results = Vec::new();
+        while let Some(result) = join_set.join_next().await {
+            results.push(result.unwrap());
+        }
+        assert_eq!(results, vec![0, 1, 2, 3]);
+    }
+
+    #[tokio::test]
+    async fn test_get_permits_with_offload_pending_consumed_frees_capacity() {
+        let permit_provider = SearchPermitProvider::new(100, ByteSize::mb(100));
+        // First call: 4 splits, threshold 6.
+        let first_permits = permit_provider
+            .get_permits_with_offload(vec![ByteSize::mb(1); 4], 6)
+            .await;
+        assert_eq!(first_permits.len(), 4);
+        // Consume all permits from the first batch (they resolve and get dropped).
+        for permit_fut in first_permits {
+            let _permit = permit_fut.await;
+        }
+        // Second call: the consumed permits no longer count as pending.
+        let second_permits = permit_provider
+            .get_permits_with_offload(vec![ByteSize::mb(1); 5], 6)
+            .await;
+        assert_eq!(second_permits.len(), 5);
+    }
+
+    #[tokio::test]
     async fn test_warmup_slot() {
         let permit_provider = SearchPermitProvider::new(10, ByteSize::mb(100));
-        let mut permit_futs = permit_provider
-            .get_permits(repeat_n(ByteSize::mb(1), 16))
-            .await;
+        let mut permit_futs = permit_provider.get_permits(vec![ByteSize::mb(1); 16]).await;
         let mut remaining_permit_futs = permit_futs.split_off(10).into_iter();
         assert_eq!(remaining_permit_futs.len(), 6);
         // we should be able to obtain 10 permits right away

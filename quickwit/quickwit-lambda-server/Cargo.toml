@@ -1,0 +1,53 @@
+[package]
+name = "quickwit-lambda-server"
+description = "AWS Lambda handler for Quickwit leaf search"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[package.metadata.cargo-machete]
+# Its here even though it is not useful, in order to enable its "vendor" feature,
+# allowing the cross-build.
+ignored = ["openssl"]
+
+[dependencies]
+anyhow = { workspace = true }
+base64 = { workspace = true }
+bytesize = { workspace = true }
+lambda_runtime = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }
+
+openssl = { workspace = true, optional = true }
+
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-search = { workspace = true }
+quickwit-storage = { workspace = true }
+
+[[bin]]
+name = "quickwit-aws-lambda-leaf-search"
+path = "src/bin/leaf_search.rs"
+
+[features]
+default = []
+testsuite = []
+
+# Keep this in sync with quickwit-cli!
+lambda-release = [
+    # The vendored OpenSSL will be compiled from source during the
+    # build, avoiding the pkg-config dependency issue during
+    # cross-compilation.
+    "openssl/vendored",
+]
