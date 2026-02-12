@@ -5,7 +5,7 @@
 
 image:
   repository: 727006795293.dkr.ecr.us-east-1.amazonaws.com/pomsky
-  tag: edge
+  tag: staging
   pullPolicy: Always
 
 # Datadog site for reverse connection
