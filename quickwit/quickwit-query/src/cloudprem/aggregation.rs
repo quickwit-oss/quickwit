@@ -720,9 +720,9 @@ impl ResultMapper {
                 // Finalized path: the sketch data is lost after finalization, only the scalar
                 // estimate remains. Return as uint64 — this is only used in tests; the production
                 // cloudprem service always uses the intermediate path which preserves the sketch.
-                state
-                    .value
-                    .push(u64_to_agg_value(cardinality.value.unwrap_or_default() as u64));
+                state.value.push(u64_to_agg_value(
+                    cardinality.value.unwrap_or_default() as u64
+                ));
             }
             ("SUM", MetricResult::Sum(metric_res))
             | ("MIN", MetricResult::Min(metric_res))
@@ -1127,7 +1127,6 @@ fn bucket_iter<T>(
         BucketEntries::HashMap(map) => Either::Right(map.into_values()),
     }
 }
-
 
 fn generate_avg(avg_float: f64) -> EvpAggValue {
     // this result is non-mergeable, but it's alright otherwise
