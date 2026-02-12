@@ -92,7 +92,7 @@ impl InnerIngesterState {
     pub fn get_open_shard_counts(&self) -> Vec<(IndexUid, SourceId, usize)> {
         self.shards
             .values()
-            .filter(|shard| shard.is_open())
+            .filter(|shard| shard.is_advertisable && !shard.is_replica() && shard.is_open())
             .map(|shard| (shard.index_uid.clone(), shard.source_id.clone()))
             .counts()
             .into_iter()
@@ -479,7 +479,7 @@ impl WeakIngesterState {
 #[cfg(test)]
 mod tests {
     use bytesize::ByteSize;
-    use quickwit_proto::types::ShardId;
+    use quickwit_proto::types::{NodeId, ShardId, SourceId};
     use tokio::time::timeout;
 
     use super::*;
@@ -653,5 +653,78 @@ mod tests {
         let shard_opt =
             locked_state.find_most_capacity_shard_mut(&index_uid, &SourceId::from("other-source"));
         assert!(shard_opt.is_none());
+    }
+
+    fn open_shard(
+        index_uid: IndexUid,
+        source_id: SourceId,
+        shard_id: ShardId,
+        is_replica: bool,
+    ) -> IngesterShard {
+        let builder = if is_replica {
+            IngesterShard::new_replica(index_uid, source_id, shard_id, NodeId::from("test-leader"))
+        } else {
+            IngesterShard::new_solo(index_uid, source_id, shard_id)
+        };
+        builder.advertisable().build()
+    }
+
+    #[tokio::test]
+    async fn test_get_open_shard_counts() {
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let mut state_guard = state.lock_partially().await.unwrap();
+
+        let index_a = IndexUid::for_test("index-a", 0);
+        let index_b = IndexUid::for_test("index-b", 0);
+        let index_c = IndexUid::for_test("index-c", 0);
+
+        // (index-a, source-a): 1 open solo shard.
+        let s = open_shard(
+            index_a.clone(),
+            SourceId::from("source-a"),
+            ShardId::from(1),
+            false,
+        );
+        state_guard.shards.insert(s.queue_id(), s);
+
+        // (index-b, source-b): 1 open solo + 1 replica. Only the solo should be counted.
+        let s = open_shard(
+            index_b.clone(),
+            SourceId::from("source-b"),
+            ShardId::from(2),
+            false,
+        );
+        state_guard.shards.insert(s.queue_id(), s);
+        let s = open_shard(
+            index_b.clone(),
+            SourceId::from("source-b"),
+            ShardId::from(3),
+            true,
+        );
+        state_guard.shards.insert(s.queue_id(), s);
+
+        // (index-c, source-c): 2 open solo shards.
+        let s = open_shard(
+            index_c.clone(),
+            SourceId::from("source-c"),
+            ShardId::from(4),
+            false,
+        );
+        state_guard.shards.insert(s.queue_id(), s);
+        let s = open_shard(
+            index_c.clone(),
+            SourceId::from("source-c"),
+            ShardId::from(5),
+            false,
+        );
+        state_guard.shards.insert(s.queue_id(), s);
+
+        let mut counts = state_guard.get_open_shard_counts();
+        counts.sort_by(|a, b| a.0.cmp(&b.0));
+
+        assert_eq!(counts.len(), 3);
+        assert_eq!(counts[0], (index_a, SourceId::from("source-a"), 1));
+        assert_eq!(counts[1], (index_b, SourceId::from("source-b"), 1));
+        assert_eq!(counts[2], (index_c, SourceId::from("source-c"), 2));
     }
 }

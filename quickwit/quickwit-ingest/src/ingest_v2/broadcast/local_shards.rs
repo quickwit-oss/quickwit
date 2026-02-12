@@ -18,6 +18,7 @@ use std::time::Duration;
 use bytesize::ByteSize;
 use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
+use quickwit_common::ring_buffer::RingBuffer;
 use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::{ConstantRate, Rate};
@@ -27,7 +28,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
-use super::BROADCAST_INTERVAL_PERIOD;
+use super::{BROADCAST_INTERVAL_PERIOD, make_key, parse_key};
 use crate::RateMibPerSec;
 use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::ingest_v2::state::WeakIngesterState;
@@ -224,36 +225,24 @@ impl ShardThroughputTimeSeriesMap {
 #[derive(Default)]
 struct ShardThroughputTimeSeries {
     shard_state: ShardState,
-    measurements: [ByteSize; SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN],
-    len: usize,
+    throughput: RingBuffer<ByteSize, SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN>,
 }
 
 impl ShardThroughputTimeSeries {
     fn last(&self) -> ByteSize {
-        self.measurements.last().copied().unwrap_or_default()
+        self.throughput.last().unwrap_or_default()
     }
 
     fn average(&self) -> ByteSize {
-        if self.len == 0 {
+        if self.throughput.is_empty() {
             return ByteSize::default();
         }
-        let sum = self
-            .measurements
-            .iter()
-            .rev()
-            .take(self.len)
-            .map(ByteSize::as_u64)
-            .sum::<u64>();
-        ByteSize::b(sum / self.len as u64)
+        let sum = self.throughput.iter().map(ByteSize::as_u64).sum::<u64>();
+        ByteSize::b(sum / self.throughput.len() as u64)
     }
 
     fn record(&mut self, new_throughput_measurement: ByteSize) {
-        self.len = (self.len + 1).min(SHARD_THROUGHPUT_LONG_TERM_WINDOW_LEN);
-        self.measurements.rotate_left(1);
-        let Some(last_measurement) = self.measurements.last_mut() else {
-            return;
-        };
-        *last_measurement = new_throughput_measurement;
+        self.throughput.push(new_throughput_measurement);
     }
 }
 
@@ -333,13 +322,13 @@ impl BroadcastLocalShardsTask {
                     source_uid,
                     shard_infos,
                 } => {
-                    let key = make_key(source_uid);
+                    let key = make_key(INGESTER_PRIMARY_SHARDS_PREFIX, source_uid);
                     let value = serde_json::to_string(&shard_infos)
                         .expect("`ShardInfos` should be JSON serializable");
                     self.cluster.set_self_key_value(key, value).await;
                 }
                 ShardInfosChange::Removed { source_uid } => {
-                    let key = make_key(source_uid);
+                    let key = make_key(INGESTER_PRIMARY_SHARDS_PREFIX, source_uid);
                     self.cluster.remove_self_key(&key).await;
                 }
             }
@@ -364,22 +353,6 @@ impl BroadcastLocalShardsTask {
             previous_snapshot = new_snapshot;
         }
     }
-}
-
-fn make_key(source_uid: &SourceUid) -> String {
-    format!(
-        "{INGESTER_PRIMARY_SHARDS_PREFIX}{}:{}",
-        source_uid.index_uid, source_uid.source_id
-    )
-}
-
-fn parse_key(key: &str) -> Option<SourceUid> {
-    let (index_uid_str, source_id_str) = key.rsplit_once(':')?;
-
-    Some(SourceUid {
-        index_uid: index_uid_str.parse().ok()?,
-        source_id: source_id_str.to_string(),
-    })
 }
 
 #[derive(Debug, Clone)]
@@ -623,30 +596,6 @@ mod tests {
         assert!(value_opt.is_none());
     }
 
-    #[test]
-    fn test_make_key() {
-        let source_uid = SourceUid {
-            index_uid: IndexUid::for_test("test-index", 0),
-            source_id: SourceId::from("test-source"),
-        };
-        let key = make_key(&source_uid);
-        assert_eq!(
-            key,
-            "ingester.primary_shards:test-index:00000000000000000000000000:test-source"
-        );
-    }
-
-    #[test]
-    fn test_parse_key() {
-        let key = "test-index:00000000000000000000000000:test-source";
-        let source_uid = parse_key(key).unwrap();
-        assert_eq!(
-            &source_uid.index_uid.to_string(),
-            "test-index:00000000000000000000000000"
-        );
-        assert_eq!(source_uid.source_id, "test-source".to_string());
-    }
-
     #[tokio::test]
     async fn test_local_shards_update_listener() {
         let transport = ChannelTransport::default();
@@ -683,7 +632,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: SourceId::from("test-source"),
         };
-        let key = make_key(&source_uid);
+        let key = make_key(INGESTER_PRIMARY_SHARDS_PREFIX, &source_uid);
         let value = serde_json::to_string(&vec![ShardInfo {
             shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
