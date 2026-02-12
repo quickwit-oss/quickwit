@@ -28,8 +28,6 @@ use std::ops::Bound;
 
 pub use doc_mapper_builder::DocMapperBuilder;
 pub use doc_mapper_impl::DocMapper;
-#[cfg(all(test, feature = "multilang"))]
-pub(crate) use field_mapping_entry::TextIndexingOptions;
 pub use field_mapping_entry::{
     BinaryFormat, FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
     QuickwitTextNormalizer,
@@ -811,56 +809,5 @@ mod tests {
 
         warmup_info.simplify();
         assert_eq!(warmup_info, expected);
-    }
-
-    #[test]
-    #[cfg(feature = "multilang")]
-    fn test_doc_mapper_query_with_multilang_field() {
-        use quickwit_query::query_ast::TermQuery;
-        use tantivy::schema::IndexRecordOption;
-
-        use crate::doc_mapper::{
-            QuickwitTextOptions, QuickwitTextTokenizer, TextIndexingOptions, TokenizerType,
-        };
-        use crate::{TokenizerConfig, TokenizerEntry};
-        let mut doc_mapper_builder = DocMapperBuilder::default();
-        doc_mapper_builder
-            .doc_mapping
-            .field_mappings
-            .push(FieldMappingEntry {
-                name: "multilang".to_string(),
-                mapping_type: FieldMappingType::Text(
-                    QuickwitTextOptions {
-                        indexing_options: Some(TextIndexingOptions {
-                            tokenizer: QuickwitTextTokenizer::from_static("multilang"),
-                            record: IndexRecordOption::Basic,
-                            fieldnorms: false,
-                        }),
-                        ..Default::default()
-                    },
-                    Cardinality::SingleValued,
-                ),
-            });
-        doc_mapper_builder
-            .doc_mapping
-            .tokenizers
-            .push(TokenizerEntry {
-                name: "multilang".to_string(),
-                config: TokenizerConfig {
-                    tokenizer_type: TokenizerType::Multilang,
-                    filters: Vec::new(),
-                },
-            });
-        let doc_mapper = doc_mapper_builder.try_build().unwrap();
-        let schema = doc_mapper.schema();
-        let query_ast = quickwit_query::query_ast::QueryAst::Term(TermQuery {
-            field: "multilang".to_string(),
-            value: "JPN:す".to_string(),
-        });
-        let (query, _) = doc_mapper.query(schema, query_ast, false, None).unwrap();
-        assert_eq!(
-            format!("{query:?}"),
-            r#"TermQuery(Term(field=2, type=Str, "JPN:す"))"#
-        );
     }
 }
