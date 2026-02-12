@@ -385,6 +385,7 @@ mod tests {
             SourceId::from("test-source"),
             ShardId::from(0),
         )
+        .advertisable()
         .build();
         state_guard.shards.insert(shard.queue_id(), shard);
         let open_shard_counts = state_guard.get_open_shard_counts();
