@@ -15,8 +15,9 @@ We also want to observe some interesting properties such as:
 To simplify the logic and make it easier to test it, we first abstract this in the following
 optimization problem. In Quickwit, we have two types of source:
 
-- The push api source: they have a given (changing) set of shards associated to them.
-  A shard is rate-limited to ensure their throughput is lower than `5MB/s` worth of
+- The push api source: indexes have a given (changing) set of shards associated to them.
+  Shards are stored on indexer nodes and are spread randomly accross them. A shard is
+  rate-limited to ensure their throughput is lower than `5MB/s` worth of
   uncompressed data. This guarantees that a given shard can be indexed by a
   single indexing pipeline.
 
