@@ -85,9 +85,6 @@ impl RoutingEntry {
     }
 }
 
-/// Node-based routing table. Populated by IngesterCapacityUpdate events
-/// (from Chitchat broadcast) and seeded from GetOrCreateOpenShards responses
-/// (for cold start). Designed to replace the shard-based RoutingTable.
 #[derive(Debug, Default)]
 pub(super) struct NodeBasedRoutingTable {
     table: HashMap<(IndexId, SourceId), RoutingEntry>,
@@ -193,7 +190,6 @@ impl NodeBasedRoutingTable {
     ) {
         let key = (index_uid.index_id.to_string(), source_id.clone());
 
-        // Count open shards per leader.
         let mut per_leader_count: HashMap<NodeId, usize> = HashMap::new();
         for shard in &shards {
             if shard.is_open() {
