@@ -61,6 +61,10 @@ quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
+quickwit-datafusion = { workspace = true }
+arrow-flight = "57"
+datafusion = "52"
+datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed" }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }

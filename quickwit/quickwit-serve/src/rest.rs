@@ -287,6 +287,28 @@ fn search_routes(
         .boxed()
 }
 
+fn datafusion_routes(
+    quickwit_services: Arc<QuickwitServices>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    let enabled = quickwit_services
+        .node_config
+        .searcher_config
+        .enable_datafusion_endpoint;
+    let filter = crate::datafusion_api::datafusion_handler_filter(quickwit_services);
+    // When disabled, the filter still exists but always rejects.
+    warp::any()
+        .and_then(move || async move {
+            if enabled {
+                Ok(())
+            } else {
+                Err(warp::reject::not_found())
+            }
+        })
+        .untuple_one()
+        .and(filter)
+        .boxed()
+}
+
 fn api_v1_routes(
     quickwit_services: Arc<QuickwitServices>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -346,6 +368,8 @@ fn api_v1_routes(
         .or(index_template_api_handlers(
             quickwit_services.metastore_client.clone(),
         ))
+        .boxed()
+        .or(datafusion_routes(quickwit_services.clone()))
         .boxed(),
     )
 }
@@ -858,6 +882,20 @@ mod tests {
             metastore_server_opt: None,
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
+            datafusion_session_builder: {
+                let ms = quickwit_proto::metastore::MetastoreServiceClient::from_mock(
+                    quickwit_proto::metastore::MockMetastoreService::new(),
+                );
+                quickwit_datafusion::QuickwitSessionBuilder::new(
+                    ms,
+                    quickwit_search::SearcherPool::default(),
+                    std::sync::Arc::new(quickwit_datafusion::SplitRegistry::new()),
+                )
+            },
+            datafusion_flight_service: quickwit_datafusion::build_flight_service(
+                std::sync::Arc::new(quickwit_datafusion::SplitRegistry::new()),
+                quickwit_search::SearcherPool::default(),
+            ),
             jaeger_service_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };

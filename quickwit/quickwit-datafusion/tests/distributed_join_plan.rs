@@ -13,7 +13,7 @@ use futures::TryStreamExt;
 use tantivy::schema::{SchemaBuilder, FAST, STORED, TEXT};
 use tantivy::{Index, IndexWriter, TantivyDocument};
 use tantivy_datafusion::{
-    full_text_udf, IndexOpener, OpenerMetadata, TantivyCodec, TantivyDocumentProvider,
+    full_text_udf, IndexOpener, TantivyCodec, TantivyDocumentProvider,
     TantivyInvertedIndexProvider, TantivyTableProvider,
 };
 
@@ -95,16 +95,6 @@ fn setup_registry() -> (Arc<SplitRegistry>, Vec<Arc<SplitIndexOpener>>) {
     (registry, vec![opener1, opener2, opener3])
 }
 
-fn make_codec(registry: Arc<SplitRegistry>) -> TantivyCodec {
-    TantivyCodec::new(move |meta: OpenerMetadata| {
-        Arc::new(SplitIndexOpener::new(
-            meta.identifier,
-            registry.clone(),
-            meta.tantivy_schema,
-            meta.segment_sizes,
-        )) as Arc<dyn IndexOpener>
-    })
-}
 
 /// Full-text search across 3 splits: inv ⋈ f, distributed.
 #[tokio::test]
@@ -118,7 +108,7 @@ async fn test_distributed_full_text_join_plan() {
         )
         .await;
 
-    ctx.set_distributed_user_codec(make_codec(registry.clone()));
+    ctx.set_distributed_user_codec(TantivyCodec);
     ctx.register_udf(full_text_udf());
 
     for (i, opener) in openers.iter().enumerate() {
@@ -183,7 +173,7 @@ async fn test_distributed_three_way_join_plan() {
         )
         .await;
 
-    ctx.set_distributed_user_codec(make_codec(registry.clone()));
+    ctx.set_distributed_user_codec(TantivyCodec);
     ctx.register_udf(full_text_udf());
 
     for (i, opener) in openers.iter().enumerate() {

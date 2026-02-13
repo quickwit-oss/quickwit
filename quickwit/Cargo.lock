@@ -8119,6 +8119,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "arrow",
+ "arrow-flight",
  "async-trait",
  "dashmap 6.1.0",
  "datafusion",
@@ -8131,12 +8132,17 @@ dependencies = [
  "quickwit-common",
  "quickwit-metastore",
  "quickwit-proto",
+ "quickwit-query",
+ "quickwit-search",
  "serde",
  "serde_json",
  "tantivy",
  "tantivy-datafusion",
  "tokio",
+ "tokio-stream",
+ "tonic 0.14.2",
  "tracing",
+ "url",
 ]
 
 [[package]]
@@ -8635,11 +8641,14 @@ name = "quickwit-serve"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "arrow-flight",
  "assert-json-diff",
  "async-trait",
  "base64 0.22.1",
  "bytes",
  "bytesize",
+ "datafusion",
+ "datafusion-distributed",
  "elasticsearch-dsl",
  "flate2",
  "futures",
@@ -8664,6 +8673,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-control-plane",
+ "quickwit-datafusion",
  "quickwit-doc-mapper",
  "quickwit-index-management",
  "quickwit-indexing",

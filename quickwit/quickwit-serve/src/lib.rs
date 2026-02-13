@@ -36,6 +36,7 @@ mod otlp_api;
 mod rate_modulator;
 mod rest;
 mod rest_api_response;
+mod datafusion_api;
 mod search_api;
 pub(crate) mod simple_list;
 pub mod tcp_listener;
@@ -200,6 +201,13 @@ struct QuickwitServices {
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
+
+    /// DataFusion session builder for distributed SQL/Arrow query execution.
+    pub datafusion_session_builder: quickwit_datafusion::QuickwitSessionBuilder,
+
+    /// Arrow Flight gRPC service for DataFusion distributed execution
+    /// and external SQL queries.
+    pub datafusion_flight_service: arrow_flight::flight_service_server::FlightServiceServer<quickwit_datafusion::QuickwitFlightService>,
 
     pub env_filter_reload_fn: EnvFilterReloadFn,
 
@@ -635,7 +643,7 @@ pub async fn serve_quickwit(
         split_cache_opt,
     ));
 
-    let (search_job_placer, search_service) = setup_searcher(
+    let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
         cluster.change_stream(),
         // search remains available without a control plane because not all
@@ -646,6 +654,18 @@ pub async fn serve_quickwit(
     )
     .await
     .context("failed to start searcher service")?;
+
+    // Set up DataFusion distributed query execution.
+    // The Flight service runs on the same gRPC port as all other services.
+    // Workers discover each other via the same SearcherPool (Chitchat).
+    let datafusion_registry = std::sync::Arc::new(quickwit_datafusion::SplitRegistry::new());
+    let datafusion_flight_service =
+        quickwit_datafusion::build_flight_service(datafusion_registry.clone(), searcher_pool.clone());
+    let datafusion_session_builder = quickwit_datafusion::QuickwitSessionBuilder::new(
+        metastore_through_control_plane.clone(),
+        searcher_pool,
+        datafusion_registry,
+    );
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
     // throughput. Ingesters (routers) do so to update their shard table.
@@ -738,6 +758,8 @@ pub async fn serve_quickwit(
         otlp_logs_service_opt,
         otlp_traces_service_opt,
         search_service,
+        datafusion_session_builder,
+        datafusion_flight_service,
         env_filter_reload_fn,
     });
     // Setup and start gRPC server.
@@ -1014,7 +1036,7 @@ async fn setup_searcher(
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     searcher_context: Arc<SearcherContext>,
-) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>)> {
+) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>, SearcherPool)> {
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
     let search_service = start_searcher_service(
@@ -1070,7 +1092,7 @@ async fn setup_searcher(
         })
     });
     searcher_pool.listen_for_changes(searcher_change_stream);
-    Ok((search_job_placer, search_service))
+    Ok((search_job_placer, search_service, searcher_pool))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1557,7 +1579,7 @@ mod tests {
         let metastore = metastore_for_test();
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();
-        let (search_job_placer, _searcher_service) = setup_searcher(
+        let (search_job_placer, _searcher_service, _searcher_pool) = setup_searcher(
             &node_config,
             change_stream,
             metastore,

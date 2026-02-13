@@ -2,17 +2,17 @@ use std::sync::Arc;
 
 use datafusion::error::DataFusionError;
 use datafusion::execution::SessionState;
+use datafusion::prelude::SessionConfig;
 use datafusion_distributed::{DistributedExt, WorkerQueryContext};
-use tantivy_datafusion::{OpenerMetadata, TantivyCodec};
+use tantivy_datafusion::{IndexOpener, OpenerFactoryExt, OpenerMetadata, TantivyCodec};
 
 use crate::split_opener::{SplitIndexOpener, SplitRegistry};
 
-/// Build a worker session builder that registers tantivy-df's
-/// [`TantivyCodec`] with the given [`SplitRegistry`].
+/// Build a worker session builder for test contexts.
 ///
-/// Each worker gets its own registry populated with the splits it
-/// should serve. The codec's opener factory reconstructs
-/// [`SplitIndexOpener`]s from the serialized metadata.
+/// Sets the opener factory on the session config and registers the
+/// stateless `TantivyCodec`. In production, `build_flight_service`
+/// does the same thing.
 pub fn build_worker_session_builder(
     registry: Arc<SplitRegistry>,
 ) -> impl Fn(WorkerQueryContext) -> std::pin::Pin<
@@ -24,15 +24,20 @@ pub fn build_worker_session_builder(
     move |ctx: WorkerQueryContext| {
         let registry = registry.clone();
         Box::pin(async move {
-            let codec = TantivyCodec::new(move |meta: OpenerMetadata| {
+            let mut config = SessionConfig::new();
+            config.set_opener_factory(Arc::new(move |meta: OpenerMetadata| {
                 Arc::new(SplitIndexOpener::new(
                     meta.identifier,
                     registry.clone(),
                     meta.tantivy_schema,
                     meta.segment_sizes,
-                )) as Arc<dyn tantivy_datafusion::IndexOpener>
-            });
-            Ok(ctx.builder.with_distributed_user_codec(codec).build())
+                )) as Arc<dyn IndexOpener>
+            }));
+            Ok(ctx
+                .builder
+                .with_config(config)
+                .with_distributed_user_codec(TantivyCodec)
+                .build())
         })
     }
 }
