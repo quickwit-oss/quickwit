@@ -18,6 +18,7 @@ mod local_shards;
 
 use std::time::Duration;
 
+pub use ingester_capacity::IngesterCapacityUpdate;
 use quickwit_proto::types::SourceUid;
 
 pub(in crate::ingest_v2) const BROADCAST_INTERVAL_PERIOD: Duration = if cfg!(test) {
