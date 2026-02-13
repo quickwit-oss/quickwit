@@ -73,9 +73,10 @@ message AnyRequest {
         UpdateIndexRequest update_index = 24;
         DeleteIndexRequest delete_index = 25;
         quickwit.search.ListFieldsRequest root_list_fields = 26;
-        SetIndexRoutingTableRequest set_index_routing_table = 28; 
         GetIndexRoutingTableRequest get_index_routing_table = 27;
+        SetIndexRoutingTableRequest set_index_routing_table = 28;
 
+        CancelRequest cancel = 99;
     }
 }
 
@@ -455,6 +456,9 @@ message ExprAndAgg {
 message ExpressionNode {
   // this is always a com.dd.calc_fields.proto.CalcNode
   google.protobuf.Any calcNode = 1;
+}
+
+message CancelRequest {
 }
 
 message Scope {
