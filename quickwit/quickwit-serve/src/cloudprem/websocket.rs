@@ -58,6 +58,17 @@ impl PendingRequests {
         let task_id = abort_handle.id();
         self.abort_handles.insert(req_id, abort_handle);
         self.task_to_req.insert(task_id, req_id);
+
+        if self.join_set.len() != self.abort_handles.len()
+            || self.abort_handles.len() != self.task_to_req.len()
+        {
+            warn!(
+                ongoing_task_count = self.join_set.len(),
+                task_handles_count = self.abort_handles.len(),
+                known_task_count = self.task_to_req.len(),
+                "pending request state missmatch"
+            )
+        }
     }
 
     /// Cancels a request by its ID if it exists.
@@ -214,6 +225,8 @@ fn handle_single_message(
             if matches!(req.request, Some(any_request::Request::Cancel(_))) {
                 if pending_requests.cancel(req_id) {
                     info!(req_id, "cancelled request");
+                } else {
+                    info!(req_id, "tried to cancel unknown request");
                 }
             } else {
                 // Spawn the request handler with the decoded request
