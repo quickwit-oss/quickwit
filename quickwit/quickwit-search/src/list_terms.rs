@@ -17,6 +17,7 @@ use std::ops::Bound;
 use std::sync::Arc;
 
 use anyhow::Context;
+use bytesize::ByteSize;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
@@ -326,14 +327,19 @@ pub async fn leaf_list_terms(
     splits: &[SplitIdAndFooterOffsets],
 ) -> Result<LeafListTermsResponse, SearchError> {
     info!(split_offsets = ?PrettySample::new(splits, 5));
-    let permit_sizes = splits.iter().map(|split| {
-        compute_initial_memory_allocation(
-            split,
-            searcher_context
-                .searcher_config
-                .warmup_single_split_initial_allocation,
-        )
-    });
+    let permit_sizes: Vec<ByteSize> = splits
+        .iter()
+        .map(|split| {
+            compute_initial_memory_allocation(
+                split,
+                searcher_context
+                    .searcher_config
+                    .warmup_single_split_initial_allocation,
+            )
+        })
+        .collect();
+    // allow offload to lambda
+    // https://github.com/quickwit-oss/quickwit/issues/6150
     let permits = searcher_context
         .search_permit_provider
         .get_permits(permit_sizes)

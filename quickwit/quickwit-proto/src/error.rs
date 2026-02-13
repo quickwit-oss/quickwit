@@ -97,7 +97,7 @@ where E: ServiceError
 }
 
 /// A trait for encoding/decoding service errors to/from gRPC statuses. Errors are stored in JSON
-/// in the gRPC header [`QW_ERROR_HEADER_NAME`]. This allows for propagating them transparently
+/// in the gRPC header `qw-error-bin`. This allows for propagating them transparently
 /// between clients and servers over the network without being semantically limited to a status code
 /// and a message. However, it also means that modifying the serialization format of existing errors
 /// or introducing new ones is not backward compatible.

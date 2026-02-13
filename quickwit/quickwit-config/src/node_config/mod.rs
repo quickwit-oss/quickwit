@@ -300,6 +300,85 @@ pub struct SearcherConfig {
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
+    /// Lambda configuration for serverless leaf search execution.
+    /// If set, enables Lambda execution for leaf search.
+    ///
+    /// If set, and Quickwit cannot access the Lambda (after a deploy attempt if
+    /// auto deploy is set up), Quickwit will log an error and
+    /// fail on startup.
+    #[serde(default)]
+    pub lambda: Option<LambdaConfig>,
+}
+
+/// Configuration for AWS Lambda leaf search execution.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LambdaConfig {
+    /// AWS Lambda function name.
+    #[serde(default = "LambdaConfig::default_function_name")]
+    pub function_name: String,
+    /// Maximum number of splits per Lambda invocation.
+    #[serde(default = "LambdaConfig::default_max_splits_per_invocation")]
+    pub max_splits_per_invocation: NonZeroUsize,
+    /// Maximum number of splits to process locally before offloading to Lambda.
+    /// When the number of pending split searches exceeds this threshold,
+    /// new splits are offloaded to Lambda instead of being queued locally.
+    /// A value of 0 offloads everything to Lambda.
+    #[serde(default = "LambdaConfig::default_offload_threshold")]
+    pub offload_threshold: usize,
+    /// Auto-deploy configuration. If set, Quickwit will automatically deploy
+    /// the Lambda function at startup.
+    /// If deploying a lambda fails, Quickwit will log an error and fail.
+    #[serde(default)]
+    pub auto_deploy: Option<LambdaDeployConfig>,
+}
+
+impl LambdaConfig {
+    #[cfg(feature = "testsuite")]
+    pub fn for_test() -> Self {
+        Self {
+            function_name: Self::default_function_name(),
+            max_splits_per_invocation: Self::default_max_splits_per_invocation(),
+            offload_threshold: Self::default_offload_threshold(),
+            auto_deploy: None,
+        }
+    }
+
+    fn default_function_name() -> String {
+        "quickwit-lambda-search".to_string()
+    }
+    fn default_max_splits_per_invocation() -> NonZeroUsize {
+        NonZeroUsize::new(10).unwrap()
+    }
+    fn default_offload_threshold() -> usize {
+        100
+    }
+}
+
+/// Configuration for automatic Lambda function deployment.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LambdaDeployConfig {
+    /// IAM execution role ARN for the Lambda function.
+    /// The role only requires GetObject permission to the targeted S3 bucket.
+    pub execution_role_arn: String,
+    /// Memory size for the Lambda function.
+    /// It will be rounded up to the nearest multiple of 1MiB.
+    #[serde(default = "LambdaDeployConfig::default_memory_size")]
+    pub memory_size: ByteSize,
+    /// Timeout for Lambda invocations in seconds.
+    #[serde(default = "LambdaDeployConfig::default_invocation_timeout_secs")]
+    pub invocation_timeout_secs: u64,
+}
+
+impl LambdaDeployConfig {
+    fn default_memory_size() -> ByteSize {
+        // Empirically this implies between 4 and 6 vCPUs.
+        ByteSize::gib(5)
+    }
+    fn default_invocation_timeout_secs() -> u64 {
+        15
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -316,6 +395,14 @@ pub struct CacheConfig {
 }
 
 impl CacheConfig {
+    pub fn no_cache() -> Self {
+        CacheConfig {
+            capacity: None,
+            policy: None,
+            virtual_caches: Vec::new(),
+        }
+    }
+
     pub fn default_with_capacity(capacity: ByteSize) -> Self {
         CacheConfig {
             capacity: Some(capacity),
@@ -376,7 +463,7 @@ pub enum CachePolicy {
 }
 
 impl std::fmt::Display for CachePolicy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             CachePolicy::Lru => f.write_str("lru"),
             CachePolicy::S3Fifo => f.write_str("s3-fifo"),
@@ -435,6 +522,7 @@ impl Default for SearcherConfig {
             storage_timeout_policy: None,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::gb(1),
+            lambda: None,
         }
     }
 }

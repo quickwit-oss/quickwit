@@ -43,6 +43,7 @@ quickwit-proto = { workspace = true }
 tokio = { workspace = true }
 
 quickwit-proto = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["testsuite"] }
 
 [features]
 testsuite = []

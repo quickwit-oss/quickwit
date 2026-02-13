@@ -1029,9 +1029,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         ..Default::default()
     });
     let searcher_context: Arc<SearcherContext> =
-        Arc::new(SearcherContext::new(SearcherConfig::default(), None));
-
-    let agg_limits = searcher_context.get_aggregation_limits();
+        Arc::new(SearcherContext::new(SearcherConfig::default(), None, None));
 
     let search_response = single_doc_mapping_leaf_search(
         searcher_context,
@@ -1039,7 +1037,6 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         test_sandbox.storage(),
         splits_offsets,
         test_sandbox.doc_mapper(),
-        agg_limits,
     )
     .await
     .unwrap();
@@ -1669,7 +1666,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         .into_iter()
         .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
         .collect();
-    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None));
+    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None, None));
 
     {
         let request = ListTermsRequest {
