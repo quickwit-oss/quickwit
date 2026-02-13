@@ -716,10 +716,13 @@ impl ResultMapper {
         };
 
         match (metric_compute.r#type.as_str(), metric_result) {
-            ("CARDINALITY_SKETCH", MetricResult::Cardinality(cardinality)) => {
-                state
-                    .value
-                    .push(generate_sketch(cardinality.value.unwrap_or_default() as u64));
+            ("CARDINALITY_SKETCH" | "CARDINALITY", MetricResult::Cardinality(cardinality)) => {
+                // Finalized path: the sketch data is lost after finalization, only the scalar
+                // estimate remains. Return as uint64 — this is only used in tests; the production
+                // cloudprem service always uses the intermediate path which preserves the sketch.
+                state.value.push(u64_to_agg_value(
+                    cardinality.value.unwrap_or_default() as u64
+                ));
             }
             ("SUM", MetricResult::Sum(metric_res))
             | ("MIN", MetricResult::Min(metric_res))
@@ -1018,14 +1021,18 @@ impl IntermediateResultMapper {
                     )),
                 });
             }
-            // TODO: Return actual HLL sketch for proper merging
             (
                 "CARDINALITY_SKETCH" | "CARDINALITY",
                 IntermediateMetricResult::Cardinality(cardinality),
             ) => {
-                state.value.push(generate_sketch(
-                    cardinality.finalize().unwrap_or_default() as u64
-                ));
+                let sketch_bytes = cardinality.to_sketch_bytes();
+                state.value.push(EvpAggValue {
+                    value: Some(
+                        quickwit_proto::cloudprem::agg_value::Value::HllDataSketchValue(
+                            sketch_bytes,
+                        ),
+                    ),
+                });
             }
             ("SUM", IntermediateMetricResult::Sum(m)) => {
                 state
@@ -1086,7 +1093,17 @@ fn default_agg_value(agg_type: &str) -> EvpAggValue {
                 quickwit_proto::cloudprem::Avg { sum: 0.0, count: 0 },
             )),
         },
-        "CARDINALITY_SKETCH" | "CARDINALITY" => generate_sketch(0),
+        "CARDINALITY_SKETCH" | "CARDINALITY" => {
+            // Return an empty DataSketches HLL sketch (lg_k=11, Hll4)
+            let empty = tantivy::aggregation::metric::CardinalityCollector::default();
+            EvpAggValue {
+                value: Some(
+                    quickwit_proto::cloudprem::agg_value::Value::HllDataSketchValue(
+                        empty.to_sketch_bytes(),
+                    ),
+                ),
+            }
+        }
         // SUM, MIN, MAX, and anything else → 0
         _ => u64_to_agg_value(0),
     }
@@ -1108,33 +1125,6 @@ fn bucket_iter<T>(
     match buckets {
         BucketEntries::Vec(vec) => Either::Left(vec.into_iter()),
         BucketEntries::HashMap(map) => Either::Right(map.into_values()),
-    }
-}
-
-fn generate_sketch(count: u64) -> EvpAggValue {
-    const VERSION: u8 = 0x10;
-    const EMPTY: u8 = 0x01;
-    const EXPLICIT: u8 = 0x02;
-    // const SPARSE: u8 = 0x01;
-    // const FULL: u8 = 0x01;
-
-    const WIDTH_5_COUNT_2_11: u8 = 0b100_01011;
-    #[allow(clippy::unusual_byte_groupings)]
-    const CUTOFF: u8 = 0b0_1_111111; // pad, sparseEnabled, explicitCUtoff=63 (implementation defined)
-
-    let hll = if count == 0 || count > 256 {
-        vec![VERSION | EMPTY, WIDTH_5_COUNT_2_11, CUTOFF]
-    } else {
-        let mut res: Vec<u8> = Vec::with_capacity(count as usize * 8 + 3);
-        res.extend_from_slice(&[VERSION | EXPLICIT, WIDTH_5_COUNT_2_11, CUTOFF]);
-        for i in 0..count {
-            res.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, i as u8]);
-        }
-        res
-    };
-
-    EvpAggValue {
-        value: Some(quickwit_proto::cloudprem::agg_value::Value::HllValue(hll)),
     }
 }
 
@@ -1282,9 +1272,7 @@ mod tests {
     use tantivy::query::AllQuery;
 
     use super::test_helpers::*;
-    use super::{
-        aggregation_result_to_proto, generate_sketch, rollup_to_interval, to_tantivy_aggregation,
-    };
+    use super::{aggregation_result_to_proto, rollup_to_interval, to_tantivy_aggregation};
     use crate::aggregations::{
         AggregationResult as QuickwitAggregationResult,
         AggregationResults as QuickwitAggregationResults, BucketEntries, BucketEntry, BucketResult,
@@ -1551,47 +1539,6 @@ mod tests {
 
         let res = aggregation_result_to_proto(aggregation_results, &agg_defs, 10).unwrap();
         assert_eq!(res, expected);
-    }
-
-    #[test]
-    fn test_generate_sketch() {
-        {
-            let sketch_empty = generate_sketch(0);
-            let quickwit_proto::cloudprem::agg_value::Value::HllValue(buffer) =
-                sketch_empty.value.unwrap()
-            else {
-                panic!();
-            };
-            assert_eq!(buffer[0], 0x11); // version+empty
-            assert_eq!(buffer.len(), 3);
-            // other bytes are configuration only meaningful on sparse/full variants
-        }
-        {
-            let sketch_too_full = generate_sketch(1024);
-            let quickwit_proto::cloudprem::agg_value::Value::HllValue(buffer) =
-                sketch_too_full.value.unwrap()
-            else {
-                panic!();
-            };
-            assert_eq!(buffer[0], 0x11); // version+empty
-            assert_eq!(buffer.len(), 3);
-        }
-        {
-            let sketch_too_full = generate_sketch(5);
-            let quickwit_proto::cloudprem::agg_value::Value::HllValue(buffer) =
-                sketch_too_full.value.unwrap()
-            else {
-                panic!();
-            };
-            assert_eq!(buffer[0], 0x12); // version+explicit
-            assert_eq!(buffer.len(), 3 + 5 * 8);
-            for i in 0..5 {
-                for j in 0..6 {
-                    assert_eq!(buffer[3 + i * 8 + j], 0);
-                }
-                assert_eq!(buffer[3 + i * 8 + 7], i as u8);
-            }
-        }
     }
 
     #[test]
