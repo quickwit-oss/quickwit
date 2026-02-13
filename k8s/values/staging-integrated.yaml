@@ -230,7 +230,7 @@ indexer:
       readOnly: true
 
 searcher:
-  replicaCount: 1
+  replicaCount: 3
 
   resources:
     limits:
