@@ -58,7 +58,13 @@ impl QuickwitSessionBuilder {
     /// [`QuickwitSchemaProvider`] that lazily resolves index names from
     /// the metastore. Otherwise (tests), tables must be registered manually.
     pub fn build_session(&self) -> SessionContext {
-        let config = SessionConfig::new();
+        // Set target_partitions=1 so the optimizer doesn't add
+        // RepartitionExec nodes inside per-split join plans.
+        // Cross-worker parallelism is handled by df-distributed's
+        // stage decomposition, not DF's partition count. Per-split
+        // parallelism comes from tantivy segment count, which the
+        // providers declare via their output_partitioning().
+        let config = SessionConfig::new().with_target_partitions(1);
         let worker_resolver = QuickwitWorkerResolver::new(self.searcher_pool.clone());
 
         let state = SessionStateBuilder::new()
