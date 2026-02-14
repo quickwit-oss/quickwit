@@ -10900,7 +10900,7 @@ dependencies = [
  "datafusion-physical-plan",
  "datafusion-proto",
  "futures",
- "prost 0.13.5",
+ "prost 0.14.1",
  "serde",
  "serde_json",
  "tantivy",
