@@ -12,6 +12,7 @@ use quickwit_search::SearcherContext;
 use quickwit_storage::Storage;
 use tantivy::Index;
 use tantivy_datafusion::IndexOpener;
+use tokio::sync::OnceCell;
 
 /// Registry of opened tantivy indexes, keyed by split ID.
 /// Used for integration tests. Production uses [`StorageSplitOpener`].
@@ -119,9 +120,13 @@ impl IndexOpener for SplitIndexOpener {
 /// to download the split bundle from S3/GCS/local storage, warm the
 /// footer cache + fast field cache, and return an opened tantivy `Index`.
 ///
+/// The opened Index is cached: the first `open()` call downloads,
+/// warms, and caches. Subsequent calls return the cached Index.
+/// This ensures that the inverted index and fast field DataSources
+/// for the same split share one download and one warmup.
+///
 /// Planning-time metadata (schema, segment sizes) is stored inline —
 /// no I/O during plan construction.
-#[derive(Clone)]
 pub struct StorageSplitOpener {
     split_id: String,
     tantivy_schema: tantivy::schema::Schema,
@@ -130,6 +135,26 @@ pub struct StorageSplitOpener {
     storage: Arc<dyn Storage>,
     footer_offsets: SplitIdAndFooterOffsets,
     tokenizer_manager: Option<TokenizerManager>,
+    /// Cache: opened + warmed Index. Shared across all DataSources
+    /// for this split.
+    cached_index: Arc<OnceCell<Index>>,
+}
+
+impl Clone for StorageSplitOpener {
+    fn clone(&self) -> Self {
+        Self {
+            split_id: self.split_id.clone(),
+            tantivy_schema: self.tantivy_schema.clone(),
+            segment_sizes: self.segment_sizes.clone(),
+            searcher_context: self.searcher_context.clone(),
+            storage: self.storage.clone(),
+            footer_offsets: self.footer_offsets.clone(),
+            tokenizer_manager: self.tokenizer_manager.clone(),
+            // Share the same cache across clones — so inv + ff
+            // DataSources for the same split share one open + warmup.
+            cached_index: self.cached_index.clone(),
+        }
+    }
 }
 
 impl StorageSplitOpener {
@@ -156,13 +181,11 @@ impl StorageSplitOpener {
             storage,
             footer_offsets,
             tokenizer_manager: None,
+            cached_index: Arc::new(OnceCell::new()),
         }
     }
 
     /// Set the tokenizer manager from the index's doc mapper.
-    ///
-    /// Required for full-text queries on fields with custom tokenizers.
-    /// Without it, tantivy falls back to the default tokenizer.
     pub fn with_tokenizer_manager(mut self, tm: TokenizerManager) -> Self {
         self.tokenizer_manager = Some(tm);
         self
@@ -188,9 +211,13 @@ impl IndexOpener for StorageSplitOpener {
     }
 
     async fn open(&self) -> Result<Index> {
-        // Use an unbounded byte range cache so that tantivy can do
-        // synchronous reads on the storage-backed directory. Without
-        // this, StorageDirectory errors on sync reads.
+        // Return cached Index if already opened. This ensures the
+        // inverted index and fast field DataSources for the same split
+        // share one download, one warmup.
+        if let Some(index) = self.cached_index.get() {
+            return Ok(index.clone());
+        }
+
         let byte_range_cache = quickwit_storage::ByteRangeCache::with_infinite_capacity(
             &quickwit_storage::STORAGE_METRICS.shortlived_cache,
         );
@@ -203,6 +230,12 @@ impl IndexOpener for StorageSplitOpener {
         )
         .await
         .map_err(|e| DataFusionError::Execution(format!("open split {}: {e}", self.split_id)))?;
+
+        // Warm up all data so tantivy's sync reads hit cache.
+        tantivy_datafusion::warmup::warmup_all(&index).await?;
+
+        // Cache for subsequent calls (inv + ff DataSources share this).
+        let _ = self.cached_index.set(index.clone());
 
         Ok(index)
     }
