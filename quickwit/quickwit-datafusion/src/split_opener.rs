@@ -231,8 +231,9 @@ impl IndexOpener for StorageSplitOpener {
         .await
         .map_err(|e| DataFusionError::Execution(format!("open split {}: {e}", self.split_id)))?;
 
-        // Warm up all data so tantivy's sync reads hit cache.
-        tantivy_datafusion::warmup::warmup_all(&index).await?;
+        // No warmup here — each DataSource warms only the fields it
+        // needs on first poll. The ByteRangeCache is shared across all
+        // DataSources via the cached Index, so no data is fetched twice.
 
         // Cache for subsequent calls (inv + ff DataSources share this).
         let _ = self.cached_index.set(index.clone());
