@@ -201,6 +201,13 @@ pub(crate) async fn start_grpc_server(
         None
     };
 
+    // Mount Arrow Flight service for DataFusion distributed execution.
+    // Runs on the same port as all other gRPC services.
+    let flight_service = {
+        enabled_grpc_services.insert("datafusion-flight");
+        Some(services.datafusion_flight_service.clone())
+    };
+
     // Mount gRPC jaeger service if present.
     let jaeger_grpc_service = if let Some(jaeger_service) = services.jaeger_service_opt.clone() {
         enabled_grpc_services.insert("jaeger");
@@ -248,7 +255,8 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(otlp_log_grpc_service)
         .add_optional_service(otlp_trace_grpc_service)
-        .add_optional_service(search_grpc_service);
+        .add_optional_service(search_grpc_service)
+        .add_optional_service(flight_service);
 
     let grpc_listen_addr = tcp_listener.local_addr()?;
     info!(

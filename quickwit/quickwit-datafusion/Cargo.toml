@@ -1,0 +1,52 @@
+[package]
+name = "quickwit-datafusion"
+description = "Distributed DataFusion execution for Quickwit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+dashmap = "6"
+futures = { workspace = true }
+prost = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+url = "2"
+
+tantivy = { workspace = true }
+tantivy-datafusion = { path = "/Users/alex.bianchi/oss/tantivy/.worktrees/bianchi/tantivydf/tantivy-datafusion" }
+
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
+quickwit-metastore = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true }
+quickwit-search = { workspace = true }
+quickwit-storage = { workspace = true }
+
+datafusion = "52"
+datafusion-datasource = "52"
+datafusion-physical-plan = "52"
+datafusion-proto = "52"
+datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed" }
+arrow = { version = "57", features = ["prettyprint"] }
+arrow-flight = "57"
+
+[dev-dependencies]
+datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed", features = ["integration"] }
+dashmap = "6"
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-config = { workspace = true }
+quickwit-indexing = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-search = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }
