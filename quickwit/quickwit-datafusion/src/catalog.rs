@@ -97,7 +97,7 @@ impl QuickwitSchemaProvider {
                 StorageSplitOpener::new(
                     split_meta.split_id.clone(),
                     schema_for_factory.clone(),
-                    vec![], // segment sizes discovered at open time
+                    vec![split_meta.num_docs as u32], // 1 segment per split
                     searcher_context.clone(),
                     storage.clone(),
                     split_meta.footer_offsets.start,

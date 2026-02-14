@@ -10909,6 +10909,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tantivy",
+ "tokio",
 ]
 
 [[package]]

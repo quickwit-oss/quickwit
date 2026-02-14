@@ -183,6 +183,10 @@ impl IndexOpener for StorageSplitOpener {
         (self.footer_offsets.split_footer_start, self.footer_offsets.split_footer_end)
     }
 
+    fn segment_sizes(&self) -> Vec<u32> {
+        self.segment_sizes.clone()
+    }
+
     async fn open(&self) -> Result<Index> {
         // Use an unbounded byte range cache so that tantivy can do
         // synchronous reads on the storage-backed directory. Without
@@ -205,10 +209,6 @@ impl IndexOpener for StorageSplitOpener {
 
     fn schema(&self) -> tantivy::schema::Schema {
         self.tantivy_schema.clone()
-    }
-
-    fn segment_sizes(&self) -> Vec<u32> {
-        self.segment_sizes.clone()
     }
 
     fn identifier(&self) -> &str {

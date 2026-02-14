@@ -196,10 +196,12 @@ async fn test_full_production_path() {
     assert!(splits.len() >= 2, "expected at least 2 splits, got {}", splits.len());
 
     for (i, split_meta) in splits.iter().enumerate() {
+        // Use num_docs as the segment size — each split is typically
+        // one tantivy Index with 1 segment after merging.
         let opener = Arc::new(StorageSplitOpener::new(
             split_meta.split_id.clone(),
             tantivy_schema.clone(),
-            vec![], // segment sizes discovered at open time
+            vec![split_meta.num_docs as u32],
             searcher_context.clone(),
             storage.clone(),
             split_meta.footer_offsets.start,
@@ -262,6 +264,11 @@ async fn test_full_production_path() {
     // Execute the distributed query.
     let stream = execute_stream(plan, ctx.task_ctx()).unwrap();
     let batches: Vec<RecordBatch> = stream.try_collect().await.unwrap();
+
+    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    println!("total rows: {total_rows}, batches: {}", batches.len());
+    assert!(total_rows > 0, "expected results but got 0 rows");
+
     let batch = collect_batches(&batches);
 
     // "electronics" should match ids {1, 2}
