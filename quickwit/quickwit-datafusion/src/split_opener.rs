@@ -6,21 +6,21 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use datafusion::common::Result;
 use datafusion::error::DataFusionError;
+use quickwit_proto::search::SplitIdAndFooterOffsets;
+use quickwit_search::SearcherContext;
+use quickwit_storage::Storage;
 use tantivy::Index;
 use tantivy_datafusion::IndexOpener;
 
 /// Registry of opened tantivy indexes, keyed by split ID.
-///
-/// For integration tests this is populated before query execution.
-/// In production this would be replaced by `open_index_with_caches()`.
+/// Used for integration tests. Production uses [`StorageSplitOpener`].
 pub type SplitRegistry = DashMap<String, Index>;
+
+// ── Test opener (DashMap-backed) ────────────────────────────────────
 
 /// An [`IndexOpener`] backed by an in-memory [`SplitRegistry`].
 ///
-/// Planning-time metadata (schema, segment sizes) is stored inline so
-/// that the opener can answer schema/partition queries without touching
-/// the registry. The actual [`open`](IndexOpener::open) call looks up
-/// the registry at execution time.
+/// For integration tests only. Production uses [`StorageSplitOpener`].
 #[derive(Clone)]
 pub struct SplitIndexOpener {
     split_id: String,
@@ -44,8 +44,6 @@ impl SplitIndexOpener {
         }
     }
 
-    /// Build an opener by extracting schema and segment sizes from an
-    /// already-opened index, then inserting it into the registry.
     pub fn from_index(split_id: String, index: Index, registry: Arc<SplitRegistry>) -> Self {
         let tantivy_schema = index.schema();
         let segment_sizes = index
@@ -76,7 +74,6 @@ impl fmt::Debug for SplitIndexOpener {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SplitIndexOpener")
             .field("split_id", &self.split_id)
-            .field("segment_sizes", &self.segment_sizes)
             .finish()
     }
 }
@@ -93,6 +90,95 @@ impl IndexOpener for SplitIndexOpener {
                     self.split_id
                 ))
             })
+    }
+
+    fn schema(&self) -> tantivy::schema::Schema {
+        self.tantivy_schema.clone()
+    }
+
+    fn segment_sizes(&self) -> Vec<u32> {
+        self.segment_sizes.clone()
+    }
+
+    fn identifier(&self) -> &str {
+        &self.split_id
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+// ── Production opener (storage-backed) ──────────────────────────────
+
+/// An [`IndexOpener`] that downloads and opens splits from object
+/// storage using Quickwit's caching infrastructure.
+///
+/// At execution time (on the worker), calls `open_index_with_caches()`
+/// to download the split bundle from S3/GCS/local storage, warm the
+/// footer cache + fast field cache, and return an opened tantivy `Index`.
+///
+/// Planning-time metadata (schema, segment sizes) is stored inline —
+/// no I/O during plan construction.
+#[derive(Clone)]
+pub struct StorageSplitOpener {
+    split_id: String,
+    tantivy_schema: tantivy::schema::Schema,
+    segment_sizes: Vec<u32>,
+    searcher_context: Arc<SearcherContext>,
+    storage: Arc<dyn Storage>,
+    footer_offsets: SplitIdAndFooterOffsets,
+}
+
+impl StorageSplitOpener {
+    pub fn new(
+        split_id: String,
+        tantivy_schema: tantivy::schema::Schema,
+        segment_sizes: Vec<u32>,
+        searcher_context: Arc<SearcherContext>,
+        storage: Arc<dyn Storage>,
+        split_footer_start: u64,
+        split_footer_end: u64,
+    ) -> Self {
+        let footer_offsets = SplitIdAndFooterOffsets {
+            split_id: split_id.clone(),
+            split_footer_start,
+            split_footer_end,
+            ..Default::default()
+        };
+        Self {
+            split_id,
+            tantivy_schema,
+            segment_sizes,
+            searcher_context,
+            storage,
+            footer_offsets,
+        }
+    }
+}
+
+impl fmt::Debug for StorageSplitOpener {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StorageSplitOpener")
+            .field("split_id", &self.split_id)
+            .finish()
+    }
+}
+
+#[async_trait]
+impl IndexOpener for StorageSplitOpener {
+    async fn open(&self) -> Result<Index> {
+        let (index, _hot_directory) = quickwit_search::leaf::open_index_with_caches(
+            &self.searcher_context,
+            self.storage.clone(),
+            &self.footer_offsets,
+            None, // tokenizer_manager — TODO: pass from doc mapper
+            None, // ephemeral cache — TODO: pass from searcher context
+        )
+        .await
+        .map_err(|e| DataFusionError::Execution(format!("open split {}: {e}", self.split_id)))?;
+
+        Ok(index)
     }
 
     fn schema(&self) -> tantivy::schema::Schema {

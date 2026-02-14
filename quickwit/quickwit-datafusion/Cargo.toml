@@ -27,6 +27,7 @@ quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
+quickwit-storage = { workspace = true }
 
 datafusion = "52"
 datafusion-datasource = "52"

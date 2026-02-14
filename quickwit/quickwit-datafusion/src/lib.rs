@@ -9,6 +9,6 @@ pub mod worker;
 pub use flight::{QuickwitFlightService, build_flight_service};
 pub use resolver::QuickwitWorkerResolver;
 pub use session::QuickwitSessionBuilder;
-pub use split_opener::{SplitIndexOpener, SplitRegistry};
+pub use split_opener::{SplitIndexOpener, SplitRegistry, StorageSplitOpener};
 pub use table_provider::{OpenerFactory, QuickwitTableProvider};
 pub use worker::build_worker_session_builder;
