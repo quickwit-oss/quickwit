@@ -7,6 +7,7 @@ use dashmap::DashMap;
 use datafusion::common::Result;
 use datafusion::error::DataFusionError;
 use quickwit_proto::search::SplitIdAndFooterOffsets;
+use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_search::SearcherContext;
 use quickwit_storage::Storage;
 use tantivy::Index;
@@ -128,6 +129,7 @@ pub struct StorageSplitOpener {
     searcher_context: Arc<SearcherContext>,
     storage: Arc<dyn Storage>,
     footer_offsets: SplitIdAndFooterOffsets,
+    tokenizer_manager: Option<TokenizerManager>,
 }
 
 impl StorageSplitOpener {
@@ -153,7 +155,17 @@ impl StorageSplitOpener {
             searcher_context,
             storage,
             footer_offsets,
+            tokenizer_manager: None,
         }
+    }
+
+    /// Set the tokenizer manager from the index's doc mapper.
+    ///
+    /// Required for full-text queries on fields with custom tokenizers.
+    /// Without it, tantivy falls back to the default tokenizer.
+    pub fn with_tokenizer_manager(mut self, tm: TokenizerManager) -> Self {
+        self.tokenizer_manager = Some(tm);
+        self
     }
 }
 
@@ -172,8 +184,8 @@ impl IndexOpener for StorageSplitOpener {
             &self.searcher_context,
             self.storage.clone(),
             &self.footer_offsets,
-            None, // tokenizer_manager — TODO: pass from doc mapper
-            None, // ephemeral cache — TODO: pass from searcher context
+            self.tokenizer_manager.as_ref(),
+            None, // ephemeral cache — can be added for hot-path optimization
         )
         .await
         .map_err(|e| DataFusionError::Execution(format!("open split {}: {e}", self.split_id)))?;

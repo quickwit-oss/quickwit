@@ -93,15 +93,18 @@ impl QuickwitSchemaProvider {
         // Build the opener factory that creates StorageSplitOpeners.
         let schema_for_factory = tantivy_schema.clone();
         let opener_factory: OpenerFactory = Arc::new(move |split_meta| {
-            Arc::new(StorageSplitOpener::new(
-                split_meta.split_id.clone(),
-                schema_for_factory.clone(),
-                vec![], // segment sizes not known until open — from_opener handles this
-                searcher_context.clone(),
-                storage.clone(),
-                split_meta.footer_offsets.start,
-                split_meta.footer_offsets.end,
-            )) as Arc<dyn IndexOpener>
+            Arc::new(
+                StorageSplitOpener::new(
+                    split_meta.split_id.clone(),
+                    schema_for_factory.clone(),
+                    vec![], // segment sizes discovered at open time
+                    searcher_context.clone(),
+                    storage.clone(),
+                    split_meta.footer_offsets.start,
+                    split_meta.footer_offsets.end,
+                )
+                .with_tokenizer_manager(tokenizer_manager.clone()),
+            ) as Arc<dyn IndexOpener>
         });
 
         let provider = QuickwitTableProvider::new(
