@@ -1,4 +1,3 @@
-use std::pin::Pin;
 use std::sync::Arc;
 
 use arrow_flight::flight_service_server::{FlightService, FlightServiceServer};
@@ -11,38 +10,24 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_distributed::{DistributedExt, DistributedPhysicalOptimizerRule, Worker};
 use futures::stream::BoxStream;
 use futures::TryStreamExt;
-use tantivy_datafusion::{
-    IndexOpener, OpenerFactoryExt, OpenerMetadata, TantivyCodec, full_text_udf,
-};
+use tantivy_datafusion::{OpenerFactory, OpenerFactoryExt, TantivyCodec, full_text_udf};
 use tonic::{Request, Response, Status, Streaming};
 
 use crate::resolver::QuickwitWorkerResolver;
-use crate::split_opener::{SplitIndexOpener, SplitRegistry};
 
 /// A Flight service that handles both:
 /// - **df-distributed plan fragments** (worker execution)
 /// - **SQL queries from external clients** (via `do_get` with SQL string tickets)
-///
-/// Dispatch: if the ticket decodes as a df-distributed protobuf, route
-/// to the worker. Otherwise treat the ticket bytes as a UTF-8 SQL string.
 pub struct QuickwitFlightService {
     worker: Worker,
-    registry: Arc<SplitRegistry>,
+    opener_factory: OpenerFactory,
     searcher_pool: quickwit_search::SearcherPool,
 }
 
 impl QuickwitFlightService {
     fn build_client_session(&self) -> SessionContext {
-        let mut config = SessionConfig::new();
-        let registry = self.registry.clone();
-        config.set_opener_factory(Arc::new(move |meta: OpenerMetadata| {
-            Arc::new(SplitIndexOpener::new(
-                meta.identifier,
-                registry.clone(),
-                meta.tantivy_schema,
-                meta.segment_sizes,
-            )) as Arc<dyn IndexOpener>
-        }));
+        let mut config = SessionConfig::new().with_target_partitions(1);
+        config.set_opener_factory(self.opener_factory.clone());
 
         let worker_resolver = QuickwitWorkerResolver::new(self.searcher_pool.clone());
 
@@ -59,15 +44,11 @@ impl QuickwitFlightService {
         ctx
     }
 
-    /// Execute a SQL query and return a Flight stream of RecordBatches.
     async fn execute_sql(
         &self,
         sql: &str,
     ) -> Result<Response<BoxStream<'static, Result<FlightData, Status>>>, Status> {
         let ctx = self.build_client_session();
-
-        // TODO: register index tables from metastore based on query.
-        // For now, execute against an empty context (useful for SHOW TABLES, SELECT 1, etc.)
 
         let df = ctx
             .sql(sql)
@@ -94,27 +75,20 @@ impl QuickwitFlightService {
 
 /// Build the combined Flight service.
 ///
-/// Handles both df-distributed worker traffic AND external SQL queries
-/// on the same gRPC port.
+/// The `opener_factory` is registered on the worker's `SessionConfig`
+/// for decoding plan fragments. It's also used by the client-facing
+/// SQL execution path.
 pub fn build_flight_service(
-    registry: Arc<SplitRegistry>,
+    opener_factory: OpenerFactory,
     searcher_pool: quickwit_search::SearcherPool,
 ) -> FlightServiceServer<QuickwitFlightService> {
-    let reg = registry.clone();
+    let factory_for_worker = opener_factory.clone();
     let worker = Worker::from_session_builder(
         move |ctx: datafusion_distributed::WorkerQueryContext| {
-            let registry = reg.clone();
+            let factory = factory_for_worker.clone();
             Box::pin(async move {
                 let mut config = SessionConfig::new();
-                config.set_opener_factory(Arc::new(move |meta: OpenerMetadata| {
-                    Arc::new(SplitIndexOpener::new(
-                        meta.identifier,
-                        registry.clone(),
-                        meta.tantivy_schema,
-                        meta.segment_sizes,
-                    )) as Arc<dyn IndexOpener>
-                }));
-
+                config.set_opener_factory(factory);
                 Ok(ctx
                     .builder
                     .with_config(config)
@@ -126,12 +100,12 @@ pub fn build_flight_service(
 
     FlightServiceServer::new(QuickwitFlightService {
         worker,
-        registry,
+        opener_factory,
         searcher_pool,
     })
 }
 
-// ── FlightService impl: dispatch worker vs SQL ──────────────────────
+// ── FlightService impl ──────────────────────────────────────────────
 
 #[tonic::async_trait]
 impl FlightService for QuickwitFlightService {
@@ -148,87 +122,21 @@ impl FlightService for QuickwitFlightService {
         request: Request<Ticket>,
     ) -> Result<Response<Self::DoGetStream>, Status> {
         let ticket = request.get_ref();
-
-        // Try to parse as a df-distributed plan fragment.
-        // df-distributed encodes DoGet as a prost::Message.
-        // If the ticket is valid protobuf with the right fields, it's a worker request.
-        // Otherwise, treat as UTF-8 SQL from an external client.
         if let Ok(sql) = std::str::from_utf8(&ticket.ticket) {
-            // Heuristic: df-distributed tickets are protobuf (binary),
-            // not valid UTF-8 text. If we got valid UTF-8 and it looks
-            // like SQL (or any human-readable string), handle as SQL.
-            // Pure protobuf tickets will almost never be valid UTF-8.
-            if sql.len() > 0 && !sql.starts_with('\0') {
+            if !sql.is_empty() && !sql.starts_with('\0') {
                 return self.execute_sql(sql).await;
             }
         }
-
-        // Delegate to df-distributed worker.
         self.worker.do_get(request).await
     }
 
-    // All other methods delegate to the worker (which returns unimplemented for most).
-
-    async fn handshake(
-        &self,
-        request: Request<Streaming<HandshakeRequest>>,
-    ) -> Result<Response<Self::HandshakeStream>, Status> {
-        self.worker.handshake(request).await
-    }
-
-    async fn list_flights(
-        &self,
-        request: Request<Criteria>,
-    ) -> Result<Response<Self::ListFlightsStream>, Status> {
-        self.worker.list_flights(request).await
-    }
-
-    async fn get_flight_info(
-        &self,
-        request: Request<FlightDescriptor>,
-    ) -> Result<Response<FlightInfo>, Status> {
-        self.worker.get_flight_info(request).await
-    }
-
-    async fn get_schema(
-        &self,
-        request: Request<FlightDescriptor>,
-    ) -> Result<Response<SchemaResult>, Status> {
-        self.worker.get_schema(request).await
-    }
-
-    async fn do_put(
-        &self,
-        request: Request<Streaming<FlightData>>,
-    ) -> Result<Response<Self::DoPutStream>, Status> {
-        self.worker.do_put(request).await
-    }
-
-    async fn do_exchange(
-        &self,
-        request: Request<Streaming<FlightData>>,
-    ) -> Result<Response<Self::DoExchangeStream>, Status> {
-        self.worker.do_exchange(request).await
-    }
-
-    async fn do_action(
-        &self,
-        request: Request<Action>,
-    ) -> Result<Response<Self::DoActionStream>, Status> {
-        self.worker.do_action(request).await
-    }
-
-    async fn list_actions(
-        &self,
-        request: Request<Empty>,
-    ) -> Result<Response<Self::ListActionsStream>, Status> {
-        self.worker.list_actions(request).await
-    }
-
-    async fn poll_flight_info(
-        &self,
-        request: Request<FlightDescriptor>,
-    ) -> Result<Response<PollInfo>, Status> {
-        self.worker.poll_flight_info(request).await
-    }
+    async fn handshake(&self, r: Request<Streaming<HandshakeRequest>>) -> Result<Response<Self::HandshakeStream>, Status> { self.worker.handshake(r).await }
+    async fn list_flights(&self, r: Request<Criteria>) -> Result<Response<Self::ListFlightsStream>, Status> { self.worker.list_flights(r).await }
+    async fn get_flight_info(&self, r: Request<FlightDescriptor>) -> Result<Response<FlightInfo>, Status> { self.worker.get_flight_info(r).await }
+    async fn get_schema(&self, r: Request<FlightDescriptor>) -> Result<Response<SchemaResult>, Status> { self.worker.get_schema(r).await }
+    async fn do_put(&self, r: Request<Streaming<FlightData>>) -> Result<Response<Self::DoPutStream>, Status> { self.worker.do_put(r).await }
+    async fn do_exchange(&self, r: Request<Streaming<FlightData>>) -> Result<Response<Self::DoExchangeStream>, Status> { self.worker.do_exchange(r).await }
+    async fn do_action(&self, r: Request<Action>) -> Result<Response<Self::DoActionStream>, Status> { self.worker.do_action(r).await }
+    async fn list_actions(&self, r: Request<Empty>) -> Result<Response<Self::ListActionsStream>, Status> { self.worker.list_actions(r).await }
+    async fn poll_flight_info(&self, r: Request<FlightDescriptor>) -> Result<Response<PollInfo>, Status> { self.worker.poll_flight_info(r).await }
 }

@@ -65,6 +65,7 @@ quickwit-datafusion = { workspace = true }
 arrow-flight = "57"
 datafusion = "52"
 datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed" }
+tantivy-datafusion = { path = "/Users/alex.bianchi/oss/tantivy/.worktrees/bianchi/tantivydf/tantivy-datafusion" }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }

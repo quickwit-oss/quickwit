@@ -179,13 +179,23 @@ impl fmt::Debug for StorageSplitOpener {
 
 #[async_trait]
 impl IndexOpener for StorageSplitOpener {
+    fn footer_range(&self) -> (u64, u64) {
+        (self.footer_offsets.split_footer_start, self.footer_offsets.split_footer_end)
+    }
+
     async fn open(&self) -> Result<Index> {
+        // Use an unbounded byte range cache so that tantivy can do
+        // synchronous reads on the storage-backed directory. Without
+        // this, StorageDirectory errors on sync reads.
+        let byte_range_cache = quickwit_storage::ByteRangeCache::with_infinite_capacity(
+            &quickwit_storage::STORAGE_METRICS.shortlived_cache,
+        );
         let (index, _hot_directory) = quickwit_search::leaf::open_index_with_caches(
             &self.searcher_context,
             self.storage.clone(),
             &self.footer_offsets,
             self.tokenizer_manager.as_ref(),
-            None, // ephemeral cache — can be added for hot-path optimization
+            Some(byte_range_cache),
         )
         .await
         .map_err(|e| DataFusionError::Execution(format!("open split {}: {e}", self.split_id)))?;

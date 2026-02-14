@@ -659,8 +659,18 @@ pub async fn serve_quickwit(
     // The Flight service runs on the same gRPC port as all other services.
     // Workers discover each other via the same SearcherPool (Chitchat).
     let datafusion_registry = std::sync::Arc::new(quickwit_datafusion::SplitRegistry::new());
+    let df_registry = datafusion_registry.clone();
+    let datafusion_opener_factory: tantivy_datafusion::OpenerFactory =
+        std::sync::Arc::new(move |meta: tantivy_datafusion::OpenerMetadata| {
+            std::sync::Arc::new(quickwit_datafusion::SplitIndexOpener::new(
+                meta.identifier,
+                df_registry.clone(),
+                meta.tantivy_schema,
+                meta.segment_sizes,
+            )) as std::sync::Arc<dyn tantivy_datafusion::IndexOpener>
+        });
     let datafusion_flight_service =
-        quickwit_datafusion::build_flight_service(datafusion_registry.clone(), searcher_pool.clone());
+        quickwit_datafusion::build_flight_service(datafusion_opener_factory, searcher_pool.clone());
     let datafusion_session_builder = quickwit_datafusion::QuickwitSessionBuilder::new(
         metastore_through_control_plane.clone(),
         searcher_pool,

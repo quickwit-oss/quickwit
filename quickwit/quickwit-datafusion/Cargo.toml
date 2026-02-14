@@ -43,7 +43,10 @@ arrow-flight = "57"
 datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed", features = ["integration"] }
 dashmap = "6"
 quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-config = { workspace = true }
+quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true }
 tokio = { workspace = true, features = ["test-util", "macros"] }

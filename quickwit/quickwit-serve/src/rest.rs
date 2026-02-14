@@ -892,10 +892,16 @@ mod tests {
                     std::sync::Arc::new(quickwit_datafusion::SplitRegistry::new()),
                 )
             },
-            datafusion_flight_service: quickwit_datafusion::build_flight_service(
-                std::sync::Arc::new(quickwit_datafusion::SplitRegistry::new()),
-                quickwit_search::SearcherPool::default(),
-            ),
+            datafusion_flight_service: {
+                let reg = std::sync::Arc::new(quickwit_datafusion::SplitRegistry::new());
+                let factory: tantivy_datafusion::OpenerFactory =
+                    std::sync::Arc::new(move |meta: tantivy_datafusion::OpenerMetadata| {
+                        std::sync::Arc::new(quickwit_datafusion::SplitIndexOpener::new(
+                            meta.identifier, reg.clone(), meta.tantivy_schema, meta.segment_sizes,
+                        )) as std::sync::Arc<dyn tantivy_datafusion::IndexOpener>
+                    });
+                quickwit_datafusion::build_flight_service(factory, quickwit_search::SearcherPool::default())
+            },
             jaeger_service_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };
