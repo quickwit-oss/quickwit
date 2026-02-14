@@ -1,3 +1,4 @@
+pub mod catalog;
 pub mod flight;
 pub mod query_translator;
 pub mod resolver;
@@ -6,6 +7,7 @@ pub mod split_opener;
 pub mod table_provider;
 pub mod worker;
 
+pub use catalog::QuickwitSchemaProvider;
 pub use flight::{QuickwitFlightService, build_flight_service};
 pub use resolver::QuickwitWorkerResolver;
 pub use session::QuickwitSessionBuilder;

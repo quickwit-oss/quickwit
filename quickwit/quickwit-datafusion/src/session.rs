@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
 use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_distributed::{DistributedExt, DistributedPhysicalOptimizerRule};
@@ -7,8 +8,10 @@ use quickwit_metastore::SplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::IndexUid;
 use quickwit_search::SearcherPool;
-use tantivy_datafusion::{IndexOpener, OpenerMetadata, TantivyCodec, full_text_udf};
+use quickwit_storage::StorageResolver;
+use tantivy_datafusion::{IndexOpener, TantivyCodec, full_text_udf};
 
+use crate::catalog::QuickwitSchemaProvider;
 use crate::resolver::QuickwitWorkerResolver;
 use crate::split_opener::{SplitIndexOpener, SplitRegistry};
 use crate::table_provider::{OpenerFactory, QuickwitTableProvider};
@@ -18,6 +21,8 @@ pub struct QuickwitSessionBuilder {
     metastore: MetastoreServiceClient,
     searcher_pool: SearcherPool,
     registry: Arc<SplitRegistry>,
+    storage_resolver: Option<StorageResolver>,
+    searcher_context: Option<Arc<quickwit_search::SearcherContext>>,
 }
 
 impl QuickwitSessionBuilder {
@@ -30,19 +35,28 @@ impl QuickwitSessionBuilder {
             metastore,
             searcher_pool,
             registry,
+            storage_resolver: None,
+            searcher_context: None,
         }
+    }
+
+    /// Set the storage resolver for production split opening.
+    /// When set, the catalog will create `StorageSplitOpener`s.
+    pub fn with_storage(
+        mut self,
+        storage_resolver: StorageResolver,
+        searcher_context: Arc<quickwit_search::SearcherContext>,
+    ) -> Self {
+        self.storage_resolver = Some(storage_resolver);
+        self.searcher_context = Some(searcher_context);
+        self
     }
 
     /// Build a `SessionContext` configured for distributed query execution.
     ///
-    /// The context has:
-    /// - `TantivyCodec` (stateless) for serializing tantivy-df nodes
-    /// - `QuickwitWorkerResolver` for discovering searcher nodes
-    /// - `full_text()` UDF registered
-    ///
-    /// The opener factory is NOT set here — it lives on each worker's
-    /// session config (set in `build_flight_service`). The coordinator
-    /// doesn't need an opener factory because it never opens indexes.
+    /// If `storage_resolver` and `searcher_context` are set, registers a
+    /// [`QuickwitSchemaProvider`] that lazily resolves index names from
+    /// the metastore. Otherwise (tests), tables must be registered manually.
     pub fn build_session(&self) -> SessionContext {
         let config = SessionConfig::new();
         let worker_resolver = QuickwitWorkerResolver::new(self.searcher_pool.clone());
@@ -57,10 +71,28 @@ impl QuickwitSessionBuilder {
 
         let ctx = SessionContext::new_with_state(state);
         ctx.register_udf(full_text_udf());
+
+        // If storage is available, register the Quickwit catalog so
+        // that index names resolve automatically from the metastore.
+        if let (Some(storage_resolver), Some(searcher_context)) =
+            (&self.storage_resolver, &self.searcher_context)
+        {
+            let schema_provider = Arc::new(QuickwitSchemaProvider::new(
+                self.metastore.clone(),
+                storage_resolver.clone(),
+                searcher_context.clone(),
+            ));
+            let catalog = Arc::new(MemoryCatalogProvider::new());
+            catalog
+                .register_schema("public", schema_provider)
+                .expect("register quickwit schema");
+            ctx.register_catalog("quickwit", catalog);
+        }
+
         ctx
     }
 
-    /// Register a Quickwit index as a DataFusion table.
+    /// Register a Quickwit index as a DataFusion table (manual path).
     pub fn register_index(
         &self,
         ctx: &SessionContext,

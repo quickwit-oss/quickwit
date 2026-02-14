@@ -23,6 +23,8 @@ tantivy = { workspace = true }
 tantivy-datafusion = { path = "/Users/alex.bianchi/oss/tantivy/.worktrees/bianchi/tantivydf/tantivy-datafusion" }
 
 quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
