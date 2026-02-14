@@ -4,10 +4,12 @@
 //! across splits, then applies aggregation / sort / limit on top.
 //! Everything uses the DataFrame API — no SQL strings.
 
+use std::collections::HashMap;
 use std::ops::Bound;
 use std::sync::Arc;
 
-use datafusion::common::Result;
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use datafusion::common::{Result, ScalarValue};
 use datafusion::error::DataFusionError;
 use datafusion::logical_expr::expr::Sort;
 use datafusion::logical_expr::{col, lit, Expr, JoinType, SortExpr};
@@ -225,22 +227,110 @@ fn has_full_text_queries(ast: &QueryAst) -> bool {
     }
 }
 
+// ── Schema alignment ────────────────────────────────────────────────
+
+/// Compute the canonical schema from the doc mapper's Arrow schema.
+///
+/// This is the union of all fields across all splits. The doc mapper
+/// always represents the latest version of the index schema. Older
+/// splits may be missing fields — those get NULL-filled during alignment.
+///
+/// If `canonical_schema` is `None`, we derive it from the union of
+/// all split schemas (for cases where no doc mapper is available).
+fn compute_canonical_schema(split_dfs: &[DataFrame]) -> SchemaRef {
+    let mut fields: Vec<Field> = Vec::new();
+    let mut seen: HashMap<String, DataType> = HashMap::new();
+
+    for df in split_dfs {
+        for field in df.schema().fields() {
+            if let Some(existing_type) = seen.get(field.name()) {
+                // Field exists — type must match (we error later if not).
+                let _ = existing_type;
+            } else {
+                seen.insert(field.name().clone(), field.data_type().clone());
+                fields.push(field.as_ref().clone());
+            }
+        }
+    }
+
+    Arc::new(Schema::new(fields))
+}
+
+/// Align a DataFrame to the canonical schema.
+///
+/// - Missing columns → added as typed NULL literals
+/// - Type mismatches → error (no implicit coercion)
+/// - Extra columns → kept (will be dropped by final projection)
+///
+/// After alignment, all DataFrames have identical schemas and can
+/// be safely unioned.
+fn align_to_schema(
+    df: DataFrame,
+    canonical: &SchemaRef,
+    split_id: &str,
+) -> Result<DataFrame> {
+    let df_schema = df.schema().clone();
+    let df_fields: HashMap<&str, &arrow::datatypes::DataType> = df_schema
+        .fields()
+        .iter()
+        .map(|f| (f.name().as_str(), f.data_type()))
+        .collect();
+
+    // Check for type mismatches.
+    for canon_field in canonical.fields() {
+        if let Some(&split_type) = df_fields.get(canon_field.name().as_str()) {
+            if split_type != canon_field.data_type() {
+                return Err(DataFusionError::Plan(format!(
+                    "type mismatch for field '{}' in split {}: \
+                     split has {:?}, canonical schema has {:?}. \
+                     Use CAST() in SQL to convert explicitly.",
+                    canon_field.name(),
+                    split_id,
+                    split_type,
+                    canon_field.data_type(),
+                )));
+            }
+        }
+    }
+
+    // Build select list: canonical columns in order, NULLs for missing.
+    let select_exprs: Vec<Expr> = canonical
+        .fields()
+        .iter()
+        .map(|canon_field| {
+            if df_fields.contains_key(canon_field.name().as_str()) {
+                col(canon_field.name().as_str())
+            } else {
+                // Missing column → typed NULL.
+                let null_value = ScalarValue::try_from(canon_field.data_type())
+                    .unwrap_or(ScalarValue::Utf8(None));
+                lit(null_value).alias(canon_field.name())
+            }
+        })
+        .collect();
+
+    df.select(select_exprs)
+}
+
 // ── SearchRequest → DataFrame ───────────────────────────────────────
 
 /// Translate a [`SearchRequest`] into a DataFusion [`DataFrame`] that
 /// spans all provided splits.
 ///
-/// Builds per-split join plans (inv ⋈ f), unions them, then applies
-/// sort / limit / offset on top. Uses the DataFrame API throughout —
-/// no SQL strings.
+/// Builds per-split join plans (inv ⋈ f), aligns schemas across splits
+/// (NULL-fill for missing columns, error on type mismatch), unions them,
+/// then applies sort / limit / offset on top.
 ///
-/// For aggregations, use [`translate_aggregation_request`] on the
-/// returned DataFrame.
+/// Uses the DataFrame API throughout — no SQL strings.
+///
+/// `canonical_schema`: if provided, all splits are aligned to this schema.
+/// If `None`, the canonical schema is derived from the union of all split schemas.
 pub fn build_search_plan(
     ctx: &SessionContext,
     splits: &[SplitMetadata],
     opener_factory: &OpenerFactory,
     request: &SearchRequest,
+    canonical_schema: Option<SchemaRef>,
 ) -> Result<DataFrame> {
     if splits.is_empty() {
         return Err(DataFusionError::Plan("no splits to search".to_string()));
@@ -253,22 +343,34 @@ pub fn build_search_plan(
     let filter_expr = query_ast_to_expr(&query_ast)?;
     let has_ft = has_full_text_queries(&query_ast);
 
-    // Build per-split plans and union them.
-    let mut per_split_dfs: Vec<DataFrame> = Vec::with_capacity(splits.len());
+    // Build per-split plans.
+    let mut per_split_dfs: Vec<(String, DataFrame)> = Vec::with_capacity(splits.len());
     for split in splits {
         let opener = opener_factory(split);
         let df = build_split_plan(ctx, opener, &filter_expr, has_ft)?;
-        per_split_dfs.push(df);
+        per_split_dfs.push((split.split_id.clone(), df));
     }
 
-    let mut result = per_split_dfs.remove(0);
-    for df in per_split_dfs {
+    // Compute or use provided canonical schema.
+    let canonical = canonical_schema.unwrap_or_else(|| {
+        let dfs: Vec<&DataFrame> = per_split_dfs.iter().map(|(_, df)| df).collect();
+        compute_canonical_schema(
+            &dfs.into_iter().cloned().collect::<Vec<_>>(),
+        )
+    });
+
+    // Align each split's DataFrame to the canonical schema.
+    let mut aligned: Vec<DataFrame> = Vec::with_capacity(per_split_dfs.len());
+    for (split_id, df) in per_split_dfs {
+        let aligned_df = align_to_schema(df, &canonical, &split_id)?;
+        aligned.push(aligned_df);
+    }
+
+    // UNION ALL across splits.
+    let mut result = aligned.remove(0);
+    for df in aligned {
         result = result.union(df)?;
     }
-
-    // Drop internal columns (_doc_id, _segment_ord, _score, virtual text cols)
-    // that the caller doesn't need. Keep only user-facing columns.
-    // For now, we keep all columns and let the caller select.
 
     // Apply sort.
     if !request.sort_fields.is_empty() {
