@@ -37,7 +37,7 @@ use aws_sdk_lambda::types::{
 };
 use quickwit_config::{LambdaConfig, LambdaDeployConfig};
 use quickwit_search::LambdaLeafSearchInvoker;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::invoker::create_lambda_invoker_for_version;
 
@@ -68,8 +68,31 @@ fn lambda_qualifier() -> &'static str {
 }
 
 /// Returns the version description for our qualifier.
-fn version_description() -> String {
-    format!("{}{}", VERSION_DESCRIPTION_PREFIX, lambda_qualifier())
+///
+/// We also pass the deploy config, as we want the function to be redeployed
+/// if the deployed is changed.
+fn version_description(deploy_config_opt: Option<&LambdaDeployConfig>) -> String {
+    if let Some(deploy_config) = deploy_config_opt {
+        let memory_size_mib = deploy_config.memory_size.as_mib() as u64;
+        let execution_role_arn_digest: String = format!(
+            "{:x}",
+            md5::compute(deploy_config.execution_role_arn.as_bytes())
+        );
+        format!(
+            "{}_{}_{}_{}s_{}",
+            VERSION_DESCRIPTION_PREFIX,
+            lambda_qualifier(),
+            memory_size_mib,
+            deploy_config.invocation_timeout_secs,
+            &execution_role_arn_digest[..5]
+        )
+    } else {
+        format!(
+            "{}_{}_nodeploy",
+            VERSION_DESCRIPTION_PREFIX,
+            lambda_qualifier()
+        )
+    }
 }
 
 /// Get or deploy the Lambda function and return an invoker.
@@ -89,12 +112,12 @@ pub async fn try_get_or_deploy_invoker(
     let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let client = LambdaClient::new(&aws_config);
     let function_name = &lambda_config.function_name;
-    let target_description = version_description();
+    let target_description = version_description(lambda_config.auto_deploy.as_ref());
 
     info!(
         function_name = %function_name,
         qualifier = %lambda_qualifier(),
-        "Looking for Lambda function version"
+        "looking for Lambda function version"
     );
 
     let version = find_or_deploy_version(
@@ -105,7 +128,7 @@ pub async fn try_get_or_deploy_invoker(
     )
     .await?;
 
-    // Step 3: Spawn background garbage collection (best effort, non-blocking)
+    // Spawn background garbage collection (best effort, non-blocking)
     let gc_client = client.clone();
     let gc_function_name = function_name.clone();
     let gc_version = version.clone();
@@ -113,14 +136,14 @@ pub async fn try_get_or_deploy_invoker(
         if let Err(e) =
             garbage_collect_old_versions(&gc_client, &gc_function_name, &gc_version).await
         {
-            warn!(error = %e, "Failed to garbage collect old Lambda versions");
+            info!(error = %e, "failed to garbage collect old Lambda versions");
         }
     });
 
-    // Step 4: Create and return the invoker
+    // Create and return the invoker
     let invoker = create_lambda_invoker_for_version(function_name.clone(), version)
         .await
-        .context("Failed to create Lambda invoker")?;
+        .context("failed to create Lambda invoker")?;
 
     info!("created the lambda invoker");
 
@@ -149,7 +172,7 @@ async fn find_or_deploy_version(
 
     let deploy_config = deploy_config.with_context(|| {
         format!(
-            "No Lambda version found with description '{}' and auto_deploy is not configured. \
+            "no Lambda version found with description '{}' and auto_deploy is not configured. \
              Either deploy the Lambda function manually or enable auto_deploy.",
             target_description
         )
@@ -237,9 +260,12 @@ async fn deploy_lambda_function(
     // This looks overly complicated but this is not AI slop.
     // The AWS API forces us to go through a bunch of hoops to update our function
     // in a safe manner.
+    let description = version_description(Some(deploy_config));
 
     // Fast path: if the function does not exist, we can create and publish the function atomically.
-    if let Some(version) = try_create_function(client, function_name, deploy_config).await? {
+    if let Some(version) =
+        try_create_function(client, function_name, deploy_config, &description).await?
+    {
         return Ok(version);
     }
 
@@ -247,7 +273,7 @@ async fn deploy_lambda_function(
     // This will create or update a version called "$LATEST" (that's the actual string)
     //
     // We cannot directly publish here, because updating the function code does not allow
-    // use to pass a different description.
+    // us to pass a different description.
     let code_sha256 = update_function_code(client, function_name).await?;
 
     // We can now publish that new uploaded version.
@@ -255,7 +281,7 @@ async fn deploy_lambda_function(
     // us to publish a different version.
     //
     // Publishing will create an actual version (a number as a string) and return it.
-    publish_version(client, function_name, &code_sha256).await
+    publish_version(client, function_name, &code_sha256, &description).await
 }
 
 /// Try to create the Lambda function with `publish=true`.
@@ -266,19 +292,19 @@ async fn try_create_function(
     client: &LambdaClient,
     function_name: &str,
     deploy_config: &LambdaDeployConfig,
+    description: &str,
 ) -> anyhow::Result<Option<String>> {
     let memory_size_mb = deploy_config
         .memory_size
         .as_u64()
         .div_ceil(1024u64 * 1024u64) as i32;
     let timeout_secs = deploy_config.invocation_timeout_secs as i32;
-    let description = version_description();
 
     info!(
         function_name = %function_name,
         memory_size_mb = memory_size_mb,
         timeout_secs = timeout_secs,
-        "Attempting to create Lambda function"
+        "attempting to create Lambda function"
     );
 
     let function_code = FunctionCode::builder()
@@ -291,7 +317,7 @@ async fn try_create_function(
         .runtime(Runtime::Providedal2023)
         .role(&deploy_config.execution_role_arn)
         .handler("bootstrap")
-        .description(&description)
+        .description(description)
         .code(function_code)
         .architectures(Architecture::Arm64)
         .memory_size(memory_size_mb)
@@ -306,24 +332,24 @@ async fn try_create_function(
         Ok(output) => {
             let version = output
                 .version()
-                .ok_or_else(|| anyhow!("Created function has no version number"))?
+                .ok_or_else(|| anyhow!("created function has no version number"))?
                 .to_string();
             info!(
                 function_name = %function_name,
                 version = %version,
-                "Lambda function created and published"
+                "lambda function created and published"
             );
             Ok(Some(version))
         }
         Err(SdkError::ServiceError(err)) if err.err().is_resource_conflict_exception() => {
             debug!(
                 function_name = %function_name,
-                "Lambda function already exists"
+                "lambda function already exists"
             );
             Ok(None)
         }
         Err(e) => Err(anyhow!(
-            "Failed to create Lambda function '{}': {}",
+            "failed to create Lambda function '{}': {}",
             function_name,
             e
         )),
@@ -351,7 +377,7 @@ async fn update_function_code(
         .architectures(Architecture::Arm64)
         .send()
         .await
-        .context("Failed to update Lambda function code")?;
+        .context("failed to update Lambda function code")?;
 
     let code_sha256 = response
         .code_sha256()
@@ -374,9 +400,8 @@ async fn publish_version(
     client: &LambdaClient,
     function_name: &str,
     code_sha256: &str,
+    description: &str,
 ) -> anyhow::Result<String> {
-    let description = version_description();
-
     info!(
         function_name = %function_name,
         description = %description,
@@ -386,18 +411,18 @@ async fn publish_version(
     let publish_response = client
         .publish_version()
         .function_name(function_name)
-        .description(&description)
+        .description(description)
         .code_sha256(code_sha256)
         .send()
         .await
         .context(
-            "Failed to publish Lambda version (code_sha256 mismatch means a concurrent deploy \
+            "failed to publish Lambda version (code_sha256 mismatch means a concurrent deploy \
              race)",
         )?;
 
     let version = publish_response
         .version()
-        .context("Published version has no version number")?
+        .context("published version has no version number")?
         .to_string();
 
     info!(
@@ -432,7 +457,7 @@ async fn wait_for_function_ready(client: &LambdaClient, function_name: &str) -> 
             .function_name(function_name)
             .send()
             .await
-            .context("Failed to get function status")?;
+            .context("failed to get function status")?;
 
         let Some(config) = response.configuration() else {
             continue;
@@ -440,9 +465,9 @@ async fn wait_for_function_ready(client: &LambdaClient, function_name: &str) -> 
 
         // Check for terminal failure states.
         if config.state() == Some(&State::Failed) {
-            let reason = config.state_reason().unwrap_or("Unknown reason");
+            let reason = config.state_reason().unwrap_or("unknown reason");
             anyhow::bail!(
-                "Lambda function '{}' is in Failed state: {}",
+                "lambda function '{}' is in Failed state: {}",
                 function_name,
                 reason
             );
@@ -455,9 +480,9 @@ async fn wait_for_function_ready(client: &LambdaClient, function_name: &str) -> 
         if last_update_status == &LastUpdateStatus::Failed {
             let reason = config
                 .last_update_status_reason()
-                .unwrap_or("Unknown reason");
+                .unwrap_or("unknown reason");
             anyhow::bail!(
-                "Lambda function '{}' last update failed: {}",
+                "lambda function '{}' last update failed: {}",
                 function_name,
                 reason
             );
@@ -484,7 +509,7 @@ async fn wait_for_function_ready(client: &LambdaClient, function_name: &str) -> 
     }
 
     anyhow::bail!(
-        "Lambda function '{}' did not become ready within {} seconds",
+        "lambda function '{}' did not become ready within {} seconds",
         function_name,
         MAX_WAIT_ATTEMPTS as u64 * WAIT_INTERVAL.as_secs()
     )
@@ -512,7 +537,7 @@ async fn garbage_collect_old_versions(
         let response = request
             .send()
             .await
-            .context("Failed to list Lambda versions for garbage collection")?;
+            .context("failed to list Lambda versions for garbage collection")?;
 
         for version in response.versions() {
             let Some(version_str) = version.version() else {
@@ -570,11 +595,11 @@ async fn garbage_collect_old_versions(
             .send()
             .await
         {
-            warn!(
+            info!(
                 function_name = %function_name,
                 version = %version,
                 error = %e,
-                "Failed to delete old Lambda version"
+                "failed to delete old Lambda version"
             );
         }
     }
@@ -627,6 +652,19 @@ mod tests {
             memory_size: ByteSize::gib(5),
             invocation_timeout_secs: 60,
         }
+    }
+
+    fn test_description() -> String {
+        version_description(None)
+    }
+
+    #[test]
+    fn test_version_description() {
+        let lambda_deploy_config = test_deploy_config();
+        let description = version_description(Some(&lambda_deploy_config));
+        assert!(description.ends_with("_60s_6c3b2"));
+        let description = version_description(None);
+        assert!(description.ends_with("_nodeploy"));
     }
 
     // --- find_matching_version tests ---
@@ -708,7 +746,7 @@ mod tests {
         let client = mock_client!(aws_sdk_lambda, [&rule]);
         let config = test_deploy_config();
 
-        let result = try_create_function(&client, "my-fn", &config)
+        let result = try_create_function(&client, "my-fn", &config, &test_description())
             .await
             .unwrap();
         assert_eq!(result, Some("1".to_string()));
@@ -724,7 +762,7 @@ mod tests {
         let client = mock_client!(aws_sdk_lambda, [&rule]);
         let config = test_deploy_config();
 
-        let result = try_create_function(&client, "my-fn", &config)
+        let result = try_create_function(&client, "my-fn", &config, &test_description())
             .await
             .unwrap();
         assert_eq!(result, None);

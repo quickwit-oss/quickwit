@@ -135,7 +135,7 @@ If using `auto_deploy`, additional permissions are required for deployment:
 
 ### Lambda execution role
 
-The Lambda function requires an execution role with S3 read access to your index data. CloudWatch logging permissions are not required.
+The Lambda function requires an execution role with S3 read access to your index data.
 
 Example policy:
 
@@ -168,6 +168,29 @@ The execution role must also have a trust policy allowing Lambda to assume it:
   ]
 }
 ```
+
+## CloudWatch logging
+
+The Lambda function emits structured logs (JSON) to stdout. To have these logs captured by CloudWatch, add the following iam permissions to the Lambda execution role:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*"
+    }
+  ]
+}
+```
+
+No additional configuration is needed on the Quickwit side.
 
 ## Versioning
 

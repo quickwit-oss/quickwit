@@ -1687,7 +1687,7 @@ async fn run_local_search_tasks(
         task_id_to_split_id_map.insert(handle.id(), split_id);
     }
 
-    // Step 5: Await all local tasks.
+    // Await all local tasks.
     let mut split_search_join_errors: Vec<(String, JoinError)> = Vec::new();
 
     while let Some(leaf_search_join_result) = split_search_joinset.join_next().await {

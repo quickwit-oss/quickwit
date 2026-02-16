@@ -20,11 +20,17 @@
 //! The Lambda binary is built separately in CI and published as a GitHub release.
 
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use sha2::{Digest, Sha256};
 
 /// URL to download the pre-built Lambda zip from GitHub releases.
 /// This should be updated when a new Lambda binary is released.
 const LAMBDA_ZIP_URL: &str = "https://github.com/quickwit-oss/quickwit/releases/download/lambda-ff6fdfa5/quickwit-aws-lambda--aarch64.zip";
+
+/// Expected SHA256 hash of the Lambda zip artifact.
+/// Must be updated alongside LAMBDA_ZIP_URL when a new Lambda binary is released.
+const LAMBDA_ZIP_SHA256: &str = "fa940f44178e28460c21e44bb2610b776542b9b97db66a53bc65b10cad653b90";
 
 /// AWS Lambda direct upload limit is 50MB.
 /// Larger artifacts must be uploaded via S3.
@@ -35,73 +41,82 @@ fn main() {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
     let zip_path = out_dir.join("lambda_bootstrap.zip");
-    let url_marker_path = out_dir.join("lambda_bootstrap.url");
 
-    // Check if we already have the zip from the same URL
-    let needs_download = if zip_path.try_exists().unwrap() && url_marker_path.try_exists().unwrap()
-    {
-        let cached_url = std::fs::read_to_string(&url_marker_path).unwrap_or_default();
-        cached_url.trim() != LAMBDA_ZIP_URL
-    } else {
-        true
-    };
+    fetch_lambda_zip(&zip_path);
 
-    let lambda_zip_payload: Vec<u8> = if needs_download {
-        println!(
-            "cargo:warning=Downloading Lambda zip from: {}",
-            LAMBDA_ZIP_URL
-        );
-        let data: Vec<u8> =
-            download_lambda_zip(LAMBDA_ZIP_URL).expect("failed to download lambda zip");
-        std::fs::write(&zip_path, &data).expect("Failed to write zip file");
-        std::fs::write(&url_marker_path, LAMBDA_ZIP_URL).expect("Failed to write URL marker");
-        println!(
-            "cargo:warning=Downloaded Lambda zip to {:?} ({} bytes)",
-            zip_path,
-            data.len()
-        );
-        data
-    } else {
-        println!("Using cached Lambda zip from {:?}", zip_path);
-        std::fs::read(&zip_path).expect("Failed to read cached zip file")
-    };
-
-    // Compute MD5 hash of the zip and export as environment variable.
+    // Export first 8 hex chars of the SHA256 as environment variable.
     // This is used to create a unique qualifier for Lambda versioning.
-    let digest = md5::compute(&lambda_zip_payload);
-    let hash_short = &format!("{:x}", digest)[..8]; // First 8 hex chars
+    let hash_short = &LAMBDA_ZIP_SHA256[..8];
     println!("cargo:rustc-env=LAMBDA_BINARY_HASH={}", hash_short);
-    println!("Lambda binary hash (short): {}", hash_short);
+    println!("lambda binary hash (short): {}", hash_short);
 }
 
-fn download_lambda_zip(url: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let response = ureq::get(url).call();
-    // Set limit higher than MAX_LAMBDA_ZIP_SIZE so we can provide a better error message
-    let data = response?
+/// Fetch the Lambda zip and save it to `local_cache_path`.
+///
+/// If a cached file already exists with the correct SHA256, this is a no-op.
+/// If the hash doesn't match (stale artifact), the file is deleted and re-downloaded.
+/// If no cached file exists, the artifact is downloaded fresh.
+///
+/// This function panics if a problem happens.
+fn fetch_lambda_zip(local_cache_path: &Path) {
+    // Try the cache first.
+    if let Ok(data) = std::fs::read(local_cache_path) {
+        let actual_hash = sha256_hex(&data);
+        if actual_hash == LAMBDA_ZIP_SHA256 {
+            println!("using cached Lambda zip from {:?}", local_cache_path);
+            return;
+        }
+        println!("cargo:warning=cached Lambda zip has wrong SHA256, re-downloading");
+        std::fs::remove_file(local_cache_path).expect("failed to delete stale cached zip");
+    }
+
+    // Download from the remote URL.
+    println!(
+        "cargo:warning=downloading Lambda zip from: {}",
+        LAMBDA_ZIP_URL
+    );
+    let data = download_lambda_zip(LAMBDA_ZIP_URL).expect("failed to download Lambda zip");
+
+    // Verify SHA256 BEFORE writing to disk.
+    let actual_hash = sha256_hex(&data);
+    if actual_hash != LAMBDA_ZIP_SHA256 {
+        panic!(
+            "SHA256 mismatch for Lambda zip!\n  expected: {LAMBDA_ZIP_SHA256}\n  actual:   \
+             {actual_hash}\nThe artifact at {LAMBDA_ZIP_URL} may have been tampered with."
+        );
+    }
+
+    std::fs::write(local_cache_path, &data).expect("failed to write zip file");
+    println!(
+        "cargo:warning=downloaded Lambda zip to {:?} ({} bytes)",
+        local_cache_path,
+        data.len()
+    );
+}
+
+fn sha256_hex(data: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(data))
+}
+
+fn download_lambda_zip(url: &str) -> Result<Vec<u8>, String> {
+    let response = ureq::get(url)
+        .call()
+        .map_err(|err| format!("HTTP request failed: {err}"))?;
+    // Set limit higher than MAX_LAMBDA_ZIP_SIZE so we can detect oversized artifacts.
+    let data = response
         .into_body()
         .with_config()
-        .limit(MAX_LAMBDA_ZIP_SIZE as u64 + 1) // We download one more byte to trigger the panic below.
-        .read_to_vec()?;
+        .limit(MAX_LAMBDA_ZIP_SIZE as u64 + 1)
+        .read_to_vec()
+        .map_err(|err| format!("failed to read response body: {err}"))?;
     if data.len() > MAX_LAMBDA_ZIP_SIZE {
-        panic!(
+        return Err(format!(
             "Lambda zip is too large ({} bytes, max {} bytes).\nAWS Lambda does not support \
              direct upload of binaries larger than 50MB.\nWorkaround: upload the Lambda zip to S3 \
              and deploy from there instead.",
             data.len(),
             MAX_LAMBDA_ZIP_SIZE
-        );
+        ));
     }
-    validate_zip(&data)?;
     Ok(data)
-}
-
-fn validate_zip(data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-    let cursor = std::io::Cursor::new(data);
-    let mut archive = zip::ZipArchive::new(cursor)?;
-    // Verify we can read all entries (checks CRC for each file)
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-        std::io::copy(&mut file, &mut std::io::sink())?;
-    }
-    Ok(())
 }

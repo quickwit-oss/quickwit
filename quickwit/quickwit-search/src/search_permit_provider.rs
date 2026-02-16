@@ -42,7 +42,7 @@ pub struct SearchPermitProvider {
 pub enum SearchPermitMessage {
     RequestWithOffload {
         permit_sizes: Vec<u64>,
-        /// Maximum number of pending requests. If granting permits all
+        /// Maximum number of pending requests. If granting all
         /// requested permits would cause the number of pending requests to exceed this threshold,
         /// some permits will be offloaded to Lambda.
         offload_threshold: usize,

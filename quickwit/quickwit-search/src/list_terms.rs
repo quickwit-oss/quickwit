@@ -338,7 +338,8 @@ pub async fn leaf_list_terms(
             )
         })
         .collect();
-    // allow offload to lambda
+    // We have added offloading leaf search to lambdas, but not for list_terms yet.
+    // TODO (Add it)
     // https://github.com/quickwit-oss/quickwit/issues/6150
     let permits = searcher_context
         .search_permit_provider

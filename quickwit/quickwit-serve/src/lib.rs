@@ -634,6 +634,7 @@ pub async fn serve_quickwit(
     let lambda_invoker_opt = if node_config.is_service_enabled(QuickwitService::Searcher) {
         if let Some(lambda_config) = &node_config.searcher_config.lambda {
             info!("initializing AWS Lambda invoker for search");
+            warn!("offloading to lambda is EXPERIMENTAL. Use at your own risk");
             let invoker = quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
             Some(invoker)
         } else {

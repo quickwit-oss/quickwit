@@ -226,6 +226,7 @@ serde_qs = { version = "0.15" }
 serde_with = "3.16"
 serde_yaml = "0.9"
 serial_test = { version = "3.2", features = ["file_locks"] }
+sha2 = "0.10"
 siphasher = "1.0"
 smallvec = "1"
 sqlx = { version = "0.8", features = [
@@ -303,7 +304,6 @@ vrl = { version = "0.29", default-features = false, features = [
 ] }
 warp = { version = "0.4", features = ["server", "test"] }
 wiremock = "0.6"
-zip = { version = "0.6", default-features = false, features = ["deflate"] }
 zstd = { version = "0.13", default-features = false }
 
 aws-config = "1.8"
