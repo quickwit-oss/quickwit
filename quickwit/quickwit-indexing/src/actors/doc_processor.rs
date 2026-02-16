@@ -41,7 +41,8 @@ use tokio::runtime::Handle;
 use super::vrl_processing::*;
 use crate::actors::Indexer;
 use crate::models::{
-    NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch,
+    NewPublishLock, NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDoc,
+    RawDocBatch,
 };
 
 const PLAIN_TEXT: &str = "plain_text";
@@ -461,17 +462,20 @@ impl DocProcessor {
         Ok(Some(timestamp))
     }
 
-    fn process_raw_doc(&mut self, raw_doc: Bytes, processed_docs: &mut Vec<ProcessedDoc>) {
-        let num_bytes = raw_doc.len();
+    fn process_raw_doc(&mut self, raw_doc: RawDoc, processed_docs: &mut Vec<ProcessedDoc>) {
+        let num_bytes = raw_doc.doc.len();
 
         #[cfg(feature = "vrl")]
         let transform_opt = self.transform_opt.as_mut();
         #[cfg(not(feature = "vrl"))]
         let transform_opt: Option<&mut VrlProgram> = None;
 
-        for json_doc_result in parse_raw_doc(self.input_format, raw_doc, num_bytes, transform_opt) {
-            let processed_doc_result =
-                json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
+        for json_doc_result in
+            parse_raw_doc(self.input_format, raw_doc.doc, num_bytes, transform_opt)
+        {
+            let processed_doc_result = json_doc_result.and_then(|json_doc| {
+                self.process_json_doc(json_doc, raw_doc.arrival_timestamp_secs_opt)
+            });
 
             match processed_doc_result {
                 Ok(processed_doc) => {
@@ -491,7 +495,11 @@ impl DocProcessor {
         }
     }
 
-    fn process_json_doc(&self, json_doc: JsonDoc) -> Result<ProcessedDoc, DocProcessorError> {
+    fn process_json_doc(
+        &self,
+        json_doc: JsonDoc,
+        arrival_timestamp_secs_opt: Option<u64>,
+    ) -> Result<ProcessedDoc, DocProcessorError> {
         let num_bytes = json_doc.num_bytes;
 
         let (partition, doc) = self
@@ -503,6 +511,7 @@ impl DocProcessor {
             timestamp_opt,
             partition,
             num_bytes,
+            arrival_timestamp_secs_opt,
         })
     }
 }
@@ -572,9 +581,10 @@ impl Handler<RawDocBatch> for DocProcessor {
         if self.publish_lock.is_dead() {
             return Ok(());
         }
-        let mut processed_docs: Vec<ProcessedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
+        let mut processed_docs: Vec<ProcessedDoc> =
+            Vec::with_capacity(raw_doc_batch.raw_docs.len());
 
-        for raw_doc in raw_doc_batch.docs {
+        for raw_doc in raw_doc_batch.raw_docs {
             let _protected_zone_guard = ctx.protect_zone();
             self.process_raw_doc(raw_doc, &mut processed_docs);
             ctx.record_progress();
