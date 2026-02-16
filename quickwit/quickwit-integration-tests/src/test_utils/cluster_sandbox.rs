@@ -351,7 +351,7 @@ impl ClusterSandbox {
         TraceServiceClient::new(self.channel(QuickwitService::Indexer))
     }
 
-    async fn wait_for_cluster_num_ready_nodes(
+    pub async fn wait_for_cluster_num_ready_nodes(
         &self,
         expected_num_ready_nodes: usize,
     ) -> anyhow::Result<()> {
@@ -595,5 +595,22 @@ impl ClusterSandbox {
     ) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
         self.shutdown_services(QuickwitService::supported_services())
             .await
+    }
+
+    /// Remove a node from the sandbox and return its shutdown handle.
+    /// After this call, `rest_client` and other lookup methods skip the removed
+    /// node, so callers can trigger shutdown concurrently with other sandbox
+    /// operations.
+    pub fn remove_node_with_service(
+        &mut self,
+        service: QuickwitService,
+    ) -> NodeShutdownHandle {
+        let idx = self
+            .node_shutdown_handles
+            .iter()
+            .position(|h| h.node_services.contains(&service))
+            .unwrap_or_else(|| panic!("no node with service {service:?}"));
+        self.node_configs.remove(idx);
+        self.node_shutdown_handles.remove(idx)
     }
 }
