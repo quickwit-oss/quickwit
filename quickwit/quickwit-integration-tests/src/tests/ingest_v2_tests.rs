@@ -856,3 +856,139 @@ async fn test_shutdown_indexer_first() {
         .unwrap()
         .unwrap();
 }
+
+/// Tests that the graceful shutdown sequence works correctly in a multi-indexer
+/// cluster: shutting down one indexer does NOT cause 500 errors or data loss,
+/// and the cluster eventually rebalances. see #6158
+#[tokio::test]
+async fn test_graceful_shutdown_no_data_loss() {
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::Indexer])
+        .add_node([
+            QuickwitService::ControlPlane,
+            QuickwitService::Searcher,
+            QuickwitService::Metastore,
+            QuickwitService::Janitor,
+        ])
+        .build_and_start()
+        .await;
+    let index_id = "test_graceful_shutdown_no_data_loss";
+
+    // Create index with a long commit timeout so documents stay uncommitted
+    // in the ingesters' WAL. The decommission sequence should commit
+    // them before the indexer quits.
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(
+            format!(
+                r#"
+            version: 0.8
+            index_id: {index_id}
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 5
+            "#
+            ),
+            ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    // Ingest docs with auto-commit. With a 5s commit timeout, these documents
+    // sit uncommitted in the ingesters' WAL - exactly the in-flight state we
+    // want to exercise during draining.
+    ingest(
+        &sandbox.rest_client(QuickwitService::Indexer),
+        index_id,
+        ingest_json!({"body": "before-shutdown-1"}),
+        CommitType::Auto,
+    )
+    .await
+    .unwrap();
+
+    ingest(
+        &sandbox.rest_client(QuickwitService::Indexer),
+        index_id,
+        ingest_json!({"body": "before-shutdown-2"}),
+        CommitType::Auto,
+    )
+    .await
+    .unwrap();
+
+    // Remove the first indexer node from the sandbox and get its shutdown handle.
+    // After this call, rest_client(Indexer) returns the second (surviving) indexer.
+    let shutdown_handle = sandbox.remove_node_with_service(QuickwitService::Indexer);
+
+    // Concurrently: shut down the removed indexer AND ingest more data via the
+    // surviving indexer. This verifies the cluster stays operational and the
+    // router on the surviving node does not return 500 errors while one indexer
+    // is decommissioning. The control plane excludes the decommissioning
+    // ingester from shard allocation, so new shards go to the surviving one.
+    let ingest_client = sandbox.rest_client(QuickwitService::Indexer);
+    let (shutdown_result, ingest_result) = tokio::join!(
+        async {
+            tokio::time::timeout(Duration::from_secs(30), shutdown_handle.shutdown())
+                .await
+                .expect("indexer shutdown timed out — decommission may be stuck")
+        },
+        async {
+            // Small delay so the decommission sequence has started before we ingest.
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            ingest(
+                &ingest_client,
+                index_id,
+                ingest_json!({"body": "during-shutdown"}),
+                CommitType::Auto,
+            )
+            .await
+        },
+    );
+    shutdown_result.expect("indexer shutdown failed");
+    ingest_result.expect("ingest during shutdown should succeed (no 500 errors)");
+
+    // All 3 documents should eventually be searchable. Documents 1 & 2 were
+    // in-flight on the decommissioning indexer and should have been committed during
+    // the decommission step. Document 3 was ingested to the surviving indexer.
+    wait_until_predicate(
+        || async {
+            match sandbox
+                .rest_client(QuickwitService::Searcher)
+                .search(
+                    index_id,
+                    quickwit_serve::SearchRequestQueryString {
+                        query: "*".to_string(),
+                        max_hits: 10,
+                        ..Default::default()
+                    },
+                )
+                .await
+            {
+                Ok(resp) => resp.num_hits == 3,
+                Err(_) => false,
+            }
+        },
+        Duration::from_secs(30),
+        Duration::from_millis(500),
+    )
+    .await
+    .expect("expected 3 documents after decommission shutdown, some data may have been lost");
+
+    // Verify the cluster sees 2 ready nodes (the surviving indexer + the
+    // control-plane/searcher/metastore/janitor node).
+    sandbox
+        .wait_for_cluster_num_ready_nodes(2)
+        .await
+        .expect("cluster should see 2 ready nodes after indexer shutdown");
+
+    // Clean shutdown of the remaining nodes.
+    tokio::time::timeout(Duration::from_secs(15), sandbox.shutdown())
+        .await
+        .unwrap()
+        .unwrap();
+}
