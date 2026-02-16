@@ -232,6 +232,12 @@ indexer:
 searcher:
   replicaCount: 3
 
+  # Fabric Egress Gateway: allows searcher pods to reach lambda.us-east-1.amazonaws.com
+  # for Lambda auto-deploy and invocation (offloaded leaf search)
+  podAnnotations:
+    beta.fabric.datadoghq.com/inject-lifecycle: "inject"
+    beta.fabric.datadoghq.com/egress-gateway: "true"
+
   resources:
     limits:
       cpu: 2
@@ -344,6 +350,16 @@ config:
   ingest_api:
     max_queue_memory_usage: 2GiB # memory capacity * 0.3 (half of staging)
     max_queue_disk_usage: 5GiB # max queue mem usage * 2 (half of staging)
+
+# Fabric Egress ACL: allowlist for searcher pods to reach AWS Lambda API
+egressAcl:
+  rules:
+    - name: lambda-api
+      serviceAccounts:
+        - name: cloudprem
+          namespace: logs-cloudprem
+      domains:
+        - "lambda.us-east-1.amazonaws.com:443"
 
 # ConfigMap entry that is rendered by consul-template into the DD_API_KEY file for reverse connection
 # Secret stored at: kv/k8s/logs-cloudprem/cloudprem/pomsky-staging/dd_api_key with key dd_api_key
