@@ -15,11 +15,12 @@
 import { TabContext, TabList, TabPanel } from "@mui/lab";
 import { Box, styled, Tab, Typography } from "@mui/material";
 import Link, { LinkProps } from "@mui/material/Link";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link as RouterLink, useParams } from "react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link as RouterLink, useParams, useSearchParams } from "react-router";
 import ApiUrlFooter from "../components/ApiUrlFooter";
 import { IndexSummary } from "../components/IndexSummary";
 import { JsonEditor } from "../components/JsonEditor";
+import { JsonEditorEditable } from "../components/JsonEditorEditable";
 import {
   FullBoxContainer,
   QBreadcrumbs,
@@ -27,11 +28,8 @@ import {
 } from "../components/LayoutUtils";
 import Loader from "../components/Loader";
 import { Client } from "../services/client";
-import { Index } from "../utils/models";
-
-export type ErrorResult = {
-  error: string;
-};
+import { useJsonSchema } from "../services/jsonShema";
+import { Index, IndexMetadata } from "../utils/models";
 
 const CustomTabPanel = styled(TabPanel)`
   padding-left: 0;
@@ -51,35 +49,31 @@ function LinkRouter(props: LinkRouterProps) {
 
 function IndexView() {
   const { indexId } = useParams();
-  const [loading, setLoading] = useState(false);
-  const [, setLoadingError] = useState<ErrorResult | null>(null);
-  const [tabIndex, setTabIndex] = useState("1");
-  const [index, setIndex] = useState<Index>();
-  const quickwitClient = useMemo(() => new Client(), []);
+  const { loading, updating, index, updateIndexConfig } = useIndex(indexId);
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const handleTabIndexChange = (_: React.SyntheticEvent, newValue: string) => {
-    setTabIndex(newValue);
+  const validTabs = [
+    "summary",
+    "sources",
+    "doc-mapping",
+    "indexing-settings",
+    "search-settings",
+    "retention-settings",
+    "splits",
+  ] as const;
+
+  type TabValue = (typeof validTabs)[number];
+
+  const isValidTab = (value: string | null): value is TabValue => {
+    return validTabs.includes(value as TabValue);
   };
 
-  const fetchIndex = useCallback(() => {
-    setLoading(true);
-    if (indexId === undefined) {
-      console.warn("`indexId` should always be set.");
-      return;
-    } else {
-      quickwitClient.getIndex(indexId).then(
-        (fetchedIndex) => {
-          setLoadingError(null);
-          setLoading(false);
-          setIndex(fetchedIndex);
-        },
-        (error) => {
-          setLoading(false);
-          setLoadingError({ error: error });
-        },
-      );
-    }
-  }, [indexId, quickwitClient]);
+  const tabFromUrl = searchParams.get("tab");
+  const tab = isValidTab(tabFromUrl) ? tabFromUrl : "summary";
+
+  const setTab = (newTab: TabValue) => {
+    setSearchParams({ tab: newTab });
+  };
 
   const renderFetchIndexResult = () => {
     if (loading || index === undefined) {
@@ -94,63 +88,59 @@ function IndexView() {
             height: "calc(100% - 48px)",
           }}
         >
-          <TabContext value={tabIndex}>
+          <TabContext value={tab}>
             <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-              <TabList onChange={handleTabIndexChange} aria-label="Index tabs">
-                <Tab label="Summary" value="1" />
-                <Tab label="Sources" value="2" />
-                <Tab label="Doc Mapping" value="3" />
-                <Tab label="Indexing settings" value="4" />
-                <Tab label="Search settings" value="5" />
-                <Tab label="Retention settings" value="6" />
-                <Tab label="Splits" value="7" />
+              <TabList
+                onChange={(_, newTab) => setTab(newTab)}
+                aria-label="Index tabs"
+              >
+                <Tab label="Summary" value="summary" />
+                <Tab label="Sources" value="sources" />
+                <Tab label="Doc Mapping" value="doc-mapping" />
+                <Tab label="Indexing settings" value="indexing-settings" />
+                <Tab label="Search settings" value="search-settings" />
+                <Tab label="Retention settings" value="retention-settings" />
+                <Tab label="Splits" value="splits" />
               </TabList>
             </Box>
-            <CustomTabPanel value="1">
-              <IndexSummary index={index} />
+            <CustomTabPanel value="summary">
+              <SummaryTab index={index} />
             </CustomTabPanel>
-            <CustomTabPanel value="2">
-              <JsonEditor
-                content={index.metadata.sources}
-                resizeOnMount={false}
+            <CustomTabPanel value="sources">
+              <SourcesTab index={index} />
+            </CustomTabPanel>
+            <CustomTabPanel value="doc-mapping">
+              <DocMappingTab index={index} />
+            </CustomTabPanel>
+            <CustomTabPanel value="indexing-settings">
+              <IndexingSettingsTab
+                index={index}
+                updateIndexConfig={updateIndexConfig}
+                updating={updating}
               />
             </CustomTabPanel>
-            <CustomTabPanel value="3">
-              <JsonEditor
-                content={index.metadata.index_config.doc_mapping}
-                resizeOnMount={false}
+            <CustomTabPanel value="search-settings">
+              <SearchSettingsTab
+                index={index}
+                updateIndexConfig={updateIndexConfig}
+                updating={updating}
               />
             </CustomTabPanel>
-            <CustomTabPanel value="4">
-              <JsonEditor
-                content={index.metadata.index_config.indexing_settings}
-                resizeOnMount={false}
+            <CustomTabPanel value="retention-settings">
+              <RetentionSettingsTab
+                index={index}
+                updateIndexConfig={updateIndexConfig}
+                updating={updating}
               />
             </CustomTabPanel>
-            <CustomTabPanel value="5">
-              <JsonEditor
-                content={index.metadata.index_config.search_settings}
-                resizeOnMount={false}
-              />
-            </CustomTabPanel>
-            <CustomTabPanel value="6">
-              <JsonEditor
-                content={index.metadata.index_config.retention || {}}
-                resizeOnMount={false}
-              />
-            </CustomTabPanel>
-            <CustomTabPanel value="7">
-              <JsonEditor content={index.splits} resizeOnMount={false} />
+            <CustomTabPanel value="splits">
+              <SplitsTab index={index} />
             </CustomTabPanel>
           </TabContext>
         </Box>
       );
     }
   };
-
-  useEffect(() => {
-    fetchIndex();
-  }, [fetchIndex]);
 
   return (
     <ViewUnderAppBarBox>
@@ -169,3 +159,215 @@ function IndexView() {
 }
 
 export default IndexView;
+
+function SummaryTab({ index }: { index: Index }) {
+  return <IndexSummary index={index} />;
+}
+
+function SourcesTab({ index }: { index: Index }) {
+  const jsonSchema =
+    useJsonSchema(
+      "#/components/schemas/IndexMetadataV0_8/properties/sources",
+    ) ?? undefined;
+
+  return (
+    <JsonEditor
+      content={index.metadata.sources}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+    />
+  );
+}
+
+function DocMappingTab({ index }: { index: Index }) {
+  const jsonSchema =
+    useJsonSchema("#/components/schemas/DocMapping") ?? undefined;
+  return (
+    <JsonEditor
+      content={index.metadata.index_config.doc_mapping}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+    />
+  );
+}
+
+function IndexingSettingsTab({
+  index,
+  updateIndexConfig,
+  updating,
+}: {
+  index: Index;
+  updateIndexConfig: (indexConfig: IndexMetadata["index_config"]) => void;
+  updating: boolean;
+}) {
+  const jsonSchema =
+    useJsonSchema("#/components/schemas/IndexingSettings") ?? undefined;
+
+  const initialValue = index.metadata.index_config.indexing_settings;
+  const [edited, setEdited] = useState<any | null>(null);
+  const pristine =
+    edited === null || JSON.stringify(edited) === JSON.stringify(initialValue);
+
+  return (
+    <JsonEditorEditable
+      content={initialValue}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+      onContentEdited={setEdited}
+      onSave={() =>
+        updateIndexConfig({
+          ...index.metadata.index_config,
+          indexing_settings: edited,
+        } as IndexMetadata["index_config"])
+      }
+      pristine={pristine}
+      saving={updating}
+    />
+  );
+}
+
+function SearchSettingsTab({
+  index,
+  updateIndexConfig,
+  updating,
+}: {
+  index: Index;
+  updateIndexConfig: (indexConfig: IndexMetadata["index_config"]) => void;
+  updating: boolean;
+}) {
+  const jsonSchema =
+    useJsonSchema("#/components/schemas/SearchSettings") ?? undefined;
+
+  const initialValue = index.metadata.index_config.search_settings;
+  const [edited, setEdited] = useState<any | null>(null);
+  const pristine =
+    edited === null || JSON.stringify(edited) === JSON.stringify(initialValue);
+
+  return (
+    <JsonEditorEditable
+      content={initialValue}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+      onContentEdited={setEdited}
+      onSave={() =>
+        updateIndexConfig({
+          ...index.metadata.index_config,
+          search_settings: edited,
+        } as IndexMetadata["index_config"])
+      }
+      pristine={pristine}
+      saving={updating}
+    />
+  );
+}
+
+function RetentionSettingsTab({
+  index,
+  updateIndexConfig,
+  updating,
+}: {
+  index: Index;
+  updateIndexConfig: (indexConfig: IndexMetadata["index_config"]) => void;
+  updating: boolean;
+}) {
+  const jsonSchema =
+    useJsonSchema("#/components/schemas/RetentionPolicy") ?? undefined;
+
+  const initialValue = index.metadata.index_config.retention || {};
+  const [edited, setEdited] = useState<any | null>(null);
+  const pristine =
+    edited === null || JSON.stringify(edited) === JSON.stringify(initialValue);
+
+  return (
+    <JsonEditorEditable
+      content={initialValue}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+      onContentEdited={setEdited}
+      onSave={() =>
+        updateIndexConfig({
+          ...index.metadata.index_config,
+          retention: edited,
+        } as IndexMetadata["index_config"])
+      }
+      pristine={pristine}
+      saving={updating}
+    />
+  );
+}
+
+function SplitsTab({ index }: { index: Index }) {
+  const splitShema = useJsonSchema("#/components/schemas/Split");
+  const jsonSchema =
+    (splitShema && {
+      ...splitShema,
+      $ref: undefined,
+      type: "array",
+      items: { $ref: "#/components/schemas/Split" },
+    }) ??
+    undefined;
+
+  return (
+    <JsonEditor
+      content={index.splits}
+      resizeOnMount={false}
+      jsonSchema={jsonSchema}
+    />
+  );
+}
+
+/**
+ * Fetches and manages index data
+ */
+const useIndex = (indexId: string | undefined) => {
+  const quickwitClient = useMemo(() => new Client(), []);
+
+  const onError = useMemo(
+    () => (err: unknown) => alert((err as any)?.message ?? err?.toString()),
+    [],
+  );
+
+  const [index, setIndex] = useState<Index>();
+  const [updating, setUpdating] = useState(false);
+
+  useEffect(() => {
+    if (!indexId) return;
+
+    const abortController = new AbortController();
+
+    quickwitClient
+      .getIndex(indexId)
+      .then((index) => {
+        if (!abortController.signal.aborted) setIndex(index);
+      })
+      .catch(onError);
+
+    return () => abortController.abort();
+  }, [indexId, quickwitClient, onError]);
+
+  const updateIndexConfig = useCallback(
+    (indexConfig: IndexMetadata["index_config"]) => {
+      setUpdating(true);
+
+      quickwitClient
+        .updateIndexConfig(indexConfig.index_id, indexConfig)
+        .then((metadata) => {
+          setIndex((i) =>
+            i?.metadata.index_config.index_id === metadata.index_config.index_id
+              ? { ...i, metadata }
+              : i,
+          );
+        })
+        .catch(onError)
+        .finally(() => setUpdating(false));
+    },
+    [quickwitClient, onError],
+  );
+
+  if (!indexId) return { loading: false, index: undefined };
+
+  if (index?.metadata.index_config.index_id !== indexId)
+    return { loading: true };
+
+  return { loading: false, updating, index: index, updateIndexConfig };
+};
