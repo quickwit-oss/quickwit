@@ -1,0 +1,14 @@
+metadata:
+  name: cp-cloudprem
+  namespace: logs-cloudprem
+  type: egress_acl
+  apiVersion: v1
+spec:
+  rules:
+  - name: "lambda-api"
+    service_accounts:
+    - name: "cloudprem"
+      namespace: "logs-cloudprem"
+    domains:
+      allowlist:
+      - exact: "lambda.us-east-1.amazonaws.com:443"
