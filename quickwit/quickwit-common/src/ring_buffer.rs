@@ -14,13 +14,23 @@
 
 use std::fmt::{Debug, Formatter};
 
-/// A fixed-capacity circular buffer that overwrites the oldest element when full.
+/// Fixed-size buffer that keeps the last N elements pushed into it.
 ///
-/// Elements are stored in a flat array of size `N` and rotated on each push.
-/// The newest element is always at position `N - 1` (the last slot), and the
-/// oldest is at position `N - len`.
+/// `head` is the write cursor. It advances by one on each push and wraps
+/// back to 0 when it reaches N, overwriting the oldest element.
+///
+/// ```text
+/// RingBuffer<u32, 4> after pushing 1, 2, 3, 4, 5, 6:
+///
+///   buffer = [5, 6, 3, 4]    head = 2    len = 4
+///                 ^
+///                 next write goes here
+///
+///   logical view (oldest → newest): [3, 4, 5, 6]
+/// ```
 pub struct RingBuffer<T: Copy + Default, const N: usize> {
     buffer: [T; N],
+    head: usize,
     len: usize,
 }
 
@@ -28,6 +38,7 @@ impl<T: Copy + Default, const N: usize> Default for RingBuffer<T, N> {
     fn default() -> Self {
         Self {
             buffer: [T::default(); N],
+            head: 0,
             len: 0,
         }
     }
@@ -40,11 +51,11 @@ impl<T: Copy + Default + Debug, const N: usize> Debug for RingBuffer<T, N> {
 }
 
 impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
-    pub fn push(&mut self, value: T) {
-        self.len = (self.len + 1).min(N);
-        self.buffer.rotate_left(1);
-        if let Some(last) = self.buffer.last_mut() {
-            *last = value;
+    pub fn push_back(&mut self, value: T) {
+        self.buffer[self.head] = value;
+        self.head = (self.head + 1) % N;
+        if self.len < N {
+            self.len += 1;
         }
     }
 
@@ -52,14 +63,14 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
         if self.len == 0 {
             return None;
         }
-        self.buffer.last().copied()
+        Some(self.buffer[(self.head + N - 1) % N])
     }
 
-    pub fn oldest(&self) -> Option<T> {
+    pub fn front(&self) -> Option<T> {
         if self.len == 0 {
             return None;
         }
-        Some(self.buffer[N - self.len])
+        Some(self.buffer[(self.head + N - self.len) % N])
     }
 
     pub fn len(&self) -> usize {
@@ -70,9 +81,9 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
         self.len == 0
     }
 
-    /// Iterates from oldest to newest over the recorded elements.
-    pub fn iter(&self) -> impl Iterator<Item = &T> {
-        self.buffer[N - self.len..].iter()
+    pub fn iter(&self) -> impl Iterator<Item = &T> + '_ {
+        let start = (self.head + N - self.len) % N;
+        (0..self.len).map(move |i| &self.buffer[(start + i) % N])
     }
 }
 
@@ -86,30 +97,30 @@ mod tests {
         assert!(rb.is_empty());
         assert_eq!(rb.len(), 0);
         assert_eq!(rb.last(), None);
-        assert_eq!(rb.oldest(), None);
+        assert_eq!(rb.front(), None);
         assert_eq!(rb.iter().count(), 0);
     }
 
     #[test]
     fn test_single_push() {
         let mut rb = RingBuffer::<u32, 4>::default();
-        rb.push(10);
+        rb.push_back(10);
         assert_eq!(rb.len(), 1);
         assert!(!rb.is_empty());
         assert_eq!(rb.last(), Some(10));
-        assert_eq!(rb.oldest(), Some(10));
+        assert_eq!(rb.front(), Some(10));
         assert_eq!(rb.iter().copied().collect::<Vec<_>>(), vec![10]);
     }
 
     #[test]
     fn test_partial_fill() {
         let mut rb = RingBuffer::<u32, 4>::default();
-        rb.push(1);
-        rb.push(2);
-        rb.push(3);
+        rb.push_back(1);
+        rb.push_back(2);
+        rb.push_back(3);
         assert_eq!(rb.len(), 3);
         assert_eq!(rb.last(), Some(3));
-        assert_eq!(rb.oldest(), Some(1));
+        assert_eq!(rb.front(), Some(1));
         assert_eq!(rb.iter().copied().collect::<Vec<_>>(), vec![1, 2, 3]);
     }
 
@@ -117,11 +128,11 @@ mod tests {
     fn test_exactly_full() {
         let mut rb = RingBuffer::<u32, 4>::default();
         for i in 1..=4 {
-            rb.push(i);
+            rb.push_back(i);
         }
         assert_eq!(rb.len(), 4);
         assert_eq!(rb.last(), Some(4));
-        assert_eq!(rb.oldest(), Some(1));
+        assert_eq!(rb.front(), Some(1));
         assert_eq!(rb.iter().copied().collect::<Vec<_>>(), vec![1, 2, 3, 4]);
     }
 
@@ -129,12 +140,11 @@ mod tests {
     fn test_wrap_around() {
         let mut rb = RingBuffer::<u32, 4>::default();
         for i in 1..=6 {
-            rb.push(i);
+            rb.push_back(i);
         }
-        // Buffer should contain [3, 4, 5, 6], oldest overwritten.
         assert_eq!(rb.len(), 4);
         assert_eq!(rb.last(), Some(6));
-        assert_eq!(rb.oldest(), Some(3));
+        assert_eq!(rb.front(), Some(3));
         assert_eq!(rb.iter().copied().collect::<Vec<_>>(), vec![3, 4, 5, 6]);
     }
 
@@ -142,19 +152,19 @@ mod tests {
     fn test_many_wraps() {
         let mut rb = RingBuffer::<u32, 3>::default();
         for i in 1..=100 {
-            rb.push(i);
+            rb.push_back(i);
         }
         assert_eq!(rb.len(), 3);
         assert_eq!(rb.last(), Some(100));
-        assert_eq!(rb.oldest(), Some(98));
+        assert_eq!(rb.front(), Some(98));
         assert_eq!(rb.iter().copied().collect::<Vec<_>>(), vec![98, 99, 100]);
     }
 
     #[test]
     fn test_debug() {
         let mut rb = RingBuffer::<u32, 3>::default();
-        rb.push(1);
-        rb.push(2);
+        rb.push_back(1);
+        rb.push_back(2);
         assert_eq!(format!("{:?}", rb), "[1, 2]");
     }
 }

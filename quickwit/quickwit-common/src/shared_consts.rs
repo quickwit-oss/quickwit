@@ -65,7 +65,7 @@ pub const SCROLL_BATCH_LEN: usize = 1_000;
 pub const INGESTER_PRIMARY_SHARDS_PREFIX: &str = "ingester.primary_shards:";
 
 /// Prefix used in chitchat to broadcast per-source ingester capacity scores and open shard counts.
-pub const INGESTER_CAPACITY_PREFIX: &str = "ingester.capacity:";
+pub const INGESTER_CAPACITY_SCORE_PREFIX: &str = "ingester.capacity_score:";
 
 /// File name for the encoded list of fields in the split
 pub const SPLIT_FIELDS_FILE_NAME: &str = "split_fields";

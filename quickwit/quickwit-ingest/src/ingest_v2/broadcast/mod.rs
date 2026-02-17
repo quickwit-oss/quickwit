@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #[allow(dead_code)]
-mod ingester_capacity;
+mod ingester_capacity_score;
 mod local_shards;
 
 use std::time::Duration;

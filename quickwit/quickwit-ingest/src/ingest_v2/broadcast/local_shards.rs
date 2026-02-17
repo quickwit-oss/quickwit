@@ -242,7 +242,7 @@ impl ShardThroughputTimeSeries {
     }
 
     fn record(&mut self, new_throughput_measurement: ByteSize) {
-        self.throughput.push(new_throughput_measurement);
+        self.throughput.push_back(new_throughput_measurement);
     }
 }
 
