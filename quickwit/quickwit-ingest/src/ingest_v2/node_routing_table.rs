@@ -65,7 +65,7 @@ impl RoutingEntry {
         &self,
         ingester_pool: &IngesterPool,
         unavailable_leaders: &HashSet<NodeId>,
-    ) -> Option<&NodeId> {
+    ) -> Option<&IngesterNode> {
         let eligible: Vec<&IngesterNode> = self
             .nodes
             .values()
@@ -79,8 +79,8 @@ impl RoutingEntry {
 
         match eligible.len() {
             0 => None,
-            1 => Some(&eligible[0].node_id),
-            _ => Some(&power_of_two_choices(&eligible).node_id),
+            1 => Some(eligible[0]),
+            _ => Some(power_of_two_choices(&eligible)),
         }
     }
 }
@@ -135,9 +135,6 @@ impl NodeBasedRoutingTable {
 
     /// Applies a capacity update from the IngesterCapacityScoreUpdate broadcast. This is the
     /// primary way the table learns about node availability and capacity.
-    ///
-    /// When `open_shard_count == 0`, the node is removed (it can't accept requests).
-    /// When `open_shard_count > 0`, the node is upserted with the latest capacity.
     pub fn apply_capacity_update(
         &mut self,
         node_id: NodeId,
@@ -149,17 +146,6 @@ impl NodeBasedRoutingTable {
             source_uid.index_uid.index_id.to_string(),
             source_uid.source_id.clone(),
         );
-
-        if open_shard_count == 0 {
-            // Node has no open shards for this source — remove it.
-            if let Some(entry) = self.table.get_mut(&key) {
-                entry.nodes.swap_remove(&node_id);
-                if entry.nodes.is_empty() {
-                    self.table.remove(&key);
-                }
-            }
-            return;
-        }
 
         let entry = self.table.entry(key).or_insert_with(|| RoutingEntry {
             nodes: IndexMap::new(),
@@ -175,14 +161,12 @@ impl NodeBasedRoutingTable {
         entry.nodes.insert(node_id, ingester_node);
     }
 
-    /// Seeds the table from a GetOrCreateOpenShards control plane response.
-    /// Used at cold start or when all shards for a source have closed and the
-    /// router asked the CP to create new ones. Replaces the entire entry for
-    /// this (index, source) — the CP response is authoritative.
-    ///
-    /// TODO: Capacity score defaults to 5 (mid-range).
-    /// Return capacity scores from the control plane in the GetOrCreateOpenShards response.
-    pub fn seed_from_shards(
+    /// Merges nodes from a GetOrCreateOpenShards control plane response into the
+    /// table. Only adds nodes that aren't already present — existing nodes keep
+    /// their real capacity scores from the broadcast.
+    /// TODO: New nodes get a default capacity_score of 5 until GetOrCreateOpenShards contains
+    /// capacity scores.
+    pub fn merge_from_shards(
         &mut self,
         index_uid: IndexUid,
         source_id: SourceId,
@@ -199,8 +183,14 @@ impl NodeBasedRoutingTable {
             }
         }
 
-        let mut nodes = IndexMap::new();
+        let entry = self.table.entry(key).or_insert_with(|| RoutingEntry {
+            nodes: IndexMap::new(),
+        });
+
         for (node_id, open_shard_count) in per_leader_count {
+            if entry.nodes.contains_key(&node_id) {
+                continue;
+            }
             let ingester_node = IngesterNode {
                 node_id: node_id.clone(),
                 index_uid: index_uid.clone(),
@@ -208,10 +198,8 @@ impl NodeBasedRoutingTable {
                 capacity_score: 5,
                 open_shard_count,
             };
-            nodes.insert(node_id, ingester_node);
+            entry.nodes.insert(node_id, ingester_node);
         }
-
-        self.table.insert(key, RoutingEntry { nodes });
     }
 }
 
@@ -236,10 +224,6 @@ mod tests {
         let uid = source_uid("test-index", 0, "test-source");
         let key = ("test-index".to_string(), "test-source".to_string());
 
-        // Remove on empty table is a no-op.
-        table.apply_capacity_update("node-1".into(), uid.clone(), 0, 0);
-        assert!(table.table.is_empty());
-
         // Insert first node.
         table.apply_capacity_update("node-1".into(), uid.clone(), 8, 3);
         let entry = table.table.get(&key).unwrap();
@@ -256,16 +240,12 @@ mod tests {
         table.apply_capacity_update("node-2".into(), uid.clone(), 6, 2);
         assert_eq!(table.table.get(&key).unwrap().nodes.len(), 2);
 
-        // Remove first node (zero shards), second remains.
+        // Zero shards: node stays in table but becomes ineligible for routing.
         table.apply_capacity_update("node-1".into(), uid.clone(), 0, 0);
         let entry = table.table.get(&key).unwrap();
-        assert_eq!(entry.nodes.len(), 1);
-        assert!(entry.nodes.get("node-1").is_none());
-        assert!(entry.nodes.get("node-2").is_some());
-
-        // Remove last node → entire entry is cleaned up.
-        table.apply_capacity_update("node-2".into(), uid, 0, 0);
-        assert!(!table.table.contains_key(&key));
+        assert_eq!(entry.nodes.len(), 2);
+        assert_eq!(entry.nodes.get("node-1").unwrap().open_shard_count, 0);
+        assert_eq!(entry.nodes.get("node-1").unwrap().capacity_score, 0);
     }
 
     #[test]
@@ -319,14 +299,13 @@ mod tests {
 
         // Single node in pool → picks it.
         pool.insert("node-1".into(), IngesterServiceClient::mocked());
-        assert_eq!(
-            table
-                .table
-                .get(&key)
-                .unwrap()
-                .pick_node(&pool, &HashSet::new()),
-            Some(&"node-1".into()),
-        );
+        let picked = table
+            .table
+            .get(&key)
+            .unwrap()
+            .pick_node(&pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.node_id, NodeId::from("node-1"));
 
         // Multiple nodes → something is returned.
         table.apply_capacity_update("node-2".into(), uid.clone(), 2, 1);
@@ -391,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn test_seed_from_shards() {
+    fn test_merge_from_shards() {
         let mut table = NodeBasedRoutingTable::default();
         let index_uid = IndexUid::for_test("test-index", 0);
         let key = ("test-index".to_string(), "test-source".to_string());
@@ -416,7 +395,7 @@ mod tests {
             make_shard(3, "node-2", true),
             make_shard(4, "node-2", false),
         ];
-        table.seed_from_shards(index_uid.clone(), "test-source".into(), shards);
+        table.merge_from_shards(index_uid.clone(), "test-source".into(), shards);
 
         let entry = table.table.get(&key).unwrap();
         assert_eq!(entry.nodes.len(), 2);
@@ -428,13 +407,14 @@ mod tests {
         let n2 = entry.nodes.get("node-2").unwrap();
         assert_eq!(n2.open_shard_count, 1);
 
-        // Seeding again replaces the entry entirely.
+        // Merging again adds new nodes but preserves existing ones.
         let shards = vec![make_shard(10, "node-3", true)];
-        table.seed_from_shards(index_uid, "test-source".into(), shards);
+        table.merge_from_shards(index_uid, "test-source".into(), shards);
 
         let entry = table.table.get(&key).unwrap();
-        assert_eq!(entry.nodes.len(), 1);
+        assert_eq!(entry.nodes.len(), 3);
+        assert!(entry.nodes.get("node-1").is_some());
+        assert!(entry.nodes.get("node-2").is_some());
         assert!(entry.nodes.get("node-3").is_some());
-        assert!(entry.nodes.get("node-1").is_none());
     }
 }
