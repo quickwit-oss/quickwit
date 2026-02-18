@@ -216,47 +216,44 @@ async fn main() -> anyhow::Result<()> {
     // ═══════════════════════════════════════════════════════════════
     //  DEMO 2: Unified table provider (hides join complexity)
     // ═══════════════════════════════════════════════════════════════
-    section("DEMO 2: Unified Table Provider");
+    section("DEMO 2: Unified Table Provider (distributed)");
     {
-        let ctx = SessionContext::new_with_config(
-            SessionConfig::new().with_target_partitions(1),
-        );
-        ctx.register_udf(full_text_udf());
+        let ctx = session_builder.build_session();
 
-        // Register each split as a unified table, then UNION ALL.
-        for (i, split) in splits.iter().enumerate() {
-            let opener = Arc::new(StorageSplitOpener::new(
-                split.split_id.clone(),
-                tantivy_schema.clone(),
-                vec![split.num_docs as u32],
-                searcher_context.clone(),
-                storage.clone(),
-                split.footer_offsets.start,
-                split.footer_offsets.end,
-            ));
-            ctx.register_table(
-                &format!("s{}", i + 1),
-                Arc::new(UnifiedTantivyTableProvider::from_opener(opener)),
-            )?;
-        }
+        // Register a single "logs" table backed by QuickwitTableProvider.
+        // It queries the metastore, discovers splits, and unions them
+        // automatically — the user just queries "logs".
+        let st2 = storage.clone();
+        let sc2 = searcher_context.clone();
+        let ts2 = tantivy_schema.clone();
+        let logs_opener_factory: quickwit_datafusion::OpenerFactory =
+            Arc::new(move |meta: &quickwit_metastore::SplitMetadata| {
+                Arc::new(StorageSplitOpener::new(
+                    meta.split_id.clone(),
+                    ts2.clone(),
+                    vec![meta.num_docs as u32],
+                    sc2.clone(),
+                    st2.clone(),
+                    meta.footer_offsets.start,
+                    meta.footer_offsets.end,
+                )) as Arc<dyn IndexOpener>
+            });
 
-        let n = splits.len();
-        let union_parts: Vec<String> = (1..=n)
-            .map(|i| format!(
-                "SELECT id, price FROM s{i} WHERE full_text(category, 'electronics')"
-            ))
-            .collect();
-        let sql = format!(
-            "SELECT id, price FROM ({}) ORDER BY id",
-            union_parts.join(" UNION ALL ")
+        let logs_provider = quickwit_datafusion::QuickwitTableProvider::new(
+            index_uid.clone(),
+            metastore.clone(),
+            logs_opener_factory,
+            &tantivy_schema,
         );
+        ctx.register_table("logs", Arc::new(logs_provider))?;
+
+        let sql = "SELECT id, price FROM logs WHERE full_text(category, 'electronics') ORDER BY id";
 
         println!("SQL:\n  {sql}\n");
 
         let df: DataFrame = ctx.sql(&sql).await?;
         let plan = df.create_physical_plan().await?;
-        println!("Physical Plan:\n{}\n",
-            datafusion::physical_plan::displayable(plan.as_ref()).indent(true));
+        println!("Distributed Plan:\n{}\n", display_plan_ascii(plan.as_ref(), false));
         let batches: Vec<_> = execute_stream(plan, ctx.task_ctx())?
             .try_collect().await?;
         let formatted = datafusion::common::arrow::util::pretty::pretty_format_batches(&batches)?;
