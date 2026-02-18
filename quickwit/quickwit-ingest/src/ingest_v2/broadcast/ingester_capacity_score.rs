@@ -56,8 +56,7 @@ impl WalMemoryCapacityTimeSeries {
     }
 
     fn record(&mut self, memory_used: ByteSize) {
-        let remaining =
-            1.0 - (memory_used.as_u64() as f64 / self.memory_capacity.as_u64() as f64);
+        let remaining = 1.0 - (memory_used.as_u64() as f64 / self.memory_capacity.as_u64() as f64);
         self.readings.push_back(remaining.clamp(0.0, 1.0));
     }
 

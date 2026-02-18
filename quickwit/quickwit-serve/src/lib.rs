@@ -82,8 +82,9 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    LocalShardsUpdate, get_idle_shard_timeout, setup_local_shards_update_listener, setup_ingester_capacity_update_listener,
-    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
+    LocalShardsUpdate, get_idle_shard_timeout, setup_ingester_capacity_update_listener,
+    setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
+    wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
@@ -906,7 +907,9 @@ async fn setup_ingest_v2(
         event_broker.clone(),
     );
     ingest_router.subscribe();
-    setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone()).await.forever();
+    setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone())
+        .await
+        .forever();
 
     let ingest_router_service = IngestRouterServiceClient::tower()
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
