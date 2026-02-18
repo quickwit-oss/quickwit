@@ -264,10 +264,7 @@ async fn main() -> anyhow::Result<()> {
     // ═══════════════════════════════════════════════════════════════
     section("DEMO 3: SearchRequest → DataFrame");
     {
-        let ctx = SessionContext::new_with_config(
-            SessionConfig::new().with_target_partitions(1),
-        );
-        ctx.register_udf(full_text_udf());
+        let ctx = session_builder.build_session();
 
         // Build a SearchRequest like Quickwit's REST handler would.
         let search_request = quickwit_proto::search::SearchRequest {
@@ -336,8 +333,8 @@ async fn main() -> anyhow::Result<()> {
             Ok(df) => {
                 match df.create_physical_plan().await {
                     Ok(plan) => {
-                        println!("Physical Plan:\n{}\n",
-                            datafusion::physical_plan::displayable(plan.as_ref()).indent(true));
+                        println!("Distributed Plan:\n{}\n",
+                            display_plan_ascii(plan.as_ref(), false));
                         match execute_stream(plan, ctx.task_ctx()) {
                             Ok(stream) => {
                                 let batches: Vec<_> = stream.try_collect().await?;
