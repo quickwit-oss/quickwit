@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use arrow::datatypes::SchemaRef;
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use async_trait::async_trait;
 use datafusion::catalog::Session;
 use datafusion::common::Result;
@@ -18,7 +18,7 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::IndexUid;
-use tantivy_datafusion::{IndexOpener, TantivyTableProvider};
+use tantivy_datafusion::{IndexOpener, UnifiedTantivyTableProvider};
 use tokio::sync::Mutex;
 
 /// Factory that creates an [`IndexOpener`] from split metadata.
@@ -32,7 +32,12 @@ pub type OpenerFactory =
 ///
 /// At scan time, queries the metastore for published splits, creates
 /// an [`IndexOpener`] per split via the provided factory, builds
-/// per-split tantivy-df providers, and unions them.
+/// per-split [`UnifiedTantivyTableProvider`]s (which internally
+/// compose inv ⋈ f ⋈ d joins), and unions them.
+///
+/// Users query a single table name (e.g. `SELECT * FROM logs WHERE
+/// full_text(category, 'books')`) — the split decomposition and
+/// joins are hidden.
 pub struct QuickwitTableProvider {
     index_uid: IndexUid,
     metastore: Mutex<MetastoreServiceClient>,
@@ -47,7 +52,12 @@ impl QuickwitTableProvider {
         opener_factory: OpenerFactory,
         tantivy_schema: &tantivy::schema::Schema,
     ) -> Self {
-        let arrow_schema = tantivy_datafusion::tantivy_schema_to_arrow(tantivy_schema);
+        // Build unified schema: fast fields + _score + _document.
+        let ff_schema = tantivy_datafusion::tantivy_schema_to_arrow(tantivy_schema);
+        let mut fields: Vec<Arc<Field>> = ff_schema.fields().to_vec();
+        fields.push(Arc::new(Field::new("_score", DataType::Float32, true)));
+        fields.push(Arc::new(Field::new("_document", DataType::Utf8, false)));
+        let arrow_schema = Arc::new(Schema::new(fields));
         Self {
             index_uid,
             metastore: Mutex::new(metastore),
@@ -119,7 +129,7 @@ impl TableProvider for QuickwitTableProvider {
         let mut execs = Vec::with_capacity(splits.len());
         for split_meta in &splits {
             let opener = (self.opener_factory)(split_meta);
-            let provider = TantivyTableProvider::from_opener(opener);
+            let provider = UnifiedTantivyTableProvider::from_opener(opener);
             let exec = provider.scan(state, projection, filters, limit).await?;
             execs.push(exec);
         }
