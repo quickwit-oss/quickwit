@@ -201,18 +201,45 @@ fn build_split_plan(
     // Apply the full-text filter on the inverted index side.
     let df_inv = df_inv.filter(query_filter.clone())?;
 
-    // Use semi join — keeps only left columns where join matches.
-    // Then we don't get duplicate columns. But we want the fast field
-    // columns, not the inv columns. So we semi-join f against inv.
-    let df_f_filtered = df_f.join(
-        df_inv,
-        JoinType::LeftSemi,
-        &["_doc_id", "_segment_ord"],
+    // Capture fast field column names before the join for post-join projection.
+    let ff_col_names: Vec<String> = df_f
+        .schema()
+        .fields()
+        .iter()
+        .map(|f| f.name().clone())
+        .collect();
+
+    // Inner join — enables DynamicFilter pushdown from the hash join
+    // build side (inv) to the probe side (f). The build side's min/max
+    // bounds on _doc_id/_segment_ord prune fast field reads at runtime.
+    //
+    // To avoid duplicate _doc_id/_segment_ord columns, we alias the
+    // inverted index columns before the join so they don't clash.
+    let inv_schema = df_inv.schema().clone();
+    let inv_rename_exprs: Vec<Expr> = inv_schema
+        .fields()
+        .iter()
+        .map(|f| {
+            let name = f.name();
+            col(name.as_str()).alias(format!("__inv_{name}"))
+        })
+        .collect();
+    let df_inv = df_inv.select(inv_rename_exprs)?;
+
+    let joined = df_inv.join(
+        df_f,
+        JoinType::Inner,
+        &["__inv__doc_id", "__inv__segment_ord"],
         &["_doc_id", "_segment_ord"],
         None,
     )?;
 
-    Ok(df_f_filtered)
+    // Project to only the fast field columns (right side).
+    let select_exprs: Vec<Expr> = ff_col_names
+        .iter()
+        .map(|name| col(name.as_str()))
+        .collect();
+    joined.select(select_exprs)
 }
 
 /// Check if a QueryAst contains any full-text query nodes.
