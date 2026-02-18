@@ -42,23 +42,22 @@ const WAL_CAPACITY_LOOKBACK_WINDOW_LEN: usize = 6;
 const WAL_CAPACITY_READINGS_LEN: usize = WAL_CAPACITY_LOOKBACK_WINDOW_LEN + 1;
 
 struct WalMemoryCapacityTimeSeries {
+    memory_capacity: ByteSize,
     readings: RingBuffer<f64, WAL_CAPACITY_READINGS_LEN>,
 }
 
 impl WalMemoryCapacityTimeSeries {
-    fn new() -> Self {
+    fn new(memory_capacity: ByteSize) -> Self {
+        assert!(memory_capacity.as_u64() > 0);
         Self {
+            memory_capacity,
             readings: RingBuffer::default(),
         }
     }
 
-    fn record(&mut self, memory_used: ByteSize, memory_allocated: ByteSize) {
-        let allocated = memory_allocated.as_u64();
-        if allocated == 0 {
-            self.readings.push_back(1.0);
-            return;
-        }
-        let remaining = 1.0 - (memory_used.as_u64() as f64 / allocated as f64);
+    fn record(&mut self, memory_used: ByteSize) {
+        let remaining =
+            1.0 - (memory_used.as_u64() as f64 / self.memory_capacity.as_u64() as f64);
         self.readings.push_back(remaining.clamp(0.0, 1.0));
     }
 
@@ -121,23 +120,27 @@ pub struct IngesterCapacityScore {
 
 /// Periodically snapshots the ingester's WAL memory usage and open shard counts, computes
 /// a capacity score, and broadcasts it to other nodes via Chitchat.
-pub(crate) struct BroadcastIngesterCapacityScoreTask {
+pub struct BroadcastIngesterCapacityScoreTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
     wal_capacity_time_series: WalMemoryCapacityTimeSeries,
 }
 
 impl BroadcastIngesterCapacityScoreTask {
-    pub fn spawn(cluster: Cluster, weak_state: WeakIngesterState) -> JoinHandle<()> {
+    pub fn spawn(
+        cluster: Cluster,
+        weak_state: WeakIngesterState,
+        memory_capacity: ByteSize,
+    ) -> JoinHandle<()> {
         let mut broadcaster = Self {
             cluster,
             weak_state,
-            wal_capacity_time_series: WalMemoryCapacityTimeSeries::new(),
+            wal_capacity_time_series: WalMemoryCapacityTimeSeries::new(memory_capacity),
         };
         tokio::spawn(async move { broadcaster.run().await })
     }
 
-    async fn snapshot(&self) -> Result<Option<(ByteSize, ByteSize, OpenShardCounts)>> {
+    async fn snapshot(&self) -> Result<Option<(ByteSize, OpenShardCounts)>> {
         let state = self
             .weak_state
             .upgrade()
@@ -155,10 +158,9 @@ impl BroadcastIngesterCapacityScoreTask {
             .map_err(|_| anyhow::anyhow!("failed to acquire ingester state lock"))?;
         let usage = guard.mrecordlog.resource_usage();
         let memory_used = ByteSize::b(usage.memory_used_bytes as u64);
-        let memory_allocated = ByteSize::b(usage.memory_allocated_bytes as u64);
         let open_shard_counts = guard.get_open_shard_counts();
 
-        Ok(Some((memory_used, memory_allocated, open_shard_counts)))
+        Ok(Some((memory_used, open_shard_counts)))
     }
 
     async fn run(&mut self) {
@@ -168,7 +170,7 @@ impl BroadcastIngesterCapacityScoreTask {
         loop {
             interval.tick().await;
 
-            let (memory_used, memory_allocated, open_shard_counts) = match self.snapshot().await {
+            let (memory_used, open_shard_counts) = match self.snapshot().await {
                 Ok(Some(snapshot)) => snapshot,
                 Ok(None) => continue,
                 Err(error) => {
@@ -177,8 +179,7 @@ impl BroadcastIngesterCapacityScoreTask {
                 }
             };
 
-            self.wal_capacity_time_series
-                .record(memory_used, memory_allocated);
+            self.wal_capacity_time_series.record(memory_used);
 
             let remaining_capacity = self.wal_capacity_time_series.current().unwrap_or(1.0);
             let capacity_delta = self.wal_capacity_time_series.delta().unwrap_or(0.0);
@@ -272,30 +273,31 @@ mod tests {
     use crate::ingest_v2::state::IngesterState;
 
     fn ts() -> WalMemoryCapacityTimeSeries {
-        WalMemoryCapacityTimeSeries::new()
+        WalMemoryCapacityTimeSeries::new(ByteSize::b(100))
     }
 
-    /// Helper: record a reading with `used` out of `allocated` bytes.
-    fn record(series: &mut WalMemoryCapacityTimeSeries, used: u64, allocated: u64) {
-        series.record(ByteSize::b(used), ByteSize::b(allocated));
+    /// Helper: record a reading with `used` bytes against the series' fixed capacity.
+    fn record(series: &mut WalMemoryCapacityTimeSeries, used: u64) {
+        series.record(ByteSize::b(used));
     }
 
     #[test]
     fn test_wal_memory_capacity_current_after_record() {
-        let mut series = ts();
+        let mut series = WalMemoryCapacityTimeSeries::new(ByteSize::b(256));
         // 192 of 256 used => 25% remaining
-        record(&mut series, 192, 256);
+        series.record(ByteSize::b(192));
         assert_eq!(series.current(), Some(0.25));
 
         // 16 of 256 used => 93.75% remaining
-        record(&mut series, 16, 256);
+        series.record(ByteSize::b(16));
         assert_eq!(series.current(), Some(0.9375));
     }
 
     #[test]
     fn test_wal_memory_capacity_record_saturates_at_zero() {
         let mut series = ts();
-        record(&mut series, 200, 100);
+        // 200 used out of 100 capacity => clamped to 0.0
+        record(&mut series, 200);
         assert_eq!(series.current(), Some(0.0));
     }
 
@@ -303,9 +305,9 @@ mod tests {
     fn test_wal_memory_capacity_delta_growing() {
         let mut series = ts();
         // oldest: 60 of 100 used => 40% remaining
-        record(&mut series, 60, 100);
+        record(&mut series, 60);
         // current: 20 of 100 used => 80% remaining
-        record(&mut series, 20, 100);
+        record(&mut series, 20);
         // delta = 0.80 - 0.40 = 0.40
         assert_eq!(series.delta(), Some(0.40));
     }
@@ -314,9 +316,9 @@ mod tests {
     fn test_wal_memory_capacity_delta_shrinking() {
         let mut series = ts();
         // oldest: 20 of 100 used => 80% remaining
-        record(&mut series, 20, 100);
+        record(&mut series, 20);
         // current: 60 of 100 used => 40% remaining
-        record(&mut series, 60, 100);
+        record(&mut series, 60);
         // delta = 0.40 - 0.80 = -0.40
         assert_eq!(series.delta(), Some(-0.40));
     }
@@ -326,7 +328,7 @@ mod tests {
         // Node A: capacity draining — usage increases 10, 20, ..., 70 over 7 ticks.
         let mut node_a = ts();
         for used in (10..=70).step_by(10) {
-            record(&mut node_a, used, 100);
+            record(&mut node_a, used);
         }
         let a_remaining = node_a.current().unwrap();
         let a_delta = node_a.delta().unwrap();
@@ -335,7 +337,7 @@ mod tests {
         // Node B: steady at 50% usage over 7 ticks.
         let mut node_b = ts();
         for _ in 0..7 {
-            record(&mut node_b, 50, 100);
+            record(&mut node_b, 50);
         }
         let b_remaining = node_b.current().unwrap();
         let b_delta = node_b.delta().unwrap();
@@ -361,7 +363,7 @@ mod tests {
         let task = BroadcastIngesterCapacityScoreTask {
             cluster,
             weak_state,
-            wal_capacity_time_series: WalMemoryCapacityTimeSeries::new(),
+            wal_capacity_time_series: WalMemoryCapacityTimeSeries::new(ByteSize::mb(1)),
         };
         assert!(task.snapshot().await.is_err());
     }
@@ -388,14 +390,13 @@ mod tests {
         let open_shard_counts = state_guard.get_open_shard_counts();
         drop(state_guard);
 
-        // Simulate 500 of 1000 bytes used => 50% remaining, 0 delta => score = 6
+        // Simulate 500 of 1000 bytes capacity used => 50% remaining, 0 delta => score = 6
         let mut task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
             weak_state: state.weak(),
-            wal_capacity_time_series: WalMemoryCapacityTimeSeries::new(),
+            wal_capacity_time_series: WalMemoryCapacityTimeSeries::new(ByteSize::b(1000)),
         };
-        task.wal_capacity_time_series
-            .record(ByteSize::b(500), ByteSize::b(1000));
+        task.wal_capacity_time_series.record(ByteSize::b(500));
 
         let remaining = task.wal_capacity_time_series.current().unwrap();
         let delta = task.wal_capacity_time_series.delta().unwrap();
@@ -440,16 +441,16 @@ mod tests {
 
         // Fill to exactly the lookback window length (6 readings), all same value.
         for _ in 0..WAL_CAPACITY_LOOKBACK_WINDOW_LEN {
-            record(&mut series, 50, 100);
+            record(&mut series, 50);
         }
         assert_eq!(series.delta(), Some(0.0));
 
         // 7th reading fills the ring buffer. Delta spans 6 intervals.
-        record(&mut series, 0, 100);
+        record(&mut series, 0);
         assert_eq!(series.delta(), Some(0.50));
 
         // 8th reading evicts the oldest 50-remaining. Delta still spans 6 intervals.
-        record(&mut series, 0, 100);
+        record(&mut series, 0);
         assert_eq!(series.delta(), Some(0.50));
     }
 }

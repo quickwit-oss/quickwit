@@ -59,7 +59,7 @@ use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
 use super::IngesterPool;
-use super::broadcast::BroadcastLocalShardsTask;
+use super::broadcast::{BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsTask};
 use super::doc_mapper::validate_doc_batch;
 use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
@@ -144,7 +144,8 @@ impl Ingester {
         let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
 
         let weak_state = state.weak();
-        BroadcastLocalShardsTask::spawn(cluster, weak_state.clone());
+        BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
+        BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone(), memory_capacity);
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
         let ingester = Self {

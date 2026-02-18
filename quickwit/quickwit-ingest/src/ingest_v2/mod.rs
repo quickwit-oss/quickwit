@@ -38,7 +38,10 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use std::{env, fmt};
 
-pub use broadcast::{LocalShardsUpdate, ShardInfo, ShardInfos, setup_local_shards_update_listener};
+pub use broadcast::{
+    LocalShardsUpdate, ShardInfo, ShardInfos, setup_ingester_capacity_update_listener,
+    setup_local_shards_update_listener,
+};
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
