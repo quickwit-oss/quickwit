@@ -23,4 +23,4 @@ mod handler;
 
 pub use context::LambdaSearcherContext;
 pub use error::{LambdaError, LambdaResult};
-pub use handler::{LeafSearchRequestPayload, LeafSearchResponsePayload, handle_leaf_search};
+pub use handler::{LambdaSearchRequestPayload, LambdaSearchResponsePayload, handle_leaf_search};

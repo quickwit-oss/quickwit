@@ -21,8 +21,8 @@ use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::InvocationType;
 use base64::prelude::*;
 use prost::Message;
-use quickwit_lambda_server::{LeafSearchRequestPayload, LeafSearchResponsePayload};
-use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse, LeafSearchResponses};
+use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePayload};
+use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest};
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
 use tracing::{debug, info, instrument};
 
@@ -85,7 +85,7 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
     async fn invoke_leaf_search(
         &self,
         request: LeafSearchRequest,
-    ) -> Result<Vec<LeafSearchResponse>, SearchError> {
+    ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
         let start = std::time::Instant::now();
 
         let result = self.invoke_leaf_search_inner(request).await;
@@ -109,10 +109,10 @@ impl AwsLambdaInvoker {
     async fn invoke_leaf_search_inner(
         &self,
         request: LeafSearchRequest,
-    ) -> Result<Vec<LeafSearchResponse>, SearchError> {
+    ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
         // Serialize request to protobuf bytes, then base64 encode
         let request_bytes = request.encode_to_vec();
-        let payload = LeafSearchRequestPayload {
+        let payload = LambdaSearchRequestPayload {
             payload: BASE64_STANDARD.encode(&request_bytes),
         };
 
@@ -164,7 +164,7 @@ impl AwsLambdaInvoker {
             .leaf_search_response_payload_size_bytes
             .observe(response_payload.as_ref().len() as f64);
 
-        let lambda_response: LeafSearchResponsePayload =
+        let lambda_response: LambdaSearchResponsePayload =
             serde_json::from_slice(response_payload.as_ref())
                 .map_err(|e| SearchError::Internal(format!("json deserialization error: {}", e)))?;
 
@@ -172,14 +172,14 @@ impl AwsLambdaInvoker {
             .decode(&lambda_response.payload)
             .map_err(|e| SearchError::Internal(format!("base64 decode error: {}", e)))?;
 
-        let leaf_responses = LeafSearchResponses::decode(&response_bytes[..])
+        let leaf_responses = LambdaSearchResponses::decode(&response_bytes[..])
             .map_err(|e| SearchError::Internal(format!("protobuf decode error: {}", e)))?;
 
         debug!(
-            num_responses = leaf_responses.responses.len(),
+            num_results = leaf_responses.split_results.len(),
             "lambda invocation completed"
         );
 
-        Ok(leaf_responses.responses)
+        Ok(leaf_responses.split_results)
     }
 }

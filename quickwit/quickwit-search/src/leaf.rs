@@ -27,6 +27,7 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
+use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
     CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
     SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
@@ -1397,14 +1398,17 @@ async fn run_offloaded_search_tasks(
     request: &SearchRequest,
     doc_mapper: &DocMapper,
     index_uri: Uri,
-    splits: Vec<SplitIdAndFooterOffsets>,
+    splits_with_requests: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     incremental_merge_collector: &Mutex<IncrementalCollector>,
 ) -> Result<(), SearchError> {
-    if splits.is_empty() {
+    if splits_with_requests.is_empty() {
         return Ok(());
     }
 
-    info!(num_offloaded_splits = splits.len(), "offloading to lambda");
+    info!(
+        num_offloaded_splits = splits_with_requests.len(),
+        "offloading to lambda"
+    );
 
     let lambda_invoker = searcher_context.lambda_invoker.as_ref().expect(
         "did not receive enough permit futures despite not having any lambda invoker to offload to",
@@ -1413,6 +1417,18 @@ async fn run_offloaded_search_tasks(
 
     let doc_mapper_str = serde_json::to_string(doc_mapper)
         .map_err(|err| SearchError::Internal(format!("failed to serialize doc mapper: {err}")))?;
+
+    // Build a lookup so we can match lambda results (tagged by split_id) back to the
+    // split metadata and per-split SearchRequest needed for caching.
+    let mut split_lookup: HashMap<String, (SplitIdAndFooterOffsets, SearchRequest)> =
+        HashMap::with_capacity(splits_with_requests.len());
+    let splits: Vec<SplitIdAndFooterOffsets> = splits_with_requests
+        .into_iter()
+        .map(|(split, search_req)| {
+            split_lookup.insert(split.split_id.clone(), (split.clone(), search_req));
+            split
+        })
+        .collect();
 
     let batches: Vec<Vec<SplitIdAndFooterOffsets>> = greedy_batch_split(
         splits,
@@ -1452,21 +1468,51 @@ async fn run_offloaded_search_tasks(
             error!("lambda join error");
             return Err(SearchError::Internal("lambda join error".to_string()));
         };
-        let mut locked = incremental_merge_collector.lock().unwrap();
         match result {
-            Ok(per_split_responses) => {
-                for response in per_split_responses {
-                    if let Err(err) = locked.add_result(response) {
-                        error!(error = %err, "failed to add lambda result to collector");
+            Ok(split_results) => {
+                let mut locked = incremental_merge_collector.lock().unwrap();
+                for split_result in split_results {
+                    match split_result.outcome {
+                        Some(Outcome::Response(response)) => {
+                            if let Some((split_info, search_req)) =
+                                split_lookup.remove(&split_result.split_id)
+                            {
+                                searcher_context.leaf_search_cache.put(
+                                    split_info,
+                                    search_req,
+                                    response.clone(),
+                                );
+                            }
+                            if let Err(err) = locked.add_result(response) {
+                                error!(error = %err, "failed to add lambda result to collector");
+                            }
+                        }
+                        Some(Outcome::Error(error_msg)) => {
+                            locked.add_failed_split(SplitSearchError {
+                                split_id: split_result.split_id,
+                                error: format!("lambda split error: {error_msg}"),
+                                retryable_error: true,
+                            });
+                        }
+                        None => {
+                            locked.add_failed_split(SplitSearchError {
+                                split_id: split_result.split_id,
+                                error: "lambda returned empty outcome".to_string(),
+                                retryable_error: true,
+                            });
+                        }
                     }
                 }
             }
             Err(err) => {
+                // Transport-level failure: the Lambda invocation itself failed.
+                // Mark all splits in this batch as failed.
                 error!(
                     error = %err,
                     num_splits = batch_split_ids.len(),
                     "lambda invocation failed for batch"
                 );
+                let mut locked = incremental_merge_collector.lock().unwrap();
                 for split_id in batch_split_ids {
                     locked.add_failed_split(SplitSearchError {
                         split_id,
@@ -1491,7 +1537,9 @@ struct ScheduleSearchTaskResult {
     // The search permit futures associated to each local_search_task are
     // guaranteed to resolve in order.
     local_search_tasks: Vec<LocalSearchTask>,
-    offloaded_search_tasks: Vec<SplitIdAndFooterOffsets>,
+    // The per-split SearchRequest (already rewritten by `rewrite_request()`) is preserved
+    // so that lambda results can be cached with the correct cache key in `leaf_search_cache`.
+    offloaded_search_tasks: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
 }
 
 /// Schedule search tasks, either:
@@ -1527,10 +1575,8 @@ async fn schedule_search_tasks(
         .get_permits_with_offload(permit_sizes, offload_threshold)
         .await;
 
-    let splits_to_run_on_lambda: Vec<SplitIdAndFooterOffsets> = splits
-        .drain(search_permit_futures.len()..)
-        .map(|(split, _req)| split)
-        .collect();
+    let splits_to_run_on_lambda: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
+        splits.drain(search_permit_futures.len()..).collect();
 
     let splits_to_run_locally: Vec<LocalSearchTask> = splits
         .into_iter()
@@ -1872,6 +1918,7 @@ mod tests {
     use bytes::BufMut;
     use quickwit_config::{LambdaConfig, SearcherConfig};
     use quickwit_directories::write_hotcache;
+    use quickwit_proto::search::LambdaSingleSplitResult;
     use rand::Rng;
     use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
@@ -2507,7 +2554,7 @@ mod tests {
         async fn invoke_leaf_search(
             &self,
             _req: LeafSearchRequest,
-        ) -> Result<Vec<LeafSearchResponse>, SearchError> {
+        ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
             todo!()
         }
     }
@@ -2527,7 +2574,7 @@ mod tests {
         for (idx, task) in result.local_search_tasks.iter().enumerate() {
             assert_eq!(task.split.split_id, format!("split_{idx}"));
         }
-        for (idx, split) in result.offloaded_search_tasks.iter().enumerate() {
+        for (idx, (split, _req)) in result.offloaded_search_tasks.iter().enumerate() {
             assert_eq!(split.split_id, format!("split_{}", idx + 3));
         }
     }

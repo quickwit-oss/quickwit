@@ -14,8 +14,9 @@
 
 use base64::prelude::*;
 use prost::Message;
+use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
-    LeafSearchRequest, LeafSearchResponse, LeafSearchResponses, SplitIdAndFooterOffsets,
+    LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest, SplitIdAndFooterOffsets,
 };
 use quickwit_search::leaf::multi_index_leaf_search;
 use serde::{Deserialize, Serialize};
@@ -26,27 +27,28 @@ use crate::error::{LambdaError, LambdaResult};
 
 /// Payload for leaf search Lambda invocation.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LeafSearchRequestPayload {
+pub struct LambdaSearchRequestPayload {
     /// Base64-encoded serialized LeafSearchRequest protobuf.
     pub payload: String,
 }
 
 /// Response from leaf search Lambda invocation.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct LeafSearchResponsePayload {
-    /// Base64-encoded serialized `LeafSearchResponses` protobuf (one per split).
+pub struct LambdaSearchResponsePayload {
+    /// Base64-encoded serialized `LambdaSearchResponses` protobuf (one per split).
     pub payload: String,
 }
 
 /// Handle a leaf search request in Lambda.
 ///
-/// Returns one `LeafSearchResponse` per split. Each split is processed
-/// independently so that the caller can cache and merge results individually.
+/// Returns one `LambdaSingleSplitResult` per split, each tagged with its
+/// split_id. Individual split failures are reported per-split rather than
+/// failing the entire invocation, so the caller can retry only failed splits.
 #[instrument(skip(ctx), fields(request_id))]
 pub async fn handle_leaf_search(
-    event: LeafSearchRequestPayload,
+    event: LambdaSearchRequestPayload,
     ctx: &LambdaSearcherContext,
-) -> LambdaResult<LeafSearchResponsePayload> {
+) -> LambdaResult<LambdaSearchResponsePayload> {
     // Decode base64 payload
     let request_bytes = BASE64_STANDARD
         .decode(&event.payload)
@@ -70,11 +72,12 @@ pub async fn handle_leaf_search(
     let num_splits = all_splits.len();
     info!(num_splits, "processing leaf search request (per-split)");
 
-    // Process each split in parallel. The SearchPermitProvider inside
-    // SearcherContext gates concurrency based on memory budget.
-    let mut split_search_futures: Vec<tokio::task::JoinHandle<_>> =
-        Vec::with_capacity(all_splits.len());
+    // Process each split in parallel using a JoinSet. The SearchPermitProvider
+    // inside SearcherContext gates concurrency based on memory budget.
+    let mut split_search_joinset: tokio::task::JoinSet<(String, Result<_, String>)> =
+        tokio::task::JoinSet::new();
     for (leaf_req_idx, split) in all_splits {
+        let split_id = split.split_id.clone();
         let leaf_request_ref = &leaf_search_request.leaf_requests[leaf_req_idx];
         let single_split_request = LeafSearchRequest {
             search_request: leaf_search_request.search_request.clone(),
@@ -89,26 +92,42 @@ pub async fn handle_leaf_search(
 
         let searcher_context = ctx.searcher_context.clone();
         let storage_resolver = ctx.storage_resolver.clone();
-        split_search_futures.push(tokio::task::spawn(multi_index_leaf_search(
-            searcher_context,
-            single_split_request,
-            storage_resolver,
-        )));
+        split_search_joinset.spawn(async move {
+            let result =
+                multi_index_leaf_search(searcher_context, single_split_request, storage_resolver)
+                    .await
+                    .map_err(|err| format!("{err}"));
+            (split_id, result)
+        });
     }
 
-    // Collect results, preserving split order.
-    let mut responses: Vec<LeafSearchResponse> = Vec::with_capacity(num_splits);
-    for split_search_fut in split_search_futures {
-        match split_search_fut.await {
-            Ok(Ok(response)) => responses.push(response),
-            Ok(Err(e)) => {
-                return Err(LambdaError::Internal(format!("leaf search failed: {e}")));
+    // Collect results. Order is irrelevant: each result is tagged with its split_id.
+    let mut split_results: Vec<LambdaSingleSplitResult> = Vec::with_capacity(num_splits);
+    let mut num_successes: usize = 0;
+    let mut num_failures: usize = 0;
+    while let Some(join_result) = split_search_joinset.join_next().await {
+        match join_result {
+            Ok((split_id, Ok(response))) => {
+                num_successes += 1;
+                split_results.push(LambdaSingleSplitResult {
+                    split_id,
+                    outcome: Some(Outcome::Response(response)),
+                });
+            }
+            Ok((split_id, Err(error_msg))) => {
+                num_failures += 1;
+                warn!(split_id = %split_id, error = %error_msg, "split search failed");
+                split_results.push(LambdaSingleSplitResult {
+                    split_id,
+                    outcome: Some(Outcome::Error(error_msg)),
+                });
             }
             Err(join_error) if join_error.is_cancelled() => {
                 warn!("search task was cancelled");
                 return Err(LambdaError::Cancelled);
             }
             Err(join_error) => {
+                // Panics lose the captured split_id, so we fail the entire invocation.
                 error!(error = %join_error, "search task panicked");
                 return Err(LambdaError::Internal(format!(
                     "search task panicked: {join_error}"
@@ -116,16 +135,14 @@ pub async fn handle_leaf_search(
             }
         }
     }
-
     info!(
-        num_responses = responses.len(),
-        "leaf search completed (per-split)"
+        num_successes,
+        num_failures, "leaf search completed (per-split)"
     );
 
-    // Serialize as LeafSearchResponses wrapper
-    let wrapper = LeafSearchResponses { responses };
+    let wrapper = LambdaSearchResponses { split_results };
     let response_bytes = wrapper.encode_to_vec();
     let payload = BASE64_STANDARD.encode(&response_bytes);
 
-    Ok(LeafSearchResponsePayload { payload })
+    Ok(LambdaSearchResponsePayload { payload })
 }

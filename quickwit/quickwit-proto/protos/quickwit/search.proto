@@ -333,8 +333,7 @@ message SplitSearchError {
   bool retryable_error = 3;
 }
 
-/// A LeafSearchRequest can span multiple indices.
-///
+// A LeafSearchRequest can span multiple indices.
 message LeafSearchRequest {
   // Search request. This is a perfect copy of the original search request
   // that was sent to root apart from the start_offset, max_hits params and index_id_patterns.
@@ -361,7 +360,7 @@ message ResourceStats {
     uint64 cpu_microsecs = 5;
 }
 
-/// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
+// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 message LeafRequestRef {
   // The ordinal of the doc_mapper in `LeafSearchRequest.doc_mappers`
   uint32 doc_mapper_ord = 1;
@@ -497,10 +496,23 @@ message LeafSearchResponse {
   ResourceStats resource_stats = 8;
 }
 
-// Wrapper for multiple LeafSearchResponse messages, used by Lambda to return
-// per-split results.
-message LeafSearchResponses {
-  repeated LeafSearchResponse responses = 1;
+// The result of searching a single split in a Lambda invocation.
+// Each result is tagged with its split_id so that ordering is irrelevant.
+message LambdaSingleSplitResult {
+  // The split that was searched.
+  string split_id = 1;
+  oneof outcome {
+    // On success, the leaf search response for this split.
+    LeafSearchResponse response = 2;
+    // On failure, the error message.
+    string error = 3;
+  }
+}
+
+// Wrapper for per-split results from a Lambda invocation.
+message LambdaSearchResponses {
+  reserved 1; // was: repeated LeafSearchResponse responses
+  repeated LambdaSingleSplitResult split_results = 2;
 }
 
 message SnippetRequest {

@@ -17,7 +17,9 @@
 use std::sync::Arc;
 
 use lambda_runtime::{Error, LambdaEvent, service_fn};
-use quickwit_lambda_server::{LambdaSearcherContext, LeafSearchRequestPayload, handle_leaf_search};
+use quickwit_lambda_server::{
+    LambdaSearchRequestPayload, LambdaSearcherContext, handle_leaf_search,
+};
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -36,7 +38,7 @@ async fn main() -> Result<(), Error> {
 
     // Run the Lambda handler
     lambda_runtime::run(service_fn(
-        |event: LambdaEvent<LeafSearchRequestPayload>| {
+        |event: LambdaEvent<LambdaSearchRequestPayload>| {
             let ctx = Arc::clone(&context);
             async move {
                 let (payload, _event_ctx) = event.into_parts();

@@ -15,7 +15,7 @@
 //! Trait for invoking remote serverless functions for leaf search.
 
 use async_trait::async_trait;
-use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
+use quickwit_proto::search::{LambdaSingleSplitResult, LeafSearchRequest};
 
 use crate::SearchError;
 
@@ -27,9 +27,12 @@ use crate::SearchError;
 pub trait LambdaLeafSearchInvoker: Send + Sync + 'static {
     /// Invoke the remote function with a LeafSearchRequest.
     ///
-    /// Returns one `LeafSearchResponse` per split in the request.
+    /// Returns one `LambdaSingleSplitResult` per split in the request.
+    /// Each result is tagged with its split_id so ordering is irrelevant.
+    /// Individual split failures are reported per-split; the outer `Result`
+    /// only represents transport-level errors.
     async fn invoke_leaf_search(
         &self,
         request: LeafSearchRequest,
-    ) -> Result<Vec<LeafSearchResponse>, SearchError>;
+    ) -> Result<Vec<LambdaSingleSplitResult>, SearchError>;
 }

@@ -34,4 +34,4 @@ mod metrics;
 pub use deploy::try_get_or_deploy_invoker;
 pub use metrics::LAMBDA_METRICS;
 // Re-export payload types from server crate for convenience
-pub use quickwit_lambda_server::{LeafSearchRequestPayload, LeafSearchResponsePayload};
+pub use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePayload};
