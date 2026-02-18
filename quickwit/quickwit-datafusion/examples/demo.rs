@@ -254,7 +254,11 @@ async fn main() -> anyhow::Result<()> {
         println!("SQL:\n  {sql}\n");
 
         let df: DataFrame = ctx.sql(&sql).await?;
-        let batches: Vec<_> = df.collect().await?;
+        let plan = df.create_physical_plan().await?;
+        println!("Physical Plan:\n{}\n",
+            datafusion::physical_plan::displayable(plan.as_ref()).indent(true));
+        let batches: Vec<_> = execute_stream(plan, ctx.task_ctx())?
+            .try_collect().await?;
         let formatted = datafusion::common::arrow::util::pretty::pretty_format_batches(&batches)?;
         println!("Results:\n{formatted}\n");
     }
@@ -334,16 +338,23 @@ async fn main() -> anyhow::Result<()> {
             None,
         ) {
             Ok(df) => {
-                println!("Plan built, executing...");
-                match df.collect().await {
-                    Ok(batches) => {
-                        let formatted = datafusion::common::arrow::util::pretty::pretty_format_batches(&batches)?;
-                        println!("Results:\n{formatted}\n");
+                match df.create_physical_plan().await {
+                    Ok(plan) => {
+                        println!("Physical Plan:\n{}\n",
+                            datafusion::physical_plan::displayable(plan.as_ref()).indent(true));
+                        match execute_stream(plan, ctx.task_ctx()) {
+                            Ok(stream) => {
+                                let batches: Vec<_> = stream.try_collect().await?;
+                                let formatted = datafusion::common::arrow::util::pretty::pretty_format_batches(&batches)?;
+                                println!("Results:\n{formatted}\n");
+                            }
+                            Err(e) => println!("Execution error: {e}\n"),
+                        }
                     }
-                    Err(e) => println!("Execution error: {e}\n"),
+                    Err(e) => println!("Plan error: {e}\n"),
                 }
             }
-            Err(e) => println!("Plan error: {e}\n"),
+            Err(e) => println!("Build error: {e}\n"),
         }
     }
 
