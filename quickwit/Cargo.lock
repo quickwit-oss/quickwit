@@ -1194,7 +1194,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1307,7 +1307,7 @@ version = "3.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89ec27229c38ed0eb3c0feee3d2c1d6a4379ae44f418a29a658890e062d8f365"
 dependencies = [
- "darling 0.20.11",
+ "darling 0.21.3",
  "ident_case",
  "prettyplease",
  "proc-macro2",
@@ -2191,7 +2191,6 @@ dependencies = [
  "ident_case",
  "proc-macro2",
  "quote",
- "strsim",
  "syn 2.0.114",
 ]
 
@@ -2852,7 +2851,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4255,7 +4254,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4309,7 +4308,7 @@ dependencies = [
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5806,7 +5805,7 @@ checksum = "1a80800c0488c3a21695ea981a54918fbb37abf04f4d0720c453632255e2ff0e"
 [[package]]
 name = "ownedbytes"
 version = "0.9.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -6645,7 +6644,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "once_cell",
@@ -6665,7 +6664,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "once_cell",
@@ -6687,7 +6686,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -6700,7 +6699,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
 dependencies = [
  "anyhow",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
@@ -7933,7 +7932,7 @@ dependencies = [
  "once_cell",
  "socket2 0.6.1",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -8586,7 +8585,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8599,7 +8598,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -9322,7 +9321,7 @@ checksum = "c1e9a774a6c28142ac54bb25d25562e6bcf957493a184f15ad4eebccb23e410a"
 [[package]]
 name = "sketches-ddsketch"
 version = "0.3.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "serde",
 ]
@@ -9858,7 +9857,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 [[package]]
 name = "tantivy"
 version = "0.26.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -9892,7 +9891,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "serde_json",
- "sketches-ddsketch 0.3.0 (git+https://github.com/quickwit-oss/tantivy/?rev=68626bf)",
+ "sketches-ddsketch 0.3.0 (git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f)",
  "smallvec",
  "tantivy-bitpacker",
  "tantivy-columnar",
@@ -9914,7 +9913,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.9.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "bitpacking",
 ]
@@ -9922,7 +9921,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "downcast-rs",
  "fastdivide",
@@ -9937,7 +9936,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.10.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -9960,7 +9959,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.25.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "fnv",
  "nom 7.1.3",
@@ -9972,7 +9971,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "futures-util",
  "itertools 0.14.0",
@@ -9985,7 +9984,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -9994,7 +9993,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=68626bf#68626bf3a122ec2bb89312b23c30284c8d370f00"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=aeea65f#aeea65f61de7256a018ae3a89be9e680beca9206"
 dependencies = [
  "serde",
 ]
@@ -10020,7 +10019,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.3",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
