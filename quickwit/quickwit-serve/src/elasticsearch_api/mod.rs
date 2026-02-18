@@ -32,11 +32,13 @@ use quickwit_search::SearchService;
 use rest_handler::es_compat_cluster_health_handler;
 pub use rest_handler::{
     es_compat_cat_indices_handler, es_compat_cluster_info_handler, es_compat_delete_index_handler,
-    es_compat_index_cat_indices_handler, es_compat_index_count_handler,
-    es_compat_index_field_capabilities_handler, es_compat_index_multi_search_handler,
-    es_compat_index_search_handler, es_compat_index_stats_handler, es_compat_resolve_index_handler,
-    es_compat_scroll_handler, es_compat_search_handler, es_compat_stats_handler,
+    es_compat_delete_scroll_handler, es_compat_index_cat_indices_handler,
+    es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
+    es_compat_index_multi_search_handler, es_compat_index_search_handler,
+    es_compat_index_stats_handler, es_compat_resolve_index_handler, es_compat_scroll_handler,
+    es_compat_search_handler, es_compat_stats_handler,
 };
+use rest_handler::{es_compat_nodes_handler, es_compat_search_shards_handler};
 use serde::{Deserialize, Serialize};
 use warp::hyper::StatusCode;
 use warp::{Filter, Rejection};
@@ -66,7 +68,8 @@ pub fn elastic_api_handlers(
     enable_ingest_v2: bool,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     let ingest_content_length_limit = node_config.ingest_api_config.content_length_limit;
-    es_compat_cluster_info_handler(node_config, BuildInfo::get())
+    es_compat_cluster_info_handler(node_config.clone(), BuildInfo::get())
+        .or(es_compat_nodes_handler(node_config.clone()))
         .or(es_compat_search_handler(search_service.clone()))
         .or(es_compat_bulk_handler(
             ingest_service.clone(),
@@ -86,6 +89,7 @@ pub fn elastic_api_handlers(
         .or(es_compat_index_search_handler(search_service.clone()))
         .or(es_compat_index_count_handler(search_service.clone()))
         .or(es_compat_scroll_handler(search_service.clone()))
+        .or(es_compat_delete_scroll_handler())
         .or(es_compat_index_multi_search_handler(search_service.clone()))
         .or(es_compat_index_field_capabilities_handler(
             search_service.clone(),
@@ -99,8 +103,13 @@ pub fn elastic_api_handlers(
         .or(es_compat_cat_indices_handler(metastore.clone()))
         .or(es_compat_resolve_index_handler(metastore.clone()))
         .or(es_compat_aliases_handler())
-        .or(es_compat_index_mapping_handler(metastore.clone()))
+        .or(es_compat_index_mapping_handler(metastore.clone(), search_service.clone()))
+        .or(es_compat_search_shards_handler(node_config))
         .recover(recover_fn)
+        .with(warp::reply::with::header(
+            "X-Elastic-Product",
+            "Elasticsearch",
+        ))
         .boxed()
     // Register newly created handlers here.
 }
@@ -226,7 +235,10 @@ mod tests {
             .reply(&es_search_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        assert!(resp.headers().get("x-elastic-product").is_none(),);
+        assert_eq!(
+            resp.headers().get("x-elastic-product").unwrap(),
+            "Elasticsearch"
+        );
         let string_body = String::from_utf8(resp.body().to_vec()).unwrap();
         let es_msearch_response: serde_json::Value = serde_json::from_str(&string_body).unwrap();
         let responses = es_msearch_response
@@ -523,9 +535,13 @@ mod tests {
             "cluster_name" : config.cluster_id,
             "version" : {
                 "distribution" : "quickwit",
-                "number" : build_info.version,
+                "number" : "7.17.0",
                 "build_hash" : build_info.commit_hash,
                 "build_date" : build_info.build_date,
+                "build_snapshot" : false,
+                "lucene_version" : "8.11.1",
+                "minimum_wire_compatibility_version" : "6.8.0",
+                "minimum_index_compatibility_version" : "6.0.0-beta1",
             }
         });
         assert_json_include!(actual: resp_json, expected: expected_response_json);

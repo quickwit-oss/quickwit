@@ -115,6 +115,8 @@ pub struct SearchQueryParams {
     #[serde(default)]
     pub scroll: Option<String>,
     #[serde(default)]
+    pub search_type: Option<String>,
+    #[serde(default)]
     pub seq_no_primary_term: Option<bool>,
     #[serde(default)]
     pub size: Option<u64>,

@@ -12,57 +12,148 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
-use quickwit_config::DocMapping;
 use quickwit_doc_mapper::{FieldMappingEntry, FieldMappingType};
 use quickwit_metastore::IndexMetadata;
-use quickwit_proto::types::IndexId;
-use serde::Serialize;
+use quickwit_proto::search::{ListFieldType, ListFieldsResponse};
+use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
 
-type Mappings = HashMap<String, Properties>;
-
-#[derive(Debug, Serialize)]
+/// Top-level response for `GET /{index}/_mapping(s)`.
+///
+/// Serializes as `{ "<index_id>": { "mappings": { "properties": { ... } } } }`.
 pub(crate) struct ElasticsearchMappingsResponse {
-    mappings: Mappings,
+    indices: HashMap<String, IndexMappings>,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct Mapping {
-    properties: Properties,
-}
-
-#[derive(Debug, Serialize, PartialEq)]
-pub(crate) enum Properties {
-    Bool,
-    Object(Mappings),
-}
-
-impl ElasticsearchMappingsResponse {
-    pub fn from_doc_mapping(indexes_metadata: Vec<IndexMetadata>) -> Self {
-        // let mappings = indexes_metadata.into_iter().map(|index_metadata| {
-        //     let doc_mapping = index_metadata.index_config.doc_mapping;
-        //     let properties = doc_mapping.field_mappings.into_iter().map(|field_mapping| {
-        //         (field_mapping.name, Properties::from_field_mapping(field_mapping))
-        //     }).collect();
-        //     (index_metadata.index_uid.index_id, Mapping { properties })
-        // }).collect();
-        Self { mappings: HashMap::new() }
+impl Serialize for ElasticsearchMappingsResponse {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(self.indices.len()))?;
+        for (index_id, mappings) in &self.indices {
+            map.serialize_entry(index_id, mappings)?;
+        }
+        map.end()
     }
 }
 
-impl Properties {
-    pub fn from_field_mapping(field_mapping: FieldMappingEntry) -> Self {
-        match field_mapping.mapping_type {
-            FieldMappingType::Bool(_, _) => Properties::Bool,
-            FieldMappingType::Object(options) => {
-                let mappings = options.field_mappings.into_iter().map(|field_mapping| {
-                    (field_mapping.name.clone(), Properties::from_field_mapping(field_mapping))
-                }).collect();
-                Properties::Object(mappings)
-            }
-            _ => todo!(),
+#[derive(Debug, Serialize)]
+struct IndexMappings {
+    mappings: MappingProperties,
+}
+
+#[derive(Debug, Serialize)]
+struct MappingProperties {
+    properties: HashMap<String, FieldMapping>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum FieldMapping {
+    Leaf {
+        #[serde(rename = "type")]
+        typ: &'static str,
+    },
+    Object {
+        #[serde(rename = "type")]
+        typ: &'static str,
+        properties: HashMap<String, FieldMapping>,
+    },
+}
+
+impl ElasticsearchMappingsResponse {
+    pub fn from_doc_mapping(
+        indexes_metadata: Vec<IndexMetadata>,
+        list_fields_response: Option<&ListFieldsResponse>,
+    ) -> Self {
+        let indices = indexes_metadata
+            .into_iter()
+            .map(|index_metadata| {
+                let field_mappings = &index_metadata.index_config.doc_mapping.field_mappings;
+                let mut properties = build_properties(field_mappings);
+                if let Some(list_fields) = list_fields_response {
+                    merge_dynamic_fields(&mut properties, list_fields);
+                }
+                let index_id = index_metadata.index_id().to_string();
+                (
+                    index_id,
+                    IndexMappings {
+                        mappings: MappingProperties { properties },
+                    },
+                )
+            })
+            .collect();
+        Self { indices }
+    }
+}
+
+fn build_properties(field_mappings: &[FieldMappingEntry]) -> HashMap<String, FieldMapping> {
+    let mut properties = HashMap::with_capacity(field_mappings.len());
+    for entry in field_mappings {
+        if let Some(field_mapping) = field_mapping_from_entry(entry) {
+            properties.insert(entry.name.clone(), field_mapping);
         }
+    }
+    properties
+}
+
+fn field_mapping_from_entry(entry: &FieldMappingEntry) -> Option<FieldMapping> {
+    match &entry.mapping_type {
+        FieldMappingType::Text(..) => Some(FieldMapping::Leaf { typ: "text" }),
+        FieldMappingType::I64(..) => Some(FieldMapping::Leaf { typ: "long" }),
+        FieldMappingType::U64(..) => Some(FieldMapping::Leaf { typ: "long" }),
+        FieldMappingType::F64(..) => Some(FieldMapping::Leaf { typ: "double" }),
+        FieldMappingType::Bool(..) => Some(FieldMapping::Leaf { typ: "boolean" }),
+        FieldMappingType::DateTime(..) => Some(FieldMapping::Leaf { typ: "date" }),
+        FieldMappingType::IpAddr(..) => Some(FieldMapping::Leaf { typ: "ip" }),
+        FieldMappingType::Bytes(..) => Some(FieldMapping::Leaf { typ: "binary" }),
+        FieldMappingType::Json(..) => Some(FieldMapping::Leaf { typ: "object" }),
+        FieldMappingType::Object(options) => {
+            let properties = build_properties(&options.field_mappings);
+            Some(FieldMapping::Object {
+                typ: "object",
+                properties,
+            })
+        }
+        FieldMappingType::Concatenate(_) => None,
+    }
+}
+
+/// Merges dynamic fields from a `ListFieldsResponse` into the properties map.
+///
+/// Fields already present in the map (from explicit doc mappings) are skipped,
+/// as are internal fields (prefixed with `_`).
+fn merge_dynamic_fields(
+    properties: &mut HashMap<String, FieldMapping>,
+    list_fields_response: &ListFieldsResponse,
+) {
+    for field_entry in &list_fields_response.fields {
+        let field_name = &field_entry.field_name;
+        if field_name.starts_with('_') {
+            continue;
+        }
+        if properties.contains_key(field_name) {
+            continue;
+        }
+        let Ok(field_type) = ListFieldType::try_from(field_entry.field_type) else {
+            continue;
+        };
+        if let Some(es_type) = es_type_from_list_field_type(field_type) {
+            properties.insert(field_name.clone(), FieldMapping::Leaf { typ: es_type });
+        }
+    }
+}
+
+fn es_type_from_list_field_type(field_type: ListFieldType) -> Option<&'static str> {
+    match field_type {
+        ListFieldType::Str => Some("keyword"),
+        ListFieldType::U64 | ListFieldType::I64 => Some("long"),
+        ListFieldType::F64 => Some("double"),
+        ListFieldType::Bool => Some("boolean"),
+        ListFieldType::Date => Some("date"),
+        ListFieldType::Bytes => Some("binary"),
+        ListFieldType::IpAddr => Some("ip"),
+        ListFieldType::Facet | ListFieldType::Json => None,
     }
 }
 
@@ -73,69 +164,65 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_properties_from_bool_field_mapping() {
-        let bool_field_mapping_json = json!({
-            "name": "test",
-            "type": "bool",
-        });
-        let bool_field_mapping = serde_json::from_value::<FieldMappingEntry>(bool_field_mapping_json).unwrap();
-        let properties = Properties::from_field_mapping(bool_field_mapping);
-        assert_eq!(properties, Properties::Bool);
+    fn test_field_mapping_from_entry_bool() {
+        let entry_json = json!({ "name": "active", "type": "bool" });
+        let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
+        let mapping = field_mapping_from_entry(&entry).unwrap();
+        let serialized = serde_json::to_value(&mapping).unwrap();
+        assert_eq!(serialized, json!({ "type": "boolean" }));
     }
 
-    // #[test]
-    // fn test_elasticsearch_mapping_response_serialize() {
-    //     let properties = HashMap::from_iter([
-    //         (
-    //             "level".to_string(),
-    //             Property {
-    //                 typ: "keyword".to_string(),
-    //             },
-    //         ),
-    //         (
-    //             "message".to_string(),
-    //             Property {
-    //                 typ: "text".to_string(),
-    //             },
-    //         ),
-    //         (
-    //             "timestamp".to_string(),
-    //             Property {
-    //                 typ: "date".to_string(),
-    //             },
-    //         ),
-    //         (
-    //             "tags".to_string(),
-    //             Property {
-    //                 typ: "object".to_string(),
-    //             },
-    //         ),
-    //         (
-    //             "status".to_string(),
-    //             Property {
-    //                 typ: "integer".to_string(),
-    //             },
-    //         ),
-    //     ]);
-    //     let mappings = Mappings { properties };
-    //     let response = ElasticsearchMappingResponse {
-    //         index_id: "test-index".to_string(),
-    //         mappings,
-    //     };
-    //     let serialized = serde_json::to_string(&response).unwrap();
-    //     let expected = json!({
-    //         "test-index": {
-    //             "mappings": {
-    //                 "properties": {
-    //                     "level": { "type": "keyword"},
-    //                     "message": { "type": "text"},
-    //                     "timestamp": { "type": "date"},
-    //                     "tags": { "type": "object"},
-    //                     "status": { "type": "integer"},
-    //                 }
-    //             }
-    //         }
-    //     });
-    //     assert_eq!(serialized, expected);
-    // }
+    #[test]
+    fn test_field_mapping_from_entry_text() {
+        let entry_json = json!({ "name": "message", "type": "text" });
+        let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
+        let mapping = field_mapping_from_entry(&entry).unwrap();
+        let serialized = serde_json::to_value(&mapping).unwrap();
+        assert_eq!(serialized, json!({ "type": "text" }));
+    }
+
+    #[test]
+    fn test_field_mapping_from_entry_i64() {
+        let entry_json = json!({ "name": "count", "type": "i64" });
+        let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
+        let mapping = field_mapping_from_entry(&entry).unwrap();
+        let serialized = serde_json::to_value(&mapping).unwrap();
+        assert_eq!(serialized, json!({ "type": "long" }));
+    }
+
+    #[test]
+    fn test_field_mapping_from_entry_object() {
+        let entry_json = json!({
+            "name": "nested",
+            "type": "object",
+            "field_mappings": [
+                { "name": "id", "type": "u64" },
+                { "name": "label", "type": "text" }
+            ]
+        });
+        let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
+        let mapping = field_mapping_from_entry(&entry).unwrap();
+        let serialized = serde_json::to_value(&mapping).unwrap();
+        assert_eq!(
+            serialized,
+            json!({
+                "type": "object",
+                "properties": {
+                    "id": { "type": "long" },
+                    "label": { "type": "text" }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn test_field_mapping_from_entry_concatenate_skipped() {
+        let entry_json = json!({
+            "name": "concat_field",
+            "type": "concatenate",
+            "concatenate_fields": ["field_a", "field_b"]
+        });
+        let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
+        assert!(field_mapping_from_entry(&entry).is_none());
+    }
 }

@@ -251,6 +251,15 @@ fn merge_scroll_body_params(
     }
 }
 
+pub(crate) fn elastic_nodes_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_nodes" / "http").and(warp::get())
+}
+
+pub(crate) fn elastic_search_shards_filter()
+-> impl Filter<Extract = (String,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / String / "_search_shards").and(warp::get())
+}
+
 #[utoipa::path(post, tag = "Search", path = "/_search/scroll")]
 pub(crate) fn elastic_scroll_filter()
 -> impl Filter<Extract = (ScrollQueryParams,), Error = Rejection> + Clone {
@@ -264,4 +273,9 @@ pub(crate) fn elastic_scroll_filter()
                 merge_scroll_body_params(scroll_query_params, scroll_body)
             },
         )
+}
+
+pub(crate) fn elastic_delete_scroll_filter()
+-> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_search" / "scroll").and(warp::delete())
 }
