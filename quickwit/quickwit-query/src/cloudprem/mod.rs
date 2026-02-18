@@ -1,5 +1,4 @@
 mod aggregation;
-mod ddsketch_java_encoding;
 mod query;
 
 pub use aggregation::{

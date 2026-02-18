@@ -19,7 +19,6 @@ use tantivy::aggregation::bucket::{CustomOrder, IncludeExcludeParam, Order, Orde
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::aggregation::{bucket, metric};
 
-use super::ddsketch_java_encoding;
 use super::{internal_error, missing_required, unsupported_query_error};
 use crate::aggregations::AggregationResults as QuickwitAggregationResults;
 use crate::InvalidQuery;
@@ -1063,12 +1062,7 @@ impl IntermediateResultMapper {
             // QUANTILE_SKETCH: encode DDSketch into Java-compatible binary format
             // for proper merging in event-query via Sketch.fromByteArray().
             ("QUANTILE_SKETCH", IntermediateMetricResult::Percentiles(percentiles_collector)) => {
-                let sketch_bytes = ddsketch_java_encoding::encode_to_java_binary(
-                    &percentiles_collector,
-                )
-                .map_err(|err| {
-                    internal_error(&format!("failed to encode DDSketch to Java binary: {err}"))
-                })?;
+                let sketch_bytes = percentiles_collector.to_sketch_bytes();
                 state.value.push(EvpAggValue {
                     value: Some(quickwit_proto::cloudprem::agg_value::Value::SketchValue(
                         sketch_bytes,
@@ -1146,12 +1140,10 @@ fn default_agg_value(agg_type: &str) -> EvpAggValue {
             }
         }
         "QUANTILE_SKETCH" => {
-            // Return an empty DDSketch encoded in Java binary format.
             let empty = tantivy::aggregation::metric::PercentilesCollector::default();
-            let bytes = ddsketch_java_encoding::encode_to_java_binary(&empty).unwrap_or_default();
             EvpAggValue {
                 value: Some(quickwit_proto::cloudprem::agg_value::Value::SketchValue(
-                    bytes,
+                    empty.to_sketch_bytes(),
                 )),
             }
         }
@@ -2473,13 +2465,12 @@ mod tests {
         let val = evp_agg_results[0].value[0].value.as_ref().unwrap();
         match val {
             agg_value::Value::SketchValue(bytes) => {
-                // DDSketch Java binary format starts with version prefix 0x02
                 assert!(!bytes.is_empty(), "sketch bytes should not be empty");
+                // Non-empty DDSketch starts with FLAG_COUNT (0xA0)
                 assert_eq!(
-                    bytes[0], 0x02,
-                    "DDSketch Java binary should start with version 0x02"
+                    bytes[0], 0xA0,
+                    "DDSketch binary should start with FLAG_COUNT (0xA0)"
                 );
-                // Should have reasonable size (version + stats + mapping + bins)
                 assert!(
                     bytes.len() > 20,
                     "sketch bytes too small: {} bytes",
@@ -2554,7 +2545,7 @@ mod tests {
         let sketch = host_5.value[1].value.as_ref().unwrap();
         match sketch {
             agg_value::Value::SketchValue(bytes) => {
-                assert_eq!(bytes[0], 0x02);
+                assert_eq!(bytes[0], 0xA0, "DDSketch binary should start with FLAG_COUNT");
                 assert!(bytes.len() > 10);
             }
             other => panic!("expected SketchValue, got {other:?}"),
