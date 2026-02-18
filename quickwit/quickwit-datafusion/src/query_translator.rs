@@ -202,14 +202,18 @@ fn build_split_plan(
     // Apply the full-text filter on the inverted index side.
     let df_inv = df_inv.filter(query_filter.clone())?;
 
-    // Join on (_doc_id, _segment_ord).
-    df_inv.join(
-        df_f,
-        JoinType::Inner,
+    // Use semi join — keeps only left columns where join matches.
+    // Then we don't get duplicate columns. But we want the fast field
+    // columns, not the inv columns. So we semi-join f against inv.
+    let df_f_filtered = df_f.join(
+        df_inv,
+        JoinType::LeftSemi,
         &["_doc_id", "_segment_ord"],
         &["_doc_id", "_segment_ord"],
         None,
-    )
+    )?;
+
+    Ok(df_f_filtered)
 }
 
 /// Check if a QueryAst contains any full-text query nodes.
