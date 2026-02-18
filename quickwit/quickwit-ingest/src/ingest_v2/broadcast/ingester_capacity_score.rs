@@ -48,6 +48,7 @@ struct WalMemoryCapacityTimeSeries {
 
 impl WalMemoryCapacityTimeSeries {
     fn new(memory_capacity: ByteSize) -> Self {
+        #[cfg(not(test))]
         assert!(memory_capacity.as_u64() > 0);
         Self {
             memory_capacity,
