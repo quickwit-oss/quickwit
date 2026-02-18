@@ -42,10 +42,9 @@ serde_yaml = { workspace = true }
 time = { workspace = true }
 
 quickwit-common = { workspace = true, features = ["testsuite"] }
-quickwit-query = { workspace = true, features = ["multilang"] }
+quickwit-query = { workspace = true }
 
 [features]
-multilang = ["quickwit-query/multilang"]
 testsuite = []
 
 [[bench]]
