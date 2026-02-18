@@ -907,9 +907,6 @@ async fn setup_ingest_v2(
         event_broker.clone(),
     );
     ingest_router.subscribe();
-    setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone())
-        .await
-        .forever();
 
     let ingest_router_service = IngestRouterServiceClient::tower()
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
