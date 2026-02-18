@@ -685,7 +685,7 @@ fn visit_aggregation_mut(
     modified_something
 }
 
-// equivalent to Bound::map, which is unstable
+/// Maps a `Bound<T>` to `Bound<U>` (equivalent to unstable `Bound::map`).
 pub fn map_bound<T, U>(bound: Bound<T>, f: impl FnOnce(T) -> U) -> Bound<U> {
     use Bound::*;
     match bound {

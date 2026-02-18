@@ -22,7 +22,7 @@ use tantivy_datafusion::{
 };
 use tokio::net::TcpListener;
 
-use quickwit_datafusion::query_translator::{build_search_plan, query_ast_to_expr};
+use quickwit_datafusion::query_translator::build_search_plan;
 use quickwit_datafusion::session::QuickwitSessionBuilder;
 use quickwit_datafusion::split_opener::{SplitRegistry, StorageSplitOpener};
 use quickwit_datafusion::build_flight_service;
@@ -362,6 +362,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Exit immediately — TestSandbox's Universe panics on drop if
     // actors are still running, which is expected for a demo binary.
-    std::process::exit(0);
-    Ok(())
+    #[allow(unreachable_code)]
+    {
+        std::process::exit(0);
+        Ok(())
+    }
 }

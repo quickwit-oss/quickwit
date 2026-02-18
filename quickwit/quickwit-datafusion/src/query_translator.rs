@@ -11,7 +11,6 @@ use std::sync::Arc;
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::common::{Result, ScalarValue};
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::expr::Sort;
 use datafusion::logical_expr::{col, lit, Expr, JoinType, SortExpr};
 use datafusion::prelude::{DataFrame, SessionContext};
 use quickwit_metastore::SplitMetadata;
