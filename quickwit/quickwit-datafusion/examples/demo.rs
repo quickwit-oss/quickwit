@@ -18,7 +18,6 @@ use quickwit_indexing::TestSandbox;
 use quickwit_search::{MockSearchService, SearchServiceClient, SearcherPool, SearcherContext};
 use tantivy_datafusion::{
     full_text_udf, IndexOpener, TantivyInvertedIndexProvider, TantivyTableProvider,
-    UnifiedTantivyTableProvider,
 };
 use tokio::net::TcpListener;
 

@@ -7,7 +7,7 @@ use datafusion::catalog::Session;
 use datafusion::common::Result;
 use datafusion::datasource::{TableProvider, TableType};
 use datafusion::error::DataFusionError;
-use datafusion::logical_expr::Expr;
+use datafusion::logical_expr::{Expr, TableProviderFilterPushDown};
 use datafusion::physical_plan::union::UnionExec;
 use datafusion::physical_plan::ExecutionPlan;
 use quickwit_metastore::{
@@ -18,7 +18,7 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::IndexUid;
-use tantivy_datafusion::{IndexOpener, UnifiedTantivyTableProvider};
+use tantivy_datafusion::{IndexOpener, UnifiedTantivyTableProvider, extract_full_text_call};
 use tokio::sync::Mutex;
 
 /// Factory that creates an [`IndexOpener`] from split metadata.
@@ -108,6 +108,22 @@ impl TableProvider for QuickwitTableProvider {
 
     fn table_type(&self) -> TableType {
         TableType::Base
+    }
+
+    fn supports_filters_pushdown(
+        &self,
+        filters: &[&Expr],
+    ) -> Result<Vec<TableProviderFilterPushDown>> {
+        Ok(filters
+            .iter()
+            .map(|f| {
+                if extract_full_text_call(f).is_some() {
+                    TableProviderFilterPushDown::Exact
+                } else {
+                    TableProviderFilterPushDown::Unsupported
+                }
+            })
+            .collect())
     }
 
     async fn scan(
