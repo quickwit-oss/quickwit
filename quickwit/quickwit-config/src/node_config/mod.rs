@@ -300,6 +300,11 @@ pub struct SearcherConfig {
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
     pub warmup_memory_budget: ByteSize,
     pub warmup_single_split_initial_allocation: ByteSize,
+    /// Enable the experimental DataFusion SQL endpoint.
+    /// When enabled, `POST /api/v1/{index_id}/datafusion` accepts SQL
+    /// queries and returns Arrow IPC record batches.
+    #[serde(default)]
+    pub enable_datafusion_endpoint: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -435,6 +440,7 @@ impl Default for SearcherConfig {
             storage_timeout_policy: None,
             warmup_memory_budget: ByteSize::gb(100),
             warmup_single_split_initial_allocation: ByteSize::gb(1),
+            enable_datafusion_endpoint: false,
         }
     }
 }

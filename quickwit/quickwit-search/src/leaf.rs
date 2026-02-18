@@ -145,7 +145,7 @@ fn configure_storage_retries(
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory (whose lifetime is tied to the returned `Index` if no
 ///   `ByteRangeCache` is provided).
-pub(crate) async fn open_index_with_caches(
+pub async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
@@ -685,7 +685,7 @@ fn visit_aggregation_mut(
     modified_something
 }
 
-// equivalent to Bound::map, which is unstable
+/// Maps a `Bound<T>` to `Bound<U>` (equivalent to unstable `Bound::map`).
 pub fn map_bound<T, U>(bound: Bound<T>, f: impl FnOnce(T) -> U) -> Bound<U> {
     use Bound::*;
     match bound {
