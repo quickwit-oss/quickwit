@@ -82,9 +82,8 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    LocalShardsUpdate, get_idle_shard_timeout, setup_ingester_capacity_update_listener,
-    setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
-    wait_for_ingester_status,
+    LocalShardsUpdate, get_idle_shard_timeout, setup_local_shards_update_listener,
+    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
