@@ -535,8 +535,8 @@ pub struct DocProcessor {
     #[allow(dead_code)]
     transform_opt: Option<VrlProgram>,
     pipeline_opt: Option<Pipeline>,
-    max_log_past_age_secs: u64,
-    max_log_future_age_secs: u64,
+    pub max_log_past_age_secs: u64,
+    pub max_log_future_age_secs: u64,
     input_format: SourceInputFormat,
 }
 
@@ -1258,7 +1258,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
-        let doc_processor = DocProcessor::try_new(
+        let mut doc_processor = DocProcessor::try_new(
             "datadog-index".to_string(),
             "my-source".to_string(),
             "pipeline1".to_string(),
@@ -1268,6 +1268,9 @@ mod tests {
             SourceInputFormat::Json,
         )
         .unwrap();
+        // Override for the test
+        doc_processor.max_log_past_age_secs = 18 * 3600; // 18 hours
+        doc_processor.max_log_future_age_secs = 12 * 3600; // 12
         let (doc_processor_mailbox, doc_processor_handle) =
             universe.spawn_builder().spawn(doc_processor);
 
