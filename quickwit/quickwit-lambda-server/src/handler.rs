@@ -12,13 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::str::FromStr;
+use std::sync::Arc;
+
 use base64::prelude::*;
 use prost::Message;
+use quickwit_common::uri::Uri;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
-    LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest, SplitIdAndFooterOffsets,
+    LambdaSearchResponses, LambdaSingleSplitResult, LeafRequestRef, LeafSearchRequest,
+    SearchRequest,
 };
-use quickwit_search::leaf::multi_index_leaf_search;
+use quickwit_search::leaf::single_doc_mapping_leaf_search;
+use quickwit_storage::Storage;
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, instrument, warn};
 
@@ -50,56 +57,105 @@ pub async fn handle_leaf_search(
     ctx: &LambdaSearcherContext,
 ) -> LambdaResult<LambdaSearchResponsePayload> {
     // Decode base64 payload
-    let request_bytes = BASE64_STANDARD
+    let request_bytes: Vec<u8> = BASE64_STANDARD
         .decode(&event.payload)
-        .map_err(|e| LambdaError::Serialization(format!("base64 decode error: {}", e)))?;
+        .map_err(|err| LambdaError::Serialization(format!("base64 decode error: {}", err)))?;
 
     // Deserialize LeafSearchRequest
     let leaf_search_request = LeafSearchRequest::decode(&request_bytes[..])?;
 
-    let all_splits: Vec<(usize, SplitIdAndFooterOffsets)> =
-        leaf_search_request
-            .leaf_requests
-            .iter()
-            .enumerate()
-            .flat_map(|(leaf_req_idx, leaf_request_ref)| {
-                leaf_request_ref.split_offsets.iter().cloned().map(
-                    move |split_id_and_footer_offsets| (leaf_req_idx, split_id_and_footer_offsets),
-                )
-            })
-            .collect();
+    // Unpack the shared fields once instead of cloning per split.
+    let search_request: Arc<SearchRequest> = leaf_search_request
+        .search_request
+        .ok_or_else(|| LambdaError::Internal("no search request".to_string()))?
+        .into();
 
-    let num_splits = all_splits.len();
-    info!(num_splits, "processing leaf search request (per-split)");
+    let doc_mappers: Vec<Arc<DocMapper>> = leaf_search_request
+        .doc_mappers
+        .iter()
+        .map(String::as_str)
+        .map(serde_json::from_str::<Arc<DocMapper>>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| {
+            LambdaError::Internal(format!("failed to deserialize doc mapper: `{err}`"))
+        })?;
 
-    // Process each split in parallel using a JoinSet. The SearchPermitProvider
-    // inside SearcherContext gates concurrency based on memory budget.
+    // Resolve storage for every index URI upfront.
+    let mut storages: Vec<Arc<dyn quickwit_storage::Storage>> =
+        Vec::with_capacity(leaf_search_request.index_uris.len());
+    for uri_str in &leaf_search_request.index_uris {
+        let uri = Uri::from_str(uri_str)
+            .map_err(|err| LambdaError::Internal(format!("invalid index uri: {err}")))?;
+        let storage =
+            ctx.storage_resolver.resolve(&uri).await.map_err(|err| {
+                LambdaError::Internal(format!("failed to resolve storage: {err}"))
+            })?;
+        storages.push(storage);
+    }
+
+    let split_results: Vec<LambdaSingleSplitResult> = lambda_leaf_search(
+        search_request,
+        leaf_search_request.leaf_requests,
+        &doc_mappers[..],
+        &storages[..],
+        ctx,
+    )
+    .await?;
+    let wrapper = LambdaSearchResponses { split_results };
+    let response_bytes = wrapper.encode_to_vec();
+    let payload = BASE64_STANDARD.encode(&response_bytes);
+
+    Ok(LambdaSearchResponsePayload { payload })
+}
+
+/// Lambda leaf search returns individual split results.
+async fn lambda_leaf_search(
+    search_request: Arc<SearchRequest>,
+    leaf_req_ref: Vec<LeafRequestRef>,
+    doc_mappers: &[Arc<DocMapper>],
+    storages: &[Arc<dyn Storage>],
+    ctx: &LambdaSearcherContext,
+) -> LambdaResult<Vec<LambdaSingleSplitResult>> {
+    // Flatten leaf_requests into per-split tasks using pre-resolved Arc references.
     let mut split_search_joinset: tokio::task::JoinSet<(String, Result<_, String>)> =
         tokio::task::JoinSet::new();
-    for (leaf_req_idx, split) in all_splits {
-        let split_id = split.split_id.clone();
-        let leaf_request_ref = &leaf_search_request.leaf_requests[leaf_req_idx];
-        let single_split_request = LeafSearchRequest {
-            search_request: leaf_search_request.search_request.clone(),
-            doc_mappers: leaf_search_request.doc_mappers.clone(),
-            index_uris: leaf_search_request.index_uris.clone(),
-            leaf_requests: vec![quickwit_proto::search::LeafRequestRef {
-                index_uri_ord: leaf_request_ref.index_uri_ord,
-                doc_mapper_ord: leaf_request_ref.doc_mapper_ord,
-                split_offsets: vec![split],
-            }],
-        };
 
-        let searcher_context = ctx.searcher_context.clone();
-        let storage_resolver = ctx.storage_resolver.clone();
-        split_search_joinset.spawn(async move {
-            let result =
-                multi_index_leaf_search(searcher_context, single_split_request, storage_resolver)
-                    .await
-                    .map_err(|err| format!("{err}"));
-            (split_id, result)
-        });
+    for leaf_req in leaf_req_ref {
+        let doc_mapper = doc_mappers
+            .get(leaf_req.doc_mapper_ord as usize)
+            .ok_or_else(|| {
+                LambdaError::Internal(format!(
+                    "doc_mapper_ord out of bounds: {}",
+                    leaf_req.doc_mapper_ord
+                ))
+            })?
+            .clone();
+        let storage = storages[leaf_req.index_uri_ord as usize].clone();
+
+        for split_id_and_footer_offsets in leaf_req.split_offsets {
+            let split_id = split_id_and_footer_offsets.split_id.clone();
+            let searcher_context = ctx.searcher_context.clone();
+            let search_request = search_request.clone();
+            let doc_mapper = doc_mapper.clone();
+            let storage = storage.clone();
+            let split = split_id_and_footer_offsets.clone();
+            split_search_joinset.spawn(async move {
+                let result = single_doc_mapping_leaf_search(
+                    searcher_context,
+                    search_request,
+                    storage,
+                    vec![split],
+                    doc_mapper,
+                )
+                .await
+                .map_err(|err| format!("{err}"));
+                (split_id, result)
+            });
+        }
     }
+
+    let num_splits = split_search_joinset.len();
+    info!(num_splits, "processing leaf search request (per-split)");
 
     // Collect results. Order is irrelevant: each result is tagged with its split_id.
     let mut split_results: Vec<LambdaSingleSplitResult> = Vec::with_capacity(num_splits);
@@ -140,9 +196,5 @@ pub async fn handle_leaf_search(
         num_failures, "leaf search completed (per-split)"
     );
 
-    let wrapper = LambdaSearchResponses { split_results };
-    let response_bytes = wrapper.encode_to_vec();
-    let payload = BASE64_STANDARD.encode(&response_bytes);
-
-    Ok(LambdaSearchResponsePayload { payload })
+    Ok(split_results)
 }

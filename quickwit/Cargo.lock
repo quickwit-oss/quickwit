@@ -7132,6 +7132,7 @@ dependencies = [
  "prost 0.14.1",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-doc-mapper",
  "quickwit-proto",
  "quickwit-search",
  "quickwit-storage",

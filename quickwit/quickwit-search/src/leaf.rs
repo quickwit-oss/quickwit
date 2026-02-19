@@ -499,6 +499,17 @@ async fn leaf_search_single_split(
     let mut leaf_search_state_guard =
         SplitSearchStateGuard::new(ctx.split_outcome_counters.clone());
 
+    // We already checked if the result was already in the partial result cache,
+    // but it's not a bad idea to check again.
+    if let Some(cached_answer) = ctx
+        .searcher_context
+        .leaf_search_cache
+        .get(split.clone(), search_request.clone())
+    {
+        leaf_search_state_guard.set_state(SplitSearchState::CacheHit);
+        return Ok(Some(cached_answer));
+    }
+
     let query_ast: QueryAst = serde_json::from_str(search_request.query_ast.as_str())
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
 
@@ -721,17 +732,6 @@ fn visit_aggregation_mut(
     modified_something
 }
 
-/// Maps a `Bound<T>` to a `Bound<U>` by applying a function to the contained value.
-/// Equivalent to `Bound::map`, which is currently unstable.
-pub fn map_bound<T, U>(bound: Bound<T>, f: impl FnOnce(T) -> U) -> Bound<U> {
-    use Bound::*;
-    match bound {
-        Unbounded => Unbounded,
-        Included(x) => Included(f(x)),
-        Excluded(x) => Excluded(f(x)),
-    }
-}
-
 // returns the max of left and right, that isn't unbounded. Useful for making
 // the intersection of lower bound of ranges
 fn max_bound<T: Ord + Copy>(left: Bound<T>, right: Bound<T>) -> Bound<T> {
@@ -864,12 +864,8 @@ fn remove_redundant_timestamp_range(
     if final_start_timestamp != Bound::Unbounded || final_end_timestamp != Bound::Unbounded {
         let range = RangeQuery {
             field: timestamp_field.to_string(),
-            lower_bound: map_bound(final_start_timestamp, |bound| {
-                bound.into_timestamp_nanos().into()
-            }),
-            upper_bound: map_bound(final_end_timestamp, |bound| {
-                bound.into_timestamp_nanos().into()
-            }),
+            lower_bound: final_start_timestamp.map(|bound| bound.into_timestamp_nanos().into()),
+            upper_bound: final_end_timestamp.map(|bound| bound.into_timestamp_nanos().into()),
         };
         new_ast = if let QueryAst::Bool(mut bool_query) = new_ast {
             if bool_query.must.is_empty()
@@ -1390,12 +1386,12 @@ fn disable_search_request_hits(search_request: &mut SearchRequest) {
 }
 
 /// Searches multiple splits for a specific index and a single doc mapping
-/// Offloads splits to Lambda invocations, distributing them accross batches
+/// Offloads splits to Lambda invocations, distributing them across batches
 /// balanced by document count. Each batch is invoked independently; a failure
 /// in one batch does not affect others.
 async fn run_offloaded_search_tasks(
     searcher_context: &SearcherContext,
-    request: &SearchRequest,
+    search_request: &SearchRequest,
     doc_mapper: &DocMapper,
     index_uri: Uri,
     splits_with_requests: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
@@ -1436,16 +1432,14 @@ async fn run_offloaded_search_tasks(
         lambda_config.max_splits_per_invocation,
     );
 
-    let mut search_request_for_leaf = request.clone();
-    search_request_for_leaf.start_offset = 0;
-    search_request_for_leaf.max_hits += request.start_offset;
-
     let mut lambda_tasks_joinset = JoinSet::new();
     for batch in batches {
         let batch_split_ids: Vec<String> =
             batch.iter().map(|split| split.split_id.clone()).collect();
         let leaf_request = LeafSearchRequest {
-            search_request: Some(search_request_for_leaf.clone()),
+            // Note this is not the split-specific rewritten request, we ship the main request,
+            // and the leaf will apply the split specific rewrite on its own.
+            search_request: Some(search_request.clone()),
             doc_mappers: vec![doc_mapper_str.clone()],
             index_uris: vec![index_uri.as_str().to_string()], //< careful here. Calling to_string() directly would return a redacted uri.
             leaf_requests: vec![quickwit_proto::search::LeafRequestRef {
@@ -1474,12 +1468,13 @@ async fn run_offloaded_search_tasks(
                 for split_result in split_results {
                     match split_result.outcome {
                         Some(Outcome::Response(response)) => {
-                            if let Some((split_info, search_req)) =
+                            if let Some((split_info, single_split_search_req)) =
                                 split_lookup.remove(&split_result.split_id)
                             {
+                                // We use the single_split_search_req to perform the search
                                 searcher_context.leaf_search_cache.put(
                                     split_info,
-                                    search_req,
+                                    single_split_search_req,
                                     response.clone(),
                                 );
                             }
@@ -1616,8 +1611,12 @@ pub async fn single_doc_mapping_leaf_search(
         CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     let mut split_with_req: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
         split_filter.optimize(&request, splits)?;
-    for (split, search_request) in &mut split_with_req {
-        rewrite_request(search_request, split, doc_mapper.timestamp_field_name());
+    for (split, single_split_search_request) in &mut split_with_req {
+        rewrite_request(
+            single_split_search_request,
+            split,
+            doc_mapper.timestamp_field_name(),
+        );
     }
     let split_filter_arc: Arc<RwLock<CanSplitDoBetter>> = Arc::new(RwLock::new(split_filter));
 
