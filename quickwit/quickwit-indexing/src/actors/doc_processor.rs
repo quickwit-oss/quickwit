@@ -715,7 +715,7 @@ impl DocProcessor {
         }
         let Some(timestamp) = processed_doc.timestamp_opt else {
             // We always have a timestamp in datadog. This shouldn't really happen.
-            return true;
+            return false;
         };
         let log_timestamp = timestamp.into_timestamp_secs();
         let min_timestamp = now_timestamp - self.max_log_past_age_secs as i64;
