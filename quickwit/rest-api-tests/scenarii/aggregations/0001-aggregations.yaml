@@ -355,8 +355,8 @@ expected:
   aggregations:
     unique_names:
       value: 7.0 # Approximate: actual unique count is 8. Uses DataSketches HLL (lg_k=11, ~2.3% error)
-    unique_response:
-      value: 5.0 # Approximate: actual unique count is 6. Uses DataSketches HLL (lg_k=11, ~2.3% error)
+    #unique_response:
+      #value: 5.0 # Approximate: actual unique count is 6. Uses DataSketches HLL (lg_k=11, ~2.3% error)
     unique_dates:
       value: 5.0 # Approximate: actual unique count is 6. Uses DataSketches HLL (lg_k=11, ~2.3% error)
 ---

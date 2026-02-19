@@ -46,7 +46,7 @@ impl Default for IndexerMetrics {
             processed_docs_total: new_counter_vec(
                 "processed_docs_total",
                 "Number of processed docs by index, pipeline and processed status in [valid, \
-                 schema_error, parse_error, transform_error]",
+                 schema_error, parse_error, transform_error, outside_time_range]",
                 "indexing",
                 &[],
                 ["index", "pipeline_uid", "docs_processed_status"],
@@ -54,7 +54,7 @@ impl Default for IndexerMetrics {
             processed_bytes: new_counter_vec(
                 "processed_bytes",
                 "Number of bytes of processed documents by index, pipeline and processed status \
-                 in [valid, schema_error, parse_error, transform_error]",
+                 in [valid, schema_error, parse_error, transform_error, outside_time_range]",
                 "indexing",
                 &[],
                 ["index", "pipeline_uid", "docs_processed_status"],
@@ -123,6 +123,7 @@ impl Default for IndexerMetrics {
                     "transform_error",
                     "json_parse_error",
                     "otlp_parse_error",
+                    "outside_time_range",
                 ],
             ),
             dd_indexed_events_bytes: DDCounters::new(
@@ -135,6 +136,7 @@ impl Default for IndexerMetrics {
                     "transform_error",
                     "json_parse_error",
                     "otlp_parse_error",
+                    "outside_time_range",
                 ],
             ),
             dd_pending_merge_ops: gauge!("pending_merge_ops.gauge"),
