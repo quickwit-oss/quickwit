@@ -133,6 +133,8 @@ jobs:
         run: cargo build --features=postgres --tests --bin quickwit
         working-directory: ./quickwit
       - name: cargo nextest
+        env: 
+          QW_MAX_LOG_PAST_AGE_HOURS: 1000000000 
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo nextest run --features=postgres --retries 1
         working-directory: ./quickwit
@@ -143,6 +145,8 @@ jobs:
           pipenv install --deploy --ignore-pipfile
         working-directory: ./quickwit/rest-api-tests
       - name: Run REST API tests
+        env: 
+          QW_MAX_LOG_PAST_AGE_HOURS: 1000000000 
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: pipenv run python3 ./run_tests.py --binary ../target/debug/quickwit
         working-directory: ./quickwit/rest-api-tests
