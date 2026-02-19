@@ -94,8 +94,7 @@ fn greedy_batch_split<T>(
     // Min-heap of (weight, item_count, batch_index).
     // Reverse turns BinaryHeap into a min-heap.
     // Ties break naturally: lighter weight → fewer items → lower index.
-    let mut heap: BinaryHeap<Reverse<(u64, usize, usize)>> =
-        BinaryHeap::with_capacity(num_batches);
+    let mut heap: BinaryHeap<Reverse<(u64, usize, usize)>> = BinaryHeap::with_capacity(num_batches);
     for batch_idx in 0..num_batches {
         heap.push(Reverse((0, 0, batch_idx)));
     }

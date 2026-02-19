@@ -46,7 +46,7 @@ use crate::invoker::create_lambda_invoker_for_version;
 const LAMBDA_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/lambda_bootstrap.zip"));
 
 /// Prefix for version descriptions to identify Quickwit-managed versions.
-const VERSION_DESCRIPTION_PREFIX: &str = "quickwit:";
+const VERSION_DESCRIPTION_PREFIX: &str = "quickwit";
 
 /// Number of recent versions to keep during garbage collection (in addition to current).
 const GC_KEEP_RECENT_VERSIONS: usize = 5;
@@ -59,7 +59,7 @@ fn lambda_qualifier() -> &'static str {
     LAMBDA_QUALIFIER
         .get_or_init(|| {
             format!(
-                "{}-{}",
+                "{}_{}",
                 env!("CARGO_PKG_VERSION").replace('.', "_"),
                 env!("LAMBDA_BINARY_HASH")
             )
@@ -70,7 +70,7 @@ fn lambda_qualifier() -> &'static str {
 /// Returns the version description for our qualifier.
 ///
 /// We also pass the deploy config, as we want the function to be redeployed
-/// if the deployed is changed.
+/// if the deploy config is changed.
 fn version_description(deploy_config_opt: Option<&LambdaDeployConfig>) -> String {
     if let Some(deploy_config) = deploy_config_opt {
         let memory_size_mib = deploy_config.memory_size.as_mib() as u64;

@@ -76,7 +76,7 @@ This is the recommended approach as it ensures the Lambda function always matche
 You can deploy the Lambda function manually without `auto_deploy`:
 1. Download the Lambda zip from [GitHub releases](https://github.com/quickwit-oss/quickwit/releases)
 2. Create or update the Lambda function using AWS CLI, Terraform, or the AWS Console
-3. Publish a version with description format `quickwit:{version}-{sha1}` (e.g., `quickwit:0_8_0-fa752891`)
+3. Publish a version with description format `quickwit_{version}_{sha256}_{timeout}_{deploy_config}"` (e.g., `quickwit_0_8_0_fa940f44_5120_60s_6c3b2`)
 
 The description must match the format Quickwit expects, or it won't find the function version.
 
@@ -195,8 +195,8 @@ No additional configuration is needed on the Quickwit side.
 ## Versioning
 
 Quickwit uses content-based versioning for Lambda:
-- A SHA1 hash of the Lambda binary is computed at build time
-- This hash is embedded in the Lambda function description as `quickwit:{version}-{sha1_short}`
+- A SHA256 hash of the Lambda binary is computed at build time
+- This hash is embedded in the Lambda function description as `quickwit:{version}-{sha256_short}`
 - When Quickwit starts, it searches for a version matching this description
 - Different Quickwit builds with the same Lambda binary share the same Lambda version
 - Updating the Lambda binary automatically triggers a new deployment

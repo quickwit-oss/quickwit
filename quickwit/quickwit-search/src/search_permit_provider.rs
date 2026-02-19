@@ -16,13 +16,12 @@ use std::collections::BinaryHeap;
 use std::collections::binary_heap::PeekMut;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use bytesize::ByteSize;
 use quickwit_common::metrics::GaugeGuard;
 use quickwit_proto::search::SplitIdAndFooterOffsets;
-#[cfg(test)]
-use tokio::sync::watch;
 use tokio::sync::{mpsc, oneshot};
 
 /// Distributor of permits to perform split search operation.
@@ -35,8 +34,8 @@ use tokio::sync::{mpsc, oneshot};
 #[derive(Clone)]
 pub struct SearchPermitProvider {
     message_sender: mpsc::UnboundedSender<SearchPermitMessage>,
-    #[cfg(test)]
-    actor_stopped: watch::Receiver<bool>,
+    #[allow(dead_code)]
+    actor_join_handle: Arc<tokio::task::JoinHandle<SearchPermitActor>>,
 }
 
 pub enum SearchPermitMessage {
@@ -88,8 +87,6 @@ pub fn compute_initial_memory_allocation(
 impl SearchPermitProvider {
     pub fn new(num_download_slots: usize, memory_budget: ByteSize) -> Self {
         let (message_sender, message_receiver) = mpsc::unbounded_channel();
-        #[cfg(test)]
-        let (state_sender, state_receiver) = watch::channel(false);
         let actor = SearchPermitActor {
             msg_receiver: message_receiver,
             msg_sender: message_sender.downgrade(),
@@ -97,15 +94,23 @@ impl SearchPermitProvider {
             total_memory_budget: memory_budget.as_u64(),
             permits_requests: BinaryHeap::new(),
             total_memory_allocated: 0u64,
-            #[cfg(test)]
-            stopped: state_sender,
         };
-        tokio::spawn(actor.run());
+        let actor_join_handle = Arc::new(tokio::spawn(actor.run()));
         Self {
             message_sender,
-            #[cfg(test)]
-            actor_stopped: state_receiver,
+            actor_join_handle,
         }
+    }
+
+    #[cfg(test)]
+    async fn stop_and_unwrap(self) -> SearchPermitActor {
+        let SearchPermitProvider {
+            message_sender,
+            actor_join_handle,
+            ..
+        } = self;
+        drop(message_sender);
+        Arc::into_inner(actor_join_handle).unwrap().await.unwrap()
     }
 
     /// Returns permits for local splits
@@ -158,8 +163,6 @@ struct SearchPermitActor {
     total_memory_budget: u64,
     total_memory_allocated: u64,
     permits_requests: BinaryHeap<LeafPermitRequest>,
-    #[cfg(test)]
-    stopped: watch::Sender<bool>,
 }
 
 struct SingleSplitPermitRequest {
@@ -237,13 +240,12 @@ impl LeafPermitRequest {
 }
 
 impl SearchPermitActor {
-    async fn run(mut self) {
+    async fn run(mut self) -> Self {
         // Stops when the last clone of SearchPermitProvider is dropped.
         while let Some(msg) = self.msg_receiver.recv().await {
             self.handle_message(msg);
         }
-        #[cfg(test)]
-        self.stopped.send(true).ok();
+        self
     }
 
     fn handle_message(&mut self, msg: SearchPermitMessage) {
@@ -562,7 +564,7 @@ mod tests {
         drop(permit_fut1);
         let permit = permit_fut2.await;
         assert_eq!(permit.memory_allocation, ByteSize::mb(10).as_u64());
-        assert_eq!(*permit_provider.actor_stopped.borrow(), false);
+        assert!(!permit_provider.actor_join_handle.is_finished());
 
         let _permit_fut3 = permit_provider
             .get_permits(vec![ByteSize::mb(10)])
@@ -570,12 +572,12 @@ mod tests {
             .into_iter()
             .next()
             .unwrap();
-        let mut actor_stopped = permit_provider.actor_stopped.clone();
-        drop(permit_provider);
-        {
-            actor_stopped.changed().await.unwrap();
-            assert!(*actor_stopped.borrow());
-        }
+        let SearchPermitProvider {
+            message_sender,
+            actor_join_handle,
+        } = permit_provider;
+        drop(message_sender);
+        Arc::into_inner(actor_join_handle).unwrap().await.unwrap();
     }
 
     /// Tries to wait for a permit
@@ -631,6 +633,8 @@ mod tests {
             .get_permits_with_offload(vec![ByteSize::mb(1); 5], 0)
             .await;
         assert!(permits.is_empty());
+        let permit_actor = permit_provider.stop_and_unwrap().await;
+        assert!(permit_actor.permits_requests.is_empty());
     }
 
     #[tokio::test]
