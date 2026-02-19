@@ -28,6 +28,7 @@ mod publish_tracker;
 mod rate_meter;
 mod replication;
 mod router;
+#[allow(dead_code)]
 mod routing_table;
 mod state;
 mod workbench;

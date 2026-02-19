@@ -18,7 +18,6 @@ use std::sync::Arc;
 use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsSubrequest,
 };
-use quickwit_proto::ingest::ShardIds;
 use quickwit_proto::types::{IndexId, SourceId};
 use tokio::sync::{OwnedRwLockWriteGuard, RwLock};
 
@@ -69,7 +68,6 @@ impl GetOrCreateOpenShardsRequestDebouncer {
 #[derive(Default)]
 pub(super) struct DebouncedGetOrCreateOpenShardsRequest {
     subrequests: Vec<GetOrCreateOpenShardsSubrequest>,
-    pub closed_shards: Vec<ShardIds>,
     pub unavailable_leaders: Vec<String>,
     rendezvous: Rendezvous,
 }
@@ -85,8 +83,8 @@ impl DebouncedGetOrCreateOpenShardsRequest {
         }
         let request = GetOrCreateOpenShardsRequest {
             subrequests: self.subrequests,
-            closed_shards: self.closed_shards,
             unavailable_leaders: self.unavailable_leaders,
+            ..Default::default()
         };
         (Some(request), self.rendezvous)
     }

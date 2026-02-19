@@ -24,7 +24,7 @@ use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
 use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
-use quickwit_proto::types::{NodeId, ShardId, SubrequestId};
+use quickwit_proto::types::{NodeId, SubrequestId};
 use tracing::warn;
 
 use super::publish_tracker::PublishTracker;
@@ -35,7 +35,6 @@ use super::router::PersistRequestSummary;
 #[derive(Default)]
 pub(super) struct IngestWorkbench {
     pub subworkbenches: BTreeMap<SubrequestId, IngestSubworkbench>,
-    pub rate_limited_shards: HashSet<ShardId>,
     pub num_successes: usize,
     /// The number of batch persist attempts. This is not sum of the number of attempts for each
     /// subrequest.
@@ -226,13 +225,6 @@ impl IngestWorkbench {
 
     pub fn record_no_shards_available(&mut self, subrequest_id: SubrequestId) {
         self.record_failure(subrequest_id, SubworkbenchFailure::NoShardsAvailable);
-    }
-
-    pub fn record_rate_limited(&mut self, subrequest_id: SubrequestId) {
-        self.record_failure(
-            subrequest_id,
-            SubworkbenchFailure::RateLimited(RateLimitingCause::ShardRateLimiting),
-        );
     }
 
     /// Marks a node as unavailable for the span of the workbench.
@@ -433,7 +425,7 @@ mod tests {
         assert!(!subworkbench.last_failure_is_transient());
 
         subworkbench.last_failure_opt = Some(SubworkbenchFailure::Persist(
-            PersistFailureReason::ShardRateLimited,
+            PersistFailureReason::NoShardsAvailable,
         ));
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
@@ -807,7 +799,7 @@ mod tests {
 
         let persist_failure = PersistFailure {
             subrequest_id: 42,
-            reason: PersistFailureReason::ShardRateLimited as i32,
+            reason: PersistFailureReason::NoShardsAvailable as i32,
             ..Default::default()
         };
         workbench.record_persist_failure(&persist_failure);
