@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, HashSet};
+use std::cmp::Reverse;
+use std::collections::binary_heap::PeekMut;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::ops::Bound;
 use std::path::PathBuf;
@@ -87,23 +89,28 @@ fn greedy_batch_split<T>(
     }
     weighted_items.sort_unstable_by_key(|(weight, _)| std::cmp::Reverse(*weight));
 
-    // Invariant: batch_weights[i] is the sum of weights in batches[i]
     let mut batches: Vec<Vec<T>> = std::iter::repeat_with(Vec::new).take(num_batches).collect();
-    let mut batch_weights: Vec<u64> = vec![0; num_batches];
+
+    // Min-heap of (weight, item_count, batch_index).
+    // Reverse turns BinaryHeap into a min-heap.
+    // Ties break naturally: lighter weight → fewer items → lower index.
+    let mut heap: BinaryHeap<Reverse<(u64, usize, usize)>> =
+        BinaryHeap::with_capacity(num_batches);
+    for batch_idx in 0..num_batches {
+        heap.push(Reverse((0, 0, batch_idx)));
+    }
 
     // Greedily assign each item to the lightest batch.
-    // Ties are broken by count to help balance item counts when weights are equal.
+    // Full batches are removed via PeekMut::pop().
     for (weight, item) in weighted_items {
-        let lightest_batch_idx = batch_weights
-            .iter()
-            .zip(batches.iter())
-            .enumerate()
-            .filter(|(_, (_, batch))| batch.len() < max_items_per_batch)
-            .min_by_key(|(_, (batch_weight, batch))| (**batch_weight, batch.len()))
-            .map(|(idx, _)| idx)
-            .unwrap();
-        batch_weights[lightest_batch_idx] += weight;
-        batches[lightest_batch_idx].push(item);
+        let mut top = heap.peek_mut().unwrap();
+        let Reverse((ref mut batch_weight, ref mut batch_count, batch_idx)) = *top;
+        batches[batch_idx].push(item);
+        *batch_weight += weight;
+        *batch_count += 1;
+        if *batch_count >= max_items_per_batch {
+            PeekMut::pop(top);
+        }
     }
 
     batches
