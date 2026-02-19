@@ -470,6 +470,68 @@ async fn test_index_crud_operations() {
 }
 
 #[tokio::test]
+async fn test_index_invalid_retention_period() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+    let mut client = sandbox.cloudprem_client();
+
+    // create_index with invalid retention period should fail
+    let create_request = CreateIndexRequest {
+        index_id: "test-invalid-retention".to_string(),
+        index_config: Some(index::IndexConfig {
+            retention_policy: Some(index::RetentionPolicy {
+                period: "not-a-valid-duration".to_string(),
+            }),
+        }),
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    let result = client
+        .create_index(authenticated_request(create_request))
+        .await;
+    assert!(
+        result.is_err(),
+        "create_index should reject invalid retention period"
+    );
+
+    // Create a valid index, then update_index with invalid retention should fail
+    let create_request = CreateIndexRequest {
+        index_id: "test-invalid-retention".to_string(),
+        index_config: Some(index::IndexConfig {
+            retention_policy: Some(index::RetentionPolicy {
+                period: "7 days".to_string(),
+            }),
+        }),
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    client
+        .create_index(authenticated_request(create_request))
+        .await
+        .expect("create_index should succeed");
+
+    let update_request = UpdateIndexRequest {
+        index_id: "test-invalid-retention".to_string(),
+        index_config: Some(index::IndexConfig {
+            retention_policy: Some(index::RetentionPolicy {
+                period: "not-a-valid-duration".to_string(),
+            }),
+        }),
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    let result = client
+        .update_index(authenticated_request(update_request))
+        .await;
+    assert!(
+        result.is_err(),
+        "update_index should reject invalid retention period"
+    );
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn test_search_after() {
     let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
     let sandbox = setup_env(&mut data).await;

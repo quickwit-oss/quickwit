@@ -496,10 +496,14 @@ impl CloudPremService for CloudPremServiceImpl {
         // Patch with retention policy from request if provided
         if let Some(proto_config) = request.index_config {
             if let Some(proto_rp) = proto_config.retention_policy {
-                index_config.retention_policy_opt = Some(RetentionPolicy {
+                let retention_policy = RetentionPolicy {
                     retention_period: proto_rp.period,
                     evaluation_schedule: RetentionPolicy::default_schedule(),
-                });
+                };
+                retention_policy.retention_period().map_err(|e| {
+                    CloudPremError::InvalidArgument(format!("invalid retention period: {e}"))
+                })?;
+                index_config.retention_policy_opt = Some(retention_policy);
             } else {
                 // If index_config is provided but retention_policy is None, remove it
                 index_config.retention_policy_opt = None;
@@ -565,10 +569,14 @@ impl CloudPremService for CloudPremServiceImpl {
                     }
                     .into());
                 }
-                updated_config.retention_policy_opt = Some(RetentionPolicy {
+                let retention_policy = RetentionPolicy {
                     retention_period: proto_rp.period,
                     evaluation_schedule: RetentionPolicy::default_schedule(),
-                });
+                };
+                retention_policy.retention_period().map_err(|e| {
+                    CloudPremError::InvalidArgument(format!("invalid retention period: {e}"))
+                })?;
+                updated_config.retention_policy_opt = Some(retention_policy);
             } else {
                 // If no retention policy provided, remove it
                 updated_config.retention_policy_opt = None;
