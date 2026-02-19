@@ -154,8 +154,10 @@ impl IngesterState {
     /// queues. Empty queues are deleted, while non-empty queues are recovered. However, the
     /// corresponding shards are closed and become read-only.
     pub async fn init(&self, wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) {
-        let mut inner_guard = self.inner.lock().await;
+        // Acquire locks in the same order as `lock_fully` (mrecordlog first, then inner) to
+        // prevent ABBA deadlocks with the broadcast capacity task.
         let mut mrecordlog_guard = self.mrecordlog.write().await;
+        let mut inner_guard = self.inner.lock().await;
 
         let now = Instant::now();
 

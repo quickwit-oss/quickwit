@@ -43,12 +43,13 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
 use tracing::{error, info};
 
-use super::broadcast::LocalShardsUpdate;
+use super::broadcast::{IngesterCapacityScoreUpdate, LocalShardsUpdate};
 use super::debouncing::{
     DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsRequestDebouncer,
 };
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::metrics::IngestResultMetrics;
+use super::node_routing_table::NodeBasedRoutingTable;
 use super::routing_table::{NextOpenShardError, RoutingTable};
 use super::workbench::IngestWorkbench;
 use super::{IngesterPool, pending_subrequests};
@@ -105,6 +106,9 @@ struct RouterState {
     debouncer: GetOrCreateOpenShardsRequestDebouncer,
     // Holds the routing table mapping index and source IDs to shards.
     routing_table: RoutingTable,
+    // Node-based routing table, populated by capacity broadcasts.
+    // Not yet used for routing — will replace `routing_table` in a follow-up PR.
+    node_routing_table: NodeBasedRoutingTable,
 }
 
 impl fmt::Debug for IngestRouter {
@@ -130,6 +134,7 @@ impl IngestRouter {
                 self_node_id: self_node_id.clone(),
                 table: HashMap::default(),
             },
+            node_routing_table: NodeBasedRoutingTable::default(),
         }));
         let ingest_semaphore_permits = get_ingest_router_buffer_size().as_u64() as usize;
         let ingest_semaphore = Arc::new(Semaphore::new(ingest_semaphore_permits));
@@ -151,7 +156,10 @@ impl IngestRouter {
             .subscribe::<LocalShardsUpdate>(weak_router_state.clone())
             .forever();
         self.event_broker
-            .subscribe::<ShardPositionsUpdate>(weak_router_state)
+            .subscribe::<ShardPositionsUpdate>(weak_router_state.clone())
+            .forever();
+        self.event_broker
+            .subscribe::<IngesterCapacityScoreUpdate>(weak_router_state)
             .forever();
     }
 
@@ -691,6 +699,22 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakRouterState {
         state_guard
             .routing_table
             .delete_shards(&index_uid, &source_id, &deleted_shard_ids);
+    }
+}
+
+#[async_trait]
+impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
+    async fn handle_event(&mut self, update: IngesterCapacityScoreUpdate) {
+        let Some(state) = self.0.upgrade() else {
+            return;
+        };
+        let mut state_guard = state.lock().await;
+        state_guard.node_routing_table.apply_capacity_update(
+            update.node_id,
+            update.source_uid,
+            update.capacity_score,
+            update.open_shard_count,
+        );
     }
 }
 
