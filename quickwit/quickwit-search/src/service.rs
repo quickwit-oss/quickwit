@@ -33,6 +33,7 @@ use quickwit_storage::{
 };
 use tantivy::aggregation::AggregationLimitsGuard;
 
+use crate::invoker::LambdaLeafSearchInvoker;
 use crate::leaf::multi_index_leaf_search;
 use crate::leaf_cache::{LeafSearchCache, PredicateCacheImpl};
 use crate::list_fields::{leaf_list_fields, root_list_fields};
@@ -152,7 +153,8 @@ impl SearchServiceImpl {
     }
 }
 
-pub fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<DocMapper>> {
+/// Deserializes a JSON-encoded doc mapper string into an `Arc<DocMapper>`.
+pub(crate) fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<DocMapper>> {
     let doc_mapper = serde_json::from_str::<Arc<DocMapper>>(doc_mapper_str).map_err(|err| {
         SearchError::Internal(format!("failed to deserialize doc mapper: `{err}`"))
     })?;
@@ -190,7 +192,7 @@ impl SearchService for SearchServiceImpl {
             tracked: multi_index_leaf_search(
                 self.searcher_context.clone(),
                 leaf_search_request,
-                &self.storage_resolver,
+                self.storage_resolver.clone(),
             ),
             start: Instant::now(),
             targeted_splits: num_splits,
@@ -415,7 +417,10 @@ pub struct SearcherContext {
     /// List fields cache. Caches the list fields response for a given split.
     pub list_fields_cache: ListFieldsCache,
     /// The aggregation limits are passed to limit the memory usage.
+    /// This object is shared across all request.
     pub aggregation_limit: AggregationLimitsGuard,
+    /// Optional Lambda invoker for offloading leaf search to serverless functions.
+    pub lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -431,11 +436,15 @@ impl SearcherContext {
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();
-        SearcherContext::new(searcher_config, None)
+        SearcherContext::new(searcher_config, None, None)
     }
 
     /// Creates a new searcher context, given a searcher config, and an optional `SplitCache`.
-    pub fn new(searcher_config: SearcherConfig, split_cache_opt: Option<Arc<SplitCache>>) -> Self {
+    pub fn new(
+        searcher_config: SearcherConfig,
+        split_cache_opt: Option<Arc<SplitCache>>,
+        lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
+    ) -> Self {
         let global_split_footer_cache = MemorySizedCache::from_config(
             &searcher_config.split_footer_cache,
             &quickwit_storage::STORAGE_METRICS.split_footer_cache,
@@ -464,6 +473,7 @@ impl SearcherContext {
             list_fields_cache,
             split_cache_opt,
             aggregation_limit,
+            lambda_invoker,
         }
     }
 
