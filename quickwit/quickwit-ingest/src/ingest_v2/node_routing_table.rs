@@ -14,9 +14,10 @@
 
 use std::collections::{HashMap, HashSet};
 
-use indexmap::IndexMap;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, SourceId, SourceUid};
+use rand::rng;
+use rand::seq::IndexedRandom;
 
 use crate::IngesterPool;
 
@@ -37,19 +38,15 @@ pub(super) struct IngesterNode {
 
 #[derive(Debug)]
 pub(super) struct RoutingEntry {
-    pub nodes: IndexMap<NodeId, IngesterNode>,
+    nodes: HashMap<NodeId, IngesterNode>,
 }
 
 /// Given a slice of candidates, picks the better of two random choices.
 /// Higher capacity_score wins; tiebreak on more open_shard_count (more landing spots).
 fn power_of_two_choices<'a>(candidates: &[&'a IngesterNode]) -> &'a IngesterNode {
-    let len = candidates.len();
-    debug_assert!(len >= 2);
-
-    let idx_1 = rand::random_range(0..len);
-    // Random offset in [1, len) wraps around, guaranteeing idx_2 != idx_1.
-    let idx_2 = (idx_1 + rand::random_range(1..len)) % len;
-    let (a, b) = (candidates[idx_1], candidates[idx_2]);
+    debug_assert!(candidates.len() >= 2);
+    let mut iter = candidates.choose_multiple(&mut rng(), 2);
+    let (&a, &b) = (iter.next().unwrap(), iter.next().unwrap());
 
     if (a.capacity_score, a.open_shard_count) >= (b.capacity_score, b.open_shard_count) {
         a
@@ -148,7 +145,7 @@ impl NodeBasedRoutingTable {
         );
 
         let entry = self.table.entry(key).or_insert_with(|| RoutingEntry {
-            nodes: IndexMap::new(),
+            nodes: HashMap::new(),
         });
 
         let ingester_node = IngesterNode {
@@ -184,7 +181,7 @@ impl NodeBasedRoutingTable {
         }
 
         let entry = self.table.entry(key).or_insert_with(|| RoutingEntry {
-            nodes: IndexMap::new(),
+            nodes: HashMap::new(),
         });
 
         for (node_id, open_shard_count) in per_leader_count {
@@ -413,8 +410,8 @@ mod tests {
 
         let entry = table.table.get(&key).unwrap();
         assert_eq!(entry.nodes.len(), 3);
-        assert!(entry.nodes.get("node-1").is_some());
-        assert!(entry.nodes.get("node-2").is_some());
-        assert!(entry.nodes.get("node-3").is_some());
+        assert!(entry.nodes.contains_key("node-1"));
+        assert!(entry.nodes.contains_key("node-2"));
+        assert!(entry.nodes.contains_key("node-3"));
     }
 }
