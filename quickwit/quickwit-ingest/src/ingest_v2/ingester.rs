@@ -1262,6 +1262,8 @@ pub async fn wait_for_ingester_decommission(ingester: Ingester) -> anyhow::Resul
         .await
         .context("failed to initiate ingester decommission")?;
 
+    ingester.state.cluster.wait_for_ingester_status_propagation().await;
+
     wait_for_ingester_status(ingester, IngesterStatus::Decommissioned).await?;
 
     info!(

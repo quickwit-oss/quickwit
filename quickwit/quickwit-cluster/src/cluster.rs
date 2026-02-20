@@ -392,6 +392,15 @@ impl Cluster {
         tokio::time::sleep(self.gossip_interval * 2).await;
     }
 
+    pub async fn wait_for_ingester_status_propagation(&self) {
+        let propagation_delay = self.gossip_interval * 2;
+        info!(
+           "waiting {:?} for cluster to propagate ingester status change",
+            propagation_delay
+        );
+        tokio::time::sleep(propagation_delay).await;
+    }
+
     pub async fn initiate_shutdown(&self) -> anyhow::Result<()> {
         self.inner.read().await.chitchat_handle.initiate_shutdown()
     }
