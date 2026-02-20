@@ -463,6 +463,8 @@ impl IngestController {
             .unavailable_leaders
             .into_iter()
             .map(NodeId::from)
+            // Also exclude ingesters that have announced they are decommissioning
+            .chain(model.decommissioning_ingesters().iter().cloned())
             .collect();
 
         // We do a first pass to identify the shards that are missing from the model and need to be
@@ -703,8 +705,10 @@ impl IngestController {
         let new_num_open_shards = shard_stats.num_open_shards + num_shards_to_open;
         let new_shards_per_source: HashMap<SourceUid, usize> =
             HashMap::from_iter([(source_uid.clone(), num_shards_to_open)]);
+        let unavailable_leaders: FnvHashSet<NodeId> =
+            model.decommissioning_ingesters().iter().cloned().collect();
         let successful_source_uids_res = self
-            .try_open_shards(new_shards_per_source, model, &Default::default(), progress)
+            .try_open_shards(new_shards_per_source, model, &unavailable_leaders, progress)
             .await;
 
         match successful_source_uids_res {
@@ -1041,11 +1045,13 @@ impl IngestController {
                 .or_default() += 1;
         }
 
+        let unavailable_leaders: FnvHashSet<NodeId> =
+            model.decommissioning_ingesters().iter().cloned().collect();
         let mut per_source_num_opened_shards: HashMap<SourceUid, usize> = self
             .try_open_shards(
                 per_source_num_shards_to_open,
                 model,
-                &Default::default(),
+                &unavailable_leaders,
                 progress,
             )
             .await
@@ -1118,10 +1124,12 @@ impl IngestController {
     /// The closing operation can only be done by the leader of that shard.
     /// For these reason, we exclude these shards from the rebalance process.
     fn compute_shards_to_rebalance(&self, model: &ControlPlaneModel) -> Vec<Shard> {
+        let decommissioning_ingesters = model.decommissioning_ingesters();
         let mut per_available_ingester_shards: HashMap<NodeId, Vec<&Shard>> = self
             .ingester_pool
             .keys()
             .into_iter()
+            .filter(|ingester_id| !decommissioning_ingesters.contains(ingester_id))
             .map(|ingester_id| (ingester_id, Vec::new()))
             .collect();
 
