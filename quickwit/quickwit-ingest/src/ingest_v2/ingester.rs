@@ -136,7 +136,7 @@ impl Ingester {
 
         let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
-        BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone(), memory_capacity);
+        BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone(), disk_capacity);
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
         let ingester = Self {

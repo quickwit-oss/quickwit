@@ -41,14 +41,13 @@ const WAL_CAPACITY_LOOKBACK_WINDOW_LEN: usize = 6;
 /// reading would be discarded when the next reading is inserted.
 const WAL_CAPACITY_READINGS_LEN: usize = WAL_CAPACITY_LOOKBACK_WINDOW_LEN + 1;
 
-struct WalMemoryCapacityTimeSeries {
+struct WalDiskCapacityTimeSeries {
     memory_capacity: ByteSize,
     readings: RingBuffer<f64, WAL_CAPACITY_READINGS_LEN>,
 }
 
-impl WalMemoryCapacityTimeSeries {
+impl WalDiskCapacityTimeSeries {
     fn new(memory_capacity: ByteSize) -> Self {
-        #[cfg(not(test))]
         assert!(memory_capacity.as_u64() > 0);
         Self {
             memory_capacity,
@@ -123,19 +122,19 @@ pub struct IngesterCapacityScore {
 pub struct BroadcastIngesterCapacityScoreTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
-    wal_capacity_time_series: WalMemoryCapacityTimeSeries,
+    wal_capacity_time_series: WalDiskCapacityTimeSeries,
 }
 
 impl BroadcastIngesterCapacityScoreTask {
     pub fn spawn(
         cluster: Cluster,
         weak_state: WeakIngesterState,
-        memory_capacity: ByteSize,
+        disk_capacity: ByteSize,
     ) -> JoinHandle<()> {
         let mut broadcaster = Self {
             cluster,
             weak_state,
-            wal_capacity_time_series: WalMemoryCapacityTimeSeries::new(memory_capacity),
+            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(disk_capacity),
         };
         tokio::spawn(async move { broadcaster.run().await })
     }
@@ -157,10 +156,10 @@ impl BroadcastIngesterCapacityScoreTask {
             .await
             .map_err(|_| anyhow::anyhow!("failed to acquire ingester state lock"))?;
         let usage = guard.mrecordlog.resource_usage();
-        let memory_used = ByteSize::b(usage.memory_used_bytes as u64);
+        let disk_used = ByteSize::b(usage.disk_used_bytes as u64);
         let open_shard_counts = guard.get_open_shard_counts();
 
-        Ok(Some((memory_used, open_shard_counts)))
+        Ok(Some((disk_used, open_shard_counts)))
     }
 
     async fn run(&mut self) {
@@ -170,7 +169,7 @@ impl BroadcastIngesterCapacityScoreTask {
         loop {
             interval.tick().await;
 
-            let (memory_used, open_shard_counts) = match self.snapshot().await {
+            let (disk_used, open_shard_counts) = match self.snapshot().await {
                 Ok(Some(snapshot)) => snapshot,
                 Ok(None) => continue,
                 Err(error) => {
@@ -179,7 +178,7 @@ impl BroadcastIngesterCapacityScoreTask {
                 }
             };
 
-            self.wal_capacity_time_series.record(memory_used);
+            self.wal_capacity_time_series.record(disk_used);
 
             let remaining_capacity = self.wal_capacity_time_series.current().unwrap_or(1.0);
             let capacity_delta = self.wal_capacity_time_series.delta().unwrap_or(0.0);
@@ -272,18 +271,18 @@ mod tests {
     use crate::ingest_v2::models::IngesterShard;
     use crate::ingest_v2::state::IngesterState;
 
-    fn ts() -> WalMemoryCapacityTimeSeries {
-        WalMemoryCapacityTimeSeries::new(ByteSize::b(100))
+    fn ts() -> WalDiskCapacityTimeSeries {
+        WalDiskCapacityTimeSeries::new(ByteSize::b(100))
     }
 
     /// Helper: record a reading with `used` bytes against the series' fixed capacity.
-    fn record(series: &mut WalMemoryCapacityTimeSeries, used: u64) {
+    fn record(series: &mut WalDiskCapacityTimeSeries, used: u64) {
         series.record(ByteSize::b(used));
     }
 
     #[test]
-    fn test_wal_memory_capacity_current_after_record() {
-        let mut series = WalMemoryCapacityTimeSeries::new(ByteSize::b(256));
+    fn test_wal_disk_capacity_current_after_record() {
+        let mut series = WalDiskCapacityTimeSeries::new(ByteSize::b(256));
         // 192 of 256 used => 25% remaining
         series.record(ByteSize::b(192));
         assert_eq!(series.current(), Some(0.25));
@@ -294,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wal_memory_capacity_record_saturates_at_zero() {
+    fn test_wal_disk_capacity_record_saturates_at_zero() {
         let mut series = ts();
         // 200 used out of 100 capacity => clamped to 0.0
         record(&mut series, 200);
@@ -302,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wal_memory_capacity_delta_growing() {
+    fn test_wal_disk_capacity_delta_growing() {
         let mut series = ts();
         // oldest: 60 of 100 used => 40% remaining
         record(&mut series, 60);
@@ -313,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wal_memory_capacity_delta_shrinking() {
+    fn test_wal_disk_capacity_delta_shrinking() {
         let mut series = ts();
         // oldest: 20 of 100 used => 80% remaining
         record(&mut series, 20);
@@ -363,7 +362,7 @@ mod tests {
         let task = BroadcastIngesterCapacityScoreTask {
             cluster,
             weak_state,
-            wal_capacity_time_series: WalMemoryCapacityTimeSeries::new(ByteSize::mb(1)),
+            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(ByteSize::mb(1)),
         };
         assert!(task.snapshot().await.is_err());
     }
@@ -384,8 +383,8 @@ mod tests {
             SourceId::from("test-source"),
             ShardId::from(0),
         )
-        .advertisable()
-        .build();
+            .advertisable()
+            .build();
         state_guard.shards.insert(shard.queue_id(), shard);
         let open_shard_counts = state_guard.get_open_shard_counts();
         drop(state_guard);
@@ -394,7 +393,7 @@ mod tests {
         let mut task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
             weak_state: state.weak(),
-            wal_capacity_time_series: WalMemoryCapacityTimeSeries::new(ByteSize::b(1000)),
+            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(ByteSize::b(1000)),
         };
         task.wal_capacity_time_series.record(ByteSize::b(500));
 
@@ -436,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wal_memory_capacity_delta_spans_lookback_window() {
+    fn test_wal_disk_capacity_delta_spans_lookback_window() {
         let mut series = ts();
 
         // Fill to exactly the lookback window length (6 readings), all same value.
