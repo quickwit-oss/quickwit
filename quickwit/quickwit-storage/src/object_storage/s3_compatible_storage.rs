@@ -45,11 +45,12 @@ use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
 use crate::metrics::object_storage_get_slice_in_flight_guards;
+use crate::metrics_wrappers::{ActionLabel, RequestMetricsWrapperExt, copy_with_download_metrics};
 use crate::object_storage::MultiPartPolicy;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, OwnedBytes, STORAGE_METRICS, Storage, StorageError,
-    StorageErrorKind, StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
+    StorageResolverError, StorageResult,
 };
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
@@ -288,11 +289,6 @@ impl S3CompatibleObjectStorage {
             .await
             .map_err(|io_error| Retry::Permanent(StorageError::from(io_error)))?;
 
-        crate::STORAGE_METRICS.object_storage_put_parts.inc();
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(len);
-
         self.s3_client
             .put_object()
             .bucket(bucket)
@@ -300,6 +296,7 @@ impl S3CompatibleObjectStorage {
             .body(body)
             .content_length(len as i64)
             .send()
+            .with_count_and_upload_metrics(ActionLabel::PutObject, len)
             .await
             .map_err(|sdk_error| {
                 if sdk_error.is_retryable() {
@@ -334,6 +331,7 @@ impl S3CompatibleObjectStorage {
                 .bucket(self.bucket.clone())
                 .key(key)
                 .send()
+                .with_count_metric(ActionLabel::CreateMultipartUpload)
                 .await
         })
         .await?
@@ -423,11 +421,6 @@ impl S3CompatibleObjectStorage {
             .map_err(Retry::Permanent)?;
         let md5 = BASE64_STANDARD.encode(part.md5.0);
 
-        crate::STORAGE_METRICS.object_storage_put_parts.inc();
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(part.len());
-
         let upload_part_output = self
             .s3_client
             .upload_part()
@@ -439,6 +432,7 @@ impl S3CompatibleObjectStorage {
             .part_number(part.part_number as i32)
             .upload_id(upload_id.0)
             .send()
+            .with_count_and_upload_metrics(ActionLabel::UploadPart, part.len())
             .await
             .map_err(|s3_err| {
                 if s3_err.is_retryable() {
@@ -518,6 +512,7 @@ impl S3CompatibleObjectStorage {
                 .multipart_upload(completed_upload.clone())
                 .upload_id(upload_id)
                 .send()
+                .with_count_metric(ActionLabel::CompleteMultipartUpload)
                 .await
         })
         .await?;
@@ -532,6 +527,7 @@ impl S3CompatibleObjectStorage {
                 .key(key)
                 .upload_id(upload_id)
                 .send()
+                .with_count_metric(ActionLabel::AbortMultipartUpload)
                 .await
         })
         .await?;
@@ -546,8 +542,6 @@ impl S3CompatibleObjectStorage {
         let key = self.key(path);
         let range_str = range_opt.map(|range| format!("bytes={}-{}", range.start, range.end - 1));
 
-        crate::STORAGE_METRICS.object_storage_get_total.inc();
-
         let get_object_output = self
             .s3_client
             .get_object()
@@ -555,6 +549,7 @@ impl S3CompatibleObjectStorage {
             .key(key)
             .set_range(range_str)
             .send()
+            .with_count_and_duration_metrics(ActionLabel::GetObject)
             .await?;
         Ok(get_object_output)
     }
@@ -642,17 +637,12 @@ impl S3CompatibleObjectStorage {
         for (path_chunk, delete) in &mut delete_requests_it {
             let delete_objects_res: StorageResult<DeleteObjectsOutput> =
                 aws_retry(&self.retry_params, || async {
-                    crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_requests_total
-                        .inc();
-                    let _timer = crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_request_duration
-                        .start_timer();
                     self.s3_client
                         .delete_objects()
                         .bucket(self.bucket.clone())
                         .delete(delete.clone())
                         .send()
+                        .with_count_and_duration_metrics(ActionLabel::DeleteObjects)
                         .await
                 })
                 .await
@@ -718,10 +708,7 @@ impl S3CompatibleObjectStorage {
 async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
     output.clear();
     let mut body_stream_reader = BufReader::new(byte_stream.into_async_read());
-    let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-    STORAGE_METRICS
-        .object_storage_download_num_bytes
-        .inc_by(num_bytes_copied);
+    copy_with_download_metrics(&mut body_stream_reader, output).await?;
     // When calling `get_all`, the Vec capacity is not properly set.
     output.shrink_to_fit();
     Ok(())
@@ -737,6 +724,7 @@ impl Storage for S3CompatibleObjectStorage {
             .bucket(self.bucket.clone())
             .max_keys(1)
             .send()
+            .with_count_metric(ActionLabel::ListObjects)
             .await?;
         Ok(())
     }
@@ -746,7 +734,6 @@ impl Storage for S3CompatibleObjectStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let key = self.key(path);
         let total_len = payload.len();
@@ -765,10 +752,7 @@ impl Storage for S3CompatibleObjectStorage {
         let get_object_output =
             aws_retry(&self.retry_params, || self.get_object(path, None)).await?;
         let mut body_read = BufReader::new(get_object_output.body.into_async_read());
-        let num_bytes_copied = tokio::io::copy_buf(&mut body_read, output).await?;
-        STORAGE_METRICS
-            .object_storage_download_num_bytes
-            .inc_by(num_bytes_copied);
+        copy_with_download_metrics(&mut body_read, output).await?;
         output.flush().await?;
         Ok(())
     }
@@ -778,17 +762,12 @@ impl Storage for S3CompatibleObjectStorage {
         let bucket = self.bucket.clone();
         let key = self.key(path);
         let delete_res = aws_retry(&self.retry_params, || async {
-            crate::STORAGE_METRICS
-                .object_storage_delete_requests_total
-                .inc();
-            let _timer = crate::STORAGE_METRICS
-                .object_storage_delete_request_duration
-                .start_timer();
             self.s3_client
                 .delete_object()
                 .bucket(&bucket)
                 .key(&key)
                 .send()
+                .with_count_and_duration_metrics(ActionLabel::DeleteObject)
                 .await
         })
         .await;
@@ -869,6 +848,7 @@ impl Storage for S3CompatibleObjectStorage {
                 .bucket(&bucket)
                 .key(&key)
                 .send()
+                .with_count_metric(ActionLabel::HeadObject)
                 .await
         })
         .await?;

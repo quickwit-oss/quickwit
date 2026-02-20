@@ -29,6 +29,7 @@ mod cache;
 mod debouncer;
 mod file_descriptor_cache;
 mod metrics;
+mod metrics_wrappers;
 mod storage;
 mod timeout_and_retry_storage;
 pub use debouncer::AsyncDebouncer;
