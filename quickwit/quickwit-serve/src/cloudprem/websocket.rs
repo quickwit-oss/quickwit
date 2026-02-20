@@ -254,6 +254,13 @@ async fn single_websocket(
     let mut request = target_url.into_client_request()?;
     let headers = request.headers_mut();
     headers.insert("DD-API-KEY", HeaderValue::from_str(dd_api_key)?);
+    // When set, routes the WebSocket connection to a RAPID test drive gateway.
+    if let Ok(td_name) = std::env::var("CLOUDPREM_GATEWAY_TEST_DRIVE") {
+        let header_name = format!("test-drive-{}", td_name);
+        if let Ok(name) = http::header::HeaderName::from_bytes(header_name.as_bytes()) {
+            headers.insert(name, HeaderValue::from_static("1"));
+        }
+    }
 
     let stream = proxy::get_proxied_stream(target_domain, proxy_url).await?;
     let (mut ws, _) = client_async_tls(request, stream).await?;
