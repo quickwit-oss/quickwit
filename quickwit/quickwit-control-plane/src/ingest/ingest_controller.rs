@@ -455,11 +455,14 @@ impl IngestController {
 
         let mut per_source_num_shards_to_open = HashMap::new();
 
-        let unavailable_leaders: FnvHashSet<NodeId> = get_open_shards_request
+        let mut unavailable_leaders: FnvHashSet<NodeId> = get_open_shards_request
             .unavailable_leaders
             .into_iter()
             .map(NodeId::from)
             .collect();
+
+        // Also exclude ingesters that have announced they are decommissioning via chitchat.
+        unavailable_leaders.extend(model.decommissioning_ingesters().iter().cloned());
 
         // We do a first pass to identify the shards that are missing from the model and need to be
         // created.

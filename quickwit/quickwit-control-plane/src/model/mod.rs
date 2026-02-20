@@ -53,12 +53,27 @@ pub(crate) struct ControlPlaneModel {
     index_uid_table: FnvHashMap<IndexId, IndexUid>,
     index_table: FnvHashMap<IndexUid, IndexMetadata>,
     shard_table: ShardTable,
+    /// Set of ingester node IDs that have announced they are decommissioning via chitchat.
+    /// These ingesters are excluded from shard allocation.
+    decommissioning_ingesters: FnvHashSet<NodeId>,
 }
 
 impl ControlPlaneModel {
     /// Clears the entire state of the model.
     pub fn clear(&mut self) {
         *self = Default::default();
+    }
+
+    pub fn add_decommissioning_ingester(&mut self, node_id: NodeId) -> bool {
+        self.decommissioning_ingesters.insert(node_id)
+    }
+
+    pub fn remove_decommissioning_ingester(&mut self, node_id: &NodeId) -> bool {
+        self.decommissioning_ingesters.remove(node_id)
+    }
+
+    pub fn decommissioning_ingesters(&self) -> &FnvHashSet<NodeId> {
+        &self.decommissioning_ingesters
     }
 
     pub fn num_indexes(&self) -> usize {

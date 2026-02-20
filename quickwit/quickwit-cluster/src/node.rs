@@ -18,8 +18,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chitchat::{ChitchatId, NodeState};
+use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeIdRef;
 use tonic::transport::Channel;
 
@@ -39,6 +41,9 @@ impl ClusterNode {
         is_self_node: bool,
     ) -> anyhow::Result<Self> {
         let member = build_cluster_member(chitchat_id.clone(), node_state)?;
+        let ingester_status = node_state
+            .get(INGESTER_STATUS_KEY)
+            .and_then(IngesterStatus::from_json_str_name);
         let inner = InnerNode {
             chitchat_id,
             channel,
@@ -46,6 +51,7 @@ impl ClusterNode {
             grpc_advertise_addr: member.grpc_advertise_addr,
             indexing_tasks: member.indexing_tasks,
             indexing_capacity: member.indexing_cpu_capacity,
+            ingester_status,
             is_ready: member.is_ready,
             is_self_node,
         };
@@ -125,6 +131,10 @@ impl ClusterNode {
         self.inner.indexing_capacity
     }
 
+    pub fn ingester_status(&self) -> Option<IngesterStatus> {
+        self.inner.ingester_status
+    }
+
     pub fn is_ready(&self) -> bool {
         self.inner.is_ready
     }
@@ -163,6 +173,7 @@ struct InnerNode {
     grpc_advertise_addr: SocketAddr,
     indexing_tasks: Vec<IndexingTask>,
     indexing_capacity: CpuCapacity,
+    ingester_status: Option<IngesterStatus>,
     is_ready: bool,
     is_self_node: bool,
 }

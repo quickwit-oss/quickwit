@@ -77,6 +77,18 @@ impl IngesterStatus {
             Self::Failed => "failed",
         }
     }
+
+    pub fn from_json_str_name(ingester_status_json_name: &str) -> Option<Self> {
+        match ingester_status_json_name {
+            "unspecified" => Some(Self::Unspecified),
+            "initializing" => Some(Self::Initializing),
+            "ready" => Some(Self::Ready),
+            "decommissioning" => Some(Self::Decommissioning),
+            "decommissioned" => Some(Self::Decommissioned),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
 }
 
 impl OpenFetchStreamRequest {

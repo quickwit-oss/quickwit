@@ -43,6 +43,7 @@ use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
@@ -1083,10 +1084,13 @@ impl Handler<IndexerLeft> for ControlPlane {
         message: IndexerLeft,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let node_id: NodeId = message.0.node_id().into();
         info!(
             "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing plan",
-            message.0.node_id()
+            node_id
         );
+        // Clean up decommissioning state for the departed node.
+        self.model.remove_decommissioning_ingester(&node_id);
         // TODO: Update shard table.
         if let Err(metastore_error) = self
             .ingest_controller
@@ -1096,6 +1100,51 @@ impl Handler<IndexerLeft> for ControlPlane {
             return convert_metastore_error::<()>(metastore_error).map(|_| ());
         }
         self.indexing_scheduler.rebuild_plan(&self.model);
+        Ok(())
+    }
+}
+
+/// An ingester node has changed its status (e.g. transitioning to decommissioning).
+#[derive(Debug)]
+struct IngesterStatusChanged {
+    node_id: NodeId,
+    status: IngesterStatus,
+}
+
+#[async_trait]
+impl Handler<IngesterStatusChanged> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: IngesterStatusChanged,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        match message.status {
+            IngesterStatus::Decommissioning => {
+                if self
+                    .model
+                    .add_decommissioning_ingester(message.node_id.clone())
+                {
+                    info!(
+                        ingester_id=%message.node_id,
+                        "ingester is decommissioning: excluding from shard allocation"
+                    );
+                }
+            }
+            _ => {
+                if self
+                    .model
+                    .remove_decommissioning_ingester(&message.node_id)
+                {
+                    info!(
+                        ingester_id=%message.node_id,
+                        status=%message.status.as_json_str_name(),
+                        "ingester is no longer decommissioning"
+                    );
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -1144,6 +1193,17 @@ async fn watcher_indexers(
         };
         match cluster_change {
             ClusterChange::Add(node) => {
+                // If a node joins (or transitions to ready) while already decommissioning,
+                // immediately notify the control plane.
+                if node.ingester_status() == Some(IngesterStatus::Decommissioning) {
+                    let node_id: NodeId = node.node_id().into();
+                    if let Err(error) = mailbox
+                        .send_message(IngesterStatusChanged { node_id, status: IngesterStatus::Decommissioning })
+                        .await
+                    {
+                        error!(%error, "failed to forward `IngesterStatusChanged` event to control plane");
+                    }
+                }
                 if node.enabled_services().contains(&QuickwitService::Indexer)
                     && let Err(error) = mailbox.send_message(IndexerJoined(node)).await
                 {
@@ -1157,8 +1217,16 @@ async fn watcher_indexers(
                     error!(%error, "failed to forward `IndexerLeft` event to control plane");
                 }
             }
-            ClusterChange::Update(_) => {
-                // We are not interested in updates (yet).
+            ClusterChange::Update(node) => {
+                if let Some(status) = node.ingester_status() {
+                    let node_id: NodeId = node.node_id().into();
+                    if let Err(error) = mailbox
+                        .send_message(IngesterStatusChanged { node_id, status })
+                        .await
+                    {
+                        error!(%error, "failed to forward `IngesterStatusChanged` event to control plane");
+                    }
+                }
             }
         }
     }
