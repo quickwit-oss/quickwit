@@ -687,9 +687,14 @@ pub struct JaegerConfig {
     #[serde(default = "JaegerConfig::default_enable_endpoint")]
     pub enable_endpoint: bool,
     /// How far back in time we look for spans when queries at not time-bound (`get_services`,
-    /// `get_operations`, `get_trace` operations).
+    /// `get_operations` operations).
     #[serde(default = "JaegerConfig::default_lookback_period_hours")]
     lookback_period_hours: NonZeroU64,
+
+    #[serde(default = "JaegerConfig::default_lookback_period_traces_hours")]
+    /// How far back in time we look for traces when queries at not time-bound (`get_trace`
+    /// operation).
+    lookback_period_traces_hours: NonZeroU64,
     /// The assumed maximum duration of a trace in seconds.
     ///
     /// Finding a trace happens in two phases: the first phase identifies at least one span that
@@ -707,6 +712,10 @@ pub struct JaegerConfig {
 impl JaegerConfig {
     pub fn lookback_period(&self) -> Duration {
         Duration::from_secs(self.lookback_period_hours.get() * 3600)
+    }
+
+    pub fn lookback_period_traces(&self) -> Duration {
+        Duration::from_secs(self.lookback_period_traces_hours.get() * 3600)
     }
 
     pub fn max_trace_duration(&self) -> Duration {
@@ -728,6 +737,10 @@ impl JaegerConfig {
         NonZeroU64::new(72).unwrap() // 3 days
     }
 
+    fn default_lookback_period_traces_hours() -> NonZeroU64 {
+        NonZeroU64::new(72).unwrap() // 3 days
+    }
+
     fn default_max_trace_duration_secs() -> NonZeroU64 {
         NonZeroU64::new(3600).unwrap() // 1 hour
     }
@@ -742,6 +755,7 @@ impl Default for JaegerConfig {
         Self {
             enable_endpoint: Self::default_enable_endpoint(),
             lookback_period_hours: Self::default_lookback_period_hours(),
+            lookback_period_traces_hours: Self::default_lookback_period_traces_hours(),
             max_trace_duration_secs: Self::default_max_trace_duration_secs(),
             max_fetch_spans: Self::default_max_fetch_spans(),
         }
