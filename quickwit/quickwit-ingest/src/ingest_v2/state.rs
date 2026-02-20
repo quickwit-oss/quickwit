@@ -679,4 +679,36 @@ mod tests {
             locked_state.find_most_capacity_shard_mut(&index_uid, &SourceId::from("other-source"));
         assert!(shard_opt.is_none());
     }
+
+    #[tokio::test]
+    async fn test_set_status_broadcasts_to_chitchat() {
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let state = IngesterState::new(cluster.clone());
+
+        // Set status to Decommissioning.
+        state
+            .inner
+            .lock()
+            .await
+            .set_status(IngesterStatus::Decommissioning);
+
+        // Let the spawned task run.
+        tokio::task::yield_now().await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let value = cluster.get_self_key_value(INGESTER_STATUS_KEY).await;
+        assert_eq!(value.as_deref(), Some("decommissioning"));
+
+        // Set status to Ready.
+        state.inner.lock().await.set_status(IngesterStatus::Ready);
+
+        tokio::task::yield_now().await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let value = cluster.get_self_key_value(INGESTER_STATUS_KEY).await;
+        assert_eq!(value.as_deref(), Some("ready"));
+    }
 }

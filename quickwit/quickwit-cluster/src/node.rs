@@ -69,6 +69,26 @@ impl ClusterNode {
         enabled_services: &[&str],
         indexing_tasks: &[IndexingTask],
     ) -> Self {
+        Self::for_test_with_ingester_status(
+            node_id,
+            port,
+            is_self_node,
+            enabled_services,
+            indexing_tasks,
+            None,
+        )
+        .await
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn for_test_with_ingester_status(
+        node_id: &str,
+        port: u16,
+        is_self_node: bool,
+        enabled_services: &[&str],
+        indexing_tasks: &[IndexingTask],
+        ingester_status: Option<IngesterStatus>,
+    ) -> Self {
         use quickwit_common::tower::{ClientGrpcConfig, make_channel};
 
         use crate::cluster::set_indexing_tasks_in_node_state;
@@ -82,6 +102,9 @@ impl ClusterNode {
         node_state.set(ENABLED_SERVICES_KEY, enabled_services.join(","));
         node_state.set(GRPC_ADVERTISE_ADDR_KEY, grpc_advertise_addr.to_string());
         set_indexing_tasks_in_node_state(indexing_tasks, &mut node_state);
+        if let Some(status) = ingester_status {
+            node_state.set(INGESTER_STATUS_KEY, status.as_json_str_name());
+        }
         Self::try_new(chitchat_id, &node_state, channel, is_self_node).unwrap()
     }
 
@@ -161,6 +184,7 @@ impl PartialEq for ClusterNode {
             && self.inner.enabled_services == other.inner.enabled_services
             && self.inner.grpc_advertise_addr == other.inner.grpc_advertise_addr
             && self.inner.indexing_tasks == other.inner.indexing_tasks
+            && self.inner.ingester_status == other.inner.ingester_status
             && self.inner.is_ready == other.inner.is_ready
             && self.inner.is_self_node == other.inner.is_self_node
     }
@@ -176,4 +200,27 @@ struct InnerNode {
     ingester_status: Option<IngesterStatus>,
     is_ready: bool,
     is_self_node: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_cluster_node_ingester_status_from_chitchat() {
+        let node = ClusterNode::for_test_with_ingester_status(
+            "test-node",
+            1337,
+            false,
+            &["indexer"],
+            &[],
+            Some(IngesterStatus::Decommissioning),
+        )
+        .await;
+        assert_eq!(
+            node.ingester_status(),
+            Some(IngesterStatus::Decommissioning)
+        );
+    }
+
 }
