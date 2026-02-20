@@ -65,10 +65,18 @@ impl ControlPlaneModel {
     }
 
     pub fn add_decommissioning_ingester(&mut self, node_id: NodeId) -> bool {
+        debug!(
+            node_id=%node_id,
+            "adding node as as decommissioning"
+        );
         self.decommissioning_ingesters.insert(node_id)
     }
 
     pub fn remove_decommissioning_ingester(&mut self, node_id: &NodeId) -> bool {
+        debug!(
+            node_id=%node_id,
+            "removing node from decommissioning"
+        );
         self.decommissioning_ingesters.remove(node_id)
     }
 
