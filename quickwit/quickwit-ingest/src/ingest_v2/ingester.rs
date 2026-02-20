@@ -141,7 +141,7 @@ impl Ingester {
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
+        let state = IngesterState::load(wal_dir_path, rate_limiter_settings, cluster.clone());
 
         let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster, weak_state.clone());
@@ -1261,6 +1261,8 @@ pub async fn wait_for_ingester_decommission(ingester: Ingester) -> anyhow::Resul
         .decommission(DecommissionRequest {})
         .await
         .context("failed to initiate ingester decommission")?;
+
+    ingester.state.cluster.wait_for_ingester_status_propagation().await;
 
     wait_for_ingester_status(ingester, IngesterStatus::Decommissioned).await?;
 

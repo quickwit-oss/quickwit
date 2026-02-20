@@ -459,6 +459,8 @@ impl IngestController {
             .unavailable_leaders
             .into_iter()
             .map(NodeId::from)
+            // Also exclude ingesters that have announced they are decommissioning via chitchat.
+            .chain(model.decommissioning_ingesters().iter().cloned())
             .collect();
 
         // We do a first pass to identify the shards that are missing from the model and need to be
@@ -699,8 +701,10 @@ impl IngestController {
         let new_num_open_shards = shard_stats.num_open_shards + num_shards_to_open;
         let new_shards_per_source: HashMap<SourceUid, usize> =
             HashMap::from_iter([(source_uid.clone(), num_shards_to_open)]);
+        let unavailable_leaders: FnvHashSet<NodeId> =
+            model.decommissioning_ingesters().iter().cloned().collect();
         let successful_source_uids_res = self
-            .try_open_shards(new_shards_per_source, model, &Default::default(), progress)
+            .try_open_shards(new_shards_per_source, model, &unavailable_leaders, progress)
             .await;
 
         match successful_source_uids_res {
@@ -1037,11 +1041,13 @@ impl IngestController {
                 .or_default() += 1;
         }
 
+        let unavailable_leaders: FnvHashSet<NodeId> =
+            model.decommissioning_ingesters().iter().cloned().collect();
         let mut per_source_num_opened_shards: HashMap<SourceUid, usize> = self
             .try_open_shards(
                 per_source_num_shards_to_open,
                 model,
-                &Default::default(),
+                &unavailable_leaders,
                 progress,
             )
             .await
@@ -1114,10 +1120,12 @@ impl IngestController {
     /// The closing operation can only be done by the leader of that shard.
     /// For these reason, we exclude these shards from the rebalance process.
     fn compute_shards_to_rebalance(&self, model: &ControlPlaneModel) -> Vec<Shard> {
+        let decommissioning_ingesters = model.decommissioning_ingesters();
         let mut per_available_ingester_shards: HashMap<NodeId, Vec<&Shard>> = self
             .ingester_pool
             .keys()
             .into_iter()
+            .filter(|ingester_id| !decommissioning_ingesters.contains(ingester_id))
             .map(|ingester_id| (ingester_id, Vec::new()))
             .collect();
 
@@ -3703,5 +3711,189 @@ mod tests {
         test_compute_shards_to_rebalance_aux(&[0, 1], &[]);
         test_compute_shards_to_rebalance_aux(&[0, 1], &[1]);
         test_compute_shards_to_rebalance_aux(&[0, 1, 2], &[3, 4]);
+    }
+
+    #[test]
+    fn test_compute_shards_to_rebalance_excludes_decommissioning_ingesters() {
+        let index_metadata =
+            IndexMetadata::for_test("test-index", "ram://indexes/test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        let source_id: SourceId = "test-source".to_string();
+
+        let mut model = ControlPlaneModel::default();
+        model.add_index(index_metadata);
+        let mut source_config = SourceConfig::ingest_v2();
+        source_config.source_id = source_id.clone();
+        model.add_source(&index_uid, source_config).unwrap();
+
+        let ingester_pool = IngesterPool::default();
+        let ingester = IngesterServiceClient::from_mock(MockIngesterService::new());
+        ingester_pool.insert(NodeId::from("ingester-0"), ingester.clone());
+        ingester_pool.insert(NodeId::from("ingester-1"), ingester);
+
+        // Ingester-0 has 5 open shards, ingester-1 has 0.
+        let shards: Vec<Shard> = (0..5)
+            .map(|i| Shard {
+                index_uid: Some(index_uid.clone()),
+                source_id: source_id.clone(),
+                shard_id: Some(ShardId::from(i as u64)),
+                leader_id: "ingester-0".to_string(),
+                shard_state: ShardState::Open as i32,
+                ..Default::default()
+            })
+            .collect();
+        model.insert_shards(&index_uid, &source_id, shards);
+
+        let controller = IngestController::new(
+            MetastoreServiceClient::mocked(),
+            ingester_pool,
+            1,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
+        );
+
+        // Both ingesters available: rebalancing should propose moves.
+        assert!(!controller.compute_shards_to_rebalance(&model).is_empty());
+
+        // Mark the target ingester as decommissioning: no rebalancing.
+        model.add_decommissioning_ingester(NodeId::from("ingester-1"));
+        assert!(controller.compute_shards_to_rebalance(&model).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_get_or_create_open_shards_excludes_decommissioning_ingesters() {
+        let source_id: &'static str = "test-source";
+        let mut index_metadata =
+            IndexMetadata::for_test("test-index-0", "ram://indexes/test-index-0");
+        let index_uid = index_metadata.index_uid.clone();
+        let doc_mapping_uid = DocMappingUid::random();
+        index_metadata.index_config.doc_mapping.doc_mapping_uid = doc_mapping_uid;
+
+        let progress = Progress::default();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        let index_uid_clone = index_uid.clone();
+        mock_metastore.expect_open_shards().returning(move |request| {
+            // The shard must be assigned to ingester-1 (ingester-0 is decommissioning).
+            assert_eq!(request.subrequests[0].leader_id, "test-ingester-1");
+
+            let subresponses = vec![OpenShardSubresponse {
+                subrequest_id: 0,
+                open_shard: Some(Shard {
+                    index_uid: index_uid_clone.clone().into(),
+                    source_id: source_id.to_string(),
+                    shard_id: Some(ShardId::from(1)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-ingester-1".to_string(),
+                    doc_mapping_uid: Some(doc_mapping_uid),
+                    ..Default::default()
+                }),
+            }];
+            Ok(metastore::OpenShardsResponse { subresponses })
+        });
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            NodeId::from("test-ingester-0"),
+            IngesterServiceClient::from_mock(MockIngesterService::new()),
+        );
+
+        let mut mock_ingester_1 = MockIngesterService::new();
+        mock_ingester_1
+            .expect_init_shards()
+            .returning(|request| {
+                let shard = request.subrequests[0].shard().clone();
+                Ok(InitShardsResponse {
+                    successes: vec![InitShardSuccess {
+                        subrequest_id: request.subrequests[0].subrequest_id,
+                        shard: Some(shard),
+                    }],
+                    failures: Vec::new(),
+                })
+            });
+        ingester_pool.insert(
+            NodeId::from("test-ingester-1"),
+            IngesterServiceClient::from_mock(mock_ingester_1),
+        );
+
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool,
+            1,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
+        );
+
+        let mut model = ControlPlaneModel::default();
+        model.add_index(index_metadata);
+        let mut source_config = SourceConfig::ingest_v2();
+        source_config.source_id = source_id.to_string();
+        model.add_source(&index_uid, source_config).unwrap();
+        model.add_decommissioning_ingester(NodeId::from("test-ingester-0"));
+
+        let request = GetOrCreateOpenShardsRequest {
+            subrequests: vec![GetOrCreateOpenShardsSubrequest {
+                subrequest_id: 0,
+                index_id: "test-index-0".to_string(),
+                source_id: source_id.to_string(),
+            }],
+            closed_shards: Vec::new(),
+            unavailable_leaders: Vec::new(),
+        };
+        let response = controller
+            .get_or_create_open_shards(request, &mut model, &progress)
+            .await
+            .unwrap();
+        assert_eq!(response.successes.len(), 1);
+        assert_eq!(response.successes[0].open_shards[0].leader_id, "test-ingester-1");
+    }
+
+    #[tokio::test]
+    async fn test_try_scale_up_shards_excludes_decommissioning() {
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_open_shards().never();
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            "test-ingester".into(),
+            IngesterServiceClient::from_mock(MockIngesterService::new()),
+        );
+
+        let mut controller = IngestController::new(
+            metastore,
+            ingester_pool,
+            1,
+            TEST_SHARD_THROUGHPUT_LIMIT_MIB,
+            1.001,
+        );
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
+        };
+        let shard_stats = ShardStats {
+            num_open_shards: 2,
+            ..Default::default()
+        };
+
+        let mut model = ControlPlaneModel::default();
+        model.add_index(IndexMetadata::for_test(
+            &index_uid.index_id,
+            "ram://indexes/test-index:0",
+        ));
+        model
+            .add_source(&index_uid, SourceConfig::ingest_v2())
+            .unwrap();
+        model.add_decommissioning_ingester(NodeId::from("test-ingester"));
+
+        let progress = Progress::default();
+        controller
+            .try_scale_up_shards(source_uid, shard_stats, &mut model, &progress, 1)
+            .await
+            .unwrap();
+        assert_eq!(model.all_shards().count(), 0);
     }
 }
