@@ -141,7 +141,7 @@ impl Ingester {
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
+        let state = IngesterState::load(wal_dir_path, rate_limiter_settings, cluster.clone());
 
         let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster, weak_state.clone());

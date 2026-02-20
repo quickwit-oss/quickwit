@@ -20,8 +20,10 @@ use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use mrecordlog::error::{DeleteQueueError, TruncateError};
+use quickwit_cluster::Cluster;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
+use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -48,6 +50,7 @@ pub(super) struct IngesterState {
     // `inner` is a mutex because it's almost always accessed mutably.
     inner: Arc<Mutex<InnerIngesterState>>,
     mrecordlog: Arc<RwLock<Option<MultiRecordLogAsync>>>,
+    pub(super) cluster: Cluster,
     pub status_rx: watch::Receiver<IngesterStatus>,
 }
 
@@ -60,6 +63,7 @@ pub(super) struct InnerIngesterState {
     pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
     status: IngesterStatus,
     status_tx: watch::Sender<IngesterStatus>,
+    cluster: Cluster,
 }
 
 impl InnerIngesterState {
@@ -70,6 +74,14 @@ impl InnerIngesterState {
     pub fn set_status(&mut self, status: IngesterStatus) {
         self.status = status;
         self.status_tx.send(status).expect("channel should be open");
+
+        // Broadcast status to chitchat asynchronously
+        let cluster = self.cluster.clone();
+        let status_str = status.as_json_str_name().to_string();
+        tokio::spawn(async move {
+            cluster.set_self_key_value(INGESTER_STATUS_KEY, &status_str).await;
+            info!(status=%status_str, "broadcasted ingester status to chitchat");
+        });
     }
 
     /// Returns the shard with the most available permits for this index and source.
@@ -90,7 +102,7 @@ impl InnerIngesterState {
 }
 
 impl IngesterState {
-    fn new() -> Self {
+    fn new(cluster: Cluster) -> Self {
         let status = IngesterStatus::Initializing;
         let (status_tx, status_rx) = watch::channel(status);
         let inner = InnerIngesterState {
@@ -100,6 +112,7 @@ impl IngesterState {
             replication_tasks: Default::default(),
             status,
             status_tx,
+            cluster: cluster.clone(),
         };
         let inner = Arc::new(Mutex::new(inner));
         let mrecordlog = Arc::new(RwLock::new(None));
@@ -107,12 +120,13 @@ impl IngesterState {
         Self {
             inner,
             mrecordlog,
+            cluster,
             status_rx,
         }
     }
 
-    pub fn load(wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) -> Self {
-        let state = Self::new();
+    pub fn load(wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings, cluster: Cluster) -> Self {
+        let state = Self::new(cluster);
         let state_clone = state.clone();
         let wal_dir_path = wal_dir_path.to_path_buf();
 
@@ -126,8 +140,14 @@ impl IngesterState {
 
     #[cfg(test)]
     pub async fn for_test() -> (tempfile::TempDir, Self) {
+        use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+
         let temp_dir = tempfile::tempdir().unwrap();
-        let mut state = IngesterState::load(temp_dir.path(), RateLimiterSettings::default());
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let mut state = IngesterState::load(temp_dir.path(), RateLimiterSettings::default(), cluster);
 
         state
             .status_rx
@@ -294,6 +314,7 @@ impl IngesterState {
         WeakIngesterState {
             inner: Arc::downgrade(&self.inner),
             mrecordlog: Arc::downgrade(&self.mrecordlog),
+            cluster: self.cluster.clone(),
             status_rx: self.status_rx.clone(),
         }
     }
@@ -447,6 +468,7 @@ impl FullyLockedIngesterState<'_> {
 pub(super) struct WeakIngesterState {
     inner: Weak<Mutex<InnerIngesterState>>,
     mrecordlog: Weak<RwLock<Option<MultiRecordLogAsync>>>,
+    cluster: Cluster,
     status_rx: watch::Receiver<IngesterStatus>,
 }
 
@@ -454,10 +476,12 @@ impl WeakIngesterState {
     pub fn upgrade(&self) -> Option<IngesterState> {
         let inner = self.inner.upgrade()?;
         let mrecordlog = self.mrecordlog.upgrade()?;
+        let cluster = self.cluster.clone();
         let status_rx = self.status_rx.clone();
         let state = IngesterState {
             inner,
             mrecordlog,
+            cluster,
             status_rx,
         };
         Some(state)
@@ -467,6 +491,7 @@ impl WeakIngesterState {
 #[cfg(test)]
 mod tests {
     use bytesize::ByteSize;
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_proto::types::ShardId;
     use tokio::time::timeout;
 
@@ -474,7 +499,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_does_not_lock_while_initializing() {
-        let state = IngesterState::new();
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let state = IngesterState::new(cluster);
         let inner_guard = state.inner.lock().await;
 
         assert_eq!(inner_guard.status(), IngesterStatus::Initializing);
@@ -489,7 +518,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_failed() {
-        let state = IngesterState::new();
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let state = IngesterState::new(cluster);
 
         state.inner.lock().await.set_status(IngesterStatus::Failed);
 
@@ -502,7 +535,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_init() {
-        let mut state = IngesterState::new();
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let mut state = IngesterState::new(cluster);
         let temp_dir = tempfile::tempdir().unwrap();
 
         state
