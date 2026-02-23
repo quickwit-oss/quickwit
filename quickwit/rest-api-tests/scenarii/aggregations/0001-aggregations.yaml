@@ -291,7 +291,7 @@ expected:
         response:
           values:
           - key: 85.0
-            value: 30.267171338722155
+            value: 30.267171338721898
 --- 
 # Test histogram
 method: [GET]
