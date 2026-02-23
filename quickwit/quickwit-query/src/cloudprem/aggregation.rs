@@ -20,8 +20,8 @@ use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResult
 use tantivy::aggregation::{bucket, metric};
 
 use super::{internal_error, missing_required, unsupported_query_error};
-use crate::aggregations::AggregationResults as QuickwitAggregationResults;
 use crate::InvalidQuery;
+use crate::aggregations::AggregationResults as QuickwitAggregationResults;
 
 const CALC_NODE_TYPE_URL: &str = "type.googleapis.com/calcfieldspb.CalcNode";
 
@@ -1317,9 +1317,9 @@ mod tests {
     use quickwit_proto::cloudprem::aggregation::Aggregation as AggregationEnum;
     use quickwit_proto::cloudprem::sort_by_expr_and_agg::SortType;
     use quickwit_proto::cloudprem::*;
+    use tantivy::aggregation::AggregationCollector;
     use tantivy::aggregation::agg_req::{Aggregation as TantivyAgg, AggregationVariants};
     use tantivy::aggregation::bucket::*;
-    use tantivy::aggregation::AggregationCollector;
     use tantivy::query::AllQuery;
 
     use super::test_helpers::*;
@@ -2545,7 +2545,10 @@ mod tests {
         let sketch = host_5.value[1].value.as_ref().unwrap();
         match sketch {
             agg_value::Value::SketchValue(bytes) => {
-                assert_eq!(bytes[0], 0xA0, "DDSketch binary should start with FLAG_COUNT");
+                assert_eq!(
+                    bytes[0], 0xA0,
+                    "DDSketch binary should start with FLAG_COUNT"
+                );
                 assert!(bytes.len() > 10);
             }
             other => panic!("expected SketchValue, got {other:?}"),
