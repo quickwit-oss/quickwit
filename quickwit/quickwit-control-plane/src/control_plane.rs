@@ -1291,6 +1291,7 @@ mod tests {
         ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, CpuCapacity, IndexingServiceClient,
         MockIndexingService,
     };
+    use quickwit_common::ServiceStream;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceClient, InitShardSuccess, InitShardsResponse, MockIngesterService,
         RetainShardsResponse,
@@ -2912,6 +2913,55 @@ mod tests {
             shard["publish_position_inclusive"],
             json!(Position::Beginning)
         );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_watch_ingester_observation_stream() {
+        let universe = Universe::with_accelerated_time();
+        let (control_plane_mailbox, control_plane_inbox) = universe.create_test_mailbox();
+        let weak_mailbox = control_plane_mailbox.downgrade();
+
+        let node_id: NodeId = "test-ingester".into();
+        let ingester_pool = IngesterPool::default();
+
+        let mut mock_ingester = MockIngesterService::new();
+        mock_ingester
+            .expect_open_observation_stream()
+            .return_once(|_| {
+                let stream = ServiceStream::from(vec![
+                    Ok(ObservationMessage {
+                        node_id: "test-ingester".to_string(),
+                        status: IngesterStatus::Ready as i32,
+                    }),
+                    Ok(ObservationMessage {
+                        node_id: "test-ingester".to_string(),
+                        status: IngesterStatus::Decommissioning as i32,
+                    }),
+                    Ok(ObservationMessage {
+                        node_id: "test-ingester".to_string(),
+                        status: IngesterStatus::Decommissioned as i32,
+                    }),
+                ]);
+                Ok(stream)
+            });
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        ingester_pool.insert(node_id.clone(), ingester);
+
+        spawn_observe_ingester_task(node_id.clone(), ingester_pool, weak_mailbox);
+
+        let msg: IngesterObservation = control_plane_inbox.recv_typed_message().await.unwrap();
+        assert_eq!(msg.node_id, node_id);
+        assert_eq!(msg.status, IngesterStatus::Ready);
+
+        let msg: IngesterObservation = control_plane_inbox.recv_typed_message().await.unwrap();
+        assert_eq!(msg.node_id, node_id);
+        assert_eq!(msg.status, IngesterStatus::Decommissioning);
+
+        let msg: IngesterObservation = control_plane_inbox.recv_typed_message().await.unwrap();
+        assert_eq!(msg.node_id, node_id);
+        assert_eq!(msg.status, IngesterStatus::Decommissioned);
 
         universe.assert_quit().await;
     }
