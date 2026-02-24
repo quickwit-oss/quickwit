@@ -367,6 +367,19 @@ fn build_metric(
             };
             AggregationVariants::Average(avg)
         }
+        // QUANTILE_SKETCH: request a percentile aggregation backed by a DDSketch.
+        // The specific percentile value (50.0) is a placeholder — the DDSketch
+        // collects the full distribution regardless. Event-query extracts the
+        // actual percentile it needs from the returned sketch.
+        "QUANTILE_SKETCH" => {
+            let percentiles = metric::PercentilesAggregationReq {
+                field,
+                percents: Some(vec![50.0]),
+                keyed: true,
+                missing: None,
+            };
+            AggregationVariants::Percentiles(percentiles)
+        }
         other => {
             return Err(InvalidQuery::Other(anyhow::anyhow!(
                 "unsupported metric aggregation: {other:?}"
@@ -736,6 +749,18 @@ impl ResultMapper {
                     .value
                     .push(generate_avg(avg.value.unwrap_or_default()));
             }
+            ("QUANTILE_SKETCH", MetricResult::Percentiles(_)) => {
+                // Finalized percentile results only contain evaluated float values —
+                // the DDSketch is consumed during finalization. Event-query requires
+                // the raw DDSketch for merging, so this path must not be used.
+                // Use skip_aggregation_finalization=true to get DDSketch via
+                // intermediate_aggregation_result_to_proto instead.
+                return Err(InvalidQuery::Other(anyhow::anyhow!(
+                    "QUANTILE_SKETCH requires skip_aggregation_finalization=true; finalized \
+                     results do not contain the DDSketch needed by event-query"
+                ))
+                .into());
+            }
             (agg_name, _) => {
                 return Err(InvalidQuery::Other(anyhow::anyhow!(
                     "aggregation type mismatch for {agg_name}"
@@ -1034,6 +1059,16 @@ impl IntermediateResultMapper {
                     ),
                 });
             }
+            // QUANTILE_SKETCH: encode DDSketch into Java-compatible binary format
+            // for proper merging in event-query via Sketch.fromByteArray().
+            ("QUANTILE_SKETCH", IntermediateMetricResult::Percentiles(percentiles_collector)) => {
+                let sketch_bytes = percentiles_collector.to_sketch_bytes();
+                state.value.push(EvpAggValue {
+                    value: Some(quickwit_proto::cloudprem::agg_value::Value::SketchValue(
+                        sketch_bytes,
+                    )),
+                });
+            }
             ("SUM", IntermediateMetricResult::Sum(m)) => {
                 state
                     .value
@@ -1102,6 +1137,14 @@ fn default_agg_value(agg_type: &str) -> EvpAggValue {
                         empty.to_sketch_bytes(),
                     ),
                 ),
+            }
+        }
+        "QUANTILE_SKETCH" => {
+            let empty = tantivy::aggregation::metric::PercentilesCollector::default();
+            EvpAggValue {
+                value: Some(quickwit_proto::cloudprem::agg_value::Value::SketchValue(
+                    empty.to_sketch_bytes(),
+                )),
             }
         }
         // SUM, MIN, MAX, and anything else → 0
@@ -1256,6 +1299,14 @@ mod test_helpers {
             expression: Some(field_expr("value")),
             id: "avg:avg".to_string(),
             r#type: "AVG".to_string(),
+        })
+    }
+
+    pub fn percentile_value_metric() -> quickwit_proto::cloudprem::aggregation::Aggregation {
+        quickwit_proto::cloudprem::aggregation::Aggregation::MetricCompute(MetricCompute {
+            expression: Some(field_expr("value")),
+            id: "percentile:value".to_string(),
+            r#type: "QUANTILE_SKETCH".to_string(),
         })
     }
 }
@@ -2350,5 +2401,157 @@ mod tests {
                 count: 78
             })
         );
+    }
+
+    // --- Percentile (QUANTILE_SKETCH) tests ---
+
+    #[test]
+    fn test_finalized_percentile_compute_errors() {
+        // Finalized percentile must return an error because the DDSketch
+        // is consumed during finalization and event-query requires raw DDSketch.
+        let child = AggregationEnum::Computes(Computes {
+            aggregation: vec![Aggregation {
+                aggregation: Some(percentile_value_metric()),
+            }],
+            time_grouping: vec![],
+        });
+        let agg = Aggregation {
+            aggregation: Some(child),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let aggregation_collector =
+            AggregationCollector::from_aggs(tantivy_aggs_ast, Default::default());
+        let aggregation_results = searcher.search(&AllQuery, &aggregation_collector).unwrap();
+
+        let result = super::aggregation_result_to_proto(aggregation_results.into(), &agg, 78);
+
+        assert!(result.is_err(), "finalized QUANTILE_SKETCH should error");
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("skip_aggregation_finalization"),
+            "error should mention skip_aggregation_finalization, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_intermediate_percentile_compute() {
+        let child = AggregationEnum::Computes(Computes {
+            aggregation: vec![Aggregation {
+                aggregation: Some(percentile_value_metric()),
+            }],
+            time_grouping: vec![],
+        });
+        let agg = Aggregation {
+            aggregation: Some(child),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 78)
+                .unwrap();
+
+        assert_eq!(evp_agg_results.len(), 1);
+        // Intermediate percentile returns DDSketch binary bytes
+        let val = evp_agg_results[0].value[0].value.as_ref().unwrap();
+        match val {
+            agg_value::Value::SketchValue(bytes) => {
+                assert!(!bytes.is_empty(), "sketch bytes should not be empty");
+                // Non-empty DDSketch starts with FLAG_COUNT (0xA0)
+                assert_eq!(
+                    bytes[0], 0xA0,
+                    "DDSketch binary should start with FLAG_COUNT (0xA0)"
+                );
+                assert!(
+                    bytes.len() > 20,
+                    "sketch bytes too small: {} bytes",
+                    bytes.len()
+                );
+            }
+            other => panic!("expected SketchValue for intermediate percentile, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_intermediate_percentile_with_group_by() {
+        let child = AggregationEnum::Computes(Computes {
+            aggregation: vec![
+                Aggregation {
+                    aggregation: Some(count_metric()),
+                },
+                Aggregation {
+                    aggregation: Some(percentile_value_metric()),
+                },
+            ],
+            time_grouping: vec![],
+        });
+
+        let attribute_group_by = AttributeGroupBy {
+            include: None,
+            expression: Some(host_expr()),
+            limit: 100,
+            sort: Some(SortByExprAndAgg {
+                ascending: false,
+                expr_and_agg: Some(ExprAndAgg {
+                    expr: Some(count_expr()),
+                    agg_function: "count".to_string(),
+                }),
+                r#type: SortType::Metric as i32,
+            }),
+            missing: None,
+            total: None,
+            child: Some(Box::new(Aggregation {
+                aggregation: Some(child),
+            })),
+        };
+
+        let agg_inner = AggregationEnum::AttributeGroupBy(Box::new(attribute_group_by));
+        let agg = Aggregation {
+            aggregation: Some(agg_inner),
+        };
+
+        let tantivy_aggs_ast = to_tantivy_aggregation(agg.clone(), 0i64).unwrap();
+        let searcher = test_searcher();
+        let distributed_collector =
+            tantivy::aggregation::DistributedAggregationCollector::from_aggs(
+                tantivy_aggs_ast,
+                Default::default(),
+            );
+        let intermediate_results = searcher.search(&AllQuery, &distributed_collector).unwrap();
+
+        let evp_agg_results =
+            super::intermediate_aggregation_result_to_proto(intermediate_results, &agg, 78)
+                .unwrap();
+
+        // All 12 host buckets
+        assert_eq!(evp_agg_results.len(), 12);
+
+        // Each bucket should have count (u64) + percentile (sketch_value)
+        let host_5 = find_result_by_key(&evp_agg_results, "host_5");
+        assert_eq!(host_5.value.len(), 2);
+
+        let count = host_5.value[0].value.as_ref().unwrap();
+        assert_eq!(count, &agg_value::Value::Uint64Value(5));
+
+        let sketch = host_5.value[1].value.as_ref().unwrap();
+        match sketch {
+            agg_value::Value::SketchValue(bytes) => {
+                assert_eq!(
+                    bytes[0], 0xA0,
+                    "DDSketch binary should start with FLAG_COUNT"
+                );
+                assert!(bytes.len() > 10);
+            }
+            other => panic!("expected SketchValue, got {other:?}"),
+        }
     }
 }
