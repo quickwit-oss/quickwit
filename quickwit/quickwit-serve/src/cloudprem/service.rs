@@ -52,8 +52,16 @@ use tracing::{debug, error, info, warn};
 
 use crate::developer_api::DeveloperApiServer;
 
-// TODO this should become configurable and sent by EVP
-pub const CLOUDPREM_INDEX_ID_PATTERN: &str = "datadog*";
+pub(crate) const CLOUDPREM_INDEX_ID_PATTERN: &str = "datadog*";
+
+/// Returns the index patterns to search. Falls back to `"datadog*"` when the
+/// caller doesn't specify any, for backward compatibility.
+fn resolve_index_patterns(index_id_patterns: &[String]) -> Vec<String> {
+    if index_id_patterns.is_empty() {
+        return vec![CLOUDPREM_INDEX_ID_PATTERN.to_string()];
+    }
+    index_id_patterns.to_vec()
+}
 
 const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -137,7 +145,7 @@ impl CloudPremService for CloudPremServiceImpl {
             .map(|after| DEFAULT_HIT_MAPPER.event_tracker_to_partial_hit(after));
 
         let search_request = SearchRequest {
-            index_id_patterns: vec![CLOUDPREM_INDEX_ID_PATTERN.to_string()],
+            index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
             query_ast: serde_json::to_string(&query_ast)
                 .map_err(|e| CloudPremError::Internal(e.to_string()))?,
             start_timestamp: None,
@@ -235,7 +243,7 @@ impl CloudPremService for CloudPremServiceImpl {
         // TODO optimize fetch one by leveraging the information in the event tracker
         // (last seen split_id, etc.)
         let search_request = SearchRequest {
-            index_id_patterns: vec![CLOUDPREM_INDEX_ID_PATTERN.to_string()],
+            index_id_patterns: resolve_index_patterns(&fetch_one_request.index_id_patterns),
             query_ast: query_ast_json,
             start_timestamp: None,
             end_timestamp: None,
@@ -314,7 +322,7 @@ impl CloudPremService for CloudPremServiceImpl {
         debug!("converted aggregation ast {aggregation_ast:?}");
 
         let search_request = SearchRequest {
-            index_id_patterns: vec![CLOUDPREM_INDEX_ID_PATTERN.to_string()],
+            index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
             query_ast: serde_json::to_string(&query_ast)
                 .map_err(|e| CloudPremError::Internal(e.to_string()))?,
             start_timestamp: None,

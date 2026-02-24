@@ -51,6 +51,7 @@ fn build_list_request(query: &QueryNode) -> ListRequest {
         search_after: None,
         org_id: 2,
         scope: Default::default(),
+        index_id_patterns: Vec::new(),
     }
 }
 
@@ -69,6 +70,7 @@ fn build_aggregation_request(
         }),
         org_id: 2,
         scope: Default::default(),
+        index_id_patterns: Vec::new(),
     }
 }
 
@@ -589,6 +591,7 @@ async fn test_fetch_one() {
             restriction_query: None,
             org_id: 2,
             scope: Default::default(),
+            index_id_patterns: Vec::new(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))
@@ -605,6 +608,7 @@ async fn test_fetch_one() {
             restriction_query: None,
             org_id: 2,
             scope: Default::default(),
+            index_id_patterns: Vec::new(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))
@@ -635,6 +639,7 @@ async fn test_fetch_one_unknown_id() {
         restriction_query: None,
         org_id: 2,
         scope: Default::default(),
+        index_id_patterns: Vec::new(),
     };
     let fetch_res = client
         .fetch_one(authenticated_request(fetch_request))
@@ -677,6 +682,7 @@ async fn test_fetch_one_restriction() {
             }),
             org_id: 2,
             scope: Default::default(),
+            index_id_patterns: Vec::new(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))
@@ -696,6 +702,7 @@ async fn test_fetch_one_restriction() {
             }),
             org_id: 2,
             scope: Default::default(),
+            index_id_patterns: Vec::new(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))

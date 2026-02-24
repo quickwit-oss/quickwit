@@ -126,6 +126,12 @@ pub struct ClusterIdentify {
     pub cluster_remote_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub version: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub commit_hash: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub commit_date: ::prost::alloc::string::String,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PullClusterMetricsRequest {}
@@ -287,6 +293,10 @@ pub struct ListRequest {
     pub search_after: ::core::option::Option<EventTracker>,
     #[prost(message, optional, tag = "8")]
     pub scope: ::core::option::Option<Scope>,
+    /// Quickwit index ID patterns to search (e.g. \["datadog-logs", "datadog-metrics"\]).
+    /// If empty, defaults to "datadog\*" for backward compatibility.
+    #[prost(string, repeated, tag = "10")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct SortKv {
@@ -357,6 +367,10 @@ pub struct FetchOneRequest {
     pub restriction_query: ::core::option::Option<::prost_types::Any>,
     #[prost(message, optional, tag = "4")]
     pub scope: ::core::option::Option<Scope>,
+    /// Quickwit index ID patterns to search (e.g. \["datadog-logs", "datadog-metrics"\]).
+    /// If empty, defaults to "datadog\*" for backward compatibility.
+    #[prost(string, repeated, tag = "5")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct FetchOneResponse {
@@ -377,6 +391,10 @@ pub struct AggregationRequest {
     pub org_id: i64,
     #[prost(message, optional, tag = "4")]
     pub scope: ::core::option::Option<Scope>,
+    /// Quickwit index ID patterns to search (e.g. \["datadog-logs", "datadog-metrics"\]).
+    /// If empty, defaults to "datadog\*" for backward compatibility.
+    #[prost(string, repeated, tag = "5")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Aggregation {

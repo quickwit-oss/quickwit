@@ -254,6 +254,9 @@ message ListRequest {
   int64 org_id = 6;
   optional EventTracker search_after = 7;
   Scope scope = 8;
+  // Quickwit index ID patterns to search (e.g. ["datadog-logs", "datadog-metrics"]).
+  // If empty, defaults to "datadog*" for backward compatibility.
+  repeated string index_id_patterns = 10;
 }
 
 message SortKV {
@@ -306,6 +309,9 @@ message FetchOneRequest {
   // this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
   google.protobuf.Any restriction_query = 3;
   Scope scope = 4;
+  // Quickwit index ID patterns to search (e.g. ["datadog-logs", "datadog-metrics"]).
+  // If empty, defaults to "datadog*" for backward compatibility.
+  repeated string index_id_patterns = 5;
 }
 
 message FetchOneResponse {
@@ -320,6 +326,9 @@ message AggregationRequest {
   // org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
   int64 org_id = 3;
   Scope scope = 4;
+  // Quickwit index ID patterns to search (e.g. ["datadog-logs", "datadog-metrics"]).
+  // If empty, defaults to "datadog*" for backward compatibility.
+  repeated string index_id_patterns = 5;
 }
 
 message Aggregation {
