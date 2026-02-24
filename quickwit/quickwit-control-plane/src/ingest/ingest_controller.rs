@@ -303,6 +303,10 @@ impl IngestController {
         }
     }
 
+    pub(crate) fn ingester_pool(&self) -> &IngesterPool {
+        &self.ingester_pool
+    }
+
     /// Sends a retain shard request to the given list of ingesters.
     ///
     /// If the request fails, we just log an error.

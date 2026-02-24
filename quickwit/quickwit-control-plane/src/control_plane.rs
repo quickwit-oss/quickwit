@@ -37,6 +37,10 @@ use quickwit_common::{Progress, shared_consts};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
+use quickwit_proto::ingest::ingester::{
+    IngesterService, IngesterServiceStream, IngesterStatus, ObservationMessage,
+    OpenObservationStreamRequest,
+};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
@@ -54,7 +58,7 @@ use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, Source
 use serde::Serialize;
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::watch;
-use tracing::{Level, debug, enabled, error, info};
+use tracing::{Level, debug, enabled, error, info, warn};
 
 use crate::IndexerPool;
 use crate::cooldown_map::{CooldownMap, CooldownStatus};
@@ -1053,9 +1057,16 @@ impl Handler<IndexerJoined> for ControlPlane {
         message: IndexerJoined,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let node_id: NodeId = message.0.node_id().into();
         info!(
-            "indexer `{}` joined the cluster: rebalancing shards and rebuilding indexing plan",
-            message.0.node_id()
+            "indexer `{node_id}` joined the cluster: rebalancing shards and rebuilding indexing \
+             plan"
+        );
+        // Subscribe to the ingester observation stream so we can track decommissioning state.
+        spawn_observe_ingester_task(
+            node_id,
+            self.ingest_controller.ingester_pool().clone(),
+            ctx.mailbox().downgrade(),
         );
         // TODO: Update shard table.
         if let Err(metastore_error) = self
@@ -1083,10 +1094,12 @@ impl Handler<IndexerLeft> for ControlPlane {
         message: IndexerLeft,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let node_id: NodeId = message.0.node_id().into();
         info!(
-            "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing plan",
-            message.0.node_id()
+            "indexer `{node_id}` left the cluster: rebalancing shards and rebuilding indexing plan"
         );
+        // Clear any decommissioning state tracked for this node's ingester.
+        self.model.remove_decommissioning_ingester(&node_id);
         // TODO: Update shard table.
         if let Err(metastore_error) = self
             .ingest_controller
@@ -1161,6 +1174,98 @@ async fn watcher_indexers(
                 // We are not interested in updates (yet).
             }
         }
+    }
+}
+
+fn spawn_observe_ingester_task(
+    node_id: NodeId,
+    ingester_pool: IngesterPool,
+    weak_mailbox: WeakMailbox<ControlPlane>,
+) {
+    tokio::spawn(observe_ingester(node_id, ingester_pool, weak_mailbox));
+}
+
+async fn observe_ingester(
+    node_id: NodeId,
+    ingester_pool: IngesterPool,
+    weak_mailbox: WeakMailbox<ControlPlane>,
+) {
+    let Some(ingester) = ingester_pool.get(&node_id) else {
+        warn!(ingester_id=%node_id, "ingester not found in pool, skipping observation stream");
+        return;
+    };
+    let observation_stream = match ingester
+        .open_observation_stream(OpenObservationStreamRequest {})
+        .await
+    {
+        Ok(stream) => stream,
+        Err(error) => {
+            warn!(ingester_id=%node_id, %error, "failed to open observation stream from ingester");
+            return;
+        }
+    };
+    watch_ingester_observation_stream(node_id, observation_stream, weak_mailbox).await;
+}
+
+async fn watch_ingester_observation_stream(
+    node_id: NodeId,
+    mut observation_stream: IngesterServiceStream<ObservationMessage>,
+    weak_mailbox: WeakMailbox<ControlPlane>,
+) {
+    while let Some(observation_message_result) = observation_stream.next().await {
+        let Some(mailbox) = weak_mailbox.upgrade() else {
+            return;
+        };
+        let status = match observation_message_result {
+            Ok(observation_message) => observation_message.status(),
+            Err(error) => {
+                warn!(ingester_id=%node_id, %error, "observation stream error from ingester");
+                return;
+            }
+        };
+        if let Err(error) = mailbox
+            .send_message(IngesterObservation {
+                node_id: node_id.clone(),
+                status,
+            })
+            .await
+        {
+            error!(ingester_id=%node_id, %error, "failed to forward `IngesterObservation` to control plane");
+        }
+        // `Decommissioned` and `Failed` are terminal states: no further status changes
+        // will be emitted. Close our end of the stream so the ingester can shut down cleanly.
+        match status {
+            IngesterStatus::Decommissioned | IngesterStatus::Failed => return,
+            _ => {}
+        }
+    }
+}
+
+/// Status update received from an ingester's observation stream.
+#[derive(Debug)]
+struct IngesterObservation {
+    node_id: NodeId,
+    status: IngesterStatus,
+}
+
+#[async_trait]
+impl Handler<IngesterObservation> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: IngesterObservation,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        match message.status {
+            IngesterStatus::Decommissioning | IngesterStatus::Decommissioned => {
+                self.model.add_decommissioning_ingester(message.node_id);
+            }
+            _ => {
+                self.model.remove_decommissioning_ingester(&message.node_id);
+            }
+        }
+        Ok(())
     }
 }
 
