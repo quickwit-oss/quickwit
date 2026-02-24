@@ -182,12 +182,21 @@ async fn get_index_metadata(
 
 async fn es_compat_index_mapping(
     index_id: String,
-    metastore: MetastoreServiceClient,
+    mut metastore: MetastoreServiceClient,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
-    let index_metadata = get_index_metadata(index_id.clone(), metastore).await?;
+    let indexes_metadata = if index_id.contains('*') || index_id.contains(',') {
+        let patterns: Vec<String> = index_id.split(',').map(|s| s.trim().to_string()).collect();
+        resolve_index_patterns(&patterns, &mut metastore).await?
+    } else {
+        vec![get_index_metadata(index_id.clone(), metastore).await?]
+    };
+    let index_id_patterns: Vec<String> = indexes_metadata
+        .iter()
+        .map(|m| m.index_id().to_string())
+        .collect();
     let list_fields_request = quickwit_proto::search::ListFieldsRequest {
-        index_id_patterns: vec![index_id],
+        index_id_patterns,
         fields: Vec::new(),
         start_timestamp: None,
         end_timestamp: None,
@@ -197,7 +206,7 @@ async fn es_compat_index_mapping(
         .await
         .ok();
     let response = ElasticsearchMappingsResponse::from_doc_mapping(
-        vec![index_metadata],
+        indexes_metadata,
         list_fields_response.as_ref(),
     );
     Ok(response)
