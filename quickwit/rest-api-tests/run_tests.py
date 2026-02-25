@@ -266,9 +266,8 @@ def stack_dicts(context, overriding):
     return context
 
 class Visitor:
-    def __init__(self, engine, debug=False):
+    def __init__(self, engine):
         self.engine = engine
-        self.debug = debug
         self.context_stack = []
         self.context = {}
     def run_setup_teardown_scripts(self, script_name, path):
@@ -281,8 +280,6 @@ class Visitor:
         return success
     def load_context(self, path):
         context = {"cwd": "/".join(path)}
-        if self.debug:
-            context["debug"] = True
         for file_name in ["_ctx.yaml", "_ctx." + self.engine + ".yaml"]:
             ctx_filepath = "/".join(path + [file_name])
             if osp.exists(ctx_filepath):
@@ -335,9 +332,9 @@ def build_path_tree(paths):
         path_tree.add_path(path)
     return path_tree
 
-def run(scenario_paths, engine, debug=False):
+def run(scenario_paths, engine):
     path_tree = build_path_tree(scenario_paths)
-    visitor = Visitor(engine=engine, debug=debug)
+    visitor = Visitor(engine=engine)
     return path_tree.visit_nodes(visitor)
 
 def filter_test(prefixes, test_name):
@@ -395,7 +392,6 @@ def main():
     arg_parser.add_argument("--engine", help="Targeted engine (elastic/quickwit).", default="quickwit")
     arg_parser.add_argument("--test", help="Specific prefix to select the tests to run. If not specified, all tests are run.", nargs="*")
     arg_parser.add_argument("--binary", help="Specific the quickwit binary to run.", nargs="?")
-    arg_parser.add_argument("--debug", help="Enable debug output for all requests.", action="store_true")
     parsed_args = arg_parser.parse_args()
 
     print(parsed_args)
@@ -411,7 +407,7 @@ def main():
 
     scenario_filepaths = glob.glob("scenarii/**/*.yaml", recursive=True)
     scenario_filepaths = list(filter_tests(parsed_args.test, scenario_filepaths))
-    return run(scenario_filepaths, engine=parsed_args.engine, debug=parsed_args.debug)
+    return run(scenario_filepaths, engine=parsed_args.engine)
 
 if __name__ == "__main__":
     import sys

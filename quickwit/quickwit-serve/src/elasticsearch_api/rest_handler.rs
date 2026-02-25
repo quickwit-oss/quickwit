@@ -45,13 +45,14 @@ use warp::reply::with_status;
 use warp::{Filter, Rejection};
 
 use super::filter::{
-    elastic_cat_indices_filter, elastic_cluster_health_filter, elastic_cluster_info_filter,
-    elastic_delete_index_filter, elastic_delete_scroll_filter, elastic_field_capabilities_filter,
-    elastic_index_cat_indices_filter, elastic_index_count_filter,
-    elastic_index_field_capabilities_filter, elastic_index_search_filter,
-    elastic_index_stats_filter, elastic_multi_search_filter, elastic_nodes_filter,
-    elastic_resolve_index_filter, elastic_scroll_filter, elastic_search_shards_filter,
-    elastic_stats_filter, elasticsearch_filter,
+    elastic_aliases_filter, elastic_cat_indices_filter, elastic_cluster_health_filter,
+    elastic_cluster_info_filter, elastic_delete_index_filter, elastic_delete_scroll_filter,
+    elastic_field_capabilities_filter, elastic_index_cat_indices_filter,
+    elastic_index_count_filter, elastic_index_field_capabilities_filter,
+    elastic_index_mapping_filter, elastic_index_search_filter, elastic_index_stats_filter,
+    elastic_multi_search_filter, elastic_nodes_filter, elastic_resolve_index_filter,
+    elastic_scroll_filter, elastic_search_shards_filter, elastic_stats_filter,
+    elasticsearch_filter,
 };
 use super::model::{
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
@@ -143,8 +144,7 @@ pub fn es_compat_search_shards_handler(
 /// GET _elastic/_aliases
 pub fn es_compat_aliases_handler()
 -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    warp::path!("_elastic" / "_aliases")
-        .and(warp::get())
+    elastic_aliases_filter()
         .then(|| async { Ok(Value::Object(Map::new())) })
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
@@ -156,11 +156,7 @@ pub fn es_compat_index_mapping_handler(
     metastore: MetastoreServiceClient,
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    let mapping_filter = warp::path!("_elastic" / String / "_mapping")
-        .or(warp::path!("_elastic" / String / "_mappings"))
-        .unify()
-        .and(warp::get());
-    mapping_filter
+    elastic_index_mapping_filter()
         .and(with_arg(metastore))
         .and(with_arg(search_service))
         .then(es_compat_index_mapping)

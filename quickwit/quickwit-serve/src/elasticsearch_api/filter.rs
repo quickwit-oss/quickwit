@@ -279,3 +279,15 @@ pub(crate) fn elastic_delete_scroll_filter()
 -> impl Filter<Extract = (), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_search" / "scroll").and(warp::delete())
 }
+
+pub(crate) fn elastic_aliases_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_aliases").and(warp::get())
+}
+
+pub(crate) fn elastic_index_mapping_filter()
+-> impl Filter<Extract = (String,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / String / "_mapping")
+        .or(warp::path!("_elastic" / String / "_mappings"))
+        .unify()
+        .and(warp::get())
+}
