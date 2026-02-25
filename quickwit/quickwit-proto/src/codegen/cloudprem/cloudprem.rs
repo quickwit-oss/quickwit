@@ -126,12 +126,6 @@ pub struct ClusterIdentify {
     pub cluster_remote_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub name: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
-    pub version: ::prost::alloc::string::String,
-    #[prost(string, tag = "5")]
-    pub commit_hash: ::prost::alloc::string::String,
-    #[prost(string, tag = "6")]
-    pub commit_date: ::prost::alloc::string::String,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PullClusterMetricsRequest {}
