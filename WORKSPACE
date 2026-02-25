@@ -2,6 +2,7 @@ workspace(name = "com_datadoghq_pomsky")
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("//:rules/cnab/version.bzl", "CNAB_TOOLS_VERSION")
 
 git_repository(
     name = "rules_oci_bootstrap",
@@ -16,7 +17,7 @@ oci_blob_pull(
     name = "com_datadoghq_cnab_tools",
     registry = "registry.ddbuild.io",
     repository = "cnab-tools/rules_cnab",
-    digest = "sha256:2fb2cf5e3bd3d655a8996918b626fd9234b2d28e996504e675076a2e75ae276f",
+    digest = CNAB_TOOLS_VERSION,
     extract = True,
     type = "tar.gz",
 )
@@ -26,6 +27,9 @@ cnab_tools_dependencies()
 
 load("@com_datadoghq_cnab_tools//rules/setup:cnab_tools.bzl", "cnab_tools_setup")
 cnab_tools_setup()
+
+load("@com_datadoghq_cnab_tools//rules/setup:rules_python.bzl", "rules_python_setup")
+rules_python_setup()
 
 load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_register_toolchains")
 
@@ -74,6 +78,5 @@ rules_docker_setup()
 git_repository(
     name = "pomsky_helm_charts",
     remote = "https://github.com/DataDog/pomsky-helm-charts.git",
-    commit = "d608492e46e706560c10d4cc6e82b9de66b4fcda",
+    commit = "e9edad900a3859a1a7a738431117cf2969456f47",
 )
-

@@ -556,23 +556,23 @@ impl IngestApiConfig {
         ensure!(
             self.max_queue_disk_usage > ByteSize::mib(256),
             "max_queue_disk_usage must be at least 256 MiB, got `{}`",
-            self.max_queue_disk_usage
+            self.max_queue_disk_usage.display().si()
         );
         ensure!(
             self.max_queue_disk_usage >= self.max_queue_memory_usage,
             "max_queue_disk_usage ({}) must be at least max_queue_memory_usage ({})",
-            self.max_queue_disk_usage,
-            self.max_queue_memory_usage
+            self.max_queue_disk_usage.display().si(),
+            self.max_queue_memory_usage.display().si()
         );
         info!(
             "ingestion shard throughput limit: {}",
-            self.shard_throughput_limit
+            self.shard_throughput_limit.display().si()
         );
         ensure!(
             self.shard_throughput_limit >= ByteSize::mib(1)
                 && self.shard_throughput_limit <= ByteSize::mib(20),
             "shard_throughput_limit ({}) must be within 1mb and 20mb",
-            self.shard_throughput_limit
+            self.shard_throughput_limit.display().si()
         );
         // The newline delimited format is persisted as something a bit larger
         // (lines prefixed with their length)
@@ -702,7 +702,21 @@ impl WebsocketConfig {
             .map(Self::normalize_site_url)
             .unwrap_or("app.datadoghq.com".to_string());
 
+        // Try DD_API_KEY env var first, then DD_API_KEY_FILE (read from file path)
         let dd_api_key_opt = quickwit_common::get_from_env_opt::<String>("DD_API_KEY", true)
+            .or_else(|| {
+                // If DD_API_KEY_FILE is set, read the API key from that file
+                quickwit_common::get_from_env_opt::<String>("DD_API_KEY_FILE", false)
+                    .and_then(|path| {
+                        std::fs::read_to_string(&path)
+                            .map_err(|e| {
+                                tracing::warn!(path = %path, error = %e, "failed to read DD_API_KEY_FILE");
+                                e
+                            })
+                            .ok()
+                    })
+                    .map(|s| s.trim().to_string())
+            })
             .or(self.dd_api_key.clone());
 
         Self {
@@ -711,10 +725,16 @@ impl WebsocketConfig {
         }
     }
 
-    fn validate(&self, enable_reverse_connection: bool) -> anyhow::Result<()> {
+    fn validate(
+        &self,
+        enable_reverse_connection: bool,
+        enabled_services: &HashSet<QuickwitService>,
+    ) -> anyhow::Result<()> {
         ensure!(self.site.is_some(), "Datadog site should be set");
 
-        if enable_reverse_connection {
+        let need_api_key =
+            enable_reverse_connection && enabled_services.contains(&QuickwitService::Searcher);
+        if need_api_key {
             ensure!(
                 self.dd_api_key.is_some(),
                 "reverse connection is enabled, but Datadog API key is not set"
@@ -779,10 +799,10 @@ pub struct CloudPremConfig {
 }
 
 impl CloudPremConfig {
-    pub fn validate(&self) -> anyhow::Result<()> {
+    pub fn validate(&self, enabled_services: &HashSet<QuickwitService>) -> anyhow::Result<()> {
         self.grpc_config.validate()?;
         self.datadog_config
-            .validate(self.enable_reverse_connection)?;
+            .validate(self.enable_reverse_connection, enabled_services)?;
 
         Ok(())
     }
@@ -826,6 +846,7 @@ impl Default for CloudPremConfig {
 pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: NodeId,
+    pub availability_zone: Option<String>,
     pub enabled_services: HashSet<QuickwitService>,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,

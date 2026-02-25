@@ -1,0 +1,81 @@
+# Delete possibly remaining indexes
+method: DELETE
+endpoint: api/v1/indexes/datadog-audit
+status_code: null
+---
+method: DELETE
+endpoint: api/v1/indexes/datadog-error
+status_code: null
+---
+method: DELETE
+endpoint: api/v1/indexes/datadog-web
+status_code: null
+---
+method: DELETE
+endpoint: api/v1/indexes/datadog-main
+status_code: null
+---
+# Create audit index (matches service:audit-*)
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.9"
+  index_id: datadog-audit
+  indexing_settings:
+    commit_timeout_secs: 1
+  ingest_settings:
+    validate_docs: false
+  doc_mapping: !include ../../config/cloudprem/datadog.yaml::doc_mapping
+---
+# Create error index (matches my-tag:critical OR @event.result.status:failed)
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.9"
+  index_id: datadog-error
+  indexing_settings:
+    commit_timeout_secs: 1
+  ingest_settings:
+    validate_docs: false
+  doc_mapping: !include ../../config/cloudprem/datadog.yaml::doc_mapping
+---
+# Create web index (matches (source:nginx OR host:web*) status:*)
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.9"
+  index_id: datadog-web
+  indexing_settings:
+    commit_timeout_secs: 1
+  ingest_settings:
+    validate_docs: false
+  doc_mapping: !include ../../config/cloudprem/datadog.yaml::doc_mapping
+---
+# Create main catch-all index
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.9"
+  index_id: datadog-main
+  indexing_settings:
+    commit_timeout_secs: 1
+  ingest_settings:
+    validate_docs: false
+  doc_mapping: !include ../../config/cloudprem/datadog.yaml::doc_mapping
+---
+# Set routing table
+method: PUT
+endpoint: api/v1/index-routing-table
+json:
+  - filter: "service:audit-*"
+    index_id: datadog-audit
+  - filter: "my-tag:critical OR @event.result.status:failed"
+    index_id: datadog-error
+  - filter: "(source:nginx OR host:web*) status:*"
+    index_id: datadog-web
+  - filter: "*"
+    index_id: datadog-main

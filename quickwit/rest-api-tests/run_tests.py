@@ -363,7 +363,16 @@ class QuickwitRunner:
         mkdir(config)
         shutil.copy("../../config/quickwit.yaml", config)
         shutil.copy(quickwit_bin_path, self.quickwit_dir.name)
-        self.proc = subprocess.Popen(["./quickwit", "run"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=self.quickwit_dir.name)
+        # Disable index routing table consistency checks so tests can freely create/delete indexes
+        env = os.environ.copy()
+        env["CP_ENFORCE_INDEX_ROUTING_TABLE_CONSISTENCY"] = "false"
+        self.proc = subprocess.Popen(
+            ["./quickwit", "run"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=self.quickwit_dir.name,
+            env=env,
+        )
         for i in range(100):
             try:
                 print("Checking on quickwit")

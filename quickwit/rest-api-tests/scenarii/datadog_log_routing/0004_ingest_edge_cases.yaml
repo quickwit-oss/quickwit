@@ -1,0 +1,40 @@
+# Known routing limitations: messages that WILL match a filter after
+# preprocessing (pomchi/src/processed_log.rs) but NOT at routing time.
+#
+# Gaps not covered by the routing accessor:
+#   - message→message chain where inner "message" is a JSON string
+#     (preprocessing parses it, accessor can't without allocating)
+#   - non-string values (booleans, numbers) are not coerced to strings
+#     (accessor only matches Value::String)
+
+# Clear all indexes
+method: PUT
+endpoint: api/v1/indexes/datadog-audit/clear
+---
+method: PUT
+endpoint: api/v1/indexes/datadog-error/clear
+---
+method: PUT
+endpoint: api/v1/indexes/datadog-web/clear
+---
+method: PUT
+endpoint: api/v1/indexes/datadog-main/clear
+---
+method: POST
+endpoint: /api/v2/logs
+headers:
+  Content-Type: application/json
+data: |
+  [
+    {"message": {"message": "{\"service\": \"audit-C1\"}"}},
+    {"message": {"event": {"result": {"status": false}}}},
+    {"message": {"host": "web-01", "status": 200}}
+  ]
+sleep_after: 10
+---
+# All 3 fall through to catch-all
+endpoint: api/v1/datadog-main/search
+params:
+  query: "*"
+expected:
+  num_hits: 3

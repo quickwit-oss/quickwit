@@ -398,6 +398,9 @@ impl IngestRouter {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: next_open_shard.index_uid.clone().into(),
                 source_id: next_open_shard.source_id.clone(),
+                // We don't necessarily persist to this shard. We persist to the shard with the most
+                // capacity on that node.
+                // TODO: Clean this up.
                 shard_id: Some(next_open_shard.shard_id.clone()),
                 doc_batch: subrequest.doc_batch.clone(),
             };
@@ -427,7 +430,6 @@ impl IngestRouter {
                 subrequests,
                 commit_type: commit_type as i32,
             };
-            workbench.record_persist_request(&persist_request);
 
             let persist_future = async move {
                 let persist_result = tokio::time::timeout(

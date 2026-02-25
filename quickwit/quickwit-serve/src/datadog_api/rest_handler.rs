@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use pomchi::{DatadogLogMsg, MessageValue};
 use quickwit_common::dd_metrics::DD_INGEST_METRICS;
-use quickwit_common::rate_limited_error;
+use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::DocBatchV2Builder;
 use quickwit_proto::ingest::CommitTypeV2;
@@ -24,19 +25,19 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestRouterService, IngestRouterServiceClient,
     IngestSubrequest,
 };
-use quickwit_proto::types::{DocUidGenerator, IndexId};
+use quickwit_proto::types::DocUidGenerator;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use serde::Deserialize;
 use serde_with::formats::CommaSeparator;
 use serde_with::{StringWithSeparator, serde_as};
-use tracing::{debug, error};
+use tracing::debug;
 use warp::{Filter, Rejection};
 
+use super::index_router::IndexRouter;
+use super::log_msg_accessors::{custom_field_accessor, tag_accessor};
 use crate::decompression::get_body_bytes;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{Body, BodyFormat, with_arg};
-
-const DATADOG_INDEX_ID: &str = "datadog";
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(datadog_logs,))]
@@ -44,9 +45,10 @@ pub struct DatadogApi;
 
 pub(crate) fn datadog_api_handlers(
     ingest_router: IngestRouterServiceClient,
+    index_router: IndexRouter,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     datadog_healthcheck()
-        .or(datadog_logs(ingest_router.clone()))
+        .or(datadog_logs(ingest_router, index_router))
         .boxed()
 }
 
@@ -105,13 +107,15 @@ pub(crate) fn datadog_logs_filter()
 )]
 pub(crate) fn datadog_logs(
     ingest_router: IngestRouterServiceClient,
+    index_router: IndexRouter,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     datadog_logs_filter()
         .and(with_arg(ingest_router))
+        .and(with_arg(index_router))
         .and(warp::post())
         .then(
-            |body: Body, query: DatadogLogsQueryParams, ingest_router| async move {
-                datadog_ingest_logs(ingest_router, DATADOG_INDEX_ID.to_string(), body, query).await
+            |body: Body, query: DatadogLogsQueryParams, ingest_router, index_router| async move {
+                datadog_ingest_logs(ingest_router, index_router, body, query).await
             },
         )
         .and(with_arg(BodyFormat::default()))
@@ -208,7 +212,7 @@ fn try_parse_datadog_log_messages(body: &Body) -> Result<Vec<DatadogLogMsg>, Dat
 
 async fn datadog_ingest_logs(
     ingest_router: IngestRouterServiceClient,
-    index_id: IndexId,
+    index_router: IndexRouter,
     body: Body,
     query: DatadogLogsQueryParams,
 ) -> Result<(), DatadogApiError> {
@@ -222,7 +226,11 @@ async fn datadog_ingest_logs(
         );
         return Ok(());
     }
-    let doc_batch_fut = quickwit_common::thread_pool::run_cpu_intensive(move || {
+    // Acquire the router guard once for the entire batch to ensure consistency
+    // and avoid cloning index_ids for each document.
+    let router = index_router.get_router();
+
+    let subrequests_fut = quickwit_common::thread_pool::run_cpu_intensive(move || {
         let mut messages = try_parse_datadog_log_messages(&body)?;
         // Apply URL parameter overrides to each message, if present.
         if query.service.is_some()
@@ -246,43 +254,73 @@ async fn datadog_ingest_logs(
             }
         }
 
-        let mut doc_batch_builder = DocBatchV2Builder::default();
+        // Group documents by target index using per-document routing.
+        let mut batches_by_index: HashMap<&str, DocBatchV2Builder> = HashMap::new();
         let mut doc_uid_generator = DocUidGenerator::default();
+        let mut num_unrouted_docs = 0u64;
 
-        for message in messages {
+        for message in &messages {
+            let Some(index_id) =
+                router.resolve_index(&tag_accessor(message), &custom_field_accessor(message))
+            else {
+                num_unrouted_docs += 1;
+                continue;
+            };
+
             let doc_json =
                 serde_json::to_vec(&message).expect("JSON serialization should not fail");
 
-            doc_batch_builder.add_doc(doc_uid_generator.next_doc_uid(), &doc_json);
+            batches_by_index
+                .entry(index_id)
+                .or_default()
+                .add_doc(doc_uid_generator.next_doc_uid(), &doc_json);
         }
-        Ok(doc_batch_builder.build())
+
+        if num_unrouted_docs > 0 {
+            DD_INGEST_METRICS
+                .ingest_unrouted_docs_total
+                .increment(num_unrouted_docs);
+            rate_limited_warn!(
+                limit_per_min = 10,
+                num_unrouted_docs = num_unrouted_docs,
+                "dropped logs with no matching routing rule"
+            );
+        }
+
+        // Build subrequests for each index.
+        let subrequests: Vec<IngestSubrequest> = batches_by_index
+            .into_iter()
+            .enumerate()
+            .map(|(i, (index_id, builder))| IngestSubrequest {
+                subrequest_id: i as u32,
+                index_id: index_id.to_string(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+                doc_batch: builder.build(),
+            })
+            .collect();
+
+        Ok(subrequests)
     });
-    let doc_batch = doc_batch_fut.await.map_err(|_panicked| {
+    let subrequests: Vec<IngestSubrequest> = subrequests_fut.await.map_err(|_panicked| {
         DatadogApiError::Internal("task panicked while processing log events payload".to_string())
     })??;
 
-    let subrequest = IngestSubrequest {
-        subrequest_id: 0,
-        index_id,
-        source_id: INGEST_V2_SOURCE_ID.to_string(),
-        doc_batch,
-    };
     let request = IngestRequestV2 {
         commit_type: CommitTypeV2::Auto as i32,
-        subrequests: vec![subrequest],
+        subrequests,
     };
+    let num_subrequests = request.subrequests.len();
     let response = ingest_router
         .ingest(request)
         .await
         .map_err(|error| DatadogApiError::Ingest(error.error_code(), error.to_string()))?;
 
-    // Since we issued only one subrequest, there should be only one success or failure in the
-    // response.
+    // Each subrequest should have exactly one success or failure in the response.
     let num_successes = response.successes.len();
     let num_failures = response.failures.len();
     assert!(
-        num_successes + num_failures == 1,
-        "expected only one success or failure, got {num_successes} successes and {num_failures} \
+        num_successes + num_failures == num_subrequests,
+        "expected {num_subrequests} responses, got {num_successes} successes and {num_failures} \
          failures",
     );
 
@@ -297,6 +335,7 @@ async fn datadog_ingest_logs(
             .record(start.elapsed().as_secs_f64());
         return Ok(());
     }
+    // Return the first failure reason (could be improved to aggregate errors).
     let failure_reason = response.failures[0].reason();
 
     // Same mapping as Elastic bulk v2:
@@ -344,9 +383,19 @@ mod tests {
         IngestFailure, IngestResponseV2, IngestRouterServiceClient, IngestSuccess,
         MockIngestRouterService,
     };
+    use quickwit_proto::metastore::IndexRoutingRule;
     use quickwit_proto::types::{IndexUid, Position, ShardId};
 
     use super::*;
+
+    const DATADOG_INDEX_ID: &str = "datadog";
+
+    fn test_index_router() -> IndexRouter {
+        IndexRouter::for_test(vec![IndexRoutingRule {
+            index_id: DATADOG_INDEX_ID.to_string(),
+            filter: "*".to_string(),
+        }])
+    }
 
     #[tokio::test]
     async fn test_datadog_ingest_logs() {
@@ -381,7 +430,7 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = datadog_logs(ingest_router);
+        let handler = datadog_logs(ingest_router, test_index_router());
         let payload = r#"
             [
               {
@@ -402,7 +451,7 @@ mod tests {
     #[tokio::test]
     async fn test_datadog_ingest_logs_empty_payload() {
         let ingest_router = IngestRouterServiceClient::mocked();
-        let handler = datadog_logs(ingest_router);
+        let handler = datadog_logs(ingest_router, test_index_router());
 
         let response = warp::test::request()
             .path("/api/v2/logs")
@@ -447,7 +496,7 @@ mod tests {
                 ))
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = datadog_logs(ingest_router);
+        let handler = datadog_logs(ingest_router, test_index_router());
         let payload = r#"
             [
               {
@@ -495,7 +544,7 @@ mod tests {
                 })
             });
         let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
-        let handler = datadog_logs(ingest_router);
+        let handler = datadog_logs(ingest_router, test_index_router());
         let payload = r#"
             [
               {
@@ -511,5 +560,92 @@ mod tests {
             .reply(&handler)
             .await;
         assert_eq!(response.status(), 429);
+    }
+
+    #[tokio::test]
+    async fn test_datadog_ingest_logs_routes_to_multiple_indexes() {
+        let index_router = IndexRouter::for_test(vec![
+            IndexRoutingRule {
+                filter: "service:frontend".to_string(),
+                index_id: "frontend-index".to_string(),
+            },
+            IndexRoutingRule {
+                filter: "service:backend".to_string(),
+                index_id: "backend-index".to_string(),
+            },
+            IndexRoutingRule {
+                filter: "*".to_string(),
+                index_id: "catch-all-index".to_string(),
+            },
+        ]);
+
+        let mut mock_ingest_router = MockIngestRouterService::new();
+        mock_ingest_router
+            .expect_ingest()
+            .once()
+            .returning(|ingest_request| {
+                // Should have 3 subrequests, one per index
+                assert_eq!(ingest_request.subrequests.len(), 3);
+
+                // Collect index_ids and doc counts
+                let index_doc_counts: HashMap<&str, usize> = ingest_request
+                    .subrequests
+                    .iter()
+                    .map(|sr| {
+                        (
+                            sr.index_id.as_str(),
+                            sr.doc_batch.as_ref().unwrap().num_docs(),
+                        )
+                    })
+                    .collect();
+
+                // Verify routing: 2 frontend, 1 backend, 1 catch-all
+                assert_eq!(index_doc_counts.get("frontend-index"), Some(&2));
+                assert_eq!(index_doc_counts.get("backend-index"), Some(&1));
+                assert_eq!(index_doc_counts.get("catch-all-index"), Some(&1));
+
+                // Return success for all subrequests
+                let successes = ingest_request
+                    .subrequests
+                    .iter()
+                    .map(|sr| IngestSuccess {
+                        subrequest_id: sr.subrequest_id,
+                        index_uid: Some(IndexUid::for_test(&sr.index_id, 0)),
+                        source_id: sr.source_id.clone(),
+                        shard_id: Some(ShardId::from(1)),
+                        replication_position_inclusive: Some(Position::offset(0u64)),
+                        num_ingested_docs: sr.doc_batch.as_ref().unwrap().num_docs() as u32,
+                        parse_failures: Vec::new(),
+                    })
+                    .collect();
+
+                Ok(IngestResponseV2 {
+                    successes,
+                    failures: Vec::new(),
+                })
+            });
+
+        let ingest_router = IngestRouterServiceClient::from_mock(mock_ingest_router);
+        let handler = datadog_logs(ingest_router, index_router);
+
+        // 4 logs: 2 frontend, 1 backend, 1 with no service (catch-all)
+        let payload = r#"
+            [
+              {"message": "frontend log 1", "service": "frontend"},
+              {"message": "backend log", "service": "backend"},
+              {"message": "frontend log 2", "service": "frontend"},
+              {"message": "no service log"}
+            ]
+        "#;
+
+        let response = warp::test::request()
+            .path("/api/v2/logs")
+            .method("POST")
+            .header("content-type", "application/json")
+            .body(payload)
+            .reply(&handler)
+            .await;
+
+        assert_eq!(response.status(), 200);
     }
 }

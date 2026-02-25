@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod rest_handler;
+pub mod index_router;
+mod log_msg_accessors;
+pub mod rest_handler;
 
+pub use index_router::IndexRouter;
+#[cfg(any(test, feature = "testsuite"))]
+pub use log_msg_accessors::{custom_field_accessor, tag_accessor};
 pub use rest_handler::DatadogApi;
 pub(crate) use rest_handler::datadog_api_handlers;

@@ -107,6 +107,7 @@ impl std::fmt::Debug for DDHistograms {
 pub struct DDIngestMetrics {
     pub ingest_requests_total: DDCounters,
     pub ingest_request_duration_seconds: DDHistograms,
+    pub ingest_unrouted_docs_total: Counter,
 }
 
 impl Default for DDIngestMetrics {
@@ -122,6 +123,7 @@ impl Default for DDIngestMetrics {
                 "status_code",
                 DD_STATUS_CODES,
             ),
+            ingest_unrouted_docs_total: counter!("ingest_unrouted_docs.count"),
         }
     }
 }

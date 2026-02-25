@@ -1,0 +1,360 @@
+# Pomsky Integrated Staging Configuration
+# Deploys to: pomsky-staging.logs-cloudprem.vaporeon-b.us1.staging.dog
+# Branch: pomsky-staging
+# Uses S3-based metastore (no PostgreSQL dependency)
+
+image:
+  repository: 727006795293.dkr.ecr.us-east-1.amazonaws.com/pomsky
+  tag: staging
+  pullPolicy: Always
+
+# Datadog site for reverse connection
+datadog:
+  site: dd.datad0g.com  # Staging environment
+
+cloudprem:
+  index:
+    minShards: 4 # number of indexers * number of vCPUs * 2 (1 * 2 * 2)
+  reverseConnection:
+    enabled: true
+
+environment:
+  QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
+  # disable mtls verification: we don't have a reverse-proxy doing decapsulation
+  # and putting the certificate into a header in staging
+  CP_DISABLE_CERTIFICATE_VERIFICATION: true
+
+podAnnotations:
+  # https://docs.datadoghq.com/containers/kubernetes/prometheus/?tab=kubernetesadv2
+  # https://docs.datadoghq.com/containers/guide/template_variables/
+  ad.datadoghq.com/pomsky.checks: |
+      {
+        "openmetrics": {
+          "instances": [
+            {
+              "openmetrics_endpoint": "http://%%host%%:7280/metrics",
+              "namespace": "cloudprem",
+              "metrics": [".*"]
+            }
+          ]
+        }
+      }
+  emissary.datadoghq.com/inject-lifecycle: "inject"
+
+tolerations:
+  - key: node
+    operator: Equal
+    effect: NoSchedule
+    value: nodeless
+
+  - key: cpu_arch
+    operator: Equal
+    effect: NoSchedule
+    value: arm64
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+          - key: "node-role.kubernetes.io/nodeless"
+            operator: Exists
+          - key: "node.datadoghq.com/cpu_arch"
+            operator: In
+            values:
+              - arm64
+
+# DD_API_KEY injection via DD_API_KEY_FILE env var (reads API key from file created by consul-template)
+# All components need this because CP_ENABLE_REVERSE_CONNECTION=true triggers validation on ALL pods
+
+metastore:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 1
+      memory: 2Gi
+
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
+
+control_plane:
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 1
+      memory: 2Gi
+
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
+
+indexer:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 2
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 8Gi
+
+  persistentVolume:
+    enabled: true
+    storage: 100Gi
+    storageClass: gp3
+
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
+
+searcher:
+  replicaCount: 3
+
+  # Fabric Egress Gateway: allows searcher pods to reach lambda.us-east-1.amazonaws.com
+  # for Lambda auto-deploy and invocation (offloaded leaf search)
+  podAnnotations:
+    beta.fabric.datadoghq.com/inject-lifecycle: "inject"
+    beta.fabric.datadoghq.com/egress-gateway: "true"
+
+  resources:
+    limits:
+      cpu: 2
+      memory: 8Gi
+    requests:
+      cpu: 2
+      memory: 8Gi
+
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
+
+  initContainers:
+    # Loads dd-api-key.tpl and injects the API key (loaded from Vault) for the reverse connection
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
+
+janitor:
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 1
+      memory: 2Gi
+
+  extraEnv:
+    DD_API_KEY_FILE: /secrets/dd-api-key.env
+
+  initContainers:
+    - name: consul-template-init
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/secrets/dd-api-key.env:chmod 600 /secrets/dd-api-key.env
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /secrets
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-staging-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /secrets/dd-api-key.env
+      subPath: dd-api-key.env
+      readOnly: true
+
+config:
+  # S3-based storage paths for integrated staging
+  default_index_root_uri: s3://logs-cloudprem-staging/integrated/indexes
+
+  # S3-based metastore (no PostgreSQL dependency)
+  metastore_uri: s3://logs-cloudprem-staging/integrated/metastore
+
+  ingest_api:
+    max_queue_memory_usage: 2GiB # memory capacity * 0.3 (half of staging)
+    max_queue_disk_usage: 5GiB # max queue mem usage * 2 (half of staging)
+
+# ConfigMap entry that is rendered by consul-template into the DD_API_KEY file for reverse connection
+# Secret stored at: kv/k8s/logs-cloudprem/cloudprem/pomsky-staging/dd_api_key with key dd_api_key
+extraConfigMaps:
+  - name: dd-api-key-template
+    data:
+      dd-api-key.tpl: |
+        {% with secret "kv/k8s/logs-cloudprem/cloudprem/pomsky-staging/dd_api_key" %}{% .Data.data.dd_api_key %}{% end %}

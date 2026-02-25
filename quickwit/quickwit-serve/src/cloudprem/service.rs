@@ -22,9 +22,11 @@ use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse, Event,
-    EventTracker, FetchOneRequest, FetchOneResponse, GetIndexesRequest, GetIndexesResponse,
-    ListRequest, ListResponse, NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
-    Statistics, UpdateIndexRequest, UpdateIndexResponse,
+    EventTracker, FetchOneRequest, FetchOneResponse, GetIndexRoutingTableRequest,
+    GetIndexRoutingTableResponse, GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse,
+    NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
+    SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest,
+    UpdateIndexResponse,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, PullMetricsRequest, PullMetricsResponse,
@@ -36,8 +38,8 @@ use quickwit_proto::metastore::{
     serde_utils,
 };
 use quickwit_proto::search::{
-    CountHits, Hit, ListTermsRequest, ListTermsResponse, PartialHit, SearchRequest, SearchResponse,
-    SortField, SortOrder,
+    CountHits, Hit, ListFieldsRequest, ListFieldsResponse, ListTermsRequest, ListTermsResponse,
+    PartialHit, SearchRequest, SearchResponse, SortField, SortOrder,
 };
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
@@ -50,8 +52,16 @@ use tracing::{debug, error, info, warn};
 
 use crate::developer_api::DeveloperApiServer;
 
-// TODO this should become configurable and sent by EVP
-pub const CLOUDPREM_INDEX_ID_PATTERN: &str = "datadog*";
+pub(crate) const CLOUDPREM_INDEX_ID_PATTERN: &str = "datadog*";
+
+/// Returns the index patterns to search. Falls back to `"datadog*"` when the
+/// caller doesn't specify any, for backward compatibility.
+fn resolve_index_patterns(index_id_patterns: &[String]) -> Vec<String> {
+    if index_id_patterns.is_empty() {
+        return vec![CLOUDPREM_INDEX_ID_PATTERN.to_string()];
+    }
+    index_id_patterns.to_vec()
+}
 
 const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
 
@@ -135,7 +145,7 @@ impl CloudPremService for CloudPremServiceImpl {
             .map(|after| DEFAULT_HIT_MAPPER.event_tracker_to_partial_hit(after));
 
         let search_request = SearchRequest {
-            index_id_patterns: vec![CLOUDPREM_INDEX_ID_PATTERN.to_string()],
+            index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
             query_ast: serde_json::to_string(&query_ast)
                 .map_err(|e| CloudPremError::Internal(e.to_string()))?,
             start_timestamp: None,
@@ -162,6 +172,7 @@ impl CloudPremService for CloudPremServiceImpl {
             search_after,
             count_hits: count_hits.into(),
             ignore_missing_indexes: false,
+            skip_aggregation_finalization: false,
         };
 
         let response = self
@@ -232,7 +243,7 @@ impl CloudPremService for CloudPremServiceImpl {
         // TODO optimize fetch one by leveraging the information in the event tracker
         // (last seen split_id, etc.)
         let search_request = SearchRequest {
-            index_id_patterns: vec![CLOUDPREM_INDEX_ID_PATTERN.to_string()],
+            index_id_patterns: resolve_index_patterns(&fetch_one_request.index_id_patterns),
             query_ast: query_ast_json,
             start_timestamp: None,
             end_timestamp: None,
@@ -245,6 +256,7 @@ impl CloudPremService for CloudPremServiceImpl {
             search_after: None,
             count_hits: CountHits::Underestimate.into(),
             ignore_missing_indexes: false,
+            skip_aggregation_finalization: false,
         };
 
         let search_response: SearchResponse =
@@ -310,7 +322,7 @@ impl CloudPremService for CloudPremServiceImpl {
         debug!("converted aggregation ast {aggregation_ast:?}");
 
         let search_request = SearchRequest {
-            index_id_patterns: vec![CLOUDPREM_INDEX_ID_PATTERN.to_string()],
+            index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
             query_ast: serde_json::to_string(&query_ast)
                 .map_err(|e| CloudPremError::Internal(e.to_string()))?,
             start_timestamp: None,
@@ -330,6 +342,7 @@ impl CloudPremService for CloudPremServiceImpl {
             // aggregation ast)
             count_hits: CountHits::CountAll.into(),
             ignore_missing_indexes: false,
+            skip_aggregation_finalization: true,
         };
 
         let response = self
@@ -343,15 +356,18 @@ impl CloudPremService for CloudPremServiceImpl {
             response.aggregation_postcard.ok_or_else(|| {
                 CloudPremError::Internal("request generated no aggregation result".to_string())
             })?;
-        let quickwit_aggregation_result = postcard::from_bytes(&aggregation_postcard_bytes)
-            .map_err(|err| {
-                CloudPremError::Internal(format!("failed to deserialize agg result: {err}"))
-            })?;
-        let cloudprem_aggregation_result = quickwit_query::cloudprem::aggregation_result_to_proto(
-            quickwit_aggregation_result,
-            &evp_aggregation_ast,
-            response.num_hits,
-        )?;
+
+        let intermediate_results: tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults =
+            postcard::from_bytes(&aggregation_postcard_bytes)
+                .map_err(|err| {
+                    CloudPremError::Internal(format!("failed to deserialize intermediate agg result: {err}"))
+                })?;
+        let cloudprem_aggregation_result =
+            quickwit_query::cloudprem::intermediate_aggregation_result_to_proto(
+                intermediate_results,
+                &evp_aggregation_ast,
+                response.num_hits,
+            )?;
         tracing::trace!("aggregation result: {cloudprem_aggregation_result:?}");
 
         let statistics = Statistics {
@@ -373,7 +389,7 @@ impl CloudPremService for CloudPremServiceImpl {
     ) -> Result<SearchResponse, CloudPremError> {
         // we don't want to ever access customer data here, that has to go through properly audited
         // channels
-        filter_safe_indexes(&mut search_request.index_id_patterns);
+        filter_safe_indexes(&mut search_request.index_id_patterns)?;
         self.search_service
             .root_search(search_request)
             .await
@@ -386,9 +402,19 @@ impl CloudPremService for CloudPremServiceImpl {
     ) -> Result<ListTermsResponse, CloudPremError> {
         // we don't want to ever access customer data here, that has to go through properly audited
         // channels
-        filter_safe_indexes(&mut list_terms_request.index_id_patterns);
+        filter_safe_indexes(&mut list_terms_request.index_id_patterns)?;
         self.search_service
             .root_list_terms(list_terms_request)
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn root_list_fields(
+        &self,
+        list_fields_request: ListFieldsRequest,
+    ) -> Result<ListFieldsResponse, CloudPremError> {
+        self.search_service
+            .root_list_fields(list_fields_request)
             .await
             .map_err(Into::into)
     }
@@ -478,10 +504,14 @@ impl CloudPremService for CloudPremServiceImpl {
         // Patch with retention policy from request if provided
         if let Some(proto_config) = request.index_config {
             if let Some(proto_rp) = proto_config.retention_policy {
-                index_config.retention_policy_opt = Some(RetentionPolicy {
+                let retention_policy = RetentionPolicy {
                     retention_period: proto_rp.period,
                     evaluation_schedule: RetentionPolicy::default_schedule(),
-                });
+                };
+                retention_policy.retention_period().map_err(|e| {
+                    CloudPremError::InvalidArgument(format!("invalid retention period: {e}"))
+                })?;
+                index_config.retention_policy_opt = Some(retention_policy);
             } else {
                 // If index_config is provided but retention_policy is None, remove it
                 index_config.retention_policy_opt = None;
@@ -547,10 +577,14 @@ impl CloudPremService for CloudPremServiceImpl {
                     }
                     .into());
                 }
-                updated_config.retention_policy_opt = Some(RetentionPolicy {
+                let retention_policy = RetentionPolicy {
                     retention_period: proto_rp.period,
                     evaluation_schedule: RetentionPolicy::default_schedule(),
-                });
+                };
+                retention_policy.retention_period().map_err(|e| {
+                    CloudPremError::InvalidArgument(format!("invalid retention period: {e}"))
+                })?;
+                updated_config.retention_policy_opt = Some(retention_policy);
             } else {
                 // If no retention policy provided, remove it
                 updated_config.retention_policy_opt = None;
@@ -616,6 +650,39 @@ impl CloudPremService for CloudPremServiceImpl {
             .await?;
 
         Ok(DeleteIndexResponse {})
+    }
+
+    async fn get_index_routing_table(
+        &self,
+        _request: GetIndexRoutingTableRequest,
+    ) -> CloudPremResult<GetIndexRoutingTableResponse> {
+        info!("received GetIndexRoutingTable request");
+
+        let rules =
+            crate::datadog_api::index_router::get_or_default_routing_rules(&self.metastore_client)
+                .await
+                .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+
+        let routing_table = rules.into_iter().map(Into::into).collect();
+
+        Ok(GetIndexRoutingTableResponse { routing_table })
+    }
+
+    async fn set_index_routing_table(
+        &self,
+        request: SetIndexRoutingTableRequest,
+    ) -> CloudPremResult<SetIndexRoutingTableResponse> {
+        info!("received SetIndexRoutingTable request");
+
+        let metastore_request = quickwit_proto::metastore::SetIndexRoutingTableRequest {
+            rules: request.routing_table.into_iter().map(Into::into).collect(),
+        };
+        self.metastore_client
+            .clone()
+            .set_index_routing_table(metastore_request)
+            .await?;
+
+        Ok(SetIndexRoutingTableResponse {})
     }
 }
 
@@ -691,11 +758,18 @@ async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
     }
 }
 
-fn filter_safe_indexes(index_id_patterns: &mut Vec<String>) {
+fn filter_safe_indexes(index_id_patterns: &mut Vec<String>) -> CloudPremResult<()> {
     let safe_pattern_char = |c: char| c.is_ascii_alphanumeric() || "-._*".contains(c);
 
     index_id_patterns
         .retain(|pattern| pattern.starts_with("otel-") && pattern.chars().all(safe_pattern_char));
+    if index_id_patterns.is_empty() {
+        Err(CloudPremError::InvalidQuery(
+            "no safe index targeted".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
 }
 
 struct HitMapper {

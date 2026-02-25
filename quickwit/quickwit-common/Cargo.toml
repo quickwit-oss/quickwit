@@ -21,6 +21,7 @@ dyn-clone = { workspace = true }
 env_logger = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
+governor = { workspace = true }
 home = { workspace = true }
 hostname = { workspace = true }
 http = { workspace = true }

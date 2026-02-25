@@ -29,7 +29,7 @@ use quickwit_indexing::IndexingService;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
 use quickwit_proto::metastore::{
-    ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient, MockMetastoreService,
+    ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient,
 };
 use quickwit_proto::types::NodeId;
 use serde_json::json;
@@ -109,7 +109,7 @@ async fn start_control_plane(
     let index_metadata_1 = index_metadata_for_test(index_1, source_1, 2);
     let mut index_metadata_2 = index_metadata_for_test(index_2, source_2, 1);
     index_metadata_2.create_timestamp = index_metadata_1.create_timestamp + 1;
-    let mut mock_metastore = MockMetastoreService::new();
+    let mut mock_metastore = crate::control_plane::tests::mock_metastore();
     mock_metastore.expect_list_indexes_metadata().returning(
         move |_list_indexes_request: quickwit_proto::metastore::ListIndexesMetadataRequest| {
             let indexes_metadata = vec![index_metadata_2.clone(), index_metadata_1.clone()];

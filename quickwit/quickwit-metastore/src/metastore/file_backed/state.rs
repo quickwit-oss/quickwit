@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_config::{IndexTemplate, IndexTemplateId};
-use quickwit_proto::metastore::MetastoreResult;
+use quickwit_proto::metastore::{IndexRoutingRule, MetastoreResult};
 use quickwit_proto::types::IndexId;
 use quickwit_storage::Storage;
 use uuid::Uuid;
@@ -33,6 +33,7 @@ pub(super) struct MetastoreState {
     pub templates: HashMap<IndexTemplateId, IndexTemplate>,
     pub template_matcher: IndexTemplateMatcher,
     pub identity: Uuid,
+    pub index_routing_table: Vec<IndexRoutingRule>,
 }
 
 impl MetastoreState {
@@ -67,6 +68,7 @@ impl MetastoreState {
             templates: manifest.templates,
             template_matcher,
             identity: manifest.identity,
+            index_routing_table: manifest.index_routing_table,
         };
         Ok(state)
     }
@@ -89,6 +91,7 @@ impl MetastoreState {
             indexes,
             templates,
             identity: self.identity,
+            index_routing_table: self.index_routing_table.clone(),
         }
     }
 }

@@ -1,5 +1,6 @@
 load("@com_datadoghq_cnab_tools//rules/artifact:artifact.bzl", "artifact_reference")
 load("@com_datadoghq_cnab_tools//rules:cli_defaults.bzl", "REGISTRY")
+load("@com_datadoghq_cnab_tools//rules:fabric.bzl", "generate_fabric_workflow")
 load("@com_datadoghq_cnab_tools//rules:workflow.bzl", "cnab_workflow", "cnab_installation")
 load("@com_datadoghq_datacenter_config//rules:helm.bzl", "dd_helm_cnab", "dd_helm_cnab_installation")
 
@@ -9,6 +10,19 @@ artifact_reference(
     repository = "pomsky",
     tag = "edge",
     digest="$(image_digest)", # --define image_digest=$(crane digest registry.ddbuild.io/pomsky:edge)
+)
+
+# The following fabric workflow is used to deploy the Fabric Egress ACL to the specified datacenters.
+# Currently it is triggered manually with
+# bzl run //:logs-cloudprem-fabric.us1.staging.dog.dc-wf
+DATACENTERS = [
+    "us1.staging.dog",
+]
+generate_fabric_workflow(
+    app = "logs-cloudprem-fabric",
+    datacenters = DATACENTERS,
+    namespace = "logs-cloudprem",
+    source_files = ["k8s/fabric/egress-acl.yaml"],
 )
 
 dd_helm_cnab(
@@ -48,6 +62,32 @@ cnab_workflow(
     parallel = True,
     tasks = [
         ":pomsky.logs-cloudprem.vaporeon-b.us1.staging.dog",
+    ],
+    tags = [
+        "env:staging",
+        "service:pomsky",
+        "team:logs-cloudprem",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Integrated Staging deployment (pomsky-staging branch)
+dd_helm_cnab_installation(
+    name = "pomsky-staging.logs-cloudprem.vaporeon-b.us1.staging.dog",
+    bundle = ":pomsky",
+    description = "Pomsky Integrated Staging",
+    parameters = default_params,
+    value_files = [
+        "k8s/values/staging-integrated.yaml"
+    ],
+)
+
+cnab_workflow(
+    name = "staging-integrated",
+    description = "Deploy Pomsky to integrated staging",
+    parallel = True,
+    tasks = [
+        ":pomsky-staging.logs-cloudprem.vaporeon-b.us1.staging.dog",
     ],
     tags = [
         "env:staging",

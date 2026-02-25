@@ -66,6 +66,13 @@ pub trait ClusterChangeStreamFactory: Clone + Send + 'static {
     fn create(&self) -> ClusterChangeStream;
 }
 
+/// A trait for publishing key-value pairs to the cluster via Chitchat.
+#[async_trait::async_trait]
+pub trait ClusterKvPublisher: Send + Sync + 'static {
+    /// Sets a key-value pair on the local node's Chitchat state.
+    async fn set_self_key_value(&self, key: String, value: String);
+}
+
 /// Compares the digests of the previous and new set of lives nodes, identifies the changes that
 /// occurred in the cluster, and emits the corresponding events, focusing on ready nodes only.
 pub(crate) async fn compute_cluster_change_events(
@@ -347,6 +354,13 @@ pub mod for_test {
             let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
             *self.inner.lock().unwrap() = Some(change_stream_tx);
             change_stream
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ClusterKvPublisher for ClusterChangeStreamFactoryForTest {
+        async fn set_self_key_value(&self, _key: String, _value: String) {
+            // No-op for tests
         }
     }
 }

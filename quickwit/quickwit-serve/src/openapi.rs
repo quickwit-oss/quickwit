@@ -28,7 +28,7 @@ use crate::delete_task_api::DeleteTaskApi;
 use crate::developer_api::DeveloperApi;
 use crate::elasticsearch_api::ElasticCompatibleApi;
 use crate::health_check_api::HealthCheckApi;
-use crate::index_api::IndexApi;
+use crate::index_api::{IndexApi, IndexRoutingTableApi};
 use crate::indexing_api::IndexingApi;
 use crate::ingest_api::{IngestApi, IngestApiSchemas};
 use crate::jaeger_api::JaegerApi;
@@ -65,6 +65,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     let tags = vec![
         Tag::new("Search"),
         Tag::new("Indexes"),
+        Tag::new("Index Routing Table"),
         Tag::new("Ingest"),
         Tag::new("Delete Tasks"),
         Tag::new("Node Health"),
@@ -90,6 +91,8 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.merge_components_and_paths(OtlpApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(HealthCheckApi::openapi().with_path_prefix("/health"));
     docs_base.merge_components_and_paths(IndexApi::openapi().with_path_prefix("/api/v1"));
+    docs_base
+        .merge_components_and_paths(IndexRoutingTableApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IndexingApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IndexTemplateApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IngestApi::openapi().with_path_prefix("/api/v1"));

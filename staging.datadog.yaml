@@ -1,0 +1,10 @@
+schema-version: v1
+kind: integration-branch
+name: pomsky/staging
+team: logs-cloudprem
+update_automatically: true
+update_at_most_every: 15m
+reset_pattern: "0 12 * * Mon"
+contacts:
+  - type: slack
+    contact: logs-cloudprem-ops-staging

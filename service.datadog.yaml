@@ -9,11 +9,21 @@ contacts:
     type: slack
     contact: https://dd.enterprise.slack.com/archives/C080CR58077
 extensions:
+  datadoghq.com/devflow:
+    integrate:
+      env:
+        staging-integrated:
+          branch: pomsky/staging
   datadoghq.com/sdp:
     workday_team: Logs CloudPrem
     conductor:
-        targets:
-          - name: staging
-            branch: main
-            schedule: '* * * * *'
-            slack: logs-cloudprem-ops
+      slack: logs-cloudprem-ops-staging
+      schedule: '* * * * 1-5'
+      targets:
+        - name: staging-integrated
+          branch: pomsky/staging
+          parent_environments:
+            - staging
+          deploy_only: true
+          artifacts:
+            - pomsky/staging-integrated

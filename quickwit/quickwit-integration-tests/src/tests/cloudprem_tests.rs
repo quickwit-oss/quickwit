@@ -51,6 +51,7 @@ fn build_list_request(query: &QueryNode) -> ListRequest {
         search_after: None,
         org_id: 2,
         scope: Default::default(),
+        index_id_patterns: Vec::new(),
     }
 }
 
@@ -69,6 +70,7 @@ fn build_aggregation_request(
         }),
         org_id: 2,
         scope: Default::default(),
+        index_id_patterns: Vec::new(),
     }
 }
 
@@ -246,6 +248,88 @@ async fn test_list() {
 }
 
 #[tokio::test]
+async fn test_index_routing_table_crud() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    // Step 1: Get routing table - should have default catch-all rule
+    let get_response = client
+        .get_index_routing_table(authenticated_request(GetIndexRoutingTableRequest {
+            org_id: 2,
+            cluster_id: "test-cluster".to_string(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let routing_table = &get_response.routing_table;
+    assert_eq!(routing_table.len(), 1, "should have default catch-all rule");
+    assert_eq!(routing_table[0].filter, "*");
+    assert_eq!(routing_table[0].index_id, "datadog");
+
+    // Step 2: Set routing table with a specific filter
+    let set_request = SetIndexRoutingTableRequest {
+        routing_table: vec![IndexRoutingRule {
+            filter: "source:nginx".to_string(),
+            index_id: "datadog".to_string(),
+        }],
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    client
+        .set_index_routing_table(authenticated_request(set_request))
+        .await
+        .expect("set_index_routing_table should succeed");
+
+    // Step 3: Verify routing table was updated
+    let get_response = client
+        .get_index_routing_table(authenticated_request(GetIndexRoutingTableRequest {
+            org_id: 2,
+            cluster_id: "test-cluster".to_string(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let routing_table = &get_response.routing_table;
+    assert_eq!(routing_table.len(), 1);
+    assert_eq!(routing_table[0].filter, "source:nginx");
+    assert_eq!(routing_table[0].index_id, "datadog");
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_index_routing_table_error_non_existent_index() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+
+    let mut client = sandbox.cloudprem_client();
+
+    // Try to set routing table with non-existent index - should fail
+    let set_request = SetIndexRoutingTableRequest {
+        routing_table: vec![IndexRoutingRule {
+            filter: "*".to_string(),
+            index_id: "non-existent-index".to_string(),
+        }],
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    let err = client
+        .set_index_routing_table(authenticated_request(set_request))
+        .await
+        .expect_err("set_index_routing_table should fail with non-existent index");
+
+    assert!(
+        err.message().contains("non-existent"),
+        "error should mention non-existent index: {}",
+        err.message()
+    );
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn test_index_crud_operations() {
     let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
     let sandbox = setup_env(&mut data).await;
@@ -388,6 +472,68 @@ async fn test_index_crud_operations() {
 }
 
 #[tokio::test]
+async fn test_index_invalid_retention_period() {
+    let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
+    let sandbox = setup_env(&mut data).await;
+    let mut client = sandbox.cloudprem_client();
+
+    // create_index with invalid retention period should fail
+    let create_request = CreateIndexRequest {
+        index_id: "test-invalid-retention".to_string(),
+        index_config: Some(index::IndexConfig {
+            retention_policy: Some(index::RetentionPolicy {
+                period: "not-a-valid-duration".to_string(),
+            }),
+        }),
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    let result = client
+        .create_index(authenticated_request(create_request))
+        .await;
+    assert!(
+        result.is_err(),
+        "create_index should reject invalid retention period"
+    );
+
+    // Create a valid index, then update_index with invalid retention should fail
+    let create_request = CreateIndexRequest {
+        index_id: "test-invalid-retention".to_string(),
+        index_config: Some(index::IndexConfig {
+            retention_policy: Some(index::RetentionPolicy {
+                period: "7 days".to_string(),
+            }),
+        }),
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    client
+        .create_index(authenticated_request(create_request))
+        .await
+        .expect("create_index should succeed");
+
+    let update_request = UpdateIndexRequest {
+        index_id: "test-invalid-retention".to_string(),
+        index_config: Some(index::IndexConfig {
+            retention_policy: Some(index::RetentionPolicy {
+                period: "not-a-valid-duration".to_string(),
+            }),
+        }),
+        org_id: 2,
+        cluster_id: "test-cluster".to_string(),
+    };
+    let result = client
+        .update_index(authenticated_request(update_request))
+        .await;
+    assert!(
+        result.is_err(),
+        "update_index should reject invalid retention period"
+    );
+
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
 async fn test_search_after() {
     let mut data: Vec<Value> = serde_json::from_slice(TEST_DATA).unwrap();
     let sandbox = setup_env(&mut data).await;
@@ -445,6 +591,7 @@ async fn test_fetch_one() {
             restriction_query: None,
             org_id: 2,
             scope: Default::default(),
+            index_id_patterns: Vec::new(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))
@@ -461,6 +608,7 @@ async fn test_fetch_one() {
             restriction_query: None,
             org_id: 2,
             scope: Default::default(),
+            index_id_patterns: Vec::new(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))
@@ -491,6 +639,7 @@ async fn test_fetch_one_unknown_id() {
         restriction_query: None,
         org_id: 2,
         scope: Default::default(),
+        index_id_patterns: Vec::new(),
     };
     let fetch_res = client
         .fetch_one(authenticated_request(fetch_request))
@@ -533,6 +682,7 @@ async fn test_fetch_one_restriction() {
             }),
             org_id: 2,
             scope: Default::default(),
+            index_id_patterns: Vec::new(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))
@@ -552,6 +702,7 @@ async fn test_fetch_one_restriction() {
             }),
             org_id: 2,
             scope: Default::default(),
+            index_id_patterns: Vec::new(),
         };
         let fetch_res = client
             .fetch_one(authenticated_request(fetch_request))

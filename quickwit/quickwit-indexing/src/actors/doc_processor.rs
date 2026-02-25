@@ -39,6 +39,7 @@ use serde_json::Value as JsonValue;
 use tantivy::schema::{Field, Value};
 use tantivy::{DateTime, TantivyDocument};
 use thiserror::Error;
+use time::OffsetDateTime;
 use tokio::runtime::Handle;
 use tracing::{error, info};
 
@@ -50,6 +51,10 @@ use crate::models::{
 };
 
 const PLAIN_TEXT: &str = "plain_text";
+const DEFAULT_MAX_LOG_PAST_AGE_HOURS: u64 = 18;
+const DEFAULT_MAX_LOG_FUTURE_AGE_HOURS: u64 = 12;
+const MAX_LOG_PAST_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_PAST_AGE_HOURS";
+const MAX_LOG_FUTURE_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_FUTURE_AGE_HOURS";
 
 pub(super) struct JsonDoc {
     json_obj: JsonObject,
@@ -379,12 +384,13 @@ pub struct DocProcessorCounters {
     pipeline_uid: String,
 
     /// Overall number of documents received, partitioned
-    /// into 5 categories:
+    /// into categories:
     /// - valid documents
     /// - number of docs that could not be parsed.
     /// - number of docs that were not valid json.
     /// - number of docs that could not be transformed.
     /// - number of docs for which the doc mapper returned an error.
+    /// - number of docs dropped because their timestamp was outside the accepted range.
     /// - number of valid docs.
     pub valid: DocProcessorCounter,
     pub doc_mapper_errors: DocProcessorCounter,
@@ -392,6 +398,7 @@ pub struct DocProcessorCounters {
     pub transform_errors: DocProcessorCounter,
     pub json_parse_errors: DocProcessorCounter,
     pub otlp_parse_errors: DocProcessorCounter,
+    pub outside_time_range: DocProcessorCounter,
 
     /// Number of bytes that went through the indexer
     /// during its entire lifetime.
@@ -436,6 +443,11 @@ impl DocProcessorCounters {
             &pipeline_uid,
             "otlp_parse_error",
         );
+        let outside_time_range = DocProcessorCounter::for_index_and_doc_processor_outcome(
+            &index_id,
+            &pipeline_uid,
+            "outside_time_range",
+        );
         let index_label = quickwit_common::metrics::index_label(&index_id);
         let processing_pipeline_cpu_micros_total = crate::metrics::INDEXER_METRICS
             .processing_pipeline_thread_cpu_micros_total
@@ -451,6 +463,7 @@ impl DocProcessorCounters {
             transform_errors,
             json_parse_errors,
             otlp_parse_errors,
+            outside_time_range,
             num_bytes_total: Default::default(),
             processing_pipeline_cpu_micros_total,
         }
@@ -464,6 +477,7 @@ impl DocProcessorCounters {
             + self.json_parse_errors.get_num_docs()
             + self.otlp_parse_errors.get_num_docs()
             + self.transform_errors.get_num_docs()
+            + self.outside_time_range.get_num_docs()
     }
 
     /// Returns the overall number of docs that were sent to the indexer but were invalid.
@@ -475,11 +489,17 @@ impl DocProcessorCounters {
             + self.json_parse_errors.get_num_docs()
             + self.otlp_parse_errors.get_num_docs()
             + self.transform_errors.get_num_docs()
+            + self.outside_time_range.get_num_docs()
     }
 
     pub fn record_valid(&self, num_bytes: u64) {
         self.num_bytes_total.fetch_add(num_bytes, Ordering::Relaxed);
         self.valid.record_doc(num_bytes);
+    }
+
+    pub fn record_outside_time_range(&self, num_bytes: u64) {
+        self.num_bytes_total.fetch_add(num_bytes, Ordering::Relaxed);
+        self.outside_time_range.record_doc(num_bytes);
     }
 
     pub fn record_error(&self, error: DocProcessorError, num_bytes: u64) {
@@ -515,6 +535,8 @@ pub struct DocProcessor {
     #[allow(dead_code)]
     transform_opt: Option<VrlProgram>,
     pipeline_opt: Option<Pipeline>,
+    pub max_log_past_age_secs: u64,
+    pub max_log_future_age_secs: u64,
     input_format: SourceInputFormat,
 }
 
@@ -546,6 +568,12 @@ fn load_pipeline_config_from_env() -> Option<PipelineConfig> {
             None
         }
     }
+}
+
+/// Return the log age limit in seconds
+fn load_log_limit_from_env(env_key: &str, default_hours: u64) -> u64 {
+    const SECS_PER_HOUR: u64 = 60 * 60;
+    quickwit_common::get_from_env(env_key, default_hours, false) * SECS_PER_HOUR
 }
 
 impl DocProcessor {
@@ -583,6 +611,14 @@ impl DocProcessor {
                 Pipeline::try_from_pipeline_config(&config, enable_integrations)
             })
             .transpose()?;
+        let max_log_past_age_secs = load_log_limit_from_env(
+            MAX_LOG_PAST_AGE_HOURS_ENV_KEY,
+            DEFAULT_MAX_LOG_PAST_AGE_HOURS,
+        );
+        let max_log_future_age_secs = load_log_limit_from_env(
+            MAX_LOG_FUTURE_AGE_HOURS_ENV_KEY,
+            DEFAULT_MAX_LOG_FUTURE_AGE_HOURS,
+        );
         Ok(DocProcessor {
             doc_mapper,
             indexer_mailbox,
@@ -594,6 +630,8 @@ impl DocProcessor {
                 .map(VrlProgram::try_from_transform_config)
                 .transpose()?,
             pipeline_opt,
+            max_log_past_age_secs,
+            max_log_future_age_secs,
             input_format,
         })
     }
@@ -618,7 +656,12 @@ impl DocProcessor {
         Ok(Some(timestamp))
     }
 
-    fn process_raw_doc(&mut self, raw_doc: Bytes, processed_docs: &mut Vec<ProcessedDoc>) {
+    fn process_raw_doc(
+        &mut self,
+        raw_doc: Bytes,
+        processed_docs: &mut Vec<ProcessedDoc>,
+        now_timestamp: i64,
+    ) {
         let num_bytes = raw_doc.len();
 
         // TODO reenable VRL?
@@ -640,6 +683,11 @@ impl DocProcessor {
 
             match processed_doc_result {
                 Ok(processed_doc) => {
+                    if self.is_outside_time_range(&processed_doc, now_timestamp) {
+                        self.counters
+                            .record_outside_time_range(processed_doc.num_bytes as u64);
+                        continue;
+                    }
                     self.counters.record_valid(processed_doc.num_bytes as u64);
                     processed_docs.push(processed_doc);
                 }
@@ -658,6 +706,21 @@ impl DocProcessor {
         self.counters
             .processing_pipeline_cpu_micros_total
             .inc_by(micros);
+    }
+
+    fn is_outside_time_range(&self, processed_doc: &ProcessedDoc, now_timestamp: i64) -> bool {
+        // Time range filtering applies to Datadog preprocessing path only.
+        if self.pipeline_opt.is_none() {
+            return false;
+        }
+        let Some(timestamp) = processed_doc.timestamp_opt else {
+            // We always have a timestamp in datadog. This shouldn't really happen.
+            return false;
+        };
+        let log_timestamp = timestamp.into_timestamp_secs();
+        let min_timestamp = now_timestamp - self.max_log_past_age_secs as i64;
+        let max_timestamp = now_timestamp + self.max_log_future_age_secs as i64;
+        log_timestamp < min_timestamp || log_timestamp > max_timestamp
     }
 
     fn process_json_doc(&self, json_doc: JsonDoc) -> Result<ProcessedDoc, DocProcessorError> {
@@ -743,10 +806,12 @@ impl Handler<RawDocBatch> for DocProcessor {
             return Ok(());
         }
         let mut processed_docs: Vec<ProcessedDoc> = Vec::with_capacity(raw_doc_batch.docs.len());
+        // Once per batch is good enough, once per doc would be too costly.
+        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
         for raw_doc in raw_doc_batch.docs {
             let _protected_zone_guard = ctx.protect_zone();
-            self.process_raw_doc(raw_doc, &mut processed_docs);
+            self.process_raw_doc(raw_doc, &mut processed_docs, now_timestamp);
             ctx.record_progress();
         }
         let processed_doc_batch = ProcessedDocBatch::new(
@@ -810,6 +875,7 @@ mod tests {
     use serde_json::Value as JsonValue;
     use tantivy::Document;
     use tantivy::schema::NamedFieldDocument;
+    use time::Duration;
 
     use super::*;
     use crate::models::{PublishLock, RawDocBatch};
@@ -1184,6 +1250,68 @@ mod tests {
 
         let (exit_status, _) = doc_processor_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Success));
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_doc_processor_drops_logs_outside_time_range() {
+        let universe = Universe::with_accelerated_time();
+        let doc_mapper = Arc::new(default_doc_mapper_for_test());
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let mut doc_processor = DocProcessor::try_new(
+            "datadog-index".to_string(),
+            "my-source".to_string(),
+            "pipeline1".to_string(),
+            doc_mapper,
+            indexer_mailbox,
+            None,
+            SourceInputFormat::Json,
+        )
+        .unwrap();
+        // Override for the test
+        doc_processor.max_log_past_age_secs = 18 * 3600; // 18 hours
+        doc_processor.max_log_future_age_secs = 12 * 3600; // 12
+        let (doc_processor_mailbox, doc_processor_handle) =
+            universe.spawn_builder().spawn(doc_processor);
+
+        let now = OffsetDateTime::now_utc();
+        let old_ts_millis = (now - Duration::hours(19)).unix_timestamp_nanos() / 1_000_000;
+        let valid_ts_millis = now.unix_timestamp_nanos() / 1_000_000;
+        let future_ts_millis = (now + Duration::hours(13)).unix_timestamp_nanos() / 1_000_000;
+
+        let old_doc = format!(r#"{{"message":"old","timestamp":{old_ts_millis}}}"#);
+        let valid_doc = format!(r#"{{"message":"ok","timestamp":{valid_ts_millis}}}"#);
+        let future_doc = format!(r#"{{"message":"future","timestamp":{future_ts_millis}}}"#);
+        doc_processor_mailbox
+            .send_message(RawDocBatch::for_test(
+                &[
+                    old_doc.as_bytes(),
+                    valid_doc.as_bytes(),
+                    future_doc.as_bytes(),
+                ],
+                0..3,
+            ))
+            .await
+            .unwrap();
+
+        let counters = doc_processor_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+        assert_eq!(counters.valid.get_num_docs(), 1);
+        assert_eq!(counters.outside_time_range.get_num_docs(), 2);
+        assert_eq!(counters.num_processed_docs(), 3);
+        assert_eq!(counters.num_invalid_docs(), 2);
+
+        let output_messages = indexer_inbox.drain_for_test();
+        assert_eq!(output_messages.len(), 1);
+        let batch = *(output_messages
+            .into_iter()
+            .next()
+            .unwrap()
+            .downcast::<ProcessedDocBatch>()
+            .unwrap());
+        assert_eq!(batch.docs.len(), 1);
         universe.assert_quit().await;
     }
 

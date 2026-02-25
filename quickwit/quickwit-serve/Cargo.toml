@@ -12,6 +12,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
@@ -76,6 +77,7 @@ quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
+quickwit-datadog-log-router = { workspace = true }
 quickwit-datetime = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
@@ -95,6 +97,8 @@ time = { workspace = true }
 
 [dev-dependencies]
 assert-json-diff = { workspace = true }
+binggan = { workspace = true }
+rand = { workspace = true }
 http = { workspace = true }
 http-body = "0.4"
 itertools = { workspace = true }
@@ -118,6 +122,7 @@ quickwit-opentelemetry = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
+quickwit-doc-mapper = { workspace = true }
 
 [features]
 pprof = [
@@ -131,3 +136,8 @@ sqs-for-tests = [
   "quickwit-indexing/sqs",
   "quickwit-indexing/sqs-test-helpers"
 ]
+
+[[bench]]
+name = "routing_filter_bench"
+harness = false
+required-features = ["testsuite"]

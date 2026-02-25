@@ -1,4 +1,4 @@
-FROM node:20@sha256:8cdc6b9b711af0711cc6139955cc1331fab5e0a995afd3260c52736fbc338059 AS ui-builder
+FROM node:24@sha256:b2b2184ba9b78c022e1d6a7924ec6fba577adf28f15c9d9c457730cc4ad3807a AS ui-builder
 
 COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 
@@ -66,7 +66,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
-FROM registry.ddbuild.io/images/base/gbi-ubuntu_2204:latest AS quickwit
+FROM registry.ddbuild.io/images/base/gbi-ubuntu_2404:latest AS quickwit
 
 LABEL org.opencontainers.image.title="Datadog CloudPrem"
 LABEL maintainer="Datadog, Inc."

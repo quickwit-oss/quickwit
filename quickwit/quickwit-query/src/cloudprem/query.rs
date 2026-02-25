@@ -306,42 +306,89 @@ fn build_quoted_query(quote_query_node: AttributeQuotedQueryNode) -> QueryAst {
     union(asts)
 }
 
-fn build_search_query(search_query: AttributeSearchQueryNode) -> Result<QueryAst, InvalidQuery> {
-    // this is a *:xxx query (full text on all fields)
-    let mode = match search_query.mode() {
-        SearchQueryMode::InvalidSearchMode => return Err(missing_required("search.mode")),
-
-        SearchQueryMode::Wes => FullTextMode::Bool {
-            operator: crate::BooleanOperand::And,
-        },
-        SearchQueryMode::WesQuoted => FullTextMode::Phrase { slop: 0 },
-        SearchQueryMode::WesPrefix | SearchQueryMode::WesGlob => {
-            return Err(unsupported_query_error("full-text search with wildcard"));
+fn convert_query(field: String, string_pattern: &str, mode: SearchQueryMode) -> QueryAst {
+    use crate::{BooleanOperand, MatchAllOrNone};
+    match mode {
+        SearchQueryMode::Wes => FullTextQuery {
+            field,
+            text: string_pattern.to_string(),
+            params: FullTextParams {
+                tokenizer: None,
+                mode: FullTextMode::Bool {
+                    operator: BooleanOperand::And,
+                },
+                zero_terms_query: MatchAllOrNone::MatchNone,
+            },
+            lenient: false,
         }
-    };
-    let string_pattern = if let Some(pattern) = search_query.structured_text {
-        wildcard_pattern_to_string(&pattern)
-    } else {
-        // we only do this if upstream did not provide us with a preparsed
-        // (non deprecated) input
-        #[allow(deprecated)]
-        search_query.text
-    };
-    let asts: Vec<QueryAst> = expand_virtual_fields(search_query.attribute)
-        .into_iter()
-        .map(|field| {
+        .into(),
+        SearchQueryMode::WesQuoted => FullTextQuery {
+            field,
+            text: string_pattern.to_string(),
+            params: FullTextParams {
+                tokenizer: None,
+                mode: FullTextMode::Phrase { slop: 0 },
+                zero_terms_query: MatchAllOrNone::MatchNone,
+            },
+            lenient: false,
+        }
+        .into(),
+        SearchQueryMode::WesPrefix => {
+            let text = string_pattern.trim_end_matches('*');
             FullTextQuery {
                 field,
-                text: string_pattern.clone(),
+                text: text.to_string(),
                 params: FullTextParams {
                     tokenizer: None,
-                    mode,
-                    zero_terms_query: crate::MatchAllOrNone::MatchNone,
+                    // SaaS returns documents where terms are not in the right order
+                    mode: FullTextMode::BoolPrefix {
+                        operator: BooleanOperand::And,
+                        max_expansions: u32::MAX,
+                    },
+                    zero_terms_query: MatchAllOrNone::MatchNone,
                 },
                 lenient: false,
             }
             .into()
-        })
+        }
+        SearchQueryMode::WesGlob => {
+            // we could "manually tokenize" and make into an union of wildcard queries to reproduce
+            // more correctly SaaS behavior.
+            WildcardQuery {
+                field,
+                value: string_pattern.to_string(),
+                lenient: false,
+                case_insensitive: false,
+            }
+            .into()
+        }
+        SearchQueryMode::InvalidSearchMode => {
+            // This shouldn't happen as we check for this before calling convert_query
+            unreachable!("InvalidSearchMode should be handled before calling convert_query")
+        }
+    }
+}
+
+fn build_search_query(search_query: AttributeSearchQueryNode) -> Result<QueryAst, InvalidQuery> {
+    // this is a *:xxx query (full text on all fields)
+
+    let string_pattern = if let Some(ref pattern) = search_query.structured_text {
+        wildcard_pattern_to_string(pattern)
+    } else {
+        // we only do this if upstream did not provide us with a preparsed
+        // (non deprecated) input
+        #[allow(deprecated)]
+        search_query.text.clone()
+    };
+
+    let mode = search_query.mode();
+    if mode == SearchQueryMode::InvalidSearchMode {
+        return Err(missing_required("search.mode"));
+    }
+
+    let asts: Vec<QueryAst> = expand_virtual_fields(search_query.attribute)
+        .into_iter()
+        .map(|field| convert_query(field, &string_pattern, mode))
         .collect();
     Ok(union(asts))
 }
@@ -473,9 +520,12 @@ fn expand_virtual_fields(field_name: String) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::cloudprem::{AttributeTermQueryNode, Value, value};
+    use quickwit_proto::cloudprem::{
+        AttributeSearchQueryNode, AttributeTermQueryNode, Value, WildcardToken, query_node, value,
+    };
 
     use super::*;
+    use crate::{BooleanOperand, MatchAllOrNone};
 
     #[test]
     fn test_term_query_expand_all() {
@@ -602,5 +652,248 @@ mod tests {
             non_zero_percent_bound,
             Bound::Excluded(JsonLiteral::Number(Number::from(i32::MIN + 1)))
         );
+    }
+
+    #[test]
+    fn test_wes_search_query_basic() {
+        let search_query = AttributeSearchQueryNode {
+            attribute: EVP_WES_FIELD.to_string(),
+            structured_text: Some(WildcardPattern {
+                tokens: vec![WildcardToken {
+                    literal: "error".to_string(),
+                    prefix_min_n_wild: 0,
+                    prefix_unbounded_n_wild: false,
+                }],
+            }),
+            mode: SearchQueryMode::Wes as i32,
+            ..Default::default()
+        };
+        let ast = build_search_query(search_query).unwrap();
+
+        let expected_ast = QueryAst::Bool(BoolQuery {
+            should: vec![
+                QueryAst::FullText(FullTextQuery {
+                    field: "message".to_string(),
+                    text: "error".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Bool {
+                            operator: BooleanOperand::And,
+                        },
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+                QueryAst::FullText(FullTextQuery {
+                    field: "all".to_string(),
+                    text: "error".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Bool {
+                            operator: BooleanOperand::And,
+                        },
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(ast, expected_ast);
+    }
+
+    #[test]
+    fn test_wes_search_query_quoted() {
+        let search_query = AttributeSearchQueryNode {
+            attribute: EVP_WES_FIELD.to_string(),
+            structured_text: Some(WildcardPattern {
+                tokens: vec![WildcardToken {
+                    literal: "connection timeout".to_string(),
+                    prefix_min_n_wild: 0,
+                    prefix_unbounded_n_wild: false,
+                }],
+            }),
+            mode: SearchQueryMode::WesQuoted as i32,
+            ..Default::default()
+        };
+        let ast = build_search_query(search_query).unwrap();
+
+        let expected_ast = QueryAst::Bool(BoolQuery {
+            should: vec![
+                QueryAst::FullText(FullTextQuery {
+                    field: "message".to_string(),
+                    text: "connection timeout".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Phrase { slop: 0 },
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+                QueryAst::FullText(FullTextQuery {
+                    field: "all".to_string(),
+                    text: "connection timeout".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Phrase { slop: 0 },
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(ast, expected_ast);
+    }
+
+    #[test]
+    fn test_wes_search_query_prefix() {
+        let search_query = AttributeSearchQueryNode {
+            attribute: EVP_WES_FIELD.to_string(),
+            structured_text: Some(WildcardPattern {
+                tokens: vec![
+                    WildcardToken {
+                        literal: "err".to_string(),
+                        prefix_min_n_wild: 0,
+                        prefix_unbounded_n_wild: false,
+                    },
+                    WildcardToken {
+                        literal: String::new(),
+                        prefix_min_n_wild: 0,
+                        prefix_unbounded_n_wild: true,
+                    },
+                ],
+            }),
+            mode: SearchQueryMode::WesPrefix as i32,
+            ..Default::default()
+        };
+        let ast = build_search_query(search_query).unwrap();
+
+        let expected_ast = QueryAst::Bool(BoolQuery {
+            should: vec![
+                QueryAst::FullText(FullTextQuery {
+                    field: "message".to_string(),
+                    text: "err".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::BoolPrefix {
+                            operator: BooleanOperand::And,
+                            max_expansions: u32::MAX,
+                        },
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+                QueryAst::FullText(FullTextQuery {
+                    field: "all".to_string(),
+                    text: "err".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::BoolPrefix {
+                            operator: BooleanOperand::And,
+                            max_expansions: u32::MAX,
+                        },
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(ast, expected_ast);
+    }
+
+    #[test]
+    fn test_wes_search_query_glob() {
+        let search_query = AttributeSearchQueryNode {
+            attribute: EVP_WES_FIELD.to_string(),
+            structured_text: Some(WildcardPattern {
+                tokens: vec![
+                    WildcardToken {
+                        literal: "err".to_string(),
+                        prefix_min_n_wild: 0,
+                        prefix_unbounded_n_wild: false,
+                    },
+                    WildcardToken {
+                        literal: "timeout".to_string(),
+                        prefix_min_n_wild: 0,
+                        prefix_unbounded_n_wild: true,
+                    },
+                ],
+            }),
+            mode: SearchQueryMode::WesGlob as i32,
+            ..Default::default()
+        };
+        let ast = build_search_query(search_query).unwrap();
+
+        let expected_ast = QueryAst::Bool(BoolQuery {
+            should: vec![
+                QueryAst::Wildcard(WildcardQuery {
+                    field: "message".to_string(),
+                    value: "err*timeout".to_string(),
+                    lenient: false,
+                    case_insensitive: false,
+                }),
+                QueryAst::Wildcard(WildcardQuery {
+                    field: "all".to_string(),
+                    value: "err*timeout".to_string(),
+                    lenient: false,
+                    case_insensitive: false,
+                }),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(ast, expected_ast);
+    }
+
+    #[test]
+    fn test_wes_via_to_quickwit_query() {
+        let evp_query = QueryNode {
+            node: Some(query_node::Node::Search(AttributeSearchQueryNode {
+                attribute: EVP_WES_FIELD.to_string(),
+                structured_text: Some(WildcardPattern {
+                    tokens: vec![WildcardToken {
+                        literal: "database error".to_string(),
+                        prefix_min_n_wild: 0,
+                        prefix_unbounded_n_wild: false,
+                    }],
+                }),
+                mode: SearchQueryMode::Wes as i32,
+                ..Default::default()
+            })),
+        };
+
+        let ast = to_quickwit_query(evp_query).unwrap();
+
+        let expected_ast = QueryAst::Bool(BoolQuery {
+            should: vec![
+                QueryAst::FullText(FullTextQuery {
+                    field: "message".to_string(),
+                    text: "database error".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Bool {
+                            operator: BooleanOperand::And,
+                        },
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+                QueryAst::FullText(FullTextQuery {
+                    field: "all".to_string(),
+                    text: "database error".to_string(),
+                    params: FullTextParams {
+                        tokenizer: None,
+                        mode: FullTextMode::Bool {
+                            operator: BooleanOperand::And,
+                        },
+                        zero_terms_query: MatchAllOrNone::MatchNone,
+                    },
+                    lenient: false,
+                }),
+            ],
+            ..Default::default()
+        });
+        assert_eq!(ast, expected_ast);
     }
 }

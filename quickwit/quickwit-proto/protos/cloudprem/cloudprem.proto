@@ -28,6 +28,7 @@ service CloudPremService {
   // These are endpoints to use the capabilities of the underlying quickwit searcher
   rpc RootSearch(quickwit.search.SearchRequest) returns (quickwit.search.SearchResponse);
   rpc RootListTerms(quickwit.search.ListTermsRequest) returns (quickwit.search.ListTermsResponse);
+  rpc RootListFields(quickwit.search.ListFieldsRequest) returns (quickwit.search.ListFieldsResponse);
 
   // Returns the list of indexes
   rpc GetIndexes(GetIndexesRequest) returns (GetIndexesResponse);
@@ -40,6 +41,12 @@ service CloudPremService {
 
   // Deletes an existing index.
   rpc DeleteIndex(DeleteIndexRequest) returns (DeleteIndexResponse);
+
+  // Gets the index routing table.
+  rpc GetIndexRoutingTable(GetIndexRoutingTableRequest) returns (GetIndexRoutingTableResponse);
+
+  // Sets the index routing table.
+  rpc SetIndexRoutingTable(SetIndexRoutingTableRequest) returns (SetIndexRoutingTableResponse);
 
   // Response are sent to the bridge by the front, which initialised the connection
   rpc InvertedRequestStream(stream AnyResponse) returns (stream AnyRequest);
@@ -65,6 +72,11 @@ message AnyRequest {
         CreateIndexRequest create_index = 23;
         UpdateIndexRequest update_index = 24;
         DeleteIndexRequest delete_index = 25;
+        quickwit.search.ListFieldsRequest root_list_fields = 26;
+        GetIndexRoutingTableRequest get_index_routing_table = 27;
+        SetIndexRoutingTableRequest set_index_routing_table = 28;
+
+        CancelRequest cancel = 99;
     }
 }
 
@@ -94,6 +106,10 @@ message AnyResponse {
         CreateIndexResponse create_index = 23;
         UpdateIndexResponse update_index = 24;
         DeleteIndexResponse delete_index = 25;
+        quickwit.search.ListFieldsResponse root_list_fields = 26;
+        GetIndexRoutingTableResponse get_index_routing_table = 27;
+        SetIndexRoutingTableResponse set_index_routing_table = 28;
+
     }
 }
 
@@ -196,6 +212,36 @@ message DeleteIndexResponse {
   // Empty response indicating successful deletion.
 }
 
+// A routing rule maps a filter pattern to an index.
+message IndexRoutingRule {
+  string filter = 1;
+  string index_id = 2;
+}
+
+message GetIndexRoutingTableRequest {
+  // org_id,cluster_id are used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
+  int64 org_id = 998;
+  string cluster_id = 999;
+}
+
+message GetIndexRoutingTableResponse {
+  // The routing table as an ordered list of routing rules.
+  repeated IndexRoutingRule routing_table = 1;
+}
+
+message SetIndexRoutingTableRequest {
+  // The routing table as an ordered list of routing rules.
+  repeated IndexRoutingRule routing_table = 1;
+
+  // org_id,cluster_id are used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
+  int64 org_id = 998;
+  string cluster_id = 999;
+}
+
+message SetIndexRoutingTableResponse {
+  // Empty response indicating successful update.
+}
+
 message ListRequest {
   // this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
   google.protobuf.Any query = 1;
@@ -208,6 +254,9 @@ message ListRequest {
   int64 org_id = 6;
   optional EventTracker search_after = 7;
   Scope scope = 8;
+  // Quickwit index ID patterns to search (e.g. ["datadog-logs", "datadog-metrics"]).
+  // If empty, defaults to "datadog*" for backward compatibility.
+  repeated string index_id_patterns = 10;
 }
 
 message SortKV {
@@ -260,6 +309,9 @@ message FetchOneRequest {
   // this is always a com.dd.queryparser.proto.QueryNode, but we can't import logs-backend protobuf from here
   google.protobuf.Any restriction_query = 3;
   Scope scope = 4;
+  // Quickwit index ID patterns to search (e.g. ["datadog-logs", "datadog-metrics"]).
+  // If empty, defaults to "datadog*" for backward compatibility.
+  repeated string index_id_patterns = 5;
 }
 
 message FetchOneResponse {
@@ -274,6 +326,9 @@ message AggregationRequest {
   // org_id is used for routing in cloudprem-bridge (which shares this api), ignored in pomsky
   int64 org_id = 3;
   Scope scope = 4;
+  // Quickwit index ID patterns to search (e.g. ["datadog-logs", "datadog-metrics"]).
+  // If empty, defaults to "datadog*" for backward compatibility.
+  repeated string index_id_patterns = 5;
 }
 
 message Aggregation {
@@ -410,6 +465,9 @@ message ExprAndAgg {
 message ExpressionNode {
   // this is always a com.dd.calc_fields.proto.CalcNode
   google.protobuf.Any calcNode = 1;
+}
+
+message CancelRequest {
 }
 
 message Scope {

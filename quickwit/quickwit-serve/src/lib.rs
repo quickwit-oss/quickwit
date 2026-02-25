@@ -19,7 +19,10 @@ mod cloudprem;
 mod cloudprem_ui_api;
 pub mod cloudprem_ui_handler;
 mod cluster_api;
-mod datadog_api;
+#[cfg(any(test, feature = "testsuite"))]
+pub mod datadog_api;
+#[cfg(not(any(test, feature = "testsuite")))]
+pub(crate) mod datadog_api;
 mod decompression;
 mod delete_task_api;
 mod developer_api;
