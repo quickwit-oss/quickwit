@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+set -eu
+
+# ensure gitleaks is available
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "Error: gitleaks is not installed or not in PATH." >&2
+  echo "Install: https://github.com/gitleaks/gitleaks#install" >&2
+  exit 1
+fi
+
+# scan for secrets before commit
+gitleaks detect --no-git --verbose
