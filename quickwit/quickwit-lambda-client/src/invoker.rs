@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
 use anyhow::Context as _;
 use async_trait::async_trait;
 use aws_sdk_lambda::Client as LambdaClient;
@@ -35,7 +33,7 @@ use crate::metrics::LAMBDA_METRICS;
 pub(crate) async fn create_lambda_invoker_for_version(
     function_name: String,
     version: String,
-) -> anyhow::Result<Arc<dyn LambdaLeafSearchInvoker>> {
+) -> anyhow::Result<AwsLambdaInvoker> {
     let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let client = LambdaClient::new(&aws_config);
     let invoker = AwsLambdaInvoker {
@@ -44,11 +42,11 @@ pub(crate) async fn create_lambda_invoker_for_version(
         version,
     };
     invoker.validate().await?;
-    Ok(Arc::new(invoker))
+    Ok(invoker)
 }
 
 /// AWS Lambda implementation of RemoteFunctionInvoker.
-struct AwsLambdaInvoker {
+pub(crate) struct AwsLambdaInvoker {
     client: LambdaClient,
     function_name: String,
     /// The version number to invoke (e.g., "7", "12").
