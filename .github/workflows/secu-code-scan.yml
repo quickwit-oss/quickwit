@@ -1,0 +1,30 @@
+name: code-scan
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: 0 1 * * 1-5
+
+jobs:
+
+  code-scan:
+    uses: centreon/security-tools/.github/workflows/checkmarx-analysis.yml@main
+    with:
+      module_directory:
+      module_name: centreon-internal-mcp-tools
+      exclude_list:
+    secrets:
+      base_uri: ${{ secrets.AST_RND_SCANS_BASE_URI }}
+      cx_tenant: ${{ secrets.AST_RND_SCANS_TENANT }}
+      cx_client_id: ${{ secrets.AST_RND_SCANS_CLIENT_ID }}
+      cx_client_secret: ${{ secrets.AST_RND_SCANS_CLIENT_SECRET }}
