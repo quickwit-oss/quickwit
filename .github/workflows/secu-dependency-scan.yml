@@ -1,0 +1,16 @@
+name: dependency-scan
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+
+on:
+  pull_request:
+    paths:
+      - '**'
+      - '!lib/crates/**'
+
+  workflow_dispatch:
+
+jobs:
+  dependency-scan:
+    uses: centreon/security-tools/.github/workflows/dependency-analysis.yml@main
