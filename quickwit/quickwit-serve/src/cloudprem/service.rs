@@ -45,7 +45,7 @@ use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
 use quickwit_query::cloudprem::sanitize_metric_id_aggregations;
 use quickwit_query::query_ast::{BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst};
-use quickwit_search::SearchService;
+use quickwit_search::{SearchError, SearchService};
 use serde_json::Value as JsonValue;
 use tokio_stream::StreamExt as _;
 use tracing::{debug, error, info, warn};
@@ -173,6 +173,10 @@ impl CloudPremService for CloudPremServiceImpl {
             .await
             .inspect_err(|e| warn!("list root search failed: {e}"))?;
 
+        if let Some(search_error) = SearchError::from_split_errors(&response.failed_splits) {
+            return Err(CloudPremError::Internal(search_error.to_string()));
+        }
+
         let events = response
             .hits
             .into_iter()
@@ -255,6 +259,13 @@ impl CloudPremService for CloudPremServiceImpl {
             self.search_service.root_search(search_request).await?;
 
         if search_response.hits.is_empty() {
+            // Only treat split failures as errors if the document wasn't found, if we got a hit,
+            // the failures are irrelevant.
+            if let Some(search_error) =
+                SearchError::from_split_errors(&search_response.failed_splits)
+            {
+                return Err(CloudPremError::Internal(search_error.to_string()));
+            }
             warn!("document not found on fetch one");
             return Ok(FetchOneResponse {
                 event: None,
@@ -342,6 +353,10 @@ impl CloudPremService for CloudPremServiceImpl {
             .root_search(search_request)
             .await
             .inspect_err(|e| warn!("list root search failed: {e}"))?;
+
+        if let Some(search_error) = SearchError::from_split_errors(&response.failed_splits) {
+            return Err(CloudPremError::Internal(search_error.to_string()));
+        }
 
         tracing::trace!("request result: {response:?}");
         let aggregation_postcard_bytes: Vec<u8> =
