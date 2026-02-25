@@ -125,6 +125,10 @@ message ListFieldsRequest {
   optional int64 start_timestamp = 3;
   optional int64 end_timestamp = 4;
 
+  uint64 max_hits = 5;
+  uint64 start_offset = 6;
+  repeated SortField sort_fields = 7;
+
   // Control if the request will fail if split_ids contains a split that does not exist.
   // optional bool fail_on_missing_index = 6;
 }
@@ -146,6 +150,7 @@ message LeafListFieldsRequest {
 
 message ListFieldsResponse {
   repeated ListFieldsEntryResponse fields = 1;
+  uint64 num_fields = 2;
 }
 
 message ListFieldsEntryResponse {

@@ -184,5 +184,6 @@ pub fn build_list_field_request_for_es_api(
         fields: search_params.fields.unwrap_or_default(),
         start_timestamp: search_params.start_timestamp,
         end_timestamp: search_params.end_timestamp,
+        ..Default::default()
     })
 }

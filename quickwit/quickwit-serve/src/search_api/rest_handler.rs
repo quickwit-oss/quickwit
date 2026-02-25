@@ -17,7 +17,7 @@ use std::sync::Arc;
 
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
-use quickwit_proto::search::{CountHits, SortField, SortOrder};
+use quickwit_proto::search::{CountHits, ListFieldsRequest, SortField, SortOrder};
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchPlanResponseRest, SearchResponseRest, SearchService};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -36,12 +36,14 @@ use crate::{BodyFormat, with_arg};
         search_post_handler,
         search_plan_get_handler,
         search_plan_post_handler,
+        list_fields_handler,
     ),
     components(schemas(
         BodyFormat,
         SearchRequestQueryString,
         SearchResponseRest,
         SearchPlanResponseRest,
+        ListFieldsQueryString,
         SortBy,
         SortField,
         SortOrder,
@@ -240,6 +242,48 @@ mod count_hits_from_bool {
     }
 }
 
+/// This struct represents the QueryString passed to
+/// the rest API.
+#[derive(
+    Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::IntoParams, utoipa::ToSchema,
+)]
+#[into_params(parameter_in = Query)]
+#[serde(deny_unknown_fields)]
+pub struct ListFieldsQueryString {
+    /// Field names to filter on. It can be a comma-separated list of field names. If empty, all
+    /// fields are returned. It also supports wildcards.
+    #[serde(default)]
+    pub fields: String,
+    /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
+    /// This timestamp is expressed in seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_timestamp: Option<i64>,
+    /// If set, restrict search to documents with a `timestamp < end_timestamp``.
+    /// This timestamp is expressed in seconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_timestamp: Option<i64>,
+    /// Maximum number of fields to return (by default 20).
+    #[serde(default = "default_max_hits")]
+    pub max_fields: u64,
+    /// First hit to return. Together with num_hits, this parameter
+    /// can be used for pagination.
+    ///
+    /// E.g.
+    /// The results with rank [start_offset..start_offset + max_hits) are returned
+    #[serde(default)] // Default to 0. (We are 0-indexed)
+    pub start_offset: u64,
+    /// The output format.
+    #[serde(default)]
+    pub format: BodyFormat,
+    /// Specifies how documents are sorted.
+    #[serde(alias = "sort_by_field")]
+    #[serde(deserialize_with = "sort_by_mini_dsl")]
+    #[serde(default)]
+    #[serde(skip_serializing_if = "SortBy::is_empty")]
+    #[param(value_type = String)]
+    pub sort_by: SortBy,
+}
+
 pub fn search_request_from_api_request(
     index_id_patterns: Vec<String>,
     search_request: SearchRequestQueryString,
@@ -328,6 +372,14 @@ fn search_plan_post_filter()
         .and(warp::body::json())
 }
 
+fn list_fields_filter()
+-> impl Filter<Extract = (Vec<String>, ListFieldsQueryString), Error = Rejection> + Clone {
+    warp::path!(String / "list-fields")
+        .and_then(extract_index_id_patterns)
+        .and(warp::get())
+        .and(warp::query())
+}
+
 async fn search(
     index_id_patterns: Vec<String>,
     search_request: SearchRequestQueryString,
@@ -353,6 +405,28 @@ async fn search_plan(
     }
     .await;
     into_rest_api_response(result, body_format)
+}
+
+async fn list_fields(
+    index_id_patterns: Vec<String>,
+    request: ListFieldsQueryString,
+    search_service: Arc<dyn SearchService>,
+) -> impl warp::Reply {
+    let req = ListFieldsRequest {
+        end_timestamp: request.end_timestamp,
+        start_timestamp: request.start_timestamp,
+        fields: if !request.fields.is_empty() {
+            request.fields.split(',').map(String::from).collect()
+        } else {
+            Default::default()
+        },
+        index_id_patterns,
+        max_fields: request.max_fields,
+        sort_fields: request.sort_by.sort_fields,
+        start_offset: request.start_offset,
+    };
+    let result = search_service.root_list_fields(req).await;
+    into_rest_api_response(result, BodyFormat::Json)
 }
 
 #[utoipa::path(
@@ -447,6 +521,27 @@ pub fn search_plan_post_handler(
     search_plan_post_filter()
         .and(with_arg(search_service))
         .then(search_plan)
+}
+
+#[utoipa::path(
+    get,
+    tag = "Search",
+    path = "/{index_id}/list-fields",
+    responses(
+        (status = 200, description = "Successfully retrieved list of fields.", body = [String])
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to search."),
+        ListFieldsQueryString
+    )
+)]
+/// List Fields
+pub fn list_fields_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    list_fields_filter()
+        .and(with_arg(search_service))
+        .then(list_fields)
 }
 
 #[cfg(test)]

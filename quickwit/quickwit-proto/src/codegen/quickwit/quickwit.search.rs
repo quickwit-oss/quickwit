@@ -54,7 +54,7 @@ pub struct ReportSplitsRequest {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ReportSplitsResponse {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListFieldsRequest {
     /// Index ID patterns
     #[prost(string, repeated, tag = "1")]
@@ -70,6 +70,12 @@ pub struct ListFieldsRequest {
     pub start_timestamp: ::core::option::Option<i64>,
     #[prost(int64, optional, tag = "4")]
     pub end_timestamp: ::core::option::Option<i64>,
+    #[prost(uint64, tag = "5")]
+    pub max_fields: u64,
+    #[prost(uint64, tag = "6")]
+    pub start_offset: u64,
+    #[prost(message, repeated, tag = "7")]
+    pub sort_fields: ::prost::alloc::vec::Vec<SortField>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -94,6 +100,8 @@ pub struct LeafListFieldsRequest {
 pub struct ListFieldsResponse {
     #[prost(message, repeated, tag = "1")]
     pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
+    #[prost(uint64, tag = "2")]
+    pub num_fields: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

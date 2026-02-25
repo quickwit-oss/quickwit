@@ -224,48 +224,61 @@ fn merge_same_field_group(
     }
 }
 
-/// Merge iterators of ListFieldsEntryResponse into a `Vec<ListFieldsEntryResponse>`.
-///
-/// The iterators need to be sorted by (field_name, fieldtype)
-fn merge_leaf_list_fields(
-    iterators: Vec<impl Iterator<Item = ListFieldsEntryResponse>>,
-) -> crate::Result<Vec<ListFieldsEntryResponse>> {
-    let merged = iterators
-        .into_iter()
-        .kmerge_by(|a, b| (&a.field_name, a.field_type) <= (&b.field_name, b.field_type));
-    let mut responses = Vec::new();
+struct ListFieldMerger<I: Iterator<Item = ListFieldsEntryResponse>> {
+    merged: itertools::KMergeBy<I, fn(&ListFieldsEntryResponse, &ListFieldsEntryResponse) -> bool>,
+    current_group: Vec<ListFieldsEntryResponse>,
+}
 
-    let mut current_group: Vec<ListFieldsEntryResponse> = Vec::new();
-    // Build ListFieldsEntryResponse from current group
-    let flush_group = |responses: &mut Vec<_>, current_group: &mut Vec<ListFieldsEntryResponse>| {
-        let entry = merge_same_field_group(current_group);
-        responses.push(entry);
-        current_group.clear();
-    };
+impl<I: Iterator<Item = ListFieldsEntryResponse>> ListFieldMerger<I> {
+    fn new(iterators: impl Iterator<Item = I>) -> Self {
+        //TODO: sort
+        let cmp_fn: fn(&ListFieldsEntryResponse, &ListFieldsEntryResponse) -> bool =
+            |a, b| (&a.field_name, a.field_type) <= (&b.field_name, b.field_type);
 
-    for entry in merged {
-        if let Some(last) = current_group.last()
-            && (last.field_name != entry.field_name || last.field_type != entry.field_type)
-        {
-            flush_group(&mut responses, &mut current_group);
+        let merged = iterators.kmerge_by(cmp_fn);
+        Self {
+            merged,
+            current_group: Vec::new(),
         }
-        if responses.len() >= *FIELD_LIST_SIZE_LIMIT {
-            return Err(SearchError::Internal(format!(
-                "list fields response exceeded {} fields",
-                *FIELD_LIST_SIZE_LIMIT
-            )));
-        }
-        current_group.push(entry);
     }
-    if !current_group.is_empty() {
-        flush_group(&mut responses, &mut current_group);
-    }
+}
 
-    Ok(responses)
+impl<I: Iterator<Item = ListFieldsEntryResponse>> Iterator for ListFieldMerger<I> {
+    type Item = ListFieldsEntryResponse;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            match self.merged.next() {
+                Some(entry) => {
+                    if let Some(last) = self.current_group.last()
+                        && (last.field_name != entry.field_name
+                            || last.field_type != entry.field_type)
+                    {
+                        let result = merge_same_field_group(&mut self.current_group);
+                        self.current_group.clear();
+                        self.current_group.push(entry);
+                        return Some(result);
+                    }
+                    self.current_group.push(entry);
+                }
+                None => {
+                    if !self.current_group.is_empty() {
+                        let result = merge_same_field_group(&mut self.current_group);
+                        self.current_group.clear();
+                        return Some(result);
+                    }
+                    return None;
+                }
+            }
+        }
+    }
 }
 
 // Returns true if any of the patterns match the field name.
 fn matches_any_pattern(field_name: &str, field_patterns: &[FieldPattern]) -> bool {
+    if field_patterns.is_empty() {
+        return true;
+    }
     field_patterns
         .iter()
         .any(|pattern| pattern.matches(field_name))
@@ -356,23 +369,22 @@ pub async fn leaf_list_fields(
                 }
             }
 
-            let filtered_list_fields_sorted_iters: Vec<_> = single_split_list_fields_vec
-                .into_iter()
-                .map(|list_fields_sorted| {
-                    list_fields_sorted.into_iter().filter(|field| {
-                        if field_patterns.is_empty() {
-                            true
-                        } else {
-                            matches_any_pattern(&field.field_name, &field_patterns)
-                        }
-                    })
-                })
-                .collect();
-            merge_leaf_list_fields(filtered_list_fields_sorted_iters)
+            let filtered_list_fields_sorted_iters =
+                single_split_list_fields_vec
+                    .into_iter()
+                    .map(|list_fields_sorted| {
+                        list_fields_sorted
+                            .into_iter()
+                            .filter(|field| matches_any_pattern(&field.field_name, &field_patterns))
+                    });
+
+            ListFieldMerger::new(filtered_list_fields_sorted_iters).collect::<Vec<_>>()
         })
         .await
-        .context("failed to merge single split list fields")??;
-    Ok(ListFieldsResponse { fields })
+        .context("failed to merge single split list fields")?;
+
+    let num_fields = fields.len() as u64;
+    Ok(ListFieldsResponse { fields, num_fields })
 }
 
 /// Index metas needed for executing a leaf search request.
@@ -397,8 +409,9 @@ pub async fn root_list_fields(
         resolve_index_patterns(&list_fields_req.index_id_patterns[..], &mut metastore).await?;
     // The request contains a wildcard, but couldn't find any index.
     if indexes_metadata.is_empty() {
-        return Ok(ListFieldsResponse { fields: Vec::new() });
+        return Ok(ListFieldsResponse::default());
     }
+
     let index_uid_to_index_meta: HashMap<IndexUid, IndexMetasForLeafSearch> = indexes_metadata
         .iter()
         .map(|index_metadata| {
@@ -442,18 +455,31 @@ pub async fn root_list_fields(
         }
     }
     let leaf_list_fields_protos: Vec<ListFieldsResponse> = try_join_all(leaf_request_tasks).await?;
-    let fields = search_thread_pool()
+    let (fields, num_fields) = search_thread_pool()
         .run_cpu_intensive(move || {
-            let leaf_list_fields = leaf_list_fields_protos
+            let fields_iter = leaf_list_fields_protos
                 .into_iter()
-                .map(|leaf_list_fields_proto| leaf_list_fields_proto.fields.into_iter())
-                .collect();
-            merge_leaf_list_fields(leaf_list_fields)
+                .map(|leaf_list_fields_proto| leaf_list_fields_proto.fields.into_iter());
+            let mut fields_iter = ListFieldMerger::new(fields_iter);
+            let skipped = fields_iter
+                .by_ref()
+                .take(list_fields_req.start_offset as usize)
+                .count();
+
+            let fields = fields_iter
+                .by_ref()
+                .take(list_fields_req.max_fields as usize)
+                .collect::<Vec<_>>();
+
+            let remaining = fields_iter.count();
+            let num_fields = (skipped + fields.len() + remaining) as u64;
+
+            (fields, num_fields)
         })
         .await
-        .context("failed to merge leaf list fields responses")??;
+        .context("failed to merge leaf list fields responses")?;
 
-    Ok(ListFieldsResponse { fields })
+    Ok(ListFieldsResponse { fields, num_fields })
 }
 
 /// Builds a list of [`LeafListFieldsRequest`], one per index, from a list of [`SearchJob`].
@@ -512,11 +538,14 @@ mod tests {
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
         };
-        let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter(),
-            vec![entry2.clone()].into_iter(),
-        ])
-        .unwrap();
+        let resp: Vec<_> = ListFieldMerger::new(
+            vec![
+                vec![entry1.clone()].into_iter(),
+                vec![entry2.clone()].into_iter(),
+            ]
+            .into_iter(),
+        )
+        .collect::<Vec<_>>();
         assert_eq!(resp, vec![entry1]);
     }
     #[test]
@@ -539,11 +568,14 @@ mod tests {
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
         };
-        let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter(),
-            vec![entry2.clone()].into_iter(),
-        ])
-        .unwrap();
+        let resp: Vec<_> = ListFieldMerger::new(
+            vec![
+                vec![entry1.clone()].into_iter(),
+                vec![entry2.clone()].into_iter(),
+            ]
+            .into_iter(),
+        )
+        .collect::<Vec<_>>();
         assert_eq!(resp, vec![entry1, entry2]);
     }
     #[test]
@@ -566,11 +598,14 @@ mod tests {
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index2".to_string()],
         };
-        let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter(),
-            vec![entry2.clone()].into_iter(),
-        ])
-        .unwrap();
+        let resp: Vec<_> = ListFieldMerger::new(
+            vec![
+                vec![entry1.clone()].into_iter(),
+                vec![entry2.clone()].into_iter(),
+            ]
+            .into_iter(),
+        )
+        .collect::<Vec<_>>();
         let expected = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
             field_type: ListFieldType::Str as i32,
@@ -602,11 +637,14 @@ mod tests {
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index2".to_string()],
         };
-        let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter(),
-            vec![entry2.clone()].into_iter(),
-        ])
-        .unwrap();
+        let resp: Vec<_> = ListFieldMerger::new(
+            vec![
+                vec![entry1.clone()].into_iter(),
+                vec![entry2.clone()].into_iter(),
+            ]
+            .into_iter(),
+        )
+        .collect::<Vec<_>>();
         let expected = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
             field_type: ListFieldType::Str as i32,
@@ -647,11 +685,14 @@ mod tests {
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
         };
-        let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone(), entry2.clone()].into_iter(),
-            vec![entry3.clone()].into_iter(),
-        ])
-        .unwrap();
+        let resp: Vec<_> = ListFieldMerger::new(
+            vec![
+                vec![entry1.clone(), entry2.clone()].into_iter(),
+                vec![entry3.clone()].into_iter(),
+            ]
+            .into_iter(),
+        )
+        .collect::<Vec<_>>();
         assert_eq!(resp, vec![entry1.clone(), entry3.clone()]);
     }
     #[test]
@@ -683,11 +724,14 @@ mod tests {
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
         };
-        let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone(), entry3.clone()].into_iter(),
-            vec![entry2.clone()].into_iter(),
-        ])
-        .unwrap();
+        let resp: Vec<_> = ListFieldMerger::new(
+            vec![
+                vec![entry1.clone(), entry3.clone()].into_iter(),
+                vec![entry2.clone()].into_iter(),
+            ]
+            .into_iter(),
+        )
+        .collect::<Vec<_>>();
         assert_eq!(resp, vec![entry1.clone(), entry3.clone()]);
     }
     #[test]
@@ -719,11 +763,14 @@ mod tests {
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index1".to_string()],
         };
-        let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone(), entry3.clone()].into_iter(),
-            vec![entry2.clone()].into_iter(),
-        ])
-        .unwrap();
+        let resp: Vec<_> = ListFieldMerger::new(
+            vec![
+                vec![entry1.clone(), entry3.clone()].into_iter(),
+                vec![entry2.clone()].into_iter(),
+            ]
+            .into_iter(),
+        )
+        .collect::<Vec<_>>();
         assert_eq!(resp, vec![entry1.clone(), entry3.clone()]);
     }
     #[test]
@@ -750,11 +797,15 @@ mod tests {
             non_aggregatable_index_ids: Vec::new(),
             index_ids: vec!["index4".to_string()],
         };
-        let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter(),
-            vec![entry2.clone()].into_iter(),
-        ])
-        .unwrap();
+        let resp: Vec<_> = ListFieldMerger::new(
+            vec![
+                vec![entry1.clone()].into_iter(),
+                vec![entry2.clone()].into_iter(),
+            ]
+            .into_iter(),
+        )
+        .collect::<Vec<_>>();
+
         let expected = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
             field_type: ListFieldType::Str as i32,
@@ -770,6 +821,141 @@ mod tests {
             ],
         };
         assert_eq!(resp, vec![expected]);
+    }
+
+    fn make_entry(
+        field_name: &str,
+        field_type: ListFieldType,
+        index_id: &str,
+    ) -> ListFieldsEntryResponse {
+        ListFieldsEntryResponse {
+            field_name: field_name.to_string(),
+            field_type: field_type as i32,
+            searchable: true,
+            aggregatable: true,
+            non_searchable_index_ids: Vec::new(),
+            non_aggregatable_index_ids: Vec::new(),
+            index_ids: vec![index_id.to_string()],
+        }
+    }
+
+    #[test]
+    fn merge_iter_skip_take_basic_pagination() {
+        // 4 distinct fields spread across 2 leaves, paginate with skip=1, take=2
+        let leaf1 = vec![
+            make_entry("aaa", ListFieldType::Str, "idx1"),
+            make_entry("ccc", ListFieldType::Str, "idx1"),
+        ];
+        let leaf2 = vec![
+            make_entry("bbb", ListFieldType::Str, "idx2"),
+            make_entry("ddd", ListFieldType::Str, "idx2"),
+        ];
+
+        let all: Vec<_> = ListFieldMerger::new(
+            vec![leaf1.clone().into_iter(), leaf2.clone().into_iter()].into_iter(),
+        )
+        .collect::<Vec<_>>();
+        assert_eq!(all.len(), 4);
+        assert_eq!(all[0].field_name, "aaa");
+        assert_eq!(all[1].field_name, "bbb");
+        assert_eq!(all[2].field_name, "ccc");
+        assert_eq!(all[3].field_name, "ddd");
+
+        // Page 2: skip 1, take 2 → ["bbb", "ccc"]
+        let page: Vec<_> = ListFieldMerger::new(
+            vec![leaf1.clone().into_iter(), leaf2.clone().into_iter()].into_iter(),
+        )
+        .skip(1)
+        .take(2)
+        .collect::<Vec<_>>();
+        assert_eq!(page.len(), 2);
+        assert_eq!(page[0].field_name, "bbb");
+        assert_eq!(page[1].field_name, "ccc");
+    }
+
+    #[test]
+    fn merge_iter_skip_take_with_grouping() {
+        // Same field appears in multiple leaves — grouping must happen before pagination
+        let leaf1 = vec![
+            make_entry("aaa", ListFieldType::Str, "idx1"),
+            make_entry("bbb", ListFieldType::Str, "idx1"),
+        ];
+        let leaf2 = vec![
+            make_entry("aaa", ListFieldType::Str, "idx2"),
+            make_entry("ccc", ListFieldType::Str, "idx2"),
+        ];
+
+        // Without pagination: 3 merged fields [aaa(idx1+idx2), bbb, ccc]
+        let all: Vec<_> = ListFieldMerger::new(
+            vec![leaf1.clone().into_iter(), leaf2.clone().into_iter()].into_iter(),
+        )
+        .collect::<Vec<_>>();
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].field_name, "aaa");
+        assert_eq!(
+            all[0].index_ids,
+            vec!["idx1".to_string(), "idx2".to_string()]
+        );
+        assert_eq!(all[1].field_name, "bbb");
+        assert_eq!(all[2].field_name, "ccc");
+
+        // skip=1, take=1 → ["bbb"] (skips the merged "aaa")
+        let page: Vec<_> = ListFieldMerger::new(
+            vec![leaf1.clone().into_iter(), leaf2.clone().into_iter()].into_iter(),
+        )
+        .skip(1)
+        .take(1)
+        .collect::<Vec<_>>();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].field_name, "bbb");
+    }
+
+    #[test]
+    fn merge_iter_skip_beyond_end() {
+        let leaf1 = vec![make_entry("aaa", ListFieldType::Str, "idx1")];
+        let page: Vec<_> = ListFieldMerger::new(vec![leaf1.into_iter()].into_iter())
+            .skip(10)
+            .take(5)
+            .collect::<Vec<_>>();
+        assert!(page.is_empty());
+    }
+
+    #[test]
+    fn merge_iter_take_more_than_available() {
+        let leaf1 = vec![
+            make_entry("aaa", ListFieldType::Str, "idx1"),
+            make_entry("bbb", ListFieldType::Str, "idx1"),
+        ];
+        let page: Vec<_> = ListFieldMerger::new(vec![leaf1.into_iter()].into_iter())
+            .take(100)
+            .collect::<Vec<_>>();
+        assert_eq!(page.len(), 2);
+    }
+
+    #[test]
+    fn merge_iter_pagination_with_mixed_types() {
+        // Same field name but different types → treated as separate entries
+        let leaf1 = vec![
+            make_entry("field", ListFieldType::Str, "idx1"),
+            make_entry("field", ListFieldType::U64, "idx1"),
+        ];
+        let leaf2 = vec![make_entry("field", ListFieldType::Str, "idx2")];
+
+        // 2 merged entries: field/Str(idx1+idx2), field/U64(idx1)
+        let all: Vec<_> = ListFieldMerger::new(
+            vec![leaf1.clone().into_iter(), leaf2.clone().into_iter()].into_iter(),
+        )
+        .collect::<Vec<_>>();
+        assert_eq!(all.len(), 2);
+
+        // skip=1 → only field/U64
+        let page: Vec<_> =
+            ListFieldMerger::new(vec![leaf1.into_iter(), leaf2.into_iter()].into_iter())
+                .skip(1)
+                .take(10)
+                .collect::<Vec<_>>();
+        assert_eq!(page.len(), 1);
+        assert_eq!(page[0].field_type, ListFieldType::U64 as i32);
     }
 
     #[test]

@@ -51,7 +51,8 @@ use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::search_api::{
-    search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
+    list_fields_handler, search_get_handler, search_plan_get_handler, search_plan_post_handler,
+    search_post_handler,
 };
 use crate::template_api::index_template_api_handlers;
 use crate::ui_handler::ui_handler;
@@ -283,6 +284,7 @@ fn search_routes(
         .or(search_post_handler(search_service.clone()))
         .or(search_plan_get_handler(search_service.clone()))
         .or(search_plan_post_handler(search_service.clone()))
+        .or(list_fields_handler(search_service.clone()))
         .recover(recover_fn)
         .boxed()
 }

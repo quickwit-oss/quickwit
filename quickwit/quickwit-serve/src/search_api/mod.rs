@@ -17,7 +17,8 @@ mod rest_handler;
 
 pub use self::grpc_adapter::GrpcSearchAdapter;
 pub use self::rest_handler::{
-    SearchApi, SearchRequestQueryString, SortBy, search_get_handler, search_plan_get_handler,
-    search_plan_post_handler, search_post_handler, search_request_from_api_request,
+    SearchApi, SearchRequestQueryString, SortBy, list_fields_handler, search_get_handler,
+    search_plan_get_handler, search_plan_post_handler, search_post_handler,
+    search_request_from_api_request,
 };
 pub(crate) use self::rest_handler::{extract_index_id_patterns, extract_index_id_patterns_default};
