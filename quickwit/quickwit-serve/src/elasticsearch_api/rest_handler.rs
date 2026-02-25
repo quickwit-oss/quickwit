@@ -422,8 +422,8 @@ pub fn es_compat_scroll_handler(
 ///
 /// Clears a scroll context. Quickwit manages scroll lifetime via TTL,
 /// so this is a no-op that returns success.
-pub fn es_compat_delete_scroll_handler(
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+pub fn es_compat_delete_scroll_handler()
+-> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_delete_scroll_filter()
         .then(|| async {
             Ok::<_, ElasticsearchError>(json!({

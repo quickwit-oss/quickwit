@@ -275,8 +275,8 @@ pub(crate) fn elastic_scroll_filter()
         )
 }
 
-pub(crate) fn elastic_delete_scroll_filter()
--> impl Filter<Extract = (), Error = Rejection> + Clone {
+pub(crate) fn elastic_delete_scroll_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
+{
     warp::path!("_elastic" / "_search" / "scroll").and(warp::delete())
 }
 

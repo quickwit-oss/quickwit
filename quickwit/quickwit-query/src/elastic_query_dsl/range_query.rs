@@ -74,22 +74,24 @@ impl ConvertibleToQueryAst for RangeQuery {
         } = self.value;
 
         let (mut gt, mut gte, mut lt, mut lte) = (gt, gte, lt, lte);
-        if let Some(from_val) = from {
-            if gt.is_none() && gte.is_none() {
-                if include_lower.unwrap_or(true) {
-                    gte = Some(from_val);
-                } else {
-                    gt = Some(from_val);
-                }
+        if let Some(from_val) = from
+            && gt.is_none()
+            && gte.is_none()
+        {
+            if include_lower.unwrap_or(true) {
+                gte = Some(from_val);
+            } else {
+                gt = Some(from_val);
             }
         }
-        if let Some(to_val) = to {
-            if lt.is_none() && lte.is_none() {
-                if include_upper.unwrap_or(true) {
-                    lte = Some(to_val);
-                } else {
-                    lt = Some(to_val);
-                }
+        if let Some(to_val) = to
+            && lt.is_none()
+            && lte.is_none()
+        {
+            if include_upper.unwrap_or(true) {
+                lte = Some(to_val);
+            } else {
+                lt = Some(to_val);
             }
         }
 
@@ -184,7 +186,8 @@ mod tests {
 
     #[test]
     fn test_range_query_with_from_to_inclusive() {
-        let range_json = r#"{"score": {"from": 50, "to": 100, "include_lower": true, "include_upper": true}}"#;
+        let range_json =
+            r#"{"score": {"from": 50, "to": 100, "include_lower": true, "include_upper": true}}"#;
         let range_query: ElasticRangeQuery = serde_json::from_str(range_json).unwrap();
         let ast = range_query.convert_to_query_ast().unwrap();
         let QueryAst::Range(rq) = ast else {
@@ -197,7 +200,8 @@ mod tests {
 
     #[test]
     fn test_range_query_with_from_to_exclusive() {
-        let range_json = r#"{"score": {"from": 50, "to": 100, "include_lower": false, "include_upper": false}}"#;
+        let range_json =
+            r#"{"score": {"from": 50, "to": 100, "include_lower": false, "include_upper": false}}"#;
         let range_query: ElasticRangeQuery = serde_json::from_str(range_json).unwrap();
         let ast = range_query.convert_to_query_ast().unwrap();
         let QueryAst::Range(rq) = ast else {
