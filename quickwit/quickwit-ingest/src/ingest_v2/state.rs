@@ -36,7 +36,7 @@ use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{FollowerId, LeaderId};
+use crate::{FollowerId, LeaderId, OpenShardCounts};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
 /// guarantees that the internal data structures are always locked in the same order.
@@ -89,12 +89,21 @@ impl InnerIngesterState {
             .map(|(_, shard)| shard)
     }
 
-    pub fn get_open_shard_counts(&self) -> Vec<(IndexUid, SourceId, usize)> {
+    /// Assembles a tuple of the number of open shards per index/source. If there are shards for an
+    /// index/source, but none of them are open, it returns 0, so that routing tables can be updated
+    /// accordingly.
+    pub fn get_open_shard_counts(&self) -> OpenShardCounts {
         self.shards
             .values()
-            .filter(|shard| shard.is_advertisable && !shard.is_replica() && shard.is_open())
-            .map(|shard| (shard.index_uid.clone(), shard.source_id.clone()))
-            .counts()
+            .filter(|&shard| shard.is_advertisable && !shard.is_replica())
+            .map(|shard| {
+                (
+                    (shard.index_uid.clone(), shard.source_id.clone()),
+                    shard.is_open() as usize,
+                )
+            })
+            .into_grouping_map()
+            .sum()
             .into_iter()
             .map(|((index_uid, source_id), count)| (index_uid, source_id, count))
             .collect()
@@ -672,7 +681,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_open_shard_counts() {
+    async fn test_get_local_shard_counts() {
         let (_temp_dir, state) = IngesterState::for_test().await;
         let mut state_guard = state.lock_partially().await.unwrap();
 
@@ -728,5 +737,44 @@ mod tests {
         assert_eq!(counts[0], (index_a, SourceId::from("source-a"), 1));
         assert_eq!(counts[1], (index_b, SourceId::from("source-b"), 1));
         assert_eq!(counts[2], (index_c, SourceId::from("source-c"), 2));
+    }
+
+    #[tokio::test]
+    async fn test_get_local_shard_counts_includes_closed_shards_with_zero() {
+        let (_temp_dir, state) = IngesterState::for_test().await;
+        let mut state_guard = state.lock_partially().await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+
+        // 1 open + 1 closed shard on source-a → count = 1
+        let s = open_shard(
+            index_uid.clone(),
+            "source-a".into(),
+            ShardId::from(1),
+            false,
+        );
+        state_guard.shards.insert(s.queue_id(), s);
+        let s = IngesterShard::new_solo(index_uid.clone(), "source-a".into(), ShardId::from(2))
+            .with_state(ShardState::Closed)
+            .advertisable()
+            .build();
+        state_guard.shards.insert(s.queue_id(), s);
+
+        // Only closed shards on source-b → count = 0
+        let s = IngesterShard::new_solo(index_uid.clone(), "source-b".into(), ShardId::from(3))
+            .with_state(ShardState::Closed)
+            .advertisable()
+            .build();
+        state_guard.shards.insert(s.queue_id(), s);
+
+        let mut counts = state_guard.get_open_shard_counts();
+        counts.sort_by(|a, b| a.2.cmp(&b.2));
+
+        assert_eq!(counts.len(), 2);
+        assert_eq!(
+            counts[0],
+            (index_uid.clone(), SourceId::from("source-b"), 0)
+        );
+        assert_eq!(counts[1], (index_uid, SourceId::from("source-a"), 1));
     }
 }

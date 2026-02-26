@@ -81,6 +81,14 @@ message PersistResponse {
   string leader_id = 1;
   repeated PersistSuccess successes = 2;
   repeated PersistFailure failures = 3;
+  uint32 capacity_score = 4;
+  repeated SourceShardCount source_shard_counts = 5;
+}
+
+message SourceShardCount {
+  quickwit.common.IndexUid index_uid = 1;
+  string source_id = 2;
+  uint32 open_shard_count = 3;
 }
 
 message PersistSuccess {

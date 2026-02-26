@@ -50,7 +50,9 @@ use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
-use quickwit_proto::types::{DocUid, DocUidGenerator, IndexId, NodeId, SubrequestId};
+use quickwit_proto::types::{
+    DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
+};
 use serde::Serialize;
 use tracing::{error, info};
 use workbench::pending_subrequests;
@@ -69,6 +71,8 @@ pub type ClientId = String;
 pub type LeaderId = NodeId;
 
 pub type FollowerId = NodeId;
+
+pub type OpenShardCounts = Vec<(IndexUid, SourceId, usize)>;
 
 const IDLE_SHARD_TIMEOUT_ENV_KEY: &str = "QW_IDLE_SHARD_TIMEOUT_SECS";
 

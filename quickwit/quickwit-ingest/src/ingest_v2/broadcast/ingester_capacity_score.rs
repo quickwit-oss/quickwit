@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use bytesize::ByteSize;
@@ -21,15 +22,15 @@ use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::ring_buffer::RingBuffer;
 use quickwit_common::shared_consts::INGESTER_CAPACITY_SCORE_PREFIX;
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::{IndexUid, NodeId, SourceId, SourceUid};
+use quickwit_proto::types::{NodeId, SourceUid};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 use super::{BROADCAST_INTERVAL_PERIOD, make_key, parse_key};
+use crate::OpenShardCounts;
 use crate::ingest_v2::state::WeakIngesterState;
-
-pub type OpenShardCounts = Vec<(IndexUid, SourceId, usize)>;
 
 /// The lookback window length is meant to capture readings far enough back in time to give
 /// a rough rate of change estimate. At size 6, with broadcast interval of 5 seconds, this would be
@@ -41,23 +42,23 @@ const WAL_CAPACITY_LOOKBACK_WINDOW_LEN: usize = 6;
 /// reading would be discarded when the next reading is inserted.
 const WAL_CAPACITY_READINGS_LEN: usize = WAL_CAPACITY_LOOKBACK_WINDOW_LEN + 1;
 
-struct WalDiskCapacityTimeSeries {
-    memory_capacity: ByteSize,
+pub struct WalDiskCapacityTimeSeries {
+    disk_capacity: ByteSize,
     readings: RingBuffer<f64, WAL_CAPACITY_READINGS_LEN>,
 }
 
 impl WalDiskCapacityTimeSeries {
-    fn new(memory_capacity: ByteSize) -> Self {
+    pub fn new(disk_capacity: ByteSize) -> Self {
         #[cfg(not(test))]
-        assert!(memory_capacity.as_u64() > 0);
+        assert!(disk_capacity.as_u64() > 0);
         Self {
-            memory_capacity,
+            disk_capacity,
             readings: RingBuffer::default(),
         }
     }
 
-    fn record(&mut self, memory_used: ByteSize) {
-        let remaining = 1.0 - (memory_used.as_u64() as f64 / self.memory_capacity.as_u64() as f64);
+    fn record(&mut self, disk_used: ByteSize) {
+        let remaining = 1.0 - (disk_used.as_u64() as f64 / self.disk_capacity.as_u64() as f64);
         self.readings.push_back(remaining.clamp(0.0, 1.0));
     }
 
@@ -71,6 +72,12 @@ impl WalDiskCapacityTimeSeries {
         let current = self.readings.last()?;
         let oldest = self.readings.front()?;
         Some(current - oldest)
+    }
+
+    pub fn score(&self, disk_used: ByteSize) -> usize {
+        let remaining = 1.0 - (disk_used.as_u64() as f64 / self.disk_capacity.as_u64() as f64);
+        let delta = self.delta().unwrap_or(0.0);
+        compute_capacity_score(remaining, delta)
     }
 }
 
@@ -123,19 +130,19 @@ pub struct IngesterCapacityScore {
 pub struct BroadcastIngesterCapacityScoreTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
-    wal_capacity_time_series: WalDiskCapacityTimeSeries,
+    wal_capacity_time_series: Arc<Mutex<WalDiskCapacityTimeSeries>>,
 }
 
 impl BroadcastIngesterCapacityScoreTask {
     pub fn spawn(
         cluster: Cluster,
         weak_state: WeakIngesterState,
-        disk_capacity: ByteSize,
+        wal_capacity_time_series: Arc<Mutex<WalDiskCapacityTimeSeries>>,
     ) -> JoinHandle<()> {
         let mut broadcaster = Self {
             cluster,
             weak_state,
-            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(disk_capacity),
+            wal_capacity_time_series,
         };
         tokio::spawn(async move { broadcaster.run().await })
     }
@@ -179,10 +186,12 @@ impl BroadcastIngesterCapacityScoreTask {
                 }
             };
 
-            self.wal_capacity_time_series.record(disk_used);
+            let mut ts_guard = self.wal_capacity_time_series.lock().await;
+            ts_guard.record(disk_used);
+            let remaining_capacity = ts_guard.current().unwrap_or(1.0);
+            let capacity_delta = ts_guard.delta().unwrap_or(0.0);
+            drop(ts_guard);
 
-            let remaining_capacity = self.wal_capacity_time_series.current().unwrap_or(1.0);
-            let capacity_delta = self.wal_capacity_time_series.delta().unwrap_or(0.0);
             let capacity_score = compute_capacity_score(remaining_capacity, capacity_delta);
 
             previous_sources = self
@@ -266,7 +275,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
-    use quickwit_proto::types::ShardId;
+    use quickwit_proto::types::{IndexUid, ShardId, SourceId};
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;
@@ -363,7 +372,9 @@ mod tests {
         let task = BroadcastIngesterCapacityScoreTask {
             cluster,
             weak_state,
-            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(ByteSize::mb(1)),
+            wal_capacity_time_series: Arc::new(Mutex::new(WalDiskCapacityTimeSeries::new(
+                ByteSize::mb(1),
+            ))),
         };
         assert!(task.snapshot().await.is_err());
     }
@@ -391,16 +402,22 @@ mod tests {
         drop(state_guard);
 
         // Simulate 500 of 1000 bytes capacity used => 50% remaining, 0 delta => score = 6
-        let mut task = BroadcastIngesterCapacityScoreTask {
+        let ts = Arc::new(Mutex::new(WalDiskCapacityTimeSeries::new(ByteSize::b(
+            1000,
+        ))));
+        let task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
             weak_state: state.weak(),
-            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(ByteSize::b(1000)),
+            wal_capacity_time_series: ts.clone(),
         };
-        task.wal_capacity_time_series.record(ByteSize::b(500));
-
-        let remaining = task.wal_capacity_time_series.current().unwrap();
-        let delta = task.wal_capacity_time_series.delta().unwrap();
-        let capacity_score = compute_capacity_score(remaining, delta);
+        {
+            let mut ts_guard = ts.lock().await;
+            ts_guard.record(ByteSize::b(500));
+            let remaining = ts_guard.current().unwrap();
+            let delta = ts_guard.delta().unwrap();
+            assert_eq!(compute_capacity_score(remaining, delta), 6);
+        }
+        let capacity_score = 6;
         assert_eq!(capacity_score, 6);
 
         let update_counter = Arc::new(AtomicUsize::new(0));

@@ -51,6 +51,20 @@ pub struct PersistResponse {
     pub successes: ::prost::alloc::vec::Vec<PersistSuccess>,
     #[prost(message, repeated, tag = "3")]
     pub failures: ::prost::alloc::vec::Vec<PersistFailure>,
+    #[prost(uint32, tag = "4")]
+    pub capacity_score: u32,
+    #[prost(message, repeated, tag = "5")]
+    pub source_shard_counts: ::prost::alloc::vec::Vec<SourceShardCount>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SourceShardCount {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub open_shard_count: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]

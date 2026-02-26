@@ -45,12 +45,14 @@ use quickwit_proto::types::{
     IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId, queue_id, split_queue_id,
 };
 use serde_json::{Value as JsonValue, json};
-use tokio::sync::Semaphore;
+use tokio::sync::{Mutex, Semaphore};
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
 use super::IngesterPool;
-use super::broadcast::{BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsTask};
+use super::broadcast::{
+    BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsTask, WalDiskCapacityTimeSeries,
+};
 use super::doc_mapper::validate_doc_batch;
 use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
@@ -105,6 +107,7 @@ pub struct Ingester {
     memory_capacity: ByteSize,
     rate_limiter_settings: RateLimiterSettings,
     replication_factor: usize,
+    wal_capacity_time_series: Arc<Mutex<WalDiskCapacityTimeSeries>>,
     // This semaphore ensures that the ingester that not run two reset shards operations
     // concurrently.
     reset_shards_permits: Arc<Semaphore>,
@@ -135,8 +138,14 @@ impl Ingester {
         let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
 
         let weak_state = state.weak();
+        let wal_capacity_time_series =
+            Arc::new(Mutex::new(WalDiskCapacityTimeSeries::new(disk_capacity)));
         BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
-        BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone(), disk_capacity);
+        BroadcastIngesterCapacityScoreTask::spawn(
+            cluster,
+            weak_state.clone(),
+            wal_capacity_time_series.clone(),
+        );
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
         let ingester = Self {
@@ -148,6 +157,7 @@ impl Ingester {
             memory_capacity,
             rate_limiter_settings,
             replication_factor,
+            wal_capacity_time_series,
             reset_shards_permits: Arc::new(Semaphore::new(1)),
         };
         ingester.background_reset_shards();
@@ -468,6 +478,8 @@ impl Ingester {
                 leader_id: leader_id.into(),
                 successes: Vec::new(),
                 failures: persist_failures,
+                capacity_score: 0,
+                source_shard_counts: Vec::new(),
             };
             return Ok(persist_response);
         }
@@ -788,14 +800,29 @@ impl Ingester {
             }
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
+        let local_shard_counts = state_guard.get_open_shard_counts();
         drop(state_guard);
 
         let disk_used = wal_usage.disk_used_bytes as u64;
+        let capacity_score = self
+            .wal_capacity_time_series
+            .lock()
+            .await
+            .score(ByteSize::b(disk_used)) as u32;
 
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
         }
         report_wal_usage(wal_usage);
+
+        let source_shard_counts = local_shard_counts
+            .into_iter()
+            .map(|(index_uid, source_id, count)| SourceShardCount {
+                index_uid: Some(index_uid),
+                source_id,
+                open_shard_count: count as u32,
+            })
+            .collect();
 
         #[cfg(test)]
         {
@@ -807,6 +834,8 @@ impl Ingester {
             leader_id,
             successes: persist_successes,
             failures: persist_failures,
+            capacity_score,
+            source_shard_counts,
         };
         Ok(persist_response)
     }
