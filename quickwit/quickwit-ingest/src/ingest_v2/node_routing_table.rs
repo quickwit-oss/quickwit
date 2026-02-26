@@ -38,7 +38,7 @@ pub(super) struct IngesterNode {
 
 #[derive(Debug)]
 pub(super) struct RoutingEntry {
-    nodes: HashMap<NodeId, IngesterNode>,
+    pub nodes: HashMap<NodeId, IngesterNode>,
 }
 
 /// Given a slice of candidates, picks the better of two random choices.
