@@ -966,7 +966,7 @@ async fn setup_ingest_v2(
         None
     };
     setup_ingester_pool(
-        cluster,
+        cluster.change_stream(),
         ingester_opt.clone(),
         ingester_pool,
         grpc_compression_encoding_opt,
@@ -976,13 +976,13 @@ async fn setup_ingest_v2(
 }
 
 fn setup_ingester_pool(
-    cluster: &Cluster,
+    cluster_change_stream: ClusterChangeStream,
     ingester_opt: Option<Ingester>,
     ingester_pool: IngesterPool,
     grpc_compression_encoding_opt: Option<CompressionEncoding>,
     grpc_max_message_size: ByteSize,
 ) {
-    let ingester_change_stream = cluster.change_stream().filter_map(move |cluster_change| {
+    let ingester_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let ingester_opt_clone = ingester_opt.clone();
         Box::pin(async move {
             match cluster_change {
@@ -1008,6 +1008,14 @@ fn setup_ingester_pool(
                         Some(change)
                     } else if previous.is_ready() && !updated.is_ready() {
                         let change = build_remove_change(&previous);
+                        Some(change)
+                    } else if previous.ingester_status().is_ready() && !updated.ingester_status().is_ready() {
+                        let change = build_update_change(
+                            &updated,
+                            ingester_opt_clone,
+                            grpc_max_message_size,
+                            grpc_compression_encoding_opt,
+                        );
                         Some(change)
                     } else {
                         None
@@ -1036,6 +1044,36 @@ fn build_insert_change(
         generation_id = chitchat_id.generation_id,
         "adding node `{}` to ingester pool",
         chitchat_id.node_id,
+    );
+    let node_id: NodeId = node.node_id().into();
+    let ingester_service = build_ingester_service(
+        node,
+        ingester_opt,
+        grpc_max_message_size,
+        grpc_compression_encoding_opt,
+    );
+    let pool_entry = IngesterPoolEntry {
+        client: ingester_service,
+        status: node.ingester_status(),
+    };
+    Change::Insert(node_id, pool_entry)
+}
+
+fn build_update_change(
+    node: &ClusterNode,
+    ingester_opt: Option<impl IngesterService>,
+    grpc_max_message_size: ByteSize,
+    grpc_compression_encoding_opt: Option<CompressionEncoding>,
+) -> Change<NodeId, IngesterPoolEntry> {
+    let chitchat_id = node.chitchat_id();
+    // tower only supports insert and remove nodes,
+    // so we simply re-add the node to the pool when its status is updated.
+    info!(
+        node_id = chitchat_id.node_id,
+        generation_id = chitchat_id.generation_id,
+        "node `{}` ingester status changed to `{}`, re-adding it to the ingester pool",
+        chitchat_id.node_id,
+        node.ingester_status(),
     );
     let node_id: NodeId = node.node_id().into();
     let ingester_service = build_ingester_service(
@@ -1718,5 +1756,69 @@ mod tests {
             .await
             .unwrap();
         assert!(!searcher_client.is_local());
+    }
+
+    #[tokio::test]
+    async fn test_setup_ingester_pool() {
+        let (cluster_change_stream, cluster_change_stream_tx) =
+            ClusterChangeStream::new_unbounded();
+        let ingester_pool = IngesterPool::default();
+        setup_ingester_pool(
+            cluster_change_stream,
+            None::<Ingester>,
+            ingester_pool.clone(),
+            None,
+            ByteSize::mib(20),
+        );
+
+        // Add an indexer node with IngesterStatus::Ready.
+        let new_node = ClusterNode::for_test_with_ingester_status(
+            "test-ingester-node",
+            1,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Add(new_node.clone()))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        assert_eq!(ingester_pool.len(), 1);
+        let pool_entry = ingester_pool.get(&NodeId::from("test-ingester-node")).unwrap();
+        assert_eq!(pool_entry.status, IngesterStatus::Ready);
+
+        // Update the node: ingester status transitions from Ready to Decommissioning.
+        let updated_node = ClusterNode::for_test_with_ingester_status(
+            "test-ingester-node",
+            1,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Decommissioning,
+        )
+        .await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update {
+                previous: new_node,
+                updated: updated_node.clone(),
+            })
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        // The node should still be in the pool with updated status.
+        assert_eq!(ingester_pool.len(), 1);
+        let pool_entry = ingester_pool.get(&NodeId::from("test-ingester-node")).unwrap();
+        assert_eq!(pool_entry.status, IngesterStatus::Decommissioning);
+
+        // Remove the node.
+        cluster_change_stream_tx
+            .send(ClusterChange::Remove(updated_node))
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        assert!(ingester_pool.is_empty());
     }
 }
