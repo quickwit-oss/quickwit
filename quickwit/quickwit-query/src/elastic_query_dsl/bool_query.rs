@@ -23,7 +23,7 @@ use crate::query_ast::{self, QueryAst};
 /// # Unsupported features
 /// - named queries
 #[serde_as]
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct BoolQuery {
     #[serde_as(deserialize_as = "DefaultOnNull<OneOrMany<_, PreferMany>>")]
@@ -42,12 +42,22 @@ pub struct BoolQuery {
     pub boost: Option<NotNaNf32>,
     #[serde(default)]
     pub minimum_should_match: Option<MinimumShouldMatch>,
-    /// Internal ES field emitted by the Java BoolQueryBuilder. Always `true`
-    /// by default. Accepted here for compatibility (e.g. Trino's ES connector)
-    /// but not used by Quickwit.
-    #[serde(default)]
-    adjust_pure_negative: Option<bool>,
+    #[serde(alias = "adjust_pure_negative", default, skip_serializing)]
+    _adjust_pure_negative: Option<serde::de::IgnoredAny>,
 }
+
+impl PartialEq for BoolQuery {
+    fn eq(&self, other: &Self) -> bool {
+        self.must == other.must
+            && self.must_not == other.must_not
+            && self.should == other.should
+            && self.filter == other.filter
+            && self.boost == other.boost
+            && self.minimum_should_match == other.minimum_should_match
+    }
+}
+
+impl Eq for BoolQuery {}
 
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(untagged)]
@@ -130,7 +140,7 @@ impl BoolQuery {
             filter: Vec::new(),
             boost: None,
             minimum_should_match: None,
-            adjust_pure_negative: None,
+            _adjust_pure_negative: None,
         }
     }
 }
@@ -205,7 +215,7 @@ mod tests {
                 filter: Vec::new(),
                 boost: None,
                 minimum_should_match: None,
-                adjust_pure_negative: None,
+                _adjust_pure_negative: None,
             }
         );
     }
@@ -226,7 +236,7 @@ mod tests {
                 filter: vec![term_query_from_field_value("product_id", "2").into(),],
                 boost: None,
                 minimum_should_match: None,
-                adjust_pure_negative: None,
+                _adjust_pure_negative: None,
             }
         );
     }
@@ -250,7 +260,7 @@ mod tests {
                 filter: Vec::new(),
                 boost: None,
                 minimum_should_match: None,
-                adjust_pure_negative: None,
+                _adjust_pure_negative: None,
             }
         );
     }
@@ -264,9 +274,9 @@ mod tests {
             "adjust_pure_negative": true
         }"#;
         let bool_query: BoolQuery = serde_json::from_str(bool_query_json).unwrap();
-        assert_eq!(bool_query.adjust_pure_negative, Some(true));
+        assert!(bool_query._adjust_pure_negative.is_some());
         assert_eq!(bool_query.must.len(), 1);
-        let _ast = bool_query.convert_to_query_ast().unwrap();
+        bool_query.convert_to_query_ast().unwrap();
     }
 
     #[test]

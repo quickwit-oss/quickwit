@@ -310,4 +310,42 @@ mod tests {
 
         // Add more test cases as needed
     }
+
+    #[test]
+    fn test_cat_index_query_params_validate_s_parameter() {
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: Some(vec!["index:asc".to_string()]),
+            ..Default::default()
+        };
+        assert!(params.validate().is_ok());
+
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: Some(vec!["index".to_string()]),
+            ..Default::default()
+        };
+        assert!(params.validate().is_ok());
+
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: Some(vec!["index:desc".to_string()]),
+            ..Default::default()
+        };
+        assert!(params.validate().is_err());
+
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: Some(vec!["index:asc".to_string(), "docs.count".to_string()]),
+            ..Default::default()
+        };
+        assert!(params.validate().is_err());
+
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: None,
+            ..Default::default()
+        };
+        assert!(params.validate().is_ok());
+    }
 }

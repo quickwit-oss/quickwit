@@ -39,18 +39,12 @@ pub struct RangeQueryParams {
     boost: Option<NotNaNf32>,
     #[serde(default)]
     format: Option<JsonLiteral>,
-    /// Legacy range boundary used by the ES Java client (e.g. Trino connector).
-    /// Converted to `gte`/`gt` depending on `include_lower`.
     #[serde(default)]
     from: Option<JsonLiteral>,
-    /// Legacy range boundary used by the ES Java client (e.g. Trino connector).
-    /// Converted to `lte`/`lt` depending on `include_upper`.
     #[serde(default)]
     to: Option<JsonLiteral>,
-    /// When `true` (default), `from` maps to `gte`; when `false`, to `gt`.
     #[serde(default)]
     include_lower: Option<bool>,
-    /// When `true` (default), `to` maps to `lte`; when `false`, to `lt`.
     #[serde(default)]
     include_upper: Option<bool>,
 }
@@ -180,7 +174,7 @@ mod tests {
         ));
     }
 
-    fn json_number(n: u64) -> JsonLiteral {
+    fn into_json_number(n: u64) -> JsonLiteral {
         JsonLiteral::Number(serde_json::Number::from(n))
     }
 
@@ -194,8 +188,8 @@ mod tests {
             panic!("expected Range, got {ast:?}");
         };
         assert_eq!(rq.field, "score");
-        assert_eq!(rq.lower_bound, Bound::Included(json_number(50)));
-        assert_eq!(rq.upper_bound, Bound::Included(json_number(100)));
+        assert_eq!(rq.lower_bound, Bound::Included(into_json_number(50)));
+        assert_eq!(rq.upper_bound, Bound::Included(into_json_number(100)));
     }
 
     #[test]
@@ -208,8 +202,8 @@ mod tests {
             panic!("expected Range, got {ast:?}");
         };
         assert_eq!(rq.field, "score");
-        assert_eq!(rq.lower_bound, Bound::Excluded(json_number(50)));
-        assert_eq!(rq.upper_bound, Bound::Excluded(json_number(100)));
+        assert_eq!(rq.lower_bound, Bound::Excluded(into_json_number(50)));
+        assert_eq!(rq.upper_bound, Bound::Excluded(into_json_number(100)));
     }
 
     #[test]
@@ -221,8 +215,8 @@ mod tests {
             panic!("expected Range, got {ast:?}");
         };
         assert_eq!(rq.field, "score");
-        assert_eq!(rq.lower_bound, Bound::Included(json_number(50)));
-        assert_eq!(rq.upper_bound, Bound::Included(json_number(100)));
+        assert_eq!(rq.lower_bound, Bound::Included(into_json_number(50)));
+        assert_eq!(rq.upper_bound, Bound::Included(into_json_number(100)));
     }
 
     #[test]

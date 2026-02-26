@@ -108,12 +108,16 @@ pub fn es_compat_nodes_handler(
     elastic_nodes_filter()
         .and(with_arg(node_config))
         .then(|config: Arc<NodeConfig>| async move {
+            let advertise_addr = std::net::SocketAddr::new(
+                config.grpc_advertise_addr.ip(),
+                config.rest_config.listen_addr.port(),
+            );
             warp::reply::json(&json!({
                 "nodes": {
                     config.node_id.as_str(): {
                         "roles": ["data", "ingest"],
                         "http": {
-                            "publish_address": config.rest_config.listen_addr.to_string()
+                            "publish_address": advertise_addr.to_string()
                         }
                     }
                 }
@@ -422,8 +426,8 @@ pub fn es_compat_scroll_handler(
 ///
 /// Clears a scroll context. Quickwit manages scroll lifetime via TTL,
 /// so this is a no-op that returns success.
-pub fn es_compat_delete_scroll_handler()
--> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+pub fn es_compat_delete_scroll_handler(
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_delete_scroll_filter()
         .then(|| async {
             Ok::<_, ElasticsearchError>(json!({

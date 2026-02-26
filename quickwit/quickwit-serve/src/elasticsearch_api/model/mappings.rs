@@ -225,4 +225,79 @@ mod tests {
         let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
         assert!(field_mapping_from_entry(&entry).is_none());
     }
+
+    #[test]
+    fn test_build_properties_all_leaf_types() {
+        let entries: Vec<FieldMappingEntry> = serde_json::from_value(json!([
+            { "name": "title", "type": "text" },
+            { "name": "count", "type": "i64" },
+            { "name": "unsigned", "type": "u64" },
+            { "name": "score", "type": "f64" },
+            { "name": "active", "type": "bool" },
+            { "name": "created_at", "type": "datetime" },
+            { "name": "ip_field", "type": "ip" },
+            { "name": "data", "type": "bytes" },
+            { "name": "payload", "type": "json" },
+            {
+                "name": "metadata",
+                "type": "object",
+                "field_mappings": [
+                    { "name": "source", "type": "text" }
+                ]
+            }
+        ]))
+        .unwrap();
+
+        let props = build_properties(&entries);
+        let to_json = |fm: &FieldMapping| serde_json::to_value(fm).unwrap();
+
+        assert_eq!(to_json(&props["title"]), json!({ "type": "text" }));
+        assert_eq!(to_json(&props["count"]), json!({ "type": "long" }));
+        assert_eq!(to_json(&props["unsigned"]), json!({ "type": "long" }));
+        assert_eq!(to_json(&props["score"]), json!({ "type": "double" }));
+        assert_eq!(to_json(&props["active"]), json!({ "type": "boolean" }));
+        assert_eq!(to_json(&props["created_at"]), json!({ "type": "date" }));
+        assert_eq!(to_json(&props["ip_field"]), json!({ "type": "ip" }));
+        assert_eq!(to_json(&props["data"]), json!({ "type": "binary" }));
+        assert_eq!(to_json(&props["payload"]), json!({ "type": "object" }));
+
+        let meta = to_json(&props["metadata"]);
+        assert_eq!(meta["type"], "object");
+        assert_eq!(meta["properties"]["source"]["type"], "text");
+    }
+
+    #[test]
+    fn test_merge_dynamic_fields_skips_existing_and_internal() {
+        use quickwit_proto::search::ListFieldsEntryResponse;
+
+        let mut properties = HashMap::new();
+        properties.insert("title".to_string(), FieldMapping::Leaf { typ: "text" });
+
+        let list_fields = ListFieldsResponse {
+            fields: vec![
+                ListFieldsEntryResponse {
+                    field_name: "title".to_string(),
+                    field_type: ListFieldType::Str as i32,
+                    ..Default::default()
+                },
+                ListFieldsEntryResponse {
+                    field_name: "_timestamp".to_string(),
+                    field_type: ListFieldType::Date as i32,
+                    ..Default::default()
+                },
+                ListFieldsEntryResponse {
+                    field_name: "dynamic_field".to_string(),
+                    field_type: ListFieldType::Str as i32,
+                    ..Default::default()
+                },
+            ],
+        };
+
+        merge_dynamic_fields(&mut properties, &list_fields);
+
+        assert_eq!(properties.len(), 2);
+        assert!(properties.contains_key("title"));
+        assert!(properties.contains_key("dynamic_field"));
+        assert!(!properties.contains_key("_timestamp"));
+    }
 }
