@@ -21,6 +21,7 @@ use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::InvocationType;
 use base64::prelude::*;
 use prost::Message;
+use quickwit_common::retry::{RetryParams, retry};
 use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePayload};
 use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest};
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
@@ -113,6 +114,12 @@ impl AwsLambdaInvoker {
     }
 }
 
+const LAMBDA_RETRY_PARAMS: RetryParams = RetryParams {
+    base_delay: std::time::Duration::from_secs(1),
+    max_delay: std::time::Duration::from_secs(10),
+    max_attempts: 3,
+};
+
 #[async_trait]
 impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
     #[instrument(skip(self, request), fields(function_name = %self.function_name, version = %self.version))]
@@ -122,7 +129,10 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
     ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
         let start = std::time::Instant::now();
 
-        let result = self.invoke_leaf_search_inner(request).await;
+        let result = retry(&LAMBDA_RETRY_PARAMS, || {
+            self.invoke_leaf_search_inner(request.clone())
+        })
+        .await;
 
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
