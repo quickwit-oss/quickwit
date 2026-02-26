@@ -218,4 +218,14 @@ mod tests {
         cache.put("hello.seg", data);
         assert_eq!(cache.get(&"hello.seg").unwrap(), &b"werwer"[..]);
     }
+
+    #[test]
+    fn test_cache_no_cache() {
+        let cache =
+            MemorySizedCache::from_config(&CacheConfig::no_cache(), &CACHE_METRICS_FOR_TESTS);
+        assert!(cache.get(&"hello.seg").is_none());
+        let data = OwnedBytes::new(&b"werwer"[..]);
+        cache.put("hello.seg", data);
+        assert!(cache.get(&"hello.seg").is_none());
+    }
 }

@@ -256,8 +256,7 @@ pub struct SplitSearchError {
     #[prost(bool, tag = "3")]
     pub retryable_error: bool,
 }
-/// / A LeafSearchRequest can span multiple indices.
-/// /
+/// A LeafSearchRequest can span multiple indices.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafSearchRequest {
@@ -292,7 +291,7 @@ pub struct ResourceStats {
     #[prost(uint64, tag = "5")]
     pub cpu_microsecs: u64,
 }
-/// / LeafRequestRef references data in LeafSearchRequest to deduplicate data.
+/// LeafRequestRef references data in LeafSearchRequest to deduplicate data.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct LeafRequestRef {
@@ -459,6 +458,38 @@ pub struct LeafSearchResponse {
     >,
     #[prost(message, optional, tag = "8")]
     pub resource_stats: ::core::option::Option<ResourceStats>,
+}
+/// The result of searching a single split in a Lambda invocation.
+/// Each result is tagged with its split_id so that ordering is irrelevant.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LambdaSingleSplitResult {
+    /// The split that was searched.
+    #[prost(string, tag = "1")]
+    pub split_id: ::prost::alloc::string::String,
+    #[prost(oneof = "lambda_single_split_result::Outcome", tags = "2, 3")]
+    pub outcome: ::core::option::Option<lambda_single_split_result::Outcome>,
+}
+/// Nested message and enum types in `LambdaSingleSplitResult`.
+pub mod lambda_single_split_result {
+    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "snake_case")]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Outcome {
+        /// On success, the leaf search response for this split.
+        #[prost(message, tag = "2")]
+        Response(super::LeafSearchResponse),
+        /// On failure, the error message.
+        #[prost(string, tag = "3")]
+        Error(::prost::alloc::string::String),
+    }
+}
+/// Wrapper for per-split results from a Lambda invocation.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LambdaSearchResponses {
+    #[prost(message, repeated, tag = "2")]
+    pub split_results: ::prost::alloc::vec::Vec<LambdaSingleSplitResult>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

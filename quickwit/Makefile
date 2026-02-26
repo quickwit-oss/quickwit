@@ -77,7 +77,9 @@ rm-postgres:
 
 update-licenses:
 	 dd-rust-license-tool --config license-tool.toml write
+	 mv LICENSE-3rdparty.csv ../LICENSE-3rdparty.csv
 
 .PHONY: load-cloudprem-ui
 load-cloudprem-ui:
 	cd cloudprem-ui && $(MAKE) load-cloudprem-ui
+
