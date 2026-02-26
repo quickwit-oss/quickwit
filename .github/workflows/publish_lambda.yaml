@@ -1,0 +1,78 @@
+# This workflow creates a new release for a quickwit search aws lambda.
+# The artifact is a zip file containing a binary for ARM 64,
+# ready to be deployed by the deployer.
+#
+# See quickwit-lambda-client/README.md
+name: Release Lambda binary
+
+on:
+  push:
+    tags:
+      - 'lambda-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.8.0)'
+        required: false
+        default: 'dev'
+
+permissions:
+  contents: read
+
+jobs:
+  build-lambda:
+    name: Build Lambda ARM64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Set version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            # Extract version from tag (e.g., lambda-v0.8.0 -> v0.8.0)
+            echo "ASSET_VERSION=${GITHUB_REF_NAME#lambda-}" >> $GITHUB_ENV
+          elif [ -n "${{ github.event.inputs.version }}" ] && [ "${{ github.event.inputs.version }}" != "dev" ]; then
+            echo "ASSET_VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          else
+            echo "ASSET_VERSION=dev-$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          fi
+
+      - name: Install rustup
+        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
+
+      - name: Install cross
+        run: cargo install cross
+
+      - name: Retrieve and export commit date, hash, and tags
+        run: |
+          echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+          echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
+
+      - name: Build Lambda binary
+        run: cross build --release --features lambda-release --target aarch64-unknown-linux-gnu -p quickwit-lambda-server --bin quickwit-aws-lambda-leaf-search
+        env:
+          QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
+          QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}
+          QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
+        working-directory: ./quickwit
+
+      - name: Create Lambda zip
+        run: |
+          cd quickwit/target/aarch64-unknown-linux-gnu/release
+          cp quickwit-aws-lambda-leaf-search bootstrap
+          zip quickwit-aws-lambda-${{ env.ASSET_VERSION }}-aarch64.zip bootstrap
+          mv quickwit-aws-lambda-${{ env.ASSET_VERSION }}-aarch64.zip ../../../../
+
+      - name: Upload to GitHub release
+        uses: quickwit-inc/upload-to-github-release@9b2c40fba23bf8dea05b7d2eece24cbc95d4a190
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: quickwit-aws-lambda-${{ env.ASSET_VERSION }}-aarch64.zip
+          overwrite: true
+          draft: true
+          tag_name: ${{ env.ASSET_VERSION }}

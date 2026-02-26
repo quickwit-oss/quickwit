@@ -181,8 +181,8 @@ impl BuildTantivyAst for RangeQuery {
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
                 let truncate_datetime =
                     |date: &DateTime| date.truncate(date_options.get_precision());
-                let lower_bound = map_bound(&lower_bound, truncate_datetime);
-                let upper_bound = map_bound(&upper_bound, truncate_datetime);
+                let lower_bound = lower_bound.as_ref().map(truncate_datetime);
+                let upper_bound = upper_bound.as_ref().map(truncate_datetime);
                 FastFieldRangeQuery::new(
                     lower_bound.map(|val| Term::from_field_date(field, val)),
                     upper_bound.map(|val| Term::from_field_date(field, val)),
@@ -274,14 +274,6 @@ impl BuildTantivyAst for RangeQuery {
                 .into()
             }
         })
-    }
-}
-
-fn map_bound<TFrom, TTo>(bound: &Bound<TFrom>, transform: impl Fn(&TFrom) -> TTo) -> Bound<TTo> {
-    match bound {
-        Bound::Excluded(from_val) => Bound::Excluded(transform(from_val)),
-        Bound::Included(from_val) => Bound::Included(transform(from_val)),
-        Bound::Unbounded => Bound::Unbounded,
     }
 }
 

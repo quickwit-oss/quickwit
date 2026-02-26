@@ -90,6 +90,7 @@ quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
+quickwit-lambda-client = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [build-dependencies]

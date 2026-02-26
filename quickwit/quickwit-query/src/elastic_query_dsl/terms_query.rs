@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::{BTreeSet, HashMap};
+
 use serde::Deserialize;
 
-use crate::elastic_query_dsl::bool_query::BoolQuery;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
-use crate::elastic_query_dsl::term_query::term_query_from_field_value;
 use crate::elastic_query_dsl::{ConvertibleToQueryAst, ElasticQueryDslInner};
 use crate::not_nan_f32::NotNaNf32;
-use crate::query_ast::QueryAst;
+use crate::query_ast::{QueryAst, TermSetQuery};
 
 #[derive(PartialEq, Eq, Debug, Deserialize, Clone)]
 #[serde(try_from = "TermsQueryForSerialization")]
@@ -87,15 +87,14 @@ impl TryFrom<TermsQueryForSerialization> for TermsQuery {
 
 impl ConvertibleToQueryAst for TermsQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
-        let term_queries: Vec<ElasticQueryDslInner> = self
-            .values
-            .into_iter()
-            .map(|value| term_query_from_field_value(self.field.clone(), value))
-            .map(ElasticQueryDslInner::from)
-            .collect();
-        let mut union = BoolQuery::union(term_queries);
-        union.boost = self.boost;
-        union.convert_to_query_ast()
+        let mut terms_per_field = HashMap::new();
+        let values_set: BTreeSet<String> = self.values.into_iter().collect();
+        terms_per_field.insert(self.field, values_set);
+
+        let term_set_query = TermSetQuery { terms_per_field };
+        let query_ast: QueryAst = term_set_query.into();
+
+        Ok(query_ast.boost(self.boost))
     }
 }
 
