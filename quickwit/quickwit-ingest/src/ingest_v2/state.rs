@@ -398,38 +398,32 @@ impl FullyLockedIngesterState<'_> {
         truncate_up_to_position_inclusive: Position,
         initiator: &'static str,
     ) {
-        // TODO: Replace with if-let-chains when stabilized.
-        let Some(truncate_up_to_offset_inclusive) = truncate_up_to_position_inclusive.as_u64()
-        else {
-            return;
-        };
-        let Some(shard) = self.inner.shards.get_mut(queue_id) else {
-            return;
-        };
-        if shard.truncation_position_inclusive >= truncate_up_to_position_inclusive {
-            return;
-        }
-        match self
-            .mrecordlog
-            .truncate(queue_id, truncate_up_to_offset_inclusive)
-            .await
+        if let Some(truncate_up_to_offset_inclusive) = truncate_up_to_position_inclusive.as_u64()
+            && let Some(shard) = self.inner.shards.get_mut(queue_id)
+            && shard.truncation_position_inclusive < truncate_up_to_position_inclusive
         {
-            Ok(_) => {
-                info!(
-                    "truncated shard `{queue_id}` at {truncate_up_to_position_inclusive} \
-                     initiated via `{initiator}`"
-                );
-                shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
-            }
-            Err(TruncateError::MissingQueue(_)) => {
-                error!("failed to truncate shard `{queue_id}`: WAL queue not found");
-                self.shards.remove(queue_id);
-                info!("deleted dangling shard `{queue_id}`");
-            }
-            Err(TruncateError::IoError(io_error)) => {
-                error!("failed to truncate shard `{queue_id}`: {io_error}");
-            }
-        };
+            match self
+                .mrecordlog
+                .truncate(queue_id, truncate_up_to_offset_inclusive)
+                .await
+            {
+                Ok(_) => {
+                    info!(
+                        "truncated shard `{queue_id}` at {truncate_up_to_position_inclusive} \
+                         initiated via `{initiator}`"
+                    );
+                    shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
+                }
+                Err(TruncateError::MissingQueue(_)) => {
+                    error!("failed to truncate shard `{queue_id}`: WAL queue not found");
+                    self.shards.remove(queue_id);
+                    info!("deleted dangling shard `{queue_id}`");
+                }
+                Err(TruncateError::IoError(io_error)) => {
+                    error!("failed to truncate shard `{queue_id}`: {io_error}");
+                }
+            };
+        }
     }
 
     /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned

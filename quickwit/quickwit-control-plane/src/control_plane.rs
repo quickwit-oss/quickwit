@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fmt::Formatter;
@@ -28,13 +29,12 @@ use quickwit_actors::{
     Supervisor, Universe, WeakMailbox,
 };
 use quickwit_cluster::{
-    ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory, ClusterNode,
+    ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory,
 };
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
 use quickwit_common::{Progress, shared_consts};
-use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IndexConfig, IndexTemplate, SourceConfig};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMetadataResponseExt};
@@ -43,6 +43,7 @@ use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
@@ -350,6 +351,28 @@ impl ControlPlane {
     }
 
     fn debug_info(&self) -> JsonValue {
+        // Build the union of ingesters tracked by ingester pool and the model.
+        let mut ingesters: BTreeMap<NodeId, JsonValue> = BTreeMap::new();
+
+        for (ingester_id, ingester) in self.ingest_controller.ingester_pool.keys_values() {
+            let ingester_json = json!({
+                "available": true,
+                "status": ingester.status.as_json_str_name(),
+            });
+            ingesters.insert(ingester_id.clone(), ingester_json);
+        }
+        for shard in self.model.all_shards() {
+            let ingester_id = NodeId::from(shard.leader_id.clone());
+
+            if let Entry::Vacant(entry) = ingesters.entry(ingester_id.clone()) {
+                let ingester_json = json!({
+                    "available": false,
+                    "status": IngesterStatus::default(),
+                });
+                entry.insert(ingester_json);
+            }
+        }
+
         let physical_indexing_plan: Vec<JsonValue> = self
             .indexing_scheduler
             .observable_state()
@@ -392,6 +415,7 @@ impl ControlPlane {
             }
         }
         json!({
+            "ingesters": ingesters,
             "physical_indexing_plan": physical_indexing_plan,
             "shard_table": per_index_and_leader_shards_json,
         })
@@ -1040,61 +1064,25 @@ fn apply_index_template_match(
     Ok(index_config)
 }
 
-/// The indexer joined the cluster.
 #[derive(Debug)]
-struct IndexerJoined(ClusterNode);
+struct RebalanceShards;
 
 #[async_trait]
-impl Handler<IndexerJoined> for ControlPlane {
+impl Handler<RebalanceShards> for ControlPlane {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        message: IndexerJoined,
+        _message: RebalanceShards,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        info!(
-            "indexer `{}` joined the cluster: rebalancing shards and rebuilding indexing plan",
-            message.0.node_id()
-        );
-        // TODO: Update shard table.
-        if let Err(metastore_error) = self
+        if let Err(error) = self
             .ingest_controller
             .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
             .await
         {
-            return convert_metastore_error::<()>(metastore_error).map(|_| ());
-        }
-        self.indexing_scheduler.rebuild_plan(&self.model);
-        Ok(())
-    }
-}
-
-/// The indexer left the cluster.
-#[derive(Debug)]
-struct IndexerLeft(ClusterNode);
-
-#[async_trait]
-impl Handler<IndexerLeft> for ControlPlane {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        message: IndexerLeft,
-        ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        info!(
-            "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing plan",
-            message.0.node_id()
-        );
-        // TODO: Update shard table.
-        if let Err(metastore_error) = self
-            .ingest_controller
-            .rebalance_shards(&mut self.model, ctx.mailbox(), ctx.progress())
-            .await
-        {
-            return convert_metastore_error::<()>(metastore_error).map(|_| ());
-        }
+            return convert_metastore_error::<()>(error).map(|_| ());
+        };
         self.indexing_scheduler.rebuild_plan(&self.model);
         Ok(())
     }
@@ -1142,23 +1130,44 @@ async fn watcher_indexers(
         let Some(mailbox) = weak_mailbox.upgrade() else {
             return;
         };
+        let mut trigger_rebalance = false;
+
         match cluster_change {
-            ClusterChange::Add(node) => {
-                if node.enabled_services().contains(&QuickwitService::Indexer)
-                    && let Err(error) = mailbox.send_message(IndexerJoined(node)).await
-                {
-                    error!(%error, "failed to forward `IndexerJoined` event to control plane");
+            ClusterChange::Add(node) if node.is_indexer() => {
+                info!(
+                    "indexer `{}` joined the cluster: rebalancing shards and rebuilding indexing \
+                     plan",
+                    node.node_id()
+                );
+                trigger_rebalance = true;
+            }
+            ClusterChange::Remove(node) if node.is_indexer() => {
+                info!(
+                    "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing \
+                     plan",
+                    node.node_id()
+                );
+                trigger_rebalance = true
+            }
+            ClusterChange::Update { previous, updated } if updated.is_indexer() => {
+                let was_ready = previous.ingester_status().is_ready();
+                let is_ready = updated.ingester_status().is_ready();
+
+                if was_ready ^ is_ready {
+                    info!(
+                        "indexer `{}` status changed to `{}`: rebalancing shards and rebuilding \
+                         indexing plan",
+                        updated.node_id(),
+                        updated.ingester_status().as_json_str_name()
+                    );
+                    trigger_rebalance = true;
                 }
             }
-            ClusterChange::Remove(node) => {
-                if node.enabled_services().contains(&QuickwitService::Indexer)
-                    && let Err(error) = mailbox.send_message(IndexerLeft(node)).await
-                {
-                    error!(%error, "failed to forward `IndexerLeft` event to control plane");
-                }
-            }
-            ClusterChange::Update { .. } => {
-                // We are not interested in updates (yet).
+            _ => {}
+        }
+        if trigger_rebalance {
+            if mailbox.send_message(RebalanceShards).await.is_err() {
+                return;
             }
         }
     }
@@ -1171,11 +1180,12 @@ mod tests {
 
     use mockall::Sequence;
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
-    use quickwit_cluster::ClusterChangeStreamFactoryForTest;
+    use quickwit_cluster::{ClusterChangeStreamFactoryForTest, ClusterNode};
     use quickwit_config::{
         CLI_SOURCE_ID, INGEST_V2_SOURCE_ID, IndexConfig, KafkaSourceParams, SourceParams,
     };
     use quickwit_indexing::IndexingService;
+    use quickwit_ingest::IngesterPoolEntry;
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
@@ -1186,7 +1196,6 @@ mod tests {
         ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, CpuCapacity, IndexingServiceClient,
         MockIndexingService,
     };
-    use quickwit_ingest::IngesterPoolEntry;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceClient, IngesterStatus, InitShardSuccess, InitShardsResponse,
         MockIngesterService, RetainShardsResponse,
@@ -2457,7 +2466,7 @@ mod tests {
         let cluster_change = ClusterChange::Add(metastore_node);
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
-        let indexer_node =
+        let indexer_node: ClusterNode =
             ClusterNode::for_test("test-indexer", 1515, false, &["indexer"], &[]).await;
         let cluster_change = ClusterChange::Add(indexer_node.clone());
         cluster_change_stream_tx.send(cluster_change).unwrap();
@@ -2465,11 +2474,35 @@ mod tests {
         let cluster_change = ClusterChange::Remove(indexer_node.clone());
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
-        let IndexerJoined(joined) = control_plane_inbox.recv_typed_message().await.unwrap();
-        assert_eq!(joined.grpc_advertise_addr().port(), 1516);
+        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
+        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
 
-        let IndexerLeft(left) = control_plane_inbox.recv_typed_message().await.unwrap();
-        assert_eq!(left.grpc_advertise_addr().port(), 1516);
+        // Test that a ClusterChange::Update with a status transition triggers rebalance.
+        let node_ready = ClusterNode::for_test_with_ingester_status(
+            "test-indexer",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
+        let node_retiring = ClusterNode::for_test_with_ingester_status(
+            "test-indexer",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Retiring,
+        )
+        .await;
+        let cluster_change = ClusterChange::Update {
+            previous: node_ready,
+            updated: node_retiring,
+        };
+        cluster_change_stream_tx.send(cluster_change).unwrap();
+
+        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
 
         universe.assert_quit().await;
     }
@@ -2502,7 +2535,7 @@ mod tests {
                 disable_control_loop,
             );
         let cluster_change_stream_tx = cluster_change_stream_factory.change_stream_tx();
-        let indexer_node =
+        let indexer_node: ClusterNode =
             ClusterNode::for_test("test-indexer", 1515, false, &["indexer"], &[]).await;
         let cluster_change = ClusterChange::Add(indexer_node.clone());
         cluster_change_stream_tx.send(cluster_change).unwrap();

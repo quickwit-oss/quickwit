@@ -65,6 +65,27 @@ impl ClusterNode {
         enabled_services: &[&str],
         indexing_tasks: &[IndexingTask],
     ) -> Self {
+        Self::for_test_with_ingester_status(
+            node_id,
+            port,
+            is_self_node,
+            enabled_services,
+            indexing_tasks,
+            IngesterStatus::default(),
+        )
+        .await
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub async fn for_test_with_ingester_status(
+        node_id: &str,
+        port: u16,
+        is_self_node: bool,
+        enabled_services: &[&str],
+        indexing_tasks: &[IndexingTask],
+        ingester_status: IngesterStatus,
+    ) -> Self {
+        use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
         use quickwit_common::tower::{ClientGrpcConfig, make_channel};
 
         use crate::cluster::set_indexing_tasks_in_node_state;
@@ -77,6 +98,7 @@ impl ClusterNode {
         let mut node_state = NodeState::for_test();
         node_state.set(ENABLED_SERVICES_KEY, enabled_services.join(","));
         node_state.set(GRPC_ADVERTISE_ADDR_KEY, grpc_advertise_addr.to_string());
+        node_state.set(INGESTER_STATUS_KEY, ingester_status.as_json_str_name());
         set_indexing_tasks_in_node_state(indexing_tasks, &mut node_state);
         Self::try_new(chitchat_id, &node_state, channel, is_self_node).unwrap()
     }
