@@ -23,7 +23,7 @@ use crate::query_ast::{self, QueryAst};
 /// # Unsupported features
 /// - named queries
 #[serde_as]
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct BoolQuery {
     #[serde_as(deserialize_as = "DefaultOnNull<OneOrMany<_, PreferMany>>")]
@@ -46,17 +46,8 @@ pub struct BoolQuery {
     _adjust_pure_negative: Option<serde::de::IgnoredAny>,
 }
 
-impl PartialEq for BoolQuery {
-    fn eq(&self, other: &Self) -> bool {
-        self.must == other.must
-            && self.must_not == other.must_not
-            && self.should == other.should
-            && self.filter == other.filter
-            && self.boost == other.boost
-            && self.minimum_should_match == other.minimum_should_match
-    }
-}
-
+// `IgnoredAny` implements `PartialEq` but not `Eq`, so we derive `PartialEq`
+// and manually assert `Eq` (safe because `IgnoredAny` is a unit struct).
 impl Eq for BoolQuery {}
 
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
