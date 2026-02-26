@@ -27,7 +27,7 @@ pub(in crate::ingest_v2) const BROADCAST_INTERVAL_PERIOD: Duration = if cfg!(tes
 };
 
 pub use ingester_capacity_score::{
-    BroadcastIngesterCapacityScoreTask, IngesterCapacityScoreUpdate, WalDiskCapacityTimeSeries,
+    BroadcastIngesterCapacityScoreTask, IngesterCapacityScoreUpdate,
     setup_ingester_capacity_update_listener,
 };
 pub use local_shards::{

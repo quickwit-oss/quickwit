@@ -154,9 +154,9 @@ impl NodeBasedRoutingTable {
         entry.nodes.insert(node_id, ingester_node);
     }
 
-    /// Merges nodes from a GetOrCreateOpenShards control plane response into the
-    /// table. For existing nodes, updates their open shard count from the CP
-    /// response while preserving their capacity scores from the broadcast.
+    /// Merges routing updates from a GetOrCreateOpenShards control plane response into the
+    /// table. For existing nodes, updates their open shard count, including counts of 0, from the
+    /// CP response while preserving capacity scores if they already exist.
     /// New nodes get a default capacity_score of 5.
     pub fn merge_from_shards(
         &mut self,

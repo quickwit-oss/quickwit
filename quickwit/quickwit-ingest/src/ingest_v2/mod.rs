@@ -31,6 +31,7 @@ mod router;
 #[allow(dead_code)]
 mod routing_table;
 mod state;
+mod wal_capacity_timeseries;
 mod workbench;
 
 use std::collections::HashMap;

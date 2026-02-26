@@ -50,9 +50,7 @@ use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
 use super::IngesterPool;
-use super::broadcast::{
-    BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsTask, WalDiskCapacityTimeSeries,
-};
+use super::broadcast::{BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsTask};
 use super::doc_mapper::validate_doc_batch;
 use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
@@ -67,6 +65,7 @@ use super::replication::{
     SYN_REPLICATION_STREAM_CAPACITY,
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
+use super::wal_capacity_timeseries::WalDiskCapacityTimeSeries;
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::report_wal_usage;
 use crate::ingest_v2::models::IngesterShardType;
@@ -815,6 +814,8 @@ impl Ingester {
         }
         report_wal_usage(wal_usage);
 
+        // Since we just updated ingester state, we can piggyback a fresh routing update on
+        // the persist response.
         let source_shard_counts = local_shard_counts
             .into_iter()
             .map(|(index_uid, source_id, count)| SourceShardCount {

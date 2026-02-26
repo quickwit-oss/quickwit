@@ -277,9 +277,9 @@ impl IngestRouter {
 
                         match persist_failure.reason() {
                             PersistFailureReason::NoShardsAvailable => {
-                                // No-op: the piggybacked shard counts already
-                                // reflect the correct state. The retry loop will
-                                // ask the control plane for new shards.
+                                // For non-critical failures, we don't mark the nodes unavailable;
+                                // a routing update is piggybacked on PersistResponses, so shard
+                                // counts and capacity scores will be fresh on the next try.
                             }
                             PersistFailureReason::NodeUnavailable
                             | PersistFailureReason::WalFull
@@ -292,6 +292,8 @@ impl IngestRouter {
 
                     let mut state_guard = self.state.lock().await;
                     for sc in persist_response.source_shard_counts {
+                        // Since we just talked to the node, we take advantage and use the
+                        // opportunity to get a fresh routing update.
                         state_guard.node_routing_table.apply_capacity_update(
                             leader_id.clone(),
                             sc.index_uid().clone(),
