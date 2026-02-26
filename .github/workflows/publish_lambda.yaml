@@ -29,6 +29,18 @@ jobs:
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
+      - name: Override ADMS registry for GitHub Actions
+        run: |
+          # GitHub Actions can't access internal ADMS registry, use crates.io instead
+          cat > .cargo/config.toml << 'EOF'
+          # Keep existing target configs but remove ADMS registry
+          [target.x86_64-unknown-linux-gnu]
+          rustflags = ["-C", "target-cpu=x86-64-v2", "--cfg", "tokio_unstable"]
+
+          [build]
+          rustdocflags = ["--cfg", "tokio_unstable"]
+          EOF
+
       - name: Set version
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
