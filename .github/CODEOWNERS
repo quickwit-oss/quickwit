@@ -1,7 +1,10 @@
+# Log Management Codeowners rules
 *                           @centreon/log-management
 /stacks/**                  @centreon/log-management
 /infra/**                   @centreon/log-management
 /tools/**                   @centreon/log-management
+
+# Rust Codeowners rules
 *.rs                        @centreon/owners-rust
 Cargo.toml                  @centreon/owners-rust
 Cargo.lock                  @centreon/owners-rust
@@ -9,6 +12,8 @@ Cargo.lock                  @centreon/owners-rust
 /lib/crates/**/docs/        @centreon/owners-rust
 **/crate/**/README.md       @centreon/owners-rust
 **/crate/**/docs/           @centreon/owners-rust
+
+# Python Codeowners rules
 *.py                        @centreon/owners-python
 pyproject.toml              @centreon/owners-python
 uv.lock                     @centreon/owners-python
@@ -16,6 +21,8 @@ uv.lock                     @centreon/owners-python
 /lib/pip/**/docs/           @centreon/owners-python
 **/pip/**/README.md         @centreon/owners-python
 **/pip/**/docs/             @centreon/owners-python
+
+# JS Codeowners rules
 *.js                        @centreon/owners-react
 *.ts                        @centreon/owners-react
 *.tsx                       @centreon/owners-react
@@ -23,8 +30,12 @@ uv.lock                     @centreon/owners-python
 **/pnpm-lock.yaml           @centreon/owners-react
 **/pnpm-workspace.yaml      @centreon/owners-react
 **/cypress                  @centreon/owners-react
+
+# Pipelines Codeowners rules
 .github/**                    @centreon/owners-pipelines
 .yamlfix.toml                 @centreon/owners-pipelines
+
+# Security Codeowners rules
 .gitleaks.toml                @centreon/owners-security
 .gitleaksignore               @centreon/owners-security
 .githooks/pre-commit          @centreon/owners-security
