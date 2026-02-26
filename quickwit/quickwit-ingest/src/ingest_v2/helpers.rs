@@ -65,6 +65,10 @@ pub async fn wait_for_ingester_status(
     status: IngesterStatus,
     timeout_after: Duration,
 ) -> anyhow::Result<()> {
+    debug_assert!(
+        timeout_after > Duration::ZERO,
+        "timeout_after should be greater than zero"
+    );
     tokio::time::timeout(
         timeout_after,
         wait_for_ingester_status_inner(ingester, status),
@@ -131,7 +135,7 @@ pub async fn wait_for_ingester_decommission(
     wait_for_ingester_status(
         ingester,
         IngesterStatus::Decommissioned,
-        now.elapsed().saturating_sub(timeout_after),
+        timeout_after.saturating_sub(now.elapsed()),
     )
     .await?;
 
@@ -197,6 +201,35 @@ mod tests {
             });
         let ingester = IngesterServiceClient::from_mock(mock_ingester);
         wait_for_ingester_status(&ingester, IngesterStatus::Ready, Duration::from_secs(1))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_wait_for_ingester_decommission_elapsed_timeout_not_zero() {
+        let mut mock_ingester = MockIngesterService::new();
+        mock_ingester
+            .expect_open_observation_stream()
+            .once()
+            .returning(|_| {
+                let (service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
+                // Simulate the ingester transitioning to Decommissioned after 50ms.
+                tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    let message = ObservationMessage {
+                        node_id: "test-ingester".to_string(),
+                        status: IngesterStatus::Decommissioned as i32,
+                    };
+                    service_stream_tx.try_send(Ok(message)).unwrap();
+                });
+                Ok(service_stream)
+            });
+        mock_ingester
+            .expect_decommission()
+            .once()
+            .returning(|_| Ok(DecommissionResponse {}));
+        let ingester = IngesterServiceClient::from_mock(mock_ingester);
+        wait_for_ingester_decommission(&ingester, Duration::from_secs(1))
             .await
             .unwrap();
     }
