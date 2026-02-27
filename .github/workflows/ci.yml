@@ -98,7 +98,7 @@ jobs:
           workspaces: "./quickwit -> target"
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/install-action@aba36d7
+        uses: taiki-e/install-action@aba36d755ec7ca22d38b12111787c26115943952
         with:
           tool: cargo-nextest
       - name: cargo build
