@@ -29,6 +29,7 @@ use crate::IngesterPool;
 pub(super) struct IngesterNode {
     pub node_id: NodeId,
     pub index_uid: IndexUid,
+    #[allow(unused)]
     pub source_id: SourceId,
     /// Score from 0-10. Higher means more available capacity.
     pub capacity_score: usize,

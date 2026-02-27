@@ -560,7 +560,6 @@ mod tests {
 
         let persist_failure = PersistFailure {
             subrequest_id: 1,
-            shard_id: Some(shard_id_2.clone()),
             ..Default::default()
         };
         workbench.record_persist_failure(&persist_failure);
@@ -807,7 +806,6 @@ mod tests {
 
         let persist_failure = PersistFailure {
             subrequest_id: 0,
-            shard_id: Some(ShardId::from(1)),
             reason: PersistFailureReason::WalFull as i32,
             ..Default::default()
         };

@@ -368,7 +368,6 @@ impl IngestRouter {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: Some(ingester_node.index_uid.clone()),
                 source_id: subrequest.source_id.clone(),
-                shard_id: None,
                 doc_batch: subrequest.doc_batch.clone(),
             };
             per_leader_persist_subrequests
@@ -1127,7 +1126,6 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::NoShardsAvailable as i32,
                 }],
                 routing_update: Some(RoutingUpdate {
@@ -1288,7 +1286,6 @@ mod tests {
             .returning(move |request| {
                 assert_eq!(request.leader_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 1);
-                assert!(request.subrequests[0].shard_id.is_none());
 
                 Ok(PersistResponse {
                     leader_id: request.leader_id,
@@ -1325,7 +1322,6 @@ mod tests {
             .returning(move |request| {
                 assert_eq!(request.leader_id, "test-ingester-1");
                 assert_eq!(request.subrequests.len(), 1);
-                assert!(request.subrequests[0].shard_id.is_none());
 
                 Ok(PersistResponse {
                     leader_id: request.leader_id,
@@ -1425,7 +1421,6 @@ mod tests {
                         subrequest_id: 0,
                         index_uid: Some(index_uid_clone.clone()),
                         source_id: "test-source".to_string(),
-                        shard_id: Some(ShardId::from(1)),
                         reason: PersistFailureReason::NoShardsAvailable as i32,
                     }],
                     routing_update: Some(RoutingUpdate {
@@ -1579,7 +1574,6 @@ mod tests {
             assert_eq!(subrequest.subrequest_id, 0);
             let index_uid = subrequest.index_uid().clone();
             assert_eq!(subrequest.source_id, "test-source");
-            assert!(subrequest.shard_id.is_none());
             assert_eq!(
                 subrequest.doc_batch,
                 Some(DocBatchV2::for_test(["test-doc-foo"]))
@@ -1592,7 +1586,6 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::NoShardsAvailable as i32,
                 }],
                 routing_update: Some(RoutingUpdate {
@@ -1701,7 +1694,6 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(IndexUid::for_test("test-index-0", 0)),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::NoShardsAvailable as i32,
                 }],
                 routing_update: Some(RoutingUpdate {
@@ -1735,7 +1727,6 @@ mod tests {
                     subrequest_id: 1,
                     index_uid: Some(IndexUid::for_test("test-index-1", 0)),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::NodeUnavailable as i32,
                 }],
                 routing_update: Some(RoutingUpdate {
