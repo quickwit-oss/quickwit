@@ -13,104 +13,26 @@
 // limitations under the License.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use bytesize::ByteSize;
 use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
-use quickwit_common::ring_buffer::RingBuffer;
 use quickwit_common::shared_consts::INGESTER_CAPACITY_SCORE_PREFIX;
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::types::{IndexUid, NodeId, SourceId, SourceUid};
+use quickwit_proto::types::{NodeId, SourceUid};
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 use super::{BROADCAST_INTERVAL_PERIOD, make_key, parse_key};
+use crate::OpenShardCounts;
 use crate::ingest_v2::state::WeakIngesterState;
-
-pub type OpenShardCounts = Vec<(IndexUid, SourceId, usize)>;
-
-/// The lookback window length is meant to capture readings far enough back in time to give
-/// a rough rate of change estimate. At size 6, with broadcast interval of 5 seconds, this would be
-/// 30 seconds of readings.
-const WAL_CAPACITY_LOOKBACK_WINDOW_LEN: usize = 6;
-
-/// The ring buffer stores one extra element so that `delta()` can compare the newest reading
-/// with the one that is exactly `WAL_CAPACITY_LOOKBACK_WINDOW_LEN` steps ago. Otherwise, that
-/// reading would be discarded when the next reading is inserted.
-const WAL_CAPACITY_READINGS_LEN: usize = WAL_CAPACITY_LOOKBACK_WINDOW_LEN + 1;
-
-struct WalDiskCapacityTimeSeries {
-    memory_capacity: ByteSize,
-    readings: RingBuffer<f64, WAL_CAPACITY_READINGS_LEN>,
-}
-
-impl WalDiskCapacityTimeSeries {
-    fn new(memory_capacity: ByteSize) -> Self {
-        #[cfg(not(test))]
-        assert!(memory_capacity.as_u64() > 0);
-        Self {
-            memory_capacity,
-            readings: RingBuffer::default(),
-        }
-    }
-
-    fn record(&mut self, memory_used: ByteSize) {
-        let remaining = 1.0 - (memory_used.as_u64() as f64 / self.memory_capacity.as_u64() as f64);
-        self.readings.push_back(remaining.clamp(0.0, 1.0));
-    }
-
-    fn current(&self) -> Option<f64> {
-        self.readings.last()
-    }
-
-    /// How much remaining capacity changed between the oldest and newest readings.
-    /// Positive = improving, negative = draining.
-    fn delta(&self) -> Option<f64> {
-        let current = self.readings.last()?;
-        let oldest = self.readings.front()?;
-        Some(current - oldest)
-    }
-}
-
-/// Computes a capacity score from 0 to 10 using a PD controller.
-///
-/// The score has two components:
-///
-/// - **P (proportional):** How much WAL capacity remains right now. An ingester with 100% free
-///   capacity gets `PROPORTIONAL_WEIGHT` points; 50% gets half; and so on. If remaining capacity
-///   drops to `MIN_PERMISSIBLE_CAPACITY` or below, the score is immediately 0.
-///
-/// - **D (derivative):** Up to `DERIVATIVE_WEIGHT` bonus points based on how fast remaining
-///   capacity is changing over the lookback window. A higher drain rate is worse, so we invert it:
-///   `drain / MAX_DRAIN_RATE` normalizes the drain to a 0–1 penalty, and subtracting from 1
-///   converts it into a 0–1 bonus. Multiplied by `DERIVATIVE_WEIGHT`, a stable node gets the full
-///   bonus and a node draining at `MAX_DRAIN_RATE` or faster gets nothing.
-///
-/// Putting it together: a completely idle ingester scores 10 (8 + 2).
-/// One that is full but stable scores ~2. One that is draining rapidly scores less.
-/// A score of 0 means the ingester is at or below minimum permissible capacity.
-///
-/// Below this remaining capacity fraction, the score is immediately 0.
-const MIN_PERMISSIBLE_CAPACITY: f64 = 0.05;
-/// Weight of the proportional term (max points from P).
-const PROPORTIONAL_WEIGHT: f64 = 8.0;
-/// Weight of the derivative term (max points from D).
-const DERIVATIVE_WEIGHT: f64 = 2.0;
-/// The drain rate (as a fraction of total capacity over the lookback window) at which the
-/// derivative penalty is fully applied. Drain rates beyond this are clamped.
-const MAX_DRAIN_RATE: f64 = 0.10;
-
-fn compute_capacity_score(remaining_capacity: f64, capacity_delta: f64) -> usize {
-    if remaining_capacity <= MIN_PERMISSIBLE_CAPACITY {
-        return 0;
-    }
-    let p = PROPORTIONAL_WEIGHT * remaining_capacity;
-    let drain = (-capacity_delta).clamp(0.0, MAX_DRAIN_RATE);
-    let d = DERIVATIVE_WEIGHT * (1.0 - drain / MAX_DRAIN_RATE);
-    (p + d).clamp(0.0, 10.0) as usize
-}
+use crate::ingest_v2::wal_capacity_timeseries::{
+    WalDiskCapacityTimeSeries, compute_capacity_score,
+};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IngesterCapacityScore {
@@ -123,19 +45,19 @@ pub struct IngesterCapacityScore {
 pub struct BroadcastIngesterCapacityScoreTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
-    wal_capacity_time_series: WalDiskCapacityTimeSeries,
+    wal_capacity_time_series: Arc<Mutex<WalDiskCapacityTimeSeries>>,
 }
 
 impl BroadcastIngesterCapacityScoreTask {
     pub fn spawn(
         cluster: Cluster,
         weak_state: WeakIngesterState,
-        disk_capacity: ByteSize,
+        wal_capacity_time_series: Arc<Mutex<WalDiskCapacityTimeSeries>>,
     ) -> JoinHandle<()> {
         let mut broadcaster = Self {
             cluster,
             weak_state,
-            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(disk_capacity),
+            wal_capacity_time_series,
         };
         tokio::spawn(async move { broadcaster.run().await })
     }
@@ -158,7 +80,7 @@ impl BroadcastIngesterCapacityScoreTask {
             .map_err(|_| anyhow::anyhow!("failed to acquire ingester state lock"))?;
         let usage = guard.mrecordlog.resource_usage();
         let disk_used = ByteSize::b(usage.disk_used_bytes as u64);
-        let open_shard_counts = guard.get_open_shard_counts();
+        let (open_shard_counts, _) = guard.get_shard_snapshot();
 
         Ok(Some((disk_used, open_shard_counts)))
     }
@@ -179,10 +101,12 @@ impl BroadcastIngesterCapacityScoreTask {
                 }
             };
 
-            self.wal_capacity_time_series.record(disk_used);
+            let mut ts_guard = self.wal_capacity_time_series.lock().await;
+            ts_guard.record(disk_used);
+            let remaining_capacity = ts_guard.current().unwrap_or(1.0);
+            let capacity_delta = ts_guard.delta().unwrap_or(0.0);
+            drop(ts_guard);
 
-            let remaining_capacity = self.wal_capacity_time_series.current().unwrap_or(1.0);
-            let capacity_delta = self.wal_capacity_time_series.delta().unwrap_or(0.0);
             let capacity_score = compute_capacity_score(remaining_capacity, capacity_delta);
 
             previous_sources = self
@@ -266,89 +190,11 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
-    use quickwit_proto::types::ShardId;
+    use quickwit_proto::types::{IndexUid, ShardId, SourceId};
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;
     use crate::ingest_v2::state::IngesterState;
-
-    fn ts() -> WalDiskCapacityTimeSeries {
-        WalDiskCapacityTimeSeries::new(ByteSize::b(100))
-    }
-
-    /// Helper: record a reading with `used` bytes against the series' fixed capacity.
-    fn record(series: &mut WalDiskCapacityTimeSeries, used: u64) {
-        series.record(ByteSize::b(used));
-    }
-
-    #[test]
-    fn test_wal_disk_capacity_current_after_record() {
-        let mut series = WalDiskCapacityTimeSeries::new(ByteSize::b(256));
-        // 192 of 256 used => 25% remaining
-        series.record(ByteSize::b(192));
-        assert_eq!(series.current(), Some(0.25));
-
-        // 16 of 256 used => 93.75% remaining
-        series.record(ByteSize::b(16));
-        assert_eq!(series.current(), Some(0.9375));
-    }
-
-    #[test]
-    fn test_wal_disk_capacity_record_saturates_at_zero() {
-        let mut series = ts();
-        // 200 used out of 100 capacity => clamped to 0.0
-        record(&mut series, 200);
-        assert_eq!(series.current(), Some(0.0));
-    }
-
-    #[test]
-    fn test_wal_disk_capacity_delta_growing() {
-        let mut series = ts();
-        // oldest: 60 of 100 used => 40% remaining
-        record(&mut series, 60);
-        // current: 20 of 100 used => 80% remaining
-        record(&mut series, 20);
-        // delta = 0.80 - 0.40 = 0.40
-        assert_eq!(series.delta(), Some(0.40));
-    }
-
-    #[test]
-    fn test_wal_disk_capacity_delta_shrinking() {
-        let mut series = ts();
-        // oldest: 20 of 100 used => 80% remaining
-        record(&mut series, 20);
-        // current: 60 of 100 used => 40% remaining
-        record(&mut series, 60);
-        // delta = 0.40 - 0.80 = -0.40
-        assert_eq!(series.delta(), Some(-0.40));
-    }
-
-    #[test]
-    fn test_capacity_score_draining_vs_stable() {
-        // Node A: capacity draining — usage increases 10, 20, ..., 70 over 7 ticks.
-        let mut node_a = ts();
-        for used in (10..=70).step_by(10) {
-            record(&mut node_a, used);
-        }
-        let a_remaining = node_a.current().unwrap();
-        let a_delta = node_a.delta().unwrap();
-        let a_score = compute_capacity_score(a_remaining, a_delta);
-
-        // Node B: steady at 50% usage over 7 ticks.
-        let mut node_b = ts();
-        for _ in 0..7 {
-            record(&mut node_b, 50);
-        }
-        let b_remaining = node_b.current().unwrap();
-        let b_delta = node_b.delta().unwrap();
-        let b_score = compute_capacity_score(b_remaining, b_delta);
-
-        // p=2.4, d=0 (max drain) => 2
-        assert_eq!(a_score, 2);
-        // p=4, d=2 (stable) => 6
-        assert_eq!(b_score, 6);
-        assert!(b_score > a_score);
-    }
 
     #[tokio::test]
     async fn test_snapshot_state_dropped() {
@@ -363,7 +209,9 @@ mod tests {
         let task = BroadcastIngesterCapacityScoreTask {
             cluster,
             weak_state,
-            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(ByteSize::mb(1)),
+            wal_capacity_time_series: Arc::new(Mutex::new(WalDiskCapacityTimeSeries::new(
+                ByteSize::mb(1),
+            ))),
         };
         assert!(task.snapshot().await.is_err());
     }
@@ -387,20 +235,26 @@ mod tests {
         .advertisable()
         .build();
         state_guard.shards.insert(shard.queue_id(), shard);
-        let open_shard_counts = state_guard.get_open_shard_counts();
+        let (open_shard_counts, _) = state_guard.get_shard_snapshot();
         drop(state_guard);
 
         // Simulate 500 of 1000 bytes capacity used => 50% remaining, 0 delta => score = 6
-        let mut task = BroadcastIngesterCapacityScoreTask {
+        let ts = Arc::new(Mutex::new(WalDiskCapacityTimeSeries::new(ByteSize::b(
+            1000,
+        ))));
+        let task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
             weak_state: state.weak(),
-            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(ByteSize::b(1000)),
+            wal_capacity_time_series: ts.clone(),
         };
-        task.wal_capacity_time_series.record(ByteSize::b(500));
-
-        let remaining = task.wal_capacity_time_series.current().unwrap();
-        let delta = task.wal_capacity_time_series.delta().unwrap();
-        let capacity_score = compute_capacity_score(remaining, delta);
+        {
+            let mut ts_guard = ts.lock().await;
+            ts_guard.record(ByteSize::b(500));
+            let remaining = ts_guard.current().unwrap();
+            let delta = ts_guard.delta().unwrap();
+            assert_eq!(compute_capacity_score(remaining, delta), 6);
+        }
+        let capacity_score = 6;
         assert_eq!(capacity_score, 6);
 
         let update_counter = Arc::new(AtomicUsize::new(0));
@@ -433,24 +287,5 @@ mod tests {
         let deserialized: IngesterCapacityScore = serde_json::from_str(&value).unwrap();
         assert_eq!(deserialized.capacity_score, 6);
         assert_eq!(deserialized.open_shard_count, 1);
-    }
-
-    #[test]
-    fn test_wal_disk_capacity_delta_spans_lookback_window() {
-        let mut series = ts();
-
-        // Fill to exactly the lookback window length (6 readings), all same value.
-        for _ in 0..WAL_CAPACITY_LOOKBACK_WINDOW_LEN {
-            record(&mut series, 50);
-        }
-        assert_eq!(series.delta(), Some(0.0));
-
-        // 7th reading fills the ring buffer. Delta spans 6 intervals.
-        record(&mut series, 0);
-        assert_eq!(series.delta(), Some(0.50));
-
-        // 8th reading evicts the oldest 50-remaining. Delta still spans 6 intervals.
-        record(&mut series, 0);
-        assert_eq!(series.delta(), Some(0.50));
     }
 }

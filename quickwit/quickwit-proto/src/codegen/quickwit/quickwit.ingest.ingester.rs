@@ -51,6 +51,28 @@ pub struct PersistResponse {
     pub successes: ::prost::alloc::vec::Vec<PersistSuccess>,
     #[prost(message, repeated, tag = "3")]
     pub failures: ::prost::alloc::vec::Vec<PersistFailure>,
+    #[prost(message, optional, tag = "4")]
+    pub routing_update: ::core::option::Option<RoutingUpdate>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RoutingUpdate {
+    #[prost(uint32, tag = "1")]
+    pub capacity_score: u32,
+    #[prost(message, repeated, tag = "2")]
+    pub source_shard_updates: ::prost::alloc::vec::Vec<SourceShardUpdate>,
+    #[prost(message, repeated, tag = "3")]
+    pub closed_shards: ::prost::alloc::vec::Vec<super::ShardIds>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SourceShardUpdate {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub open_shard_count: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]

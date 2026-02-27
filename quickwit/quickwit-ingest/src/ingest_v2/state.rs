@@ -26,7 +26,7 @@ use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
+use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tracing::{error, info};
@@ -36,7 +36,7 @@ use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{FollowerId, LeaderId};
+use crate::{FollowerId, LeaderId, OpenShardCounts};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
 /// guarantees that the internal data structures are always locked in the same order.
@@ -89,15 +89,40 @@ impl InnerIngesterState {
             .map(|(_, shard)| shard)
     }
 
-    pub fn get_open_shard_counts(&self) -> Vec<(IndexUid, SourceId, usize)> {
-        self.shards
+    /// Returns per-source open shard counts and closed shard IDs for all advertisable,
+    /// non-replica shards.
+    pub fn get_shard_snapshot(&self) -> (OpenShardCounts, Vec<ShardIds>) {
+        let grouped = self
+            .shards
             .values()
-            .filter(|shard| shard.is_advertisable && !shard.is_replica() && shard.is_open())
-            .map(|shard| (shard.index_uid.clone(), shard.source_id.clone()))
-            .counts()
-            .into_iter()
-            .map(|((index_uid, source_id), count)| (index_uid, source_id, count))
-            .collect()
+            .filter(|shard| shard.is_advertisable && !shard.is_replica())
+            .map(|shard| ((shard.index_uid.clone(), shard.source_id.clone()), shard))
+            .into_group_map();
+
+        let mut open_counts = Vec::new();
+        let mut closed_shards = Vec::new();
+
+        for ((index_uid, source_id), shards) in grouped {
+            let mut open_count = 0;
+            let mut closed_ids = Vec::new();
+
+            for shard in shards {
+                if shard.is_open() {
+                    open_count += 1;
+                } else if shard.is_closed() {
+                    closed_ids.push(shard.shard_id.clone());
+                }
+            }
+            open_counts.push((index_uid.clone(), source_id.clone(), open_count));
+            if !closed_ids.is_empty() {
+                closed_shards.push(ShardIds {
+                    index_uid: Some(index_uid),
+                    source_id,
+                    shard_ids: closed_ids,
+                });
+            }
+        }
+        (open_counts, closed_shards)
     }
 }
 
@@ -672,61 +697,71 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_open_shard_counts() {
+    async fn test_get_shard_snapshot() {
         let (_temp_dir, state) = IngesterState::for_test().await;
         let mut state_guard = state.lock_partially().await.unwrap();
 
-        let index_a = IndexUid::for_test("index-a", 0);
-        let index_b = IndexUid::for_test("index-b", 0);
-        let index_c = IndexUid::for_test("index-c", 0);
+        let index_uid = IndexUid::for_test("test-index", 0);
 
-        // (index-a, source-a): 1 open solo shard.
+        // source-a: 2 open shards + 1 closed shard + 1 replica (ignored).
         let s = open_shard(
-            index_a.clone(),
-            SourceId::from("source-a"),
+            index_uid.clone(),
+            "source-a".into(),
             ShardId::from(1),
             false,
         );
         state_guard.shards.insert(s.queue_id(), s);
-
-        // (index-b, source-b): 1 open solo + 1 replica. Only the solo should be counted.
         let s = open_shard(
-            index_b.clone(),
-            SourceId::from("source-b"),
+            index_uid.clone(),
+            "source-a".into(),
             ShardId::from(2),
             false,
         );
         state_guard.shards.insert(s.queue_id(), s);
-        let s = open_shard(
-            index_b.clone(),
-            SourceId::from("source-b"),
-            ShardId::from(3),
-            true,
-        );
+        let s = IngesterShard::new_solo(index_uid.clone(), "source-a".into(), ShardId::from(3))
+            .with_state(ShardState::Closed)
+            .advertisable()
+            .build();
+        state_guard.shards.insert(s.queue_id(), s);
+        let s = open_shard(index_uid.clone(), "source-a".into(), ShardId::from(4), true);
         state_guard.shards.insert(s.queue_id(), s);
 
-        // (index-c, source-c): 2 open solo shards.
-        let s = open_shard(
-            index_c.clone(),
-            SourceId::from("source-c"),
-            ShardId::from(4),
-            false,
-        );
+        // source-b: 2 closed shards, no open shards.
+        let s = IngesterShard::new_solo(index_uid.clone(), "source-b".into(), ShardId::from(5))
+            .with_state(ShardState::Closed)
+            .advertisable()
+            .build();
         state_guard.shards.insert(s.queue_id(), s);
-        let s = open_shard(
-            index_c.clone(),
-            SourceId::from("source-c"),
-            ShardId::from(5),
-            false,
-        );
+        let s = IngesterShard::new_solo(index_uid.clone(), "source-b".into(), ShardId::from(6))
+            .with_state(ShardState::Closed)
+            .advertisable()
+            .build();
         state_guard.shards.insert(s.queue_id(), s);
 
-        let mut counts = state_guard.get_open_shard_counts();
-        counts.sort_by(|a, b| a.0.cmp(&b.0));
+        let (mut open_counts, mut closed_shards) = state_guard.get_shard_snapshot();
 
-        assert_eq!(counts.len(), 3);
-        assert_eq!(counts[0], (index_a, SourceId::from("source-a"), 1));
-        assert_eq!(counts[1], (index_b, SourceId::from("source-b"), 1));
-        assert_eq!(counts[2], (index_c, SourceId::from("source-c"), 2));
+        // Open counts: source-a has 2, source-b has 0.
+        open_counts.sort_by(|a, b| a.1.cmp(&b.1));
+        assert_eq!(open_counts.len(), 2);
+        assert_eq!(
+            open_counts[0],
+            (index_uid.clone(), SourceId::from("source-a"), 2)
+        );
+        assert_eq!(
+            open_counts[1],
+            (index_uid.clone(), SourceId::from("source-b"), 0)
+        );
+
+        // Closed shards: source-a has shard 3, source-b has shards 5 and 6.
+        closed_shards.sort_by(|a, b| a.source_id.cmp(&b.source_id));
+        assert_eq!(closed_shards.len(), 2);
+
+        assert_eq!(closed_shards[0].source_id, "source-a");
+        assert_eq!(closed_shards[0].shard_ids, vec![ShardId::from(3)]);
+
+        assert_eq!(closed_shards[1].source_id, "source-b");
+        let mut source_b_ids = closed_shards[1].shard_ids.clone();
+        source_b_ids.sort();
+        assert_eq!(source_b_ids, vec![ShardId::from(5), ShardId::from(6)]);
     }
 }

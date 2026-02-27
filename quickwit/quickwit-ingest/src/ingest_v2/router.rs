@@ -98,7 +98,9 @@ pub struct IngestRouter {
 }
 
 struct RouterState {
+    // Debounces `GetOrCreateOpenShardsRequest` requests to the control plane.
     debouncer: GetOrCreateOpenShardsRequestDebouncer,
+    // Routing table of nodes, their WAL capacity, and the number of open shards per source.
     node_routing_table: NodeBasedRoutingTable,
 }
 
@@ -152,7 +154,7 @@ impl IngestRouter {
         ingester_pool: &IngesterPool,
     ) -> DebouncedGetOrCreateOpenShardsRequest {
         let mut debounced_request = DebouncedGetOrCreateOpenShardsRequest::default();
-        let unavailable_leaders = &workbench.unavailable_leaders;
+        let unavailable_leaders: &HashSet<NodeId> = &workbench.unavailable_leaders;
 
         let mut state_guard = self.state.lock().await;
 
@@ -186,6 +188,12 @@ impl IngestRouter {
         }
         drop(state_guard);
 
+        if !debounced_request.is_empty() && !workbench.closed_shards.is_empty() {
+            info!(closed_shards=?workbench.closed_shards, "reporting closed shard(s) to control plane");
+            debounced_request
+                .closed_shards
+                .append(&mut workbench.closed_shards);
+        }
         if !debounced_request.is_empty() && !unavailable_leaders.is_empty() {
             info!(unavailable_leaders=?unavailable_leaders, "reporting unavailable leader(s) to control plane");
 
@@ -265,6 +273,8 @@ impl IngestRouter {
         while let Some((persist_summary, persist_result)) = persist_futures.next().await {
             match persist_result {
                 Ok(persist_response) => {
+                    let leader_id = NodeId::from(persist_response.leader_id.clone());
+
                     for persist_success in persist_response.successes {
                         workbench.record_persist_success(persist_success);
                     }
@@ -272,15 +282,36 @@ impl IngestRouter {
                         workbench.record_persist_failure(&persist_failure);
 
                         match persist_failure.reason() {
-                            PersistFailureReason::NoShardsAvailable => {}
+                            PersistFailureReason::NoShardsAvailable => {
+                                // For non-critical failures, we don't mark the nodes unavailable;
+                                // a routing update is piggybacked on PersistResponses, so shard
+                                // counts and capacity scores will be fresh on the next try.
+                            }
                             PersistFailureReason::NodeUnavailable
                             | PersistFailureReason::WalFull
                             | PersistFailureReason::Timeout => {
-                                unavailable_leaders
-                                    .insert(NodeId::from(persist_response.leader_id.clone()));
+                                unavailable_leaders.insert(leader_id.clone());
                             }
                             _ => {}
                         }
+                    }
+
+                    if let Some(routing_update) = persist_response.routing_update {
+                        // Since we just talked to the node, we take advantage and use the
+                        // opportunity to get a fresh routing update.
+                        let mut state_guard = self.state.lock().await;
+                        for shard_update in routing_update.source_shard_updates {
+                            state_guard.node_routing_table.apply_capacity_update(
+                                leader_id.clone(),
+                                shard_update.index_uid().clone(),
+                                shard_update.source_id,
+                                routing_update.capacity_score as usize,
+                                shard_update.open_shard_count as usize,
+                            );
+                        }
+                        drop(state_guard);
+
+                        workbench.closed_shards.extend(routing_update.closed_shards);
                     }
                 }
                 Err(persist_error) => {
@@ -574,7 +605,8 @@ impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
         let mut state_guard = state.lock().await;
         state_guard.node_routing_table.apply_capacity_update(
             update.node_id,
-            update.source_uid,
+            update.source_uid.index_uid,
+            update.source_uid.source_id,
             update.capacity_score,
             update.open_shard_count,
         );
@@ -593,7 +625,8 @@ mod tests {
         GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess, MockControlPlaneService,
     };
     use quickwit_proto::ingest::ingester::{
-        IngesterServiceClient, MockIngesterService, PersistFailure, PersistResponse, PersistSuccess,
+        IngesterServiceClient, MockIngesterService, PersistFailure, PersistResponse,
+        PersistSuccess, RoutingUpdate, SourceShardUpdate,
     };
     use quickwit_proto::ingest::router::IngestSubrequest;
     use quickwit_proto::ingest::{
@@ -630,10 +663,8 @@ mod tests {
             let mut state_guard = router.state.lock().await;
             state_guard.node_routing_table.apply_capacity_update(
                 "test-ingester-0".into(),
-                SourceUid {
-                    index_uid: IndexUid::for_test("test-index-0", 0),
-                    source_id: "test-source".to_string(),
-                },
+                IndexUid::for_test("test-index-0", 0),
+                "test-source".to_string(),
                 8,
                 1,
             );
@@ -1042,6 +1073,11 @@ mod tests {
                     ..Default::default()
                 }],
                 failures: Vec::new(),
+                routing_update: Some(RoutingUpdate {
+                    capacity_score: 6,
+                    source_shard_updates: Vec::new(),
+                    ..Default::default()
+                }),
             });
             (persist_summary, persist_result)
         });
@@ -1094,6 +1130,11 @@ mod tests {
                     shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::NoShardsAvailable as i32,
                 }],
+                routing_update: Some(RoutingUpdate {
+                    capacity_score: 6,
+                    source_shard_updates: Vec::new(),
+                    ..Default::default()
+                }),
             });
             (persist_summary, persist_result)
         });
@@ -1265,6 +1306,11 @@ mod tests {
                         }],
                     }],
                     failures: Vec::new(),
+                    routing_update: Some(RoutingUpdate {
+                        capacity_score: 6,
+                        source_shard_updates: Vec::new(),
+                        ..Default::default()
+                    }),
                 })
             });
         ingester_pool.insert(
@@ -1293,6 +1339,11 @@ mod tests {
                         parse_failures: Vec::new(),
                     }],
                     failures: Vec::new(),
+                    routing_update: Some(RoutingUpdate {
+                        capacity_score: 6,
+                        source_shard_updates: Vec::new(),
+                        ..Default::default()
+                    }),
                 })
             });
         ingester_pool.insert(
@@ -1360,8 +1411,9 @@ mod tests {
         }
 
         let mut mock_ingester_0 = MockIngesterService::new();
-        let index_uid_clone = index_uid.clone();
         // First attempt: returns NoShardsAvailable (transient, doesn't mark leader unavailable).
+        // The response still reports capacity_score=6 and 1 open shard so the node stays routable.
+        let index_uid_clone = index_uid.clone();
         mock_ingester_0
             .expect_persist()
             .once()
@@ -1376,6 +1428,15 @@ mod tests {
                         shard_id: Some(ShardId::from(1)),
                         reason: PersistFailureReason::NoShardsAvailable as i32,
                     }],
+                    routing_update: Some(RoutingUpdate {
+                        capacity_score: 6,
+                        source_shard_updates: vec![SourceShardUpdate {
+                            index_uid: Some(index_uid_clone.clone()),
+                            source_id: "test-source".to_string(),
+                            open_shard_count: 1,
+                        }],
+                        ..Default::default()
+                    }),
                 })
             });
         // Second attempt: succeeds.
@@ -1395,6 +1456,11 @@ mod tests {
                         parse_failures: Vec::new(),
                     }],
                     failures: Vec::new(),
+                    routing_update: Some(RoutingUpdate {
+                        capacity_score: 6,
+                        source_shard_updates: Vec::new(),
+                        ..Default::default()
+                    }),
                 })
             });
         ingester_pool.insert(
@@ -1524,11 +1590,20 @@ mod tests {
                 successes: Vec::new(),
                 failures: vec![PersistFailure {
                     subrequest_id: 0,
-                    index_uid: Some(index_uid),
+                    index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
                     shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::NoShardsAvailable as i32,
                 }],
+                routing_update: Some(RoutingUpdate {
+                    capacity_score: 6,
+                    source_shard_updates: vec![SourceShardUpdate {
+                        index_uid: Some(index_uid),
+                        source_id: "test-source".to_string(),
+                        open_shard_count: 1,
+                    }],
+                    ..Default::default()
+                }),
             };
             Ok(response)
         });
@@ -1629,6 +1704,11 @@ mod tests {
                     shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::NoShardsAvailable as i32,
                 }],
+                routing_update: Some(RoutingUpdate {
+                    capacity_score: 6,
+                    source_shard_updates: Vec::new(),
+                    ..Default::default()
+                }),
             });
             (summary, result)
         });
@@ -1658,6 +1738,11 @@ mod tests {
                     shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::NodeUnavailable as i32,
                 }],
+                routing_update: Some(RoutingUpdate {
+                    capacity_score: 6,
+                    source_shard_updates: Vec::new(),
+                    ..Default::default()
+                }),
             });
             (summary, result)
         });
@@ -1669,5 +1754,58 @@ mod tests {
                 .unavailable_leaders
                 .contains(&NodeId::from("test-ingester-1"))
         );
+    }
+
+    #[tokio::test]
+    async fn test_router_process_persist_results_applies_piggybacked_feedback() {
+        let router = IngestRouter::new(
+            "test-router".into(),
+            ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
+            IngesterPool::default(),
+            1,
+            EventBroker::default(),
+        );
+        let ingest_subrequests = vec![IngestSubrequest {
+            subrequest_id: 0,
+            index_id: "test-index".to_string(),
+            source_id: "test-source".to_string(),
+            ..Default::default()
+        }];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 2);
+
+        let persist_futures = FuturesUnordered::new();
+        persist_futures.push(async {
+            let summary = PersistRequestSummary {
+                leader_id: "test-ingester-0".into(),
+                subrequest_ids: vec![0],
+            };
+            let result = Ok::<_, IngestV2Error>(PersistResponse {
+                leader_id: "test-ingester-0".to_string(),
+                successes: Vec::new(),
+                failures: Vec::new(),
+                routing_update: Some(RoutingUpdate {
+                    capacity_score: 3,
+                    source_shard_updates: vec![SourceShardUpdate {
+                        index_uid: Some(IndexUid::for_test("test-index", 0)),
+                        source_id: "test-source".to_string(),
+                        open_shard_count: 2,
+                    }],
+                    ..Default::default()
+                }),
+            });
+            (summary, result)
+        });
+        router
+            .process_persist_results(&mut workbench, persist_futures)
+            .await;
+
+        let state_guard = router.state.lock().await;
+        let entry = state_guard
+            .node_routing_table
+            .find_entry("test-index", "test-source")
+            .unwrap();
+        let node = entry.nodes.get("test-ingester-0").unwrap();
+        assert_eq!(node.capacity_score, 3);
+        assert_eq!(node.open_shard_count, 2);
     }
 }
