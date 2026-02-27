@@ -37,15 +37,13 @@
     "react": "19.2.4",
     "react-app-polyfill": "3.0.0",
     "react-dom": "19.2.4",
-    "react-monaco-editor": "0.59.0",
     "react-number-format": "5.4.4",
     "react-router": "7.13.1",
     "styled-components": "6.1.19",
     "styled-icons": "10.47.1",
     "swagger-ui-react": "5.32.0",
     "typescript": "5.9.3",
-    "vite": "7.3.1",
-    "web-vitals": "2.1.4"
+    "vite": "7.3.1"
   },
   "resolutions": {
     "@types/react": "19.2.14",
