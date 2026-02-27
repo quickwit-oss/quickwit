@@ -468,7 +468,6 @@ impl Ingester {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
                     reason: PersistFailureReason::NodeUnavailable as i32,
                 };
                 persist_failures.push(persist_failure);
@@ -504,7 +503,6 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: subrequest.shard_id,
                         reason: PersistFailureReason::NoShardsAvailable as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -545,7 +543,6 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: Some(shard_id),
                         reason: PersistFailureReason::WalFull as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -563,7 +560,6 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        shard_id: Some(shard_id),
                         reason: PersistFailureReason::NoShardsAvailable as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -701,7 +697,6 @@ impl Ingester {
                         subrequest_id: replicate_failure.subrequest_id,
                         index_uid: replicate_failure.index_uid,
                         source_id: replicate_failure.source_id,
-                        shard_id: replicate_failure.shard_id,
                         reason: persist_failure_reason as i32,
                     };
                     persist_failures.push(persist_failure);
@@ -751,7 +746,6 @@ impl Ingester {
                             subrequest_id: subrequest.subrequest_id,
                             index_uid: subrequest.index_uid,
                             source_id: subrequest.source_id,
-                            shard_id: subrequest.shard_id,
                             reason: reason as i32,
                         };
                         persist_failures.push(persist_failure);
@@ -1791,14 +1785,12 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
                     index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([
                         r#"{"doc": "test-doc-110"}"#,
                         r#"{"doc": "test-doc-111"}"#,
@@ -1815,7 +1807,6 @@ mod tests {
         assert_eq!(persist_success_0.subrequest_id, 0);
         assert_eq!(persist_success_0.index_uid(), &index_uid);
         assert_eq!(persist_success_0.source_id, "test-source");
-        assert_eq!(persist_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
             persist_success_0.replication_position_inclusive,
             Some(Position::offset(1u64))
@@ -1825,7 +1816,6 @@ mod tests {
         assert_eq!(persist_success_1.subrequest_id, 1);
         assert_eq!(persist_success_1.index_uid(), &index_uid2);
         assert_eq!(persist_success_1.source_id, "test-source");
-        assert_eq!(persist_success_1.shard_id(), ShardId::from(1));
         assert_eq!(
             persist_success_1.replication_position_inclusive,
             Some(Position::offset(2u64))
@@ -1912,7 +1902,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: None,
             }],
         };
@@ -1925,7 +1914,6 @@ mod tests {
         assert_eq!(persist_success.subrequest_id, 0);
         assert_eq!(persist_success.index_uid(), &index_uid);
         assert_eq!(persist_success.source_id, "test-source");
-        assert_eq!(persist_success.shard_id(), ShardId::from(0));
         assert_eq!(
             persist_success.replication_position_inclusive,
             Some(Position::Beginning)
@@ -1973,7 +1961,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test([
                     "",                           // invalid
                     "[]",                         // invalid
@@ -2048,7 +2035,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test([
                     "",                           // invalid
                     "[]",                         // invalid
@@ -2111,7 +2097,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#])),
             }],
         };
@@ -2172,7 +2157,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#])),
             }],
         };
@@ -2233,7 +2217,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"test-doc-foo"#])),
             }],
         };
@@ -2246,7 +2229,6 @@ mod tests {
         assert_eq!(persist_failure.subrequest_id, 0);
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
-        assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(
             persist_failure.reason(),
             PersistFailureReason::NodeUnavailable,
@@ -2286,7 +2268,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-foo"}"#])),
             }],
         };
@@ -2299,7 +2280,6 @@ mod tests {
         assert_eq!(persist_failure.subrequest_id, 0);
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
-        assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(
             persist_failure.reason(),
             PersistFailureReason::NodeUnavailable
@@ -2382,14 +2362,12 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
                     index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([
                         r#"{"doc": "test-doc-110"}"#,
                         r#"{"doc": "test-doc-111"}"#,
@@ -2590,14 +2568,12 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: Some(index_uid.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
                 },
                 PersistSubrequest {
                     subrequest_id: 1,
                     index_uid: Some(index_uid2.clone()),
                     source_id: "test-source".to_string(),
-                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test([
                         r#"{"doc": "test-doc-110"}"#,
                         r#"{"doc": "test-doc-111"}"#,
@@ -2716,7 +2692,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
         };
@@ -2729,7 +2704,6 @@ mod tests {
         assert_eq!(persist_failure.subrequest_id, 0);
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
-        assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(
             persist_failure.reason(),
             PersistFailureReason::NoShardsAvailable
@@ -2795,7 +2769,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
         };
@@ -2808,7 +2781,6 @@ mod tests {
         assert_eq!(persist_failure.subrequest_id, 0);
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
-        assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(
             persist_failure.reason(),
             PersistFailureReason::NoShardsAvailable
@@ -2876,7 +2848,6 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
                 source_id: "test-source".to_string(),
-                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
         };
@@ -2889,7 +2860,6 @@ mod tests {
         assert_eq!(persist_failure.subrequest_id, 0);
         assert_eq!(persist_failure.index_uid(), &index_uid);
         assert_eq!(persist_failure.source_id, "test-source");
-        assert_eq!(persist_failure.shard_id(), ShardId::from(1));
         assert_eq!(persist_failure.reason(), PersistFailureReason::WalFull);
 
         let state_guard = ingester.state.lock_fully().await.unwrap();
