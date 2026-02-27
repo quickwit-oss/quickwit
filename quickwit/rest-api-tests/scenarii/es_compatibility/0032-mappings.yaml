@@ -1,0 +1,100 @@
+method: [GET]
+engines:
+  - elasticsearch
+endpoint: "gharchive/_mappings"
+expected:
+  gharchive: {}
+  # _all:
+  #   primaries:
+  #     docs:
+  #       count: 100
+  #     store:
+  #       size_in_bytes:
+  #         $expect: "val > 278300"
+  #   total:
+  #     segments:
+  #       count: 1
+  #     docs:
+  #       count: 100
+  # indices:
+  #   gharchive:
+  #     primaries:
+  #       docs:
+  #         count: 100
+  #       store:
+  #         size_in_bytes:
+  #           $expect: "val > 278300"
+  #     total:
+  #       segments:
+  #         count: 1
+  #       docs:
+  #         count: 100
+---
+# method: [GET]
+# engines:
+#   - quickwit
+#   - elasticsearch
+# endpoint: "ghar*/_stats"
+# expected:
+#   _all:
+#     primaries:
+#       docs:
+#         count: 100
+#     total:
+#       segments:
+#         count: 1
+#       docs:
+#         count: 100
+#   indices:
+#     gharchive:
+#       primaries:
+#         docs:
+#           count: 100
+#       total:
+#         segments:
+#           count: 1
+#         docs:
+#           count: 100
+# ---
+# method: [GET]
+# engines:
+#   - quickwit
+# endpoint: "_stats"
+# expected:
+#   _all:
+#     primaries:
+#       docs:
+#         count: 102
+#     total:
+#       segments:
+#         count: 2
+#       docs:
+#         count: 102
+#   indices:
+#     gharchive:
+#       primaries:
+#         docs:
+#           count: 100
+#       total:
+#         segments:
+#           count: 1
+#         docs:
+#           count: 100
+#     fast_only:
+#       primaries:
+#         docs:
+#           count: 2
+#       total:
+#         segments:
+#           count: 1
+#         docs:
+#           count: 2
+#     empty_index:
+#       primaries:
+#         docs:
+#           count: 0
+#       total:
+#         segments:
+#           count: 0
+#         docs:
+#           count: 0

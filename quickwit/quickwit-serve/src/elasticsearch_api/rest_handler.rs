@@ -27,7 +27,7 @@ use quickwit_common::truncate_str;
 use quickwit_config::{NodeConfig, validate_index_id_pattern};
 use quickwit_index_management::IndexService;
 use quickwit_metastore::*;
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{
     CountHits, ListFieldsResponse, PartialHit, ScrollRequest, SearchResponse, SortByValue,
     SortDatetimeFormat,
@@ -39,18 +39,20 @@ use quickwit_search::{
     AggregationResults, SearchError, SearchService, list_all_splits, resolve_index_patterns,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{Map, Value, json};
 use warp::hyper::StatusCode;
 use warp::reply::with_status;
 use warp::{Filter, Rejection};
 
 use super::filter::{
-    elastic_cat_indices_filter, elastic_cluster_health_filter, elastic_cluster_info_filter,
-    elastic_delete_index_filter, elastic_field_capabilities_filter,
-    elastic_index_cat_indices_filter, elastic_index_count_filter,
-    elastic_index_field_capabilities_filter, elastic_index_search_filter,
-    elastic_index_stats_filter, elastic_multi_search_filter, elastic_resolve_index_filter,
-    elastic_scroll_filter, elastic_stats_filter, elasticsearch_filter,
+    elastic_aliases_filter, elastic_cat_indices_filter, elastic_cluster_health_filter,
+    elastic_cluster_info_filter, elastic_delete_index_filter, elastic_delete_scroll_filter,
+    elastic_field_capabilities_filter, elastic_index_cat_indices_filter,
+    elastic_index_count_filter, elastic_index_field_capabilities_filter,
+    elastic_index_mapping_filter, elastic_index_search_filter, elastic_index_stats_filter,
+    elastic_multi_search_filter, elastic_nodes_filter, elastic_resolve_index_filter,
+    elastic_scroll_filter, elastic_search_shards_filter, elastic_stats_filter,
+    elasticsearch_filter,
 };
 use super::model::{
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
@@ -62,6 +64,7 @@ use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
 use super::{TrackTotalHits, make_elastic_api_response};
+use crate::elasticsearch_api::model::ElasticsearchMappingsResponse;
 use crate::format::BodyFormat;
 use crate::rest::recover_fn;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
@@ -80,16 +83,133 @@ pub fn es_compat_cluster_info_handler(
                 warp::reply::json(&json!({
                     "name" : config.node_id,
                     "cluster_name" : config.cluster_id,
+                    "cluster_uuid" : config.cluster_id,
+                    "tagline" : "You Know, for Search",
                     "version" : {
                         "distribution" : "quickwit",
-                        "number" : build_info.version,
+                        "number" : "7.17.0",
                         "build_hash" : build_info.commit_hash,
                         "build_date" : build_info.build_date,
+                        "build_snapshot" : false,
+                        "lucene_version" : "8.11.1",
+                        "minimum_wire_compatibility_version" : "6.8.0",
+                        "minimum_index_compatibility_version" : "6.0.0-beta1",
                     }
                 }))
             },
         )
         .boxed()
+}
+
+/// GET _elastic/_nodes/http
+pub fn es_compat_nodes_handler(
+    node_config: Arc<NodeConfig>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_nodes_filter()
+        .and(with_arg(node_config))
+        .then(|config: Arc<NodeConfig>| async move {
+            let advertise_addr = std::net::SocketAddr::new(
+                config.grpc_advertise_addr.ip(),
+                config.rest_config.listen_addr.port(),
+            );
+            warp::reply::json(&json!({
+                "nodes": {
+                    config.node_id.as_str(): {
+                        "roles": ["data", "ingest"],
+                        "http": {
+                            "publish_address": advertise_addr.to_string()
+                        }
+                    }
+                }
+            }))
+        })
+        .boxed()
+}
+
+/// GET _elastic/{index}/_search_shards
+pub fn es_compat_search_shards_handler(
+    node_config: Arc<NodeConfig>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_search_shards_filter()
+        .and(with_arg(node_config))
+        .then(|index_id: String, config: Arc<NodeConfig>| async move {
+            warp::reply::json(&json!({
+                "shards": [[{
+                    "index": index_id,
+                    "shard": 0,
+                    "primary": true,
+                    "node": config.node_id.as_str()
+                }]]
+            }))
+        })
+        .boxed()
+}
+
+/// GET _elastic/_aliases
+pub fn es_compat_aliases_handler()
+-> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_aliases_filter()
+        .then(|| async { Ok(Value::Object(Map::new())) })
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
+        .boxed()
+}
+
+/// GET _elastic/{index}/_mapping or _elastic/{index}/_mappings
+pub fn es_compat_index_mapping_handler(
+    metastore: MetastoreServiceClient,
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_index_mapping_filter()
+        .and(with_arg(metastore))
+        .and(with_arg(search_service))
+        .then(es_compat_index_mapping)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
+}
+
+async fn get_index_metadata(
+    index_id: String,
+    metastore: MetastoreServiceClient,
+) -> Result<IndexMetadata, SearchError> {
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
+    let index_metadata = metastore
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?;
+    Ok(index_metadata)
+}
+
+async fn es_compat_index_mapping(
+    index_id: String,
+    mut metastore: MetastoreServiceClient,
+    search_service: Arc<dyn SearchService>,
+) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
+    let indexes_metadata = if index_id.contains('*') || index_id.contains(',') {
+        let patterns: Vec<String> = index_id.split(',').map(|s| s.trim().to_string()).collect();
+        resolve_index_patterns(&patterns, &mut metastore).await?
+    } else {
+        vec![get_index_metadata(index_id.clone(), metastore).await?]
+    };
+    let index_id_patterns: Vec<String> = indexes_metadata
+        .iter()
+        .map(|m| m.index_id().to_string())
+        .collect();
+    let list_fields_request = quickwit_proto::search::ListFieldsRequest {
+        index_id_patterns,
+        fields: Vec::new(),
+        start_timestamp: None,
+        end_timestamp: None,
+    };
+    let list_fields_response = search_service
+        .root_list_fields(list_fields_request)
+        .await
+        .ok();
+    let response = ElasticsearchMappingsResponse::from_doc_mapping(
+        indexes_metadata,
+        list_fields_response.as_ref(),
+    );
+    Ok(response)
 }
 
 /// GET or POST _elastic/_search
@@ -297,6 +417,24 @@ pub fn es_compat_scroll_handler(
     elastic_scroll_filter()
         .and(with_arg(search_service))
         .then(es_scroll)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .recover(recover_fn)
+        .boxed()
+}
+
+/// DELETE _elastic/_search/scroll
+///
+/// Clears a scroll context. Quickwit manages scroll lifetime via TTL,
+/// so this is a no-op that returns success.
+pub fn es_compat_delete_scroll_handler(
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_delete_scroll_filter()
+        .then(|| async {
+            Ok::<_, ElasticsearchError>(json!({
+                "succeeded": true,
+                "num_freed": 0
+            }))
+        })
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
         .boxed()
