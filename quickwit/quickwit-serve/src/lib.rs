@@ -81,10 +81,10 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    LocalShardsUpdate, get_idle_shard_timeout, setup_ingester_capacity_update_listener,
-    setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
-    wait_for_ingester_status,
+    ActiveRoutingTable, GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient,
+    Ingester, IngesterPool, LocalShardsUpdate, get_idle_shard_timeout,
+    setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
+    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
@@ -898,18 +898,26 @@ async fn setup_ingest_v2(
         .get();
 
     // Any node can serve ingest requests, so we always instantiate an ingest router.
-    // TODO: I'm not sure that's such a good idea.
+    let routing_table = if node_config.ingest_api_config.disable_node_based_routing {
+        setup_local_shards_update_listener(cluster.clone(), event_broker.clone())
+            .await
+            .forever();
+        ActiveRoutingTable::new_shard_based(self_node_id.clone())
+    } else {
+        setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone())
+            .await
+            .forever();
+        ActiveRoutingTable::new_node_based()
+    };
     let ingest_router = IngestRouter::new(
         self_node_id.clone(),
         control_plane.clone(),
         ingester_pool.clone(),
         replication_factor,
         event_broker.clone(),
+        routing_table,
     );
     ingest_router.subscribe();
-    setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone())
-        .await
-        .forever();
 
     let ingest_router_service = IngestRouterServiceClient::tower()
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())

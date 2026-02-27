@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod active_routing_table;
 mod broadcast;
 mod debouncing;
 mod doc_mapper;
@@ -27,7 +28,6 @@ mod publish_tracker;
 mod rate_meter;
 mod replication;
 mod router;
-#[allow(dead_code)]
 mod routing_table;
 mod state;
 mod wal_capacity_timeseries;
@@ -39,6 +39,7 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use std::{env, fmt};
 
+pub use active_routing_table::ActiveRoutingTable;
 pub use broadcast::{
     LocalShardsUpdate, ShardInfo, ShardInfos, setup_ingester_capacity_update_listener,
     setup_local_shards_update_listener,
