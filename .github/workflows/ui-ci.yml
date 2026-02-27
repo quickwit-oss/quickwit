@@ -30,7 +30,7 @@ jobs:
         task:
           - name: Cypress run
             command: |
-              sudo apt-get -y install protobuf-compiler
+              sudo apt-get update && sudo apt-get -y install protobuf-compiler
               CI=false yarn --cwd quickwit-ui build
               RUSTFLAGS="--cfg tokio_unstable" cargo build --features=postgres
               mkdir qwdata
