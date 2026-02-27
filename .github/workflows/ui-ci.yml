@@ -18,32 +18,36 @@ permissions:
   contents: read
 
 jobs:
-  tests:
-    name: ${{ matrix.task.name }}
+  checks:
+    name: Lint, type check & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: 24
+          cache: "yarn"
+          cache-dependency-path: quickwit/quickwit-ui/yarn.lock
+      - name: Install JS dependencies
+        run: yarn --cwd quickwit-ui install
+        working-directory: ./quickwit
+      - name: Lint
+        run: yarn --cwd quickwit-ui lint
+        working-directory: ./quickwit
+      - name: Type check
+        run: yarn --cwd quickwit-ui type
+        working-directory: ./quickwit
+      - name: Unit tests
+        run: yarn --cwd quickwit-ui test
+        working-directory: ./quickwit
+
+  e2e:
+    name: Playwright e2e
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: write
-    strategy:
-      fail-fast: false
-      matrix:
-        task:
-          - name: Playwright e2e
-            command: |
-              sudo apt-get update && sudo apt-get -y install protobuf-compiler
-              CI=false yarn --cwd quickwit-ui build
-              RUSTFLAGS="--cfg tokio_unstable" cargo build --features=postgres
-              mkdir qwdata
-              RUSTFLAGS="--cfg tokio_unstable" cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
-              yarn --cwd quickwit-ui e2e-test
-          - name: Lint
-            command: yarn --cwd quickwit-ui lint
-          - name: Check type consistency
-            command: yarn --cwd quickwit-ui type
-          - name: Unit Test
-            command: yarn --cwd quickwit-ui test
     services:
-      # PostgreSQL service container
       postgres:
         image: postgres:latest
         ports:
@@ -52,7 +56,6 @@ jobs:
           POSTGRES_USER: quickwit-dev
           POSTGRES_PASSWORD: quickwit-dev
           POSTGRES_DB: quickwit-metastore-dev
-        # Set health checks to wait until postgres has started
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -75,18 +78,27 @@ jobs:
         uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master
         with:
           toolchain: stable
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        with:
+          workspaces: "./quickwit -> target"
       - name: Install JS dependencies
         run: yarn --cwd quickwit-ui install
         working-directory: ./quickwit
       - name: Install Playwright browsers
-        if: matrix.task.name == 'Playwright e2e'
         run: npx playwright install chromium --with-deps --only-shell
         working-directory: ./quickwit/quickwit-ui
-      - name: Setup Rust cache
-        if: matrix.task.name == 'Playwright e2e'
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
-        with:
-          workspaces: "./quickwit -> target"
-      - name: ${{ matrix.task.name }}
-        run: ${{ matrix.task.command }}
+      - name: Build UI
+        run: CI=false yarn --cwd quickwit-ui build
+        working-directory: ./quickwit
+      - name: Build Quickwit
+        run: |
+          sudo apt-get update && sudo apt-get -y install protobuf-compiler
+          RUSTFLAGS="--cfg tokio_unstable" cargo build --features=postgres
+        working-directory: ./quickwit
+      - name: Run e2e tests
+        run: |
+          mkdir -p qwdata
+          RUSTFLAGS="--cfg tokio_unstable" cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
+          yarn --cwd quickwit-ui e2e-test
         working-directory: ./quickwit
