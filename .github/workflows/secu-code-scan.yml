@@ -21,7 +21,7 @@ jobs:
     uses: centreon/security-tools/.github/workflows/checkmarx-analysis.yml@main
     with:
       module_directory:
-      module_name: centreon-internal-mcp-tools
+      module_name: quickwit
       exclude_list:
     secrets:
       base_uri: ${{ secrets.AST_RND_SCANS_BASE_URI }}
