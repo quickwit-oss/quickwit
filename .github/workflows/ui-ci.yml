@@ -28,14 +28,14 @@ jobs:
       fail-fast: false
       matrix:
         task:
-          - name: Cypress run
+          - name: Playwright e2e
             command: |
               sudo apt-get update && sudo apt-get -y install protobuf-compiler
               CI=false yarn --cwd quickwit-ui build
               RUSTFLAGS="--cfg tokio_unstable" cargo build --features=postgres
               mkdir qwdata
               RUSTFLAGS="--cfg tokio_unstable" cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
-              yarn --cwd quickwit-ui cypress run
+              yarn --cwd quickwit-ui e2e-test
           - name: Lint
             command: yarn --cwd quickwit-ui lint
           - name: Check type consistency
@@ -78,8 +78,12 @@ jobs:
       - name: Install JS dependencies
         run: yarn --cwd quickwit-ui install
         working-directory: ./quickwit
+      - name: Install Playwright browsers
+        if: matrix.task.name == 'Playwright e2e'
+        run: npx playwright install chromium --with-deps --only-shell
+        working-directory: ./quickwit/quickwit-ui
       - name: Setup Rust cache
-        if: matrix.task.name == 'Cypress run'
+        if: matrix.task.name == 'Playwright e2e'
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           workspaces: "./quickwit -> target"
