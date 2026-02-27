@@ -478,6 +478,8 @@ impl Ingester {
                 successes: Vec::new(),
                 failures: persist_failures,
                 routing_update: Some(RoutingUpdate {
+                    // if for some reason a request made it to this ingester, we return a capacity
+                    // score of 0 so that future requests dont get routed to it.
                     capacity_score: 0,
                     ..Default::default()
                 }),
@@ -805,11 +807,6 @@ impl Ingester {
         drop(state_guard);
 
         let disk_used = wal_usage.disk_used_bytes as u64;
-        let capacity_score = self
-            .wal_capacity_time_series
-            .lock()
-            .await
-            .score(ByteSize::b(disk_used)) as u32;
 
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
@@ -818,6 +815,12 @@ impl Ingester {
 
         // Since we just updated ingester state, we can piggyback a fresh routing update on
         // the persist response.
+        let capacity_score = self
+            .wal_capacity_time_series
+            .lock()
+            .await
+            .score(ByteSize::b(disk_used)) as u32;
+
         let source_shard_updates = open_shard_counts
             .into_iter()
             .map(|(index_uid, source_id, count)| SourceShardUpdate {
