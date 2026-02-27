@@ -27,13 +27,13 @@ use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsSubrequest,
 };
+use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::{
     IngesterService, PersistFailureReason, PersistRequest, PersistResponse, PersistSubrequest,
 };
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
 };
-use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::{
     CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause, ShardState,
 };

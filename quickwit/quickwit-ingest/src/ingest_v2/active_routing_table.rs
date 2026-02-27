@@ -130,7 +130,13 @@ impl ActiveRoutingTable {
         open_shard_count: usize,
     ) {
         if let Self::NodeBased(table) = self {
-            table.apply_capacity_update(node_id, index_uid, source_id, capacity_score, open_shard_count);
+            table.apply_capacity_update(
+                node_id,
+                index_uid,
+                source_id,
+                capacity_score,
+                open_shard_count,
+            );
         }
     }
 

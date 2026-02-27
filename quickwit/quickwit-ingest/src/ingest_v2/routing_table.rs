@@ -319,7 +319,6 @@ impl RoutingTableEntry {
     pub fn len(&self) -> usize {
         self.local_shards.len() + self.remote_shards.len()
     }
-
 }
 
 #[derive(Debug, PartialEq, Eq)]
