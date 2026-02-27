@@ -32,5 +32,7 @@ module.exports = {
     "@mui/x-charts": "<rootDir>/mocks/x-charts.js",
   },
 
+  testPathIgnorePatterns: ["/node_modules/", "<rootDir>/e2e/"],
+
   resetMocks: true,
 };
