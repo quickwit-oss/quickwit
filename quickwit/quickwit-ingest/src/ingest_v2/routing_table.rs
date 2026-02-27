@@ -26,6 +26,7 @@ use crate::IngesterPool;
 #[derive(Debug)]
 pub(super) struct RoutingEntry {
     pub index_uid: IndexUid,
+    #[allow(unused)]
     pub source_id: SourceId,
     pub shard_id: ShardId,
     pub shard_state: ShardState,
@@ -317,14 +318,6 @@ impl RoutingTableEntry {
     #[cfg(test)]
     pub fn len(&self) -> usize {
         self.local_shards.len() + self.remote_shards.len()
-    }
-
-    #[cfg(test)]
-    pub fn all_shards(&self) -> Vec<&RoutingEntry> {
-        let mut shards = Vec::with_capacity(self.len());
-        shards.extend(&self.local_shards);
-        shards.extend(&self.remote_shards);
-        shards
     }
 }
 

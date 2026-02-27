@@ -500,6 +500,12 @@ pub struct IngestApiConfig {
     pub shard_scale_up_factor: f32,
     #[serde(default)]
     pub grpc_compression_algorithm: Option<CompressionAlgorithm>,
+    /// The legacy shard based routing favored local shards before forwarding ingest requests to
+    /// other nodes. Node based routing is agnostic to local or not. It can be turned off.
+    /// Warning: Node based routing will become the default in a future version of Quickwit, and
+    /// shard based routing will be removed.
+    #[serde(default)]
+    pub disable_node_based_routing: bool,
 }
 
 impl Default for IngestApiConfig {
@@ -513,6 +519,7 @@ impl Default for IngestApiConfig {
             shard_burst_limit: DEFAULT_SHARD_BURST_LIMIT,
             shard_scale_up_factor: DEFAULT_SHARD_SCALE_UP_FACTOR,
             grpc_compression_algorithm: None,
+            disable_node_based_routing: false,
         }
     }
 }
