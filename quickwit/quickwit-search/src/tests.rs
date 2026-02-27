@@ -1028,8 +1028,10 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         max_hits: 100,
         ..Default::default()
     });
-    let searcher_context: Arc<SearcherContext> =
-        Arc::new(SearcherContext::new(SearcherConfig::default(), None, None));
+    let searcher_context: Arc<SearcherContext> = Arc::new(SearcherContext::new_without_invoker(
+        SearcherConfig::default(),
+        None,
+    ));
 
     let search_response = single_doc_mapping_leaf_search(
         searcher_context,
@@ -1666,7 +1668,10 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         .into_iter()
         .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
         .collect();
-    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None, None));
+    let searcher_context = Arc::new(SearcherContext::new_without_invoker(
+        SearcherConfig::default(),
+        None,
+    ));
 
     {
         let request = ListTermsRequest {

@@ -436,14 +436,26 @@ impl SearcherContext {
     #[cfg(test)]
     pub fn for_test() -> SearcherContext {
         let searcher_config = SearcherConfig::default();
-        SearcherContext::new(searcher_config, None, None)
+        SearcherContext::new_without_invoker(searcher_config, None)
+    }
+
+    /// Creates a new searcher context without a lambda invoker.
+    pub fn new_without_invoker(
+        searcher_config: SearcherConfig,
+        split_cache_opt: Option<Arc<SplitCache>>,
+    ) -> Self {
+        Self::new(
+            searcher_config,
+            split_cache_opt,
+            None::<Box<dyn LambdaLeafSearchInvoker>>,
+        )
     }
 
     /// Creates a new searcher context, given a searcher config, and an optional `SplitCache`.
     pub fn new(
         searcher_config: SearcherConfig,
         split_cache_opt: Option<Arc<SplitCache>>,
-        lambda_invoker: Option<Arc<dyn LambdaLeafSearchInvoker>>,
+        lambda_invoker: Option<impl LambdaLeafSearchInvoker + 'static>,
     ) -> Self {
         let global_split_footer_cache = MemorySizedCache::from_config(
             &searcher_config.split_footer_cache,
@@ -462,6 +474,9 @@ impl SearcherContext {
             Some(searcher_config.aggregation_memory_limit.as_u64()),
             Some(searcher_config.aggregation_bucket_limit),
         );
+
+        let lambda_invoker =
+            lambda_invoker.map(|invoker| Arc::new(invoker) as Arc<dyn LambdaLeafSearchInvoker>);
 
         Self {
             searcher_config,

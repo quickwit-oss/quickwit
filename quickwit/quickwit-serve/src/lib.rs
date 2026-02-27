@@ -631,24 +631,37 @@ pub async fn serve_quickwit(
         };
 
     // Initialize Lambda invoker if enabled and searcher service is running
-    let lambda_invoker_opt = if node_config.is_service_enabled(QuickwitService::Searcher) {
+    let searcher_context = if node_config.is_service_enabled(QuickwitService::Searcher) {
         if let Some(lambda_config) = &node_config.searcher_config.lambda {
-            info!("initializing AWS Lambda invoker for search");
-            warn!("offloading to lambda is EXPERIMENTAL. Use at your own risk");
-            let invoker = quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
-            Some(invoker)
+            #[cfg(feature = "lambda")]
+            {
+                info!("initializing AWS Lambda invoker for search");
+                warn!("offloading to lambda is EXPERIMENTAL. Use at your own risk");
+                let invoker =
+                    quickwit_lambda_client::try_get_or_deploy_invoker(lambda_config).await?;
+                Arc::new(SearcherContext::new(
+                    node_config.searcher_config.clone(),
+                    split_cache_opt,
+                    Some(invoker),
+                ))
+            }
+            #[cfg(not(feature = "lambda"))]
+            {
+                let _ = lambda_config;
+                bail!("lambda support is statically disabled, but enabled in configuration");
+            }
         } else {
-            None
+            Arc::new(SearcherContext::new_without_invoker(
+                node_config.searcher_config.clone(),
+                split_cache_opt,
+            ))
         }
     } else {
-        None
+        Arc::new(SearcherContext::new_without_invoker(
+            node_config.searcher_config.clone(),
+            split_cache_opt,
+        ))
     };
-
-    let searcher_context = Arc::new(SearcherContext::new(
-        node_config.searcher_config.clone(),
-        split_cache_opt,
-        lambda_invoker_opt,
-    ));
 
     let (search_job_placer, search_service) = setup_searcher(
         &node_config,
@@ -1569,8 +1582,10 @@ mod tests {
     #[tokio::test]
     async fn test_setup_searcher() {
         let node_config = NodeConfig::for_test();
-        let searcher_context =
-            Arc::new(SearcherContext::new(SearcherConfig::default(), None, None));
+        let searcher_context = Arc::new(SearcherContext::new_without_invoker(
+            SearcherConfig::default(),
+            None,
+        ));
         let metastore = metastore_for_test();
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();
