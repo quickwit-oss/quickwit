@@ -8,6 +8,7 @@ on:
     paths:
       - '**'
       - '!lib/crates/**'
+      - '!tests/**'
 
   workflow_dispatch:
 
