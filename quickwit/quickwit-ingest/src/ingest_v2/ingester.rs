@@ -477,8 +477,10 @@ impl Ingester {
                 leader_id: leader_id.into(),
                 successes: Vec::new(),
                 failures: persist_failures,
-                capacity_score: 0,
-                source_shard_counts: Vec::new(),
+                routing_update: Some(RoutingUpdate {
+                    capacity_score: 0,
+                    ..Default::default()
+                }),
             };
             return Ok(persist_response);
         }
@@ -799,7 +801,7 @@ impl Ingester {
             }
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
-        let local_shard_counts = state_guard.get_open_shard_counts();
+        let (open_shard_counts, closed_shards) = state_guard.get_shard_snapshot();
         drop(state_guard);
 
         let disk_used = wal_usage.disk_used_bytes as u64;
@@ -816,14 +818,20 @@ impl Ingester {
 
         // Since we just updated ingester state, we can piggyback a fresh routing update on
         // the persist response.
-        let source_shard_counts = local_shard_counts
+        let source_shard_updates = open_shard_counts
             .into_iter()
-            .map(|(index_uid, source_id, count)| SourceShardCount {
+            .map(|(index_uid, source_id, count)| SourceShardUpdate {
                 index_uid: Some(index_uid),
                 source_id,
                 open_shard_count: count as u32,
             })
             .collect();
+
+        let routing_update = RoutingUpdate {
+            capacity_score,
+            source_shard_updates,
+            closed_shards,
+        };
 
         #[cfg(test)]
         {
@@ -835,8 +843,7 @@ impl Ingester {
             leader_id,
             successes: persist_successes,
             failures: persist_failures,
-            capacity_score,
-            source_shard_counts,
+            routing_update: Some(routing_update),
         };
         Ok(persist_response)
     }

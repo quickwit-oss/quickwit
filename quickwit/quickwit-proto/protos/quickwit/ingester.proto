@@ -81,11 +81,16 @@ message PersistResponse {
   string leader_id = 1;
   repeated PersistSuccess successes = 2;
   repeated PersistFailure failures = 3;
-  uint32 capacity_score = 4;
-  repeated SourceShardCount source_shard_counts = 5;
+  RoutingUpdate routing_update = 4;
 }
 
-message SourceShardCount {
+message RoutingUpdate {
+  uint32 capacity_score = 1;
+  repeated SourceShardUpdate source_shard_updates = 2;
+  repeated quickwit.ingest.ShardIds closed_shards = 3;
+}
+
+message SourceShardUpdate {
   quickwit.common.IndexUid index_uid = 1;
   string source_id = 2;
   uint32 open_shard_count = 3;

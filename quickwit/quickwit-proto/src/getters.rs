@@ -111,7 +111,7 @@ generate_getters! {
     ShardIds,
     ShardPKey,
     TruncateShardsSubrequest,
-    SourceShardCount,
+    SourceShardUpdate,
 
     // Metastore API
     AcquireShardsRequest,
