@@ -30,14 +30,14 @@ pub trait RpcName {
 }
 
 #[derive(Clone)]
-pub struct GrpcMetrics<S> {
+pub struct ServiceMetrics<S> {
     inner: S,
     requests_total: IntCounterVec<2>,
     requests_in_flight: IntGaugeVec<1>,
     request_duration_seconds: HistogramVec<2>,
 }
 
-impl<S, R> Service<R> for GrpcMetrics<S>
+impl<S, R> Service<R> for ServiceMetrics<S>
 where
     S: Service<R>,
     R: RpcName,
@@ -70,31 +70,31 @@ where
 }
 
 #[derive(Clone)]
-pub struct GrpcMetricsLayer {
+pub struct ServiceMetricsLayer {
     requests_total: IntCounterVec<2>,
     requests_in_flight: IntGaugeVec<1>,
     request_duration_seconds: HistogramVec<2>,
 }
 
-impl GrpcMetricsLayer {
+impl ServiceMetricsLayer {
     pub fn new(subsystem: &'static str, kind: &'static str) -> Self {
         Self {
             requests_total: new_counter_vec(
-                "grpc_requests_total",
-                "Total number of gRPC requests processed.",
+                "service_requests_total",
+                "Total number of service requests processed.",
                 subsystem,
                 &[("kind", kind)],
                 ["rpc", "status"],
             ),
             requests_in_flight: new_gauge_vec(
-                "grpc_requests_in_flight",
-                "Number of gRPC requests in-flight.",
+                "service_requests_in_flight",
+                "Number of service requests in-flight.",
                 subsystem,
                 &[("kind", kind)],
                 ["rpc"],
             ),
             request_duration_seconds: new_histogram_vec(
-                "grpc_request_duration_seconds",
+                "service_request_duration_seconds",
                 "Duration of request in seconds.",
                 subsystem,
                 &[("kind", kind)],
@@ -105,11 +105,11 @@ impl GrpcMetricsLayer {
     }
 }
 
-impl<S> Layer<S> for GrpcMetricsLayer {
-    type Service = GrpcMetrics<S>;
+impl<S> Layer<S> for ServiceMetricsLayer {
+    type Service = ServiceMetrics<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        GrpcMetrics {
+        ServiceMetrics {
             inner,
             requests_total: self.requests_total.clone(),
             requests_in_flight: self.requests_in_flight.clone(),
@@ -182,7 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_grpc_metrics() {
-        let layer = GrpcMetricsLayer::new("quickwit_test", "server");
+        let layer = ServiceMetricsLayer::new("quickwit_test", "server");
 
         let mut hello_service =
             layer

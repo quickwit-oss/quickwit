@@ -67,8 +67,8 @@ use quickwit_common::retry::RetryParams;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, CircuitBreakerEvaluator,
-    ConstantRate, EstimateRateLayer, EventListenerLayer, GrpcMetricsLayer, LoadShedLayer,
-    RateLimitLayer, RetryLayer, RetryPolicy, SmaRateEstimator, TimeoutLayer,
+    ConstantRate, EstimateRateLayer, EventListenerLayer, LoadShedLayer, RateLimitLayer, RetryLayer,
+    RetryPolicy, ServiceMetricsLayer, SmaRateEstimator, TimeoutLayer,
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
@@ -152,25 +152,29 @@ fn get_metastore_client_max_concurrency() -> usize {
     )
 }
 
-static CP_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "client"));
-static CP_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "server"));
+static CP_LOCAL_SERVICE_CLIENT_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("control_plane", "local"));
 
-static INDEXING_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "client"));
-pub(crate) static INDEXING_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "server"));
+static CP_REMOTE_SERVICE_CLIENT_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("control_plane", "remote"));
 
-static INGEST_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "client"));
-static INGEST_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "server"));
+static INDEXING_LOCAL_SERVICE_CLIENT_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("indexing", "local"));
 
-static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "client"));
-static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
+static INDEXING_REMOTE_SERVICE_CLIENT_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("indexing", "remote"));
+
+static INGEST_LOCAL_SERVICE_CLIENT_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("ingest", "local"));
+
+static INGEST_REMOTE_SERVICE_CLIENT_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("ingest", "remote"));
+
+static METASTORE_LOCAL_SERVICE_CLIENT_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("metastore", "local"));
+
+static METASTORE_REMOTE_SERVICE_CLIENT_METRICS_LAYER: Lazy<ServiceMetricsLayer> =
+    Lazy::new(|| ServiceMetricsLayer::new("metastore", "remote"));
 
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -279,7 +283,7 @@ async fn start_ingest_client_if_needed(
         let memory_capacity = ingest_api_service.ask(GetMemoryCapacity).await?;
         let min_rate = ConstantRate::new(ByteSize::mib(1).as_u64(), Duration::from_millis(100));
         let rate_modulator = RateModulator::new(rate_estimator.clone(), memory_capacity, min_rate);
-        let ingest_service = IngestServiceClient::tower()
+        let ingest_service: IngestServiceClient = IngestServiceClient::tower()
             .stack_ingest_layer(
                 ServiceBuilder::new()
                     .layer(EstimateRateLayer::<IngestRequest, _>::new(rate_estimator))
@@ -334,7 +338,7 @@ async fn start_control_plane_if_needed(
 
         let control_plane_server_opt = Some(control_plane_mailbox.clone());
         let control_plane_client = ControlPlaneServiceClient::tower()
-            .stack_layer(CP_GRPC_SERVER_METRICS_LAYER.clone())
+            .stack_layer(CP_LOCAL_SERVICE_CLIENT_METRICS_LAYER.clone())
             .stack_layer(LoadShedLayer::new(100))
             .build_from_mailbox(control_plane_mailbox);
         Ok((control_plane_server_opt, control_plane_client))
@@ -360,7 +364,7 @@ async fn start_control_plane_if_needed(
         }
         let control_plane_server_opt = None;
         let control_plane_client = ControlPlaneServiceClient::tower()
-            .stack_layer(CP_GRPC_CLIENT_METRICS_LAYER.clone())
+            .stack_layer(CP_REMOTE_SERVICE_CLIENT_METRICS_LAYER.clone())
             .build_from_balance_channel(
                 balance_channel,
                 node_config.grpc_config.max_message_size,
@@ -468,7 +472,6 @@ pub async fn serve_quickwit(
             };
             // These layers apply to all the RPCs of the metastore.
             let shared_layer = ServiceBuilder::new()
-                .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())
                 .layer(LoadShedLayer::new(max_in_flight_requests))
                 .into_inner();
             let broker_layer = EventListenerLayer::new(event_broker.clone());
@@ -487,7 +490,9 @@ pub async fn serve_quickwit(
     // Instantiate a metastore client, either local if available or remote otherwise.
     let metastore_client: MetastoreServiceClient =
         if let Some(metastore_server) = &metastore_server_opt {
-            metastore_server.clone()
+            MetastoreServiceClient::tower()
+                .stack_layer(METASTORE_LOCAL_SERVICE_CLIENT_METRICS_LAYER.clone())
+                .build(metastore_server.clone())
         } else {
             info!("connecting to metastore");
 
@@ -505,7 +510,7 @@ pub async fn serve_quickwit(
             MetastoreServiceClient::tower()
                 .stack_layer(RetryLayer::new(RetryPolicy::from(RetryParams::standard())))
                 .stack_layer(TimeoutLayer::new(GRPC_METASTORE_SERVICE_TIMEOUT))
-                .stack_layer(METASTORE_GRPC_CLIENT_METRICS_LAYER.clone())
+                .stack_layer(METASTORE_REMOTE_SERVICE_CLIENT_METRICS_LAYER.clone())
                 .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
                     get_metastore_client_max_concurrency(),
                 ))
@@ -877,7 +882,6 @@ fn ingester_service_layer_stack(
     layer_stack: IngesterServiceTowerLayerStack,
 ) -> IngesterServiceTowerLayerStack {
     layer_stack
-        .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
         .stack_persist_layer(quickwit_common::tower::OneTaskPerCallLayer)
         .stack_persist_layer(
             // "3" may seem a little bit low, but we only consider error caused by a full WAL.
@@ -922,9 +926,7 @@ async fn setup_ingest_v2(
     );
     ingest_router.subscribe();
 
-    let ingest_router_service = IngestRouterServiceClient::tower()
-        .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
-        .build(ingest_router.clone());
+    let ingest_router_service = IngestRouterServiceClient::tower().build(ingest_router.clone());
 
     let rate_limit =
         ConstantRate::bytes_per_sec(node_config.ingest_api_config.shard_throughput_limit);
@@ -988,13 +990,13 @@ async fn setup_ingest_v2(
                             .expect("ingester service should be initialized");
                         let ingester_service = ingester_service_layer_stack(
                             IngesterServiceClient::tower()
-                                .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone()),
+                                .stack_layer(INGEST_LOCAL_SERVICE_CLIENT_METRICS_LAYER.clone()),
                         )
                         .build(ingester);
                         Some(Change::Insert(node_id, ingester_service))
                     } else {
                         let ingester_service = IngesterServiceClient::tower()
-                            .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .stack_layer(INGEST_REMOTE_SERVICE_CLIENT_METRICS_LAYER.clone())
                             .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),
@@ -1179,8 +1181,7 @@ fn setup_indexer_pool(
                             .expect("indexing service should be initialized");
                         // These layers apply to all the RPCs of the indexing service.
                         let shared_layers = ServiceBuilder::new()
-                            .layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
+                            .layer(INDEXING_LOCAL_SERVICE_CLIENT_METRICS_LAYER.clone())
                             .into_inner();
                         let client = IndexingServiceClient::tower()
                             .stack_layer(shared_layers)
@@ -1198,7 +1199,7 @@ fn setup_indexer_pool(
                         Some(change)
                     } else {
                         let client = IndexingServiceClient::tower()
-                            .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
+                            .stack_layer(INDEXING_REMOTE_SERVICE_CLIENT_METRICS_LAYER.clone())
                             .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
                             .build_from_channel(
                                 node.grpc_advertise_addr(),

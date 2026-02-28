@@ -16,8 +16,9 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use anyhow::Context;
+use once_cell::sync::Lazy;
 use quickwit_cluster::cluster_grpc_server;
-use quickwit_common::tower::BoxFutureInfaillible;
+use quickwit_common::tower::{BoxFutureInfaillible, GrpcMetricsLayer};
 use quickwit_config::GrpcConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::developer::DeveloperServiceClient;
@@ -28,6 +29,7 @@ use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_serv
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
+use quickwit_proto::tonic::service::LayerExt;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
 use quickwit_proto::tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tokio::net::TcpListener;
@@ -37,9 +39,21 @@ use tonic_reflection::pb::v1::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_
 use tonic_reflection::server::v1::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
+use crate::QuickwitServices;
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
-use crate::{INDEXING_GRPC_SERVER_METRICS_LAYER, QuickwitServices};
+
+static CP_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("control_plane"));
+
+static INDEXING_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("indexing"));
+
+static INGEST_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("ingest"));
+
+static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
+    Lazy::new(|| GrpcMetricsLayer::new("metastore"));
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
@@ -81,7 +95,12 @@ pub(crate) async fn start_grpc_server(
         enabled_grpc_services.insert("metastore");
         file_descriptor_sets.push(quickwit_proto::metastore::METASTORE_FILE_DESCRIPTOR_SET);
 
-        Some(metastore_server.as_grpc_service(grpc_config.max_message_size))
+        let metastore_service = metastore_server.as_grpc_service(grpc_config.max_message_size);
+        Some(
+            METASTORE_GRPC_SERVER_METRICS_LAYER
+                .clone()
+                .named_layer(metastore_service),
+        )
     } else {
         None
     };
@@ -94,10 +113,13 @@ pub(crate) async fn start_grpc_server(
             enabled_grpc_services.insert("indexing");
             file_descriptor_sets.push(quickwit_proto::indexing::INDEXING_FILE_DESCRIPTOR_SET);
 
-            let indexing_service = IndexingServiceClient::tower()
-                .stack_layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
-                .build_from_mailbox(indexing_service);
-            Some(indexing_service.as_grpc_service(grpc_config.max_message_size))
+            let indexing_service =
+                IndexingServiceClient::tower().build_from_mailbox(indexing_service);
+            Some(
+                INDEXING_GRPC_SERVER_METRICS_LAYER
+                    .clone()
+                    .named_layer(indexing_service.as_grpc_service(grpc_config.max_message_size)),
+            )
         } else {
             None
         }
@@ -127,7 +149,11 @@ pub(crate) async fn start_grpc_server(
         let ingest_router_service = services
             .ingest_router_service
             .as_grpc_service(grpc_config.max_message_size);
-        Some(ingest_router_service)
+        Some(
+            INGEST_GRPC_SERVER_METRICS_LAYER
+                .clone()
+                .named_layer(ingest_router_service),
+        )
     } else {
         None
     };
@@ -136,7 +162,11 @@ pub(crate) async fn start_grpc_server(
         enabled_grpc_services.insert("ingester");
         file_descriptor_sets.push(quickwit_proto::ingest::INGEST_FILE_DESCRIPTOR_SET);
         let ingester_grpc_service = ingester_service.as_grpc_service(grpc_config.max_message_size);
-        Some(ingester_grpc_service)
+        Some(
+            INDEXING_GRPC_SERVER_METRICS_LAYER
+                .clone()
+                .named_layer(ingester_grpc_service),
+        )
     } else {
         None
     };
@@ -148,11 +178,13 @@ pub(crate) async fn start_grpc_server(
     {
         enabled_grpc_services.insert("control-plane");
         file_descriptor_sets.push(quickwit_proto::control_plane::CONTROL_PLANE_FILE_DESCRIPTOR_SET);
-
+        let control_plane_service = services
+            .control_plane_client
+            .as_grpc_service(grpc_config.max_message_size);
         Some(
-            services
-                .control_plane_client
-                .as_grpc_service(grpc_config.max_message_size),
+            CP_GRPC_SERVER_METRICS_LAYER
+                .clone()
+                .named_layer(control_plane_service),
         )
     } else {
         None
