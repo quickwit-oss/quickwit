@@ -1,0 +1,139 @@
+# Test top_hits aggregation grouped by actor.login
+params:
+  size: 0
+json:
+  aggs:
+    logins:
+      terms:
+        field: actor.login
+        order:
+          _key: asc
+      aggs:
+        recent_events:
+          top_hits:
+            size: 1
+            sort:
+              - created_at: desc
+            docvalue_fields:
+              - created_at
+              - repo.name
+
+expected:
+  hits:
+    total:
+      value: 100
+    hits: []
+
+  aggregations:
+    logins:
+      sum_other_doc_count: 90
+      buckets:
+        - key: 1maria
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["Health-Tracker/health_tracker"]
+                    created_at: ["2015-02-01T00:00:11Z"]
+
+        - key: aborruso
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["SiciliaHub/albopretoriopa"]
+                    created_at: ["2015-02-01T00:00:07Z"]
+
+        - key: adius
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["casertap/UkuleleSongbook"]
+                    created_at: ["2015-02-01T00:00:11Z"]
+
+        - key: amosnier
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["amosnier/code"]
+                    created_at: ["2015-02-01T00:00:06Z"]
+
+        - key: anantax13
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["anantax13/aboutme"]
+                    created_at: ["2015-02-01T00:00:11Z"]
+
+        - key: ancurio
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["Ancurio/mkxp"]
+                    created_at: ["2015-02-01T00:00:15Z"]
+
+        - key: athal7
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["spree/spree"]
+                    created_at: ["2015-02-01T00:00:15Z"]
+
+        - key: basuco
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["carlops/Haskinator"]
+                    created_at: ["2015-02-01T00:00:06Z"]
+
+        - key: boecko
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["toy/blueutil"]
+                    created_at: ["2015-02-01T00:00:12Z"]
+
+        - key: bptripp
+          doc_count: 1
+          recent_events:
+            hits:
+              hits:
+                - sort:
+                    $expect: "len(val) == 1"
+                  docvalue_fields:
+                    repo.name: ["bptripp/nengo-FPGA"]
+                    created_at: ["2015-02-01T00:00:11Z"]
