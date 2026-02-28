@@ -305,6 +305,7 @@ impl IndexerState {
                 timestamp_opt,
                 partition,
                 num_bytes,
+                arrival_timestamp_secs_opt,
             } = doc;
             counters.num_docs_in_workbench += 1;
             let (indexed_split, split_created) = self.get_or_create_indexed_split(
@@ -325,6 +326,12 @@ impl IndexerState {
             indexed_split.split_attrs.num_docs += 1;
             if let Some(timestamp) = timestamp_opt {
                 record_timestamp(timestamp, &mut indexed_split.split_attrs.time_range);
+            }
+            if let Some(arrival_timestamp_millis) = arrival_timestamp_secs_opt {
+                record_arrival_timestamp(
+                    arrival_timestamp_millis,
+                    &mut indexed_split.split_attrs.min_arrival_timestamp_secs_opt,
+                );
             }
             let _protect_guard = ctx.protect_zone();
             indexed_split
@@ -466,6 +473,14 @@ fn record_timestamp(timestamp: DateTime, time_range: &mut Option<RangeInclusive<
         None => timestamp..=timestamp,
     };
     *time_range = Some(new_timestamp_range);
+}
+
+fn record_arrival_timestamp(
+    arrival_timestamp_millis: u64,
+    min_arrival_timestamp_secs_opt: &mut Option<u64>,
+) {
+    let current_min = min_arrival_timestamp_secs_opt.get_or_insert(arrival_timestamp_millis);
+    *current_min = arrival_timestamp_millis.min(*current_min);
 }
 
 #[async_trait]
@@ -797,6 +812,7 @@ mod tests {
                         timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                         partition: 1,
                         num_bytes: 30,
+                        arrival_timestamp_secs_opt: None,
                     },
                     ProcessedDoc {
                         doc: doc!(
@@ -806,6 +822,7 @@ mod tests {
                         timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                         partition: 1,
                         num_bytes: 30,
+                        arrival_timestamp_secs_opt: None,
                     },
                 ],
                 SourceCheckpointDelta::from_range(4..6),
@@ -823,6 +840,7 @@ mod tests {
                         timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435i64)),
                         partition: 1,
                         num_bytes: 30,
+                        arrival_timestamp_secs_opt: None,
                     },
                     ProcessedDoc {
                         doc: doc!(
@@ -832,6 +850,7 @@ mod tests {
                         timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                         partition: 1,
                         num_bytes: 30,
+                        arrival_timestamp_secs_opt: None,
                     },
                 ],
                 SourceCheckpointDelta::from_range(6..8),
@@ -848,6 +867,7 @@ mod tests {
                     timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                     partition: 1,
                     num_bytes: 30,
+                    arrival_timestamp_secs_opt: None,
                 }],
                 SourceCheckpointDelta::from_range(8..9),
                 false,
@@ -933,6 +953,7 @@ mod tests {
                 timestamp_opt: None,
                 partition: 0,
                 num_bytes,
+                arrival_timestamp_secs_opt: None,
             }
         };
         for i in 0..10_000 {
@@ -1011,6 +1032,7 @@ mod tests {
                             timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                             partition: 1,
                             num_bytes: 30,
+                            arrival_timestamp_secs_opt: None,
                         }],
                         SourceCheckpointDelta::from_range(position..position + 1),
                         false,
@@ -1089,6 +1111,7 @@ mod tests {
                     timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                     partition: 1,
                     num_bytes: 30,
+                    arrival_timestamp_secs_opt: None,
                 }],
                 SourceCheckpointDelta::from_range(8..9),
                 false,
@@ -1176,6 +1199,7 @@ mod tests {
                     timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_529_435)),
                     partition: 1,
                     num_bytes: 30,
+                    arrival_timestamp_secs_opt: None,
                 }],
                 SourceCheckpointDelta::from_range(8..9),
                 false,
@@ -1260,6 +1284,7 @@ mod tests {
                         timestamp_opt: None,
                         partition: 1,
                         num_bytes: 30,
+                        arrival_timestamp_secs_opt: None,
                     },
                     ProcessedDoc {
                         doc: doc!(
@@ -1269,6 +1294,7 @@ mod tests {
                         timestamp_opt: None,
                         partition: 3,
                         num_bytes: 30,
+                        arrival_timestamp_secs_opt: None,
                     },
                 ],
                 SourceCheckpointDelta::from_range(8..9),
@@ -1354,6 +1380,7 @@ mod tests {
                         timestamp_opt: None,
                         partition,
                         num_bytes: 30,
+                        arrival_timestamp_secs_opt: None,
                     }],
                     SourceCheckpointDelta::from_range(partition..partition + 1),
                     false,
@@ -1432,6 +1459,7 @@ mod tests {
                         timestamp_opt: None,
                         partition: 0,
                         num_bytes: 30,
+                        arrival_timestamp_secs_opt: None,
                     }],
                     SourceCheckpointDelta::from_range(0..1),
                     false,
@@ -1503,6 +1531,7 @@ mod tests {
                     timestamp_opt: None,
                     partition: 0,
                     num_bytes: 30,
+                    arrival_timestamp_secs_opt: None,
                 }],
                 SourceCheckpointDelta::from_range(0..1),
                 false,
@@ -1559,6 +1588,7 @@ mod tests {
                     timestamp_opt: None,
                     partition: 0,
                     num_bytes: 30,
+                    arrival_timestamp_secs_opt: None,
                 }],
                 SourceCheckpointDelta::from_range(0..1),
                 true,

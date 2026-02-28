@@ -18,9 +18,11 @@ use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, PublishSplitsRequest};
 use serde::Serialize;
+use time::OffsetDateTime;
 use tracing::{info, instrument, warn};
 
 use crate::actors::MergePlanner;
+use crate::metrics::INDEXER_METRICS;
 use crate::models::{NewSplits, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
@@ -143,6 +145,10 @@ impl Handler<SplitsUpdate> for Publisher {
             .iter()
             .map(|split| split.split_id.clone())
             .collect();
+        let all_min_arrival_timestamp_secs: Vec<u64> = new_splits
+            .iter()
+            .flat_map(|split| split.min_arrival_timestamp_secs_opt)
+            .collect();
         if let Some(_guard) = publish_lock.acquire().await {
             let publish_splits_request = PublishSplitsRequest {
                 index_uid: Some(index_uid),
@@ -163,7 +169,7 @@ impl Handler<SplitsUpdate> for Publisher {
             return Ok(());
         }
         info!("publish-new-splits");
-        if let Some(source_mailbox) = self.source_mailbox_opt.as_ref()
+        if let Some(source_mailbox) = &self.source_mailbox_opt
             && let Some(checkpoint) = checkpoint_delta_opt
         {
             // We voluntarily do not log anything here.
@@ -182,7 +188,6 @@ impl Handler<SplitsUpdate> for Publisher {
                 warn!(error=?send_truncate_err, "failed to send truncate message from publisher to source");
             }
         }
-
         if !new_splits.is_empty() {
             // The merge planner is not necessarily awake and this is not an error.
             // For instance, when a source reaches its end, and the last "new" split
@@ -193,7 +198,6 @@ impl Handler<SplitsUpdate> for Publisher {
                     .send_message(merge_planner_mailbox, NewSplits { new_splits })
                     .await;
             }
-
             if replaced_split_ids.is_empty() {
                 self.counters.num_published_splits += 1;
             } else {
@@ -201,6 +205,16 @@ impl Handler<SplitsUpdate> for Publisher {
             }
         } else {
             self.counters.num_empty_splits += 1;
+        }
+        let now = OffsetDateTime::now_utc();
+        let now_timestamp = now.unix_timestamp() as u64;
+
+        for min_arrival_timestamp_secs in all_min_arrival_timestamp_secs {
+            if let Some(lag_secs) = now_timestamp.checked_sub(min_arrival_timestamp_secs) {
+                INDEXER_METRICS
+                    .indexing_lag_seconds
+                    .observe(lag_secs as f64);
+            }
         }
         fail_point!("publisher:after");
         Ok(())

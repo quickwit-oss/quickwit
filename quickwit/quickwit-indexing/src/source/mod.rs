@@ -117,7 +117,7 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
 use crate::actors::DocProcessor;
-use crate::models::RawDocBatch;
+use crate::models::{RawDoc, RawDocBatch};
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
@@ -510,7 +510,7 @@ impl Handler<SuggestTruncate> for SourceActor {
 pub(super) struct BatchBuilder {
     // Do not directly append documents to this vector; otherwise, in-flight metrics will be
     // incorrect. Use `add_doc` instead.
-    docs: Vec<Bytes>,
+    raw_docs: Vec<RawDoc>,
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
     force_commit: bool,
@@ -535,7 +535,7 @@ impl BatchBuilder {
         let gauge_guard = GaugeGuard::from_gauge(gauge);
 
         Self {
-            docs: Vec::with_capacity(capacity),
+            raw_docs: Vec::with_capacity(capacity),
             num_bytes: 0,
             checkpoint_delta: SourceCheckpointDelta::default(),
             force_commit: false,
@@ -543,9 +543,13 @@ impl BatchBuilder {
         }
     }
 
-    pub fn add_doc(&mut self, doc: Bytes) {
+    pub fn add_doc(&mut self, doc: Bytes, arrival_timestamp_secs_opt: Option<u64>) {
         let num_bytes = doc.len();
-        self.docs.push(doc);
+        let raw_doc = RawDoc {
+            doc,
+            arrival_timestamp_secs_opt,
+        };
+        self.raw_docs.push(raw_doc);
         self.gauge_guard.add(num_bytes as i64);
         self.num_bytes += num_bytes as u64;
     }
@@ -554,13 +558,20 @@ impl BatchBuilder {
         self.force_commit = true;
     }
 
+    // pub fn record_arrival_timestamp(&mut self, arrival_timestamp_millis: u64) {
+    //     let current_min = self
+    //         .min_arrival_timestamp_secs_opt
+    //         .get_or_insert(arrival_timestamp_millis);
+    //     *current_min = arrival_timestamp_millis.min(*current_min);
+    // }
+
     pub fn build(self) -> RawDocBatch {
-        RawDocBatch::new(self.docs, self.checkpoint_delta, self.force_commit)
+        RawDocBatch::new(self.raw_docs, self.checkpoint_delta, self.force_commit)
     }
 
     #[cfg(feature = "kafka")]
     pub fn clear(&mut self) {
-        self.docs.clear();
+        self.raw_docs.clear();
         self.checkpoint_delta = SourceCheckpointDelta::default();
         self.gauge_guard.sub(self.num_bytes as i64);
         self.num_bytes = 0;

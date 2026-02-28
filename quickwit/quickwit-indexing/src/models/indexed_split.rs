@@ -110,6 +110,7 @@ impl IndexedSplitBuilder {
                 time_range: None,
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: 0,
+                min_arrival_timestamp_secs_opt: None,
             },
             index_writer,
             split_scratch_directory,

@@ -253,7 +253,8 @@ impl Source for KinesisSource {
                                     self.state.num_invalid_records += 1;
                                     continue;
                                 }
-                                batch_builder.add_doc(Bytes::from(record_data));
+                                let arrival_timestamp_secs_opt = record.approximate_arrival_timestamp.and_then(|datetime| datetime.to_millis().ok()).map(|millis| millis as u64);
+                                batch_builder.add_doc(Bytes::from(record_data), arrival_timestamp_secs_opt);
 
                                 if i == num_records - 1 {
                                     let shard_consumer_state = self
@@ -310,7 +311,7 @@ impl Source for KinesisSource {
             }
         }
         self.state.num_bytes_processed += batch_builder.num_bytes;
-        self.state.num_records_processed += batch_builder.docs.len() as u64;
+        self.state.num_records_processed += batch_builder.raw_docs.len() as u64;
 
         if !batch_builder.checkpoint_delta.is_empty() {
             ctx.send_message(indexer_mailbox, batch_builder.build())
