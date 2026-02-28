@@ -43,6 +43,7 @@ use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteShardsRequest, DeleteSourceRequest, EmptyResponse, FindIndexTemplateMatchesRequest,
@@ -198,6 +199,7 @@ pub struct ControlPlaneObservableState {
     pub ingest_controller: IngestControllerStats,
     pub num_indexes: usize,
     pub num_sources: usize,
+    pub num_decommissioning_ingesters: usize,
     pub readiness: bool,
 }
 
@@ -215,6 +217,7 @@ impl Actor for ControlPlane {
             ingest_controller: self.ingest_controller.stats,
             num_indexes: self.model.num_indexes(),
             num_sources: self.model.num_sources(),
+            num_decommissioning_ingesters: self.model.decommissioning_ingesters().len(),
             readiness: *self.readiness_tx.borrow(),
         }
     }
@@ -1083,10 +1086,13 @@ impl Handler<IndexerLeft> for ControlPlane {
         message: IndexerLeft,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let node_id: NodeId = message.0.node_id().into();
         info!(
             "indexer `{}` left the cluster: rebalancing shards and rebuilding indexing plan",
-            message.0.node_id()
+            node_id
         );
+        // Clean up decommissioning state for the departed node.
+        self.model.remove_decommissioning_ingester(&node_id);
         // TODO: Update shard table.
         if let Err(metastore_error) = self
             .ingest_controller
@@ -1096,6 +1102,51 @@ impl Handler<IndexerLeft> for ControlPlane {
             return convert_metastore_error::<()>(metastore_error).map(|_| ());
         }
         self.indexing_scheduler.rebuild_plan(&self.model);
+        Ok(())
+    }
+}
+
+/// An ingester node has changed its status (e.g. transitioning to decommissioning).
+#[derive(Debug)]
+struct IngesterStatusChanged {
+    node_id: NodeId,
+    status: IngesterStatus,
+}
+
+#[async_trait]
+impl Handler<IngesterStatusChanged> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: IngesterStatusChanged,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        match message.status {
+            IngesterStatus::Decommissioning => {
+                if self
+                    .model
+                    .add_decommissioning_ingester(message.node_id.clone())
+                {
+                    info!(
+                        ingester_id=%message.node_id,
+                        "ingester is decommissioning: excluding from shard allocation"
+                    );
+                }
+            }
+            _ => {
+                if self
+                    .model
+                    .remove_decommissioning_ingester(&message.node_id)
+                {
+                    info!(
+                        ingester_id=%message.node_id,
+                        status=%message.status.as_json_str_name(),
+                        "ingester is no longer decommissioning"
+                    );
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -1144,6 +1195,17 @@ async fn watcher_indexers(
         };
         match cluster_change {
             ClusterChange::Add(node) => {
+                // If a node joins (or transitions to ready) while already decommissioning,
+                // immediately notify the control plane.
+                if node.ingester_status() == Some(IngesterStatus::Decommissioning) {
+                    let node_id: NodeId = node.node_id().into();
+                    if let Err(error) = mailbox
+                        .send_message(IngesterStatusChanged { node_id, status: IngesterStatus::Decommissioning })
+                        .await
+                    {
+                        error!(%error, "failed to forward `IngesterStatusChanged` event to control plane");
+                    }
+                }
                 if node.enabled_services().contains(&QuickwitService::Indexer)
                     && let Err(error) = mailbox.send_message(IndexerJoined(node)).await
                 {
@@ -1157,8 +1219,16 @@ async fn watcher_indexers(
                     error!(%error, "failed to forward `IndexerLeft` event to control plane");
                 }
             }
-            ClusterChange::Update(_) => {
-                // We are not interested in updates (yet).
+            ClusterChange::Update(node) => {
+                if let Some(status) = node.ingester_status() {
+                    let node_id: NodeId = node.node_id().into();
+                    if let Err(error) = mailbox
+                        .send_message(IngesterStatusChanged { node_id, status })
+                        .await
+                    {
+                        error!(%error, "failed to forward `IngesterStatusChanged` event to control plane");
+                    }
+                }
             }
         }
     }
@@ -2443,24 +2513,59 @@ mod tests {
 
         let cluster_change_stream_tx = cluster_change_stream_factory.change_stream_tx();
 
+        // Non-indexer nodes are ignored.
         let metastore_node =
             ClusterNode::for_test("test-metastore", 1337, false, &["metastore"], &[]).await;
-        let cluster_change = ClusterChange::Add(metastore_node);
-        cluster_change_stream_tx.send(cluster_change).unwrap();
+        cluster_change_stream_tx
+            .send(ClusterChange::Add(metastore_node))
+            .unwrap();
 
         let indexer_node =
             ClusterNode::for_test("test-indexer", 1515, false, &["indexer"], &[]).await;
-        let cluster_change = ClusterChange::Add(indexer_node.clone());
-        cluster_change_stream_tx.send(cluster_change).unwrap();
-
-        let cluster_change = ClusterChange::Remove(indexer_node.clone());
-        cluster_change_stream_tx.send(cluster_change).unwrap();
+        cluster_change_stream_tx
+            .send(ClusterChange::Add(indexer_node.clone()))
+            .unwrap();
+        cluster_change_stream_tx
+            .send(ClusterChange::Remove(indexer_node.clone()))
+            .unwrap();
 
         let IndexerJoined(joined) = control_plane_inbox.recv_typed_message().await.unwrap();
         assert_eq!(joined.grpc_advertise_addr().port(), 1516);
 
         let IndexerLeft(left) = control_plane_inbox.recv_typed_message().await.unwrap();
         assert_eq!(left.grpc_advertise_addr().port(), 1516);
+
+        // An Update with ingester status emits IngesterStatusChanged.
+        let decommissioning_node = ClusterNode::for_test_with_ingester_status(
+            "test-indexer",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            Some(IngesterStatus::Decommissioning),
+        )
+        .await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update(decommissioning_node.clone()))
+            .unwrap();
+
+        let msg: IngesterStatusChanged =
+            control_plane_inbox.recv_typed_message().await.unwrap();
+        assert_eq!(msg.node_id, NodeId::from("test-indexer"));
+        assert_eq!(msg.status, IngesterStatus::Decommissioning);
+
+        // An Add with ingester status emits both IngesterStatusChanged and IndexerJoined.
+        cluster_change_stream_tx
+            .send(ClusterChange::Add(decommissioning_node))
+            .unwrap();
+
+        let msg: IngesterStatusChanged =
+            control_plane_inbox.recv_typed_message().await.unwrap();
+        assert_eq!(msg.node_id, NodeId::from("test-indexer"));
+        assert_eq!(msg.status, IngesterStatus::Decommissioning);
+
+        let IndexerJoined(joined) = control_plane_inbox.recv_typed_message().await.unwrap();
+        assert_eq!(joined.grpc_advertise_addr().port(), 1516);
 
         universe.assert_quit().await;
     }
@@ -2807,6 +2912,121 @@ mod tests {
             shard["publish_position_inclusive"],
             json!(Position::Beginning)
         );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_control_plane_decommissioning_lifecycle() {
+        let universe = Universe::with_accelerated_time();
+
+        let cluster_config = ClusterConfig::for_test();
+        let node_id = NodeId::from("test-control-plane");
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+
+        let indexer_pool = IndexerPool::default();
+        let ingester_pool = IngesterPool::default();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .return_once(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
+        mock_metastore
+            .expect_delete_shards()
+            .returning(|request| {
+                Ok(DeleteShardsResponse {
+                    index_uid: request.index_uid,
+                    source_id: request.source_id,
+                    successes: request.shard_ids,
+                    failures: Vec::new(),
+                })
+            });
+        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
+        let disable_control_loop = true;
+        let (_control_plane_mailbox, control_plane_handle, _readiness_rx) =
+            ControlPlane::spawn_inner(
+                &universe,
+                cluster_config,
+                node_id,
+                cluster_change_stream_factory.clone(),
+                indexer_pool,
+                ingester_pool,
+                metastore,
+                disable_control_loop,
+            );
+        let cluster_change_stream_tx = cluster_change_stream_factory.change_stream_tx();
+
+        macro_rules! num_decommissioning {
+            () => {
+                control_plane_handle
+                    .process_pending_and_observe()
+                    .await
+                    .state_opt
+                    .as_ref()
+                    .unwrap()
+                    .num_decommissioning_ingesters
+            };
+        }
+
+        // Mark ingester as decommissioning.
+        let node = ClusterNode::for_test_with_ingester_status(
+            "test-ingester-0",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            Some(IngesterStatus::Decommissioning),
+        )
+        .await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update(node.clone()))
+            .unwrap();
+        universe.sleep(Duration::from_secs(1)).await;
+        assert_eq!(num_decommissioning!(), 1);
+
+        // Sending it again is idempotent.
+        cluster_change_stream_tx
+            .send(ClusterChange::Update(node))
+            .unwrap();
+        universe.sleep(Duration::from_secs(1)).await;
+        assert_eq!(num_decommissioning!(), 1);
+
+        // Transitioning back to Ready removes the decommissioning state.
+        let ready_node = ClusterNode::for_test_with_ingester_status(
+            "test-ingester-0",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            Some(IngesterStatus::Ready),
+        )
+        .await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update(ready_node))
+            .unwrap();
+        universe.sleep(Duration::from_secs(1)).await;
+        assert_eq!(num_decommissioning!(), 0);
+
+        // Add a decommissioning node, then remove it — should clean up.
+        let node = ClusterNode::for_test_with_ingester_status(
+            "test-ingester-1",
+            1516,
+            false,
+            &["indexer"],
+            &[],
+            Some(IngesterStatus::Decommissioning),
+        )
+        .await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Add(node.clone()))
+            .unwrap();
+        universe.sleep(Duration::from_secs(1)).await;
+        assert_eq!(num_decommissioning!(), 1);
+
+        cluster_change_stream_tx
+            .send(ClusterChange::Remove(node))
+            .unwrap();
+        universe.sleep(Duration::from_secs(1)).await;
+        assert_eq!(num_decommissioning!(), 0);
 
         universe.assert_quit().await;
     }

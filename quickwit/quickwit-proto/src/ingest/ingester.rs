@@ -77,6 +77,18 @@ impl IngesterStatus {
             Self::Failed => "failed",
         }
     }
+
+    pub fn from_json_str_name(ingester_status_json_name: &str) -> Option<Self> {
+        match ingester_status_json_name {
+            "unspecified" => Some(Self::Unspecified),
+            "initializing" => Some(Self::Initializing),
+            "ready" => Some(Self::Ready),
+            "decommissioning" => Some(Self::Decommissioning),
+            "decommissioned" => Some(Self::Decommissioned),
+            "failed" => Some(Self::Failed),
+            _ => None,
+        }
+    }
 }
 
 impl OpenFetchStreamRequest {
@@ -182,5 +194,27 @@ impl ReplicateSubrequest {
 impl TruncateShardsSubrequest {
     pub fn queue_id(&self) -> QueueId {
         queue_id(self.index_uid(), &self.source_id, self.shard_id())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ingester_status_from_json_str_name_round_trip() {
+        let all_variants = [
+            IngesterStatus::Unspecified,
+            IngesterStatus::Initializing,
+            IngesterStatus::Ready,
+            IngesterStatus::Decommissioning,
+            IngesterStatus::Decommissioned,
+            IngesterStatus::Failed,
+        ];
+        for variant in all_variants {
+            let json_name = variant.as_json_str_name();
+            let parsed = IngesterStatus::from_json_str_name(json_name);
+            assert_eq!(parsed, Some(variant), "round-trip failed for {json_name}");
+        }
     }
 }
