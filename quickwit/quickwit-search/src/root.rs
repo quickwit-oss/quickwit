@@ -49,7 +49,7 @@ use tracing::{debug, error, info, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
-use crate::metrics_trackers::{RootSearchMetricsFuture, RootSearchMetricsStep};
+use crate::metrics_trackers::{RootSearchMetricsFuture, SearchPlanMetricsFuture};
 use crate::scroll_context::{ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_job_placer::{Job, group_by, group_jobs_by_index_id};
 use crate::search_response_rest::StorageRequestCount;
@@ -1211,11 +1211,10 @@ pub async fn root_search(
 ) -> crate::Result<SearchResponse> {
     let start_instant = Instant::now();
 
-    let (split_metadatas, indexes_meta_for_leaf_search) = RootSearchMetricsFuture {
+    let (split_metadatas, indexes_meta_for_leaf_search) = SearchPlanMetricsFuture {
         start: start_instant,
         tracked: plan_splits_for_root_search(&mut search_request, &mut metastore),
         is_success: None,
-        step: RootSearchMetricsStep::Plan,
     }
     .await?;
 
@@ -1258,10 +1257,8 @@ pub async fn root_search(
             split_metadatas,
             cluster_client,
         ),
-        is_success: None,
-        step: RootSearchMetricsStep::Exec {
-            num_targeted_splits: num_splits,
-        },
+        status: None,
+        num_targeted_splits: num_splits,
     }
     .await;
 
