@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -33,6 +34,10 @@ impl Debouncer {
             let barrier = self.0.clone();
             Err(BarrierGuard(barrier))
         }
+    }
+
+    fn strong_count(&self) -> usize {
+        Arc::strong_count(&self.0)
     }
 }
 
@@ -63,6 +68,15 @@ impl GetOrCreateOpenShardsRequestDebouncer {
     ) -> Result<PermitGuard, BarrierGuard> {
         let key = (index_id.to_string(), source_id.to_string());
         self.debouncers.entry(key).or_default().acquire()
+    }
+
+    pub fn delete_if_released(&mut self, index_id: &str, source_id: &str) {
+        let key = (index_id.to_string(), source_id.to_string());
+        if let Entry::Occupied(entry) = self.debouncers.entry(key) {
+            if entry.get().strong_count() == 1 {
+                entry.remove();
+            }
+        }
     }
 }
 

@@ -392,6 +392,7 @@ pub struct LocalShardsUpdate {
     pub leader_id: NodeId,
     pub source_uid: SourceUid,
     pub shard_infos: ShardInfos,
+    pub is_deletion: bool,
 }
 
 impl Event for LocalShardsUpdate {}
@@ -416,6 +417,7 @@ pub async fn setup_local_shards_update_listener(
                 leader_id,
                 source_uid,
                 shard_infos,
+                is_deletion: false,
             };
             event_broker.publish(local_shards_update);
         })
