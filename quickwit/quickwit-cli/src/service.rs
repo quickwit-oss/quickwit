@@ -75,12 +75,19 @@ async fn listen_interrupt() {
     });
 }
 
+#[cfg(unix)]
 async fn listen_sigterm() {
     signal::unix::signal(signal::unix::SignalKind::terminate())
         .expect("registering a signal handler for SIGTERM should not fail")
         .recv()
         .await;
     info!("SIGTERM received");
+}
+
+#[cfg(not(unix))]
+async fn listen_sigterm() {
+    // SIGTERM does not exist on Windows; this future never completes.
+    std::future::pending::<()>().await;
 }
 
 impl RunCliCommand {

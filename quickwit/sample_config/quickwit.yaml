@@ -1,0 +1,52 @@
+# quickwit.yaml — single-node, local file storage
+version: 0.8
+
+# ── Node identity ──────────────────────────────────────────────────────────────
+node_id: node-1
+cluster_id: my-cluster
+
+# ── Network ────────────────────────────────────────────────────────────────────
+# 127.0.0.1 is fine for single-node (local only).
+# Change to 0.0.0.0 or your NIC IP if other machines need to reach this node.
+listen_address: 0.0.0.0
+
+rest:
+  listen_port: 7280          # REST API + Web UI  → http://127.0.0.1:7280/ui
+
+# ── Storage: local disk ────────────────────────────────────────────────────────
+# All paths use forward slashes (Rust on Windows accepts both).
+# Change C:/quickwit/... to wherever you want data stored.
+
+# Temporary / working data (WAL, caches, split staging area)
+data_dir: ./data
+
+# File-backed metastore: stores index metadata as JSON files on disk.
+# polling_interval=30s refreshes the cache periodically (useful if you
+# run separate indexer/searcher processes; safe to remove for single-node).
+metastore_uri: ./data/metastore
+
+# Where finished index splits (the actual data files) are stored.
+default_index_root_uri: ./data/indexes
+
+# ── Indexer ────────────────────────────────────────────────────────────────────
+indexer:
+  enable_otlp_endpoint: false   # disable OpenTelemetry gRPC ingestion
+  split_store_max_num_bytes: 10G
+  split_store_max_num_splits: 500
+  max_concurrent_split_uploads: 4
+
+# ── Ingest API ─────────────────────────────────────────────────────────────────
+ingest_api:
+  max_queue_memory_usage: 1GiB
+  max_queue_disk_usage: 2GiB
+
+# ── Searcher ───────────────────────────────────────────────────────────────────
+searcher:
+  fast_field_cache_capacity: 512M
+  split_footer_cache_capacity: 256M
+  partial_request_cache_capacity: 32M
+  max_num_concurrent_split_searches: 20
+
+# ── Jaeger (distributed tracing UI) ───────────────────────────────────────────
+jaeger:
+  enable_endpoint: false

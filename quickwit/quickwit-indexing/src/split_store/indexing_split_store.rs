@@ -26,7 +26,9 @@ use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::Directory;
-use tantivy::directory::{Advice, MmapDirectory};
+#[cfg(unix)]
+use tantivy::directory::Advice;
+use tantivy::directory::MmapDirectory;
 use time::OffsetDateTime;
 use tracing::{Instrument, debug, info_span, instrument};
 
@@ -190,10 +192,11 @@ impl IndexingSplitStore {
             .await?
         {
             tracing::Span::current().record("cache_hit", true);
-            let mmap_directory: Box<dyn Directory> = Box::new(MmapDirectory::open_with_madvice(
-                split_path,
-                Advice::Sequential,
-            )?);
+            #[cfg(unix)]
+            let mmap_dir = MmapDirectory::open_with_madvice(split_path, Advice::Sequential)?;
+            #[cfg(not(unix))]
+            let mmap_dir = MmapDirectory::open(split_path)?;
+            let mmap_directory: Box<dyn Directory> = Box::new(mmap_dir);
             return Ok(mmap_directory);
         } else {
             tracing::Span::current().record("cache_hit", false);

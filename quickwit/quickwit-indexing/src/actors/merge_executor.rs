@@ -37,7 +37,9 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{NodeId, SplitId};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
-use tantivy::directory::{Advice, DirectoryClone, MmapDirectory, RamDirectory};
+#[cfg(unix)]
+use tantivy::directory::Advice;
+use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::index::SegmentId;
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentReader};
@@ -490,11 +492,12 @@ impl MergeExecutor {
         let shadowing_meta_json_directory = create_shadowing_meta_json_directory(union_index_meta)?;
 
         // This directory is here to receive the merged split, as well as the final meta.json file.
+        #[cfg(unix)]
+        let mmap_dir = MmapDirectory::open_with_madvice(output_path, Advice::Sequential)?;
+        #[cfg(not(unix))]
+        let mmap_dir = MmapDirectory::open(output_path)?;
         let output_directory = ControlledDirectory::new(
-            Box::new(MmapDirectory::open_with_madvice(
-                output_path,
-                Advice::Sequential,
-            )?),
+            Box::new(mmap_dir),
             self.io_controls
                 .clone()
                 .set_kill_switch(ctx.kill_switch().clone())

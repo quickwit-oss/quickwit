@@ -30,7 +30,8 @@ hyper-util = { workspace = true, optional = true }
 itertools = { workspace = true }
 once_cell = { workspace = true }
 pin-project = { workspace = true }
-pnet = { workspace = true }
+if-addrs = { workspace = true }
+ipnetwork = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }

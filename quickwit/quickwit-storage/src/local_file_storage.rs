@@ -190,11 +190,17 @@ impl Storage for LocalFileStorage {
         tokio::io::copy(&mut reader, &mut temp_tokio_file).await?;
         temp_tokio_file.flush().await?;
         temp_tokio_file.sync_data().await?;
+        // On Windows, the file handle must be closed before renaming, otherwise
+        // the rename fails with "Access Denied" (OS error 5).
+        drop(temp_tokio_file);
         temp_filepath
             .persist(&full_path)
             .map_err(|err| StorageErrorKind::Io.with_error(err))?;
-        // We also need to sync the parent directory to ensure it
+        // We also need to sync the parent directory to ensure
         // the file move has been persisted on all file systems.
+        // On Windows, opening a directory with File::open() fails with
+        // "Access Denied" (OS error 5), so we skip directory syncing.
+        #[cfg(not(target_os = "windows"))]
         tokio::fs::File::open(parent_dir).await?.sync_data().await?;
         Ok(())
     }

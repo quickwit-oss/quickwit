@@ -155,7 +155,7 @@ md5 = "0.8"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
-mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
+mrecordlog = { path = "../mrecordlog" }
 new_string_template = "1.5"
 nom = "8.0"
 numfmt = "1.2"
@@ -169,7 +169,8 @@ opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
 ouroboros = "0.18"
 percent-encoding = "2.3"
 pin-project = "1.1"
-pnet = { version = "0.35", features = ["std"] }
+ipnetwork = "0.21"
+if-addrs = "0.13"
 postcard = { version = "1.1", features = [
   "use-std",
 ], default-features = false }

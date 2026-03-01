@@ -19,10 +19,10 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::str::FromStr;
 
 use anyhow::{Context, bail};
+use if_addrs::IfAddr;
+use ipnetwork::{IpNetwork, Ipv4Network, Ipv6Network};
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
-use pnet::datalink::{self, NetworkInterface};
-use pnet::ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::net::{ToSocketAddrs, lookup_host};
 
@@ -214,25 +214,54 @@ pub fn find_available_tcp_port() -> anyhow::Result<u16> {
     Ok(port)
 }
 
+/// Minimal interface info used for private IP detection.
+struct NetworkInterfaceInfo {
+    name: String,
+    ips: Vec<IpNetwork>,
+}
+
+fn if_addr_to_ip_network(addr: IfAddr) -> Option<IpNetwork> {
+    match addr {
+        IfAddr::V4(v4) => {
+            let prefix = u32::from(v4.netmask).leading_ones() as u8;
+            Ipv4Network::new(v4.ip, prefix).ok().map(IpNetwork::V4)
+        }
+        IfAddr::V6(v6) => {
+            let prefix = u128::from(v6.netmask).leading_ones() as u8;
+            Ipv6Network::new(v6.ip, prefix).ok().map(IpNetwork::V6)
+        }
+    }
+}
+
 /// Attempts to find the private IP of the host. Returns the matching interface name along with it.
 pub fn find_private_ip() -> Option<(String, IpAddr)> {
-    _find_private_ip(&datalink::interfaces())
+    let raw = if_addrs::get_if_addrs().ok()?;
+    // Group per-interface addresses (get_if_addrs returns one entry per address).
+    let mut map: std::collections::BTreeMap<String, NetworkInterfaceInfo> = Default::default();
+    for iface in raw {
+        let entry = map.entry(iface.name.clone()).or_insert_with(|| NetworkInterfaceInfo {
+            name: iface.name.clone(),
+            ips: Vec::new(),
+        });
+        if let Some(ip_net) = if_addr_to_ip_network(iface.addr) {
+            entry.ips.push(ip_net);
+        }
+    }
+    let interfaces: Vec<NetworkInterfaceInfo> = map.into_values().collect();
+    _find_private_ip(&interfaces)
 }
 
 // Inner function for testing purposes.
-fn _find_private_ip(interfaces: &[NetworkInterface]) -> Option<(String, IpAddr)> {
+fn _find_private_ip(interfaces: &[NetworkInterfaceInfo]) -> Option<(String, IpAddr)> {
     // The way we do this is the following:
     // 1. List the network interfaces
-    // 2. Filter out the interfaces that are not up
-    // 3. Filter out the networks that are not routable and private
-    // 4. Sort the IP addresses by:
+    // 2. Filter out the networks that are not routable and private
+    // 3. Sort the IP addresses by:
     //      - type (IPv4 first)
-    //      - mode (default first)
     //      - size of network address space (desc)
-    // 5. Pick the first one
+    // 4. Pick the first one
     interfaces
         .iter()
-        .filter(|interface| interface.is_up())
         .flat_map(|interface| {
             interface
                 .ips
@@ -240,25 +269,11 @@ fn _find_private_ip(interfaces: &[NetworkInterface]) -> Option<(String, IpAddr)>
                 .filter(|ip_net| is_forwardable_ip(&ip_net.ip()) && is_private_ip(&ip_net.ip()))
                 .map(move |ip_net| (interface, ip_net))
         })
-        .sorted_by_key(|(interface, ip_net)| {
-            (
-                ip_net.is_ipv6(),
-                is_dormant(interface),
-                std::cmp::Reverse(ip_net.prefix()),
-            )
+        .sorted_by_key(|(_interface, ip_net)| {
+            (ip_net.is_ipv6(), std::cmp::Reverse(ip_net.prefix()))
         })
         .next()
         .map(|(interface, ip_net)| (interface.name.clone(), ip_net.ip()))
-}
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-fn is_dormant(interface: &NetworkInterface) -> bool {
-    interface.is_dormant()
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "android")))]
-fn is_dormant(_interface: &NetworkInterface) -> bool {
-    false
 }
 
 /// Converts an object into a resolved `SocketAddr`.
@@ -374,7 +389,6 @@ pub fn is_valid_hostname(hostname: &str) -> bool {
 mod tests {
     use std::net::Ipv6Addr;
 
-    use pnet::ipnetwork::{Ipv4Network, Ipv6Network};
     use serde_json::Value as JsonValue;
 
     use super::*;
@@ -511,42 +525,30 @@ mod tests {
         assert!(_find_private_ip(&[]).is_none());
 
         let interfaces = [
-            NetworkInterface {
+            NetworkInterfaceInfo {
                 name: "lo".to_string(),
-                description: "".to_string(),
-                index: 1,
-                mac: None,
                 ips: vec![
                     IpNetwork::V4(Ipv4Network::new("127.0.0.1".parse().unwrap(), 8).unwrap()),
                     IpNetwork::V6(Ipv6Network::new("::1".parse().unwrap(), 128).unwrap()),
                 ],
-                flags: 65609,
             },
-            NetworkInterface {
+            NetworkInterfaceInfo {
                 name: "docker0".to_string(),
-                description: "".to_string(),
-                index: 2,
-                mac: None,
                 ips: vec![
                     IpNetwork::V6(
                         Ipv6Network::new("fe80::42:69ff:fe8e:e739".parse().unwrap(), 64).unwrap(),
                     ),
                     IpNetwork::V4(Ipv4Network::new("172.17.0.1".parse().unwrap(), 8).unwrap()),
                 ],
-                flags: 4099,
             },
-            NetworkInterface {
+            NetworkInterfaceInfo {
                 name: "eth0".to_string(),
-                description: "".to_string(),
-                index: 3,
-                mac: None,
                 ips: vec![
                     IpNetwork::V6(
                         Ipv6Network::new("fe80::84ed:78c:ec06:bf53".parse().unwrap(), 64).unwrap(),
                     ),
                     IpNetwork::V4(Ipv4Network::new("192.168.1.70".parse().unwrap(), 24).unwrap()),
                 ],
-                flags: 69699,
             },
         ];
         let (interface_name, ip_addr) = _find_private_ip(&interfaces).unwrap();

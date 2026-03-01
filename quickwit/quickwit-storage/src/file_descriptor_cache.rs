@@ -153,9 +153,52 @@ impl FileDescriptorCache {
     }
 }
 
+/// Reads exactly `buf.len()` bytes from `file` starting at `offset`,
+/// without changing the file's current seek position.
+/// Works on both Unix (using `read_exact_at`) and Windows (using `seek_read` in a loop).
+fn read_exact_at_offset(file: &File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileExt;
+        file.read_exact_at(buf, offset)
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileExt;
+        let mut pos = offset;
+        let mut remaining = buf;
+        while !remaining.is_empty() {
+            match file.seek_read(remaining, pos) {
+                Ok(0) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "failed to fill whole buffer",
+                    ));
+                }
+                Ok(n) => {
+                    pos += n as u64;
+                    remaining = &mut remaining[n..];
+                }
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(())
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        use std::io::{Read, Seek, SeekFrom};
+        // Fallback: seek + read (not atomic, but works on unsupported platforms).
+        let _ = (file, buf, offset);
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "positional file reads are not supported on this platform",
+        ))
+    }
+}
+
 impl SplitFile {
     pub async fn get_range(&self, range: Range<usize>) -> io::Result<OwnedBytes> {
-        use std::os::unix::fs::FileExt;
         let file = self.clone();
         let buf = tokio::task::spawn_blocking(move || {
             let mut buf = Vec::with_capacity(range.len());
@@ -163,7 +206,7 @@ impl SplitFile {
             unsafe {
                 buf.set_len(range.len());
             }
-            file.0.file.read_exact_at(&mut buf, range.start as u64)?;
+            read_exact_at_offset(&file.0.file, &mut buf, range.start as u64)?;
             io::Result::Ok(buf)
         })
         .await
