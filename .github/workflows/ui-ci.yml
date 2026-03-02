@@ -64,7 +64,7 @@ jobs:
     env:
       CARGO_INCREMENTAL: 0
       RUST_BACKTRACE: 1
-      RUSTFLAGS: -Dwarnings -C lto=off
+      RUSTFLAGS: -Dwarnings --cfg tokio_unstable
       RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
       QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
     steps:
@@ -82,6 +82,7 @@ jobs:
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
         with:
           workspaces: "./quickwit -> target"
+          shared-key: "quickwit-cargo"
       - name: Install JS dependencies
         run: yarn --cwd quickwit-ui install
         working-directory: ./quickwit
@@ -94,11 +95,11 @@ jobs:
       - name: Build Quickwit
         run: |
           sudo apt-get update && sudo apt-get -y install protobuf-compiler
-          RUSTFLAGS="--cfg tokio_unstable" cargo build --features=postgres
+          cargo build --features=postgres
         working-directory: ./quickwit
       - name: Run e2e tests
         run: |
           mkdir -p qwdata
-          RUSTFLAGS="--cfg tokio_unstable" cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
+          cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
           yarn --cwd quickwit-ui e2e-test
         working-directory: ./quickwit
