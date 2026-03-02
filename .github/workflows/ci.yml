@@ -55,16 +55,24 @@ jobs:
       - name: Cleanup Disk Space
         run: |
           df -h
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/share/swift
-          sudo rm -rf /usr/local/.ghcup
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          df -h
+
+          if [ "$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')" -lt 30 ]; then
+            echo "Less than 30GiB available. Running cleanup..."
+            sudo rm -rf /usr/share/dotnet
+            sudo rm -rf /usr/local/lib/android
+            sudo rm -rf /usr/share/swift
+            sudo rm -rf /usr/local/.ghcup
+            sudo rm -rf /opt/hostedtoolcache/CodeQL
+            df -h
+          else
+            echo "30GiB or more available. Skipping cleanup."
+          fi
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - name: Install Ubuntu packages
-        run: sudo apt-get -y install protobuf-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install protobuf-compiler
       - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v.6.1.0
         with:
           python-version: '3.11'
@@ -90,7 +98,7 @@ jobs:
           workspaces: "./quickwit -> target"
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@34ce5120836e5f9f1508d8713d7fdea0e8facd6f # v3.0.1
+        uses: taiki-e/install-action@aba36d755ec7ca22d38b12111787c26115943952
         with:
           tool: cargo-nextest
       - name: cargo build
@@ -132,7 +140,9 @@ jobs:
               - .github/workflows/ci.yml
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: sudo apt-get -y install protobuf-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install protobuf-compiler
       - name: Setup nightly Rust Toolchain (for rustfmt)
         if: steps.modified.outputs.rust_src == 'true'
         uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master
