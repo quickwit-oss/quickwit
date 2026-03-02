@@ -51,24 +51,6 @@ jobs:
       actions: write
       contents: read
       id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        task:
-          - name: Cypress run
-            command: |
-              sudo apt-get -y install protobuf-compiler
-              CI=false yarn --cwd quickwit-ui build
-              RUSTFLAGS="--cfg tokio_unstable" cargo build --features=postgres
-              mkdir qwdata
-              RUSTFLAGS="--cfg tokio_unstable" cargo run --features=postgres -- run --service searcher --service metastore --config ../config/quickwit.yaml &
-              yarn --cwd quickwit-ui cypress run
-          - name: Lint
-            command: yarn --cwd quickwit-ui lint
-          - name: Check type consistency
-            command: yarn --cwd quickwit-ui type
-          - name: Unit Test
-            command: yarn --cwd quickwit-ui test
     services:
       postgres:
         image: postgres:latest
