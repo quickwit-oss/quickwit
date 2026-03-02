@@ -3066,28 +3066,19 @@ mod tests {
             client: client_1,
             status: IngesterStatus::Ready,
         };
-        ingester_pool.insert(
-            "node-1".into(),
-            ingester_1,
-        );
+        ingester_pool.insert("node-1".into(), ingester_1);
         let client_2 = IngesterServiceClient::from_mock(mock_ingester_2);
         let ingester_2 = IngesterPoolEntry {
             client: client_2,
             status: IngesterStatus::Ready,
         };
-        ingester_pool.insert(
-            "node-2".into(),
-            ingester_2,
-        );
+        ingester_pool.insert("node-2".into(), ingester_2);
         let client_3 = IngesterServiceClient::from_mock(mock_ingester_3);
         let ingester_3 = IngesterPoolEntry {
             client: client_3,
             status: IngesterStatus::Ready,
         };
-        ingester_pool.insert(
-            "node-3".into(),
-            ingester_3,
-        );
+        ingester_pool.insert("node-3".into(), ingester_3);
         let node_id = "node-1".into();
         let wait_handle = controller.sync_with_ingester(&node_id, &model);
         wait_handle.wait().await;
@@ -3493,7 +3484,13 @@ mod tests {
             .unwrap();
         assert_eq!(num_opened_shards, 1);
 
-        let callback: RebalanceShardsCallback = tokio::time::timeout(CLOSE_SHARDS_REQUEST_TIMEOUT * 2, control_plane_inbox.recv_typed_message()).await.unwrap().unwrap();
+        let callback: RebalanceShardsCallback = tokio::time::timeout(
+            CLOSE_SHARDS_REQUEST_TIMEOUT * 2,
+            control_plane_inbox.recv_typed_message(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(callback.closed_shards.len(), 1);
     }
 
@@ -3791,8 +3788,7 @@ mod tests {
                     .collect();
             let mut opened_shards: Vec<Shard> = Vec::new();
             for _ in 0..shards_to_rebalance.len() {
-                let (num_shards, ingester_id) =
-                    per_ingester_num_shards_sorted.pop_first().unwrap();
+                let (num_shards, ingester_id) = per_ingester_num_shards_sorted.pop_first().unwrap();
                 let opened_shard = Shard {
                     index_uid: Some(index_uid.clone()),
                     source_id: source_id.to_string(),

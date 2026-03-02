@@ -673,8 +673,8 @@ mod tests {
     use quickwit_common::metrics::MEMORY_METRICS;
     use quickwit_common::stream_utils::InFlightValue;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
-    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_ingest::IngesterPoolEntry;
+    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{
         FetchMessage, IngesterServiceClient, IngesterStatus, MockIngesterService,
         TruncateShardsResponse,

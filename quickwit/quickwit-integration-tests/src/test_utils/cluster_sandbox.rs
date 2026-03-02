@@ -601,10 +601,7 @@ impl ClusterSandbox {
     /// After this call, `rest_client` and other lookup methods skip the removed
     /// node, so callers can trigger shutdown concurrently with other sandbox
     /// operations.
-    pub fn remove_node_with_service(
-        &mut self,
-        service: QuickwitService,
-    ) -> NodeShutdownHandle {
+    pub fn remove_node_with_service(&mut self, service: QuickwitService) -> NodeShutdownHandle {
         let idx = self
             .node_shutdown_handles
             .iter()

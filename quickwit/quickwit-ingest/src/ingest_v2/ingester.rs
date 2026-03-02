@@ -1867,7 +1867,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: source_id,
+                source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: None,
             }],
@@ -1929,7 +1929,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: source_id,
+                source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test([
                     "",                           // invalid
@@ -2005,7 +2005,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: source_id,
+                source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test([
                     "",                           // invalid
@@ -2069,7 +2069,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: source_id,
+                source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#])),
             }],
@@ -2131,7 +2131,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: source_id,
+                source_id,
                 shard_id: Some(ShardId::from(0)),
                 doc_batch: Some(DocBatchV2::for_test(["", "[]", r#"{"foo": "bar"}"#])),
             }],
@@ -2237,7 +2237,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: source_id,
+                source_id,
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-foo"}"#])),
             }],
@@ -2673,7 +2673,7 @@ mod tests {
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: Some(index_uid.clone()),
-                source_id: source_id,
+                source_id,
                 shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
             }],
@@ -2964,7 +2964,7 @@ mod tests {
         let open_fetch_stream_request = OpenFetchStreamRequest {
             client_id: "test-client".to_string(),
             index_uid: Some(index_uid.clone()),
-            source_id: source_id,
+            source_id,
             shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::Beginning),
         };
@@ -3130,7 +3130,7 @@ mod tests {
                 },
                 TruncateShardsSubrequest {
                     index_uid: Some(IndexUid::for_test("test-index", 1337)),
-                    source_id: source_id,
+                    source_id,
                     shard_id: Some(ShardId::from(1337)),
                     truncate_up_to_position_inclusive: Some(Position::offset(1337u64)),
                 },
@@ -3177,7 +3177,7 @@ mod tests {
             ingester_id: ingester_ctx.node_id.to_string(),
             subrequests: vec![TruncateShardsSubrequest {
                 index_uid: Some(index_uid.clone()),
-                source_id: source_id,
+                source_id,
                 shard_id: Some(ShardId::from(1)),
                 truncate_up_to_position_inclusive: Some(Position::offset(0u64)),
             }],
@@ -3385,7 +3385,7 @@ mod tests {
         let retain_shards_request = RetainShardsRequest {
             retain_shards_for_sources: vec![RetainShardsForSource {
                 index_uid: Some(index_uid.clone()),
-                source_id: source_id,
+                source_id,
                 shard_ids: vec![ShardId::from(17u64)],
             }],
         };
@@ -3456,7 +3456,7 @@ mod tests {
                 },
                 ShardPKey {
                     index_uid: Some(index_uid.clone()),
-                    source_id: source_id,
+                    source_id,
                     shard_id: Some(ShardId::from(1337)),
                 },
             ],
@@ -3690,7 +3690,7 @@ mod tests {
         let shard_position_update = ShardPositionsUpdate {
             source_uid: SourceUid {
                 index_uid: index_uid.clone(),
-                source_id: source_id,
+                source_id,
             },
             updated_shard_positions: vec![
                 (ShardId::from(1), Position::offset(0u64)),
@@ -3741,7 +3741,7 @@ mod tests {
         );
         let shard_01 = Shard {
             index_uid: Some(index_uid.clone()),
-            source_id: source_id,
+            source_id,
             shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             doc_mapping_uid: Some(doc_mapping_uid),
@@ -3810,7 +3810,7 @@ mod tests {
         };
         let shard_03 = Shard {
             index_uid: Some(index_uid_1.clone()),
-            source_id: source_id,
+            source_id,
             shard_id: Some(ShardId::from(3)),
             shard_state: ShardState::Closed as i32,
             doc_mapping_uid: Some(doc_mapping_uid),

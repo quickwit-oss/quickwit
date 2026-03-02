@@ -1009,7 +1009,9 @@ fn setup_ingester_pool(
                     } else if previous.is_ready() && !updated.is_ready() {
                         let change = build_ingester_remove_change(&previous);
                         Some(change)
-                    } else if previous.ingester_status().is_ready() && !updated.ingester_status().is_ready() {
+                    } else if previous.ingester_status().is_ready()
+                        && !updated.ingester_status().is_ready()
+                    {
                         let change = build_ingester_insert_change(
                             &updated,
                             ingester_opt_clone,
@@ -1762,7 +1764,9 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(1)).await;
 
         assert_eq!(ingester_pool.len(), 1);
-        let pool_entry = ingester_pool.get(&NodeId::from("test-ingester-node")).unwrap();
+        let pool_entry = ingester_pool
+            .get(&NodeId::from("test-ingester-node"))
+            .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Ready);
 
         // Update the node: ingester status transitions from Ready to Decommissioning.
@@ -1785,7 +1789,9 @@ mod tests {
 
         // The node should still be in the pool with updated status.
         assert_eq!(ingester_pool.len(), 1);
-        let pool_entry = ingester_pool.get(&NodeId::from("test-ingester-node")).unwrap();
+        let pool_entry = ingester_pool
+            .get(&NodeId::from("test-ingester-node"))
+            .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Decommissioning);
 
         // Remove the node.

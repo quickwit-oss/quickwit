@@ -28,9 +28,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, DeferableReplyHandler, Handler, Mailbox,
     Supervisor, Universe, WeakMailbox,
 };
-use quickwit_cluster::{
-    ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory,
-};
+use quickwit_cluster::{ClusterChange, ClusterChangeStream, ClusterChangeStreamFactory};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::uri::Uri;
@@ -1165,10 +1163,8 @@ async fn watcher_indexers(
             }
             _ => {}
         }
-        if trigger_rebalance {
-            if mailbox.send_message(RebalanceShards).await.is_err() {
-                return;
-            }
+        if trigger_rebalance && mailbox.send_message(RebalanceShards).await.is_err() {
+            return;
         }
     }
 }
