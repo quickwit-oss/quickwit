@@ -76,7 +76,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.20-dev"
+version = "0.1.22-dev"
 edition = "2024"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
