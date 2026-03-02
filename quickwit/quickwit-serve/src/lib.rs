@@ -558,10 +558,10 @@ pub async fn serve_quickwit(
 
     // Setup the indexer pool to track cluster changes.
     setup_indexer_pool(
-        &node_config,
         cluster.change_stream(),
-        indexer_pool,
         indexing_service_opt.clone(),
+        indexer_pool,
+        node_config.grpc_config.max_message_size,
     );
 
     // Setup ingest service v2.
@@ -989,7 +989,7 @@ fn setup_ingester_pool(
                 ClusterChange::Add(node)
                     if node.is_indexer() && node.ingester_status().is_ready() =>
                 {
-                    let change = build_insert_change(
+                    let change = build_ingester_insert_change(
                         &node,
                         ingester_opt_clone,
                         grpc_max_message_size,
@@ -999,7 +999,7 @@ fn setup_ingester_pool(
                 }
                 ClusterChange::Update { previous, updated } if updated.is_indexer() => {
                     if !previous.is_ready() && updated.is_ready() {
-                        let change = build_insert_change(
+                        let change = build_ingester_insert_change(
                             &updated,
                             ingester_opt_clone,
                             grpc_max_message_size,
@@ -1007,10 +1007,10 @@ fn setup_ingester_pool(
                         );
                         Some(change)
                     } else if previous.is_ready() && !updated.is_ready() {
-                        let change = build_remove_change(&previous);
+                        let change = build_ingester_remove_change(&previous);
                         Some(change)
                     } else if previous.ingester_status().is_ready() && !updated.ingester_status().is_ready() {
-                        let change = build_update_change(
+                        let change = build_ingester_insert_change(
                             &updated,
                             ingester_opt_clone,
                             grpc_max_message_size,
@@ -1022,7 +1022,7 @@ fn setup_ingester_pool(
                     }
                 }
                 ClusterChange::Remove(node) if node.is_indexer() => {
-                    let change = build_remove_change(&node);
+                    let change = build_ingester_remove_change(&node);
                     Some(change)
                 }
                 _ => None,
@@ -1032,7 +1032,7 @@ fn setup_ingester_pool(
     ingester_pool.listen_for_changes(ingester_change_stream);
 }
 
-fn build_insert_change(
+fn build_ingester_insert_change(
     node: &ClusterNode,
     ingester_opt: Option<impl IngesterService>,
     grpc_max_message_size: ByteSize,
@@ -1042,36 +1042,7 @@ fn build_insert_change(
     info!(
         node_id = chitchat_id.node_id,
         generation_id = chitchat_id.generation_id,
-        "adding node `{}` to ingester pool",
-        chitchat_id.node_id,
-    );
-    let node_id: NodeId = node.node_id().into();
-    let ingester_service = build_ingester_service(
-        node,
-        ingester_opt,
-        grpc_max_message_size,
-        grpc_compression_encoding_opt,
-    );
-    let pool_entry = IngesterPoolEntry {
-        client: ingester_service,
-        status: node.ingester_status(),
-    };
-    Change::Insert(node_id, pool_entry)
-}
-
-fn build_update_change(
-    node: &ClusterNode,
-    ingester_opt: Option<impl IngesterService>,
-    grpc_max_message_size: ByteSize,
-    grpc_compression_encoding_opt: Option<CompressionEncoding>,
-) -> Change<NodeId, IngesterPoolEntry> {
-    let chitchat_id = node.chitchat_id();
-    // tower only supports insert and remove nodes,
-    // so we simply re-add the node to the pool when its status is updated.
-    info!(
-        node_id = chitchat_id.node_id,
-        generation_id = chitchat_id.generation_id,
-        "node `{}` ingester status changed to `{}`, re-adding it to the ingester pool",
+        "adding/updating node `{}` with ingester status `{}` to ingester pool",
         chitchat_id.node_id,
         node.ingester_status(),
     );
@@ -1089,7 +1060,7 @@ fn build_update_change(
     Change::Insert(node_id, pool_entry)
 }
 
-fn build_remove_change(node: &ClusterNode) -> Change<NodeId, IngesterPoolEntry> {
+fn build_ingester_remove_change(node: &ClusterNode) -> Change<NodeId, IngesterPoolEntry> {
     let chitchat_id = node.chitchat_id();
     info!(
         node_id = chitchat_id.node_id,
@@ -1250,98 +1221,102 @@ async fn setup_control_plane(
 }
 
 fn setup_indexer_pool(
-    node_config: &NodeConfig,
     cluster_change_stream: ClusterChangeStream,
-    indexer_pool: IndexerPool,
     indexing_service_opt: Option<Mailbox<IndexingService>>,
+    indexer_pool: IndexerPool,
+    grpc_max_message_size: ByteSize,
 ) {
-    let max_message_size = node_config.grpc_config.max_message_size;
     let indexer_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_service_clone_opt = indexing_service_opt.clone();
         Box::pin(async move {
-            match &cluster_change {
-                ClusterChange::Add(node) if node.is_indexer() => {
-                    let chitchat_id = node.chitchat_id();
-                    info!(
-                        node_id = chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
-                        "adding node `{}` to indexer pool",
-                        chitchat_id.node_id,
-                    );
-                }
-                _ => {}
-            };
             match cluster_change {
                 ClusterChange::Add(node) | ClusterChange::Update { updated: node, .. }
                     if node.is_indexer() =>
                 {
-                    let node_id = node.node_id().to_owned();
-                    let indexing_tasks = node.indexing_tasks().to_vec();
-                    let indexing_capacity = node.indexing_capacity();
-
-                    if node.is_self_node() {
-                        // Here, since the service is available locally, we bypass the network stack
-                        // and use the mailbox directly. However, we still want client-side metrics,
-                        // so we use both metrics layers.
-                        let indexing_service_mailbox = indexing_service_clone_opt
-                            .expect("indexing service should be initialized");
-                        // These layers apply to all the RPCs of the indexing service.
-                        let shared_layers = ServiceBuilder::new()
-                            .layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
-                            .into_inner();
-                        let client = IndexingServiceClient::tower()
-                            .stack_layer(shared_layers)
-                            .build_from_mailbox(indexing_service_mailbox);
-                        let change = Change::Insert(
-                            node_id.clone(),
-                            IndexerNodeInfo {
-                                node_id,
-                                generation_id: node.chitchat_id().generation_id,
-                                client,
-                                indexing_tasks,
-                                indexing_capacity,
-                            },
-                        );
-                        Some(change)
-                    } else {
-                        let client = IndexingServiceClient::tower()
-                            .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
-                            .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
-                            .build_from_channel(
-                                node.grpc_advertise_addr(),
-                                node.channel(),
-                                max_message_size,
-                                None,
-                            );
-                        let change = Change::Insert(
-                            node_id.clone(),
-                            IndexerNodeInfo {
-                                node_id,
-                                generation_id: node.chitchat_id().generation_id,
-                                client,
-                                indexing_tasks,
-                                indexing_capacity,
-                            },
-                        );
-                        Some(change)
-                    }
+                    let change = build_indexer_insert_change(
+                        &node,
+                        indexing_service_clone_opt,
+                        grpc_max_message_size,
+                    );
+                    Some(change)
                 }
                 ClusterChange::Remove(node) if node.is_indexer() => {
-                    let chitchat_id = node.chitchat_id();
-                    info!(
-                        node_id = chitchat_id.node_id,
-                        generation_id = chitchat_id.generation_id,
-                        "removing node `{}` from indexer pool",
-                        chitchat_id.node_id,
-                    );
-                    Some(Change::Remove(node.node_id().to_owned()))
+                    let change = build_indexer_remove_change(&node);
+                    Some(change)
                 }
                 _ => None,
             }
         })
     });
     indexer_pool.listen_for_changes(indexer_change_stream);
+}
+
+fn build_indexer_insert_change(
+    node: &ClusterNode,
+    indexing_service_opt: Option<Mailbox<IndexingService>>,
+    grpc_max_message_size: ByteSize,
+) -> Change<NodeId, IndexerNodeInfo> {
+    let chitchat_id = node.chitchat_id();
+    info!(
+        node_id = chitchat_id.node_id,
+        generation_id = chitchat_id.generation_id,
+        "adding node `{}` to indexer pool",
+        chitchat_id.node_id,
+    );
+    let node_id: NodeId = node.node_id().into();
+    let client = build_indexing_service(node, indexing_service_opt, grpc_max_message_size);
+    Change::Insert(
+        node_id.clone(),
+        IndexerNodeInfo {
+            node_id,
+            generation_id: chitchat_id.generation_id,
+            client,
+            indexing_tasks: node.indexing_tasks().to_vec(),
+            indexing_capacity: node.indexing_capacity(),
+        },
+    )
+}
+
+fn build_indexer_remove_change(node: &ClusterNode) -> Change<NodeId, IndexerNodeInfo> {
+    let chitchat_id = node.chitchat_id();
+    info!(
+        node_id = chitchat_id.node_id,
+        generation_id = chitchat_id.generation_id,
+        "removing node `{}` from indexer pool",
+        chitchat_id.node_id,
+    );
+    let node_id: NodeId = node.node_id().into();
+    Change::Remove(node_id)
+}
+
+fn build_indexing_service(
+    node: &ClusterNode,
+    indexing_service_opt: Option<Mailbox<IndexingService>>,
+    max_message_size: ByteSize,
+) -> IndexingServiceClient {
+    if node.is_self_node() {
+        // Here, since the service is available locally, we bypass the network stack
+        // and use the mailbox directly. However, we still want client-side metrics,
+        // so we use both metrics layers.
+        let indexing_service_mailbox =
+            indexing_service_opt.expect("indexing service should be initialized");
+        let shared_layers = ServiceBuilder::new()
+            .layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
+            .layer(INDEXING_GRPC_SERVER_METRICS_LAYER.clone())
+            .into_inner();
+        return IndexingServiceClient::tower()
+            .stack_layer(shared_layers)
+            .build_from_mailbox(indexing_service_mailbox);
+    }
+    IndexingServiceClient::tower()
+        .stack_layer(INDEXING_GRPC_CLIENT_METRICS_LAYER.clone())
+        .stack_layer(TimeoutLayer::new(GRPC_INDEXING_SERVICE_TIMEOUT))
+        .build_from_channel(
+            node.grpc_advertise_addr(),
+            node.channel(),
+            max_message_size,
+            None,
+        )
 }
 
 fn require<T: Clone + Send>(
@@ -1641,10 +1616,10 @@ mod tests {
             ClusterChangeStream::new_unbounded();
         let indexer_pool = IndexerPool::default();
         setup_indexer_pool(
-            &node_config,
             cluster_change_stream,
-            indexer_pool.clone(),
             Some(indexing_service_mailbox),
+            indexer_pool.clone(),
+            node_config.grpc_config.max_message_size,
         );
 
         let new_indexer_node =
