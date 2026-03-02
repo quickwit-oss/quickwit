@@ -45,7 +45,7 @@ use quickwit_proto::types::{
     IndexUid, NodeId, Position, QueueId, ShardId, SourceId, SubrequestId, queue_id, split_queue_id,
 };
 use serde_json::{Value as JsonValue, json};
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::Semaphore;
 use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
@@ -65,7 +65,6 @@ use super::replication::{
     SYN_REPLICATION_STREAM_CAPACITY,
 };
 use super::state::{IngesterState, InnerIngesterState, WeakIngesterState};
-use super::wal_capacity_timeseries::WalDiskCapacityTimeSeries;
 use crate::ingest_v2::doc_mapper::get_or_try_build_doc_mapper;
 use crate::ingest_v2::metrics::report_wal_usage;
 use crate::ingest_v2::models::IngesterShardType;
@@ -106,7 +105,6 @@ pub struct Ingester {
     memory_capacity: ByteSize,
     rate_limiter_settings: RateLimiterSettings,
     replication_factor: usize,
-    wal_capacity_time_series: Arc<Mutex<WalDiskCapacityTimeSeries>>,
     // This semaphore ensures that the ingester that not run two reset shards operations
     // concurrently.
     reset_shards_permits: Arc<Semaphore>,
@@ -134,17 +132,11 @@ impl Ingester {
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
+        let state = IngesterState::load(wal_dir_path, disk_capacity, rate_limiter_settings);
 
         let weak_state = state.weak();
-        let wal_capacity_time_series =
-            Arc::new(Mutex::new(WalDiskCapacityTimeSeries::new(disk_capacity)));
         BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
-        BroadcastIngesterCapacityScoreTask::spawn(
-            cluster,
-            weak_state.clone(),
-            wal_capacity_time_series.clone(),
-        );
+        BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
         let ingester = Self {
@@ -156,7 +148,6 @@ impl Ingester {
             memory_capacity,
             rate_limiter_settings,
             replication_factor,
-            wal_capacity_time_series,
             reset_shards_permits: Arc::new(Semaphore::new(1)),
         };
         ingester.background_reset_shards();
@@ -477,12 +468,7 @@ impl Ingester {
                 leader_id: leader_id.into(),
                 successes: Vec::new(),
                 failures: persist_failures,
-                routing_update: Some(RoutingUpdate {
-                    // if for some reason a request made it to this ingester, we return a capacity
-                    // score of 0 so that future requests dont get routed to it.
-                    capacity_score: 0,
-                    ..Default::default()
-                }),
+                routing_update: None,
             };
             return Ok(persist_response);
         }
@@ -803,23 +789,17 @@ impl Ingester {
             }
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
-        let (open_shard_counts, closed_shards) = state_guard.get_shard_snapshot();
-        drop(state_guard);
-
         let disk_used = wal_usage.disk_used_bytes as u64;
+        let (open_shard_counts, closed_shards) = state_guard.get_shard_snapshot();
+        let capacity_score = state_guard
+            .wal_capacity_time_series
+            .score(ByteSize::b(disk_used)) as u32;
+        drop(state_guard);
 
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
         }
         report_wal_usage(wal_usage);
-
-        // Since we just updated ingester state, we can piggyback a fresh routing update on
-        // the persist response.
-        let capacity_score = self
-            .wal_capacity_time_series
-            .lock()
-            .await
-            .score(ByteSize::b(disk_used)) as u32;
 
         let source_shard_updates = open_shard_counts
             .into_iter()

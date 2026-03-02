@@ -155,8 +155,8 @@ impl NodeBasedRoutingTable {
     }
 
     /// Merges routing updates from a GetOrCreateOpenShards control plane response into the
-    /// table. For existing nodes, updates their open shard count, including counts of 0, from the
-    /// CP response while preserving capacity scores if they already exist.
+    /// table. For existing nodes, updates their open shard count, including if the count is 0, from
+    /// the CP response while preserving capacity scores if they already exist.
     /// New nodes get a default capacity_score of 5.
     pub fn merge_from_shards(
         &mut self,
@@ -167,10 +167,9 @@ impl NodeBasedRoutingTable {
         let per_leader_count: HashMap<NodeId, usize> = shards
             .iter()
             .map(|shard| {
-                (
-                    NodeId::from(shard.leader_id.clone()),
-                    shard.is_open() as usize,
-                )
+                let num_open_shards = shard.is_open() as usize;
+                let leader_id = NodeId::from(shard.leader_id.clone());
+                (leader_id, num_open_shards)
             })
             .into_grouping_map()
             .sum();
@@ -202,35 +201,53 @@ mod tests {
 
     use super::*;
 
-    const TEST_SOURCE: &str = "test-source";
-
-    fn test_index_uid() -> IndexUid {
-        IndexUid::for_test("test-index", 0)
-    }
-
     #[test]
     fn test_apply_capacity_update() {
         let mut table = NodeBasedRoutingTable::default();
-        let key = ("test-index".to_string(), TEST_SOURCE.to_string());
+        let key = ("test-index".to_string(), "test-source".into());
 
         // Insert first node.
-        table.apply_capacity_update("node-1".into(), test_index_uid(), TEST_SOURCE.into(), 8, 3);
+        table.apply_capacity_update(
+            "node-1".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            8,
+            3,
+        );
         let entry = table.table.get(&key).unwrap();
         assert_eq!(entry.nodes.len(), 1);
         assert_eq!(entry.nodes.get("node-1").unwrap().capacity_score, 8);
 
         // Update existing node.
-        table.apply_capacity_update("node-1".into(), test_index_uid(), TEST_SOURCE.into(), 4, 5);
+        table.apply_capacity_update(
+            "node-1".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            4,
+            5,
+        );
         let node = table.table.get(&key).unwrap().nodes.get("node-1").unwrap();
         assert_eq!(node.capacity_score, 4);
         assert_eq!(node.open_shard_count, 5);
 
         // Add second node.
-        table.apply_capacity_update("node-2".into(), test_index_uid(), TEST_SOURCE.into(), 6, 2);
+        table.apply_capacity_update(
+            "node-2".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            6,
+            2,
+        );
         assert_eq!(table.table.get(&key).unwrap().nodes.len(), 2);
 
         // Zero shards: node stays in table but becomes ineligible for routing.
-        table.apply_capacity_update("node-1".into(), test_index_uid(), TEST_SOURCE.into(), 0, 0);
+        table.apply_capacity_update(
+            "node-1".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            0,
+            0,
+        );
         let entry = table.table.get(&key).unwrap();
         assert_eq!(entry.nodes.len(), 2);
         assert_eq!(entry.nodes.get("node-1").unwrap().open_shard_count, 0);
@@ -243,38 +260,62 @@ mod tests {
         let pool = IngesterPool::default();
 
         // Empty table.
-        assert!(!table.has_open_nodes("test-index", TEST_SOURCE, &pool, &HashSet::new()));
+        assert!(!table.has_open_nodes("test-index", "test-source", &pool, &HashSet::new()));
 
         // Node exists but is not in pool.
-        table.apply_capacity_update("node-1".into(), test_index_uid(), TEST_SOURCE.into(), 8, 3);
-        assert!(!table.has_open_nodes("test-index", TEST_SOURCE, &pool, &HashSet::new()));
+        table.apply_capacity_update(
+            "node-1".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            8,
+            3,
+        );
+        assert!(!table.has_open_nodes("test-index", "test-source", &pool, &HashSet::new()));
 
         // Node is in pool → true.
         pool.insert("node-1".into(), IngesterServiceClient::mocked());
-        assert!(table.has_open_nodes("test-index", TEST_SOURCE, &pool, &HashSet::new()));
+        assert!(table.has_open_nodes("test-index", "test-source", &pool, &HashSet::new()));
 
         // Node is unavailable → false.
         let unavailable: HashSet<NodeId> = HashSet::from(["node-1".into()]);
-        assert!(!table.has_open_nodes("test-index", TEST_SOURCE, &pool, &unavailable));
+        assert!(!table.has_open_nodes("test-index", "test-source", &pool, &unavailable));
 
         // Second node available → true despite first being unavailable.
-        table.apply_capacity_update("node-2".into(), test_index_uid(), TEST_SOURCE.into(), 6, 2);
+        table.apply_capacity_update(
+            "node-2".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            6,
+            2,
+        );
         pool.insert("node-2".into(), IngesterServiceClient::mocked());
-        assert!(table.has_open_nodes("test-index", TEST_SOURCE, &pool, &unavailable));
+        assert!(table.has_open_nodes("test-index", "test-source", &pool, &unavailable));
 
         // Node with capacity_score=0 is not eligible.
-        table.apply_capacity_update("node-2".into(), test_index_uid(), TEST_SOURCE.into(), 0, 2);
-        assert!(!table.has_open_nodes("test-index", TEST_SOURCE, &pool, &unavailable));
+        table.apply_capacity_update(
+            "node-2".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            0,
+            2,
+        );
+        assert!(!table.has_open_nodes("test-index", "test-source", &pool, &unavailable));
     }
 
     #[test]
     fn test_pick_node() {
         let mut table = NodeBasedRoutingTable::default();
         let pool = IngesterPool::default();
-        let key = ("test-index".to_string(), TEST_SOURCE.to_string());
+        let key = ("test-index".to_string(), "test-source".to_string());
 
         // Node exists but not in pool → None.
-        table.apply_capacity_update("node-1".into(), test_index_uid(), TEST_SOURCE.into(), 8, 3);
+        table.apply_capacity_update(
+            "node-1".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            8,
+            3,
+        );
         assert!(
             table
                 .table
@@ -295,7 +336,13 @@ mod tests {
         assert_eq!(picked.node_id, NodeId::from("node-1"));
 
         // Multiple nodes → something is returned.
-        table.apply_capacity_update("node-2".into(), test_index_uid(), TEST_SOURCE.into(), 2, 1);
+        table.apply_capacity_update(
+            "node-2".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            2,
+            1,
+        );
         pool.insert("node-2".into(), IngesterServiceClient::mocked());
         assert!(
             table
@@ -307,8 +354,20 @@ mod tests {
         );
 
         // Node with capacity_score=0 is skipped.
-        table.apply_capacity_update("node-1".into(), test_index_uid(), TEST_SOURCE.into(), 0, 3);
-        table.apply_capacity_update("node-2".into(), test_index_uid(), TEST_SOURCE.into(), 0, 1);
+        table.apply_capacity_update(
+            "node-1".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            0,
+            3,
+        );
+        table.apply_capacity_update(
+            "node-2".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            0,
+            1,
+        );
         assert!(
             table
                 .table

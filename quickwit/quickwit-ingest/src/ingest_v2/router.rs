@@ -1757,7 +1757,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_router_process_persist_results_applies_piggybacked_feedback() {
+    async fn test_router_process_persist_results_applies_piggybacked_routing_updates() {
         let router = IngestRouter::new(
             "test-router".into(),
             ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),

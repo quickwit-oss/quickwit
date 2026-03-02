@@ -13,7 +13,6 @@
 // limitations under the License.
 
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use bytesize::ByteSize;
@@ -23,16 +22,12 @@ use quickwit_common::shared_consts::INGESTER_CAPACITY_SCORE_PREFIX;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::{NodeId, SourceUid};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 use super::{BROADCAST_INTERVAL_PERIOD, make_key, parse_key};
 use crate::OpenShardCounts;
 use crate::ingest_v2::state::WeakIngesterState;
-use crate::ingest_v2::wal_capacity_timeseries::{
-    WalDiskCapacityTimeSeries, compute_capacity_score,
-};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct IngesterCapacityScore {
@@ -45,24 +40,18 @@ pub struct IngesterCapacityScore {
 pub struct BroadcastIngesterCapacityScoreTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
-    wal_capacity_time_series: Arc<Mutex<WalDiskCapacityTimeSeries>>,
 }
 
 impl BroadcastIngesterCapacityScoreTask {
-    pub fn spawn(
-        cluster: Cluster,
-        weak_state: WeakIngesterState,
-        wal_capacity_time_series: Arc<Mutex<WalDiskCapacityTimeSeries>>,
-    ) -> JoinHandle<()> {
+    pub fn spawn(cluster: Cluster, weak_state: WeakIngesterState) -> JoinHandle<()> {
         let mut broadcaster = Self {
             cluster,
             weak_state,
-            wal_capacity_time_series,
         };
         tokio::spawn(async move { broadcaster.run().await })
     }
 
-    async fn snapshot(&self) -> Result<Option<(ByteSize, OpenShardCounts)>> {
+    async fn snapshot(&self) -> Result<Option<(usize, OpenShardCounts)>> {
         let state = self
             .weak_state
             .upgrade()
@@ -74,15 +63,16 @@ impl BroadcastIngesterCapacityScoreTask {
             return Ok(None);
         }
 
-        let guard = state
+        let mut guard = state
             .lock_fully()
             .await
             .map_err(|_| anyhow::anyhow!("failed to acquire ingester state lock"))?;
         let usage = guard.mrecordlog.resource_usage();
         let disk_used = ByteSize::b(usage.disk_used_bytes as u64);
+        let capacity_score = guard.wal_capacity_time_series.record_and_score(disk_used);
         let (open_shard_counts, _) = guard.get_shard_snapshot();
 
-        Ok(Some((disk_used, open_shard_counts)))
+        Ok(Some((capacity_score, open_shard_counts)))
     }
 
     async fn run(&mut self) {
@@ -92,7 +82,7 @@ impl BroadcastIngesterCapacityScoreTask {
         loop {
             interval.tick().await;
 
-            let (disk_used, open_shard_counts) = match self.snapshot().await {
+            let (capacity_score, open_shard_counts) = match self.snapshot().await {
                 Ok(Some(snapshot)) => snapshot,
                 Ok(None) => continue,
                 Err(error) => {
@@ -100,14 +90,6 @@ impl BroadcastIngesterCapacityScoreTask {
                     return;
                 }
             };
-
-            let mut ts_guard = self.wal_capacity_time_series.lock().await;
-            ts_guard.record(disk_used);
-            let remaining_capacity = ts_guard.current().unwrap_or(1.0);
-            let capacity_delta = ts_guard.delta().unwrap_or(0.0);
-            drop(ts_guard);
-
-            let capacity_score = compute_capacity_score(remaining_capacity, capacity_delta);
 
             previous_sources = self
                 .broadcast_capacity(capacity_score, &open_shard_counts, &previous_sources)
@@ -209,9 +191,6 @@ mod tests {
         let task = BroadcastIngesterCapacityScoreTask {
             cluster,
             weak_state,
-            wal_capacity_time_series: Arc::new(Mutex::new(WalDiskCapacityTimeSeries::new(
-                ByteSize::mb(1),
-            ))),
         };
         assert!(task.snapshot().await.is_err());
     }
@@ -224,7 +203,9 @@ mod tests {
             .unwrap();
         let event_broker = EventBroker::default();
 
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        // Use 1000 bytes disk capacity so 500 used => 50% remaining, 0 delta => score = 6
+        let (_temp_dir, state) =
+            IngesterState::for_test_with_disk_capacity(ByteSize::b(1000)).await;
         let index_uid = IndexUid::for_test("test-index", 0);
         let mut state_guard = state.lock_partially().await.unwrap();
         let shard = IngesterShard::new_solo(
@@ -236,26 +217,17 @@ mod tests {
         .build();
         state_guard.shards.insert(shard.queue_id(), shard);
         let (open_shard_counts, _) = state_guard.get_shard_snapshot();
+        let capacity_score = state_guard
+            .wal_capacity_time_series
+            .record_and_score(ByteSize::b(500));
         drop(state_guard);
 
-        // Simulate 500 of 1000 bytes capacity used => 50% remaining, 0 delta => score = 6
-        let ts = Arc::new(Mutex::new(WalDiskCapacityTimeSeries::new(ByteSize::b(
-            1000,
-        ))));
+        assert_eq!(capacity_score, 6);
+
         let task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
             weak_state: state.weak(),
-            wal_capacity_time_series: ts.clone(),
         };
-        {
-            let mut ts_guard = ts.lock().await;
-            ts_guard.record(ByteSize::b(500));
-            let remaining = ts_guard.current().unwrap();
-            let delta = ts_guard.delta().unwrap();
-            assert_eq!(compute_capacity_score(remaining, delta), 6);
-        }
-        let capacity_score = 6;
-        assert_eq!(capacity_score, 6);
 
         let update_counter = Arc::new(AtomicUsize::new(0));
         let update_counter_clone = update_counter.clone();

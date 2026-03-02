@@ -19,6 +19,7 @@ use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
+use bytesize::ByteSize;
 use itertools::Itertools;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use quickwit_common::pretty::PrettyDisplay;
@@ -34,6 +35,7 @@ use tracing::{error, info};
 use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
+use super::wal_capacity_timeseries::WalDiskCapacityTimeSeries;
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
 use crate::mrecordlog_async::MultiRecordLogAsync;
 use crate::{FollowerId, LeaderId, OpenShardCounts};
@@ -59,6 +61,7 @@ pub(super) struct InnerIngesterState {
     pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
     // Replication tasks running for each replication stream opened with leaders.
     pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
+    pub wal_capacity_time_series: WalDiskCapacityTimeSeries,
     status: IngesterStatus,
     status_tx: watch::Sender<IngesterStatus>,
 }
@@ -127,7 +130,7 @@ impl InnerIngesterState {
 }
 
 impl IngesterState {
-    fn new() -> Self {
+    fn new(disk_capacity: ByteSize) -> Self {
         let status = IngesterStatus::Initializing;
         let (status_tx, status_rx) = watch::channel(status);
         let inner = InnerIngesterState {
@@ -135,6 +138,7 @@ impl IngesterState {
             doc_mappers: Default::default(),
             replication_streams: Default::default(),
             replication_tasks: Default::default(),
+            wal_capacity_time_series: WalDiskCapacityTimeSeries::new(disk_capacity),
             status,
             status_tx,
         };
@@ -148,8 +152,12 @@ impl IngesterState {
         }
     }
 
-    pub fn load(wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) -> Self {
-        let state = Self::new();
+    pub fn load(
+        wal_dir_path: &Path,
+        disk_capacity: ByteSize,
+        rate_limiter_settings: RateLimiterSettings,
+    ) -> Self {
+        let state = Self::new(disk_capacity);
         let state_clone = state.clone();
         let wal_dir_path = wal_dir_path.to_path_buf();
 
@@ -163,8 +171,17 @@ impl IngesterState {
 
     #[cfg(test)]
     pub async fn for_test() -> (tempfile::TempDir, Self) {
+        Self::for_test_with_disk_capacity(ByteSize::mb(256)).await
+    }
+
+    #[cfg(test)]
+    pub async fn for_test_with_disk_capacity(disk_capacity: ByteSize) -> (tempfile::TempDir, Self) {
         let temp_dir = tempfile::tempdir().unwrap();
-        let mut state = IngesterState::load(temp_dir.path(), RateLimiterSettings::default());
+        let mut state = IngesterState::load(
+            temp_dir.path(),
+            disk_capacity,
+            RateLimiterSettings::default(),
+        );
 
         state
             .status_rx
@@ -513,7 +530,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_does_not_lock_while_initializing() {
-        let state = IngesterState::new();
+        let state = IngesterState::new(ByteSize::mb(256));
         let inner_guard = state.inner.lock().await;
 
         assert_eq!(inner_guard.status(), IngesterStatus::Initializing);
@@ -528,7 +545,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_failed() {
-        let state = IngesterState::new();
+        let state = IngesterState::new(ByteSize::mb(256));
 
         state.inner.lock().await.set_status(IngesterStatus::Failed);
 
@@ -541,7 +558,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_init() {
-        let mut state = IngesterState::new();
+        let mut state = IngesterState::new(ByteSize::mb(256));
         let temp_dir = tempfile::tempdir().unwrap();
 
         state

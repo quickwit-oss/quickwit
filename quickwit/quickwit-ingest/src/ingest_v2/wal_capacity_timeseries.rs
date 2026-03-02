@@ -40,27 +40,36 @@ impl WalDiskCapacityTimeSeries {
         }
     }
 
-    pub(super) fn record(&mut self, disk_used: ByteSize) {
+    /// Records a disk usage reading and returns the resulting capacity score.
+    pub fn record_and_score(&mut self, disk_used: ByteSize) -> usize {
+        self.record(disk_used);
+        let remaining = self.current().unwrap_or(1.0);
+        let delta = self.delta().unwrap_or(0.0);
+        compute_capacity_score(remaining, delta)
+    }
+
+    /// Computes a capacity score for the given disk usage without recording it.
+    pub fn score(&self, disk_used: ByteSize) -> usize {
+        let remaining = 1.0 - (disk_used.as_u64() as f64 / self.disk_capacity.as_u64() as f64);
+        let delta = self.delta().unwrap_or(0.0);
+        compute_capacity_score(remaining, delta)
+    }
+
+    fn record(&mut self, disk_used: ByteSize) {
         let remaining = 1.0 - (disk_used.as_u64() as f64 / self.disk_capacity.as_u64() as f64);
         self.readings.push_back(remaining.clamp(0.0, 1.0));
     }
 
-    pub(super) fn current(&self) -> Option<f64> {
+    fn current(&self) -> Option<f64> {
         self.readings.last()
     }
 
     /// How much remaining capacity changed between the oldest and newest readings.
     /// Positive = improving, negative = draining.
-    pub(super) fn delta(&self) -> Option<f64> {
+    fn delta(&self) -> Option<f64> {
         let current = self.readings.last()?;
         let oldest = self.readings.front()?;
         Some(current - oldest)
-    }
-
-    pub fn score(&self, disk_used: ByteSize) -> usize {
-        let remaining = 1.0 - (disk_used.as_u64() as f64 / self.disk_capacity.as_u64() as f64);
-        let delta = self.delta().unwrap_or(0.0);
-        compute_capacity_score(remaining, delta)
     }
 }
 
@@ -92,7 +101,7 @@ const DERIVATIVE_WEIGHT: f64 = 2.0;
 /// derivative penalty is fully applied. Drain rates beyond this are clamped.
 const MAX_DRAIN_RATE: f64 = 0.10;
 
-pub(super) fn compute_capacity_score(remaining_capacity: f64, capacity_delta: f64) -> usize {
+fn compute_capacity_score(remaining_capacity: f64, capacity_delta: f64) -> usize {
     if remaining_capacity <= MIN_PERMISSIBLE_CAPACITY {
         return 0;
     }
