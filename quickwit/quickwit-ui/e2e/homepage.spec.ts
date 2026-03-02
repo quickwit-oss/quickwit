@@ -37,5 +37,4 @@ test.describe("Home navigation", () => {
       page.getByLabel("breadcrumb").getByRole("link", { name: "Indexes" }),
     ).toBeVisible();
   });
-
 });
