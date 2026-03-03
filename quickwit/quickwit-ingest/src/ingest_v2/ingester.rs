@@ -132,11 +132,11 @@ impl Ingester {
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let state = IngesterState::load(wal_dir_path, rate_limiter_settings);
+        let state = IngesterState::load(wal_dir_path, disk_capacity, rate_limiter_settings);
 
         let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
-        BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone(), disk_capacity);
+        BroadcastIngesterCapacityScoreTask::spawn(cluster, weak_state.clone());
         CloseIdleShardsTask::spawn(weak_state, idle_shard_timeout);
 
         let ingester = Self {
@@ -468,6 +468,7 @@ impl Ingester {
                 leader_id: leader_id.into(),
                 successes: Vec::new(),
                 failures: persist_failures,
+                routing_update: None,
             };
             return Ok(persist_response);
         }
@@ -788,14 +789,32 @@ impl Ingester {
             }
         }
         let wal_usage = state_guard.mrecordlog.resource_usage();
-        drop(state_guard);
-
         let disk_used = wal_usage.disk_used_bytes as u64;
+        let (open_shard_counts, closed_shards) = state_guard.get_shard_snapshot();
+        let capacity_score = state_guard
+            .wal_capacity_time_series
+            .score(ByteSize::b(disk_used)) as u32;
+        drop(state_guard);
 
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
             self.background_reset_shards();
         }
         report_wal_usage(wal_usage);
+
+        let source_shard_updates = open_shard_counts
+            .into_iter()
+            .map(|(index_uid, source_id, count)| SourceShardUpdate {
+                index_uid: Some(index_uid),
+                source_id,
+                open_shard_count: count as u32,
+            })
+            .collect();
+
+        let routing_update = RoutingUpdate {
+            capacity_score,
+            source_shard_updates,
+            closed_shards,
+        };
 
         #[cfg(test)]
         {
@@ -807,6 +826,7 @@ impl Ingester {
             leader_id,
             successes: persist_successes,
             failures: persist_failures,
+            routing_update: Some(routing_update),
         };
         Ok(persist_response)
     }

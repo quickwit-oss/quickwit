@@ -23,7 +23,7 @@ use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, Per
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
-use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause};
+use quickwit_proto::ingest::{IngestV2Error, RateLimitingCause, ShardIds};
 use quickwit_proto::types::{NodeId, SubrequestId};
 use tracing::warn;
 
@@ -47,6 +47,7 @@ pub(super) struct IngestWorkbench {
     /// (The point here is to make sure we do not wait for the failure detection to kick the node
     /// out of the ingest node.)
     pub unavailable_leaders: HashSet<NodeId>,
+    pub closed_shards: Vec<ShardIds>,
     publish_tracker: Option<PublishTracker>,
 }
 
