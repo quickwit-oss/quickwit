@@ -351,6 +351,14 @@ config:
     max_queue_memory_usage: 2GiB # memory capacity * 0.3 (half of staging)
     max_queue_disk_usage: 5GiB # max queue mem usage * 2 (half of staging)
 
+  searcher:
+    lambda:
+      function_name: cloudprem-search
+      max_splits_per_invocation: 8
+      offload_threshold: 0
+      auto_deploy:
+        execution_role_arn: arn:aws:iam::727006795293:role/cloudprem-lambda-execution
+
 # ConfigMap entry that is rendered by consul-template into the DD_API_KEY file for reverse connection
 # Secret stored at: kv/k8s/logs-cloudprem/cloudprem/pomsky-staging/dd_api_key with key dd_api_key
 extraConfigMaps:
