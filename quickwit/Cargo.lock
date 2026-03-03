@@ -7301,7 +7301,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-lambda-client"
-version = "0.1.20-dev"
+version = "0.1.22-dev"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7328,7 +7328,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-lambda-server"
-version = "0.1.20-dev"
+version = "0.1.22-dev"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

@@ -1,0 +1,12 @@
+#
+# Description:
+# The final form of the BUILD file accessed at runtime as an external WORKSPACE.
+#
+
+licenses(["notice"])  # Apache 2.0
+
+exports_files([
+    "tools/PackageParser_deploy.jar",
+    "tools/CreateAar_deploy.jar",
+    "tools/JarFilter_deploy.jar",
+])
