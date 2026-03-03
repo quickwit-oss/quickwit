@@ -81,10 +81,10 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    LocalShardsUpdate, get_idle_shard_timeout, setup_ingester_capacity_update_listener,
-    setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
-    wait_for_ingester_status,
+    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester,
+    IngesterNodeInfo, IngesterPool, LocalShardsUpdate, get_idle_shard_timeout,
+    setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
+    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
@@ -905,6 +905,7 @@ async fn setup_ingest_v2(
         ingester_pool.clone(),
         replication_factor,
         event_broker.clone(),
+        node_config.availability_zone.clone(),
     );
     ingest_router.subscribe();
     setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone())
@@ -954,9 +955,11 @@ async fn setup_ingest_v2(
     };
     // Setup ingester pool change stream.
     let ingester_opt_clone = ingester_opt.clone();
+    let event_broker_clone = event_broker.clone();
     let max_message_size = node_config.grpc_config.max_message_size;
     let ingester_change_stream = cluster.change_stream().filter_map(move |cluster_change| {
         let ingester_opt_clone_clone = ingester_opt_clone.clone();
+        let event_broker_clone_clone = event_broker_clone.clone();
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.is_indexer() => {
@@ -968,6 +971,13 @@ async fn setup_ingest_v2(
                         chitchat_id.node_id,
                     );
                     let node_id: NodeId = node.node_id().into();
+
+                    if let Some(availability_zone) = node.availability_zone() {
+                        event_broker_clone_clone.publish(IngesterNodeInfo::Add {
+                            node_id: node_id.clone(),
+                            availability_zone: availability_zone.to_string(),
+                        });
+                    }
 
                     if node.is_self_node() {
                         // Here, since the service is available locally, we bypass the network stack
@@ -1002,7 +1012,11 @@ async fn setup_ingest_v2(
                         "removing node `{}` from ingester pool",
                         chitchat_id.node_id,
                     );
-                    Some(Change::Remove(node.node_id().into()))
+                    let node_id: NodeId = node.node_id().into();
+                    event_broker_clone_clone.publish(IngesterNodeInfo::Remove {
+                        node_id: node_id.clone(),
+                    });
+                    Some(Change::Remove(node_id))
                 }
                 _ => None,
             }

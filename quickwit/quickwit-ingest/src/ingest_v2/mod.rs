@@ -40,8 +40,8 @@ use std::time::Duration;
 use std::{env, fmt};
 
 pub use broadcast::{
-    LocalShardsUpdate, ShardInfo, ShardInfos, setup_ingester_capacity_update_listener,
-    setup_local_shards_update_listener,
+    IngesterNodeInfo, LocalShardsUpdate, ShardInfo, ShardInfos,
+    setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
 };
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};

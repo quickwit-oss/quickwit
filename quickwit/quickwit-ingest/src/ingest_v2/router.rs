@@ -40,7 +40,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
 use tracing::{error, info};
 
-use super::broadcast::IngesterCapacityScoreUpdate;
+use super::broadcast::{IngesterCapacityScoreUpdate, IngesterNodeInfo};
 use super::debouncing::{
     DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsRequestDebouncer,
 };
@@ -120,10 +120,11 @@ impl IngestRouter {
         ingester_pool: IngesterPool,
         replication_factor: usize,
         event_broker: EventBroker,
+        self_availability_zone: Option<String>,
     ) -> Self {
         let state = Arc::new(Mutex::new(RouterState {
             debouncer: GetOrCreateOpenShardsRequestDebouncer::default(),
-            node_routing_table: NodeBasedRoutingTable::default(),
+            node_routing_table: NodeBasedRoutingTable::new(self_availability_zone),
         }));
         let ingest_semaphore_permits = get_ingest_router_buffer_size().as_u64() as usize;
         let ingest_semaphore = Arc::new(Semaphore::new(ingest_semaphore_permits));
@@ -142,7 +143,10 @@ impl IngestRouter {
     pub fn subscribe(&self) {
         let weak_router_state = WeakRouterState(Arc::downgrade(&self.state));
         self.event_broker
-            .subscribe::<IngesterCapacityScoreUpdate>(weak_router_state)
+            .subscribe::<IngesterCapacityScoreUpdate>(weak_router_state.clone())
+            .forever();
+        self.event_broker
+            .subscribe::<IngesterNodeInfo>(weak_router_state)
             .forever();
     }
 
@@ -352,10 +356,12 @@ impl IngestRouter {
         let state_guard = self.state.lock().await;
 
         for subrequest in pending_subrequests(&workbench.subworkbenches) {
-            let ingester_node = state_guard
-                .node_routing_table
-                .find_entry(&subrequest.index_id, &subrequest.source_id)
-                .and_then(|entry| entry.pick_node(&self.ingester_pool, unavailable_leaders));
+            let ingester_node = state_guard.node_routing_table.pick_node(
+                &subrequest.index_id,
+                &subrequest.source_id,
+                &self.ingester_pool,
+                unavailable_leaders,
+            );
 
             let ingester_node = match ingester_node {
                 Some(node) => node,
@@ -612,6 +618,31 @@ impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
     }
 }
 
+#[async_trait]
+impl EventSubscriber<IngesterNodeInfo> for WeakRouterState {
+    async fn handle_event(&mut self, info: IngesterNodeInfo) {
+        let Some(state) = self.0.upgrade() else {
+            return;
+        };
+        let mut state_guard = state.lock().await;
+        match info {
+            IngesterNodeInfo::Add {
+                node_id,
+                availability_zone,
+            } => {
+                state_guard
+                    .node_routing_table
+                    .update_node_availability_zone(node_id, availability_zone);
+            }
+            IngesterNodeInfo::Remove { node_id } => {
+                state_guard
+                    .node_routing_table
+                    .remove_node_availability_zone(&node_id);
+            }
+        }
+    }
+}
+
 pub(super) struct PersistRequestSummary {
     pub leader_id: NodeId,
     pub subrequest_ids: Vec<SubrequestId>,
@@ -649,6 +680,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let mut workbench = IngestWorkbench::default();
         let (get_or_create_open_shard_request_opt, rendezvous) = router
@@ -859,6 +891,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -957,6 +990,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1016,6 +1050,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1046,6 +1081,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1103,6 +1139,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1163,6 +1200,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1246,6 +1284,7 @@ mod tests {
             ingester_pool.clone(),
             1,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
 
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
@@ -1388,6 +1427,7 @@ mod tests {
             ingester_pool.clone(),
             1,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         {
@@ -1491,6 +1531,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let index_uid_0: IndexUid = IndexUid::for_test("test-index-0", 0);
         let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
@@ -1547,6 +1588,7 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         {
@@ -1624,12 +1666,14 @@ mod tests {
     #[tokio::test]
     async fn test_router_updates_node_routing_table_on_capacity_update() {
         let event_broker = EventBroker::default();
+        let ingester_pool = IngesterPool::default();
         let router = IngestRouter::new(
             "test-router".into(),
             ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
-            IngesterPool::default(),
+            ingester_pool.clone(),
             1,
             event_broker.clone(),
+            Some("test-az".to_string()),
         );
         router.subscribe();
 
@@ -1645,14 +1689,73 @@ mod tests {
         // Give the async subscriber a moment to process.
         tokio::time::sleep(Duration::from_millis(10)).await;
 
+        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
         let state_guard = router.state.lock().await;
-        let entry = state_guard
+        let node = state_guard
             .node_routing_table
-            .find_entry("test-index", "test-source")
+            .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
             .unwrap();
-        let node = entry.nodes.get("test-ingester-0").unwrap();
-        assert_eq!(node.capacity_score, 7);
-        assert_eq!(node.open_shard_count, 3);
+        assert_eq!(node.node_id, NodeId::from("test-ingester-0"));
+    }
+
+    #[tokio::test]
+    async fn test_router_ingester_node_info_add_and_remove() {
+        let event_broker = EventBroker::default();
+        let ingester_pool = IngesterPool::default();
+        let router = IngestRouter::new(
+            "test-router".into(),
+            ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
+            ingester_pool.clone(),
+            1,
+            event_broker.clone(),
+            Some("test-az".to_string()),
+        );
+        router.subscribe();
+
+        for node_id in ["test-ingester-0", "test-ingester-1"] {
+            event_broker.publish(IngesterCapacityScoreUpdate {
+                node_id: node_id.into(),
+                source_uid: SourceUid {
+                    index_uid: IndexUid::for_test("test-index", 0),
+                    source_id: "test-source".to_string(),
+                },
+                capacity_score: 5,
+                open_shard_count: 1,
+            });
+            ingester_pool.insert(node_id.into(), IngesterServiceClient::mocked());
+        }
+
+        // ingester-0 is in our AZ.
+        event_broker.publish(IngesterNodeInfo::Add {
+            node_id: "test-ingester-0".into(),
+            availability_zone: "test-az".to_string(),
+        });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let state_guard = router.state.lock().await;
+        let node = state_guard
+            .node_routing_table
+            .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(node.node_id, NodeId::from("test-ingester-0"));
+        drop(state_guard);
+
+        // Remove ingester-0's AZ, add ingester-1 as local instead.
+        event_broker.publish(IngesterNodeInfo::Remove {
+            node_id: "test-ingester-0".into(),
+        });
+        event_broker.publish(IngesterNodeInfo::Add {
+            node_id: "test-ingester-1".into(),
+            availability_zone: "test-az".to_string(),
+        });
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let state_guard = router.state.lock().await;
+        let node = state_guard
+            .node_routing_table
+            .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(node.node_id, NodeId::from("test-ingester-1"));
     }
 
     #[tokio::test]
@@ -1663,6 +1766,7 @@ mod tests {
             IngesterPool::default(),
             1,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let ingest_subrequests = vec![
             IngestSubrequest {
@@ -1749,12 +1853,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_process_persist_results_applies_piggybacked_routing_updates() {
+        let ingester_pool = IngesterPool::default();
         let router = IngestRouter::new(
             "test-router".into(),
             ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
-            IngesterPool::default(),
+            ingester_pool.clone(),
             1,
             EventBroker::default(),
+            Some("test-az".to_string()),
         );
         let ingest_subrequests = vec![IngestSubrequest {
             subrequest_id: 0,
@@ -1790,13 +1896,12 @@ mod tests {
             .process_persist_results(&mut workbench, persist_futures)
             .await;
 
+        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
         let state_guard = router.state.lock().await;
-        let entry = state_guard
+        let node = state_guard
             .node_routing_table
-            .find_entry("test-index", "test-source")
+            .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
             .unwrap();
-        let node = entry.nodes.get("test-ingester-0").unwrap();
-        assert_eq!(node.capacity_score, 3);
-        assert_eq!(node.open_shard_count, 2);
+        assert_eq!(node.node_id, NodeId::from("test-ingester-0"));
     }
 }
