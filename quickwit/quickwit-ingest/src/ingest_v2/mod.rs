@@ -22,7 +22,6 @@ mod metrics;
 mod models;
 mod mrecord;
 mod mrecordlog_utils;
-#[allow(dead_code)]
 mod node_routing_table;
 mod publish_tracker;
 mod rate_meter;
