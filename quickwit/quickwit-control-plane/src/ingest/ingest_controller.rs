@@ -52,7 +52,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, RngCore, rng};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
-use tracing::{Level, debug, enabled, error, info, warn};
+use tracing::{Level, debug, enabled, error, info, instrument, warn};
 use ulid::Ulid;
 
 use super::scaling_arbiter::ScalingArbiter;
@@ -1011,6 +1011,7 @@ impl IngestController {
     ///
     /// This method is guarded by a lock to ensure that only one rebalance operation is performed at
     /// a time.
+    #[instrument(skip_all)]
     pub(crate) async fn rebalance_shards(
         &mut self,
         model: &mut ControlPlaneModel,
