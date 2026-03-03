@@ -8,9 +8,11 @@ on:
   pull_request:
     branches:
       - main
+      - develop
   push:
     branches:
       - main
+      - develop
   workflow_dispatch:
   schedule:
     - cron: 0 1 * * 1-5
