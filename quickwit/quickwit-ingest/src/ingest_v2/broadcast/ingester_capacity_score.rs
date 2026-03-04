@@ -69,7 +69,8 @@ impl BroadcastIngesterCapacityScoreTask {
             .map_err(|_| anyhow::anyhow!("failed to acquire ingester state lock"))?;
         let usage = guard.mrecordlog.resource_usage();
         let disk_used = ByteSize::b(usage.disk_used_bytes as u64);
-        let capacity_score = guard.wal_capacity_time_series.record_and_score(disk_used);
+        let memory_used = ByteSize::b(usage.memory_used_bytes as u64);
+        let capacity_score = guard.wal_capacity_tracker.record_and_score(disk_used, memory_used);
         let (open_shard_counts, _) = guard.get_shard_snapshot();
 
         Ok(Some((capacity_score, open_shard_counts)))
@@ -218,8 +219,8 @@ mod tests {
         state_guard.shards.insert(shard.queue_id(), shard);
         let (open_shard_counts, _) = state_guard.get_shard_snapshot();
         let capacity_score = state_guard
-            .wal_capacity_time_series
-            .record_and_score(ByteSize::b(500));
+            .wal_capacity_tracker
+            .record_and_score(ByteSize::b(500), ByteSize::b(0));
         drop(state_guard);
 
         assert_eq!(capacity_score, 6);

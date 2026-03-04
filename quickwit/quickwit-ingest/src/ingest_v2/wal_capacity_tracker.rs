@@ -25,38 +25,36 @@ const WAL_CAPACITY_LOOKBACK_WINDOW_LEN: usize = 6;
 /// reading would be discarded when the next reading is inserted.
 const WAL_CAPACITY_READINGS_LEN: usize = WAL_CAPACITY_LOOKBACK_WINDOW_LEN + 1;
 
-pub struct WalDiskCapacityTimeSeries {
-    disk_capacity: ByteSize,
+struct WalCapacityTimeSeries {
+    capacity: ByteSize,
     readings: RingBuffer<f64, WAL_CAPACITY_READINGS_LEN>,
 }
 
-impl WalDiskCapacityTimeSeries {
-    pub fn new(disk_capacity: ByteSize) -> Self {
+impl WalCapacityTimeSeries {
+    fn new(capacity: ByteSize) -> Self {
         #[cfg(not(test))]
-        assert!(disk_capacity.as_u64() > 0);
+        assert!(capacity.as_u64() > 0);
         Self {
-            disk_capacity,
+            capacity,
             readings: RingBuffer::default(),
         }
     }
 
-    /// Records a disk usage reading and returns the resulting capacity score.
-    pub fn record_and_score(&mut self, disk_used: ByteSize) -> usize {
-        self.record(disk_used);
+    fn record_and_score(&mut self, used: ByteSize) -> usize {
+        self.record(used);
         let remaining = self.current().unwrap_or(1.0);
         let delta = self.delta().unwrap_or(0.0);
         compute_capacity_score(remaining, delta)
     }
 
-    /// Computes a capacity score for the given disk usage without recording it.
-    pub fn score(&self, disk_used: ByteSize) -> usize {
-        let remaining = 1.0 - (disk_used.as_u64() as f64 / self.disk_capacity.as_u64() as f64);
+    fn score(&self, used: ByteSize) -> usize {
+        let remaining = 1.0 - (used.as_u64() as f64 / self.capacity.as_u64() as f64);
         let delta = self.delta().unwrap_or(0.0);
         compute_capacity_score(remaining, delta)
     }
 
-    fn record(&mut self, disk_used: ByteSize) {
-        let remaining = 1.0 - (disk_used.as_u64() as f64 / self.disk_capacity.as_u64() as f64);
+    fn record(&mut self, used: ByteSize) {
+        let remaining = 1.0 - (used.as_u64() as f64 / self.capacity.as_u64() as f64);
         self.readings.push_back(remaining.clamp(0.0, 1.0));
     }
 
@@ -64,12 +62,39 @@ impl WalDiskCapacityTimeSeries {
         self.readings.last()
     }
 
-    /// How much remaining capacity changed between the oldest and newest readings.
-    /// Positive = improving, negative = draining.
     fn delta(&self) -> Option<f64> {
         let current = self.readings.last()?;
         let oldest = self.readings.front()?;
         Some(current - oldest)
+    }
+}
+
+pub struct WalCapacityTracker {
+    disk: WalCapacityTimeSeries,
+    memory: WalCapacityTimeSeries,
+}
+
+impl WalCapacityTracker {
+    pub fn new(disk_capacity: ByteSize, memory_capacity: ByteSize) -> Self {
+        Self {
+            disk: WalCapacityTimeSeries::new(disk_capacity),
+            memory: WalCapacityTimeSeries::new(memory_capacity),
+        }
+    }
+
+    /// Records disk and memory usage readings and returns the resulting capacity score.
+    /// The score is the minimum of the individual disk and memory scores.
+    pub fn record_and_score(&mut self, disk_used: ByteSize, memory_used: ByteSize) -> usize {
+        let disk_score = self.disk.record_and_score(disk_used);
+        let memory_score = self.memory.record_and_score(memory_used);
+        disk_score.min(memory_score)
+    }
+
+    /// Computes a capacity score for the given usage without recording it.
+    pub fn score(&self, disk_used: ByteSize, memory_used: ByteSize) -> usize {
+        let disk_score = self.disk.score(disk_used);
+        let memory_score = self.memory.score(memory_used);
+        disk_score.min(memory_score)
     }
 }
 
@@ -115,18 +140,18 @@ fn compute_capacity_score(remaining_capacity: f64, capacity_delta: f64) -> usize
 mod tests {
     use super::*;
 
-    fn ts() -> WalDiskCapacityTimeSeries {
-        WalDiskCapacityTimeSeries::new(ByteSize::b(100))
+    fn ts() -> WalCapacityTimeSeries {
+        WalCapacityTimeSeries::new(ByteSize::b(100))
     }
 
     /// Helper: record a reading with `used` bytes against the series' fixed capacity.
-    fn record(series: &mut WalDiskCapacityTimeSeries, used: u64) {
+    fn record(series: &mut WalCapacityTimeSeries, used: u64) {
         series.record(ByteSize::b(used));
     }
 
     #[test]
     fn test_wal_disk_capacity_current_after_record() {
-        let mut series = WalDiskCapacityTimeSeries::new(ByteSize::b(256));
+        let mut series = WalCapacityTimeSeries::new(ByteSize::b(256));
         // 192 of 256 used => 25% remaining
         series.record(ByteSize::b(192));
         assert_eq!(series.current(), Some(0.25));
@@ -210,5 +235,12 @@ mod tests {
         // 8th reading evicts the oldest 50-remaining. Delta still spans 6 intervals.
         record(&mut series, 0);
         assert_eq!(series.delta(), Some(0.50));
+    }
+
+    #[test]
+    fn test_wal_capacity_tracker_returns_min() {
+        let mut tracker = WalCapacityTracker::new(ByteSize::b(100), ByteSize::b(100));
+        // Disk 10% used (score 9), memory 90% used (score 2) → returns 2.
+        assert_eq!(tracker.record_and_score(ByteSize::b(10), ByteSize::b(90)), 2);
     }
 }
