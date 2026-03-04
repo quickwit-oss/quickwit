@@ -425,6 +425,7 @@ impl fmt::Debug for S3StorageConfig {
                 "disable_multi_object_delete",
                 &self.disable_multi_object_delete,
             )
+            .field("encryption", &self.encryption)
             .finish()
     }
 }
