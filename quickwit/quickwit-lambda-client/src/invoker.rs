@@ -12,21 +12,56 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
-
 use anyhow::Context as _;
 use async_trait::async_trait;
 use aws_sdk_lambda::Client as LambdaClient;
+use aws_sdk_lambda::error::{DisplayErrorContext, SdkError};
+use aws_sdk_lambda::operation::invoke::InvokeError;
 use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::InvocationType;
 use base64::prelude::*;
 use prost::Message;
+use quickwit_common::retry::{RetryParams, retry};
 use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePayload};
 use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest};
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
 use tracing::{debug, info, instrument};
 
 use crate::metrics::LAMBDA_METRICS;
+
+/// Maps an AWS Lambda SDK invocation error to a `SearchError`.
+fn invoke_error_to_search_error(error: SdkError<InvokeError>) -> SearchError {
+    if let SdkError::ServiceError(ref service_error) = error
+        && matches!(
+            service_error.err(),
+            InvokeError::TooManyRequestsException(_)
+                | InvokeError::EniLimitReachedException(_)
+                | InvokeError::SubnetIpAddressLimitReachedException(_)
+                | InvokeError::Ec2ThrottledException(_)
+                | InvokeError::ResourceConflictException(_)
+        )
+    {
+        return SearchError::TooManyRequests;
+    }
+
+    let is_timeout = match &error {
+        SdkError::TimeoutError(_) => true,
+        SdkError::DispatchFailure(failure) => failure.is_timeout(),
+        SdkError::ServiceError(service_error) => matches!(
+            service_error.err(),
+            InvokeError::EfsMountTimeoutException(_) | InvokeError::SnapStartTimeoutException(_)
+        ),
+        _ => false,
+    };
+
+    let error_msg = format!("lambda invocation failed: {}", DisplayErrorContext(&error));
+
+    if is_timeout {
+        SearchError::Timeout(error_msg)
+    } else {
+        SearchError::Internal(error_msg)
+    }
+}
 
 /// Create a Lambda invoker for a specific version.
 ///
@@ -35,7 +70,7 @@ use crate::metrics::LAMBDA_METRICS;
 pub(crate) async fn create_lambda_invoker_for_version(
     function_name: String,
     version: String,
-) -> anyhow::Result<Arc<dyn LambdaLeafSearchInvoker>> {
+) -> anyhow::Result<AwsLambdaInvoker> {
     let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let client = LambdaClient::new(&aws_config);
     let invoker = AwsLambdaInvoker {
@@ -44,11 +79,11 @@ pub(crate) async fn create_lambda_invoker_for_version(
         version,
     };
     invoker.validate().await?;
-    Ok(Arc::new(invoker))
+    Ok(invoker)
 }
 
 /// AWS Lambda implementation of RemoteFunctionInvoker.
-struct AwsLambdaInvoker {
+pub(crate) struct AwsLambdaInvoker {
     client: LambdaClient,
     function_name: String,
     /// The version number to invoke (e.g., "7", "12").
@@ -79,6 +114,12 @@ impl AwsLambdaInvoker {
     }
 }
 
+const LAMBDA_RETRY_PARAMS: RetryParams = RetryParams {
+    base_delay: std::time::Duration::from_secs(1),
+    max_delay: std::time::Duration::from_secs(10),
+    max_attempts: 3,
+};
+
 #[async_trait]
 impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
     #[instrument(skip(self, request), fields(function_name = %self.function_name, version = %self.version))]
@@ -88,7 +129,10 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
     ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
         let start = std::time::Instant::now();
 
-        let result = self.invoke_leaf_search_inner(request).await;
+        let result = retry(&LAMBDA_RETRY_PARAMS, || {
+            self.invoke_leaf_search_inner(request.clone())
+        })
+        .await;
 
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
@@ -141,7 +185,7 @@ impl AwsLambdaInvoker {
         let response = invoke_builder
             .send()
             .await
-            .map_err(|e| SearchError::Internal(format!("Lambda invocation error: {}", e)))?;
+            .map_err(invoke_error_to_search_error)?;
 
         // Check for function error
         if let Some(error) = response.function_error() {

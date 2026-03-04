@@ -12,18 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { ReportHandler } from "web-vitals";
+import { defineConfig } from "@playwright/test";
 
-const reportWebVitals = (onPerfEntry?: ReportHandler) => {
-  if (onPerfEntry && onPerfEntry instanceof Function) {
-    import("web-vitals").then(({ getCLS, getFID, getFCP, getLCP, getTTFB }) => {
-      getCLS(onPerfEntry);
-      getFID(onPerfEntry);
-      getFCP(onPerfEntry);
-      getLCP(onPerfEntry);
-      getTTFB(onPerfEntry);
-    });
-  }
-};
-
-export default reportWebVitals;
+export default defineConfig({
+  testDir: "./e2e",
+  use: {
+    baseURL: "http://127.0.0.1:7280/ui",
+    browserName: "chromium",
+    video: "off",
+    screenshot: "off",
+  },
+});
