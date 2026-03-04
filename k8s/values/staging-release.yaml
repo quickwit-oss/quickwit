@@ -1,0 +1,180 @@
+fullnameOverride: pomsky-release
+
+image:
+  repository: 727006795293.dkr.ecr.us-east-1.amazonaws.com/pomsky
+  tag: release
+  pullPolicy: Always
+
+cloudprem:
+  index:
+    minShards: 48 # number of indexers * number of vCPUs * 2 (6 * 4 * 2)
+  reverseConnection:
+    enabled: false
+
+environment:
+  QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
+  # disable mtls verification: we don't have a reverse-proxy doing decapsulation
+  # and putting the certificate into a header in staging
+  CP_DISABLE_CERTIFICATE_VERIFICATION: true
+
+podAnnotations:
+  # https://docs.datadoghq.com/containers/kubernetes/prometheus/?tab=kubernetesadv2
+  # https://docs.datadoghq.com/containers/guide/template_variables/
+  ad.datadoghq.com/pomsky.checks: |
+      {
+        "openmetrics": {
+          "instances": [
+            {
+              "openmetrics_endpoint": "http://%%host%%:7280/metrics",
+              "namespace": "cloudprem",
+              "metrics": [".*"]
+            }
+          ]
+        }
+      }
+  emissary.datadoghq.com/inject-lifecycle: "inject"
+
+tolerations:
+  - key: node
+    operator: Equal
+    effect: NoSchedule
+    value: nodeless
+
+  - key: cpu_arch
+    operator: Equal
+    effect: NoSchedule
+    value: arm64
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+          - key: "node-role.kubernetes.io/nodeless"
+            operator: Exists
+          - key: "node.datadoghq.com/cpu_arch"
+            operator: In
+            values:
+              - arm64
+
+metastore:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+
+  initContainers:
+    # Loads pgpass.tpl and injects the password (loaded from Vault) for the OrgStore metastore db into it,
+    # rendering the output into a /quickwit/pgpass file
+    - name: consul-template-init
+      # Note that this is a hard-coded US1 staging image, should not be copied directly for other envs
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/pgpass.tpl:/quickwit/pgpass:chmod 600 /quickwit/pgpass
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: pgpass-template
+          mountPath: /template/pgpass.tpl
+          subPath: pgpass.tpl
+        - name: pgpass
+          mountPath: /quickwit
+
+  # Additional volumes for the source template and rendered pgpass file
+  extraVolumes:
+    - name: pgpass
+      emptyDir:
+        medium: Memory
+    - name: pgpass-template
+      configMap:
+        name: pomsky-release-pgpass-template
+        items:
+          - key: pgpass.tpl
+            path: pgpass.tpl
+
+  # Mounts the pgpass file for connecting to OrgStore
+  extraVolumeMounts:
+    - name: pgpass
+      mountPath: /quickwit/pgpass
+      subPath: pgpass
+      readOnly: true
+
+  extraEnv:
+    # Points sqlx to the appropriate pgpass file location
+    PGPASSFILE: /quickwit/pgpass
+
+control_plane:
+  resources:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+
+indexer:
+  replicaCount: 6
+
+  resources:
+    limits:
+      cpu: 4
+      memory: 16Gi
+    requests:
+      cpu: 4
+      memory: 16Gi
+
+  persistentVolume:
+    enabled: true
+    storage: 200Gi
+    storageClass: gp3
+
+searcher:
+  replicaCount: 2
+
+  resources:
+    limits:
+      cpu: 4
+      memory: 16Gi
+    requests:
+      cpu: 4
+      memory: 16Gi
+
+janitor:
+  resources:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 2
+      memory: 4Gi
+
+# ConfigMap entry that is rendered by consul-template into a pgpass file used for connecting to the OrgStore metastore DB
+extraConfigMaps:
+  - name: pgpass-template
+    data:
+      pgpass.tpl: |
+        *:*:*:*:{% with secret "kv/orgstore/orgstore-pomsky-release-metastore/orgstore-pomsky-release-metastore-pg-proxy/k8s/logs-cloudprem/cloudprem/credentials" %}{% .Data.data.password %}{% end %}
+
+
+config:
+  default_index_root_uri: s3://logs-cloudprem-staging/release/indexes
+
+  # username for database is $namespace_$serviceAccount with underscores as separators
+  metastore_uri: postgres://logs_cloudprem_cloudprem@orgstore-pomsky-release-metastore-pg-proxy.orgstore-pomsky-release-metastore.all-clusters.local-dc.fabric.dog/pomsky_release_metastore
+
+  ingest_api:
+    max_queue_memory_usage: 5GiB # memory capacity * 0.3
+    max_queue_disk_usage: 10GiB # max queue mem usage * 2
