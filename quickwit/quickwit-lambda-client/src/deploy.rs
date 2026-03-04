@@ -26,7 +26,7 @@
 //! - Old versions are garbage collected (keep current + top 5 most recent)
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use anyhow::{Context, anyhow};
 use aws_sdk_lambda::Client as LambdaClient;
@@ -108,7 +108,7 @@ fn version_description(deploy_config_opt: Option<&LambdaDeployConfig>) -> String
 /// ensuring the deployed Lambda matches the embedded binary.
 pub async fn try_get_or_deploy_invoker(
     lambda_config: &LambdaConfig,
-) -> anyhow::Result<Arc<dyn LambdaLeafSearchInvoker>> {
+) -> anyhow::Result<impl LambdaLeafSearchInvoker> {
     let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let client = LambdaClient::new(&aws_config);
     let function_name = &lambda_config.function_name;

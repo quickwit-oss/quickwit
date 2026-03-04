@@ -14,6 +14,7 @@
 
 use itertools::Itertools;
 use quickwit_common::rate_limited_error;
+use quickwit_common::retry::Retryable;
 use quickwit_doc_mapper::QueryParserError;
 use quickwit_proto::error::grpc_error_to_grpc_status;
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
@@ -172,6 +173,12 @@ impl From<MetastoreError> for SearchError {
             }
             _ => SearchError::Internal(metastore_error.to_string()),
         }
+    }
+}
+
+impl Retryable for SearchError {
+    fn is_retryable(&self) -> bool {
+        matches!(self, SearchError::TooManyRequests | SearchError::Timeout(_))
     }
 }
 
