@@ -241,6 +241,9 @@ mod tests {
     fn test_wal_capacity_tracker_returns_min() {
         let mut tracker = WalCapacityTracker::new(ByteSize::b(100), ByteSize::b(100));
         // Disk 10% used (score 9), memory 90% used (score 2) → returns 2.
-        assert_eq!(tracker.record_and_score(ByteSize::b(10), ByteSize::b(90)), 2);
+        assert_eq!(
+            tracker.record_and_score(ByteSize::b(10), ByteSize::b(90)),
+            2
+        );
     }
 }

@@ -70,7 +70,9 @@ impl BroadcastIngesterCapacityScoreTask {
         let usage = guard.mrecordlog.resource_usage();
         let disk_used = ByteSize::b(usage.disk_used_bytes as u64);
         let memory_used = ByteSize::b(usage.memory_used_bytes as u64);
-        let capacity_score = guard.wal_capacity_tracker.record_and_score(disk_used, memory_used);
+        let capacity_score = guard
+            .wal_capacity_tracker
+            .record_and_score(disk_used, memory_used);
         let (open_shard_counts, _) = guard.get_shard_snapshot();
 
         Ok(Some((capacity_score, open_shard_counts)))

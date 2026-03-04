@@ -132,7 +132,12 @@ impl Ingester {
         idle_shard_timeout: Duration,
     ) -> IngestV2Result<Self> {
         let self_node_id: NodeId = cluster.self_node_id().into();
-        let state = IngesterState::load(wal_dir_path, disk_capacity, memory_capacity, rate_limiter_settings);
+        let state = IngesterState::load(
+            wal_dir_path,
+            disk_capacity,
+            memory_capacity,
+            rate_limiter_settings,
+        );
 
         let weak_state = state.weak();
         BroadcastLocalShardsTask::spawn(cluster.clone(), weak_state.clone());
@@ -788,7 +793,8 @@ impl Ingester {
         let (open_shard_counts, closed_shards) = state_guard.get_shard_snapshot();
         let capacity_score = state_guard
             .wal_capacity_tracker
-            .score(ByteSize::b(disk_used), ByteSize::b(memory_used)) as u32;
+            .score(ByteSize::b(disk_used), ByteSize::b(memory_used))
+            as u32;
         drop(state_guard);
 
         if disk_used >= self.disk_capacity.as_u64() * 90 / 100 {
