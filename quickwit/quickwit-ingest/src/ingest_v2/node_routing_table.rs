@@ -125,9 +125,7 @@ impl NodeBasedRoutingTable {
         unavailable_leaders: &HashSet<NodeId>,
     ) -> Option<&IngesterNode> {
         let key = (index_id.to_string(), source_id.to_string());
-        let Some(entry) = self.table.get(&key) else {
-            return None;
-        };
+        let entry = self.table.get(&key)?;
         entry.pick_node(
             ingester_pool,
             unavailable_leaders,
