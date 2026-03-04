@@ -266,6 +266,7 @@ impl IngestWorkbench {
                     replication_position_inclusive: persist_success.replication_position_inclusive,
                     num_ingested_docs: persist_success.num_persisted_docs,
                     parse_failures: persist_success.parse_failures,
+                    az_routing: subworkbench.az_routing_locality,
                 };
                 successes.push(success);
             } else if let Some(failure) = subworkbench.last_failure_opt {
@@ -274,6 +275,7 @@ impl IngestWorkbench {
                     index_id: subworkbench.subrequest.index_id,
                     source_id: subworkbench.subrequest.source_id,
                     reason: failure.reason() as i32,
+                    az_routing: subworkbench.az_routing_locality,
                 };
                 failures.push(failure);
             }
@@ -355,6 +357,8 @@ pub(super) struct IngestSubworkbench {
     pub last_failure_opt: Option<SubworkbenchFailure>,
     /// The number of persist attempts for this subrequest.
     pub num_attempts: usize,
+    /// AZ routing locality of the last routing decision for this subrequest.
+    pub az_routing_locality: i32,
 }
 
 impl IngestSubworkbench {

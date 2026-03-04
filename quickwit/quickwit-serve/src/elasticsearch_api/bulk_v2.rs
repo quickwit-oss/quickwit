@@ -476,6 +476,7 @@ mod tests {
                             replication_position_inclusive: Some(Position::offset(1u64)),
                             num_ingested_docs: 2,
                             parse_failures: Vec::new(),
+                            az_routing: 0,
                         },
                         IngestSuccess {
                             subrequest_id: 1,
@@ -485,6 +486,7 @@ mod tests {
                             replication_position_inclusive: Some(Position::offset(0u64)),
                             num_ingested_docs: 1,
                             parse_failures: Vec::new(),
+                            az_routing: 0,
                         },
                     ],
                     failures: Vec::new(),
@@ -583,6 +585,7 @@ mod tests {
                         replication_position_inclusive: Some(Position::offset(0u64)),
                         num_ingested_docs: 1,
                         parse_failures: Vec::new(),
+                        az_routing: 0,
                     }],
                     failures: Vec::new(),
                 })
@@ -701,12 +704,14 @@ mod tests {
                             index_id: "my-index-1".to_string(),
                             source_id: INGEST_V2_SOURCE_ID.to_string(),
                             reason: IngestFailureReason::IndexNotFound as i32,
+                            az_routing: 0,
                         },
                         IngestFailure {
                             subrequest_id: 1,
                             index_id: "my-index-2".to_string(),
                             source_id: INGEST_V2_SOURCE_ID.to_string(),
                             reason: IngestFailureReason::IndexNotFound as i32,
+                            az_routing: 0,
                         },
                     ],
                 })
@@ -762,12 +767,14 @@ mod tests {
                     reason: ParseFailureReason::InvalidJson as i32,
                     message: "failed to parse JSON document".to_string(),
                 }],
+                az_routing: 0,
             }],
             failures: vec![IngestFailure {
                 subrequest_id: 1,
                 index_id: "test-index-bar".to_string(),
                 source_id: "test-source".to_string(),
                 reason: IngestFailureReason::IndexNotFound as i32,
+                az_routing: 0,
             }],
         };
         let per_request_doc_handles = HashMap::from_iter([
@@ -851,6 +858,7 @@ mod tests {
                         replication_position_inclusive: Some(Position::offset(1u64)),
                         num_ingested_docs: 2,
                         parse_failures: Vec::new(),
+                        az_routing: 0,
                     }],
                     failures: Vec::new(),
                 })
@@ -888,6 +896,7 @@ mod tests {
                             replication_position_inclusive: Some(Position::offset(1u64)),
                             num_ingested_docs: 2,
                             parse_failures: Vec::new(),
+                            az_routing: 0,
                         },
                         IngestSuccess {
                             subrequest_id: 1,
@@ -897,6 +906,7 @@ mod tests {
                             replication_position_inclusive: Some(Position::offset(0u64)),
                             num_ingested_docs: 1,
                             parse_failures: Vec::new(),
+                            az_routing: 0,
                         },
                     ],
                     failures: Vec::new(),

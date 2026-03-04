@@ -49,6 +49,8 @@ pub struct IngestSuccess {
     pub num_ingested_docs: u32,
     #[prost(message, repeated, tag = "7")]
     pub parse_failures: ::prost::alloc::vec::Vec<super::ParseFailure>,
+    #[prost(enumeration = "AzRoutingLocality", tag = "8")]
+    pub az_routing: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -61,6 +63,45 @@ pub struct IngestFailure {
     pub source_id: ::prost::alloc::string::String,
     #[prost(enumeration = "IngestFailureReason", tag = "5")]
     pub reason: i32,
+    #[prost(enumeration = "AzRoutingLocality", tag = "6")]
+    pub az_routing: i32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AzRoutingLocality {
+    Unspecified = 0,
+    SelfNode = 1,
+    SameAz = 2,
+    CrossAz = 3,
+    NotEnabled = 4,
+}
+impl AzRoutingLocality {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "AZ_ROUTING_LOCALITY_UNSPECIFIED",
+            Self::SelfNode => "AZ_ROUTING_LOCALITY_SELF_NODE",
+            Self::SameAz => "AZ_ROUTING_LOCALITY_SAME_AZ",
+            Self::CrossAz => "AZ_ROUTING_LOCALITY_CROSS_AZ",
+            Self::NotEnabled => "AZ_ROUTING_LOCALITY_NOT_ENABLED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "AZ_ROUTING_LOCALITY_UNSPECIFIED" => Some(Self::Unspecified),
+            "AZ_ROUTING_LOCALITY_SELF_NODE" => Some(Self::SelfNode),
+            "AZ_ROUTING_LOCALITY_SAME_AZ" => Some(Self::SameAz),
+            "AZ_ROUTING_LOCALITY_CROSS_AZ" => Some(Self::CrossAz),
+            "AZ_ROUTING_LOCALITY_NOT_ENABLED" => Some(Self::NotEnabled),
+            _ => None,
+        }
+    }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

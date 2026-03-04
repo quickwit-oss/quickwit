@@ -31,7 +31,7 @@ use quickwit_proto::ingest::ingester::{
     IngesterService, PersistFailureReason, PersistRequest, PersistResponse, PersistSubrequest,
 };
 use quickwit_proto::ingest::router::{
-    IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
+    AzRoutingLocality, IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause};
 use quickwit_proto::types::{NodeId, SubrequestId};
@@ -45,11 +45,11 @@ use super::debouncing::{
     DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsRequestDebouncer,
 };
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
-use super::metrics::IngestResultMetrics;
 use super::node_routing_table::NodeBasedRoutingTable;
 use super::workbench::IngestWorkbench;
 use super::{IngesterPool, pending_subrequests};
 use crate::get_ingest_router_buffer_size;
+use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
 fn ingest_request_timeout() -> Duration {
@@ -350,6 +350,7 @@ impl IngestRouter {
 
         let unavailable_leaders = &workbench.unavailable_leaders;
         let mut no_shards_available_subrequest_ids: Vec<SubrequestId> = Vec::new();
+        let mut az_routing_assignments: Vec<(SubrequestId, i32)> = Vec::new();
         let mut per_leader_persist_subrequests: HashMap<&NodeId, Vec<PersistSubrequest>> =
             HashMap::new();
 
@@ -370,6 +371,10 @@ impl IngestRouter {
                     continue;
                 }
             };
+            let az_locality = state_guard
+                .node_routing_table
+                .classify_az_locality(&ingester_node.node_id, &self.self_node_id);
+            az_routing_assignments.push((subrequest.subrequest_id, az_locality as i32));
             let persist_subrequest = PersistSubrequest {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: Some(ingester_node.index_uid.clone()),
@@ -422,6 +427,11 @@ impl IngestRouter {
         }
         drop(state_guard);
 
+        for (subrequest_id, az_locality) in az_routing_assignments {
+            if let Some(subworkbench) = workbench.subworkbenches.get_mut(&subrequest_id) {
+                subworkbench.az_routing_locality = az_locality;
+            }
+        }
         for subrequest_id in no_shards_available_subrequest_ids {
             workbench.record_no_shards_available(subrequest_id);
         }
@@ -485,87 +495,75 @@ impl IngestRouter {
     }
 }
 
+fn az_routing_locality_as_metric_label(locality: AzRoutingLocality) -> &'static str {
+    match locality {
+        AzRoutingLocality::Unspecified => "unspecified",
+        AzRoutingLocality::SelfNode => "self_node",
+        AzRoutingLocality::SameAz => "same_az",
+        AzRoutingLocality::CrossAz => "cross_az",
+        AzRoutingLocality::NotEnabled => "not_enabled",
+    }
+}
+
+fn ingest_failure_reason_as_metric_label(reason: IngestFailureReason) -> &'static str {
+    match reason {
+        IngestFailureReason::Unspecified => "unspecified",
+        IngestFailureReason::IndexNotFound => "index_not_found",
+        IngestFailureReason::SourceNotFound => "source_not_found",
+        IngestFailureReason::Internal => "internal",
+        IngestFailureReason::NoShardsAvailable => "no_shards_available",
+        IngestFailureReason::ShardRateLimited => "shard_rate_limited",
+        IngestFailureReason::WalFull => "wal_full",
+        IngestFailureReason::Timeout => "timeout",
+        IngestFailureReason::RouterLoadShedding => "router_load_shedding",
+        IngestFailureReason::LoadShedding => "load_shedding",
+        IngestFailureReason::CircuitBreaker => "circuit_breaker",
+    }
+}
+
 fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_subrequests: usize) {
     let num_subrequests = num_subrequests as u64;
-    let ingest_results_metrics: &IngestResultMetrics =
-        &crate::ingest_v2::metrics::INGEST_V2_METRICS.ingest_results;
+    let metrics = &INGEST_V2_METRICS.ingest_results;
     match ingest_result {
         Ok(ingest_response) => {
-            ingest_results_metrics
-                .success
-                .inc_by(ingest_response.successes.len() as u64);
-            for ingest_failure in &ingest_response.failures {
-                match ingest_failure.reason() {
-                    IngestFailureReason::CircuitBreaker => {
-                        ingest_results_metrics.circuit_breaker.inc();
-                    }
-                    IngestFailureReason::Unspecified => ingest_results_metrics.unspecified.inc(),
-                    IngestFailureReason::IndexNotFound => {
-                        ingest_results_metrics.index_not_found.inc()
-                    }
-                    IngestFailureReason::SourceNotFound => {
-                        ingest_results_metrics.source_not_found.inc()
-                    }
-                    IngestFailureReason::Internal => ingest_results_metrics.internal.inc(),
-                    IngestFailureReason::NoShardsAvailable => {
-                        ingest_results_metrics.no_shards_available.inc()
-                    }
-                    IngestFailureReason::ShardRateLimited => {
-                        ingest_results_metrics.shard_rate_limited.inc()
-                    }
-                    IngestFailureReason::WalFull => ingest_results_metrics.wal_full.inc(),
-                    IngestFailureReason::Timeout => ingest_results_metrics.timeout.inc(),
-                    IngestFailureReason::RouterLoadShedding => {
-                        ingest_results_metrics.router_load_shedding.inc()
-                    }
-                    IngestFailureReason::LoadShedding => ingest_results_metrics.load_shedding.inc(),
+            for success in &ingest_response.successes {
+                let az = az_routing_locality_as_metric_label(success.az_routing());
+                metrics.inc("success", az);
+            }
+            for failure in &ingest_response.failures {
+                let az = az_routing_locality_as_metric_label(failure.az_routing());
+                let result = ingest_failure_reason_as_metric_label(failure.reason());
+                metrics.inc(result, az);
+            }
+        }
+        Err(ingest_error) => {
+            let az = "unspecified";
+            match ingest_error {
+                IngestV2Error::TooManyRequests(cause) => {
+                    let result = match cause {
+                        RateLimitingCause::RouterLoadShedding => "router_load_shedding",
+                        RateLimitingCause::LoadShedding => "load_shedding",
+                        RateLimitingCause::WalFull => "wal_full",
+                        RateLimitingCause::CircuitBreaker => "circuit_breaker",
+                        RateLimitingCause::ShardRateLimiting => "shard_rate_limited",
+                        RateLimitingCause::Unknown => "unspecified",
+                    };
+                    metrics.inc_by(result, az, num_subrequests);
+                }
+                IngestV2Error::Timeout(_) => {
+                    metrics.inc_by("router_timeout", az, num_subrequests);
+                }
+                IngestV2Error::ShardNotFound { .. } => {
+                    metrics.inc_by("shard_not_found", az, num_subrequests);
+                }
+                IngestV2Error::Unavailable(_) => {
+                    metrics.inc_by("unavailable", az, num_subrequests);
+                }
+                IngestV2Error::Internal(_) => {
+                    metrics.inc_by("internal", az, num_subrequests);
                 }
             }
         }
-        Err(ingest_error) => match ingest_error {
-            IngestV2Error::TooManyRequests(rate_limiting_cause) => match rate_limiting_cause {
-                RateLimitingCause::RouterLoadShedding => {
-                    ingest_results_metrics
-                        .router_load_shedding
-                        .inc_by(num_subrequests);
-                }
-                RateLimitingCause::LoadShedding => {
-                    ingest_results_metrics.load_shedding.inc_by(num_subrequests)
-                }
-                RateLimitingCause::WalFull => {
-                    ingest_results_metrics.wal_full.inc_by(num_subrequests);
-                }
-                RateLimitingCause::CircuitBreaker => {
-                    ingest_results_metrics
-                        .circuit_breaker
-                        .inc_by(num_subrequests);
-                }
-                RateLimitingCause::ShardRateLimiting => {
-                    ingest_results_metrics
-                        .shard_rate_limited
-                        .inc_by(num_subrequests);
-                }
-                RateLimitingCause::Unknown => {
-                    ingest_results_metrics.unspecified.inc_by(num_subrequests);
-                }
-            },
-            IngestV2Error::Timeout(_) => {
-                ingest_results_metrics
-                    .router_timeout
-                    .inc_by(num_subrequests);
-            }
-            IngestV2Error::ShardNotFound { .. } => {
-                ingest_results_metrics
-                    .shard_not_found
-                    .inc_by(num_subrequests);
-            }
-            IngestV2Error::Unavailable(_) => {
-                ingest_results_metrics.unavailable.inc_by(num_subrequests);
-            }
-            IngestV2Error::Internal(_) => {
-                ingest_results_metrics.internal.inc_by(num_subrequests);
-            }
-        },
     }
 }
 

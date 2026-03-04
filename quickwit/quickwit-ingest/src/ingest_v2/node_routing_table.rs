@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use quickwit_proto::ingest::Shard;
+use quickwit_proto::ingest::router::AzRoutingLocality;
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, SourceId};
 use rand::rng;
 use rand::seq::IndexedRandom;
@@ -134,6 +135,24 @@ impl NodeBasedRoutingTable {
             &self.self_availability_zone,
             &self.node_availability_zone_map,
         )
+    }
+
+    pub fn classify_az_locality(
+        &self,
+        picked_node_id: &NodeId,
+        self_node_id: &NodeId,
+    ) -> AzRoutingLocality {
+        let Some(self_az) = &self.self_availability_zone else {
+            return AzRoutingLocality::NotEnabled;
+        };
+        if picked_node_id == self_node_id {
+            return AzRoutingLocality::SelfNode;
+        }
+        match self.node_availability_zone_map.get(picked_node_id) {
+            Some(node_az) if node_az == self_az => AzRoutingLocality::SameAz,
+            Some(_) => AzRoutingLocality::CrossAz,
+            None => AzRoutingLocality::Unspecified,
+        }
     }
 
     pub fn debug_info(&self) -> HashMap<IndexId, Vec<serde_json::Value>> {
