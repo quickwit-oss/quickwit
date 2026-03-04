@@ -59,7 +59,6 @@ quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest = { workspace = true }
@@ -105,7 +104,6 @@ release-feature-set = [
   "quickwit-storage/azure",
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
-  "quickwit-doc-mapper/multilang",
 ]
 release-feature-vendored-set = [
   "jemalloc",
@@ -119,7 +117,6 @@ release-feature-vendored-set = [
   "quickwit-storage/azure",
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
-  "quickwit-doc-mapper/multilang",
 ]
 release-macos-feature-vendored-set = [
   "jemalloc",
@@ -132,13 +129,8 @@ release-macos-feature-vendored-set = [
   "quickwit-storage/azure",
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
-  "quickwit-doc-mapper/multilang",
 ]
 release-jemalloc-profiled = [
   "release-feature-set",
   "jemalloc-profiled",
 ]
-
-[package.metadata.cargo-machete]
-# used to enable the `multilang` feature
-ignored = ["quickwit-doc-mapper"]

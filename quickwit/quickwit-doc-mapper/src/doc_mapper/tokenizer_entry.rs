@@ -44,10 +44,6 @@ impl TokenizerConfig {
     pub fn text_analyzer(&self) -> anyhow::Result<TextAnalyzer> {
         let mut text_analyzer_builder = match &self.tokenizer_type {
             TokenizerType::Simple => TextAnalyzer::builder(SimpleTokenizer::default()).dynamic(),
-            #[cfg(any(test, feature = "multilang"))]
-            TokenizerType::Multilang => {
-                TextAnalyzer::builder(quickwit_query::MultiLangTokenizer::default()).dynamic()
-            }
             TokenizerType::SourceCode => TextAnalyzer::builder(CodeTokenizer::default()).dynamic(),
             TokenizerType::Ngram(options) => {
                 let tokenizer =
@@ -120,8 +116,6 @@ impl TokenFilterType {
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TokenizerType {
-    #[cfg(any(test, feature = "multilang"))]
-    Multilang,
     Ngram(NgramTokenizerOption),
     Regex(RegexTokenizerOption),
     Simple,
