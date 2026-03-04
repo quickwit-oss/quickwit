@@ -90,7 +90,7 @@ quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
-quickwit-lambda-client = { workspace = true }
+quickwit-lambda-client = { workspace = true, optional = true }
 quickwit-storage = { workspace = true }
 
 [build-dependencies]
@@ -136,6 +136,9 @@ testsuite = []
 sqs-for-tests = [
   "quickwit-indexing/sqs",
   "quickwit-indexing/sqs-test-helpers"
+]
+lambda = [
+  "quickwit-lambda-client"
 ]
 
 [[bench]]
