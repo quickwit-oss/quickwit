@@ -2457,13 +2457,27 @@ mod tests {
 
         let cluster_change_stream_tx = cluster_change_stream_factory.change_stream_tx();
 
-        let metastore_node =
-            ClusterNode::for_test("test-metastore", 1337, false, &["metastore"], &[]).await;
+        let metastore_node = ClusterNode::for_test(
+            "test-metastore",
+            1337,
+            false,
+            &["metastore"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
         let cluster_change = ClusterChange::Add(metastore_node);
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
-        let indexer_node: ClusterNode =
-            ClusterNode::for_test("test-indexer", 1515, false, &["indexer"], &[]).await;
+        let indexer_node: ClusterNode = ClusterNode::for_test(
+            "test-indexer",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
         let cluster_change = ClusterChange::Add(indexer_node.clone());
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
@@ -2474,7 +2488,7 @@ mod tests {
         let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
 
         // Test that a ClusterChange::Update with a status transition triggers rebalance.
-        let node_ready = ClusterNode::for_test_with_ingester_status(
+        let node_ready = ClusterNode::for_test(
             "test-indexer",
             1515,
             false,
@@ -2483,7 +2497,7 @@ mod tests {
             IngesterStatus::Ready,
         )
         .await;
-        let node_retiring = ClusterNode::for_test_with_ingester_status(
+        let node_retiring = ClusterNode::for_test(
             "test-indexer",
             1515,
             false,
@@ -2531,8 +2545,15 @@ mod tests {
                 disable_control_loop,
             );
         let cluster_change_stream_tx = cluster_change_stream_factory.change_stream_tx();
-        let indexer_node: ClusterNode =
-            ClusterNode::for_test("test-indexer", 1515, false, &["indexer"], &[]).await;
+        let indexer_node: ClusterNode = ClusterNode::for_test(
+            "test-indexer",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
         let cluster_change = ClusterChange::Add(indexer_node.clone());
         cluster_change_stream_tx.send(cluster_change).unwrap();
 

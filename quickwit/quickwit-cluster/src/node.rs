@@ -64,25 +64,6 @@ impl ClusterNode {
         is_self_node: bool,
         enabled_services: &[&str],
         indexing_tasks: &[IndexingTask],
-    ) -> Self {
-        Self::for_test_with_ingester_status(
-            node_id,
-            port,
-            is_self_node,
-            enabled_services,
-            indexing_tasks,
-            IngesterStatus::default(),
-        )
-        .await
-    }
-
-    #[cfg(any(test, feature = "testsuite"))]
-    pub async fn for_test_with_ingester_status(
-        node_id: &str,
-        port: u16,
-        is_self_node: bool,
-        enabled_services: &[&str],
-        indexing_tasks: &[IndexingTask],
         ingester_status: IngesterStatus,
     ) -> Self {
         use quickwit_common::shared_consts::INGESTER_STATUS_KEY;

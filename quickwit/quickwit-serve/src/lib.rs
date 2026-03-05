@@ -1624,8 +1624,15 @@ mod tests {
             node_config.grpc_config.max_message_size,
         );
 
-        let new_indexer_node =
-            ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], &[]).await;
+        let new_indexer_node = ClusterNode::for_test(
+            "test-indexer-node",
+            1,
+            true,
+            &["indexer"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
         cluster_change_stream_tx
             .send(ClusterChange::Add(new_indexer_node.clone()))
             .unwrap();
@@ -1649,6 +1656,7 @@ mod tests {
             true,
             &["indexer"],
             std::slice::from_ref(&new_indexing_task),
+            IngesterStatus::Ready,
         )
         .await;
         cluster_change_stream_tx
@@ -1708,7 +1716,15 @@ mod tests {
             .await
             .unwrap_err();
 
-        let self_node = ClusterNode::for_test("node-1", 1337, true, &["searcher"], &[]).await;
+        let self_node = ClusterNode::for_test(
+            "node-1",
+            1337,
+            true,
+            &["searcher"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
         change_stream_tx
             .send(ClusterChange::Add(self_node.clone()))
             .unwrap();
@@ -1724,7 +1740,15 @@ mod tests {
             .send(ClusterChange::Remove(self_node))
             .unwrap();
 
-        let node = ClusterNode::for_test("node-1", 1337, false, &["searcher"], &[]).await;
+        let node = ClusterNode::for_test(
+            "node-1",
+            1337,
+            false,
+            &["searcher"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
         change_stream_tx.send(ClusterChange::Add(node)).unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 
@@ -1749,7 +1773,7 @@ mod tests {
         );
 
         // Add an indexer node with IngesterStatus::Ready.
-        let new_node = ClusterNode::for_test_with_ingester_status(
+        let new_node = ClusterNode::for_test(
             "test-ingester-node",
             1,
             false,
@@ -1770,7 +1794,7 @@ mod tests {
         assert_eq!(pool_entry.status, IngesterStatus::Ready);
 
         // Update the node: ingester status transitions from Ready to Decommissioning.
-        let updated_node = ClusterNode::for_test_with_ingester_status(
+        let updated_node = ClusterNode::for_test(
             "test-ingester-node",
             1,
             false,
