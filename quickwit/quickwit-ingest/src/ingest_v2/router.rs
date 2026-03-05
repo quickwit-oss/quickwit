@@ -50,6 +50,7 @@ use super::node_routing_table::NodeBasedRoutingTable;
 use super::workbench::IngestWorkbench;
 use super::{IngesterPool, pending_subrequests};
 use crate::get_ingest_router_buffer_size;
+use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
 fn ingest_request_timeout() -> Duration {
@@ -367,6 +368,13 @@ impl IngestRouter {
                     continue;
                 }
             };
+            let az_locality = state_guard
+                .node_routing_table
+                .classify_az_locality(&ingester_node.node_id, &self.self_node_id);
+            INGEST_V2_METRICS
+                .ingest_attempts
+                .with_label_values([az_locality])
+                .inc();
             let persist_subrequest = PersistSubrequest {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: Some(ingester_node.index_uid.clone()),
@@ -486,8 +494,7 @@ impl IngestRouter {
 
 fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_subrequests: usize) {
     let num_subrequests = num_subrequests as u64;
-    let ingest_results_metrics: &IngestResultMetrics =
-        &crate::ingest_v2::metrics::INGEST_V2_METRICS.ingest_results;
+    let ingest_results_metrics: &IngestResultMetrics = &INGEST_V2_METRICS.ingest_results;
     match ingest_result {
         Ok(ingest_response) => {
             ingest_results_metrics
