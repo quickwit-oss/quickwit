@@ -119,7 +119,7 @@ async fn main_impl() -> anyhow::Result<()> {
             .context("failed to shutdown OpenTelemetry tracer provider")?;
         logs_provider
             .shutdown()
-            .context("failed to shutdown OpenTelemetry tracer provider")?;
+            .context("failed to shutdown OpenTelemetry logs provider")?;
     }
 
     std::process::exit(return_code)
