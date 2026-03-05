@@ -81,8 +81,8 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester,
-    IngesterNodeInfo, IngesterPool, LocalShardsUpdate, get_idle_shard_timeout,
+    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterHandle,
+    IngesterPool, LocalShardsUpdate, get_idle_shard_timeout,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
     start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
 };
@@ -955,11 +955,9 @@ async fn setup_ingest_v2(
     };
     // Setup ingester pool change stream.
     let ingester_opt_clone = ingester_opt.clone();
-    let event_broker_clone = event_broker.clone();
     let max_message_size = node_config.grpc_config.max_message_size;
     let ingester_change_stream = cluster.change_stream().filter_map(move |cluster_change| {
         let ingester_opt_clone_clone = ingester_opt_clone.clone();
-        let event_broker_clone_clone = event_broker_clone.clone();
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node) if node.is_indexer() => {
@@ -971,28 +969,21 @@ async fn setup_ingest_v2(
                         chitchat_id.node_id,
                     );
                     let node_id: NodeId = node.node_id().into();
+                    let availability_zone = node.availability_zone().map(|az| az.to_string());
 
-                    if let Some(availability_zone) = node.availability_zone() {
-                        event_broker_clone_clone.publish(IngesterNodeInfo::Add {
-                            node_id: node_id.clone(),
-                            availability_zone: availability_zone.to_string(),
-                        });
-                    }
-
-                    if node.is_self_node() {
+                    let client = if node.is_self_node() {
                         // Here, since the service is available locally, we bypass the network stack
                         // and use the instance directly. However, we still want client-side
                         // metrics, so we use both metrics layers.
                         let ingester = ingester_opt_clone_clone
                             .expect("ingester service should be initialized");
-                        let ingester_service = ingester_service_layer_stack(
+                        ingester_service_layer_stack(
                             IngesterServiceClient::tower()
                                 .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone()),
                         )
-                        .build(ingester);
-                        Some(Change::Insert(node_id, ingester_service))
+                        .build(ingester)
                     } else {
-                        let ingester_service = IngesterServiceClient::tower()
+                        IngesterServiceClient::tower()
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
                             .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
                             .build_from_channel(
@@ -1000,9 +991,13 @@ async fn setup_ingest_v2(
                                 node.channel(),
                                 max_message_size,
                                 grpc_compression_encoding_opt,
-                            );
-                        Some(Change::Insert(node_id, ingester_service))
-                    }
+                            )
+                    };
+                    let handle = IngesterHandle {
+                        client,
+                        availability_zone,
+                    };
+                    Some(Change::Insert(node_id, handle))
                 }
                 ClusterChange::Remove(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();
@@ -1012,11 +1007,7 @@ async fn setup_ingest_v2(
                         "removing node `{}` from ingester pool",
                         chitchat_id.node_id,
                     );
-                    let node_id: NodeId = node.node_id().into();
-                    event_broker_clone_clone.publish(IngesterNodeInfo::Remove {
-                        node_id: node_id.clone(),
-                    });
-                    Some(Change::Remove(node_id))
+                    Some(Change::Remove(node.node_id().into()))
                 }
                 _ => None,
             }

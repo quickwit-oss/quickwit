@@ -40,7 +40,7 @@ use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
 use tracing::{error, info};
 
-use super::broadcast::{IngesterCapacityScoreUpdate, IngesterNodeInfo};
+use super::broadcast::IngesterCapacityScoreUpdate;
 use super::debouncing::{
     DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsRequestDebouncer,
 };
@@ -143,10 +143,7 @@ impl IngestRouter {
     pub fn subscribe(&self) {
         let weak_router_state = WeakRouterState(Arc::downgrade(&self.state));
         self.event_broker
-            .subscribe::<IngesterCapacityScoreUpdate>(weak_router_state.clone())
-            .forever();
-        self.event_broker
-            .subscribe::<IngesterNodeInfo>(weak_router_state)
+            .subscribe::<IngesterCapacityScoreUpdate>(weak_router_state)
             .forever();
     }
 
@@ -389,7 +386,7 @@ impl IngestRouter {
                 .iter()
                 .map(|subrequest| subrequest.subrequest_id)
                 .collect();
-            let Some(ingester) = self.ingester_pool.get(&leader_id) else {
+            let Some(ingester) = self.ingester_pool.get(&leader_id).map(|h| h.client) else {
                 no_shards_available_subrequest_ids.extend(subrequest_ids);
                 continue;
             };
@@ -477,7 +474,9 @@ impl IngestRouter {
 
     pub async fn debug_info(&self) -> JsonValue {
         let state_guard = self.state.lock().await;
-        let routing_table_json = state_guard.node_routing_table.debug_info();
+        let routing_table_json = state_guard
+            .node_routing_table
+            .debug_info(&self.ingester_pool);
 
         json!({
             "routing_table": routing_table_json,
@@ -618,31 +617,6 @@ impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
     }
 }
 
-#[async_trait]
-impl EventSubscriber<IngesterNodeInfo> for WeakRouterState {
-    async fn handle_event(&mut self, info: IngesterNodeInfo) {
-        let Some(state) = self.0.upgrade() else {
-            return;
-        };
-        let mut state_guard = state.lock().await;
-        match info {
-            IngesterNodeInfo::Add {
-                node_id,
-                availability_zone,
-            } => {
-                state_guard
-                    .node_routing_table
-                    .update_node_availability_zone(node_id, availability_zone);
-            }
-            IngesterNodeInfo::Remove { node_id } => {
-                state_guard
-                    .node_routing_table
-                    .remove_node_availability_zone(&node_id);
-            }
-        }
-    }
-}
-
 pub(super) struct PersistRequestSummary {
     pub leader_id: NodeId,
     pub subrequest_ids: Vec<SubrequestId>,
@@ -665,7 +639,15 @@ mod tests {
     use quickwit_proto::types::{DocUid, IndexUid, Position, ShardId, SourceUid};
 
     use super::*;
+    use crate::IngesterHandle;
     use crate::ingest_v2::workbench::SubworkbenchFailure;
+
+    fn mocked_ingester() -> IngesterHandle {
+        IngesterHandle {
+            client: IngesterServiceClient::mocked(),
+            availability_zone: None,
+        }
+    }
 
     #[tokio::test]
     async fn test_router_make_get_or_create_open_shard_request() {
@@ -755,7 +737,7 @@ mod tests {
         drop(rendezvous_1);
         drop(rendezvous_2);
 
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
         {
             // Ingester-0 is in pool and in table, but marked unavailable on the workbench
             // (simulating a prior transport error). has_open_nodes returns false → both
@@ -1190,8 +1172,8 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
 
         let ingester_pool = IngesterPool::default();
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
-        ingester_pool.insert("test-ingester-1".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
+        ingester_pool.insert("test-ingester-1".into(), mocked_ingester());
 
         let replication_factor = 1;
         let router = IngestRouter::new(
@@ -1351,7 +1333,10 @@ mod tests {
             });
         ingester_pool.insert(
             "test-ingester-0".into(),
-            IngesterServiceClient::from_mock(mock_ingester_0),
+            IngesterHandle {
+                client: IngesterServiceClient::from_mock(mock_ingester_0),
+                availability_zone: None,
+            },
         );
 
         let mut mock_ingester_1 = MockIngesterService::new();
@@ -1383,7 +1368,10 @@ mod tests {
             });
         ingester_pool.insert(
             "test-ingester-1".into(),
-            IngesterServiceClient::from_mock(mock_ingester_1),
+            IngesterHandle {
+                client: IngesterServiceClient::from_mock(mock_ingester_1),
+                availability_zone: None,
+            },
         );
 
         let response = router
@@ -1500,7 +1488,10 @@ mod tests {
             });
         ingester_pool.insert(
             "test-ingester-0".into(),
-            IngesterServiceClient::from_mock(mock_ingester_0),
+            IngesterHandle {
+                client: IngesterServiceClient::from_mock(mock_ingester_0),
+                availability_zone: None,
+            },
         );
 
         let response = router
@@ -1643,7 +1634,13 @@ mod tests {
             Ok(response)
         });
         let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+        ingester_pool.insert(
+            "test-ingester-0".into(),
+            IngesterHandle {
+                client: ingester_0.clone(),
+                availability_zone: None,
+            },
+        );
 
         let ingest_request = IngestRequestV2 {
             subrequests: vec![IngestSubrequest {
@@ -1689,73 +1686,13 @@ mod tests {
         // Give the async subscriber a moment to process.
         tokio::time::sleep(Duration::from_millis(10)).await;
 
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
         let state_guard = router.state.lock().await;
         let node = state_guard
             .node_routing_table
             .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
             .unwrap();
         assert_eq!(node.node_id, NodeId::from("test-ingester-0"));
-    }
-
-    #[tokio::test]
-    async fn test_router_ingester_node_info_add_and_remove() {
-        let event_broker = EventBroker::default();
-        let ingester_pool = IngesterPool::default();
-        let router = IngestRouter::new(
-            "test-router".into(),
-            ControlPlaneServiceClient::from_mock(MockControlPlaneService::new()),
-            ingester_pool.clone(),
-            1,
-            event_broker.clone(),
-            Some("test-az".to_string()),
-        );
-        router.subscribe();
-
-        for node_id in ["test-ingester-0", "test-ingester-1"] {
-            event_broker.publish(IngesterCapacityScoreUpdate {
-                node_id: node_id.into(),
-                source_uid: SourceUid {
-                    index_uid: IndexUid::for_test("test-index", 0),
-                    source_id: "test-source".to_string(),
-                },
-                capacity_score: 5,
-                open_shard_count: 1,
-            });
-            ingester_pool.insert(node_id.into(), IngesterServiceClient::mocked());
-        }
-
-        // ingester-0 is in our AZ.
-        event_broker.publish(IngesterNodeInfo::Add {
-            node_id: "test-ingester-0".into(),
-            availability_zone: "test-az".to_string(),
-        });
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
-        let state_guard = router.state.lock().await;
-        let node = state_guard
-            .node_routing_table
-            .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
-            .unwrap();
-        assert_eq!(node.node_id, NodeId::from("test-ingester-0"));
-        drop(state_guard);
-
-        // Remove ingester-0's AZ, add ingester-1 as local instead.
-        event_broker.publish(IngesterNodeInfo::Remove {
-            node_id: "test-ingester-0".into(),
-        });
-        event_broker.publish(IngesterNodeInfo::Add {
-            node_id: "test-ingester-1".into(),
-            availability_zone: "test-az".to_string(),
-        });
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
-        let state_guard = router.state.lock().await;
-        let node = state_guard
-            .node_routing_table
-            .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
-            .unwrap();
-        assert_eq!(node.node_id, NodeId::from("test-ingester-1"));
     }
 
     #[tokio::test]
@@ -1896,7 +1833,7 @@ mod tests {
             .process_persist_results(&mut workbench, persist_futures)
             .await;
 
-        ingester_pool.insert("test-ingester-0".into(), IngesterServiceClient::mocked());
+        ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
         let state_guard = router.state.lock().await;
         let node = state_guard
             .node_routing_table

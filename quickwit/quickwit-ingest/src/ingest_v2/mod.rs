@@ -40,8 +40,8 @@ use std::time::Duration;
 use std::{env, fmt};
 
 pub use broadcast::{
-    IngesterNodeInfo, LocalShardsUpdate, ShardInfo, ShardInfos,
-    setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
+    LocalShardsUpdate, ShardInfo, ShardInfos, setup_ingester_capacity_update_listener,
+    setup_local_shards_update_listener,
 };
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
@@ -63,7 +63,14 @@ use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
 pub use self::router::IngestRouter;
 
-pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;
+/// An ingester as represented in the pool, bundling the gRPC client with node metadata.
+#[derive(Debug, Clone)]
+pub struct IngesterHandle {
+    pub client: IngesterServiceClient,
+    pub availability_zone: Option<String>,
+}
+
+pub type IngesterPool = Pool<NodeId, IngesterHandle>;
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;

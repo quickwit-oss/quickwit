@@ -34,21 +34,6 @@ pub use local_shards::{
     BroadcastLocalShardsTask, LocalShardsUpdate, ShardInfo, ShardInfos,
     setup_local_shards_update_listener,
 };
-use quickwit_common::pubsub::Event;
-use quickwit_proto::types::NodeId;
-
-#[derive(Debug, Clone)]
-pub enum IngesterNodeInfo {
-    Add {
-        node_id: NodeId,
-        availability_zone: String,
-    },
-    Remove {
-        node_id: NodeId,
-    },
-}
-
-impl Event for IngesterNodeInfo {}
 
 fn make_key(prefix: &str, source_uid: &SourceUid) -> String {
     format!("{prefix}{}:{}", source_uid.index_uid, source_uid.source_id)

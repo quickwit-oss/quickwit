@@ -31,7 +31,6 @@ use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
-use quickwit_common::tower::Pool;
 use quickwit_common::{ServiceStream, rate_limited_error, rate_limited_warn};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
@@ -123,7 +122,7 @@ impl Ingester {
     pub async fn try_new(
         cluster: Cluster,
         control_plane: ControlPlaneServiceClient,
-        ingester_pool: Pool<NodeId, IngesterServiceClient>,
+        ingester_pool: IngesterPool,
         wal_dir_path: &Path,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
@@ -390,6 +389,7 @@ impl Ingester {
             IngestV2Error::Unavailable(message)
         })?;
         let mut ack_replication_stream = ingester
+            .client
             .open_replication_stream(syn_replication_stream)
             .await?;
         ack_replication_stream
@@ -1311,11 +1311,11 @@ mod tests {
     use tonic::transport::{Endpoint, Server};
 
     use super::*;
-    use crate::MRecord;
     use crate::ingest_v2::DEFAULT_IDLE_SHARD_TIMEOUT;
     use crate::ingest_v2::broadcast::ShardInfos;
     use crate::ingest_v2::doc_mapper::try_build_doc_mapper;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
+    use crate::{IngesterHandle, MRecord};
 
     const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
@@ -2284,10 +2284,14 @@ mod tests {
             .build()
             .await;
 
-        leader_ctx.ingester_pool.insert(
-            follower_ctx.node_id.clone(),
-            IngesterServiceClient::new(follower.clone()),
-        );
+        let ingester_handle = IngesterHandle {
+            client: IngesterServiceClient::new(follower.clone()),
+            availability_zone: None,
+        };
+
+        leader_ctx
+            .ingester_pool
+            .insert(follower_ctx.node_id.clone(), ingester_handle);
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
@@ -2491,9 +2495,14 @@ mod tests {
             None,
         );
 
+        let ingester_handle = IngesterHandle {
+            client: follower_grpc_client,
+            availability_zone: None,
+        };
+
         leader_ctx
             .ingester_pool
-            .insert(follower_ctx.node_id.clone(), follower_grpc_client);
+            .insert(follower_ctx.node_id.clone(), ingester_handle);
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
