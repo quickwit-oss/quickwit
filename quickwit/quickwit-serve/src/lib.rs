@@ -1377,17 +1377,7 @@ async fn node_readiness_reporting_task(
         let metastore_is_available = match metastore.check_connectivity().await {
             Ok(()) => {
                 debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
-                if let Some(ingester) = &ingester_opt {
-                    if let Ok(status) = try_get_ingester_status(ingester).await {
-                        status != IngesterStatus::Failed
-                    } else {
-                        // If we couldn't get the ingester status, it's not looking good, so we set
-                        // the node to not ready.
-                        false
-                    }
-                } else {
-                    true
-                }
+                true
             }
             Err(error) => {
                 warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
