@@ -75,6 +75,7 @@ pub struct TermQueryParams {
     case_insensitive: bool,
 }
 
+#[cfg(test)]
 pub fn term_query_from_field_value(field: impl ToString, value: impl ToString) -> TermQuery {
     TermQuery {
         field: field.to_string(),

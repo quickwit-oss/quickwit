@@ -1152,7 +1152,7 @@ mod tests {
             "type": "text",
             "stored": true,
             "record": "basic",
-            "tokenizer": "en_stem"
+            "tokenizer": "lowercase"
         }
         "#,
         )?;
@@ -1161,7 +1161,7 @@ mod tests {
             FieldMappingType::Text(options, _) => {
                 assert_eq!(options.stored, true);
                 let indexing_options = options.indexing_options.unwrap();
-                assert_eq!(indexing_options.tokenizer.name(), "en_stem");
+                assert_eq!(indexing_options.tokenizer.name(), "lowercase");
                 assert_eq!(indexing_options.record, IndexRecordOption::Basic);
             }
             _ => panic!("wrong property type"),

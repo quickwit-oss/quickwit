@@ -83,16 +83,9 @@ impl InnerIngesterState {
             .filter(|shard| {
                 shard.is_open() && shard.index_uid == *index_uid && shard.source_id == *source_id
             })
-            // We use reduce here because we need a mutable borrow of the shard, since
-            // available_permits() calls refill, which is a mutator.
-            .reduce(|best, current| {
-                if current.rate_limiter.available_permits() > best.rate_limiter.available_permits()
-                {
-                    current
-                } else {
-                    best
-                }
-            })
+            .map(|shard| (shard.rate_limiter.available_permits(), shard))
+            .max_by_key(|(available_permits, _)| *available_permits)
+            .map(|(_, shard)| shard)
     }
 }
 

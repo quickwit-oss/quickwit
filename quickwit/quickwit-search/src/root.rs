@@ -45,7 +45,7 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tracing::{debug, info, info_span, instrument};
+use tracing::{debug, error, info, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
@@ -372,6 +372,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // to recompute it afterward.
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
         ignore_missing_indexes: req.ignore_missing_indexes,
+        skip_aggregation_finalization: false,
     })
 }
 
@@ -1062,6 +1063,9 @@ fn finalize_aggregation_if_any(
     let Some(aggregations_json) = search_request.aggregation_request.as_ref() else {
         return Ok(None);
     };
+    if search_request.skip_aggregation_finalization {
+        return Ok(intermediate_aggregation_result_bytes_opt);
+    }
     let aggregations: QuickwitAggregations = serde_json::from_str(aggregations_json)?;
     let aggregation_result_postcard = finalize_aggregation(
         intermediate_aggregation_result_bytes_opt,
@@ -1079,36 +1083,34 @@ fn finalize_aggregation_if_any(
 /// We put this check here and not in the metastore to make sure the logic is independent
 /// of the metastore implementation, and some different use cases could require different
 /// behaviors. This specification was principally motivated by #4042.
-pub fn check_all_index_metadata_found(
-    index_metadatas: &[IndexMetadata],
+pub fn ensure_all_indexes_found(
+    indexes_metadata: &[IndexMetadata],
     index_id_patterns: &[String],
 ) -> crate::Result<()> {
     let mut index_ids: HashSet<&str> = index_id_patterns
         .iter()
-        .map(|index_ptn| index_ptn.as_str())
-        .filter(|index_ptn| !index_ptn.contains('*') && !index_ptn.starts_with('-'))
+        .filter(|pattern| !pattern.contains('*') && !pattern.starts_with('-'))
+        .map(|pattern| pattern.as_str())
         .collect();
 
     if index_ids.is_empty() {
-        // All of the patterns are wildcard patterns.
+        // All the patterns are wildcard or negative patterns.
         return Ok(());
     }
-
-    for index_metadata in index_metadatas {
-        index_ids.remove(index_metadata.index_uid.index_id.as_str());
+    for index_metadata in indexes_metadata {
+        index_ids.remove(index_metadata.index_id());
     }
-
-    if !index_ids.is_empty() {
-        let missing_index_ids = index_ids
-            .into_iter()
-            .map(|missing_index_id| missing_index_id.to_string())
-            .collect();
-        return Err(SearchError::IndexesNotFound {
-            index_ids: missing_index_ids,
-        });
+    if index_ids.is_empty() {
+        return Ok(());
     }
+    let not_found_index_ids = index_ids
+        .into_iter()
+        .map(|index_id| index_id.to_string())
+        .collect();
 
-    Ok(())
+    Err(SearchError::IndexesNotFound {
+        index_ids: not_found_index_ids,
+    })
 }
 
 async fn refine_and_list_matches(
@@ -1167,10 +1169,7 @@ async fn plan_splits_for_root_search(
         .await?;
 
     if !search_request.ignore_missing_indexes {
-        check_all_index_metadata_found(
-            &indexes_metadata[..],
-            &search_request.index_id_patterns[..],
-        )?;
+        ensure_all_indexes_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
     }
 
     if indexes_metadata.is_empty() {
@@ -1233,7 +1232,7 @@ pub async fn root_search(
     if let Some(max_total_split_searches) = searcher_context.searcher_config.max_splits_per_search
         && max_total_split_searches < num_splits
     {
-        tracing::error!(
+        error!(
             num_splits,
             max_total_split_searches,
             index=?search_request.index_id_patterns,
@@ -1283,10 +1282,7 @@ pub async fn search_plan(
         .await?;
 
     if !search_request.ignore_missing_indexes {
-        check_all_index_metadata_found(
-            &indexes_metadata[..],
-            &search_request.index_id_patterns[..],
-        )?;
+        ensure_all_indexes_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
     }
     if indexes_metadata.is_empty() {
         return Ok(SearchPlanResponse {
@@ -5300,5 +5296,94 @@ mod tests {
         .unwrap_err();
         assert!(matches!(search_error, SearchError::InvalidArgument { .. }));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_no_aggregation_request() {
+        let search_request = SearchRequest {
+            aggregation_request: None,
+            skip_aggregation_finalization: false,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result =
+            finalize_aggregation_if_any(&search_request, Some(vec![1, 2, 3]), &searcher_context)
+                .unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_skip_finalization_returns_intermediate_bytes() {
+        let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
+        let intermediate_bytes = vec![42, 43, 44];
+        let search_request = SearchRequest {
+            aggregation_request: Some(agg_req.to_string()),
+            skip_aggregation_finalization: true,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result = finalize_aggregation_if_any(
+            &search_request,
+            Some(intermediate_bytes.clone()),
+            &searcher_context,
+        )
+        .unwrap();
+        assert_eq!(result, Some(intermediate_bytes));
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_skip_finalization_none_bytes() {
+        let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
+        let search_request = SearchRequest {
+            aggregation_request: Some(agg_req.to_string()),
+            skip_aggregation_finalization: true,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result = finalize_aggregation_if_any(&search_request, None, &searcher_context).unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_default_finalizes() {
+        let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
+        let intermediate_results = IntermediateAggregationResults::default();
+        let intermediate_bytes = postcard::to_stdvec(&intermediate_results).unwrap();
+        let search_request = SearchRequest {
+            aggregation_request: Some(agg_req.to_string()),
+            skip_aggregation_finalization: false,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result = finalize_aggregation_if_any(
+            &search_request,
+            Some(intermediate_bytes.clone()),
+            &searcher_context,
+        )
+        .unwrap();
+        // Result should be Some (finalized), but different from intermediate bytes
+        assert!(result.is_some());
+        assert_ne!(result.unwrap(), intermediate_bytes);
+    }
+
+    #[tokio::test]
+    async fn test_finalize_aggregation_if_any_false_flag_finalizes() {
+        let agg_req = r#"{"avg_price": {"avg": {"field": "price"}}}"#;
+        let intermediate_results = IntermediateAggregationResults::default();
+        let intermediate_bytes = postcard::to_stdvec(&intermediate_results).unwrap();
+        let search_request = SearchRequest {
+            aggregation_request: Some(agg_req.to_string()),
+            skip_aggregation_finalization: false,
+            ..Default::default()
+        };
+        let searcher_context = SearcherContext::for_test();
+        let result = finalize_aggregation_if_any(
+            &search_request,
+            Some(intermediate_bytes.clone()),
+            &searcher_context,
+        )
+        .unwrap();
+        assert!(result.is_some());
+        assert_ne!(result.unwrap(), intermediate_bytes);
     }
 }

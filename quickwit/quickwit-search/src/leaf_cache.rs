@@ -70,7 +70,6 @@ impl LeafSearchCache {
         result: LeafSearchResponse,
     ) {
         let key = CacheKey::from_split_meta_and_request(split_info, search_request);
-
         let encoded_result = result.encode_to_vec();
         self.content.put(key, OwnedBytes::new(encoded_result));
     }

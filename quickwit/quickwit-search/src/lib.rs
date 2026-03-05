@@ -23,7 +23,10 @@ mod collector;
 mod error;
 mod fetch_docs;
 mod find_trace_ids_collector;
-mod leaf;
+
+mod invoker;
+/// Leaf search operations.
+pub mod leaf;
 mod leaf_cache;
 mod list_fields;
 mod list_fields_cache;
@@ -80,8 +83,9 @@ pub use crate::client::{
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{SearchError, parse_grpc_error};
 use crate::fetch_docs::fetch_docs;
+pub use crate::invoker::LambdaLeafSearchInvoker;
 pub use crate::root::{
-    IndexMetasForLeafSearch, SearchJob, check_all_index_metadata_found, jobs_to_leaf_request,
+    IndexMetasForLeafSearch, SearchJob, ensure_all_indexes_found, jobs_to_leaf_request,
     root_search, search_plan,
 };
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
@@ -224,7 +228,7 @@ pub async fn resolve_index_patterns(
         ListIndexesMetadataRequest::all()
     } else {
         ListIndexesMetadataRequest {
-            index_id_patterns: index_id_patterns.to_owned(),
+            index_id_patterns: index_id_patterns.to_vec(),
         }
     };
 
@@ -234,7 +238,7 @@ pub async fn resolve_index_patterns(
         .await?
         .deserialize_indexes_metadata()
         .await?;
-    check_all_index_metadata_found(&indexes_metadata, index_id_patterns)?;
+    ensure_all_indexes_found(&indexes_metadata, index_id_patterns)?;
     Ok(indexes_metadata)
 }
 
@@ -283,7 +287,7 @@ pub async fn single_node_search(
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
     let cluster_client = ClusterClient::new(search_job_placer);
     let searcher_config = SearcherConfig::default();
-    let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));
+    let searcher_context = Arc::new(SearcherContext::new_without_invoker(searcher_config, None));
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore.clone(),
         storage_resolver,

@@ -56,7 +56,7 @@ runs:
         path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
         retention-days: 3
     - name: Upload archive
-      uses: quickwit-inc/upload-to-github-release@v1
+      uses: quickwit-inc/upload-to-github-release@9b2c40fba23bf8dea05b7d2eece24cbc95d4a190
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
       with:
