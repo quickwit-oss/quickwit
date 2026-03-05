@@ -56,6 +56,39 @@ pub struct TestNodeConfig {
     pub enable_otlp: bool,
 }
 
+impl TestNodeConfig {
+    async fn build_node_config(
+        &self,
+        node_idx: usize,
+        cluster_id: String,
+        temp_dir: &TempDir,
+        unique_dir_name: String,
+        tcp_listener_resolver: &TestTcpListenerResolver,
+    ) -> NodeConfig {
+        let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
+        let rest_tcp_listener = TcpListener::bind(socket).await.unwrap();
+        let grpc_tcp_listener = TcpListener::bind(socket).await.unwrap();
+        let mut config = NodeConfig::for_test_from_ports(
+            rest_tcp_listener.local_addr().unwrap().port(),
+            grpc_tcp_listener.local_addr().unwrap().port(),
+        );
+        tcp_listener_resolver.add_listener(rest_tcp_listener).await;
+        tcp_listener_resolver.add_listener(grpc_tcp_listener).await;
+        config.indexer_config.enable_otlp_endpoint = self.enable_otlp;
+        config.enabled_services.clone_from(&self.services);
+        config.jaeger_config.enable_endpoint = true;
+        config.cluster_id.clone_from(&cluster_id);
+        config.node_id = NodeId::new(format!("test-node-{node_idx}"));
+        let root_data_dir = temp_dir.path().to_path_buf();
+        config.data_dir_path = root_data_dir.join(config.node_id.as_str());
+        config.metastore_uri =
+            QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();
+        config.default_index_root_uri =
+            QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/indexes")).unwrap();
+        config
+    }
+}
+
 pub struct ClusterSandboxBuilder {
     temp_dir: TempDir,
     node_configs: Vec<TestNodeConfig>,
@@ -106,32 +139,21 @@ impl ClusterSandboxBuilder {
     /// - `default_index_root_uri` defined by `root_data_dir/indexes`.
     /// - `peers` defined by others nodes `gossip_advertise_addr`.
     pub async fn build_config(self) -> ResolvedClusterConfig {
-        let root_data_dir = self.temp_dir.path().to_path_buf();
         let cluster_id = new_coolid("test-cluster");
         let mut resolved_node_configs = Vec::new();
         let mut peers: Vec<String> = Vec::new();
         let unique_dir_name = new_coolid("test-dir");
         let tcp_listener_resolver = TestTcpListenerResolver::default();
         for (node_idx, node_builder) in self.node_configs.iter().enumerate() {
-            let socket: SocketAddr = ([127, 0, 0, 1], 0u16).into();
-            let rest_tcp_listener = TcpListener::bind(socket).await.unwrap();
-            let grpc_tcp_listener = TcpListener::bind(socket).await.unwrap();
-            let mut config = NodeConfig::for_test_from_ports(
-                rest_tcp_listener.local_addr().unwrap().port(),
-                grpc_tcp_listener.local_addr().unwrap().port(),
-            );
-            tcp_listener_resolver.add_listener(rest_tcp_listener).await;
-            tcp_listener_resolver.add_listener(grpc_tcp_listener).await;
-            config.indexer_config.enable_otlp_endpoint = node_builder.enable_otlp;
-            config.enabled_services.clone_from(&node_builder.services);
-            config.jaeger_config.enable_endpoint = true;
-            config.cluster_id.clone_from(&cluster_id);
-            config.node_id = NodeId::new(format!("test-node-{node_idx}"));
-            config.data_dir_path = root_data_dir.join(config.node_id.as_str());
-            config.metastore_uri =
-                QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();
-            config.default_index_root_uri =
-                QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/indexes")).unwrap();
+            let config = node_builder
+                .build_node_config(
+                    node_idx,
+                    cluster_id.clone(),
+                    &self.temp_dir,
+                    unique_dir_name.clone(),
+                    &tcp_listener_resolver,
+                )
+                .await;
             peers.push(config.gossip_advertise_addr.to_string());
             resolved_node_configs.push((config, node_builder.services.clone()));
         }
@@ -143,7 +165,9 @@ impl ClusterSandboxBuilder {
                 .collect_vec();
         }
         ResolvedClusterConfig {
+            cluster_id,
             temp_dir: self.temp_dir,
+            unique_dir_name,
             node_configs: resolved_node_configs,
             tcp_listener_resolver,
         }
@@ -167,7 +191,9 @@ impl ClusterSandboxBuilder {
 /// Intermediate state where the ports of all the test cluster nodes have
 /// been reserved and the configurations have been generated.
 pub struct ResolvedClusterConfig {
+    cluster_id: String,
     temp_dir: TempDir,
+    unique_dir_name: String,
     pub node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
     tcp_listener_resolver: TestTcpListenerResolver,
 }
@@ -176,49 +202,23 @@ impl ResolvedClusterConfig {
     /// Start a cluster using this config and waits for the nodes to be ready
     pub async fn start(self) -> ClusterSandbox {
         quickwit_cli::install_default_crypto_ring_provider();
-        let mut node_shutdown_handles = Vec::new();
-        let runtimes_config = RuntimesConfig::light_for_tests();
-        let storage_resolver = StorageResolver::unconfigured();
-        let metastore_resolver = MetastoreResolver::unconfigured();
-        let cluster_size = self.node_configs.len();
-        for node_config in self.node_configs.iter() {
-            let mut shutdown_handler =
-                NodeShutdownHandle::new(node_config.0.node_id.clone(), node_config.1.clone());
-            let shutdown_signal = shutdown_handler.shutdown_signal();
-            let join_handle = tokio::spawn({
-                let node_config = node_config.0.clone();
-                let node_id = node_config.node_id.clone();
-                let services = node_config.enabled_services.clone();
-                let metastore_resolver = metastore_resolver.clone();
-                let storage_resolver = storage_resolver.clone();
-                let tcp_listener_resolver = self.tcp_listener_resolver.clone();
 
-                async move {
-                    let result = serve_quickwit(
-                        node_config,
-                        runtimes_config,
-                        metastore_resolver,
-                        storage_resolver,
-                        tcp_listener_resolver,
-                        shutdown_signal,
-                        quickwit_serve::do_nothing_env_filter_reload_fn(),
-                    )
-                    .await?;
-                    debug!("{node_id} stopped successfully ({:?})", services);
-                    Result::<_, anyhow::Error>::Ok(result)
-                }
-            });
-            shutdown_handler.set_node_join_handle(join_handle);
-            node_shutdown_handles.push(shutdown_handler);
-        }
-
-        let sandbox = ClusterSandbox {
-            node_configs: self.node_configs,
-            _temp_dir: self.temp_dir,
-            node_shutdown_handles,
+        let mut sandbox = ClusterSandbox {
+            cluster_id: self.cluster_id,
+            node_configs: Vec::new(),
+            temp_dir: self.temp_dir,
+            unique_dir_name: self.unique_dir_name,
+            node_shutdown_handles: Vec::new(),
+            tcp_listener_resolver: self.tcp_listener_resolver,
+            storage_resolver: StorageResolver::unconfigured(),
+            metastore_resolver: MetastoreResolver::unconfigured(),
         };
+        for (config, services) in &self.node_configs {
+            sandbox.spawn_node(config.clone(), services.clone());
+        }
+        sandbox.node_configs = self.node_configs;
         sandbox
-            .wait_for_cluster_num_ready_nodes(cluster_size)
+            .wait_for_cluster_num_ready_nodes(sandbox.node_configs.len())
             .await
             .unwrap();
         sandbox
@@ -257,12 +257,74 @@ pub(crate) async fn ingest(
 /// A test environment where you can start a Quickwit cluster and use the gRPC
 /// or REST clients to test it.
 pub struct ClusterSandbox {
+    cluster_id: String,
     pub node_configs: Vec<(NodeConfig, HashSet<QuickwitService>)>,
-    _temp_dir: TempDir,
+    unique_dir_name: String,
+    temp_dir: TempDir,
     node_shutdown_handles: Vec<NodeShutdownHandle>,
+    tcp_listener_resolver: TestTcpListenerResolver,
+    storage_resolver: StorageResolver,
+    metastore_resolver: MetastoreResolver,
 }
 
 impl ClusterSandbox {
+    fn spawn_node(&mut self, config: NodeConfig, services: HashSet<QuickwitService>) {
+        let mut shutdown_handle = NodeShutdownHandle::new(config.node_id.clone(), services.clone());
+        let shutdown_signal = shutdown_handle.shutdown_signal();
+        let runtimes_config = RuntimesConfig::light_for_tests();
+        let join_handle = tokio::spawn({
+            let node_id = config.node_id.clone();
+            let metastore_resolver = self.metastore_resolver.clone();
+            let storage_resolver = self.storage_resolver.clone();
+            let tcp_listener_resolver = self.tcp_listener_resolver.clone();
+            async move {
+                let result = serve_quickwit(
+                    config,
+                    runtimes_config,
+                    metastore_resolver,
+                    storage_resolver,
+                    tcp_listener_resolver,
+                    shutdown_signal,
+                    quickwit_serve::do_nothing_env_filter_reload_fn(),
+                )
+                .await?;
+                debug!("{node_id} stopped successfully ({services:?})");
+                Result::<_, anyhow::Error>::Ok(result)
+            }
+        });
+        shutdown_handle.set_node_join_handle(join_handle);
+        self.node_shutdown_handles.push(shutdown_handle);
+    }
+
+    /// Dynamically adds a node to the cluster. Does not wait for readiness.
+    pub async fn add_node(&mut self, services: impl IntoIterator<Item = QuickwitService>) {
+        self.add_node_inner(TestNodeConfig {
+            services: HashSet::from_iter(services),
+            enable_otlp: false,
+        })
+        .await;
+    }
+
+    async fn add_node_inner(&mut self, config_builder: TestNodeConfig) {
+        let mut config = config_builder
+            .build_node_config(
+                self.node_configs.len() + 1,
+                self.cluster_id.clone(),
+                &self.temp_dir,
+                self.unique_dir_name.clone(),
+                &self.tcp_listener_resolver,
+            )
+            .await;
+        config.peer_seeds = self
+            .node_configs
+            .iter()
+            .map(|config| config.0.gossip_advertise_addr.to_string())
+            .collect_vec();
+        self.spawn_node(config.clone(), config_builder.services.clone());
+        self.node_configs
+            .push((config, config_builder.services.clone()));
+    }
+
     fn find_node_for_service(&self, service: QuickwitService) -> NodeConfig {
         self.node_configs
             .iter()
@@ -610,4 +672,34 @@ impl ClusterSandbox {
         self.node_configs.remove(idx);
         self.node_shutdown_handles.remove(idx)
     }
+}
+
+/// We don't usually test the tests, but the complexity of the sandbox setup code justifies it here.
+#[tokio::test]
+async fn test_sandbox_happy_path() {
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::ControlPlane, QuickwitService::Metastore])
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Indexer])
+        .build_and_start()
+        .await;
+
+    sandbox.wait_for_cluster_num_ready_nodes(3).await.unwrap();
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_sandbox_add_node_dynamically() {
+    let mut sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::ControlPlane, QuickwitService::Metastore])
+        .add_node([QuickwitService::Searcher])
+        .build_and_start()
+        .await;
+    sandbox.wait_for_cluster_num_ready_nodes(2).await.unwrap();
+
+    // Later, add an indexer node to the running cluster
+    sandbox.add_node([QuickwitService::Indexer]).await;
+
+    sandbox.wait_for_cluster_num_ready_nodes(3).await.unwrap();
+    sandbox.shutdown().await.unwrap();
 }
