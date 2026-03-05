@@ -55,15 +55,6 @@ message IngestSuccess {
   quickwit.ingest.Position replication_position_inclusive = 5;
   uint32 num_ingested_docs = 6;
   repeated quickwit.ingest.ParseFailure parse_failures = 7;
-  AzRoutingLocality az_routing = 8;
-}
-
-enum AzRoutingLocality {
-  AZ_ROUTING_LOCALITY_UNSPECIFIED = 0;
-  AZ_ROUTING_LOCALITY_SELF_NODE = 1;
-  AZ_ROUTING_LOCALITY_SAME_AZ = 2;
-  AZ_ROUTING_LOCALITY_CROSS_AZ = 3;
-  AZ_ROUTING_LOCALITY_NOT_ENABLED = 4;
 }
 
 enum IngestFailureReason {
@@ -85,5 +76,4 @@ message IngestFailure {
   string index_id = 2;
   string source_id = 3;
   IngestFailureReason reason = 5;
-  AzRoutingLocality az_routing = 6;
 }

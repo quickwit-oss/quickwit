@@ -15,41 +15,60 @@
 use mrecordlog::ResourceUsage;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    Histogram, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, exponential_buckets,
-    linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram, new_histogram_vec,
+    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec,
+    exponential_buckets, linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
+    new_histogram_vec,
 };
 
 // Counter vec counting the different outcomes of ingest requests as
-// measured at the end of the router work.
+// measure at the end of the router work.
 //
-// The counters count persist subrequests, broken down by result and AZ routing locality.
+// The counter are counting persist subrequests.
 pub(crate) struct IngestResultMetrics {
-    counter_vec: IntCounterVec<2>,
+    pub success: IntCounter,
+    pub circuit_breaker: IntCounter,
+    pub unspecified: IntCounter,
+    pub index_not_found: IntCounter,
+    pub source_not_found: IntCounter,
+    pub internal: IntCounter,
+    pub no_shards_available: IntCounter,
+    pub shard_rate_limited: IntCounter,
+    pub wal_full: IntCounter,
+    pub timeout: IntCounter,
+    pub router_timeout: IntCounter,
+    pub router_load_shedding: IntCounter,
+    pub load_shedding: IntCounter,
+    pub shard_not_found: IntCounter,
+    pub unavailable: IntCounter,
 }
 
-impl IngestResultMetrics {
-    fn new() -> Self {
+impl Default for IngestResultMetrics {
+    fn default() -> Self {
+        let ingest_result_total_vec = new_counter_vec::<1>(
+            "ingest_result_total",
+            "Number of ingest requests by result",
+            "ingest",
+            &[],
+            ["result"],
+        );
         Self {
-            counter_vec: new_counter_vec::<2>(
-                "ingest_result_total",
-                "Number of ingest requests by result and AZ routing locality",
-                "ingest",
-                &[],
-                ["result", "az_routing"],
-            ),
+            success: ingest_result_total_vec.with_label_values(["success"]),
+            circuit_breaker: ingest_result_total_vec.with_label_values(["circuit_breaker"]),
+            unspecified: ingest_result_total_vec.with_label_values(["unspecified"]),
+            index_not_found: ingest_result_total_vec.with_label_values(["index_not_found"]),
+            source_not_found: ingest_result_total_vec.with_label_values(["source_not_found"]),
+            internal: ingest_result_total_vec.with_label_values(["internal"]),
+            no_shards_available: ingest_result_total_vec.with_label_values(["no_shards_available"]),
+            shard_rate_limited: ingest_result_total_vec.with_label_values(["shard_rate_limited"]),
+            wal_full: ingest_result_total_vec.with_label_values(["wal_full"]),
+            timeout: ingest_result_total_vec.with_label_values(["timeout"]),
+            router_timeout: ingest_result_total_vec.with_label_values(["router_timeout"]),
+            router_load_shedding: ingest_result_total_vec
+                .with_label_values(["router_load_shedding"]),
+            load_shedding: ingest_result_total_vec.with_label_values(["load_shedding"]),
+            unavailable: ingest_result_total_vec.with_label_values(["unavailable"]),
+            shard_not_found: ingest_result_total_vec.with_label_values(["shard_not_found"]),
         }
-    }
-
-    pub fn inc(&self, result: &str, az_routing: &str) {
-        self.counter_vec
-            .with_label_values([result, az_routing])
-            .inc();
-    }
-
-    pub fn inc_by(&self, result: &str, az_routing: &str, count: u64) {
-        self.counter_vec
-            .with_label_values([result, az_routing])
-            .inc_by(count);
     }
 }
 
@@ -64,12 +83,20 @@ pub(super) struct IngestV2Metrics {
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
+    pub ingest_routing_attempts: IntCounterVec<1>,
 }
 
 impl Default for IngestV2Metrics {
     fn default() -> Self {
         Self {
-            ingest_results: IngestResultMetrics::new(),
+            ingest_results: IngestResultMetrics::default(),
+            ingest_routing_attempts: new_counter_vec::<1>(
+                "ingest_routing_attempts",
+                "Number of routing attempts by AZ locality",
+                "ingest",
+                &[],
+                ["az_routing"],
+            ),
             reset_shards_operations_total: new_counter_vec(
                 "reset_shards_operations_total",
                 "Total number of reset shards operations performed.",

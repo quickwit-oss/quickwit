@@ -155,7 +155,6 @@ mod tests {
                 replication_position_inclusive: None,
                 num_ingested_docs: 5,
                 parse_failures: vec![],
-                az_routing: 0,
             }],
             failures: vec![],
         };
@@ -181,7 +180,6 @@ mod tests {
                     message: "error".to_string(),
                     reason: ParseFailureReason::InvalidJson.into(),
                 }],
-                az_routing: 0,
             }],
             failures: vec![],
         };
@@ -201,7 +199,6 @@ mod tests {
                 index_id: String::from("myindex"),
                 source_id: String::from("mysource"),
                 reason: IngestFailureReason::SourceNotFound.into(),
-                az_routing: 0,
             }],
         };
         let result = RestIngestResponse::from_ingest_v2(failure_resp, None, 10);
