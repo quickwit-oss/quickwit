@@ -26,8 +26,35 @@ jobs:
     permissions:
       contents: write
       actions: write
+      id-token: write
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Override ADMS registry for GitHub Actions
+        run: |
+          # GitHub Actions can't access internal ADMS registry, use crates.io instead
+          cat > .cargo/config.toml << 'EOF'
+          # Keep existing target configs but remove ADMS registry
+          [target.x86_64-unknown-linux-gnu]
+          rustflags = ["-C", "target-cpu=x86-64-v2", "--cfg", "tokio_unstable"]
+
+          [build]
+          rustdocflags = ["--cfg", "tokio_unstable"]
+          EOF
+
+      - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
+        id: octo-sts
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - name: Configure git rewrite (STS token)
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: |
+          echo "::add-mask::${GH_TOKEN}"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
 
       - name: Set version
         run: |

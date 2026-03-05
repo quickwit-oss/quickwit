@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
+use fnv::FnvHashMap;
 use metrics::Counter;
 use pomchi::{DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -55,6 +56,7 @@ const DEFAULT_MAX_LOG_PAST_AGE_HOURS: u64 = 18;
 const DEFAULT_MAX_LOG_FUTURE_AGE_HOURS: u64 = 12;
 const MAX_LOG_PAST_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_PAST_AGE_HOURS";
 const MAX_LOG_FUTURE_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_FUTURE_AGE_HOURS";
+const UNSET_PIPELINE_SOURCE_LABEL: &str = "unset";
 
 pub(super) struct JsonDoc {
     json_obj: JsonObject,
@@ -208,7 +210,7 @@ fn parse_raw_doc<'a>(
     raw_doc: Bytes,
     num_bytes: usize,
     pipeline_opt: Option<&'a Pipeline>,
-    pipeline_cpu_micros_sum: &'a mut u64,
+    pipeline_cpu_micros_per_source: &'a mut FnvHashMap<String, u64>,
 ) -> impl Iterator<Item = Result<JsonDoc, DocProcessorError>> + 'a {
     let json_doc_iter = try_into_json_docs(input_format, raw_doc, num_bytes);
     let Some(pipeline) = pipeline_opt else {
@@ -229,8 +231,17 @@ fn parse_raw_doc<'a>(
             // Measure thread CPU time around the processing pipeline application.
             let start = cpu_time::ThreadTime::try_now();
             let apply_res = pipeline.apply(&mut processed_log);
+            let source = processed_log
+                .source
+                .as_deref()
+                .unwrap_or(UNSET_PIPELINE_SOURCE_LABEL);
             if let Ok(cpu_delta) = start.and_then(|start| start.try_elapsed()) {
-                *pipeline_cpu_micros_sum += cpu_delta.as_micros() as u64;
+                let cpu_micros = cpu_delta.as_micros() as u64;
+                if let Some(cpu_micros_total) = pipeline_cpu_micros_per_source.get_mut(source) {
+                    *cpu_micros_total += cpu_micros;
+                } else {
+                    pipeline_cpu_micros_per_source.insert(source.to_string(), cpu_micros);
+                }
             }
 
             if let Err(pipeline_error) = apply_res {
@@ -405,10 +416,6 @@ pub struct DocProcessorCounters {
     ///
     /// Includes both valid and invalid documents.
     pub num_bytes_total: AtomicU64,
-    /// Total thread CPU time spent in the processing pipeline (microseconds)
-    /// for this DocProcessor instance.
-    #[serde(skip)]
-    processing_pipeline_cpu_micros_total: IntCounter,
 }
 
 impl DocProcessorCounters {
@@ -448,10 +455,6 @@ impl DocProcessorCounters {
             &pipeline_uid,
             "outside_time_range",
         );
-        let index_label = quickwit_common::metrics::index_label(&index_id);
-        let processing_pipeline_cpu_micros_total = crate::metrics::INDEXER_METRICS
-            .processing_pipeline_thread_cpu_micros_total
-            .with_label_values([index_label, &pipeline_uid]);
         DocProcessorCounters {
             index_id,
             source_id,
@@ -465,7 +468,6 @@ impl DocProcessorCounters {
             otlp_parse_errors,
             outside_time_range,
             num_bytes_total: Default::default(),
-            processing_pipeline_cpu_micros_total,
         }
     }
 
@@ -522,6 +524,14 @@ impl DocProcessorCounters {
                 self.transform_errors.record_doc(num_bytes);
             }
         };
+    }
+
+    pub fn record_processing_pipeline_cpu_micros(&self, source: &str, micros: u64) {
+        let index_label = quickwit_common::metrics::index_label(&self.index_id);
+        crate::metrics::INDEXER_METRICS
+            .processing_pipeline_thread_cpu_micros_total
+            .with_label_values([index_label, &self.pipeline_uid, source])
+            .inc_by(micros);
     }
 }
 
@@ -670,13 +680,14 @@ impl DocProcessor {
         // #[cfg(not(feature = "vrl"))]
         // let transform_opt: Option<&mut VrlProgram> = None;
 
-        let mut pipeline_cpu_micros_sum: u64 = 0;
+        let mut pipeline_cpu_micros_per_source =
+            FnvHashMap::with_capacity_and_hasher(8, Default::default());
         for json_doc_result in parse_raw_doc(
             self.input_format,
             raw_doc,
             num_bytes,
             self.pipeline_opt.as_ref(),
-            &mut pipeline_cpu_micros_sum,
+            &mut pipeline_cpu_micros_per_source,
         ) {
             let processed_doc_result =
                 json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
@@ -702,10 +713,10 @@ impl DocProcessor {
                 }
             }
         }
-        let micros = pipeline_cpu_micros_sum;
-        self.counters
-            .processing_pipeline_cpu_micros_total
-            .inc_by(micros);
+        for (source, micros) in pipeline_cpu_micros_per_source {
+            self.counters
+                .record_processing_pipeline_cpu_micros(&source, micros);
+        }
     }
 
     fn is_outside_time_range(&self, processed_doc: &ProcessedDoc, now_timestamp: i64) -> bool {
