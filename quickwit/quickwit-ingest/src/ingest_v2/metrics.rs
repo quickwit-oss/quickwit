@@ -83,15 +83,15 @@ pub(super) struct IngestV2Metrics {
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
-    pub ingest_routing_attempts: IntCounterVec<1>,
+    pub ingest_attempts: IntCounterVec<1>,
 }
 
 impl Default for IngestV2Metrics {
     fn default() -> Self {
         Self {
             ingest_results: IngestResultMetrics::default(),
-            ingest_routing_attempts: new_counter_vec::<1>(
-                "ingest_routing_attempts",
+            ingest_attempts: new_counter_vec::<1>(
+                "ingest_attempts",
                 "Number of routing attempts by AZ locality",
                 "ingest",
                 &[],

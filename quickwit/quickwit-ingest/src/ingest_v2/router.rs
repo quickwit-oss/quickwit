@@ -375,7 +375,7 @@ impl IngestRouter {
                 .node_routing_table
                 .classify_az_locality(&ingester_node.node_id, &self.self_node_id);
             INGEST_V2_METRICS
-                .ingest_routing_attempts
+                .ingest_attempts
                 .with_label_values([az_locality])
                 .inc();
             let persist_subrequest = PersistSubrequest {
