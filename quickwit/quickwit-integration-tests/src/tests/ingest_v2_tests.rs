@@ -860,10 +860,14 @@ async fn test_shutdown_indexer_first() {
 /// Tests that the graceful shutdown sequence works correctly in a multi-indexer
 /// cluster: shutting down one indexer does NOT cause 500 errors or data loss,
 /// and the cluster eventually rebalances. see #6158
+///
+/// We start with a single indexer so the shard for this index is guaranteed to
+/// live on it. After ingesting, we dynamically add a second indexer, then shut
+/// down the first one. This proves the decommission sequence correctly drains
+/// in-flight data even when the shard owner is the node being removed.
 #[tokio::test]
 async fn test_graceful_shutdown_no_data_loss() {
     let mut sandbox = ClusterSandboxBuilder::default()
-        .add_node([QuickwitService::Indexer])
         .add_node([QuickwitService::Indexer])
         .add_node([
             QuickwitService::ControlPlane,
@@ -921,8 +925,12 @@ async fn test_graceful_shutdown_no_data_loss() {
     .await
     .unwrap();
 
-    // Remove the first indexer node from the sandbox and get its shutdown handle.
-    // After this call, rest_client(Indexer) returns the second (surviving) indexer.
+    // Add a second indexer after the shard has been created on the first one.
+    sandbox.add_node([QuickwitService::Indexer]).await;
+
+    // Remove the first indexer (the shard owner) from the sandbox and get its
+    // shutdown handle. After this call, rest_client(Indexer) returns the
+    // second (surviving) indexer.
     let shutdown_handle = sandbox.remove_node_with_service(QuickwitService::Indexer);
 
     // Concurrently: shut down the removed indexer AND ingest more data via the
