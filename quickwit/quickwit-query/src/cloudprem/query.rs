@@ -6,14 +6,14 @@ use quickwit_proto::cloudprem::query_node::Node;
 use quickwit_proto::cloudprem::{
     AttributePrefixQueryNode, AttributeQuotedQueryNode, AttributeRangeQueryNode,
     AttributeSearchQueryNode, AttributeTermInQueryNode, AttributeWildcardQueryNode,
-    BooleanOperator, QueryNode, SearchQueryMode, WildcardPattern,
+    BooleanOperator, QueryNode, SearchQueryMode, WildcardPattern, WildcardToken,
 };
 use serde_json::Number;
 
 use super::{missing_required, unsupported_query_error};
 use crate::query_ast::{
     BoolQuery, FieldPresenceQuery, FullTextMode, FullTextParams, FullTextQuery, PhrasePrefixQuery,
-    QueryAst, RangeQuery, TermSetQuery, WildcardQuery,
+    QueryAst, RangeQuery, TermQuery, TermSetQuery, WildcardQuery,
 };
 use crate::{InvalidQuery, JsonLiteral};
 
@@ -25,6 +25,11 @@ const QW_ERROR_FIELD: &str = "error";
 const QW_MESSAGE_FIELD: &str = "message";
 const QW_TIEBREAKER: &str = "tiebreaker";
 const QW_WES_FIELD: &str = "all";
+
+/// Returns true for fields indexed with the DatadogTokenizer (see config/cloudprem/datadog.yaml).
+fn is_datadog_tokenized(field: &str) -> bool {
+    field == QW_MESSAGE_FIELD || field == QW_ERROR_FIELD || field.starts_with("error.")
+}
 
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
     // TODO this can be cleaner once we upgrade to prost 0.12+
@@ -248,28 +253,67 @@ fn build_phrase_prefix_query(prefix_query_node: AttributePrefixQueryNode) -> Que
     union(phrase_prefix_queries)
 }
 
-fn build_wildcard_query(wildcard_query: AttributeWildcardQueryNode) -> QueryAst {
-    let string_wildcard = if let Some(pattern) = wildcard_query.pattern {
-        wildcard_pattern_to_string(&pattern)
-    } else {
-        // we only do this if upstream did not provide us with a preparsed
-        // (non deprecated) input
-        #[allow(deprecated)]
-        wildcard_query.wildcard
-    };
-    let wildcard_query_asts: Vec<QueryAst> = expand_virtual_fields(wildcard_query.attribute)
+/// Converts the output of [`tokenize_wildcard_pattern_for_query`] into an intersected query.
+/// Plain terms become [`TermQuery`]; entries with wildcards become [`WildcardQuery`].
+/// An empty token list means the pattern is unconstrained and matches everything.
+fn wildcard_tokens_to_query(field: String, tokens: Vec<(String, bool)>) -> QueryAst {
+    if tokens.is_empty() {
+        return QueryAst::MatchAll;
+    }
+    let queries: Vec<QueryAst> = tokens
         .into_iter()
-        .map(|field| {
-            WildcardQuery {
-                field,
-                value: string_wildcard.clone(),
-                lenient: false,
-                case_insensitive: false,
+        .map(|(value, is_wildcard)| {
+            if is_wildcard {
+                WildcardQuery {
+                    field: field.clone(),
+                    value,
+                    lenient: false,
+                    case_insensitive: false,
+                }
+                .into()
+            } else {
+                TermQuery {
+                    field: field.clone(),
+                    value,
+                }
+                .into()
             }
-            .into()
         })
         .collect();
-    union(wildcard_query_asts)
+    intersection(queries)
+}
+
+fn build_wildcard_query(wildcard_query: AttributeWildcardQueryNode) -> QueryAst {
+    let asts: Vec<QueryAst> = expand_virtual_fields(wildcard_query.attribute)
+        .into_iter()
+        .map(|field| {
+            if let Some(ref pattern) = wildcard_query.pattern {
+                if is_datadog_tokenized(&field) {
+                    wildcard_tokens_to_query(field, tokenize_wildcard_pattern_for_query(pattern))
+                } else {
+                    WildcardQuery {
+                        field,
+                        value: wildcard_pattern_to_string(pattern),
+                        lenient: false,
+                        case_insensitive: false,
+                    }
+                    .into()
+                }
+            } else {
+                // we only do this if upstream did not provide us with a preparsed
+                // (non deprecated) input
+                #[allow(deprecated)]
+                WildcardQuery {
+                    field,
+                    value: wildcard_query.wildcard.clone(),
+                    lenient: false,
+                    case_insensitive: false,
+                }
+                .into()
+            }
+        })
+        .collect();
+    union(asts)
 }
 
 fn build_term_in_query(term_in_query: AttributeTermInQueryNode) -> Result<QueryAst, InvalidQuery> {
@@ -306,7 +350,12 @@ fn build_quoted_query(quote_query_node: AttributeQuotedQueryNode) -> QueryAst {
     union(asts)
 }
 
-fn convert_query(field: String, string_pattern: &str, mode: SearchQueryMode) -> QueryAst {
+fn convert_query(
+    field: String,
+    string_pattern: &str,
+    pattern_opt: Option<&WildcardPattern>,
+    mode: SearchQueryMode,
+) -> QueryAst {
     use crate::{BooleanOperand, MatchAllOrNone};
     match mode {
         SearchQueryMode::Wes => FullTextQuery {
@@ -333,34 +382,49 @@ fn convert_query(field: String, string_pattern: &str, mode: SearchQueryMode) -> 
             lenient: false,
         }
         .into(),
-        SearchQueryMode::WesPrefix => {
-            let text = string_pattern.trim_end_matches('*');
-            FullTextQuery {
-                field,
-                text: text.to_string(),
-                params: FullTextParams {
-                    tokenizer: None,
-                    // SaaS returns documents where terms are not in the right order
-                    mode: FullTextMode::BoolPrefix {
-                        operator: BooleanOperand::And,
-                        max_expansions: u32::MAX,
-                    },
-                    zero_terms_query: MatchAllOrNone::MatchNone,
-                },
-                lenient: false,
+        SearchQueryMode::WesPrefix | SearchQueryMode::WesGlob => {
+            if let Some(pattern) = pattern_opt {
+                if is_datadog_tokenized(&field) {
+                    let mut pattern = pattern.clone();
+                    if mode == SearchQueryMode::WesPrefix {
+                        pattern.tokens.push(WildcardToken {
+                            prefix_unbounded_n_wild: true,
+                            prefix_min_n_wild: 0,
+                            literal: String::new(),
+                        });
+                    }
+                    wildcard_tokens_to_query(field, tokenize_wildcard_pattern_for_query(&pattern))
+                } else {
+                    let value = wildcard_pattern_to_string(pattern);
+                    let value = if mode == SearchQueryMode::WesPrefix {
+                        format!("{}*", value)
+                    } else {
+                        value
+                    };
+                    WildcardQuery {
+                        field,
+                        value,
+                        lenient: false,
+                        case_insensitive: false,
+                    }
+                    .into()
+                }
+            } else {
+                // we only do this if upstream did not provide us with a preparsed
+                // (non deprecated) input
+                let value = if mode == SearchQueryMode::WesPrefix {
+                    format!("{}*", string_pattern)
+                } else {
+                    string_pattern.to_string()
+                };
+                WildcardQuery {
+                    field,
+                    value,
+                    lenient: false,
+                    case_insensitive: false,
+                }
+                .into()
             }
-            .into()
-        }
-        SearchQueryMode::WesGlob => {
-            // we could "manually tokenize" and make into an union of wildcard queries to reproduce
-            // more correctly SaaS behavior.
-            WildcardQuery {
-                field,
-                value: string_pattern.to_string(),
-                lenient: false,
-                case_insensitive: false,
-            }
-            .into()
         }
         SearchQueryMode::InvalidSearchMode => {
             // This shouldn't happen as we check for this before calling convert_query
@@ -388,7 +452,14 @@ fn build_search_query(search_query: AttributeSearchQueryNode) -> Result<QueryAst
 
     let asts: Vec<QueryAst> = expand_virtual_fields(search_query.attribute)
         .into_iter()
-        .map(|field| convert_query(field, &string_pattern, mode))
+        .map(|field| {
+            convert_query(
+                field,
+                &string_pattern,
+                search_query.structured_text.as_ref(),
+                mode,
+            )
+        })
         .collect();
     Ok(union(asts))
 }
@@ -467,6 +538,47 @@ impl From<InvalidQuery> for quickwit_proto::cloudprem::CloudPremError {
     }
 }
 
+/// Splits a [`WildcardPattern`] into per-token entries compatible with the DatadogTokenizer.
+///
+/// Each entry is `(value, is_wildcard)`: `is_wildcard` is `true` when `value` contains `*` or
+/// `?` and needs a [`WildcardQuery`], `false` when a plain term query suffices.
+fn tokenize_wildcard_pattern_for_query(pattern: &WildcardPattern) -> Vec<(String, bool)> {
+    use unicode_segmentation::UnicodeSegmentation;
+
+    let mut result: Vec<(String, bool)> = Vec::new();
+
+    let mut current = String::new();
+    let mut current_has_wildcard = false;
+
+    for token in &pattern.tokens {
+        for _ in 0..token.prefix_min_n_wild {
+            current.push('?');
+            current_has_wildcard = true;
+        }
+        if token.prefix_unbounded_n_wild {
+            current.push('*');
+            current_has_wildcard = true;
+        }
+        for segment in token.literal.split_word_bounds() {
+            if segment.chars().any(|c| c.is_alphanumeric()) {
+                current.push_str(segment);
+            } else {
+                // Separator: flush if `current` has a word, then reset.
+                if current.chars().any(|c| c.is_alphanumeric()) {
+                    result.push((std::mem::take(&mut current), current_has_wildcard));
+                }
+                current.clear();
+                current_has_wildcard = false;
+            }
+        }
+    }
+    if current.chars().any(|c| c.is_alphanumeric()) {
+        result.push((current, current_has_wildcard));
+    }
+    result
+}
+
+/// Splits a [`WildcardPattern`] into a wildcard query string suitable only for untokenized fields.
 fn wildcard_pattern_to_string(pattern: &WildcardPattern) -> String {
     let mut string_wildcard = String::new();
     for token in &pattern.tokens {
@@ -526,6 +638,138 @@ mod tests {
 
     use super::*;
     use crate::{BooleanOperand, MatchAllOrNone};
+
+    fn make_pattern(tokens: Vec<(i32, bool, &str)>) -> WildcardPattern {
+        WildcardPattern {
+            tokens: tokens
+                .into_iter()
+                .map(
+                    |(prefix_min_n_wild, prefix_unbounded_n_wild, literal)| WildcardToken {
+                        prefix_min_n_wild,
+                        prefix_unbounded_n_wild,
+                        literal: literal.to_string(),
+                    },
+                )
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_simple_word() {
+        // "error" -> [("error", false)]
+        let pattern = make_pattern(vec![(0, false, "error")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![("error".to_string(), false)]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_multi_word_literal() {
+        // "timeout bar" (no wildcards) -> [("timeout", false), ("bar", false)]
+        let pattern = make_pattern(vec![(0, false, "timeout bar")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![("timeout".to_string(), false), ("bar".to_string(), false)]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_glob_two_tokens() {
+        // "err*timeout" -> token1={literal="err"}, token2={prefix=*, literal="timeout"}
+        // The first word of token2 is stitched onto the previous entry through the *.
+        let pattern = make_pattern(vec![(0, false, "err"), (0, true, "timeout")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![("err*timeout".to_string(), true)]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_glob_multi_word() {
+        // "err*timeout bar" -> token1={literal="err"}, token2={prefix=*, literal="timeout bar"}
+        // "timeout" stitches onto "err" through the *, and "bar" is a separate plain term.
+        let pattern = make_pattern(vec![(0, false, "err"), (0, true, "timeout bar")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![
+                ("err*timeout".to_string(), true),
+                ("bar".to_string(), false)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_trailing_wildcard() {
+        // "err*" -> token1={literal="err"}, token2={prefix=*, literal=""}
+        let pattern = make_pattern(vec![(0, false, "err"), (0, true, "")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![("err*".to_string(), true)]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_surround_wildcard() {
+        // "*foo*" -> token1={prefix=*, literal="foo"}, token2={prefix=*, literal=""}
+        let pattern = make_pattern(vec![(0, true, "foo"), (0, true, "")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![("*foo*".to_string(), true)]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_question_mark_prefix() {
+        // "?timeout" -> token={prefix_min=1, literal="timeout"}
+        let pattern = make_pattern(vec![(1, false, "timeout")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![("?timeout".to_string(), true)]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_question_mark_trailing() {
+        // "err?" -> token1={literal="err"}, token2={prefix_min=1, literal=""}
+        let pattern = make_pattern(vec![(0, false, "err"), (1, false, "")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![("err?".to_string(), true)]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_pure_wildcard() {
+        // "*" -> token={prefix=*, literal=""}
+        // No literal constraints: treated as MatchAll by the caller.
+        let pattern = make_pattern(vec![(0, true, "")]);
+        assert!(tokenize_wildcard_pattern_for_query(&pattern).is_empty());
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_trailing_sep_before_wildcard() {
+        // "err-*timeout": the "-" after "err" is a word-boundary separator, so "err" and
+        // "*timeout" must not be stitched together.
+        // token1={literal="err-"}, token2={prefix=*, literal="timeout"}
+        let pattern = make_pattern(vec![(0, false, "err-"), (0, true, "timeout")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![("err".to_string(), false), ("*timeout".to_string(), true)]
+        );
+    }
+
+    #[test]
+    fn test_tokenize_wildcard_pattern_leading_sep_after_wildcard() {
+        // "err*-timeout": the "*" is directly after "err" (no separator between them), so it
+        // becomes a suffix of "err" → "err*". The "-" then splits, leaving "timeout" separate.
+        // token1={literal="err"}, token2={prefix=*, literal="-timeout"}
+        let pattern = make_pattern(vec![(0, false, "err"), (0, true, "-timeout")]);
+        assert_eq!(
+            tokenize_wildcard_pattern_for_query(&pattern),
+            vec![("err*".to_string(), true), ("timeout".to_string(), false)]
+        );
+    }
 
     #[test]
     fn test_term_query_expand_all() {
@@ -751,18 +995,11 @@ mod tests {
         let search_query = AttributeSearchQueryNode {
             attribute: EVP_WES_FIELD.to_string(),
             structured_text: Some(WildcardPattern {
-                tokens: vec![
-                    WildcardToken {
-                        literal: "err".to_string(),
-                        prefix_min_n_wild: 0,
-                        prefix_unbounded_n_wild: false,
-                    },
-                    WildcardToken {
-                        literal: String::new(),
-                        prefix_min_n_wild: 0,
-                        prefix_unbounded_n_wild: true,
-                    },
-                ],
+                tokens: vec![WildcardToken {
+                    literal: "err".to_string(),
+                    prefix_min_n_wild: 0,
+                    prefix_unbounded_n_wild: false,
+                }],
             }),
             mode: SearchQueryMode::WesPrefix as i32,
             ..Default::default()
@@ -771,31 +1008,17 @@ mod tests {
 
         let expected_ast = QueryAst::Bool(BoolQuery {
             should: vec![
-                QueryAst::FullText(FullTextQuery {
+                QueryAst::Wildcard(WildcardQuery {
                     field: "message".to_string(),
-                    text: "err".to_string(),
-                    params: FullTextParams {
-                        tokenizer: None,
-                        mode: FullTextMode::BoolPrefix {
-                            operator: BooleanOperand::And,
-                            max_expansions: u32::MAX,
-                        },
-                        zero_terms_query: MatchAllOrNone::MatchNone,
-                    },
+                    value: "err*".to_string(),
                     lenient: false,
+                    case_insensitive: false,
                 }),
-                QueryAst::FullText(FullTextQuery {
+                QueryAst::Wildcard(WildcardQuery {
                     field: "all".to_string(),
-                    text: "err".to_string(),
-                    params: FullTextParams {
-                        tokenizer: None,
-                        mode: FullTextMode::BoolPrefix {
-                            operator: BooleanOperand::And,
-                            max_expansions: u32::MAX,
-                        },
-                        zero_terms_query: MatchAllOrNone::MatchNone,
-                    },
+                    value: "err*".to_string(),
                     lenient: false,
+                    case_insensitive: false,
                 }),
             ],
             ..Default::default()
