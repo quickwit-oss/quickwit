@@ -470,8 +470,9 @@ impl ReplicateFailureReason {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IngesterStatus {
+    /// For nodes without an ingester.
     Unspecified = 0,
-    /// The ingester is live but not ready yet to accept requests.
+    /// The ingester is live but not ready yet to accept requests (i.e. the Write-Ahead Log is not loaded yet).
     Initializing = 1,
     /// The ingester is ready and accepts read and write requests.
     Ready = 2,

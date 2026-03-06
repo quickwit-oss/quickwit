@@ -1106,7 +1106,7 @@ impl Handler<RebalanceShardsCallback> for ControlPlane {
             };
             self.model.close_shards(&source_uid, &[shard_id]);
         }
-        // We drop the rebalance guard explicitly here to put some emphasis on where a the rebalance
+        // We drop the rebalance guard explicitly here to put some emphasis on where the rebalance
         // lock is released.
         drop(message.rebalance_guard);
         Ok(())
@@ -1128,16 +1128,23 @@ async fn watcher_indexers(
         let Some(mailbox) = weak_mailbox.upgrade() else {
             return;
         };
-        let mut trigger_rebalance = false;
 
+        // Ingesters have two readiness levels:
+        // 1. Cluster connectivity: node is up and can reach the metastore (similar to other nodes)
+        // 2. Shard readiness: IngesterStatus::Ready indicates the ingester can accept new shards
+        // We rebalance shards when either readiness level changes.
+        let mut trigger_rebalance = false;
         match cluster_change {
             ClusterChange::Add(node) if node.is_indexer() => {
-                info!(
-                    "indexer `{}` joined the cluster: rebalancing shards and rebuilding indexing \
-                     plan",
-                    node.node_id()
-                );
-                trigger_rebalance = true;
+                if node.ingester_status().is_ready() {
+                    info!(
+                        "indexer `{}` with status `{}` joined the cluster: rebalancing shards and \
+                         rebuilding indexing plan",
+                        node.node_id(),
+                        node.ingester_status().as_json_str_name()
+                    );
+                    trigger_rebalance = true;
+                }
             }
             ClusterChange::Remove(node) if node.is_indexer() => {
                 info!(
@@ -2457,18 +2464,47 @@ mod tests {
 
         let cluster_change_stream_tx = cluster_change_stream_factory.change_stream_tx();
 
+        // a non-indexer node status change doesn't trigger a shard rebalancing.
         let metastore_node = ClusterNode::for_test(
             "test-metastore",
-            1337,
+            1515,
             false,
             &["metastore"],
             &[],
-            IngesterStatus::Ready,
+            IngesterStatus::Unspecified,
         )
         .await;
         let cluster_change = ClusterChange::Add(metastore_node);
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert!(
+            control_plane_inbox
+                .drain_for_test_typed::<RebalanceShards>()
+                .is_empty()
+        );
+
+        // an indexer initializing doesn't trigger a shard rebalancing.
+        let indexer_node_initializing: ClusterNode = ClusterNode::for_test(
+            "test-indexer",
+            1515,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Initializing,
+        )
+        .await;
+        let cluster_change = ClusterChange::Add(indexer_node_initializing);
+        cluster_change_stream_tx.send(cluster_change).unwrap();
+
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        assert!(
+            control_plane_inbox
+                .drain_for_test_typed::<RebalanceShards>()
+                .is_empty()
+        );
+
+        // an indexer ready triggers a shard rebalancing.
         let indexer_node: ClusterNode = ClusterNode::for_test(
             "test-indexer",
             1515,
@@ -2481,13 +2517,17 @@ mod tests {
         let cluster_change = ClusterChange::Add(indexer_node.clone());
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
+        tokio::time::sleep(Duration::from_millis(1)).await;
+        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
+
+        // removing an indexer node triggers a shard rebalancing.
         let cluster_change = ClusterChange::Remove(indexer_node.clone());
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
-        let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
         let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
 
-        // Test that a ClusterChange::Update with a status transition triggers rebalance.
+        // a change in IngesterStatus readiness triggers a shard rebalancing.
         let node_ready = ClusterNode::for_test(
             "test-indexer",
             1515,
@@ -2512,6 +2552,7 @@ mod tests {
         };
         cluster_change_stream_tx.send(cluster_change).unwrap();
 
+        tokio::time::sleep(Duration::from_millis(1)).await;
         let RebalanceShards = control_plane_inbox.recv_typed_message().await.unwrap();
 
         universe.assert_quit().await;
