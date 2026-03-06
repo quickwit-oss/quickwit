@@ -353,7 +353,7 @@ fn build_quoted_query(quote_query_node: AttributeQuotedQueryNode) -> QueryAst {
 fn convert_query(
     field: String,
     string_pattern: &str,
-    pattern: Option<&WildcardPattern>,
+    pattern_opt: Option<&WildcardPattern>,
     mode: SearchQueryMode,
 ) -> QueryAst {
     use crate::{BooleanOperand, MatchAllOrNone};
@@ -383,7 +383,7 @@ fn convert_query(
         }
         .into(),
         SearchQueryMode::WesPrefix | SearchQueryMode::WesGlob => {
-            if let Some(pattern) = pattern {
+            if let Some(pattern) = pattern_opt {
                 if is_datadog_tokenized(&field) {
                     let mut pattern = pattern.clone();
                     if mode == SearchQueryMode::WesPrefix {
