@@ -1232,9 +1232,7 @@ fn setup_indexer_pool(
         let indexing_service_clone_opt = indexing_service_opt.clone();
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node) | ClusterChange::Update { updated: node, .. }
-                    if node.is_indexer() =>
-                {
+                ClusterChange::Add(node) if node.is_indexer() => {
                     let change = build_indexer_insert_change(
                         &node,
                         indexing_service_clone_opt,
@@ -1262,8 +1260,9 @@ fn build_indexer_insert_change(
     info!(
         node_id = chitchat_id.node_id,
         generation_id = chitchat_id.generation_id,
-        "adding node `{}` to indexer pool",
+        "adding node `{}` with ingester status `{}` to indexer pool",
         chitchat_id.node_id,
+        node.ingester_status()
     );
     let node_id: NodeId = node.node_id().into();
     let client = build_indexing_service(node, indexing_service_opt, grpc_max_message_size);
@@ -1468,10 +1467,8 @@ mod tests {
     use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
-    use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
-    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_search::Job;
     use tokio::sync::watch;
     use tonic::transport::{Channel, Server};
@@ -1614,6 +1611,7 @@ mod tests {
             node_config.grpc_config.max_message_size,
         );
 
+        // adding a indexer node refreshes the indexer pool
         let new_indexer_node = ClusterNode::for_test(
             "test-indexer-node",
             1,
@@ -1630,42 +1628,9 @@ mod tests {
 
         assert_eq!(indexer_pool.len(), 1);
 
-        let new_indexer_node_info = indexer_pool.get("test-indexer-node").unwrap();
-        assert!(new_indexer_node_info.indexing_tasks.is_empty());
-
-        let new_indexing_task = IndexingTask {
-            pipeline_uid: Some(PipelineUid::for_test(0u128)),
-            index_uid: Some(IndexUid::for_test("test-index", 0)),
-            source_id: "test-source".to_string(),
-            shard_ids: Vec::new(),
-            params_fingerprint: 0,
-        };
-        let updated_indexer_node = ClusterNode::for_test(
-            "test-indexer-node",
-            1,
-            true,
-            &["indexer"],
-            std::slice::from_ref(&new_indexing_task),
-            IngesterStatus::Ready,
-        )
-        .await;
+        // removing an indexer node refreshes the indexer pool
         cluster_change_stream_tx
-            .send(ClusterChange::Update {
-                previous: new_indexer_node,
-                updated: updated_indexer_node.clone(),
-            })
-            .unwrap();
-        tokio::time::sleep(Duration::from_millis(1)).await;
-
-        let updated_indexer_node_info = indexer_pool.get("test-indexer-node").unwrap();
-        assert_eq!(updated_indexer_node_info.indexing_tasks.len(), 1);
-        assert_eq!(
-            updated_indexer_node_info.indexing_tasks[0],
-            new_indexing_task
-        );
-
-        cluster_change_stream_tx
-            .send(ClusterChange::Remove(updated_indexer_node))
+            .send(ClusterChange::Remove(new_indexer_node))
             .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 
