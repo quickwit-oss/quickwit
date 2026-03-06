@@ -986,9 +986,7 @@ fn setup_ingester_pool(
         let ingester_opt_clone = ingester_opt.clone();
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node)
-                    if node.is_indexer() && node.ingester_status().is_ready() =>
-                {
+                ClusterChange::Add(node) if node.is_indexer() => {
                     let change = build_ingester_insert_change(
                         &node,
                         ingester_opt_clone,
@@ -997,31 +995,19 @@ fn setup_ingester_pool(
                     );
                     Some(change)
                 }
-                ClusterChange::Update { previous, updated } if updated.is_indexer() => {
-                    if !previous.is_ready() && updated.is_ready() {
-                        let change = build_ingester_insert_change(
-                            &updated,
-                            ingester_opt_clone,
-                            grpc_max_message_size,
-                            grpc_compression_encoding_opt,
-                        );
-                        Some(change)
-                    } else if previous.is_ready() && !updated.is_ready() {
-                        let change = build_ingester_remove_change(&previous);
-                        Some(change)
-                    } else if previous.ingester_status().is_ready()
-                        && !updated.ingester_status().is_ready()
-                    {
-                        let change = build_ingester_insert_change(
-                            &updated,
-                            ingester_opt_clone,
-                            grpc_max_message_size,
-                            grpc_compression_encoding_opt,
-                        );
-                        Some(change)
-                    } else {
-                        None
-                    }
+                ClusterChange::Update { previous, updated }
+                    if updated.is_indexer()
+                        && previous.ingester_status() != updated.ingester_status() =>
+                {
+                    // only update the ingester pool when the ingester status changes, to avoid
+                    // unnecessary churn
+                    let change = build_ingester_insert_change(
+                        &updated,
+                        ingester_opt_clone,
+                        grpc_max_message_size,
+                        grpc_compression_encoding_opt,
+                    );
+                    Some(change)
                 }
                 ClusterChange::Remove(node) if node.is_indexer() => {
                     let change = build_ingester_remove_change(&node);
@@ -1727,14 +1713,14 @@ mod tests {
             ByteSize::mib(20),
         );
 
-        // Add an indexer node with IngesterStatus::Ready.
+        // Add an indexer node with IngesterStatus::Initializing.
         let new_node = ClusterNode::for_test(
             "test-ingester-node",
             1,
             false,
             &["indexer"],
             &[],
-            IngesterStatus::Ready,
+            IngesterStatus::Initializing,
         )
         .await;
         cluster_change_stream_tx
@@ -1746,10 +1732,34 @@ mod tests {
         let pool_entry = ingester_pool
             .get(&NodeId::from("test-ingester-node"))
             .unwrap();
+        assert_eq!(pool_entry.status, IngesterStatus::Initializing);
+
+        // Update the node: ingester status transitions from Initializing to Ready.
+        let updated_node = ClusterNode::for_test(
+            "test-ingester-node",
+            1,
+            false,
+            &["indexer"],
+            &[],
+            IngesterStatus::Ready,
+        )
+        .await;
+        cluster_change_stream_tx
+            .send(ClusterChange::Update {
+                previous: new_node.clone(),
+                updated: updated_node.clone(),
+            })
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        assert_eq!(ingester_pool.len(), 1);
+        let pool_entry = ingester_pool
+            .get(&NodeId::from("test-ingester-node"))
+            .unwrap();
         assert_eq!(pool_entry.status, IngesterStatus::Ready);
 
         // Update the node: ingester status transitions from Ready to Decommissioning.
-        let updated_node = ClusterNode::for_test(
+        let updated_node_2 = ClusterNode::for_test(
             "test-ingester-node",
             1,
             false,
@@ -1760,8 +1770,8 @@ mod tests {
         .await;
         cluster_change_stream_tx
             .send(ClusterChange::Update {
-                previous: new_node,
-                updated: updated_node.clone(),
+                previous: updated_node.clone(),
+                updated: updated_node_2.clone(),
             })
             .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
