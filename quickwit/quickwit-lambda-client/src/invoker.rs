@@ -198,11 +198,10 @@ impl AwsLambdaInvoker {
 
                     // Determine whether to retry and how long to wait.
                     let delay = match &error {
-                        LambdaInvokeError::RateLimited(retry_after) => {
-                            Some(retry_after.unwrap_or_else(|| {
-                                LAMBDA_RETRY_PARAMS.compute_delay(num_attempts)
-                            }))
-                        }
+                        LambdaInvokeError::RateLimited(retry_after) => Some(
+                            retry_after
+                                .unwrap_or_else(|| LAMBDA_RETRY_PARAMS.compute_delay(num_attempts)),
+                        ),
                         LambdaInvokeError::Timeout(_) => {
                             Some(LAMBDA_RETRY_PARAMS.compute_delay(num_attempts))
                         }
