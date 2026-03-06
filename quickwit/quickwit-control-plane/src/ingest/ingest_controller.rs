@@ -1031,6 +1031,7 @@ impl IngestController {
             .set(shards_to_rebalance.len() as i64);
 
         if shards_to_rebalance.is_empty() {
+            debug!("skipping rebalance: no shards to rebalance");
             return Ok(0);
         }
         let mut per_source_num_shards_to_open: HashMap<SourceUid, usize> = HashMap::new();
