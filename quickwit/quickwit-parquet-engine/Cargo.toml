@@ -13,8 +13,10 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 arrow = { workspace = true }
+base64 = { workspace = true }
 chrono = { workspace = true }
 parquet = { workspace = true }
+prost = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-proto = { workspace = true }
 sea-query = { workspace = true, optional = true }
