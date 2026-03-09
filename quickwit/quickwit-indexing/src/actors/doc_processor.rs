@@ -20,7 +20,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
-use fnv::FnvHashMap;
+use fnv::FnvBuildHasher;
+use hashbrown::hash_map::EntryRef;
+use hashbrown::{Equivalent, HashMap};
 use metrics::Counter;
 use pomchi::{DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -56,7 +58,36 @@ const DEFAULT_MAX_LOG_PAST_AGE_HOURS: u64 = 18;
 const DEFAULT_MAX_LOG_FUTURE_AGE_HOURS: u64 = 12;
 const MAX_LOG_PAST_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_PAST_AGE_HOURS";
 const MAX_LOG_FUTURE_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_FUTURE_AGE_HOURS";
-const UNSET_PIPELINE_SOURCE_LABEL: &str = "unset";
+const UNSET_PIPELINE_LABEL: &str = "unset";
+
+type PipelineCpuMicrosBySourceAndService = HashMap<PipelineCpuLabels, u64, FnvBuildHasher>;
+
+#[derive(Debug, Eq, Hash, PartialEq)]
+struct PipelineCpuLabels {
+    source: String,
+    service: String,
+}
+
+#[derive(Debug, Eq, Hash, PartialEq)]
+struct PipelineCpuLabelsRef<'a> {
+    source: &'a str,
+    service: &'a str,
+}
+
+impl Equivalent<PipelineCpuLabels> for PipelineCpuLabelsRef<'_> {
+    fn equivalent(&self, key: &PipelineCpuLabels) -> bool {
+        self.source == key.source && self.service == key.service
+    }
+}
+
+impl From<&PipelineCpuLabelsRef<'_>> for PipelineCpuLabels {
+    fn from(key: &PipelineCpuLabelsRef<'_>) -> Self {
+        Self {
+            source: key.source.to_string(),
+            service: key.service.to_string(),
+        }
+    }
+}
 
 pub(super) struct JsonDoc {
     json_obj: JsonObject,
@@ -210,7 +241,7 @@ fn parse_raw_doc<'a>(
     raw_doc: Bytes,
     num_bytes: usize,
     pipeline_opt: Option<&'a Pipeline>,
-    pipeline_cpu_micros_per_source: &'a mut FnvHashMap<String, u64>,
+    pipeline_cpu_micros_by_source_and_service: &'a mut PipelineCpuMicrosBySourceAndService,
 ) -> impl Iterator<Item = Result<JsonDoc, DocProcessorError>> + 'a {
     let json_doc_iter = try_into_json_docs(input_format, raw_doc, num_bytes);
     let Some(pipeline) = pipeline_opt else {
@@ -234,13 +265,21 @@ fn parse_raw_doc<'a>(
             let source = processed_log
                 .source
                 .as_deref()
-                .unwrap_or(UNSET_PIPELINE_SOURCE_LABEL);
+                .unwrap_or(UNSET_PIPELINE_LABEL);
+            let service = processed_log
+                .service
+                .as_deref()
+                .unwrap_or(UNSET_PIPELINE_LABEL);
             if let Ok(cpu_delta) = start.and_then(|start| start.try_elapsed()) {
                 let cpu_micros = cpu_delta.as_micros() as u64;
-                if let Some(cpu_micros_total) = pipeline_cpu_micros_per_source.get_mut(source) {
-                    *cpu_micros_total += cpu_micros;
-                } else {
-                    pipeline_cpu_micros_per_source.insert(source.to_string(), cpu_micros);
+                let key = PipelineCpuLabelsRef { source, service };
+                match pipeline_cpu_micros_by_source_and_service.entry_ref(&key) {
+                    EntryRef::Occupied(entry) => {
+                        *entry.into_mut() += cpu_micros;
+                    }
+                    EntryRef::Vacant(entry) => {
+                        entry.insert(cpu_micros);
+                    }
                 }
             }
 
@@ -526,11 +565,11 @@ impl DocProcessorCounters {
         };
     }
 
-    pub fn record_processing_pipeline_cpu_micros(&self, source: &str, micros: u64) {
+    pub fn record_processing_pipeline_cpu_micros(&self, source: &str, service: &str, micros: u64) {
         let index_label = quickwit_common::metrics::index_label(&self.index_id);
         crate::metrics::INDEXER_METRICS
             .processing_pipeline_thread_cpu_micros_total
-            .with_label_values([index_label, &self.pipeline_uid, source])
+            .with_label_values([index_label, &self.pipeline_uid, source, service])
             .inc_by(micros);
     }
 }
@@ -680,14 +719,14 @@ impl DocProcessor {
         // #[cfg(not(feature = "vrl"))]
         // let transform_opt: Option<&mut VrlProgram> = None;
 
-        let mut pipeline_cpu_micros_per_source =
-            FnvHashMap::with_capacity_and_hasher(8, Default::default());
+        let mut pipeline_cpu_micros_by_source_and_service =
+            HashMap::with_capacity_and_hasher(8, Default::default());
         for json_doc_result in parse_raw_doc(
             self.input_format,
             raw_doc,
             num_bytes,
             self.pipeline_opt.as_ref(),
-            &mut pipeline_cpu_micros_per_source,
+            &mut pipeline_cpu_micros_by_source_and_service,
         ) {
             let processed_doc_result =
                 json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
@@ -713,9 +752,12 @@ impl DocProcessor {
                 }
             }
         }
-        for (source, micros) in pipeline_cpu_micros_per_source {
-            self.counters
-                .record_processing_pipeline_cpu_micros(&source, micros);
+        for (labels, micros) in pipeline_cpu_micros_by_source_and_service {
+            self.counters.record_processing_pipeline_cpu_micros(
+                &labels.source,
+                &labels.service,
+                micros,
+            );
         }
     }
 
