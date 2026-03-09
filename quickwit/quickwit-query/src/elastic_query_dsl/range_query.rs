@@ -39,6 +39,14 @@ pub struct RangeQueryParams {
     boost: Option<NotNaNf32>,
     #[serde(default)]
     format: Option<JsonLiteral>,
+    #[serde(default)]
+    from: Option<JsonLiteral>,
+    #[serde(default)]
+    to: Option<JsonLiteral>,
+    #[serde(default)]
+    include_lower: Option<bool>,
+    #[serde(default)]
+    include_upper: Option<bool>,
 }
 
 pub type RangeQuery = OneFieldMap<RangeQueryParams>;
@@ -53,7 +61,34 @@ impl ConvertibleToQueryAst for RangeQuery {
             lte,
             boost,
             format,
+            from,
+            to,
+            include_lower,
+            include_upper,
         } = self.value;
+
+        let (mut gt, mut gte, mut lt, mut lte) = (gt, gte, lt, lte);
+        if let Some(from_val) = from
+            && gt.is_none()
+            && gte.is_none()
+        {
+            if include_lower.unwrap_or(true) {
+                gte = Some(from_val);
+            } else {
+                gt = Some(from_val);
+            }
+        }
+        if let Some(to_val) = to
+            && lt.is_none()
+            && lte.is_none()
+        {
+            if include_upper.unwrap_or(true) {
+                lte = Some(to_val);
+            } else {
+                lt = Some(to_val);
+            }
+        }
+
         let (gt, gte, lt, lte) = if let Some(JsonLiteral::String(java_date_format)) = format {
             let parser = StrptimeParser::from_java_datetime_format(&java_date_format)
                 .map_err(|err| anyhow::anyhow!("failed to parse range query date format. {err}"))?;
@@ -121,6 +156,7 @@ mod tests {
             lte: None,
             boost: None,
             format: JsonLiteral::String("yyyy-MM-dd['T'HH:mm:ss]".to_string()).into(),
+            ..Default::default()
         };
         let range_query: ElasticRangeQuery = ElasticRangeQuery {
             field: "date".to_string(),
@@ -138,6 +174,51 @@ mod tests {
         ));
     }
 
+    fn into_json_number(n: u64) -> JsonLiteral {
+        JsonLiteral::Number(serde_json::Number::from(n))
+    }
+
+    #[test]
+    fn test_range_query_with_from_to_inclusive() {
+        let range_json =
+            r#"{"score": {"from": 50, "to": 100, "include_lower": true, "include_upper": true}}"#;
+        let range_query: ElasticRangeQuery = serde_json::from_str(range_json).unwrap();
+        let ast = range_query.convert_to_query_ast().unwrap();
+        let QueryAst::Range(rq) = ast else {
+            panic!("expected Range, got {ast:?}");
+        };
+        assert_eq!(rq.field, "score");
+        assert_eq!(rq.lower_bound, Bound::Included(into_json_number(50)));
+        assert_eq!(rq.upper_bound, Bound::Included(into_json_number(100)));
+    }
+
+    #[test]
+    fn test_range_query_with_from_to_exclusive() {
+        let range_json =
+            r#"{"score": {"from": 50, "to": 100, "include_lower": false, "include_upper": false}}"#;
+        let range_query: ElasticRangeQuery = serde_json::from_str(range_json).unwrap();
+        let ast = range_query.convert_to_query_ast().unwrap();
+        let QueryAst::Range(rq) = ast else {
+            panic!("expected Range, got {ast:?}");
+        };
+        assert_eq!(rq.field, "score");
+        assert_eq!(rq.lower_bound, Bound::Excluded(into_json_number(50)));
+        assert_eq!(rq.upper_bound, Bound::Excluded(into_json_number(100)));
+    }
+
+    #[test]
+    fn test_range_query_with_from_to_defaults() {
+        let range_json = r#"{"score": {"from": 50, "to": 100}}"#;
+        let range_query: ElasticRangeQuery = serde_json::from_str(range_json).unwrap();
+        let ast = range_query.convert_to_query_ast().unwrap();
+        let QueryAst::Range(rq) = ast else {
+            panic!("expected Range, got {ast:?}");
+        };
+        assert_eq!(rq.field, "score");
+        assert_eq!(rq.lower_bound, Bound::Included(into_json_number(50)));
+        assert_eq!(rq.upper_bound, Bound::Included(into_json_number(100)));
+    }
+
     #[test]
     fn test_date_range_query_with_strict_date_optional_time_format() {
         let range_query_params = ElasticRangeQueryParams {
@@ -147,6 +228,7 @@ mod tests {
             lte: Some(JsonLiteral::String("2024-09-28T10:22:55.797Z".to_string())),
             boost: None,
             format: JsonLiteral::String("strict_date_optional_time".to_string()).into(),
+            ..Default::default()
         };
         let range_query: ElasticRangeQuery = ElasticRangeQuery {
             field: "timestamp".to_string(),
