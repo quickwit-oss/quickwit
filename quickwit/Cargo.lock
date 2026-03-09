@@ -7612,9 +7612,12 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "arrow",
+ "chrono",
  "parquet",
  "proptest",
+ "prost 0.14.3",
  "quickwit-common",
+ "quickwit-proto",
  "sea-query",
  "serde",
  "serde_json",

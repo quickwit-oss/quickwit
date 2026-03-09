@@ -37,10 +37,16 @@ pub mod indexing;
 pub mod ingest;
 pub mod metastore;
 pub mod search;
+pub mod sort_fields_error;
 pub mod types;
 
 pub use error::{GrpcServiceError, ServiceError, ServiceErrorCode};
 use search::ReportSplitsRequest;
+pub use sort_fields_error::SortFieldsError;
+
+pub mod sortschema {
+    include!("codegen/sortschema/sortschema.rs");
+}
 
 pub mod jaeger {
     pub mod api_v2 {
