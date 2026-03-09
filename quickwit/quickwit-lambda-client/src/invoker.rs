@@ -188,43 +188,35 @@ impl AwsLambdaInvoker {
         &self,
         request: LeafSearchRequest,
     ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
-        let mut num_attempts = 0usize;
+        let mut error = match self.invoke_leaf_search_once(request.clone()).await {
+            Ok(results) => return Ok(results),
+            Err(error) => error,
+        };
 
-        loop {
+        for num_attempts in 1..LAMBDA_RETRY_PARAMS.max_attempts {
+            // Determine whether to retry and how long to wait.
+            let delay = match &error {
+                LambdaInvokeError::RateLimited(retry_after) => {
+                    retry_after.unwrap_or_else(|| LAMBDA_RETRY_PARAMS.compute_delay(num_attempts))
+                }
+                LambdaInvokeError::Timeout(_) => LAMBDA_RETRY_PARAMS.compute_delay(num_attempts),
+                LambdaInvokeError::Permanent(_) => return Err(error.into_search_error()),
+            };
+
+            warn!(
+                num_attempts = num_attempts,
+                delay_ms = delay.as_millis(),
+                "lambda invocation failed, retrying"
+            );
+            tokio::time::sleep(delay).await;
+
             match self.invoke_leaf_search_once(request.clone()).await {
                 Ok(results) => return Ok(results),
-                Err(error) => {
-                    num_attempts += 1;
-
-                    // Determine whether to retry and how long to wait.
-                    let delay = match &error {
-                        LambdaInvokeError::RateLimited(retry_after) => Some(
-                            retry_after
-                                .unwrap_or_else(|| LAMBDA_RETRY_PARAMS.compute_delay(num_attempts)),
-                        ),
-                        LambdaInvokeError::Timeout(_) => {
-                            Some(LAMBDA_RETRY_PARAMS.compute_delay(num_attempts))
-                        }
-                        LambdaInvokeError::Permanent(_) => None,
-                    };
-
-                    match delay {
-                        Some(delay) if num_attempts < LAMBDA_RETRY_PARAMS.max_attempts => {
-                            warn!(
-                                num_attempts = num_attempts,
-                                delay_ms = delay.as_millis(),
-                                "lambda invocation failed, retrying"
-                            );
-                            tokio::time::sleep(delay).await;
-                        }
-                        _ => {
-                            warn!(num_attempts = num_attempts, "lambda invocation failed");
-                            return Err(error.into_search_error());
-                        }
-                    }
-                }
-            }
+                Err(e) => error = e,
+            };
         }
+
+        Err(error.into_search_error())
     }
 
     async fn invoke_leaf_search_once(
