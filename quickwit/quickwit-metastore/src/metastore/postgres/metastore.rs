@@ -75,9 +75,9 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    IndexesMetadataResponseExt, ListMetricsSplitsResponseExt, PublishMetricsSplitsRequestExt,
-    PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE, StageMetricsSplitsRequestExt,
-    UpdateSourceRequestExt, use_shard_api,
+    IndexesMetadataResponseExt, ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt,
+    PublishMetricsSplitsRequestExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    StageMetricsSplitsRequestExt, UpdateSourceRequestExt, use_shard_api,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -1803,6 +1803,12 @@ impl MetastoreService for PostgresqlMetastore {
         let mut num_rows_list = Vec::with_capacity(splits_metadata.len());
         let mut size_bytes_list = Vec::with_capacity(splits_metadata.len());
         let mut split_metadata_jsons = Vec::with_capacity(splits_metadata.len());
+        let mut window_starts: Vec<Option<i64>> = Vec::with_capacity(splits_metadata.len());
+        let mut window_duration_secs_list: Vec<Option<i32>> = Vec::with_capacity(splits_metadata.len());
+        let mut sort_fields_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
+        let mut num_merge_ops_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
+        let mut row_keys_list: Vec<Option<Vec<u8>>> = Vec::with_capacity(splits_metadata.len());
+        let mut zonemap_regexes_json_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
 
         for metadata in &splits_metadata {
             let insertable =
@@ -1837,6 +1843,16 @@ impl MetastoreService for PostgresqlMetastore {
             num_rows_list.push(insertable.num_rows);
             size_bytes_list.push(insertable.size_bytes);
             split_metadata_jsons.push(insertable.split_metadata_json);
+            window_starts.push(insertable.window_start);
+            window_duration_secs_list.push(if insertable.window_duration_secs == 0 {
+                None
+            } else {
+                Some(insertable.window_duration_secs)
+            });
+            sort_fields_list.push(insertable.sort_fields);
+            num_merge_ops_list.push(insertable.num_merge_ops);
+            row_keys_list.push(insertable.row_keys);
+            zonemap_regexes_json_list.push(insertable.zonemap_regexes);
         }
 
         info!(
@@ -1863,6 +1879,12 @@ impl MetastoreService for PostgresqlMetastore {
                 num_rows,
                 size_bytes,
                 split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes,
                 create_timestamp,
                 update_timestamp
             )
@@ -1887,6 +1909,12 @@ impl MetastoreService for PostgresqlMetastore {
                 num_rows,
                 size_bytes,
                 split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes_json::jsonb,
                 (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
                 (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
             FROM UNNEST(
@@ -1904,7 +1932,13 @@ impl MetastoreService for PostgresqlMetastore {
                 $12::text[],
                 $13::bigint[],
                 $14::bigint[],
-                $15::text[]
+                $15::text[],
+                $16::bigint[],
+                $17::int[],
+                $18::text[],
+                $19::int[],
+                $20::bytea[],
+                $21::text[]
             ) AS staged(
                 split_id,
                 split_state,
@@ -1920,7 +1954,13 @@ impl MetastoreService for PostgresqlMetastore {
                 high_cardinality_tag_keys_json,
                 num_rows,
                 size_bytes,
-                split_metadata_json
+                split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes_json
             )
             ON CONFLICT (split_id) DO UPDATE
                 SET
@@ -1937,6 +1977,12 @@ impl MetastoreService for PostgresqlMetastore {
                     num_rows = EXCLUDED.num_rows,
                     size_bytes = EXCLUDED.size_bytes,
                     split_metadata_json = EXCLUDED.split_metadata_json,
+                    window_start = EXCLUDED.window_start,
+                    window_duration_secs = EXCLUDED.window_duration_secs,
+                    sort_fields = EXCLUDED.sort_fields,
+                    num_merge_ops = EXCLUDED.num_merge_ops,
+                    row_keys = EXCLUDED.row_keys,
+                    zonemap_regexes = EXCLUDED.zonemap_regexes,
                     update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                 WHERE metrics_splits.split_state = 'Staged'
             RETURNING split_id
@@ -1962,6 +2008,12 @@ impl MetastoreService for PostgresqlMetastore {
                     .bind(&num_rows_list)
                     .bind(&size_bytes_list)
                     .bind(&split_metadata_jsons)
+                    .bind(&window_starts)
+                    .bind(&window_duration_secs_list)
+                    .bind(&sort_fields_list)
+                    .bind(&num_merge_ops_list)
+                    .bind(&row_keys_list)
+                    .bind(&zonemap_regexes_json_list)
                     .fetch_all(tx.as_mut())
                     .await
                     .map_err(|sqlx_error| convert_sqlx_err(&index_id_for_err, sqlx_error))
@@ -2312,12 +2364,15 @@ impl MetastoreService for PostgresqlMetastore {
                     size_bytes: row.13,
                     split_metadata_json: row.14,
                     update_timestamp: row.15,
+                    // Compaction fields are read from the JSON blob via
+                    // to_metadata() — the SQL columns are only used for
+                    // filtering and SS-5 consistency checks.
                     window_start: None,
                     window_duration_secs: 0,
                     sort_fields: String::new(),
                     num_merge_ops: 0,
                     row_keys: None,
-                    zonemap_regexes: String::new(),
+                    zonemap_regexes: "{}".to_string(),
                 };
 
                 let state = pg_split.split_state().unwrap_or(MetricsSplitState::Staged);
@@ -2325,7 +2380,7 @@ impl MetastoreService for PostgresqlMetastore {
 
                 Some(MetricsSplitRecord {
                     state,
-                    update_timestamp: row.15,
+                    update_timestamp: pg_split.update_timestamp,
                     metadata,
                 })
             })
