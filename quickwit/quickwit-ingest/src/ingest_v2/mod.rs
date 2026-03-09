@@ -65,12 +65,12 @@ pub use self::router::IngestRouter;
 
 /// An ingester as represented in the pool, bundling the gRPC client with node metadata.
 #[derive(Debug, Clone)]
-pub struct IngesterHandle {
+pub struct IngesterPoolEntry {
     pub client: IngesterServiceClient,
     pub availability_zone: Option<String>,
 }
 
-pub type IngesterPool = Pool<NodeId, IngesterHandle>;
+pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;

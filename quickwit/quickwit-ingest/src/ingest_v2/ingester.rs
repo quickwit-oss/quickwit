@@ -1315,7 +1315,7 @@ mod tests {
     use crate::ingest_v2::broadcast::ShardInfos;
     use crate::ingest_v2::doc_mapper::try_build_doc_mapper;
     use crate::ingest_v2::fetch::tests::{into_fetch_eof, into_fetch_payload};
-    use crate::{IngesterHandle, MRecord};
+    use crate::{IngesterPoolEntry, MRecord};
 
     const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
@@ -2284,14 +2284,14 @@ mod tests {
             .build()
             .await;
 
-        let ingester_handle = IngesterHandle {
+        let ingester_pool_entry = IngesterPoolEntry {
             client: IngesterServiceClient::new(follower.clone()),
             availability_zone: None,
         };
 
         leader_ctx
             .ingester_pool
-            .insert(follower_ctx.node_id.clone(), ingester_handle);
+            .insert(follower_ctx.node_id.clone(), ingester_pool_entry);
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);
@@ -2495,14 +2495,14 @@ mod tests {
             None,
         );
 
-        let ingester_handle = IngesterHandle {
+        let ingester_pool_entry = IngesterPoolEntry {
             client: follower_grpc_client,
             availability_zone: None,
         };
 
         leader_ctx
             .ingester_pool
-            .insert(follower_ctx.node_id.clone(), ingester_handle);
+            .insert(follower_ctx.node_id.clone(), ingester_pool_entry);
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let index_uid2: IndexUid = IndexUid::for_test("test-index", 1);

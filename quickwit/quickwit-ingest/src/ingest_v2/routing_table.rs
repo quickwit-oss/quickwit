@@ -586,14 +586,14 @@ mod tests {
 
         ingester_pool.insert(
             "test-ingester-0".into(),
-            crate::IngesterHandle {
+            crate::IngesterPoolEntry {
                 client: IngesterServiceClient::mocked(),
                 availability_zone: None,
             },
         );
         ingester_pool.insert(
             "test-ingester-1".into(),
-            crate::IngesterHandle {
+            crate::IngesterPoolEntry {
                 client: IngesterServiceClient::mocked(),
                 availability_zone: None,
             },
@@ -689,14 +689,14 @@ mod tests {
 
         ingester_pool.insert(
             "test-ingester-0".into(),
-            crate::IngesterHandle {
+            crate::IngesterPoolEntry {
                 client: IngesterServiceClient::mocked(),
                 availability_zone: None,
             },
         );
         ingester_pool.insert(
             "test-ingester-1".into(),
-            crate::IngesterHandle {
+            crate::IngesterPoolEntry {
                 client: IngesterServiceClient::mocked(),
                 availability_zone: None,
             },
@@ -821,7 +821,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         ingester_pool.insert(
             "test-ingester-0".into(),
-            crate::IngesterHandle {
+            crate::IngesterPoolEntry {
                 client: IngesterServiceClient::mocked(),
                 availability_zone: None,
             },

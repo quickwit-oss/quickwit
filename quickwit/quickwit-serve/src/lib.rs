@@ -81,8 +81,8 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterHandle,
-    IngesterPool, LocalShardsUpdate, get_idle_shard_timeout,
+    GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
+    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
     setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
     start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
 };
@@ -993,11 +993,11 @@ async fn setup_ingest_v2(
                                 grpc_compression_encoding_opt,
                             )
                     };
-                    let handle = IngesterHandle {
+                    let ingester_pool_entry = IngesterPoolEntry {
                         client,
                         availability_zone,
                     };
-                    Some(Change::Insert(node_id, handle))
+                    Some(Change::Insert(node_id, ingester_pool_entry))
                 }
                 ClusterChange::Remove(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();

@@ -236,10 +236,10 @@ mod tests {
     use quickwit_proto::types::ShardId;
 
     use super::*;
-    use crate::IngesterHandle;
+    use crate::IngesterPoolEntry;
 
-    fn mocked_ingester(availability_zone: Option<&str>) -> IngesterHandle {
-        IngesterHandle {
+    fn mocked_ingester(availability_zone: Option<&str>) -> IngesterPoolEntry {
+        IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             availability_zone: availability_zone.map(|s| s.to_string()),
         }

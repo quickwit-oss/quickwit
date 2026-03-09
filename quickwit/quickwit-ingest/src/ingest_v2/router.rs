@@ -639,11 +639,11 @@ mod tests {
     use quickwit_proto::types::{DocUid, IndexUid, Position, ShardId, SourceUid};
 
     use super::*;
-    use crate::IngesterHandle;
+    use crate::IngesterPoolEntry;
     use crate::ingest_v2::workbench::SubworkbenchFailure;
 
-    fn mocked_ingester() -> IngesterHandle {
-        IngesterHandle {
+    fn mocked_ingester() -> IngesterPoolEntry {
+        IngesterPoolEntry {
             client: IngesterServiceClient::mocked(),
             availability_zone: None,
         }
@@ -1333,7 +1333,7 @@ mod tests {
             });
         ingester_pool.insert(
             "test-ingester-0".into(),
-            IngesterHandle {
+            IngesterPoolEntry {
                 client: IngesterServiceClient::from_mock(mock_ingester_0),
                 availability_zone: None,
             },
@@ -1368,7 +1368,7 @@ mod tests {
             });
         ingester_pool.insert(
             "test-ingester-1".into(),
-            IngesterHandle {
+            IngesterPoolEntry {
                 client: IngesterServiceClient::from_mock(mock_ingester_1),
                 availability_zone: None,
             },
@@ -1488,7 +1488,7 @@ mod tests {
             });
         ingester_pool.insert(
             "test-ingester-0".into(),
-            IngesterHandle {
+            IngesterPoolEntry {
                 client: IngesterServiceClient::from_mock(mock_ingester_0),
                 availability_zone: None,
             },
@@ -1636,7 +1636,7 @@ mod tests {
         let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
         ingester_pool.insert(
             "test-ingester-0".into(),
-            IngesterHandle {
+            IngesterPoolEntry {
                 client: ingester_0.clone(),
                 availability_zone: None,
             },
