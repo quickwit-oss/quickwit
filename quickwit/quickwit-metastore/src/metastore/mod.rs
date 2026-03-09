@@ -75,6 +75,10 @@ pub struct ListMetricsSplitsQuery {
     pub tag_region: Option<String>,
     /// Host tag filter.
     pub tag_host: Option<String>,
+    /// Window start filter for compaction scope queries.
+    pub window_start: Option<i64>,
+    /// Sort fields filter for compaction scope queries.
+    pub sort_fields: Option<String>,
     /// Limit number of results.
     pub limit: Option<usize>,
 }
@@ -105,6 +109,17 @@ impl ListMetricsSplitsQuery {
     /// Filter by metric names.
     pub fn with_metric_names(mut self, names: Vec<String>) -> Self {
         self.metric_names = names;
+        self
+    }
+
+    /// Filter by compaction scope (window_start + sort_fields).
+    pub fn with_compaction_scope(
+        mut self,
+        window_start: i64,
+        sort_fields: impl Into<String>,
+    ) -> Self {
+        self.window_start = Some(window_start);
+        self.sort_fields = Some(sort_fields.into());
         self
     }
 }

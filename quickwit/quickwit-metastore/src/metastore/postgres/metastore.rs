@@ -2167,13 +2167,13 @@ impl MetastoreService for PostgresqlMetastore {
                 return Err(MetastoreError::FailedPrecondition { entity, message });
             }
 
-            // Verify all replaced splits were marked for deletion
+            // Verify all replaced splits were marked for deletion.
             if marked_count as usize != replaced_split_ids.len() {
                 let entity = EntityKind::Splits {
                     split_ids: replaced_split_ids.clone(),
                 };
                 let message = format!(
-                    "expected to mark {} splits for deletion, but only {} were in Published state",
+                    "expected to replace {} splits, but only {} were in Published state",
                     replaced_split_ids.len(),
                     marked_count
                 );
@@ -2273,6 +2273,16 @@ impl MetastoreService for PostgresqlMetastore {
             param_idx += 1;
         }
 
+        // Compaction scope filters
+        if query.window_start.is_some() {
+            sql.push_str(&format!(" AND window_start = ${}", param_idx));
+            param_idx += 1;
+        }
+        if query.sort_fields.is_some() {
+            sql.push_str(&format!(" AND sort_fields = ${}", param_idx));
+            param_idx += 1;
+        }
+
         sql.push_str(" ORDER BY time_range_start ASC");
 
         // Add limit
@@ -2331,6 +2341,12 @@ impl MetastoreService for PostgresqlMetastore {
         }
         if let Some(ref host) = query.tag_host {
             query_builder = query_builder.bind(host);
+        }
+        if let Some(ws) = query.window_start {
+            query_builder = query_builder.bind(ws);
+        }
+        if let Some(ref sf) = query.sort_fields {
+            query_builder = query_builder.bind(sf);
         }
         if let Some(limit) = query.limit {
             query_builder = query_builder.bind(limit as i64);
