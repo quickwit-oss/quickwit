@@ -22,7 +22,7 @@ mod metrics;
 mod models;
 mod mrecord;
 mod mrecordlog_utils;
-mod node_routing_table;
+mod routing_table;
 mod publish_tracker;
 mod rate_meter;
 mod replication;

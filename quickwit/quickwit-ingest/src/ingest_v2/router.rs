@@ -46,7 +46,7 @@ use super::debouncing::{
 };
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::metrics::IngestResultMetrics;
-use super::node_routing_table::NodeBasedRoutingTable;
+use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
 use super::{IngesterPool, pending_subrequests};
 use crate::get_ingest_router_buffer_size;
@@ -102,7 +102,7 @@ struct RouterState {
     // Debounces `GetOrCreateOpenShardsRequest` requests to the control plane.
     debouncer: GetOrCreateOpenShardsRequestDebouncer,
     // Routing table of nodes, their WAL capacity, and the number of open shards per source.
-    node_routing_table: NodeBasedRoutingTable,
+    routing_table: RoutingTable,
 }
 
 impl fmt::Debug for IngestRouter {
@@ -125,7 +125,7 @@ impl IngestRouter {
     ) -> Self {
         let state = Arc::new(Mutex::new(RouterState {
             debouncer: GetOrCreateOpenShardsRequestDebouncer::default(),
-            node_routing_table: NodeBasedRoutingTable::new(self_availability_zone),
+            routing_table: RoutingTable::new(self_availability_zone),
         }));
         let ingest_semaphore_permits = get_ingest_router_buffer_size().as_u64() as usize;
         let ingest_semaphore = Arc::new(Semaphore::new(ingest_semaphore_permits));
@@ -161,7 +161,7 @@ impl IngestRouter {
         let mut state_guard = self.state.lock().await;
 
         for subrequest in pending_subrequests(&workbench.subworkbenches) {
-            if !state_guard.node_routing_table.has_open_nodes(
+            if !state_guard.routing_table.has_open_nodes(
                 &subrequest.index_id,
                 &subrequest.source_id,
                 ingester_pool,
@@ -252,7 +252,7 @@ impl IngestRouter {
         let mut state_guard = self.state.lock().await;
 
         for success in response.successes {
-            state_guard.node_routing_table.merge_from_shards(
+            state_guard.routing_table.merge_from_shards(
                 success.index_uid().clone(),
                 success.source_id,
                 success.open_shards,
@@ -303,7 +303,7 @@ impl IngestRouter {
                         // opportunity to get a fresh routing update.
                         let mut state_guard = self.state.lock().await;
                         for shard_update in routing_update.source_shard_updates {
-                            state_guard.node_routing_table.apply_capacity_update(
+                            state_guard.routing_table.apply_capacity_update(
                                 leader_id.clone(),
                                 shard_update.index_uid().clone(),
                                 shard_update.source_id,
@@ -354,7 +354,7 @@ impl IngestRouter {
         let state_guard = self.state.lock().await;
 
         for subrequest in pending_subrequests(&workbench.subworkbenches) {
-            let ingester_node = state_guard.node_routing_table.pick_node(
+            let ingester_node = state_guard.routing_table.pick_node(
                 &subrequest.index_id,
                 &subrequest.source_id,
                 &self.ingester_pool,
@@ -369,8 +369,8 @@ impl IngestRouter {
                 }
             };
             let az_locality = state_guard
-                .node_routing_table
-                .classify_az_locality(&ingester_node.node_id, &self.self_node_id);
+                .routing_table
+                .classify_az_locality(&ingester_node.node_id, &self.ingester_pool);
             INGEST_V2_METRICS
                 .ingest_attempts
                 .with_label_values([az_locality])
@@ -483,7 +483,7 @@ impl IngestRouter {
     pub async fn debug_info(&self) -> JsonValue {
         let state_guard = self.state.lock().await;
         let routing_table_json = state_guard
-            .node_routing_table
+            .routing_table
             .debug_info(&self.ingester_pool);
 
         json!({
@@ -614,7 +614,7 @@ impl EventSubscriber<IngesterCapacityScoreUpdate> for WeakRouterState {
             return;
         };
         let mut state_guard = state.lock().await;
-        state_guard.node_routing_table.apply_capacity_update(
+        state_guard.routing_table.apply_capacity_update(
             update.node_id,
             update.source_uid.index_uid,
             update.source_uid.source_id,
@@ -681,7 +681,7 @@ mod tests {
 
         {
             let mut state_guard = router.state.lock().await;
-            state_guard.node_routing_table.apply_capacity_update(
+            state_guard.routing_table.apply_capacity_update(
                 "test-ingester-0".into(),
                 IndexUid::for_test("test-index-0", 0),
                 "test-source".to_string(),
@@ -1280,7 +1280,7 @@ mod tests {
         let index_uid_1: IndexUid = IndexUid::for_test("test-index-1", 0);
         {
             let mut state_guard = router.state.lock().await;
-            state_guard.node_routing_table.merge_from_shards(
+            state_guard.routing_table.merge_from_shards(
                 index_uid_0.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1292,7 +1292,7 @@ mod tests {
                     ..Default::default()
                 }],
             );
-            state_guard.node_routing_table.merge_from_shards(
+            state_guard.routing_table.merge_from_shards(
                 index_uid_1.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1427,7 +1427,7 @@ mod tests {
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         {
             let mut state_guard = router.state.lock().await;
-            state_guard.node_routing_table.merge_from_shards(
+            state_guard.routing_table.merge_from_shards(
                 index_uid.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1536,7 +1536,7 @@ mod tests {
 
         {
             let mut state_guard = router.state.lock().await;
-            state_guard.node_routing_table.merge_from_shards(
+            state_guard.routing_table.merge_from_shards(
                 index_uid_0.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1547,7 +1547,7 @@ mod tests {
                     ..Default::default()
                 }],
             );
-            state_guard.node_routing_table.merge_from_shards(
+            state_guard.routing_table.merge_from_shards(
                 index_uid_1.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1591,7 +1591,7 @@ mod tests {
         let index_uid: IndexUid = IndexUid::for_test("test-index-0", 0);
         {
             let mut state_guard = router.state.lock().await;
-            state_guard.node_routing_table.merge_from_shards(
+            state_guard.routing_table.merge_from_shards(
                 index_uid.clone(),
                 "test-source".to_string(),
                 vec![Shard {
@@ -1696,7 +1696,7 @@ mod tests {
         ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
         let state_guard = router.state.lock().await;
         let node = state_guard
-            .node_routing_table
+            .routing_table
             .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
             .unwrap();
         assert_eq!(node.node_id, NodeId::from("test-ingester-0"));
@@ -1843,7 +1843,7 @@ mod tests {
         ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
         let state_guard = router.state.lock().await;
         let node = state_guard
-            .node_routing_table
+            .routing_table
             .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
             .unwrap();
         assert_eq!(node.node_id, NodeId::from("test-ingester-0"));

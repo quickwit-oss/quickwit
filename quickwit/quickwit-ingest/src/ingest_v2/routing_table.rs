@@ -96,12 +96,12 @@ impl RoutingEntry {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct NodeBasedRoutingTable {
+pub(super) struct RoutingTable {
     table: HashMap<(IndexId, SourceId), RoutingEntry>,
     self_availability_zone: Option<String>,
 }
 
-impl NodeBasedRoutingTable {
+impl RoutingTable {
     pub fn new(self_availability_zone: Option<String>) -> Self {
         Self {
             self_availability_zone,
@@ -123,6 +123,24 @@ impl NodeBasedRoutingTable {
             unavailable_leaders,
             &self.self_availability_zone,
         )
+    }
+
+    pub fn classify_az_locality(
+        &self,
+        target_node_id: &NodeId,
+        ingester_pool: &IngesterPool,
+    ) -> &'static str {
+        let Some(self_az) = &self.self_availability_zone else {
+            return "az_unaware";
+        };
+        let target_az = ingester_pool
+            .get(target_node_id)
+            .and_then(|entry| entry.availability_zone);
+        match target_az {
+            Some(ref az) if az == self_az => "same_az",
+            Some(_) => "cross_az",
+            None => "az_unaware",
+        }
     }
 
     pub fn debug_info(
@@ -247,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_apply_capacity_update() {
-        let mut table = NodeBasedRoutingTable::default();
+        let mut table = RoutingTable::default();
         let key = ("test-index".to_string(), "test-source".into());
 
         // Insert first node.
@@ -300,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_has_open_nodes() {
-        let mut table = NodeBasedRoutingTable::default();
+        let mut table = RoutingTable::default();
         let pool = IngesterPool::default();
 
         // Empty table.
@@ -348,7 +366,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_prefers_same_az() {
-        let mut table = NodeBasedRoutingTable::new(Some("az-1".to_string()));
+        let mut table = RoutingTable::new(Some("az-1".to_string()));
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
@@ -376,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_falls_back_to_cross_az() {
-        let mut table = NodeBasedRoutingTable::new(Some("az-1".to_string()));
+        let mut table = RoutingTable::new(Some("az-1".to_string()));
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
@@ -396,7 +414,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_no_az_awareness() {
-        let mut table = NodeBasedRoutingTable::default();
+        let mut table = RoutingTable::default();
         let pool = IngesterPool::default();
 
         table.apply_capacity_update(
@@ -416,7 +434,7 @@ mod tests {
 
     #[test]
     fn test_pick_node_missing_entry() {
-        let table = NodeBasedRoutingTable::new(Some("az-1".to_string()));
+        let table = RoutingTable::new(Some("az-1".to_string()));
         let pool = IngesterPool::default();
 
         assert!(
@@ -465,7 +483,7 @@ mod tests {
 
     #[test]
     fn test_merge_from_shards() {
-        let mut table = NodeBasedRoutingTable::default();
+        let mut table = RoutingTable::default();
         let index_uid = IndexUid::for_test("test-index", 0);
         let key = ("test-index".to_string(), "test-source".to_string());
 
@@ -515,5 +533,21 @@ mod tests {
         assert!(entry.nodes.contains_key("node-2"));
         assert!(entry.nodes.contains_key("node-3"));
         assert!(entry.nodes.contains_key("node-4"));
+    }
+
+    #[test]
+    fn test_classify_az_locality() {
+        let table = RoutingTable::new(Some("az-1".to_string()));
+        let pool = IngesterPool::default();
+        pool.insert("node-local".into(), mocked_ingester(Some("az-1")));
+        pool.insert("node-remote".into(), mocked_ingester(Some("az-2")));
+        pool.insert("node-no-az".into(), mocked_ingester(None));
+
+        assert_eq!(table.classify_az_locality(&"node-local".into(), &pool), "same_az");
+        assert_eq!(table.classify_az_locality(&"node-remote".into(), &pool), "cross_az");
+        assert_eq!(table.classify_az_locality(&"node-no-az".into(), &pool), "az_unaware");
+
+        let table_no_az = RoutingTable::default();
+        assert_eq!(table_no_az.classify_az_locality(&"node-local".into(), &pool), "az_unaware");
     }
 }
