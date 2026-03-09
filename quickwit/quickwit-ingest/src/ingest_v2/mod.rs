@@ -22,15 +22,13 @@ mod metrics;
 mod models;
 mod mrecord;
 mod mrecordlog_utils;
-mod node_routing_table;
 mod publish_tracker;
 mod rate_meter;
 mod replication;
 mod router;
-#[allow(dead_code)]
 mod routing_table;
 mod state;
-mod wal_capacity_timeseries;
+mod wal_capacity_tracker;
 mod workbench;
 
 use std::collections::HashMap;

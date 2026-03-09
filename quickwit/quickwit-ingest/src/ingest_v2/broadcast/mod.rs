@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #[allow(dead_code)]
-mod ingester_capacity_score;
+mod capacity_score;
 mod local_shards;
 
 use std::time::Duration;
@@ -26,7 +26,7 @@ pub(in crate::ingest_v2) const BROADCAST_INTERVAL_PERIOD: Duration = if cfg!(tes
     Duration::from_secs(5)
 };
 
-pub use ingester_capacity_score::{
+pub use capacity_score::{
     BroadcastIngesterCapacityScoreTask, IngesterCapacityScoreUpdate,
     setup_ingester_capacity_update_listener,
 };
