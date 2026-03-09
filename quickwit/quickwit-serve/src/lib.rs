@@ -82,9 +82,9 @@ use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
-    LocalShardsUpdate, get_idle_shard_timeout, setup_ingester_capacity_update_listener,
-    setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
-    wait_for_ingester_status,
+    IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
+    setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
+    start_ingest_api_service, wait_for_ingester_decommission, wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
@@ -905,6 +905,7 @@ async fn setup_ingest_v2(
         ingester_pool.clone(),
         replication_factor,
         event_broker.clone(),
+        node_config.availability_zone.clone(),
     );
     ingest_router.subscribe();
     setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone())
@@ -968,21 +969,21 @@ async fn setup_ingest_v2(
                         chitchat_id.node_id,
                     );
                     let node_id: NodeId = node.node_id().into();
+                    let availability_zone = node.availability_zone().map(|az| az.to_string());
 
-                    if node.is_self_node() {
+                    let client = if node.is_self_node() {
                         // Here, since the service is available locally, we bypass the network stack
                         // and use the instance directly. However, we still want client-side
                         // metrics, so we use both metrics layers.
                         let ingester = ingester_opt_clone_clone
                             .expect("ingester service should be initialized");
-                        let ingester_service = ingester_service_layer_stack(
+                        ingester_service_layer_stack(
                             IngesterServiceClient::tower()
                                 .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone()),
                         )
-                        .build(ingester);
-                        Some(Change::Insert(node_id, ingester_service))
+                        .build(ingester)
                     } else {
-                        let ingester_service = IngesterServiceClient::tower()
+                        IngesterServiceClient::tower()
                             .stack_layer(INGEST_GRPC_CLIENT_METRICS_LAYER.clone())
                             .stack_layer(TimeoutLayer::new(GRPC_INGESTER_SERVICE_TIMEOUT))
                             .build_from_channel(
@@ -990,9 +991,13 @@ async fn setup_ingest_v2(
                                 node.channel(),
                                 max_message_size,
                                 grpc_compression_encoding_opt,
-                            );
-                        Some(Change::Insert(node_id, ingester_service))
-                    }
+                            )
+                    };
+                    let ingester_pool_entry = IngesterPoolEntry {
+                        client,
+                        availability_zone,
+                    };
+                    Some(Change::Insert(node_id, ingester_pool_entry))
                 }
                 ClusterChange::Remove(node) if node.is_indexer() => {
                     let chitchat_id = node.chitchat_id();

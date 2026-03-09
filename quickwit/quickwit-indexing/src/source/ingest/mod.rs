@@ -345,7 +345,7 @@ impl IngestSource {
                 .push(truncate_shards_subrequest);
         }
         for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
-            let Some(ingester) = self.ingester_pool.get(ingester_id) else {
+            let Some(ingester) = self.ingester_pool.get(ingester_id).map(|h| h.client) else {
                 warn!("failed to truncate shard(s): ingester `{ingester_id}` is unavailable");
                 continue;
             };
@@ -672,6 +672,7 @@ mod tests {
     use quickwit_common::metrics::MEMORY_METRICS;
     use quickwit_common::stream_utils::InFlightValue;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
+    use quickwit_ingest::IngesterPoolEntry;
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{
         FetchMessage, IngesterServiceClient, MockIngesterService, TruncateShardsResponse,
@@ -686,6 +687,13 @@ mod tests {
     use super::*;
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
+
+    fn ingester_pool_entry(client: IngesterServiceClient) -> IngesterPoolEntry {
+        IngesterPoolEntry {
+            client,
+            availability_zone: None,
+        }
+    }
 
     // In this test, we simulate a source to which we sequentially assign the following set of
     // shards []
@@ -929,7 +937,7 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1126,7 +1134,7 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1291,7 +1299,7 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1599,7 +1607,7 @@ mod tests {
                 })
             });
 
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1699,7 +1707,7 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
+        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let mut mock_ingester_1 = MockIngesterService::new();
@@ -1726,7 +1734,7 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
+        let ingester_1 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_1));
         ingester_pool.insert("test-ingester-1".into(), ingester_1.clone());
 
         let mut mock_ingester_3 = MockIngesterService::new();
@@ -1746,7 +1754,7 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_3 = IngesterServiceClient::from_mock(mock_ingester_3);
+        let ingester_3 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_3));
         ingester_pool.insert("test-ingester-3".into(), ingester_3.clone());
 
         let event_broker = EventBroker::default();

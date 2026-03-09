@@ -63,7 +63,14 @@ use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
 pub use self::router::IngestRouter;
 
-pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;
+/// An ingester as represented in the pool, bundling the gRPC client with node metadata.
+#[derive(Debug, Clone)]
+pub struct IngesterPoolEntry {
+    pub client: IngesterServiceClient,
+    pub availability_zone: Option<String>,
+}
+
+pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;

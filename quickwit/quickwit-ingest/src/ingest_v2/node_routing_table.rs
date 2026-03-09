@@ -57,15 +57,25 @@ fn power_of_two_choices<'a>(candidates: &[&'a IngesterNode]) -> &'a IngesterNode
     }
 }
 
+fn pick_from(candidates: Vec<&IngesterNode>) -> Option<&IngesterNode> {
+    match candidates.len() {
+        0 => None,
+        1 => Some(candidates[0]),
+        _ => Some(power_of_two_choices(&candidates)),
+    }
+}
+
 impl RoutingEntry {
     /// Pick an ingester node to persist the request to. Uses power of two choices based on reported
-    /// ingester capacity, if more than one eligible node exists.
-    pub fn pick_node(
+    /// ingester capacity, if more than one eligible node exists. Prefers nodes in the same
+    /// availability zone, falling back to remote nodes.
+    fn pick_node(
         &self,
         ingester_pool: &IngesterPool,
         unavailable_leaders: &HashSet<NodeId>,
+        self_availability_zone: &Option<String>,
     ) -> Option<&IngesterNode> {
-        let eligible: Vec<&IngesterNode> = self
+        let (local_ingesters, remote_ingesters): (Vec<&IngesterNode>, Vec<&IngesterNode>) = self
             .nodes
             .values()
             .filter(|node| {
@@ -74,31 +84,55 @@ impl RoutingEntry {
                     && ingester_pool.contains_key(&node.node_id)
                     && !unavailable_leaders.contains(&node.node_id)
             })
-            .collect();
+            .partition(|node| {
+                let node_az = ingester_pool
+                    .get(&node.node_id)
+                    .and_then(|h| h.availability_zone);
+                node_az == *self_availability_zone
+            });
 
-        match eligible.len() {
-            0 => None,
-            1 => Some(eligible[0]),
-            _ => Some(power_of_two_choices(&eligible)),
-        }
+        pick_from(local_ingesters).or_else(|| pick_from(remote_ingesters))
     }
 }
 
 #[derive(Debug, Default)]
 pub(super) struct NodeBasedRoutingTable {
     table: HashMap<(IndexId, SourceId), RoutingEntry>,
+    self_availability_zone: Option<String>,
 }
 
 impl NodeBasedRoutingTable {
-    pub fn find_entry(&self, index_id: &str, source_id: &str) -> Option<&RoutingEntry> {
-        let key = (index_id.to_string(), source_id.to_string());
-        self.table.get(&key)
+    pub fn new(self_availability_zone: Option<String>) -> Self {
+        Self {
+            self_availability_zone,
+            ..Default::default()
+        }
     }
 
-    pub fn debug_info(&self) -> HashMap<IndexId, Vec<serde_json::Value>> {
+    pub fn pick_node(
+        &self,
+        index_id: &str,
+        source_id: &str,
+        ingester_pool: &IngesterPool,
+        unavailable_leaders: &HashSet<NodeId>,
+    ) -> Option<&IngesterNode> {
+        let key = (index_id.to_string(), source_id.to_string());
+        let entry = self.table.get(&key)?;
+        entry.pick_node(
+            ingester_pool,
+            unavailable_leaders,
+            &self.self_availability_zone,
+        )
+    }
+
+    pub fn debug_info(
+        &self,
+        ingester_pool: &IngesterPool,
+    ) -> HashMap<IndexId, Vec<serde_json::Value>> {
         let mut per_index: HashMap<IndexId, Vec<serde_json::Value>> = HashMap::new();
         for ((index_id, source_id), entry) in &self.table {
             for (node_id, node) in &entry.nodes {
+                let az = ingester_pool.get(node_id).and_then(|h| h.availability_zone);
                 per_index
                     .entry(index_id.clone())
                     .or_default()
@@ -107,6 +141,7 @@ impl NodeBasedRoutingTable {
                         "node_id": node_id,
                         "capacity_score": node.capacity_score,
                         "open_shard_count": node.open_shard_count,
+                        "availability_zone": az,
                     }));
             }
         }
@@ -201,6 +236,14 @@ mod tests {
     use quickwit_proto::types::ShardId;
 
     use super::*;
+    use crate::IngesterPoolEntry;
+
+    fn mocked_ingester(availability_zone: Option<&str>) -> IngesterPoolEntry {
+        IngesterPoolEntry {
+            client: IngesterServiceClient::mocked(),
+            availability_zone: availability_zone.map(|s| s.to_string()),
+        }
+    }
 
     #[test]
     fn test_apply_capacity_update() {
@@ -274,7 +317,7 @@ mod tests {
         assert!(!table.has_open_nodes("test-index", "test-source", &pool, &HashSet::new()));
 
         // Node is in pool → true.
-        pool.insert("node-1".into(), IngesterServiceClient::mocked());
+        pool.insert("node-1".into(), mocked_ingester(None));
         assert!(table.has_open_nodes("test-index", "test-source", &pool, &HashSet::new()));
 
         // Node is unavailable → false.
@@ -289,7 +332,7 @@ mod tests {
             6,
             2,
         );
-        pool.insert("node-2".into(), IngesterServiceClient::mocked());
+        pool.insert("node-2".into(), mocked_ingester(None));
         assert!(table.has_open_nodes("test-index", "test-source", &pool, &unavailable));
 
         // Node with capacity_score=0 is not eligible.
@@ -304,77 +347,81 @@ mod tests {
     }
 
     #[test]
-    fn test_pick_node() {
-        let mut table = NodeBasedRoutingTable::default();
+    fn test_pick_node_prefers_same_az() {
+        let mut table = NodeBasedRoutingTable::new(Some("az-1".to_string()));
         let pool = IngesterPool::default();
-        let key = ("test-index".to_string(), "test-source".to_string());
 
-        // Node exists but not in pool → None.
         table.apply_capacity_update(
             "node-1".into(),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
-            8,
-            3,
+            5,
+            1,
         );
-        assert!(
-            table
-                .table
-                .get(&key)
-                .unwrap()
-                .pick_node(&pool, &HashSet::new())
-                .is_none()
+        table.apply_capacity_update(
+            "node-2".into(),
+            IndexUid::for_test("test-index", 0),
+            "test-source".into(),
+            5,
+            1,
         );
+        pool.insert("node-1".into(), mocked_ingester(Some("az-1")));
+        pool.insert("node-2".into(), mocked_ingester(Some("az-2")));
 
-        // Single node in pool → picks it.
-        pool.insert("node-1".into(), IngesterServiceClient::mocked());
         let picked = table
-            .table
-            .get(&key)
-            .unwrap()
-            .pick_node(&pool, &HashSet::new())
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
             .unwrap();
         assert_eq!(picked.node_id, NodeId::from("node-1"));
+    }
 
-        // Multiple nodes → something is returned.
+    #[test]
+    fn test_pick_node_falls_back_to_cross_az() {
+        let mut table = NodeBasedRoutingTable::new(Some("az-1".to_string()));
+        let pool = IngesterPool::default();
+
         table.apply_capacity_update(
             "node-2".into(),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
-            2,
+            5,
             1,
         );
-        pool.insert("node-2".into(), IngesterServiceClient::mocked());
-        assert!(
-            table
-                .table
-                .get(&key)
-                .unwrap()
-                .pick_node(&pool, &HashSet::new())
-                .is_some()
-        );
+        pool.insert("node-2".into(), mocked_ingester(Some("az-2")));
 
-        // Node with capacity_score=0 is skipped.
+        let picked = table
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.node_id, NodeId::from("node-2"));
+    }
+
+    #[test]
+    fn test_pick_node_no_az_awareness() {
+        let mut table = NodeBasedRoutingTable::default();
+        let pool = IngesterPool::default();
+
         table.apply_capacity_update(
             "node-1".into(),
             IndexUid::for_test("test-index", 0),
             "test-source".into(),
-            0,
-            3,
-        );
-        table.apply_capacity_update(
-            "node-2".into(),
-            IndexUid::for_test("test-index", 0),
-            "test-source".into(),
-            0,
+            5,
             1,
         );
+        pool.insert("node-1".into(), mocked_ingester(Some("az-1")));
+
+        let picked = table
+            .pick_node("test-index", "test-source", &pool, &HashSet::new())
+            .unwrap();
+        assert_eq!(picked.node_id, NodeId::from("node-1"));
+    }
+
+    #[test]
+    fn test_pick_node_missing_entry() {
+        let table = NodeBasedRoutingTable::new(Some("az-1".to_string()));
+        let pool = IngesterPool::default();
+
         assert!(
             table
-                .table
-                .get(&key)
-                .unwrap()
-                .pick_node(&pool, &HashSet::new())
+                .pick_node("nonexistent", "source", &pool, &HashSet::new())
                 .is_none()
         );
     }
