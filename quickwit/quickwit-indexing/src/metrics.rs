@@ -37,7 +37,7 @@ pub struct IndexerMetrics {
     pub dd_indexed_events: DDCounters,
     pub dd_indexed_events_bytes: DDCounters,
     pub dd_pending_merge_ops: Gauge,
-    pub processing_pipeline_thread_cpu_micros_total: IntCounterVec<3>,
+    pub processing_pipeline_thread_cpu_micros_total: IntCounterVec<4>,
 }
 
 impl Default for IndexerMetrics {
@@ -145,7 +145,7 @@ impl Default for IndexerMetrics {
                 "Total thread CPU time spent in processing pipeline (microseconds).",
                 "indexing",
                 &[],
-                ["index", "pipeline_uid", "source"],
+                ["index", "pipeline_uid", "source", "service"],
             ),
         }
     }
