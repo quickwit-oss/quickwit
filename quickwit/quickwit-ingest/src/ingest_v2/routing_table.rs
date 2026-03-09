@@ -543,11 +543,23 @@ mod tests {
         pool.insert("node-remote".into(), mocked_ingester(Some("az-2")));
         pool.insert("node-no-az".into(), mocked_ingester(None));
 
-        assert_eq!(table.classify_az_locality(&"node-local".into(), &pool), "same_az");
-        assert_eq!(table.classify_az_locality(&"node-remote".into(), &pool), "cross_az");
-        assert_eq!(table.classify_az_locality(&"node-no-az".into(), &pool), "az_unaware");
+        assert_eq!(
+            table.classify_az_locality(&"node-local".into(), &pool),
+            "same_az"
+        );
+        assert_eq!(
+            table.classify_az_locality(&"node-remote".into(), &pool),
+            "cross_az"
+        );
+        assert_eq!(
+            table.classify_az_locality(&"node-no-az".into(), &pool),
+            "az_unaware"
+        );
 
         let table_no_az = RoutingTable::default();
-        assert_eq!(table_no_az.classify_az_locality(&"node-local".into(), &pool), "az_unaware");
+        assert_eq!(
+            table_no_az.classify_az_locality(&"node-local".into(), &pool),
+            "az_unaware"
+        );
     }
 }

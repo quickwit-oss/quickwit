@@ -482,9 +482,7 @@ impl IngestRouter {
 
     pub async fn debug_info(&self) -> JsonValue {
         let state_guard = self.state.lock().await;
-        let routing_table_json = state_guard
-            .routing_table
-            .debug_info(&self.ingester_pool);
+        let routing_table_json = state_guard.routing_table.debug_info(&self.ingester_pool);
 
         json!({
             "routing_table": routing_table_json,
