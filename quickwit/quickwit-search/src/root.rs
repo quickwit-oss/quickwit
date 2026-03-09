@@ -1083,36 +1083,34 @@ fn finalize_aggregation_if_any(
 /// We put this check here and not in the metastore to make sure the logic is independent
 /// of the metastore implementation, and some different use cases could require different
 /// behaviors. This specification was principally motivated by #4042.
-pub fn check_all_index_metadata_found(
-    index_metadatas: &[IndexMetadata],
+pub fn ensure_all_indexes_found(
+    indexes_metadata: &[IndexMetadata],
     index_id_patterns: &[String],
 ) -> crate::Result<()> {
     let mut index_ids: HashSet<&str> = index_id_patterns
         .iter()
-        .map(|index_ptn| index_ptn.as_str())
-        .filter(|index_ptn| !index_ptn.contains('*') && !index_ptn.starts_with('-'))
+        .filter(|pattern| !pattern.contains('*') && !pattern.starts_with('-'))
+        .map(|pattern| pattern.as_str())
         .collect();
 
     if index_ids.is_empty() {
-        // All of the patterns are wildcard patterns.
+        // All the patterns are wildcard or negative patterns.
         return Ok(());
     }
-
-    for index_metadata in index_metadatas {
-        index_ids.remove(index_metadata.index_uid.index_id.as_str());
+    for index_metadata in indexes_metadata {
+        index_ids.remove(index_metadata.index_id());
     }
-
-    if !index_ids.is_empty() {
-        let missing_index_ids = index_ids
-            .into_iter()
-            .map(|missing_index_id| missing_index_id.to_string())
-            .collect();
-        return Err(SearchError::IndexesNotFound {
-            index_ids: missing_index_ids,
-        });
+    if index_ids.is_empty() {
+        return Ok(());
     }
+    let not_found_index_ids = index_ids
+        .into_iter()
+        .map(|index_id| index_id.to_string())
+        .collect();
 
-    Ok(())
+    Err(SearchError::IndexesNotFound {
+        index_ids: not_found_index_ids,
+    })
 }
 
 async fn refine_and_list_matches(
@@ -1171,10 +1169,7 @@ async fn plan_splits_for_root_search(
         .await?;
 
     if !search_request.ignore_missing_indexes {
-        check_all_index_metadata_found(
-            &indexes_metadata[..],
-            &search_request.index_id_patterns[..],
-        )?;
+        ensure_all_indexes_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
     }
 
     if indexes_metadata.is_empty() {
@@ -1287,10 +1282,7 @@ pub async fn search_plan(
         .await?;
 
     if !search_request.ignore_missing_indexes {
-        check_all_index_metadata_found(
-            &indexes_metadata[..],
-            &search_request.index_id_patterns[..],
-        )?;
+        ensure_all_indexes_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
     }
     if indexes_metadata.is_empty() {
         return Ok(SearchPlanResponse {

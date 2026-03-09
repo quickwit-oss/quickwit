@@ -83,8 +83,13 @@ impl CatIndexQueryParams {
         if self.v.is_some() {
             return Err(unsupported_parameter_error("v"));
         }
-        if self.s.is_some() {
-            return Err(unsupported_parameter_error("s"));
+        if let Some(sort_by) = &self.s {
+            if sort_by.len() > 1 {
+                return Err(unsupported_parameter_error("s"));
+            }
+            if sort_by[0] != "index" && sort_by[0] != "index:asc" {
+                return Err(unsupported_parameter_error("s"));
+            }
         }
         Ok(())
     }
@@ -304,5 +309,43 @@ mod tests {
         assert_eq!(selected_fields, expected_selected_fields);
 
         // Add more test cases as needed
+    }
+
+    #[test]
+    fn test_cat_index_query_params_validate_s_parameter() {
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: Some(vec!["index:asc".to_string()]),
+            ..Default::default()
+        };
+        assert!(params.validate().is_ok());
+
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: Some(vec!["index".to_string()]),
+            ..Default::default()
+        };
+        assert!(params.validate().is_ok());
+
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: Some(vec!["index:desc".to_string()]),
+            ..Default::default()
+        };
+        assert!(params.validate().is_err());
+
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: Some(vec!["index:asc".to_string(), "docs.count".to_string()]),
+            ..Default::default()
+        };
+        assert!(params.validate().is_err());
+
+        let params = CatIndexQueryParams {
+            format: Some("json".to_string()),
+            s: None,
+            ..Default::default()
+        };
+        assert!(params.validate().is_ok());
     }
 }
