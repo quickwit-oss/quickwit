@@ -20,20 +20,23 @@ use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClie
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
+    DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
     FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataRequest, IndexesMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
-    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    GetClusterIdentityResponse, GetIndexRoutingTableRequest, GetIndexRoutingTableResponse,
+    GetIndexTemplateRequest, GetIndexTemplateResponse, IndexMetadataRequest, IndexMetadataResponse,
+    IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListMetricsSplitsRequest, ListMetricsSplitsResponse, ListShardsRequest, ListShardsResponse,
+    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
+    MarkMetricsSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
+    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, SetIndexRoutingTableRequest,
+    StageMetricsSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 
 /// A [`MetastoreService`] implementation that proxies some requests to the control plane so it can
@@ -288,5 +291,75 @@ impl MetastoreService for ControlPlaneMetastore {
         request: GetClusterIdentityRequest,
     ) -> MetastoreResult<GetClusterIdentityResponse> {
         self.metastore.get_cluster_identity(request).await
+    }
+
+    // Index Routing Table API
+
+    async fn get_index_routing_table(
+        &self,
+        request: GetIndexRoutingTableRequest,
+    ) -> MetastoreResult<GetIndexRoutingTableResponse> {
+        self.metastore.get_index_routing_table(request).await
+    }
+
+    // Proxied through control plane so it can validate invariants and gossip changes.
+    async fn set_index_routing_table(
+        &self,
+        request: SetIndexRoutingTableRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let response = self.control_plane.set_index_routing_table(request).await?;
+        Ok(response)
+    }
+
+    // Metrics Splits API - stub implementations (will be implemented in a later PR)
+
+    async fn stage_metrics_splits(
+        &self,
+        _request: StageMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn publish_metrics_splits(
+        &self,
+        _request: PublishMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn list_metrics_splits(
+        &self,
+        _request: ListMetricsSplitsRequest,
+    ) -> MetastoreResult<ListMetricsSplitsResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn mark_metrics_splits_for_deletion(
+        &self,
+        _request: MarkMetricsSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn delete_metrics_splits(
+        &self,
+        _request: DeleteMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented".to_string(),
+            cause: String::new(),
+        })
     }
 }
