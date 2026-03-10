@@ -30,23 +30,26 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexRoutingTableRequest, GetIndexRoutingTableResponse,
-    GetIndexTemplateRequest, GetIndexTemplateResponse, IndexMetadataFailure,
-    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse, IndexStats,
-    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
-    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
-    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
+    EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
+    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexRoutingTableRequest,
+    GetIndexRoutingTableResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
+    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
+    IndexStats, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
+    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
+    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
+    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
+    ListIndexesMetadataResponse, ListMetricsSplitsRequest, ListMetricsSplitsResponse,
     ListShardsRequest, ListShardsResponse, ListShardsSubresponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
-    OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SetIndexRoutingTableRequest, SplitStats,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkMetricsSplitsForDeletionRequest,
+    MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceStream, OpenShardSubrequest, OpenShardSubresponse, OpenShardsRequest,
+    OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, SetIndexRoutingTableRequest, SplitStats,
+    StageMetricsSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
@@ -1804,6 +1807,58 @@ impl MetastoreService for PostgresqlMetastore {
         .execute(&self.connection_pool)
         .await?;
         Ok(EmptyResponse {})
+    }
+
+    // Metrics Splits API - stub implementations (will be implemented in a later PR)
+
+    async fn stage_metrics_splits(
+        &self,
+        _request: StageMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for postgresql metastore".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn publish_metrics_splits(
+        &self,
+        _request: PublishMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for postgresql metastore".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn list_metrics_splits(
+        &self,
+        _request: ListMetricsSplitsRequest,
+    ) -> MetastoreResult<ListMetricsSplitsResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for postgresql metastore".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn mark_metrics_splits_for_deletion(
+        &self,
+        _request: MarkMetricsSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for postgresql metastore".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn delete_metrics_splits(
+        &self,
+        _request: DeleteMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for postgresql metastore".to_string(),
+            cause: String::new(),
+        })
     }
 }
 

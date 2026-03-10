@@ -43,21 +43,23 @@ use quickwit_config::IndexTemplate;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexRoutingTableRequest, GetIndexRoutingTableResponse,
-    GetIndexTemplateRequest, GetIndexTemplateResponse, IndexMetadataFailure,
-    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch,
-    IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
+    EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
+    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexRoutingTableRequest,
+    GetIndexRoutingTableResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
+    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
+    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
     ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
     ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    SetIndexRoutingTableRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    ListMetricsSplitsRequest, ListMetricsSplitsResponse, ListShardsRequest, ListShardsResponse,
+    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
+    MarkMetricsSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, SetIndexRoutingTableRequest,
+    StageMetricsSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
     UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
     serde_utils,
 };
@@ -1308,6 +1310,58 @@ impl MetastoreService for FileBackedMetastore {
             return Err(error);
         }
         Ok(EmptyResponse {})
+    }
+
+    // Metrics Splits API - stub implementations (will be implemented in a later PR)
+
+    async fn stage_metrics_splits(
+        &self,
+        _request: StageMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for file-backed metastore".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn publish_metrics_splits(
+        &self,
+        _request: PublishMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for file-backed metastore".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn list_metrics_splits(
+        &self,
+        _request: ListMetricsSplitsRequest,
+    ) -> MetastoreResult<ListMetricsSplitsResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for file-backed metastore".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn mark_metrics_splits_for_deletion(
+        &self,
+        _request: MarkMetricsSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for file-backed metastore".to_string(),
+            cause: String::new(),
+        })
+    }
+
+    async fn delete_metrics_splits(
+        &self,
+        _request: DeleteMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        Err(MetastoreError::Internal {
+            message: "metrics splits not yet implemented for file-backed metastore".to_string(),
+            cause: String::new(),
+        })
     }
 }
 
