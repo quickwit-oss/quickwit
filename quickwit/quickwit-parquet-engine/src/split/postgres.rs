@@ -72,11 +72,11 @@ pub struct PgMetricsSplit {
     pub split_metadata_json: String,
     pub update_timestamp: i64,
     pub window_start: Option<i64>,
-    pub window_duration_secs: i32,
+    pub window_duration_secs: Option<i32>,
     pub sort_fields: String,
     pub num_merge_ops: i32,
     pub row_keys: Option<Vec<u8>>,
-    pub zonemap_regexes: String,
+    pub zonemap_regexes: serde_json::Value,
 }
 
 /// Insertable row for metrics_splits table.
@@ -99,11 +99,11 @@ pub struct InsertableMetricsSplit {
     pub size_bytes: i64,
     pub split_metadata_json: String,
     pub window_start: Option<i64>,
-    pub window_duration_secs: i32,
+    pub window_duration_secs: Option<i32>,
     pub sort_fields: String,
     pub num_merge_ops: i32,
     pub row_keys: Option<Vec<u8>>,
-    pub zonemap_regexes: String,
+    pub zonemap_regexes: serde_json::Value,
 }
 
 impl InsertableMetricsSplit {
@@ -113,12 +113,6 @@ impl InsertableMetricsSplit {
         state: MetricsSplitState,
     ) -> Result<Self, serde_json::Error> {
         let split_metadata_json = serde_json::to_string(metadata)?;
-
-        let zonemap_regexes_json = if metadata.zonemap_regexes.is_empty() {
-            "{}".to_string()
-        } else {
-            serde_json::to_string(&metadata.zonemap_regexes)?
-        };
 
         Ok(Self {
             split_id: metadata.split_id.as_str().to_string(),
@@ -137,11 +131,15 @@ impl InsertableMetricsSplit {
             size_bytes: metadata.size_bytes as i64,
             split_metadata_json,
             window_start: metadata.window_start(),
-            window_duration_secs: metadata.window_duration_secs() as i32,
+            window_duration_secs: {
+                let dur = metadata.window_duration_secs();
+                if dur > 0 { Some(dur as i32) } else { None }
+            },
             sort_fields: metadata.sort_fields.clone(),
             num_merge_ops: metadata.num_merge_ops as i32,
             row_keys: metadata.row_keys_proto.clone(),
-            zonemap_regexes: zonemap_regexes_json,
+            zonemap_regexes: serde_json::to_value(&metadata.zonemap_regexes)
+                .unwrap_or_else(|_| serde_json::json!({})),
         })
     }
 }
@@ -165,7 +163,7 @@ impl PgMetricsSplit {
         debug_assert_eq!(metadata.window_start(), self.window_start);
         debug_assert_eq!(
             metadata.window_duration_secs(),
-            self.window_duration_secs as u32
+            self.window_duration_secs.unwrap_or(0) as u32
         );
         debug_assert_eq!(metadata.sort_fields, self.sort_fields);
         debug_assert_eq!(metadata.num_merge_ops, self.num_merge_ops as u32);
@@ -255,6 +253,61 @@ mod tests {
         assert_eq!(insertable.high_cardinality_tag_keys, vec!["host"]);
         assert_eq!(insertable.num_rows, 50000);
         assert_eq!(insertable.size_bytes, 1024 * 1024);
+    }
+
+    #[test]
+    fn test_insertable_from_metadata_with_compaction_fields() {
+        let metadata = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("compaction-test"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .num_rows(100)
+            .size_bytes(500)
+            .window_start_secs(1700000000)
+            .window_duration_secs(3600)
+            .sort_fields("metric_name|host|timestamp/V2")
+            .num_merge_ops(2)
+            .row_keys_proto(vec![0x08, 0x01])
+            .add_zonemap_regex("metric_name", "cpu\\..*")
+            .build();
+
+        let insertable =
+            InsertableMetricsSplit::from_metadata(&metadata, MetricsSplitState::Published)
+                .expect("conversion should succeed");
+
+        assert_eq!(insertable.window_start, Some(1700000000));
+        assert_eq!(insertable.window_duration_secs, Some(3600));
+        assert_eq!(insertable.sort_fields, "metric_name|host|timestamp/V2");
+        assert_eq!(insertable.num_merge_ops, 2);
+        assert_eq!(insertable.row_keys, Some(vec![0x08, 0x01]));
+        assert!(insertable.zonemap_regexes.is_object());
+        assert_eq!(
+            insertable.zonemap_regexes["metric_name"],
+            serde_json::json!("cpu\\..*")
+        );
+    }
+
+    #[test]
+    fn test_insertable_from_metadata_pre_phase31_defaults() {
+        let metadata = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("pre-phase31"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .build();
+
+        let insertable =
+            InsertableMetricsSplit::from_metadata(&metadata, MetricsSplitState::Staged)
+                .expect("conversion should succeed");
+
+        assert!(insertable.window_start.is_none());
+        assert!(
+            insertable.window_duration_secs.is_none(),
+            "pre-Phase-31 splits should have NULL window_duration_secs"
+        );
+        assert_eq!(insertable.sort_fields, "");
+        assert_eq!(insertable.num_merge_ops, 0);
+        assert!(insertable.row_keys.is_none());
+        assert_eq!(insertable.zonemap_regexes, serde_json::json!({}));
     }
 
     #[test]

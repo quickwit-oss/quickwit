@@ -1844,15 +1844,11 @@ impl MetastoreService for PostgresqlMetastore {
             size_bytes_list.push(insertable.size_bytes);
             split_metadata_jsons.push(insertable.split_metadata_json);
             window_starts.push(insertable.window_start);
-            window_duration_secs_list.push(if insertable.window_duration_secs == 0 {
-                None
-            } else {
-                Some(insertable.window_duration_secs)
-            });
+            window_duration_secs_list.push(insertable.window_duration_secs);
             sort_fields_list.push(insertable.sort_fields);
             num_merge_ops_list.push(insertable.num_merge_ops);
             row_keys_list.push(insertable.row_keys);
-            zonemap_regexes_json_list.push(insertable.zonemap_regexes);
+            zonemap_regexes_json_list.push(insertable.zonemap_regexes.to_string());
         }
 
         info!(
@@ -2384,11 +2380,11 @@ impl MetastoreService for PostgresqlMetastore {
                     // to_metadata() — the SQL columns are only used for
                     // filtering and SS-5 consistency checks.
                     window_start: None,
-                    window_duration_secs: 0,
+                    window_duration_secs: None,
                     sort_fields: String::new(),
                     num_merge_ops: 0,
                     row_keys: None,
-                    zonemap_regexes: "{}".to_string(),
+                    zonemap_regexes: serde_json::json!({}),
                 };
 
                 let state = pg_split.split_state().unwrap_or(MetricsSplitState::Staged);
