@@ -14,6 +14,7 @@ license.workspace = true
 arrow = { workspace = true }
 parquet = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-proto = { workspace = true }
 sea-query = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

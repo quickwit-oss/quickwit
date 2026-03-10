@@ -7593,6 +7593,7 @@ dependencies = [
  "parquet",
  "proptest",
  "quickwit-common",
+ "quickwit-proto",
  "sea-query",
  "serde",
  "serde_json",
