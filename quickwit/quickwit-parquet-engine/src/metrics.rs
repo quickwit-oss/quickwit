@@ -37,14 +37,14 @@ fn duration_buckets() -> Vec<f64> {
 /// Metrics for the Pomsky Parquet Engine.
 #[derive(Clone)]
 pub struct ParquetEngineMetrics {
-    /// Total number of batches processed during ingest.
-    pub ingest_batches_total: IntCounter,
-    /// Total number of rows ingested.
-    pub ingest_rows_total: IntCounter,
-    /// Total number of bytes ingested (from IPC payloads).
+    /// Total number of batches accumulated during indexing.
+    pub index_batches_total: IntCounter,
+    /// Total number of rows accumulated during indexing.
+    pub index_rows_total: IntCounter,
+    /// Total number of bytes received from IPC payloads during ingestion.
     pub ingest_bytes_total: IntCounter,
-    /// Histogram of batch processing durations (seconds).
-    pub ingest_duration_seconds: Histogram,
+    /// Histogram of add_batch durations (seconds), including any triggered flush.
+    pub index_batch_duration_seconds: Histogram,
     /// Total number of splits written to storage.
     pub splits_written_total: IntCounter,
     /// Total bytes written to split files.
@@ -60,27 +60,27 @@ pub struct ParquetEngineMetrics {
 impl Default for ParquetEngineMetrics {
     fn default() -> Self {
         Self {
-            ingest_batches_total: new_counter(
-                "ingest_batches_total",
-                "Total number of batches processed during ingest.",
+            index_batches_total: new_counter(
+                "index_batches_total",
+                "Total number of batches accumulated during indexing.",
                 SUBSYSTEM,
                 &[],
             ),
-            ingest_rows_total: new_counter(
-                "ingest_rows_total",
-                "Total number of rows ingested.",
+            index_rows_total: new_counter(
+                "index_rows_total",
+                "Total number of rows accumulated during indexing.",
                 SUBSYSTEM,
                 &[],
             ),
             ingest_bytes_total: new_counter(
                 "ingest_bytes_total",
-                "Total number of bytes ingested from IPC payloads.",
+                "Total number of bytes received from IPC payloads during ingestion.",
                 SUBSYSTEM,
                 &[],
             ),
-            ingest_duration_seconds: new_histogram(
-                "ingest_duration_seconds",
-                "Histogram of batch processing durations in seconds.",
+            index_batch_duration_seconds: new_histogram(
+                "index_batch_duration_seconds",
+                "Histogram of add_batch durations in seconds, including any triggered flush.",
                 SUBSYSTEM,
                 duration_buckets(),
             ),

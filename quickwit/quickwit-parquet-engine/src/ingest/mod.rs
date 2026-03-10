@@ -12,17 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Pomsky Parquet Engine
+//! Parquet ingest pipeline.
 //!
-//! High-throughput metrics storage and query engine using DataFusion/Parquet.
-//! Replaces Tantivy for metrics workloads while maintaining full compatibility
-//! with Tantivy for logs/traces.
+//! Provides high-throughput metrics ingestion by converting Arrow IPC batches
+//! directly to Parquet splits, bypassing Tantivy entirely.
 
-#![deny(clippy::disallowed_methods)]
+pub mod processor;
 
-pub mod index;
-pub mod ingest;
-pub mod metrics;
-pub mod schema;
-pub mod split;
-pub mod storage;
+pub use processor::{IngestError, ParquetIngestProcessor, record_batch_to_ipc};
