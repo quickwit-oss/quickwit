@@ -63,68 +63,93 @@ pub enum UploaderType {
     DeleteUploader,
 }
 
-/// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer>`] or [`Mailbox<Publisher>`].
+/// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer<P>>`] or [`Mailbox<P>`].
 ///
-/// It makes it possible to send a [`SplitsUpdate`] either to the [`Sequencer`] or directly
-/// to [`Publisher`]. It is used in combination with `SplitsUpdateSender` that will do the send.
+/// It makes it possible to send a splits update either to the [`Sequencer`] or directly
+/// to the publisher actor `P`. It is used in combination with [`SplitsUpdateSender`] that
+/// will do the send.
 ///
 /// This is useful as we have different requirements between the indexing pipeline and
 /// the merge/delete task pipelines.
 /// 1. In the indexing pipeline, we want to publish splits in the same order as they are produced by
 ///    the indexer/packager to ensure we are publishing splits without "holes" in checkpoints. We
-///    thus send [`SplitsUpdate`] to the [`Sequencer`] to keep the right ordering.
-/// 2. In the merge pipeline and the delete task pipeline, we are merging splits and in in this
-///    case, publishing order does not matter. In this case, we can just send [`SplitsUpdate`]
-///    directly to the [`Publisher`].
-#[derive(Clone, Debug)]
-pub enum SplitsUpdateMailbox {
-    Sequencer(Mailbox<Sequencer<Publisher>>),
-    Publisher(Mailbox<Publisher>),
+///    thus send the update to the [`Sequencer`] to keep the right ordering.
+/// 2. In the merge pipeline and the delete task pipeline, we are merging splits and in this case,
+///    publishing order does not matter. In this case, we can just send the update directly to the
+///    publisher.
+///
+/// The default type parameter `P = Publisher` preserves backward compatibility with the
+/// standard logs pipeline. For the metrics pipeline, use `SplitsUpdateMailbox<ParquetPublisher>`.
+pub enum SplitsUpdateMailbox<P: Actor = Publisher> {
+    Sequencer(Mailbox<Sequencer<P>>),
+    Publisher(Mailbox<P>),
 }
 
-impl From<Mailbox<Publisher>> for SplitsUpdateMailbox {
-    fn from(publisher_mailbox: Mailbox<Publisher>) -> Self {
+// Manual Clone impl to avoid a spurious `P: Clone` bound from #[derive(Clone)].
+impl<P: Actor> Clone for SplitsUpdateMailbox<P> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Sequencer(m) => Self::Sequencer(m.clone()),
+            Self::Publisher(m) => Self::Publisher(m.clone()),
+        }
+    }
+}
+
+// Manual Debug impl to avoid a spurious `P: Debug` bound from #[derive(Debug)].
+impl<P: Actor> std::fmt::Debug for SplitsUpdateMailbox<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Sequencer(m) => f.debug_tuple("Sequencer").field(m).finish(),
+            Self::Publisher(m) => f.debug_tuple("Publisher").field(m).finish(),
+        }
+    }
+}
+
+impl<P: Actor> From<Mailbox<P>> for SplitsUpdateMailbox<P> {
+    fn from(publisher_mailbox: Mailbox<P>) -> Self {
         SplitsUpdateMailbox::Publisher(publisher_mailbox)
     }
 }
 
-impl From<Mailbox<Sequencer<Publisher>>> for SplitsUpdateMailbox {
-    fn from(publisher_sequencer_mailbox: Mailbox<Sequencer<Publisher>>) -> Self {
-        SplitsUpdateMailbox::Sequencer(publisher_sequencer_mailbox)
+impl<P: Actor> From<Mailbox<Sequencer<P>>> for SplitsUpdateMailbox<P> {
+    fn from(sequencer_mailbox: Mailbox<Sequencer<P>>) -> Self {
+        SplitsUpdateMailbox::Sequencer(sequencer_mailbox)
     }
 }
 
-impl SplitsUpdateMailbox {
-    async fn get_split_update_sender(
+impl<P: Actor> SplitsUpdateMailbox<P> {
+    pub(crate) async fn get_sender<A: Actor, M>(
         &self,
-        ctx: &ActorContext<Uploader>,
-    ) -> anyhow::Result<SplitsUpdateSender> {
+        ctx: &ActorContext<A>,
+    ) -> anyhow::Result<SplitsUpdateSender<P, M>>
+    where
+        P: Handler<M>,
+        M: Send + Sync + std::fmt::Debug + 'static,
+    {
         match self {
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox) => {
-                // We send the future to the sequencer right away.
-                // The sequencer will then resolve the future in their arrival order and ensure that
-                // the publisher publishes splits in order.
-                let (split_uploaded_tx, split_uploaded_rx) =
-                    oneshot::channel::<SequencerCommand<SplitsUpdate>>();
-                ctx.send_message(sequencer_mailbox, split_uploaded_rx)
-                    .await?;
-                Ok(SplitsUpdateSender::Sequencer(split_uploaded_tx))
+                let (tx, rx) = oneshot::channel::<SequencerCommand<M>>();
+                ctx.send_message(sequencer_mailbox, rx).await?;
+                Ok(SplitsUpdateSender::Sequencer(tx))
             }
             SplitsUpdateMailbox::Publisher(publisher_mailbox) => {
-                // We just need the publisher mailbox to send the split in this case.
                 Ok(SplitsUpdateSender::Publisher(publisher_mailbox.clone()))
             }
         }
     }
 }
 
-enum SplitsUpdateSender {
-    Sequencer(Sender<SequencerCommand<SplitsUpdate>>),
-    Publisher(Mailbox<Publisher>),
+pub(crate) enum SplitsUpdateSender<P: Actor = Publisher, M: std::fmt::Debug = SplitsUpdate> {
+    Sequencer(Sender<SequencerCommand<M>>),
+    Publisher(Mailbox<P>),
 }
 
-impl SplitsUpdateSender {
-    fn discard(self) -> anyhow::Result<()> {
+impl<P, M> SplitsUpdateSender<P, M>
+where
+    P: Actor + Handler<M>,
+    M: Send + Sync + std::fmt::Debug + 'static,
+{
+    pub(crate) fn discard(self) -> anyhow::Result<()> {
         if let SplitsUpdateSender::Sequencer(split_uploader_tx) = self
             && split_uploader_tx.send(SequencerCommand::Discard).is_err()
         {
@@ -133,15 +158,11 @@ impl SplitsUpdateSender {
         Ok(())
     }
 
-    async fn send(
-        self,
-        split_update: SplitsUpdate,
-        ctx: &ActorContext<Uploader>,
-    ) -> anyhow::Result<()> {
+    pub(crate) async fn send<A: Actor>(self, msg: M, ctx: &ActorContext<A>) -> anyhow::Result<()> {
         match self {
             SplitsUpdateSender::Sequencer(split_uploaded_tx) => {
                 if let Err(publisher_message) =
-                    split_uploaded_tx.send(SequencerCommand::Proceed(split_update))
+                    split_uploaded_tx.send(SequencerCommand::Proceed(msg))
                 {
                     bail!(
                         "failed to send upload split `{:?}`. the publisher is probably dead",
@@ -150,7 +171,7 @@ impl SplitsUpdateSender {
                 }
             }
             SplitsUpdateSender::Publisher(publisher_mailbox) => {
-                ctx.send_message(&publisher_mailbox, split_update).await?;
+                ctx.send_message(&publisher_mailbox, msg).await?;
             }
         }
         Ok(())
@@ -274,10 +295,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
-        let split_update_sender = self
-            .split_update_mailbox
-            .get_split_update_sender(ctx)
-            .await?;
+        let split_update_sender = self.split_update_mailbox.get_sender(ctx).await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
         // This is not a valid usage of protected zone here.
@@ -432,10 +450,7 @@ impl Handler<EmptySplit> for Uploader {
         empty_split: EmptySplit,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let split_update_sender = self
-            .split_update_mailbox
-            .get_split_update_sender(ctx)
-            .await?;
+        let split_update_sender = self.split_update_mailbox.get_sender(ctx).await?;
         let splits_update = SplitsUpdate {
             index_uid: empty_split.index_uid,
             new_splits: Vec::new(),
