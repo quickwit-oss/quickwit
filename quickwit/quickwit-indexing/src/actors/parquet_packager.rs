@@ -426,7 +426,10 @@ mod tests {
             publish_token_opt: None,
         };
 
-        packager_mailbox.send_message(batch_for_packager).await.unwrap();
+        packager_mailbox
+            .send_message(batch_for_packager)
+            .await
+            .unwrap();
 
         let counters = packager_handle.process_pending_and_observe().await.state;
 
@@ -462,7 +465,10 @@ mod tests {
             publish_token_opt: None,
         };
 
-        packager_mailbox.send_message(batch_for_packager).await.unwrap();
+        packager_mailbox
+            .send_message(batch_for_packager)
+            .await
+            .unwrap();
 
         let counters = packager_handle.process_pending_and_observe().await.state;
 

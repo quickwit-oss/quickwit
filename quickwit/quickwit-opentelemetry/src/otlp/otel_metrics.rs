@@ -113,7 +113,6 @@ impl std::fmt::Display for MetricType {
     }
 }
 
-
 #[derive(Debug, thiserror::Error)]
 pub enum OtlpMetricsError {
     #[error("failed to deserialize JSON metric records: `{0}`")]
@@ -127,7 +126,9 @@ pub enum OtlpMetricsError {
 impl From<OtlpMetricsError> for tonic::Status {
     fn from(err: OtlpMetricsError) -> Self {
         match &err {
-            OtlpMetricsError::InvalidArgument(_) => tonic::Status::invalid_argument(err.to_string()),
+            OtlpMetricsError::InvalidArgument(_) => {
+                tonic::Status::invalid_argument(err.to_string())
+            }
             _ => tonic::Status::internal(err.to_string()),
         }
     }
@@ -444,7 +445,8 @@ fn parse_metric(
             // Only support DELTA temporality
             if sum.aggregation_temporality == AggregationTemporality::Cumulative as i32 {
                 return Err(OtlpMetricsError::InvalidArgument(
-                    "cumulative aggregation temporality is not supported, only delta is supported".to_string(),
+                    "cumulative aggregation temporality is not supported, only delta is supported"
+                        .to_string(),
                 ));
             }
 
@@ -787,7 +789,6 @@ mod tests {
             err => panic!("unexpected error type: {:?}", err),
         }
     }
-
 
     /// Test parsing metrics with various attribute types
     #[test]

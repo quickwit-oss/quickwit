@@ -210,7 +210,10 @@ mod tests {
 
         assert_eq!(insertable.split_id, "test-split-001");
         assert_eq!(insertable.split_state, "Staged");
-        assert_eq!(insertable.index_uid, "otel-metrics-v0_1:00000000000000000000000000");
+        assert_eq!(
+            insertable.index_uid,
+            "otel-metrics-v0_1:00000000000000000000000000"
+        );
         assert_eq!(insertable.time_range_start, 1700000000);
         assert_eq!(insertable.time_range_end, 1700003600);
         assert_eq!(insertable.metric_names.len(), 2);

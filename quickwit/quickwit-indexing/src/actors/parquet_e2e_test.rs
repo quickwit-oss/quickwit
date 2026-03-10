@@ -35,8 +35,9 @@ use quickwit_parquet_engine::ingest::record_batch_to_ipc;
 use quickwit_parquet_engine::schema::ParquetSchema;
 use quickwit_parquet_engine::storage::{ParquetSplitWriter, ParquetWriterConfig};
 use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
-use quickwit_storage::RamStorage;
 use quickwit_proto::types::IndexUid;
+use quickwit_storage::RamStorage;
+
 use crate::actors::{
     ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetPublisher, ParquetUploader,
     PublisherType, SplitsUpdateMailbox, UploaderType,

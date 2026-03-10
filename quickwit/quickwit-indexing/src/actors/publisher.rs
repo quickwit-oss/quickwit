@@ -605,7 +605,10 @@ mod parquet_publisher_tests {
 
         let update = ParquetSplitsUpdate {
             index_uid: IndexUid::for_test("test-index", 0),
-            new_splits: vec![create_test_metrics_split_metadata("test-index:00000000000000000000000000", "split-1")],
+            new_splits: vec![create_test_metrics_split_metadata(
+                "test-index:00000000000000000000000000",
+                "split-1",
+            )],
             replaced_split_ids: Vec::new(),
             checkpoint_delta_opt: Some(IndexCheckpointDelta {
                 source_id: "test-source".to_string(),
@@ -693,7 +696,10 @@ mod parquet_publisher_tests {
 
         let update = ParquetSplitsUpdate {
             index_uid: IndexUid::for_test("test-index", 0),
-            new_splits: vec![create_test_metrics_split_metadata("test-index:00000000000000000000000000", "split-1")],
+            new_splits: vec![create_test_metrics_split_metadata(
+                "test-index:00000000000000000000000000",
+                "split-1",
+            )],
             replaced_split_ids: Vec::new(),
             checkpoint_delta_opt: Some(IndexCheckpointDelta {
                 source_id: "test-source".to_string(),

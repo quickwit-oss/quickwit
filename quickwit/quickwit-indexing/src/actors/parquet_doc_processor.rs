@@ -311,7 +311,8 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                             should_force_commit,
                         );
 
-                        ctx.send_message(&self.indexer_mailbox, processed_batch).await?;
+                        ctx.send_message(&self.indexer_mailbox, processed_batch)
+                            .await?;
                         if is_last_doc {
                             checkpoint_forwarded = true;
                         }
@@ -343,14 +344,13 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
         // still send the checkpoint delta so the pipeline advances past this batch.
         // Without this, a batch of consistently malformed data blocks offset progress
         // forever.
-        if !checkpoint_forwarded
-            && !checkpoint_delta.is_empty()
-        {
+        if !checkpoint_forwarded && !checkpoint_delta.is_empty() {
             let empty_batch =
                 RecordBatch::new_empty(self.processor.schema().arrow_schema().clone());
             let processed_batch =
                 ProcessedParquetBatch::new(empty_batch, checkpoint_delta, force_commit);
-            ctx.send_message(&self.indexer_mailbox, processed_batch).await?;
+            ctx.send_message(&self.indexer_mailbox, processed_batch)
+                .await?;
         }
 
         INDEXER_METRICS
@@ -396,8 +396,8 @@ impl Handler<NewPublishToken> for ParquetDocProcessor {
 #[cfg(test)]
 mod tests {
     use quickwit_actors::Universe;
-    use quickwit_proto::types::IndexUid;
     use quickwit_parquet_engine::ingest::record_batch_to_ipc;
+    use quickwit_proto::types::IndexUid;
 
     use super::*;
 

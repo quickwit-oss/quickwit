@@ -33,6 +33,7 @@ use quickwit_config::{
     SearchSettings, SourceConfig, SourceParams,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_parquet_engine::split::{MetricsSplitMetadata, MetricsSplitRecord};
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask, IndexMetadataFailure,
     IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
@@ -42,7 +43,6 @@ use quickwit_proto::metastore::{
     PublishSplitsRequest, StageMetricsSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
     UpdateSourceRequest, serde_utils,
 };
-use quickwit_parquet_engine::split::{MetricsSplitMetadata, MetricsSplitRecord};
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -792,7 +792,8 @@ pub trait ListMetricsSplitsResponseExt {
     fn empty() -> Self;
 
     /// Creates a response from a list of splits.
-    fn try_from_splits(splits: &[MetricsSplitRecord]) -> MetastoreResult<ListMetricsSplitsResponse>;
+    fn try_from_splits(splits: &[MetricsSplitRecord])
+    -> MetastoreResult<ListMetricsSplitsResponse>;
 
     /// Deserializes the splits in the response.
     fn deserialize_splits(&self) -> MetastoreResult<Vec<MetricsSplitRecord>>;
@@ -805,7 +806,9 @@ impl ListMetricsSplitsResponseExt for ListMetricsSplitsResponse {
         }
     }
 
-    fn try_from_splits(splits: &[MetricsSplitRecord]) -> MetastoreResult<ListMetricsSplitsResponse> {
+    fn try_from_splits(
+        splits: &[MetricsSplitRecord],
+    ) -> MetastoreResult<ListMetricsSplitsResponse> {
         let splits_serialized_json = splits
             .iter()
             .map(serde_utils::to_json_str)

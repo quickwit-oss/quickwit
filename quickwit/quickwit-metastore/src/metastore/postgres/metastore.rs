@@ -77,8 +77,8 @@ use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
     IndexesMetadataResponseExt, ListMetricsSplitsResponseExt, PublishMetricsSplitsRequestExt,
-    PublishSplitsRequestExt, StageMetricsSplitsRequestExt,
-    STREAM_SPLITS_CHUNK_SIZE, UpdateSourceRequestExt, use_shard_api,
+    PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE, StageMetricsSplitsRequestExt,
+    UpdateSourceRequestExt, use_shard_api,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -1864,10 +1864,13 @@ impl MetastoreService for PostgresqlMetastore {
                 struct_name: "MetricsSplitMetadata".to_string(),
                 message: e.to_string(),
             };
-            metric_names_json.push(serde_json::to_string(&insertable.metric_names).map_err(json_err)?);
-            tag_service_json.push(serde_json::to_string(&insertable.tag_service).map_err(json_err)?);
+            metric_names_json
+                .push(serde_json::to_string(&insertable.metric_names).map_err(json_err)?);
+            tag_service_json
+                .push(serde_json::to_string(&insertable.tag_service).map_err(json_err)?);
             tag_env_json.push(serde_json::to_string(&insertable.tag_env).map_err(json_err)?);
-            tag_datacenter_json.push(serde_json::to_string(&insertable.tag_datacenter).map_err(json_err)?);
+            tag_datacenter_json
+                .push(serde_json::to_string(&insertable.tag_datacenter).map_err(json_err)?);
             tag_region_json.push(serde_json::to_string(&insertable.tag_region).map_err(json_err)?);
             tag_host_json.push(serde_json::to_string(&insertable.tag_host).map_err(json_err)?);
             high_card_tag_keys_json.push(
