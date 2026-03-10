@@ -92,7 +92,9 @@ use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
-use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
+use quickwit_opentelemetry::otlp::{
+    OtlpGrpcLogsService, OtlpGrpcMetricsService, OtlpGrpcTracesService,
+};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
@@ -199,6 +201,7 @@ struct QuickwitServices {
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
     pub otlp_traces_service_opt: Option<OtlpGrpcTracesService>,
+    pub otlp_metrics_service_opt: Option<OtlpGrpcMetricsService>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -747,6 +750,14 @@ pub async fn serve_quickwit(
         None
     };
 
+    let otlp_metrics_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
+        && node_config.indexer_config.enable_otlp_endpoint
+    {
+        Some(OtlpGrpcMetricsService::new(ingest_router_service.clone()))
+    } else {
+        None
+    };
+
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
@@ -768,6 +779,7 @@ pub async fn serve_quickwit(
         jaeger_service_opt,
         otlp_logs_service_opt,
         otlp_traces_service_opt,
+        otlp_metrics_service_opt,
         search_service,
         env_filter_reload_fn,
     });
@@ -1463,6 +1475,156 @@ async fn check_cluster_configuration(
         );
     }
     Ok(())
+}
+
+async fn create_managed_indexes(
+    node_config: &NodeConfig,
+    mut index_manager: IndexManager,
+) -> anyhow::Result<()> {
+    let mut indexes_to_create = Vec::new();
+    if node_config.indexer_config.enable_otlp_endpoint {
+        let otel_logs_index_config =
+            OtlpGrpcLogsService::index_config(&node_config.default_index_root_uri)
+                .context("failed to load OTEL logs index config")?;
+        let otel_traces_index_config =
+            OtlpGrpcTracesService::index_config(&node_config.default_index_root_uri)
+                .context("failed to load OTEL traces index config")?;
+
+        indexes_to_create.push(("OTEL logs", otel_logs_index_config));
+        indexes_to_create.push(("OTEL traces", otel_traces_index_config));
+
+        let otel_metrics_index_config =
+            OtlpGrpcMetricsService::index_config(&node_config.default_index_root_uri)
+                .context("failed to load OTEL metrics index config")?;
+        indexes_to_create.push(("OTEL metrics", otel_metrics_index_config));
+    }
+    for (index_name, index_config) in indexes_to_create {
+        match index_manager.create_index(index_config, false).await {
+            Ok(_)
+            | Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(
+                EntityKind::Index { .. },
+            ))) => {}
+            Err(error) => bail!("failed to create {index_name} index: {error}"),
+        };
+    }
+    create_or_update_datadog_index(node_config, &mut index_manager).await?;
+    Ok(())
+}
+
+/// Creates the Datadog index if it doesn't exist, or updates its retention policy if necessary.
+async fn create_or_update_datadog_index(
+    node_config: &NodeConfig,
+    index_manager: &mut IndexManager,
+) -> anyhow::Result<()> {
+    if !node_config.cloudprem_config.create_datadog_index {
+        return Ok(());
+    }
+    let desired_index_config_bytes = include_bytes!("../../../config/cloudprem/datadog.yaml");
+    let mut desired_index_config = quickwit_config::load_index_config_from_user_config(
+        quickwit_config::ConfigFormat::Yaml,
+        desired_index_config_bytes,
+        &node_config.default_index_root_uri,
+    )?;
+    let index_id = desired_index_config.index_id.clone();
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
+
+    let mut current_index_metadata = match index_manager
+        .index_metadata_opt(index_metadata_request)
+        .await?
+    {
+        Some(index_metadata) => index_metadata,
+        None => {
+            patch_index_config(&mut desired_index_config);
+
+            info!("creating Datadog index");
+            index_manager
+                .create_index(desired_index_config, false)
+                .await?;
+            return Ok(());
+        }
+    };
+    let mut mutation_occurred: bool = current_index_metadata.update_index_config(
+        desired_index_config.doc_mapping,
+        desired_index_config.indexing_settings,
+        desired_index_config.ingest_settings,
+        desired_index_config.search_settings,
+        desired_index_config.retention_policy_opt,
+    )?;
+    mutation_occurred |= patch_index_config(&mut current_index_metadata.index_config);
+
+    if !mutation_occurred {
+        return Ok(());
+    }
+    info!("updating Datadog index");
+    index_manager
+        .update_index(
+            current_index_metadata.index_uid,
+            current_index_metadata.index_config,
+        )
+        .await?;
+    Ok(())
+}
+
+fn patch_index_config(index_config: &mut IndexConfig) -> bool {
+    let mut mutation_occurred = patch_ingest_settings(&mut index_config.ingest_settings);
+    mutation_occurred |= patch_retention_policy(&mut index_config.retention_policy_opt);
+    mutation_occurred
+}
+
+/// Reads the min number of shards from the environment variable `CP_MIN_SHARDS` and patches the
+/// ingest settings. Returns whether the ingest settings were updated.
+fn patch_ingest_settings(ingest_settings: &mut IngestSettings) -> bool {
+    let Some(min_shards) = quickwit_common::get_from_env_opt::<usize>("CP_MIN_SHARDS", false)
+    else {
+        return false;
+    };
+    let Some(non_zero_min_shards) = NonZeroUsize::new(min_shards) else {
+        error!("failed to update Datadog index: min shards should be greater than 0");
+        return false;
+    };
+    if ingest_settings.min_shards == non_zero_min_shards {
+        return false;
+    }
+    ingest_settings.min_shards = non_zero_min_shards;
+    true
+}
+
+/// Reads the retention period from the environment variable `CP_RETENTION_PERIOD` and patches the
+/// retention policy. Returns whether the retention policy was updated.
+fn patch_retention_policy(retention_policy_opt: &mut Option<RetentionPolicy>) -> bool {
+    let Some(retention_period) = quickwit_common::get_from_env_opt("CP_RETENTION_PERIOD", false)
+    else {
+        return false;
+    };
+    match retention_policy_opt {
+        Some(retention_policy) if retention_policy.retention_period == retention_period => {
+            return false;
+        }
+        Some(retention_policy) => {
+            retention_policy.retention_period = retention_period;
+        }
+        None => {
+            let retention_policy = RetentionPolicy {
+                retention_period,
+                evaluation_schedule: RetentionPolicy::default_schedule(),
+            };
+            *retention_policy_opt = Some(retention_policy);
+        }
+    };
+    let retention_policy = retention_policy_opt
+        .as_ref()
+        .expect("retention policy should be set");
+
+    if let Err(error) = retention_policy.validate() {
+        // We don't want to crash the node if the user-provided retention period cannot be parsed,
+        // so we just log an error and return false.
+        error!(
+            "failed to update Datadog index: retention period `{}` is invalid: {error}",
+            retention_policy.retention_period
+        );
+        return false;
+    }
+    true
 }
 
 #[cfg(test)]
