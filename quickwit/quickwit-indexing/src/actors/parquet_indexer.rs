@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-use quickwit_parquet_engine::ingest::{ParquetBatchAccumulator, ParquetIngestConfig};
+use quickwit_parquet_engine::index::{ParquetBatchAccumulator, ParquetIndexingConfig};
 use quickwit_parquet_engine::split::ParquetSplit;
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId};
 use serde::Serialize;
@@ -152,7 +152,7 @@ impl ParquetIndexer {
     pub fn new(
         index_uid: IndexUid,
         source_id: SourceId,
-        config: Option<ParquetIngestConfig>,
+        config: Option<ParquetIndexingConfig>,
         packager_mailbox: Mailbox<ParquetPackager>,
         commit_timeout: Option<Duration>,
     ) -> Self {
@@ -892,7 +892,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
 
         // Configure low threshold for testing
-        let config = ParquetIngestConfig::new().with_max_rows(50);
+        let config = ParquetIndexingConfig::default().with_max_rows(50);
 
         let (uploader_mailbox, uploader_handle) =
             create_test_uploader_with_staging_expectation(&universe, "test-index");

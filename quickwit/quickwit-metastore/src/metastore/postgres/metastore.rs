@@ -77,7 +77,7 @@ use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
     IndexesMetadataResponseExt, ListMetricsSplitsResponseExt, PublishMetricsSplitsRequestExt,
-    PublishSplitsRequestExt,
+    PublishSplitsRequestExt, StageMetricsSplitsRequestExt,
     STREAM_SPLITS_CHUNK_SIZE, UpdateSourceRequestExt, use_shard_api,
 };
 use crate::{
@@ -1820,6 +1820,8 @@ impl MetastoreService for PostgresqlMetastore {
             InsertableMetricsSplit, MetricsSplitMetadata, MetricsSplitState,
         };
 
+        let index_uid = request.index_uid().clone();
+
         // Deserialize the splits metadata
         let splits_metadata: Vec<MetricsSplitMetadata> = request.deserialize_splits_metadata()?;
 
@@ -1979,6 +1981,8 @@ impl MetastoreService for PostgresqlMetastore {
             RETURNING split_id
         "#;
 
+        let split_ids_snapshot = split_ids.clone();
+        let index_id_for_err = index_uid.index_id.clone();
         let upserted_split_ids: Vec<String> =
             run_with_tx!(self.connection_pool, tx, "stage metrics splits", {
                 sqlx::query_scalar(STAGE_METRICS_SPLITS_QUERY)
@@ -1997,13 +2001,13 @@ impl MetastoreService for PostgresqlMetastore {
                     .bind(&num_rows_list)
                     .bind(&size_bytes_list)
                     .bind(&split_metadata_jsons)
-                    .fetch_all(tx)
+                    .fetch_all(tx.as_mut())
                     .await
-                    .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid(), sqlx_error))
+                    .map_err(|sqlx_error| convert_sqlx_err(&index_id_for_err, sqlx_error))
             })?;
 
-        if upserted_split_ids.len() != split_ids.len() {
-            let failed_split_ids: Vec<String> = split_ids
+        if upserted_split_ids.len() != split_ids_snapshot.len() {
+            let failed_split_ids: Vec<String> = split_ids_snapshot
                 .into_iter()
                 .filter(|split_id| !upserted_split_ids.contains(split_id))
                 .collect();
@@ -2012,7 +2016,7 @@ impl MetastoreService for PostgresqlMetastore {
             };
             let message = "splits are not in the Staged state".to_string();
             warn!(
-                index_uid = %request.index_uid(),
+                %index_uid,
                 failed_split_ids = ?failed_split_ids,
                 "failed to stage some metrics splits"
             );
@@ -2020,7 +2024,7 @@ impl MetastoreService for PostgresqlMetastore {
         }
 
         info!(
-            index_uid = %request.index_uid(),
+            %index_uid,
             num_staged = upserted_split_ids.len(),
             "staged metrics splits successfully"
         );
@@ -2050,14 +2054,14 @@ impl MetastoreService for PostgresqlMetastore {
         );
 
         run_with_tx!(self.connection_pool, tx, "publish metrics splits", {
-            let mut index_metadata = index_metadata(tx, &index_uid, true).await?;
+            let mut index_metadata = index_metadata(tx, &index_uid.index_id, true).await?;
             let index_uid = index_metadata.index_uid.clone();
 
             if let Some(checkpoint_delta) = checkpoint_delta_opt {
                 let source_id = checkpoint_delta.source_id.clone();
                 let source = index_metadata.sources.get(&source_id).ok_or_else(|| {
                     MetastoreError::NotFound(EntityKind::Source {
-                        index_id: index_id.to_string(),
+                        index_id: index_uid.index_id.to_string(),
                         source_id: source_id.to_string(),
                     })
                 })?;
@@ -2084,7 +2088,7 @@ impl MetastoreService for PostgresqlMetastore {
                         .try_apply_delta(checkpoint_delta)
                         .map_err(|error| {
                             let entity = EntityKind::CheckpointDelta {
-                                index_id: index_id.to_string(),
+                                index_id: index_uid.index_id.to_string(),
                                 source_id,
                             };
                             let message = error.to_string();
@@ -2133,14 +2137,14 @@ impl MetastoreService for PostgresqlMetastore {
 
             let (published_count, marked_count): (i64, i64) =
                 sqlx::query_as(PUBLISH_METRICS_SPLITS_QUERY)
-                    .bind(&index_id)
+                    .bind(&index_uid.index_id)
                     .bind(index_metadata_json)
                     .bind(&staged_split_ids)
                     .bind(&replaced_split_ids)
                     .bind(&index_uid)
                     .fetch_one(tx.as_mut())
                     .await
-                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid, sqlx_error))?;
+                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
             // Verify all staged splits were published
             if published_count as usize != staged_split_ids.len() {
@@ -2327,7 +2331,7 @@ impl MetastoreService for PostgresqlMetastore {
         let rows = query_builder
             .fetch_all(&self.connection_pool)
             .await
-            .map_err(|sqlx_error| convert_sqlx_err(&query.index_uid, sqlx_error))?;
+            .map_err(|sqlx_error| convert_sqlx_err(&query.index_uid.index_id, sqlx_error))?;
 
         // Convert rows to MetricsSplitRecord
         let splits: Vec<MetricsSplitRecord> = rows
@@ -2338,7 +2342,7 @@ impl MetastoreService for PostgresqlMetastore {
                 let pg_split = PgMetricsSplit {
                     split_id: row.0,
                     split_state: row.1,
-                    index_id: row.2,
+                    index_uid: row.2,
                     time_range_start: row.3,
                     time_range_end: row.4,
                     metric_names: row.5,
@@ -2351,6 +2355,7 @@ impl MetastoreService for PostgresqlMetastore {
                     num_rows: row.12,
                     size_bytes: row.13,
                     split_metadata_json: row.14,
+                    update_timestamp: row.15,
                 };
 
                 let state = pg_split.split_state().unwrap_or(MetricsSplitState::Staged);
@@ -2364,7 +2369,7 @@ impl MetastoreService for PostgresqlMetastore {
             })
             .collect();
 
-        ListMetricsSplitsResponseExt::try_from_splits(&splits)
+        ListMetricsSplitsResponse::try_from_splits(&splits)
     }
 
     #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
@@ -2395,11 +2400,11 @@ impl MetastoreService for PostgresqlMetastore {
         "#;
 
         let marked_split_ids: Vec<String> = sqlx::query_scalar(MARK_FOR_DELETION_QUERY)
-            .bind(&request.index_uid())
+            .bind(request.index_uid())
             .bind(&request.split_ids)
             .fetch_all(&self.connection_pool)
             .await
-            .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid(), sqlx_error))?;
+            .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid().index_id, sqlx_error))?;
 
         info!(
             index_uid = %request.index_uid(),
@@ -2435,11 +2440,11 @@ impl MetastoreService for PostgresqlMetastore {
         "#;
 
         let deleted_split_ids: Vec<String> = sqlx::query_scalar(DELETE_SPLITS_QUERY)
-            .bind(&request.index_uid())
+            .bind(request.index_uid())
             .bind(&request.split_ids)
             .fetch_all(&self.connection_pool)
             .await
-            .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid(), sqlx_error))?;
+            .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid().index_id, sqlx_error))?;
 
         // Check if any splits could not be deleted
         if deleted_split_ids.len() != request.split_ids.len() {

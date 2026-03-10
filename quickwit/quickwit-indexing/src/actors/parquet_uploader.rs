@@ -128,7 +128,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         let index_uid = batch.index_uid.clone();
         let num_splits = batch.splits.len();
 
-        tracing::Span::current().record("index_uid", &index_uid.to_string());
+        tracing::Span::current().record("index_uid", index_uid.to_string());
         tracing::Span::current().record("num_splits", num_splits);
 
         if batch.splits.is_empty() {
@@ -448,14 +448,14 @@ mod tests {
             source_id: "test-source".to_string(),
             source_delta: SourceCheckpointDelta::from_range(0..10),
         };
-        let batch = ParquetSplitBatch::new(
-            IndexUid::for_test("test-index", 0),
+        let batch = ParquetSplitBatch {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             splits,
-            temp_dir.path().to_path_buf(),
+            output_dir: temp_dir.path().to_path_buf(),
             checkpoint_delta,
-            PublishLock::default(),
-            None,
-        );
+            publish_lock: PublishLock::default(),
+            publish_token_opt: None,
+        };
 
         uploader_mailbox.send_message(batch).await.unwrap();
 
@@ -540,14 +540,14 @@ mod tests {
             source_id: "test-source".to_string(),
             source_delta: SourceCheckpointDelta::from_range(0..10),
         };
-        let batch = ParquetSplitBatch::new(
-            IndexUid::for_test("test-index", 0),
+        let batch = ParquetSplitBatch {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             splits,
-            temp_dir.path().to_path_buf(),
+            output_dir: temp_dir.path().to_path_buf(),
             checkpoint_delta,
-            PublishLock::default(),
-            None,
-        );
+            publish_lock: PublishLock::default(),
+            publish_token_opt: None,
+        };
 
         uploader_mailbox.send_message(batch).await.unwrap();
 
@@ -613,14 +613,14 @@ mod tests {
             source_id: "test-source".to_string(),
             source_delta: SourceCheckpointDelta::from_range(0..1),
         };
-        let batch = ParquetSplitBatch::new(
-            IndexUid::for_test("test-index", 0),
-            Vec::new(), // Empty splits list
-            temp_dir.path().to_path_buf(),
+        let batch = ParquetSplitBatch {
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
+            splits: Vec::new(),
+            output_dir: temp_dir.path().to_path_buf(),
             checkpoint_delta,
-            PublishLock::default(),
-            None,
-        );
+            publish_lock: PublishLock::default(),
+            publish_token_opt: None,
+        };
 
         uploader_mailbox.send_message(batch).await.unwrap();
 
@@ -684,14 +684,14 @@ mod tests {
                 source_id: "test-source".to_string(),
                 source_delta: SourceCheckpointDelta::from_range((i * 10)..(i * 10 + 10)),
             };
-            let batch = ParquetSplitBatch::new(
-                IndexUid::for_test("test-index", 0),
+            let batch = ParquetSplitBatch {
+                index_uid: IndexUid::new_with_random_ulid("test-index"),
                 splits,
-                temp_dir.path().to_path_buf(),
+                output_dir: temp_dir.path().to_path_buf(),
                 checkpoint_delta,
-                PublishLock::default(),
-                None,
-            );
+                publish_lock: PublishLock::default(),
+                publish_token_opt: None,
+            };
             uploader_mailbox.send_message(batch).await.unwrap();
         }
 

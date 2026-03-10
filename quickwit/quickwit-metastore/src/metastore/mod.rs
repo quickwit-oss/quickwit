@@ -732,7 +732,7 @@ impl StageMetricsSplitsRequestExt for StageMetricsSplitsRequest {
     ) -> MetastoreResult<StageMetricsSplitsRequest> {
         let splits_metadata_json = splits_metadata
             .iter()
-            .map(|m| serde_utils::to_json_str(m))
+            .map(serde_utils::to_json_str)
             .collect::<MetastoreResult<Vec<String>>>()?;
         Ok(StageMetricsSplitsRequest {
             index_uid: Some(index_uid.into()),
@@ -808,7 +808,7 @@ impl ListMetricsSplitsResponseExt for ListMetricsSplitsResponse {
     fn try_from_splits(splits: &[MetricsSplitRecord]) -> MetastoreResult<ListMetricsSplitsResponse> {
         let splits_serialized_json = splits
             .iter()
-            .map(|s| serde_utils::to_json_str(s))
+            .map(serde_utils::to_json_str)
             .collect::<MetastoreResult<Vec<String>>>()?;
         Ok(ListMetricsSplitsResponse {
             splits_serialized_json,

@@ -18,15 +18,11 @@ use std::time::Instant;
 
 use arrow::compute::concat_batches;
 use arrow::record_batch::RecordBatch;
-use tracing::{debug, info, warn};
-
-use quickwit_proto::types::IndexUid;
+use tracing::{debug, info};
 
 use super::config::ParquetIndexingConfig;
 use crate::metrics::PARQUET_ENGINE_METRICS;
 use crate::schema::ParquetSchema;
-use crate::split::ParquetSplit;
-use crate::storage::ParquetSplitWriter;
 
 /// Error type for index operations.
 #[derive(Debug, thiserror::Error)]
@@ -34,12 +30,7 @@ pub enum IndexingError {
     /// Arrow error during RecordBatch concatenation.
     #[error("Arrow error: {0}")]
     Arrow(#[from] arrow::error::ArrowError),
-
-    /// Storage error during split writing.
-    #[error("Storage error: {0}")]
-    Storage(#[from] crate::storage::ParquetWriteError),
 }
-
 
 /// Accumulator that buffers RecordBatches and produces concatenated batches when thresholds
 /// are exceeded.
@@ -48,12 +39,8 @@ pub enum IndexingError {
 /// at which point they are concatenated and returned for downstream processing (writing to
 /// Parquet by the ParquetPackager actor).
 pub struct ParquetBatchAccumulator {
-    /// Index UID for split metadata.
-    index_uid: IndexUid,
     /// Configuration for accumulation thresholds.
     config: ParquetIndexingConfig,
-    /// Writer for producing splits.
-    split_writer: ParquetSplitWriter,
     /// Metrics schema for concatenation.
     schema: ParquetSchema,
     /// Pending batches waiting to be flushed.
@@ -68,18 +55,11 @@ impl ParquetBatchAccumulator {
     /// Creates a new ParquetBatchAccumulator.
     ///
     /// # Arguments
-    /// * `index_uid` - Index UID for split metadata
     /// * `config` - Configuration for accumulation thresholds
-    /// * `base_path` - Directory where split files will be written
-    pub fn new(
-        index_uid: IndexUid,
-        config: ParquetIndexingConfig,
-        base_path: impl Into<PathBuf>,
-    ) -> Self {
+    pub fn new(config: ParquetIndexingConfig) -> Self {
         let schema = ParquetSchema::new();
 
         Self {
-            index_uid,
             config,
             schema,
             pending_batches: Vec::new(),
@@ -90,9 +70,12 @@ impl ParquetBatchAccumulator {
 
     /// Adds a RecordBatch to the accumulator.
     ///
-    /// If thresholds are exceeded after adding the batch, flushes to create split(s).
-    /// Returns list of splits produced (empty if none flushed).
-    pub fn add_batch(&mut self, batch: RecordBatch) -> Result<Vec<ParquetSplit>, IndexingError> {
+    /// If thresholds are exceeded after adding the batch, concatenates all pending batches
+    /// and returns the combined batch. Returns None if the threshold has not been reached.
+    pub fn add_batch(
+        &mut self,
+        batch: RecordBatch,
+    ) -> Result<Option<RecordBatch>, IndexingError> {
         let start = Instant::now();
         let batch_rows = batch.num_rows();
         let batch_bytes = estimate_batch_bytes(&batch);
@@ -146,12 +129,12 @@ impl ParquetBatchAccumulator {
     /// Force flush all pending batches.
     ///
     /// Returns None if no pending data.
-    pub fn flush(&mut self) -> Result<Option<ParquetSplit>, IndexingError> {
+    pub fn flush(&mut self) -> Result<Option<RecordBatch>, IndexingError> {
         self.flush_internal()
     }
 
     /// Internal flush implementation.
-    fn flush_internal(&mut self) -> Result<Option<ParquetSplit>, IndexingError> {
+    fn flush_internal(&mut self) -> Result<Option<RecordBatch>, IndexingError> {
         if self.pending_batches.is_empty() {
             return Ok(None);
         }
@@ -307,16 +290,12 @@ mod tests {
 
     #[test]
     fn test_accumulator_below_threshold() {
-        let temp_dir = tempfile::tempdir().unwrap();
         let config = ParquetIndexingConfig::default().with_max_rows(1000);
+        let mut accumulator = ParquetBatchAccumulator::new(config);
 
-        let mut accumulator = ParquetBatchAccumulator::new(IndexUid::for_test("test-index", 0), config, temp_dir.path());
-
-        // Add batch below threshold
         let batch = create_test_batch(100);
         let flushed = accumulator.add_batch(batch).unwrap();
 
-        // Should not flush
         assert!(flushed.is_none());
         assert_eq!(accumulator.pending_rows(), 100);
         assert_eq!(accumulator.pending_batch_count(), 1);
@@ -324,18 +303,14 @@ mod tests {
 
     #[test]
     fn test_accumulator_row_threshold() {
-        let temp_dir = tempfile::tempdir().unwrap();
         let config = ParquetIndexingConfig::default().with_max_rows(150);
+        let mut accumulator = ParquetBatchAccumulator::new(config);
 
-        let mut accumulator = ParquetBatchAccumulator::new(IndexUid::for_test("test-index", 0), config, temp_dir.path());
-
-        // Add first batch (100 rows) - no flush
         let batch1 = create_test_batch(100);
         let flushed1 = accumulator.add_batch(batch1).unwrap();
         assert!(flushed1.is_none());
         assert_eq!(accumulator.pending_rows(), 100);
 
-        // Add second batch (100 rows) - should flush (200 > 150)
         let batch2 = create_test_batch(100);
         let flushed2 = accumulator.add_batch(batch2).unwrap();
         let combined = flushed2.expect("should have flushed");
@@ -344,37 +319,29 @@ mod tests {
     }
 
     #[test]
-    fn test_accumulator_flush_produces_split() {
-        let temp_dir = tempfile::tempdir().unwrap();
+    fn test_accumulator_flush_produces_batch() {
         let config = ParquetIndexingConfig::default().with_max_rows(1000);
+        let mut accumulator = ParquetBatchAccumulator::new(config);
 
-        let mut accumulator = ParquetBatchAccumulator::new(IndexUid::for_test("test-index", 0), config, temp_dir.path());
-
-        // Add batch below threshold
         let batch = create_test_batch(50);
         let _ = accumulator.add_batch(batch).unwrap();
         assert_eq!(accumulator.pending_rows(), 50);
 
-        // Force flush
         let flushed = accumulator.flush().unwrap();
         assert!(flushed.is_some());
         let combined = flushed.unwrap();
         assert_eq!(combined.num_rows(), 50);
         assert_eq!(accumulator.pending_rows(), 0);
 
-        // Second flush should return None
         let flushed2 = accumulator.flush().unwrap();
         assert!(flushed2.is_none());
     }
 
     #[test]
     fn test_accumulator_multiple_batches_concatenated() {
-        let temp_dir = tempfile::tempdir().unwrap();
         let config = ParquetIndexingConfig::default().with_max_rows(1000);
+        let mut accumulator = ParquetBatchAccumulator::new(config);
 
-        let mut accumulator = ParquetBatchAccumulator::new(IndexUid::for_test("test-index", 0), config, temp_dir.path());
-
-        // Add multiple batches
         for _ in 0..5 {
             let batch = create_test_batch(10);
             let _ = accumulator.add_batch(batch).unwrap();
@@ -383,7 +350,6 @@ mod tests {
         assert_eq!(accumulator.pending_rows(), 50);
         assert_eq!(accumulator.pending_batch_count(), 5);
 
-        // Flush and verify combined
         let combined = accumulator.flush().unwrap().unwrap();
         assert_eq!(combined.num_rows(), 50);
     }
@@ -392,8 +358,6 @@ mod tests {
     fn test_estimate_batch_bytes() {
         let batch = create_test_batch(100);
         let bytes = estimate_batch_bytes(&batch);
-
-        // Should have some non-zero byte estimate
         assert!(bytes > 0);
     }
 }
