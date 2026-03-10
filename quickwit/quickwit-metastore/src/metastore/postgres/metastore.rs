@@ -2045,10 +2045,6 @@ impl MetastoreService for PostgresqlMetastore {
         let staged_split_ids = request.staged_split_ids;
         let replaced_split_ids = request.replaced_split_ids;
 
-        if staged_split_ids.is_empty() && replaced_split_ids.is_empty() {
-            return Ok(EmptyResponse {});
-        }
-
         info!(
             %index_uid,
             staged_splits = staged_split_ids.len(),
@@ -2131,7 +2127,7 @@ impl MetastoreService for PostgresqlMetastore {
                     SET
                         index_metadata_json = $2
                     WHERE
-                        index_uid = $5
+                        index_uid = $1
                 )
                 SELECT
                     (SELECT COUNT(*) FROM publish) as published_count,
@@ -2140,11 +2136,10 @@ impl MetastoreService for PostgresqlMetastore {
 
             let (published_count, marked_count): (i64, i64) =
                 sqlx::query_as(PUBLISH_METRICS_SPLITS_QUERY)
-                    .bind(&index_uid.index_id)
+                    .bind(&index_uid)
                     .bind(index_metadata_json)
                     .bind(&staged_split_ids)
                     .bind(&replaced_split_ids)
-                    .bind(&index_uid)
                     .fetch_one(tx.as_mut())
                     .await
                     .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
