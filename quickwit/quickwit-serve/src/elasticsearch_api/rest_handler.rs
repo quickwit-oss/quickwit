@@ -200,6 +200,7 @@ async fn es_compat_index_mapping(
         fields: Vec::new(),
         start_timestamp: None,
         end_timestamp: None,
+        query_ast: None,
     };
     let list_fields_response = search_service
         .root_list_fields(list_fields_request)
