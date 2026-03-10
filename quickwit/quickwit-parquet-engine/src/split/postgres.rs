@@ -57,7 +57,7 @@ pub enum MetricsSplits {
 pub struct PgMetricsSplit {
     pub split_id: String,
     pub split_state: String,
-    pub index_id: String,
+    pub index_uid: String,
     pub time_range_start: i64,
     pub time_range_end: i64,
     pub metric_names: Vec<String>,
@@ -79,7 +79,7 @@ pub struct PgMetricsSplit {
 pub struct InsertableMetricsSplit {
     pub split_id: String,
     pub split_state: String,
-    pub index_id: String,
+    pub index_uid: String,
     pub time_range_start: i64,
     pub time_range_end: i64,
     pub metric_names: Vec<String>,
@@ -105,7 +105,7 @@ impl InsertableMetricsSplit {
         Ok(Self {
             split_id: metadata.split_id.as_str().to_string(),
             split_state: state.as_str().to_string(),
-            index_id: metadata.index_id.clone(),
+            index_uid: metadata.index_uid.clone(),
             time_range_start: metadata.time_range.start_secs as i64,
             time_range_end: metadata.time_range.end_secs as i64,
             metric_names: metadata.metric_names.iter().cloned().collect(),
@@ -192,7 +192,7 @@ mod tests {
     fn test_insertable_from_metadata() {
         let metadata = MetricsSplitMetadata::builder()
             .split_id(SplitId::new("test-split-001"))
-            .index_id("otel-metrics-v0_1")
+            .index_uid("otel-metrics-v0_1:00000000000000000000000000")
             .time_range(TimeRange::new(1700000000, 1700003600))
             .num_rows(50000)
             .size_bytes(1024 * 1024)
@@ -210,7 +210,7 @@ mod tests {
 
         assert_eq!(insertable.split_id, "test-split-001");
         assert_eq!(insertable.split_state, "Staged");
-        assert_eq!(insertable.index_id, "otel-metrics-v0_1");
+        assert_eq!(insertable.index_uid, "otel-metrics-v0_1:00000000000000000000000000");
         assert_eq!(insertable.time_range_start, 1700000000);
         assert_eq!(insertable.time_range_end, 1700003600);
         assert_eq!(insertable.metric_names.len(), 2);
@@ -227,7 +227,7 @@ mod tests {
     fn test_pg_split_to_metadata_roundtrip() {
         let original = MetricsSplitMetadata::builder()
             .split_id(SplitId::new("roundtrip-test"))
-            .index_id("test-index")
+            .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .num_rows(100)
             .size_bytes(500)
@@ -242,7 +242,7 @@ mod tests {
         let pg_row = PgMetricsSplit {
             split_id: insertable.split_id,
             split_state: insertable.split_state,
-            index_id: insertable.index_id,
+            index_uid: insertable.index_uid,
             time_range_start: insertable.time_range_start,
             time_range_end: insertable.time_range_end,
             metric_names: insertable.metric_names,
@@ -260,7 +260,7 @@ mod tests {
 
         let recovered = pg_row.to_metadata().expect("should deserialize");
         assert_eq!(recovered.split_id.as_str(), original.split_id.as_str());
-        assert_eq!(recovered.index_id, original.index_id);
+        assert_eq!(recovered.index_uid, original.index_uid);
         assert_eq!(recovered.time_range, original.time_range);
         assert_eq!(recovered.num_rows, original.num_rows);
     }

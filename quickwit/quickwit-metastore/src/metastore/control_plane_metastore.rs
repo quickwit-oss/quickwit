@@ -31,12 +31,12 @@ use quickwit_proto::metastore::{
     ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
     ListMetricsSplitsRequest, ListMetricsSplitsResponse, ListShardsRequest, ListShardsResponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
-    MarkMetricsSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SetIndexRoutingTableRequest,
-    StageMetricsSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    MarkMetricsSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreResult,
+    MetastoreService, MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest,
+    OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, SetIndexRoutingTableRequest, StageMetricsSplitsRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 
 /// A [`MetastoreService`] implementation that proxies some requests to the control plane so it can
@@ -311,55 +311,42 @@ impl MetastoreService for ControlPlaneMetastore {
         Ok(response)
     }
 
-    // Metrics Splits API - stub implementations (will be implemented in a later PR)
+    // Metrics Splits API - Proxy to underlying metastore
 
     async fn stage_metrics_splits(
         &self,
-        _request: StageMetricsSplitsRequest,
+        request: StageMetricsSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        Err(MetastoreError::Internal {
-            message: "metrics splits not yet implemented".to_string(),
-            cause: String::new(),
-        })
+        self.metastore.stage_metrics_splits(request).await
     }
 
     async fn publish_metrics_splits(
         &self,
-        _request: PublishMetricsSplitsRequest,
+        request: PublishMetricsSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        Err(MetastoreError::Internal {
-            message: "metrics splits not yet implemented".to_string(),
-            cause: String::new(),
-        })
+        self.metastore.publish_metrics_splits(request).await
     }
 
     async fn list_metrics_splits(
         &self,
-        _request: ListMetricsSplitsRequest,
+        request: ListMetricsSplitsRequest,
     ) -> MetastoreResult<ListMetricsSplitsResponse> {
-        Err(MetastoreError::Internal {
-            message: "metrics splits not yet implemented".to_string(),
-            cause: String::new(),
-        })
+        self.metastore.list_metrics_splits(request).await
     }
 
     async fn mark_metrics_splits_for_deletion(
         &self,
-        _request: MarkMetricsSplitsForDeletionRequest,
+        request: MarkMetricsSplitsForDeletionRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        Err(MetastoreError::Internal {
-            message: "metrics splits not yet implemented".to_string(),
-            cause: String::new(),
-        })
+        self.metastore
+            .mark_metrics_splits_for_deletion(request)
+            .await
     }
 
     async fn delete_metrics_splits(
         &self,
-        _request: DeleteMetricsSplitsRequest,
+        request: DeleteMetricsSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        Err(MetastoreError::Internal {
-            message: "metrics splits not yet implemented".to_string(),
-            cause: String::new(),
-        })
+        self.metastore.delete_metrics_splits(request).await
     }
 }

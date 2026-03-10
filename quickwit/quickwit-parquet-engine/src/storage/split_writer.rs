@@ -63,7 +63,7 @@ impl ParquetSplitWriter {
     ///
     /// # Arguments
     /// * `batch` - The RecordBatch to write
-    /// * `index_id` - The index identifier for the split metadata
+    /// * `index_uid` - The index unique identifier for the split metadata
     ///
     /// # Returns
     /// A ParquetSplit containing metadata extracted from the batch and the file path.
@@ -71,7 +71,7 @@ impl ParquetSplitWriter {
     pub fn write_split(
         &self,
         batch: &RecordBatch,
-        index_id: &str,
+        index_uid: &str,
     ) -> Result<ParquetSplit, ParquetWriteError> {
         // Generate unique split ID
         let split_id = SplitId::generate();
@@ -101,7 +101,7 @@ impl ParquetSplitWriter {
         // Build metadata
         let metadata = MetricsSplitMetadata::builder()
             .split_id(split_id.clone())
-            .index_id(index_id)
+            .index_uid(index_uid)
             .time_range(time_range)
             .num_rows(batch.num_rows() as u64)
             .size_bytes(size_bytes);

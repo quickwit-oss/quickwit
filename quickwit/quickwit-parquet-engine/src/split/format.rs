@@ -80,7 +80,7 @@ mod tests {
 
     fn create_test_split() -> ParquetSplit {
         let metadata = MetricsSplitMetadata::builder()
-            .index_id("test-index")
+            .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .num_rows(10000)
             .size_bytes(1024 * 1024)

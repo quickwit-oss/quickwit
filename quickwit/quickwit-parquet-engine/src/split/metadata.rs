@@ -122,8 +122,8 @@ pub struct MetricsSplitMetadata {
     /// Unique split identifier.
     pub split_id: SplitId,
 
-    /// Index identifier for Postgres foreign key relationship.
-    pub index_id: String,
+    /// Index unique identifier for Postgres foreign key relationship.
+    pub index_uid: String,
 
     /// Time range covered by this split.
     pub time_range: TimeRange,
@@ -211,7 +211,7 @@ impl MetricsSplitMetadata {
 #[derive(Default)]
 pub struct MetricsSplitMetadataBuilder {
     split_id: Option<SplitId>,
-    index_id: Option<String>,
+    index_uid: Option<String>,
     time_range: Option<TimeRange>,
     num_rows: u64,
     size_bytes: u64,
@@ -246,8 +246,8 @@ impl MetricsSplitMetadataBuilder {
         self
     }
 
-    pub fn index_id(mut self, id: impl Into<String>) -> Self {
-        self.index_id = Some(id.into());
+    pub fn index_uid(mut self, uid: impl Into<String>) -> Self {
+        self.index_uid = Some(uid.into());
         self
     }
 
@@ -284,7 +284,7 @@ impl MetricsSplitMetadataBuilder {
     pub fn build(self) -> MetricsSplitMetadata {
         MetricsSplitMetadata {
             split_id: self.split_id.unwrap_or_else(SplitId::generate),
-            index_id: self.index_id.expect("index_id is required"),
+            index_uid: self.index_uid.expect("index_uid is required"),
             time_range: self.time_range.expect("time_range is required"),
             num_rows: self.num_rows,
             size_bytes: self.size_bytes,
@@ -325,7 +325,7 @@ mod tests {
     #[test]
     fn test_metadata_builder_with_tags() {
         let metadata = MetricsSplitMetadata::builder()
-            .index_id("test-index")
+            .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .add_metric_name("cpu.usage")
             .add_low_cardinality_tag(TAG_SERVICE, "web")
@@ -334,7 +334,7 @@ mod tests {
             .add_high_cardinality_tag_key(TAG_HOST)
             .build();
 
-        assert_eq!(metadata.index_id, "test-index");
+        assert_eq!(metadata.index_uid, "test-index:00000000000000000000000000");
         assert!(metadata.metric_names.contains("cpu.usage"));
         assert_eq!(metadata.get_tag_values(TAG_SERVICE).unwrap().len(), 2);
         assert!(
@@ -351,7 +351,7 @@ mod tests {
     #[test]
     fn test_cardinality_promotion() {
         let mut metadata = MetricsSplitMetadata::builder()
-            .index_id("test-index")
+            .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .build();
 
@@ -376,7 +376,7 @@ mod tests {
     #[test]
     fn test_service_names_convenience() {
         let metadata = MetricsSplitMetadata::builder()
-            .index_id("test-index")
+            .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .add_low_cardinality_tag(TAG_SERVICE, "web")
             .add_low_cardinality_tag(TAG_SERVICE, "api")
