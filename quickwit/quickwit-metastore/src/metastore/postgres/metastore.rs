@@ -3028,7 +3028,7 @@ mod tests {
                 "another-index".to_string()
             ])
             .unwrap(),
-            "SELECT * FROM indexes WHERE (index_id LIKE '%-index-%-last%' OR index_uid = \
+            "SELECT * FROM indexes WHERE (index_id LIKE '%-index-%-last%' OR index_id = \
              'another-index')"
         );
         assert_eq!(
@@ -3063,7 +3063,7 @@ mod tests {
                 "-index-2-last".to_string(),
             ])
             .unwrap(),
-            "SELECT * FROM indexes WHERE (index_id LIKE '%-index-%-last%' OR index_uid = \
+            "SELECT * FROM indexes WHERE (index_id LIKE '%-index-%-last%' OR index_id = \
              'another-index') AND index_id NOT LIKE '%-index-1-last%' AND index_id <> \
              'index-2-last'"
         );
