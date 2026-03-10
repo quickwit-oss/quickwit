@@ -702,6 +702,88 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
+    /// META-07 compliance: Prove the Parquet file is truly self-describing by
+    /// writing compaction metadata, reading it back from a cold file (no in-memory
+    /// state), and reconstructing the MetricsSplitMetadata compaction fields from
+    /// ONLY the Parquet key_value_metadata.
+    #[test]
+    fn test_meta07_self_describing_parquet_roundtrip() {
+        use std::fs::File;
+
+        use crate::split::{SplitId, TimeRange};
+        use parquet::file::reader::{FileReader, SerializedFileReader};
+
+        let sort_schema_str = "metric_name|host|env|timestamp/V2";
+        let window_start_secs: i64 = 1700006400;
+        let window_duration: u32 = 900;
+        let merge_ops: u32 = 7;
+        let row_keys_bytes: Vec<u8> = vec![0x0A, 0x03, 0x63, 0x70, 0x75];
+
+        let original = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("self-describing-test"))
+            .index_uid("metrics-prod:00000000000000000000000000")
+            .time_range(TimeRange::new(1700006400, 1700007300))
+            .window_start_secs(window_start_secs)
+            .window_duration_secs(window_duration)
+            .sort_fields(sort_schema_str)
+            .num_merge_ops(merge_ops)
+            .row_keys_proto(row_keys_bytes.clone())
+            .build();
+
+        let config = ParquetWriterConfig::default();
+        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let batch = create_test_batch();
+
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_self_describing_roundtrip.parquet");
+        writer
+            .write_to_file_with_metadata(&batch, &path, Some(&original))
+            .unwrap();
+
+        // Read phase: open a cold file and reconstruct fields from kv_metadata.
+        let file = File::open(&path).unwrap();
+        let reader = SerializedFileReader::new(file).unwrap();
+        let file_metadata = reader.metadata().file_metadata();
+        let kv_metadata = file_metadata
+            .key_value_metadata()
+            .expect("self-describing file must have kv_metadata");
+
+        let find_kv = |key: &str| -> Option<String> {
+            kv_metadata
+                .iter()
+                .find(|kv| kv.key == key)
+                .and_then(|kv| kv.value.clone())
+        };
+
+        let recovered_sort_schema = find_kv(PARQUET_META_SORT_FIELDS)
+            .expect("self-describing file must contain qh.sort_fields");
+        let recovered_window_start: i64 = find_kv(PARQUET_META_WINDOW_START)
+            .expect("self-describing file must contain qh.window_start")
+            .parse()
+            .expect("window_start must be parseable as i64");
+        let recovered_window_duration: u32 = find_kv(PARQUET_META_WINDOW_DURATION)
+            .expect("self-describing file must contain qh.window_duration_secs")
+            .parse()
+            .expect("window_duration must be parseable as u32");
+        let recovered_merge_ops: u32 = find_kv(PARQUET_META_NUM_MERGE_OPS)
+            .expect("self-describing file must contain qh.num_merge_ops")
+            .parse()
+            .expect("num_merge_ops must be parseable as u32");
+        let recovered_row_keys_b64 = find_kv(PARQUET_META_ROW_KEYS)
+            .expect("self-describing file must contain qh.row_keys");
+        let recovered_row_keys = BASE64
+            .decode(&recovered_row_keys_b64)
+            .expect("row_keys must be valid base64");
+
+        assert_eq!(recovered_sort_schema, sort_schema_str);
+        assert_eq!(recovered_window_start, window_start_secs);
+        assert_eq!(recovered_window_duration, window_duration);
+        assert_eq!(recovered_merge_ops, merge_ops);
+        assert_eq!(recovered_row_keys, row_keys_bytes);
+
+        std::fs::remove_file(&path).ok();
+    }
+
     #[test]
     fn test_build_compaction_kv_metadata_fully_populated() {
         use crate::split::{SplitId, TimeRange};
