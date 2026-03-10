@@ -116,10 +116,16 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
-use crate::actors::{DocProcessor, Processor};
+use crate::actors::{DocProcessor, ParquetDocProcessor, Processor};
 use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
+
+/// Type alias for SourceContext with ParquetDocProcessor (for metrics pipeline).
+pub type ParquetSourceContext = SourceContext<ParquetDocProcessor>;
+
+/// Type alias for SourceLoader with ParquetDocProcessor (for metrics pipeline).
+pub type ParquetSourceLoader = SourceLoader<ParquetDocProcessor>;
 
 /// Number of bytes after which we cut a new batch.
 ///
@@ -421,6 +427,24 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         #[cfg(feature = "pulsar")]
         source_factory.add_source(SourceType::Pulsar, PulsarSourceFactory);
         source_factory.add_source(SourceType::Stdin, StdinSourceFactory);
+        source_factory.add_source(SourceType::Vec, VecSourceFactory);
+        source_factory.add_source(SourceType::Void, VoidSourceFactory);
+        source_factory
+    })
+}
+
+/// Returns the source loader for parquet pipelines (ParquetDocProcessor).
+///
+/// Metrics pipelines currently only support IngestV2 sources, which is the
+/// production source type for metrics ingestion.
+pub fn quickwit_supported_parquet_sources() -> &'static ParquetSourceLoader {
+    static PARQUET_SOURCE_LOADER: OnceCell<ParquetSourceLoader> = OnceCell::new();
+    PARQUET_SOURCE_LOADER.get_or_init(|| {
+        let mut source_factory = ParquetSourceLoader::default();
+        // Only IngestV2 is currently used for metrics ingestion
+        source_factory.add_source(SourceType::IngestV2, IngestSourceFactory);
+        // Add other sources for testing/development
+        source_factory.add_source(SourceType::File, FileSourceFactory);
         source_factory.add_source(SourceType::Vec, VecSourceFactory);
         source_factory.add_source(SourceType::Void, VoidSourceFactory);
         source_factory

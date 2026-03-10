@@ -14,7 +14,6 @@
 
 //! Batch accumulator for producing splits from RecordBatches.
 
-use std::path::PathBuf;
 use std::time::Instant;
 
 use arrow::compute::concat_batches;
@@ -42,10 +41,12 @@ pub enum IndexingError {
 }
 
 
-/// Accumulator that buffers RecordBatches and produces splits when thresholds are exceeded.
+/// Accumulator that buffers RecordBatches and produces concatenated batches when thresholds
+/// are exceeded.
 ///
 /// Batches are accumulated until either `max_rows` or `max_bytes` threshold is reached,
-/// at which point they are flushed to create a new split.
+/// at which point they are concatenated and returned for downstream processing (writing to
+/// Parquet by the ParquetPackager actor).
 pub struct ParquetBatchAccumulator {
     /// Index UID for split metadata.
     index_uid: IndexUid,
@@ -76,13 +77,10 @@ impl ParquetBatchAccumulator {
         base_path: impl Into<PathBuf>,
     ) -> Self {
         let schema = ParquetSchema::new();
-        let split_writer =
-            ParquetSplitWriter::new(schema.clone(), config.writer_config.clone(), base_path);
 
         Self {
             index_uid,
             config,
-            split_writer,
             schema,
             pending_batches: Vec::new(),
             pending_rows: 0,
@@ -117,31 +115,35 @@ impl ParquetBatchAccumulator {
             "Added batch to accumulator"
         );
 
-        let mut splits = Vec::new();
-
-        // Flush if thresholds exceeded
-        while self.should_flush() {
-            warn!(
+        let flushed = if self.should_flush() {
+            info!(
                 pending_rows = self.pending_rows,
                 pending_bytes = self.pending_bytes,
                 max_rows = self.config.max_rows,
                 max_bytes = self.config.max_bytes,
                 "Threshold exceeded, triggering flush"
             );
-            if let Some(split) = self.flush_internal()? {
-                splits.push(split);
-            }
-        }
+            self.flush_internal()?
+        } else {
+            None
+        };
 
         // Record batch processing duration
         PARQUET_ENGINE_METRICS
             .index_batch_duration_seconds
             .observe(start.elapsed().as_secs_f64());
 
-        Ok(splits)
+        Ok(flushed)
     }
 
-    /// Force flush all pending batches to create split.
+    /// Discard all pending data without producing output.
+    pub fn discard(&mut self) {
+        self.pending_batches.clear();
+        self.pending_rows = 0;
+        self.pending_bytes = 0;
+    }
+
+    /// Force flush all pending batches.
     ///
     /// Returns None if no pending data.
     pub fn flush(&mut self) -> Result<Option<ParquetSplit>, IndexingError> {
@@ -157,28 +159,15 @@ impl ParquetBatchAccumulator {
         // Concatenate all pending batches into one
         let combined = concat_batches(self.schema.arrow_schema(), self.pending_batches.iter())?;
 
-        // Write to split
-        let split = self.split_writer.write_split(&combined, &self.index_uid.index_id)?;
-
-        // Record split metrics
-        PARQUET_ENGINE_METRICS.splits_written_total.inc();
-        PARQUET_ENGINE_METRICS
-            .splits_bytes_written
-            .inc_by(split.metadata.size_bytes as u64);
-
-        info!(
-            split_id = %split.metadata.split_id,
-            num_rows = split.metadata.num_rows,
-            size_bytes = split.metadata.size_bytes,
-            "Produced split from accumulated batches"
-        );
+        let num_rows = combined.num_rows();
+        info!(num_rows, "Flushed accumulated batches");
 
         // Reset state
         self.pending_batches.clear();
         self.pending_rows = 0;
         self.pending_bytes = 0;
 
-        Ok(Some(split))
+        Ok(Some(combined))
     }
 
     /// Checks if pending data exceeds thresholds.
@@ -325,10 +314,10 @@ mod tests {
 
         // Add batch below threshold
         let batch = create_test_batch(100);
-        let splits = accumulator.add_batch(batch).unwrap();
+        let flushed = accumulator.add_batch(batch).unwrap();
 
         // Should not flush
-        assert!(splits.is_empty());
+        assert!(flushed.is_none());
         assert_eq!(accumulator.pending_rows(), 100);
         assert_eq!(accumulator.pending_batch_count(), 1);
     }
@@ -342,15 +331,15 @@ mod tests {
 
         // Add first batch (100 rows) - no flush
         let batch1 = create_test_batch(100);
-        let splits1 = accumulator.add_batch(batch1).unwrap();
-        assert!(splits1.is_empty());
+        let flushed1 = accumulator.add_batch(batch1).unwrap();
+        assert!(flushed1.is_none());
         assert_eq!(accumulator.pending_rows(), 100);
 
         // Add second batch (100 rows) - should flush (200 > 150)
         let batch2 = create_test_batch(100);
-        let splits2 = accumulator.add_batch(batch2).unwrap();
-        assert_eq!(splits2.len(), 1);
-        assert_eq!(splits2[0].metadata.num_rows, 200);
+        let flushed2 = accumulator.add_batch(batch2).unwrap();
+        let combined = flushed2.expect("should have flushed");
+        assert_eq!(combined.num_rows(), 200);
         assert_eq!(accumulator.pending_rows(), 0);
     }
 
@@ -367,15 +356,15 @@ mod tests {
         assert_eq!(accumulator.pending_rows(), 50);
 
         // Force flush
-        let split = accumulator.flush().unwrap();
-        assert!(split.is_some());
-        let split = split.unwrap();
-        assert_eq!(split.metadata.num_rows, 50);
+        let flushed = accumulator.flush().unwrap();
+        assert!(flushed.is_some());
+        let combined = flushed.unwrap();
+        assert_eq!(combined.num_rows(), 50);
         assert_eq!(accumulator.pending_rows(), 0);
 
         // Second flush should return None
-        let split2 = accumulator.flush().unwrap();
-        assert!(split2.is_none());
+        let flushed2 = accumulator.flush().unwrap();
+        assert!(flushed2.is_none());
     }
 
     #[test]
@@ -395,8 +384,8 @@ mod tests {
         assert_eq!(accumulator.pending_batch_count(), 5);
 
         // Flush and verify combined
-        let split = accumulator.flush().unwrap().unwrap();
-        assert_eq!(split.metadata.num_rows, 50);
+        let combined = accumulator.flush().unwrap().unwrap();
+        assert_eq!(combined.num_rows(), 50);
     }
 
     #[test]

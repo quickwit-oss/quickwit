@@ -21,7 +21,7 @@ use quickwit_proto::types::SourceId;
 use thiserror::Error;
 
 use super::Source;
-use crate::actors::{DocProcessor, Processor};
+use crate::actors::{DocProcessor, ParquetDocProcessor, Processor};
 use crate::source::SourceRuntime;
 
 #[async_trait]
@@ -34,7 +34,7 @@ pub trait SourceFactory<P: Processor = DocProcessor>: Send + Sync + 'static {
 
 #[async_trait]
 pub trait TypedSourceFactory: Send + Sync + 'static {
-    type Source: Source<DocProcessor>;
+    type Source: Source<DocProcessor> + Source<ParquetDocProcessor>;
     type Params: serde::de::DeserializeOwned + Send + Sync + 'static;
 
     async fn typed_create_source(
@@ -49,6 +49,19 @@ impl<T: TypedSourceFactory> SourceFactory for T {
         &self,
         source_runtime: SourceRuntime,
     ) -> anyhow::Result<Box<dyn Source>> {
+        let typed_params: T::Params =
+            serde_json::from_value(source_runtime.source_config.params())?;
+        let source = Self::typed_create_source(source_runtime, typed_params).await?;
+        Ok(Box::new(source))
+    }
+}
+
+#[async_trait]
+impl<T: TypedSourceFactory> SourceFactory<ParquetDocProcessor> for T {
+    async fn create_source(
+        &self,
+        source_runtime: SourceRuntime,
+    ) -> anyhow::Result<Box<dyn Source<ParquetDocProcessor>>> {
         let typed_params: T::Params =
             serde_json::from_value(source_runtime.source_config.params())?;
         let source = Self::typed_create_source(source_runtime, typed_params).await?;
