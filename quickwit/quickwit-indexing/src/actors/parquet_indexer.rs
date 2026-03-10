@@ -36,7 +36,7 @@ use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, warn};
 use ulid::Ulid;
 
-use crate::actors::parquet_packager::{ParquetPackager, ParquetBatchForPackager};
+use crate::actors::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock};
 
@@ -101,7 +101,6 @@ pub struct ParquetSplitBatch {
     /// Optional publish token.
     pub publish_token_opt: Option<PublishToken>,
 }
-
 
 /// ParquetIndexer actor that accumulates RecordBatches and forwards them to ParquetPackager.
 ///
@@ -396,7 +395,9 @@ impl Actor for ParquetIndexer {
                         publish_lock: self.publish_lock.clone(),
                         publish_token_opt: self.publish_token_opt.clone(),
                     };
-                    let _ = ctx.send_message(&self.packager_mailbox, batch_for_packager).await;
+                    let _ = ctx
+                        .send_message(&self.packager_mailbox, batch_for_packager)
+                        .await;
                 }
                 self.update_accumulator_gauges();
             }
@@ -548,7 +549,8 @@ impl Handler<CommitTimeout> for ParquetIndexer {
                 .map_err(|e| {
                     ActorExitStatus::Failure(
                         anyhow::anyhow!(
-                            "failed to send ParquetBatchForPackager to packager on commit timeout: {}",
+                            "failed to send ParquetBatchForPackager to packager on commit \
+                             timeout: {}",
                             e
                         )
                         .into(),

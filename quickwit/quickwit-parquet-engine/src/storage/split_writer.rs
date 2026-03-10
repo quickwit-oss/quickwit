@@ -223,9 +223,13 @@ mod tests {
     fn test_column_indices_match_schema() {
         let schema = ParquetSchema::new();
         for field in ParquetField::all() {
-            let expected: usize = schema.arrow_schema().index_of(field.name()).unwrap_or_else(|_| {
-                panic!("field {:?} should exist in arrow schema", field.name())
-            });
+            let expected: usize =
+                schema
+                    .arrow_schema()
+                    .index_of(field.name())
+                    .unwrap_or_else(|_| {
+                        panic!("field {:?} should exist in arrow schema", field.name())
+                    });
             assert_eq!(
                 field.column_index(),
                 expected,

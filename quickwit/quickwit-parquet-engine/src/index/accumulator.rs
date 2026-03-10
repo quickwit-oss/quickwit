@@ -72,10 +72,7 @@ impl ParquetBatchAccumulator {
     ///
     /// If thresholds are exceeded after adding the batch, concatenates all pending batches
     /// and returns the combined batch. Returns None if the threshold has not been reached.
-    pub fn add_batch(
-        &mut self,
-        batch: RecordBatch,
-    ) -> Result<Option<RecordBatch>, IndexingError> {
+    pub fn add_batch(&mut self, batch: RecordBatch) -> Result<Option<RecordBatch>, IndexingError> {
         let start = Instant::now();
         let batch_rows = batch.num_rows();
         let batch_bytes = estimate_batch_bytes(&batch);

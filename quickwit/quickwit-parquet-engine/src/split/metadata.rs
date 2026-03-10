@@ -38,7 +38,10 @@ impl SplitId {
 
     /// Generates a new unique SplitId using a ULID (timestamp + randomness).
     pub fn generate() -> Self {
-        Self(format!("metrics_{}", ulid::Ulid::new().to_string().to_lowercase()))
+        Self(format!(
+            "metrics_{}",
+            ulid::Ulid::new().to_string().to_lowercase()
+        ))
     }
 
     /// Get the string representation.

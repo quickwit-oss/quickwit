@@ -57,7 +57,7 @@ pub use parquet_doc_processor::{
     ParquetDocProcessor, ParquetDocProcessorCounters, ParquetDocProcessorError, is_arrow_ipc,
 };
 pub use parquet_indexer::{ParquetIndexer, ParquetIndexerCounters, ParquetSplitBatch};
-pub use parquet_packager::{ParquetPackager, ParquetPackagerCounters, ParquetBatchForPackager};
+pub use parquet_packager::{ParquetBatchForPackager, ParquetPackager, ParquetPackagerCounters};
 pub use parquet_uploader::ParquetUploader;
 pub use publisher::{ParquetPublisher, Publisher, PublisherCounters, PublisherType};
 use quickwit_actors::{Actor, Handler};

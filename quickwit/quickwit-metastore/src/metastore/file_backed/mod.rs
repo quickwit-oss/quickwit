@@ -466,7 +466,6 @@ impl FileBackedMetastore {
     async fn get_index(&self, index_uid: &IndexUid) -> MetastoreResult<FileBackedIndex> {
         self.read(index_uid, |index| Ok(index.clone())).await
     }
-
 }
 
 #[async_trait]
