@@ -101,7 +101,9 @@ use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
-use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
+use quickwit_opentelemetry::otlp::{
+    OtlpGrpcLogsService, OtlpGrpcMetricsService, OtlpGrpcTracesService,
+};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
@@ -211,6 +213,7 @@ struct QuickwitServices {
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
     pub otlp_traces_service_opt: Option<OtlpGrpcTracesService>,
+    pub otlp_metrics_service_opt: Option<OtlpGrpcMetricsService>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -742,6 +745,14 @@ pub async fn serve_quickwit(
         None
     };
 
+    let otlp_metrics_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
+        && node_config.indexer_config.enable_otlp_endpoint
+    {
+        Some(OtlpGrpcMetricsService::new(ingest_router_service.clone()))
+    } else {
+        None
+    };
+
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let cloudprem_listen_addr = node_config.cloudprem_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
@@ -764,6 +775,7 @@ pub async fn serve_quickwit(
         jaeger_service_opt,
         otlp_logs_service_opt,
         otlp_traces_service_opt,
+        otlp_metrics_service_opt,
         search_service,
         env_filter_reload_fn,
     });
@@ -1511,6 +1523,11 @@ async fn create_managed_indexes(
 
         indexes_to_create.push(("OTEL logs", otel_logs_index_config));
         indexes_to_create.push(("OTEL traces", otel_traces_index_config));
+
+        let otel_metrics_index_config =
+            OtlpGrpcMetricsService::index_config(&node_config.default_index_root_uri)
+                .context("failed to load OTEL metrics index config")?;
+        indexes_to_create.push(("OTEL metrics", otel_metrics_index_config));
     }
     for (index_name, index_config) in indexes_to_create {
         match index_manager.create_index(index_config, false).await {

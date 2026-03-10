@@ -902,16 +902,13 @@ async fn test_create_managed_indexes_on_startup() {
         .await
         .unwrap();
 
-    assert_eq!(indexes.len(), 3);
+    assert_eq!(indexes.len(), 4);
 
-    let index_ids: [&str; 3] = [
-        indexes[0].index_id(),
-        indexes[1].index_id(),
-        indexes[2].index_id(),
-    ];
+    let index_ids: Vec<&str> = indexes.iter().map(|idx| idx.index_id()).collect();
 
     assert!(index_ids.contains(&"otel-logs-v0_9"));
     assert!(index_ids.contains(&"otel-traces-v0_9"));
+    assert!(index_ids.contains(&"otel-metrics-v0_9"));
     assert!(index_ids.contains(&"datadog"));
 
     sandbox

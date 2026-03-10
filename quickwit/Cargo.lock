@@ -7774,8 +7774,10 @@ name = "quickwit-opentelemetry"
 version = "0.1.22"
 dependencies = [
  "anyhow",
+ "arrow",
  "async-trait",
  "once_cell",
+ "parquet",
  "prost 0.14.1",
  "quickwit-common",
  "quickwit-config",

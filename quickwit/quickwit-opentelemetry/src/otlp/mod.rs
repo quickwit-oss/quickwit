@@ -27,15 +27,24 @@ use quickwit_proto::opentelemetry::proto::common::v1::{
 };
 use serde_json::{Number as JsonNumber, Value as JsonValue};
 
+mod arrow_metrics;
 mod logs;
 mod metrics;
+mod otel_metrics;
 #[cfg(any(test, feature = "testsuite"))]
 mod test_utils;
 mod traces;
 
+pub use arrow_metrics::{
+    ArrowDocBatchV2Builder, ArrowIpcError, ArrowMetricsBatchBuilder, ipc_to_json_values,
+    ipc_to_record_batch, metrics_arrow_schema, record_batch_to_ipc,
+};
 pub use logs::{
     JsonLogIterator, OTEL_LOGS_INDEX_ID, OtlpGrpcLogsService, OtlpLogsError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf,
+};
+pub use otel_metrics::{
+    MetricDataPoint, MetricType, OTEL_METRICS_INDEX_ID, OtlpGrpcMetricsService, OtlpMetricsError,
 };
 pub use quickwit_proto::search::{SpanId, TraceId, TryFromSpanIdError, TryFromTraceIdError};
 #[cfg(any(test, feature = "testsuite"))]
@@ -50,6 +59,7 @@ pub use traces::{
 #[derive(Debug, Clone, Copy)]
 pub enum OtelSignal {
     Logs,
+    Metrics,
     Traces,
 }
 
@@ -57,6 +67,7 @@ impl OtelSignal {
     pub fn header_name(&self) -> &'static str {
         match self {
             OtelSignal::Logs => "qw-otel-logs-index",
+            OtelSignal::Metrics => "qw-otel-metrics-index",
             OtelSignal::Traces => "qw-otel-traces-index",
         }
     }
@@ -64,6 +75,7 @@ impl OtelSignal {
     pub fn default_index_id(&self) -> &'static str {
         match self {
             OtelSignal::Logs => OTEL_LOGS_INDEX_ID,
+            OtelSignal::Metrics => OTEL_METRICS_INDEX_ID,
             OtelSignal::Traces => OTEL_TRACES_INDEX_ID,
         }
     }
