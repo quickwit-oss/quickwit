@@ -2571,7 +2571,7 @@ fn build_index_id_patterns_sql_query(index_id_patterns: &[String]) -> anyhow::Re
             let sql_pattern = index_id_pattern.replace('*', "%");
             let _ = write!(where_like_query, "index_id LIKE '{sql_pattern}'");
         } else {
-            let _ = write!(where_like_query, "index_uid = '{index_id_pattern}'");
+            let _ = write!(where_like_query, "index_id = '{index_id_pattern}'");
         }
     }
     let mut negative_like_query = String::new();
