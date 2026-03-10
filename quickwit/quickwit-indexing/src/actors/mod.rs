@@ -42,6 +42,18 @@ pub use merge_scheduler_service::{MergePermit, MergeSchedulerService, schedule_m
 pub use merge_split_downloader::MergeSplitDownloader;
 pub use packager::Packager;
 pub use publisher::{Publisher, PublisherCounters, PublisherType};
+use quickwit_actors::{Actor, Handler};
 pub use quickwit_proto::indexing::IndexingError;
 pub use sequencer::Sequencer;
 pub use uploader::{SplitsUpdateMailbox, Uploader, UploaderCounters, UploaderType};
+
+use crate::models::{NewPublishLock, NewPublishToken, RawDocBatch};
+
+/// Trait alias for actor types that can process document batches.
+pub trait Processor:
+    Actor + Handler<RawDocBatch> + Handler<NewPublishLock> + Handler<NewPublishToken>
+{
+}
+
+impl<T> Processor for T where T: Actor + Handler<RawDocBatch> + Handler<NewPublishLock> + Handler<NewPublishToken>
+{}

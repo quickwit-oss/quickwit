@@ -26,7 +26,7 @@ use pulsar::message::proto::MessageIdData;
 use pulsar::{
     Authentication, Consumer, DeserializeMessage, Payload, Pulsar, SubType, TokioExecutor,
 };
-use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
+use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -35,9 +35,9 @@ use serde_json::{Value as JsonValue, json};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use crate::actors::DocProcessor;
+use crate::actors::Processor;
 use crate::source::{
-    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceActor, SourceContext,
+    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
     SourceRuntime, TypedSourceFactory,
 };
 
@@ -210,11 +210,11 @@ impl PulsarSource {
 }
 
 #[async_trait]
-impl Source for PulsarSource {
+impl<P: Processor> Source<P> for PulsarSource {
     async fn emit_batches(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch_builder = BatchBuilder::new(SourceType::Pulsar);
@@ -252,7 +252,7 @@ impl Source for PulsarSource {
                 "sending doc batch to indexer"
             );
             let message = batch_builder.build();
-            ctx.send_message(doc_processor_mailbox, message).await?;
+            ctx.send_message(processor_mailbox, message).await?;
         }
         Ok(Duration::default())
     }
@@ -260,7 +260,7 @@ impl Source for PulsarSource {
     async fn suggest_truncate(
         &mut self,
         checkpoint: SourceCheckpoint,
-        _ctx: &ActorContext<SourceActor>,
+        _ctx: &SourceContext<P>,
     ) -> anyhow::Result<()> {
         self.try_ack_messages(checkpoint).await
     }
@@ -272,7 +272,7 @@ impl Source for PulsarSource {
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &SourceContext,
+        _ctx: &SourceContext<P>,
     ) -> anyhow::Result<()> {
         self.pulsar_consumer.close().await?;
         Ok(())
@@ -454,10 +454,11 @@ mod pulsar_broker_tests {
     use reqwest::StatusCode;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::source::pulsar_source::{msg_id_from_position, msg_id_to_position};
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{RawDocBatch, SuggestTruncate, quickwit_supported_sources};
+    use crate::source::{RawDocBatch, SourceActor, SuggestTruncate, quickwit_supported_sources};
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
     static PULSAR_ADMIN_URI: &str = "http://localhost:8081";
@@ -651,7 +652,7 @@ mod pulsar_broker_tests {
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
             source,
-            doc_processor_mailbox,
+            processor_mailbox: doc_processor_mailbox,
         };
         let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
 

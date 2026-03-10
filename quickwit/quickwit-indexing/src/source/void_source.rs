@@ -19,17 +19,17 @@ use quickwit_actors::{ActorExitStatus, HEARTBEAT, Mailbox};
 use quickwit_config::VoidSourceParams;
 use serde_json::Value as JsonValue;
 
-use crate::actors::DocProcessor;
+use crate::actors::Processor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 pub struct VoidSource;
 
 #[async_trait]
-impl Source for VoidSource {
+impl<P: Processor> Source<P> for VoidSource {
     async fn emit_batches(
         &mut self,
-        _: &Mailbox<DocProcessor>,
-        _: &SourceContext,
+        _: &Mailbox<P>,
+        _: &SourceContext<P>,
     ) -> Result<Duration, ActorExitStatus> {
         tokio::time::sleep(*HEARTBEAT / 2).await;
         Ok(Duration::default())
@@ -71,6 +71,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::{SourceActor, SourceConfig, quickwit_supported_sources};
 
@@ -108,10 +109,10 @@ mod tests {
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
         let void_source =
             VoidSourceFactory::typed_create_source(source_runtime, VoidSourceParams).await?;
-        let (doc_processor_mailbox, _) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, _) = universe.create_test_mailbox::<DocProcessor>();
         let void_source_actor = SourceActor {
             source: Box::new(void_source),
-            doc_processor_mailbox,
+            processor_mailbox: doc_processor_mailbox,
         };
         let (_, void_source_handle) = universe.spawn_builder().spawn(void_source_actor);
         matches!(void_source_handle.check_health(true), Health::Healthy);
