@@ -113,7 +113,6 @@ ci-test = []
 [dev-dependencies]
 bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
-datafusion = { workspace = true }
 mockall = { workspace = true }
 parquet = { workspace = true }
 proptest = { workspace = true }

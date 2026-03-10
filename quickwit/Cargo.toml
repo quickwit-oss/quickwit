@@ -109,7 +109,6 @@ colored = "3.0"
 console-subscriber = "0.5"
 criterion = { version = "0.8", features = ["async_tokio"] }
 cron = "0.15"
-datafusion = { version = "52", default-features = false, features = ["parquet", "sql"] }
 dialoguer = { version = "0.12", default-features = false }
 dotenvy = "0.15"
 dyn-clone = "1.0"
