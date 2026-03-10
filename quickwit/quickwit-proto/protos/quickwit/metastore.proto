@@ -622,19 +622,18 @@ message SetIndexRoutingTableRequest {
 // ========================================
 // Metrics splits use a separate table (metrics_splits) with different
 // schema optimized for time-series queries (GIN indexes on tags, etc.)
-// Messages mirror Tantivy split messages but use index_id (string) instead
-// of IndexUid since metrics indices are simpler.
+// Messages mirror Tantivy split messages and use IndexUid consistently.
 
 // Stage metrics splits - first step after MetricsSplitWriter creates Parquet
 message StageMetricsSplitsRequest {
-  string index_id = 1;
+  quickwit.common.IndexUid index_uid = 1;
   // Each element is a MetricsSplitMetadata serialized as JSON
   repeated string splits_metadata_json = 2;
 }
 
 // Publish metrics splits - make staged splits queryable
 message PublishMetricsSplitsRequest {
-  string index_id = 1;
+  quickwit.common.IndexUid index_uid = 1;
   repeated string staged_split_ids = 2;
   repeated string replaced_split_ids = 3;  // For merge operations (future)
   optional string index_checkpoint_delta_json_opt = 4;
@@ -643,7 +642,7 @@ message PublishMetricsSplitsRequest {
 
 // List metrics splits - for query planning and Tier 1 pruning
 message ListMetricsSplitsRequest {
-  string index_id = 1;
+  quickwit.common.IndexUid index_uid = 1;
   // Query predicate as JSON (ListMetricsSplitsQuery)
   string query_json = 2;
 }
@@ -655,12 +654,12 @@ message ListMetricsSplitsResponse {
 
 // Mark metrics splits for deletion - cleanup flow
 message MarkMetricsSplitsForDeletionRequest {
-  string index_id = 1;
+  quickwit.common.IndexUid index_uid = 1;
   repeated string split_ids = 2;
 }
 
 // Delete metrics splits - after storage cleanup complete
 message DeleteMetricsSplitsRequest {
-  string index_id = 1;
+  quickwit.common.IndexUid index_uid = 1;
   repeated string split_ids = 2;
 }

@@ -7537,6 +7537,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",
+ "quickwit-parquet-engine",
  "quickwit-proto",
  "quickwit-query",
  "quickwit-storage",

@@ -226,7 +226,7 @@ pub(crate) fn extract_otel_index_id_from_metadata(
     Ok(index_id.to_string())
 }
 
-async fn ingest_doc_batch_v2(
+pub async fn ingest_doc_batch_v2(
     ingest_router: IngestRouterServiceClient,
     index_id: String,
     doc_batch: DocBatchV2,

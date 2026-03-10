@@ -563,8 +563,8 @@ pub struct SetIndexRoutingTableRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct StageMetricsSplitsRequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     /// Each element is a MetricsSplitMetadata serialized as JSON
     #[prost(string, repeated, tag = "2")]
     pub splits_metadata_json: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
@@ -573,8 +573,8 @@ pub struct StageMetricsSplitsRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PublishMetricsSplitsRequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, repeated, tag = "2")]
     pub staged_split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// For merge operations (future)
@@ -591,8 +591,8 @@ pub struct PublishMetricsSplitsRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListMetricsSplitsRequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     /// Query predicate as JSON (ListMetricsSplitsQuery)
     #[prost(string, tag = "2")]
     pub query_json: ::prost::alloc::string::String,
@@ -608,8 +608,8 @@ pub struct ListMetricsSplitsResponse {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct MarkMetricsSplitsForDeletionRequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
@@ -617,8 +617,8 @@ pub struct MarkMetricsSplitsForDeletionRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteMetricsSplitsRequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, repeated, tag = "2")]
     pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
