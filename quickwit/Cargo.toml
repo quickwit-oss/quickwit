@@ -28,6 +28,7 @@ members = [
   # We can reenable it when we need it.
   # "quickwit-metastore-utils",
   "quickwit-opentelemetry",
+  "quickwit-parquet-engine",
   "quickwit-proto",
   "quickwit-query",
   "quickwit-rest-client",
@@ -63,6 +64,7 @@ default-members = [
   "quickwit-macros",
   "quickwit-metastore",
   "quickwit-opentelemetry",
+  "quickwit-parquet-engine",
   "quickwit-proto",
   "quickwit-query",
   "quickwit-rest-client",
@@ -84,6 +86,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 anyhow = "1"
 arc-swap = "1.8"
+arrow = { version = "57", default-features = false, features = ["ipc"] }
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
@@ -168,6 +171,7 @@ opentelemetry-appender-tracing = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
 ouroboros = "0.18"
+parquet = { version = "57", default-features = false, features = ["arrow", "zstd", "snap", "variant_experimental"] }
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
@@ -359,6 +363,7 @@ quickwit-lambda-server = { path = "quickwit-lambda-server" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
+quickwit-parquet-engine = { path = "quickwit-parquet-engine" }
 quickwit-proto = { path = "quickwit-proto" }
 quickwit-query = { path = "quickwit-query" }
 quickwit-rest-client = { path = "quickwit-rest-client" }

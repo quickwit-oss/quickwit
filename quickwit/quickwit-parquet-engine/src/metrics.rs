@@ -1,0 +1,124 @@
+// Copyright 2021-Present Datadog, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Prometheus metrics for the Pomsky Parquet Engine.
+//!
+//! Provides counters, histograms, and gauges for monitoring ingest throughput,
+//! query performance, and error rates in production.
+
+use std::sync::LazyLock;
+
+use quickwit_common::metrics::{
+    Histogram, IntCounter, IntCounterVec, new_counter, new_counter_vec, new_histogram,
+};
+
+/// Subsystem name for all metrics engine metrics.
+const SUBSYSTEM: &str = "metrics_engine";
+
+/// Histogram buckets for duration measurements (in seconds).
+/// Covers sub-millisecond to multi-second operations.
+fn duration_buckets() -> Vec<f64> {
+    vec![
+        0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+    ]
+}
+
+/// Metrics for the Pomsky Parquet Engine.
+#[derive(Clone)]
+pub struct ParquetEngineMetrics {
+    /// Total number of batches processed during ingest.
+    pub ingest_batches_total: IntCounter,
+    /// Total number of rows ingested.
+    pub ingest_rows_total: IntCounter,
+    /// Total number of bytes ingested (from IPC payloads).
+    pub ingest_bytes_total: IntCounter,
+    /// Histogram of batch processing durations (seconds).
+    pub ingest_duration_seconds: Histogram,
+    /// Total number of splits written to storage.
+    pub splits_written_total: IntCounter,
+    /// Total bytes written to split files.
+    pub splits_bytes_written: IntCounter,
+    /// Histogram of query execution durations (seconds).
+    pub query_duration_seconds: Histogram,
+    /// Total number of rows returned from queries.
+    pub query_rows_returned: IntCounter,
+    /// Errors by operation type: ingest, query, storage.
+    pub errors_total: IntCounterVec<1>,
+}
+
+impl Default for ParquetEngineMetrics {
+    fn default() -> Self {
+        Self {
+            ingest_batches_total: new_counter(
+                "ingest_batches_total",
+                "Total number of batches processed during ingest.",
+                SUBSYSTEM,
+                &[],
+            ),
+            ingest_rows_total: new_counter(
+                "ingest_rows_total",
+                "Total number of rows ingested.",
+                SUBSYSTEM,
+                &[],
+            ),
+            ingest_bytes_total: new_counter(
+                "ingest_bytes_total",
+                "Total number of bytes ingested from IPC payloads.",
+                SUBSYSTEM,
+                &[],
+            ),
+            ingest_duration_seconds: new_histogram(
+                "ingest_duration_seconds",
+                "Histogram of batch processing durations in seconds.",
+                SUBSYSTEM,
+                duration_buckets(),
+            ),
+            splits_written_total: new_counter(
+                "splits_written_total",
+                "Total number of splits written to storage.",
+                SUBSYSTEM,
+                &[],
+            ),
+            splits_bytes_written: new_counter(
+                "splits_bytes_written",
+                "Total bytes written to split files.",
+                SUBSYSTEM,
+                &[],
+            ),
+            query_duration_seconds: new_histogram(
+                "query_duration_seconds",
+                "Histogram of query execution durations in seconds.",
+                SUBSYSTEM,
+                duration_buckets(),
+            ),
+            query_rows_returned: new_counter(
+                "query_rows_returned",
+                "Total number of rows returned from queries.",
+                SUBSYSTEM,
+                &[],
+            ),
+            errors_total: new_counter_vec(
+                "errors_total",
+                "Total errors by operation type.",
+                SUBSYSTEM,
+                &[],
+                ["operation"],
+            ),
+        }
+    }
+}
+
+/// Global metrics instance for the metrics engine.
+pub static PARQUET_ENGINE_METRICS: LazyLock<ParquetEngineMetrics> =
+    LazyLock::new(ParquetEngineMetrics::default);
