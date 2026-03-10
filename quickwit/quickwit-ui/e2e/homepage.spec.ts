@@ -16,7 +16,7 @@ import { expect, test } from "@playwright/test";
 
 test.describe("Home navigation", () => {
   test("Should display sidebar links", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/ui");
     await expect(page.locator("a")).toContainText([
       "Query editor",
       "Indexes",
@@ -25,7 +25,7 @@ test.describe("Home navigation", () => {
   });
 
   test("Should navigate to cluster state", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/ui");
     await page.getByRole("link", { name: "Cluster" }).click();
     await expect(page.getByLabel("breadcrumb")).toContainText("Cluster");
     await expect(page.getByText("cluster_id")).toBeVisible();
