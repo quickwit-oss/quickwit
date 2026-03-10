@@ -20,7 +20,7 @@ use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, Publis
 use serde::Serialize;
 use tracing::{info, instrument, warn};
 
-use crate::actors::MergePlanner;
+use crate::actors::{DocProcessor, MergePlanner};
 use crate::models::{NewSplits, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
@@ -56,7 +56,7 @@ pub struct Publisher {
     publisher_type: PublisherType,
     metastore: MetastoreServiceClient,
     merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
-    source_mailbox_opt: Option<Mailbox<SourceActor>>,
+    source_mailbox_opt: Option<Mailbox<SourceActor<DocProcessor>>>,
     counters: PublisherCounters,
 }
 
@@ -65,7 +65,7 @@ impl Publisher {
         publisher_type: PublisherType,
         metastore: MetastoreServiceClient,
         merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
-        source_mailbox_opt: Option<Mailbox<SourceActor>>,
+        source_mailbox_opt: Option<Mailbox<SourceActor<DocProcessor>>>,
     ) -> Publisher {
         Publisher {
             publisher_type,

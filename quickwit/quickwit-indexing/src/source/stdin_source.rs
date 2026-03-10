@@ -22,7 +22,7 @@ use quickwit_proto::metastore::SourceType;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::{BATCH_NUM_BYTES_LIMIT, BatchBuilder};
-use crate::actors::DocProcessor;
+use crate::actors::Processor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 pub struct StdinBatchReader {
@@ -76,20 +76,20 @@ impl fmt::Debug for StdinSource {
 }
 
 #[async_trait]
-impl Source for StdinSource {
+impl<P: Processor> Source<P> for StdinSource {
     async fn emit_batches(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<Duration, ActorExitStatus> {
         let batch_builder = self.reader.read_batch(ctx.progress()).await?;
         self.num_bytes_processed += batch_builder.num_bytes;
         self.num_lines_processed += batch_builder.docs.len() as u64;
-        doc_processor_mailbox
+        processor_mailbox
             .send_message(batch_builder.build())
             .await?;
         if self.reader.is_eof() {
-            ctx.send_exit_with_success(doc_processor_mailbox).await?;
+            ctx.send_exit_with_success(processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
 

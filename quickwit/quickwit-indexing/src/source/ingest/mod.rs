@@ -49,7 +49,7 @@ use super::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
     SourceRuntime, TypedSourceFactory,
 };
-use crate::actors::DocProcessor;
+use crate::actors::Processor;
 use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
 
 pub struct IngestSourceFactory;
@@ -391,11 +391,11 @@ impl IngestSource {
     /// After this method has returned we are guaranteed to have the following post condition:
     /// - a alive publish lock / non-empty publish token
     /// - all currently assigned shards included in the `new_assigned_shard_ids` set.
-    async fn reset_if_needed(
+    async fn reset_if_needed<Q: crate::actors::Processor>(
         &mut self,
         new_assigned_shard_ids: &BTreeSet<ShardId>,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        doc_processor_mailbox: &Mailbox<Q>,
+        ctx: &crate::source::SourceContext<Q>,
     ) -> anyhow::Result<()> {
         // No need to do anything if the list of shards before and after are empty.
         if new_assigned_shard_ids.is_empty() && self.assigned_shards.is_empty() {
@@ -456,11 +456,11 @@ impl IngestSource {
 }
 
 #[async_trait]
-impl Source for IngestSource {
+impl<P: Processor> Source<P> for IngestSource {
     async fn emit_batches(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::IngestV2);
 
@@ -502,7 +502,7 @@ impl Source for IngestSource {
                 "Sending doc batch to indexer."
             );
             let message = batch_builder.build();
-            ctx.send_message(doc_processor_mailbox, message).await?;
+            ctx.send_message(processor_mailbox, message).await?;
         }
         Ok(Duration::default())
     }
@@ -510,10 +510,10 @@ impl Source for IngestSource {
     async fn assign_shards(
         &mut self,
         new_assigned_shard_ids: BTreeSet<ShardId>,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> anyhow::Result<()> {
-        self.reset_if_needed(&new_assigned_shard_ids, doc_processor_mailbox, ctx)
+        self.reset_if_needed(&new_assigned_shard_ids, processor_mailbox, ctx)
             .await?;
 
         // As enforced by `reset_if_needed`, at this point, all currently assigned shards should be
@@ -621,7 +621,7 @@ impl Source for IngestSource {
     async fn suggest_truncate(
         &mut self,
         checkpoint: SourceCheckpoint,
-        _ctx: &SourceContext,
+        _ctx: &SourceContext<P>,
     ) -> anyhow::Result<()> {
         let truncate_up_to_positions: Vec<(ShardId, Position)> = checkpoint
             .iter()
@@ -686,6 +686,7 @@ mod tests {
     use tokio::sync::watch;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
 

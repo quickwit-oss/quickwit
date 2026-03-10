@@ -452,7 +452,7 @@ impl IndexingPipeline {
             .await?;
         let actor_source = SourceActor {
             source,
-            doc_processor_mailbox,
+            processor_mailbox: doc_processor_mailbox,
         };
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
