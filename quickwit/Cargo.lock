@@ -7172,6 +7172,9 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sigv4",
  "bytes",
  "bytesize",
  "dotenvy",
@@ -7208,6 +7211,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ulid",
+ "url",
  "utoipa",
  "uuid",
 ]

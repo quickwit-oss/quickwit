@@ -12,6 +12,9 @@ license.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+aws-config = { workspace = true, optional = true }
+aws-credential-types = { workspace = true, optional = true }
+aws-sigv4 = { workspace = true, optional = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 futures = { workspace = true }
@@ -37,6 +40,7 @@ tokio-stream = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
+url = { workspace = true, optional = true }
 uuid = { workspace = true }
 utoipa = { workspace = true }
 
@@ -66,5 +70,6 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 ci-test = []
+mysql = ["quickwit-proto/mysql", "sea-query", "sea-query-binder", "sqlx", "aws-config", "aws-credential-types", "aws-sigv4", "url"]
 postgres = ["quickwit-proto/postgres", "sea-query", "sea-query-binder", "sqlx"]
 testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]
