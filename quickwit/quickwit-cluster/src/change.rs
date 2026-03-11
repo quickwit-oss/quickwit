@@ -35,7 +35,10 @@ use crate::member::NodeStateExt;
 #[derive(Debug, Clone)]
 pub enum ClusterChange {
     Add(ClusterNode),
-    Update(ClusterNode),
+    Update {
+        previous: ClusterNode,
+        updated: ClusterNode,
+    },
     Remove(ClusterNode),
 }
 
@@ -246,7 +249,10 @@ async fn compute_cluster_change_events_on_updated(
         );
         Some(ClusterChange::Remove(updated_node))
     } else if previous_node.is_ready() && updated_node.is_ready() {
-        Some(ClusterChange::Update(updated_node))
+        Some(ClusterChange::Update {
+            previous: previous_node,
+            updated: updated_node,
+        })
     } else {
         None
     }
@@ -681,16 +687,16 @@ pub(crate) mod tests {
             .await
             .unwrap();
 
-            let ClusterChange::Update(node) = event else {
+            let ClusterChange::Update { updated, .. } = event else {
                 panic!("expected `ClusterChange::Remove` event, got `{event:?}`");
             };
-            assert_eq!(node.chitchat_id(), &updated_chitchat_id);
-            assert_eq!(node.grpc_advertise_addr(), grpc_advertise_addr);
-            assert!(!node.is_self_node());
-            assert!(node.is_ready());
+            assert_eq!(updated.chitchat_id(), &updated_chitchat_id);
+            assert_eq!(updated.grpc_advertise_addr(), grpc_advertise_addr);
+            assert!(!updated.is_self_node());
+            assert!(updated.is_ready());
             assert_eq!(
                 previous_nodes.get(&updated_chitchat_id.node_id).unwrap(),
-                &node
+                &updated
             );
         }
         {
@@ -1009,7 +1015,7 @@ pub(crate) mod tests {
             .await;
             assert_eq!(events.len(), 1);
 
-            let ClusterChange::Update(_node) = events[0].clone() else {
+            let ClusterChange::Update { .. } = events[0].clone() else {
                 panic!(
                     "Expected `ClusterChange::Update` event, got `{:?}`",
                     events[0]

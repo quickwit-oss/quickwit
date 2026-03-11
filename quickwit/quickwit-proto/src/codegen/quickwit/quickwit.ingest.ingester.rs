@@ -470,11 +470,14 @@ impl ReplicateFailureReason {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IngesterStatus {
+    /// For nodes without an ingester.
     Unspecified = 0,
-    /// The ingester is live but not ready yet to accept requests.
+    /// The ingester is live but not ready yet to accept requests (i.e. the Write-Ahead Log is not loaded yet).
     Initializing = 1,
     /// The ingester is ready and accepts read and write requests.
     Ready = 2,
+    /// The ingester is about to be decommissioned. It still accepts read and write requests, but will not accept write requests in a few seconds and should be avoided by future write requests.
+    Retiring = 6,
     /// The ingester is being decommissioned. It accepts read requests but rejects write requests
     /// (open shards, persist, and replicate requests). It will transition to `Decommissioned` once
     /// all shards are fully indexed.
@@ -495,6 +498,7 @@ impl IngesterStatus {
             Self::Unspecified => "INGESTER_STATUS_UNSPECIFIED",
             Self::Initializing => "INGESTER_STATUS_INITIALIZING",
             Self::Ready => "INGESTER_STATUS_READY",
+            Self::Retiring => "INGESTER_STATUS_RETIRING",
             Self::Decommissioning => "INGESTER_STATUS_DECOMMISSIONING",
             Self::Decommissioned => "INGESTER_STATUS_DECOMMISSIONED",
             Self::Failed => "INGESTER_STATUS_FAILED",
@@ -506,6 +510,7 @@ impl IngesterStatus {
             "INGESTER_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
             "INGESTER_STATUS_INITIALIZING" => Some(Self::Initializing),
             "INGESTER_STATUS_READY" => Some(Self::Ready),
+            "INGESTER_STATUS_RETIRING" => Some(Self::Retiring),
             "INGESTER_STATUS_DECOMMISSIONING" => Some(Self::Decommissioning),
             "INGESTER_STATUS_DECOMMISSIONED" => Some(Self::Decommissioned),
             "INGESTER_STATUS_FAILED" => Some(Self::Failed),

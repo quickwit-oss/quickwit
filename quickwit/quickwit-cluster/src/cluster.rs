@@ -697,6 +697,7 @@ pub async fn create_cluster_for_test_with_id(
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
     use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
+    use quickwit_proto::ingest::ingester::IngesterStatus;
     let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], gossip_advertise_port).into();
     let self_node = ClusterMember {
         node_id,
@@ -707,6 +708,7 @@ pub async fn create_cluster_for_test_with_id(
         grpc_advertise_addr: grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
         indexing_tasks: Vec::new(),
         indexing_cpu_capacity: PIPELINE_FULL_CAPACITY,
+        ingester_status: IngesterStatus::default(),
         availability_zone: None,
     };
     let failure_detector_config = create_failure_detector_config_for_test();
