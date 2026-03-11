@@ -1,0 +1,26 @@
+name: Rebase upstream
+
+on:
+  schedule:
+    # Run daily at 03:00 UTC
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-upstream:
+    name: Sync main from upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Sync fork with upstream
+        uses: tgymnich/fork-sync@e905b254d56ebb367514cd05fa96bf7516bd2a5a # v2.0.10
+        with:
+          base: main
+          head: main
+          merge_method: merge
+          auto_merge: false
+          pr_title: "chore: merge upstream main"
