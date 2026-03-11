@@ -13,13 +13,16 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{IntGauge, new_gauge};
+use quickwit_common::metrics::{IntCounter, IntGauge, new_counter, new_gauge};
 
 #[derive(Clone)]
 pub(super) struct MysqlMetrics {
     pub acquire_connections: IntGauge,
     pub active_connections: IntGauge,
     pub idle_connections: IntGauge,
+    pub iam_token_refresh_success: IntCounter,
+    pub iam_token_refresh_failure: IntCounter,
+    pub iam_token_last_refresh_timestamp_secs: IntGauge,
 }
 
 impl Default for MysqlMetrics {
@@ -40,6 +43,24 @@ impl Default for MysqlMetrics {
             idle_connections: new_gauge(
                 "mysql_idle_connections",
                 "Number of idle MySQL connections.",
+                "metastore",
+                &[],
+            ),
+            iam_token_refresh_success: new_counter(
+                "mysql_iam_token_refresh_success_total",
+                "Number of successful IAM token refreshes.",
+                "metastore",
+                &[],
+            ),
+            iam_token_refresh_failure: new_counter(
+                "mysql_iam_token_refresh_failure_total",
+                "Number of failed IAM token refreshes.",
+                "metastore",
+                &[],
+            ),
+            iam_token_last_refresh_timestamp_secs: new_gauge(
+                "mysql_iam_token_last_refresh_timestamp_secs",
+                "Unix timestamp of the last successful IAM token refresh.",
                 "metastore",
                 &[],
             ),

@@ -19,6 +19,7 @@ use std::time::Duration;
 use anyhow::{Context, ensure};
 use humantime::parse_duration;
 use itertools::Itertools;
+use quickwit_common::uri::Protocol;
 use serde::{Deserialize, Serialize};
 use serde_with::{EnumMap, serde_as};
 
@@ -108,6 +109,16 @@ impl MetastoreConfigs {
                 MetastoreConfig::MySQL(mysql_metastore_config) => Some(mysql_metastore_config),
                 _ => None,
             })
+    }
+
+    /// Returns the `max_connections` for the database backend matching the given protocol,
+    /// or `None` if the protocol is not a database or no matching config is found.
+    pub fn find_database_max_connections(&self, protocol: Protocol) -> Option<NonZeroUsize> {
+        match protocol {
+            Protocol::PostgreSQL => self.find_postgres().map(|config| config.max_connections),
+            Protocol::MySQL => self.find_mysql().map(|config| config.max_connections),
+            _ => None,
+        }
     }
 }
 
@@ -664,5 +675,56 @@ mod tests {
 
         let roundtripped: MysqlAuthMode = serde_yaml::from_str(&aws_iam_yaml).unwrap();
         assert_eq!(roundtripped, MysqlAuthMode::AwsIam);
+    }
+
+    #[test]
+    fn test_find_database_max_connections_postgres() {
+        let configs_yaml = r#"
+            postgres:
+                max_connections: 20
+        "#;
+        let configs: MetastoreConfigs = serde_yaml::from_str(configs_yaml).unwrap();
+        let max_conn = configs
+            .find_database_max_connections(Protocol::PostgreSQL)
+            .unwrap();
+        assert_eq!(max_conn.get(), 20);
+    }
+
+    #[test]
+    fn test_find_database_max_connections_mysql() {
+        let configs_yaml = r#"
+            mysql:
+                max_connections: 15
+        "#;
+        let configs: MetastoreConfigs = serde_yaml::from_str(configs_yaml).unwrap();
+        let max_conn = configs
+            .find_database_max_connections(Protocol::MySQL)
+            .unwrap();
+        assert_eq!(max_conn.get(), 15);
+    }
+
+    #[test]
+    fn test_find_database_max_connections_file_returns_none() {
+        let configs: MetastoreConfigs = serde_yaml::from_str("").unwrap();
+        assert!(
+            configs
+                .find_database_max_connections(Protocol::File)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn test_find_database_max_connections_missing_config_returns_none() {
+        let configs: MetastoreConfigs = serde_yaml::from_str("").unwrap();
+        assert!(
+            configs
+                .find_database_max_connections(Protocol::PostgreSQL)
+                .is_none()
+        );
+        assert!(
+            configs
+                .find_database_max_connections(Protocol::MySQL)
+                .is_none()
+        );
     }
 }

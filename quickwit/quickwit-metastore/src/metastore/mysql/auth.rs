@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aws_credential_types::provider::ProvideCredentials;
 use aws_sigv4::http_request::{SignableBody, SignableRequest, SignatureLocation, SigningSettings};
@@ -21,6 +21,7 @@ use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
 use sqlx::MySql;
 use sqlx::mysql::MySqlConnectOptions;
 
+use super::metrics::MYSQL_METRICS;
 use super::pool::TrackedPool;
 
 /// Spawns a background task that refreshes the IAM auth token every 10 minutes.
@@ -48,9 +49,18 @@ pub(super) fn spawn_token_refresh_task(
                         .password(&token)
                         .enable_cleartext_plugin(true);
                     pool.set_connect_options(new_options);
+                    MYSQL_METRICS.iam_token_refresh_success.inc();
+                    let now_secs = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as i64;
+                    MYSQL_METRICS
+                        .iam_token_last_refresh_timestamp_secs
+                        .set(now_secs);
                     tracing::debug!("refreshed RDS IAM auth token");
                 }
                 Err(error) => {
+                    MYSQL_METRICS.iam_token_refresh_failure.inc();
                     quickwit_common::rate_limited_error!(
                         limit_per_min = 6,
                         error = ?error,
@@ -136,4 +146,69 @@ pub(super) async fn generate_rds_iam_token(
         .strip_prefix("https://")
         .unwrap_or(signed_url.as_str());
     Ok(token.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_generate_rds_iam_token_missing_credentials_provider() {
+        let aws_config = aws_config::SdkConfig::builder().build();
+        let result = generate_rds_iam_token(
+            "my-db.us-east-1.rds.amazonaws.com",
+            3306,
+            "admin",
+            "us-east-1",
+            &aws_config,
+        )
+        .await;
+        let error = result.unwrap_err();
+        assert!(
+            matches!(error, MetastoreError::Internal { .. }),
+            "expected MetastoreError::Internal, got: {error:?}"
+        );
+        let MetastoreError::Internal { cause, .. } = &error else {
+            panic!("expected Internal error");
+        };
+        assert!(
+            cause.contains("no AWS credentials provider"),
+            "unexpected cause: {cause}"
+        );
+    }
+
+    // End-to-end IAM token generation requires real AWS credentials and a reachable
+    // RDS/Aurora endpoint. To test manually:
+    //
+    //   DB_HOST=my-db.us-east-1.rds.amazonaws.com \
+    //   DB_USER=admin \
+    //   AWS_REGION=us-east-1 \
+    //   cargo test -p quickwit-metastore --features mysql test_generate_rds_iam_token_e2e --
+    // --ignored
+    #[tokio::test]
+    #[ignore]
+    async fn test_generate_rds_iam_token_e2e() {
+        let host = std::env::var("DB_HOST").expect("DB_HOST must be set");
+        let user = std::env::var("DB_USER").expect("DB_USER must be set");
+        let region = std::env::var("AWS_REGION").expect("AWS_REGION must be set");
+
+        let aws_config = aws_config::defaults(aws_config::BehaviorVersion::latest())
+            .region(aws_config::Region::new(region.clone()))
+            .load()
+            .await;
+
+        let token = generate_rds_iam_token(&host, 3306, &user, &region, &aws_config)
+            .await
+            .expect("token generation should succeed with valid AWS credentials");
+
+        assert!(!token.is_empty(), "token should not be empty");
+        assert!(
+            token.contains(&host),
+            "token should contain the host: {token}"
+        );
+        assert!(
+            token.contains("Action=connect"),
+            "token should contain Action=connect: {token}"
+        );
+    }
 }
