@@ -96,3 +96,29 @@ cnab_workflow(
     ],
     visibility = ["//visibility:public"],
 )
+
+# Release staging deployment (pomsky-release)
+dd_helm_cnab_installation(
+    name = "pomsky-release.logs-cloudprem.vaporeon-b.us1.staging.dog",
+    bundle = ":pomsky",
+    description = "Pomsky Release Staging",
+    parameters = default_params,
+    value_files = [
+        "k8s/values/staging-release.yaml",
+    ],
+)
+
+cnab_workflow(
+    name = "staging-release",
+    description = "Deploy Pomsky Release to staging",
+    parallel = True,
+    tasks = [
+        ":pomsky-release.logs-cloudprem.vaporeon-b.us1.staging.dog",
+    ],
+    tags = [
+        "env:staging",
+        "service:pomsky",
+        "team:logs-cloudprem",
+    ],
+    visibility = ["//visibility:public"],
+)
