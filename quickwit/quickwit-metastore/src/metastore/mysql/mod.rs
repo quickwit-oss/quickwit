@@ -14,6 +14,8 @@
 
 mod auth;
 mod error;
+mod factory;
+mod metastore;
 mod metrics;
 mod migrator;
 mod model;
@@ -21,6 +23,9 @@ mod pool;
 mod split_stream;
 mod tags;
 mod utils;
+
+pub use factory::MysqlMetastoreFactory;
+pub use metastore::MysqlMetastore;
 
 const QW_MYSQL_SKIP_MIGRATIONS_ENV_KEY: &str = "QW_MYSQL_SKIP_MIGRATIONS";
 const QW_MYSQL_SKIP_MIGRATION_LOCKING_ENV_KEY: &str = "QW_MYSQL_SKIP_MIGRATION_LOCKING";
