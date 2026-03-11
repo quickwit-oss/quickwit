@@ -154,6 +154,23 @@ impl sqlx::postgres::PgHasArrayType for ShardId {
     }
 }
 
+#[cfg(feature = "mysql")]
+impl sqlx::Type<sqlx::MySql> for ShardId {
+    fn type_info() -> sqlx::mysql::MySqlTypeInfo {
+        <String as sqlx::Type<sqlx::MySql>>::type_info()
+    }
+}
+
+#[cfg(feature = "mysql")]
+impl sqlx::Encode<'_, sqlx::MySql> for ShardId {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <sqlx::MySql as sqlx::Database>::ArgumentBuffer<'_>,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        <String as sqlx::Encode<'_, sqlx::MySql>>::encode_by_ref(&self.as_str().to_string(), buf)
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
