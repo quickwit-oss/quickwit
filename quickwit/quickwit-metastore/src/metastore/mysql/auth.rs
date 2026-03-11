@@ -18,8 +18,8 @@ use aws_credential_types::provider::ProvideCredentials;
 use aws_sigv4::http_request::{SignableBody, SignableRequest, SignatureLocation, SigningSettings};
 use aws_sigv4::sign::v4;
 use quickwit_proto::metastore::{MetastoreError, MetastoreResult};
-use sqlx::mysql::MySqlConnectOptions;
 use sqlx::MySql;
+use sqlx::mysql::MySqlConnectOptions;
 
 use super::pool::TrackedPool;
 

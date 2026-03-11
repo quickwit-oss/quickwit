@@ -69,6 +69,33 @@ services:
       timeout: 5s
       retries: 100
 
+  mysql:
+    # MySQL 8.0 is the minimum supported version.
+    image: mysql:${MYSQL_VERSION:-8.0}
+    container_name: mysql
+    ports:
+      - "${MAP_HOST_MYSQL:-127.0.0.1}:3307:3306"
+    profiles:
+      - all
+      - mysql
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DB:-quickwit-metastore-dev}
+      MYSQL_USER: ${MYSQL_USER:-quickwit-dev}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-quickwit-dev}
+      MYSQL_ROOT_PASSWORD: root
+      TZ: UTC
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --default-time-zone=+00:00
+      --sql-mode=STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "quickwit-dev", "-pquickwit-dev"]
+      interval: 1s
+      timeout: 5s
+      retries: 100
+
   pulsar-broker:
     # The oldest version with arm64 docker images. EOL May 2 2025
     image: apachepulsar/pulsar:${PULSAR_VERSION:-3.0.0}
@@ -230,4 +257,5 @@ volumes:
   grafana_conf:
   grafana_data:
   localstack_data:
+  mysql_data:
   postgres_data:

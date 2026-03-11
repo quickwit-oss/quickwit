@@ -2080,9 +2080,8 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::metastore::mysql::model::{MysqlShard, shard_state_to_str};
+    use crate::metastore::mysql::model::MysqlShard;
     use crate::metastore_test_suite;
-    use crate::tests::DefaultForTest;
     use crate::tests::shard::ReadWriteShardsForTest;
 
     #[async_trait]

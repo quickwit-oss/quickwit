@@ -33,6 +33,7 @@ use crate::metastore::{FilterRange, SortBy};
 use crate::{ListSplitsQuery, SplitMaturity, SplitMetadata};
 
 /// Establishes a connection to the given database URI.
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn establish_connection(
     connection_uri: &Uri,
     min_connections: usize,
