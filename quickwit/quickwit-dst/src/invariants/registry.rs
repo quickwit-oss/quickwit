@@ -82,6 +82,38 @@ pub enum InvariantId {
 }
 
 impl InvariantId {
+    /// Short identifier string (e.g. `"SS-1"`).
+    ///
+    /// Returns a `&'static str` to avoid allocation on the hot path.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SS1 => "SS-1",
+            Self::SS2 => "SS-2",
+            Self::SS3 => "SS-3",
+            Self::SS4 => "SS-4",
+            Self::SS5 => "SS-5",
+
+            Self::TW1 => "TW-1",
+            Self::TW2 => "TW-2",
+            Self::TW3 => "TW-3",
+
+            Self::CS1 => "CS-1",
+            Self::CS2 => "CS-2",
+            Self::CS3 => "CS-3",
+
+            Self::MC1 => "MC-1",
+            Self::MC2 => "MC-2",
+            Self::MC3 => "MC-3",
+            Self::MC4 => "MC-4",
+
+            Self::DM1 => "DM-1",
+            Self::DM2 => "DM-2",
+            Self::DM3 => "DM-3",
+            Self::DM4 => "DM-4",
+            Self::DM5 => "DM-5",
+        }
+    }
+
     /// Human-readable description of this invariant.
     pub fn description(self) -> &'static str {
         match self {
@@ -115,33 +147,7 @@ impl InvariantId {
 
 impl fmt::Display for InvariantId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::SS1 => "SS-1",
-            Self::SS2 => "SS-2",
-            Self::SS3 => "SS-3",
-            Self::SS4 => "SS-4",
-            Self::SS5 => "SS-5",
-
-            Self::TW1 => "TW-1",
-            Self::TW2 => "TW-2",
-            Self::TW3 => "TW-3",
-
-            Self::CS1 => "CS-1",
-            Self::CS2 => "CS-2",
-            Self::CS3 => "CS-3",
-
-            Self::MC1 => "MC-1",
-            Self::MC2 => "MC-2",
-            Self::MC3 => "MC-3",
-            Self::MC4 => "MC-4",
-
-            Self::DM1 => "DM-1",
-            Self::DM2 => "DM-2",
-            Self::DM3 => "DM-3",
-            Self::DM4 => "DM-4",
-            Self::DM5 => "DM-5",
-        };
-        f.write_str(s)
+        f.write_str(self.as_str())
     }
 }
 

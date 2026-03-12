@@ -101,6 +101,12 @@ async fn main_impl() -> anyhow::Result<()> {
     let (env_filter_reload_fn, tracer_provider_opt) =
         setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
 
+    #[cfg(not(any(test, feature = "testsuite")))]
+    quickwit_cli::logger::setup_dogstatsd_exporter(build_info)?;
+
+    #[cfg(not(any(test, feature = "testsuite")))]
+    quickwit_cli::logger::setup_invariant_recorder();
+
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");
         eprintln!(
