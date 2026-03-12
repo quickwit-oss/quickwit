@@ -29,6 +29,7 @@ mod replication;
 mod router;
 mod routing_table;
 mod state;
+mod wal_capacity_tracker;
 mod workbench;
 
 use std::collections::HashMap;
@@ -37,7 +38,10 @@ use std::ops::{Add, AddAssign};
 use std::time::Duration;
 use std::{env, fmt};
 
-pub use broadcast::{LocalShardsUpdate, ShardInfo, ShardInfos, setup_local_shards_update_listener};
+pub use broadcast::{
+    LocalShardsUpdate, ShardInfo, ShardInfos, setup_ingester_capacity_update_listener,
+    setup_local_shards_update_listener,
+};
 use bytes::buf::Writer;
 use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
@@ -45,7 +49,9 @@ use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::{IngesterServiceClient, IngesterStatus};
 use quickwit_proto::ingest::router::{IngestRequestV2, IngestSubrequest};
 use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2};
-use quickwit_proto::types::{DocUid, DocUidGenerator, IndexId, NodeId, SubrequestId};
+use quickwit_proto::types::{
+    DocUid, DocUidGenerator, IndexId, IndexUid, NodeId, SourceId, SubrequestId,
+};
 use serde::Serialize;
 use tracing::{error, info};
 use workbench::pending_subrequests;
@@ -59,10 +65,12 @@ use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{MRecord, decoded_mrecords};
 pub use self::router::IngestRouter;
 
-#[derive(Clone)]
+/// An ingester as represented in the pool, bundling the gRPC client with node metadata.
+#[derive(Debug, Clone)]
 pub struct IngesterPoolEntry {
     pub client: IngesterServiceClient,
     pub status: IngesterStatus,
+    pub availability_zone: Option<String>,
 }
 
 pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
@@ -73,6 +81,8 @@ pub type ClientId = String;
 pub type LeaderId = NodeId;
 
 pub type FollowerId = NodeId;
+
+pub type OpenShardCounts = Vec<(IndexUid, SourceId, usize)>;
 
 const IDLE_SHARD_TIMEOUT_ENV_KEY: &str = "QW_IDLE_SHARD_TIMEOUT_SECS";
 
