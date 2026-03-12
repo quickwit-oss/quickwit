@@ -52,10 +52,12 @@ pub(crate) const PARQUET_META_ROW_KEYS_JSON: &str = "qh.row_keys_json";
 pub(crate) fn build_compaction_key_value_metadata(
     metadata: &MetricsSplitMetadata,
 ) -> Vec<KeyValue> {
-    // TW-2: window_duration must divide 3600.
-    debug_assert!(
+    // TW-2: window_duration must divide 3600 (also checked at build time,
+    // but belt-and-suspenders at the serialization boundary).
+    quickwit_dst::check_invariant!(
+        quickwit_dst::invariants::InvariantId::TW2,
         metadata.window_duration_secs() == 0 || 3600 % metadata.window_duration_secs() == 0,
-        "TW-2 violated at Parquet write: window_duration_secs={} does not divide 3600",
+        " at Parquet write: window_duration_secs={} does not divide 3600",
         metadata.window_duration_secs()
     );
 
@@ -116,18 +118,18 @@ fn verify_ss5_kv_consistency(metadata: &MetricsSplitMetadata, kvs: &[KeyValue]) 
     };
 
     if !metadata.sort_fields.is_empty() {
-        debug_assert_eq!(
-            find_kv(PARQUET_META_SORT_FIELDS),
-            Some(metadata.sort_fields.as_str()),
-            "SS-5 violated: sort_fields in kv_metadata does not match MetricsSplitMetadata"
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            find_kv(PARQUET_META_SORT_FIELDS) == Some(metadata.sort_fields.as_str()),
+            ": sort_fields in kv_metadata does not match MetricsSplitMetadata"
         );
     }
 
     if let Some(ws) = metadata.window_start() {
-        debug_assert_eq!(
-            find_kv(PARQUET_META_WINDOW_START),
-            Some(ws.to_string()).as_deref(),
-            "SS-5 violated: window_start in kv_metadata does not match MetricsSplitMetadata"
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            find_kv(PARQUET_META_WINDOW_START) == Some(ws.to_string()).as_deref(),
+            ": window_start in kv_metadata does not match MetricsSplitMetadata"
         );
     }
 }
@@ -283,11 +285,10 @@ impl ParquetWriter {
                 let verify_indices = lexsort_to_indices(&verify_columns, None)
                     .expect("SS-1 verification sort failed");
                 for i in 0..verify_indices.len() {
-                    debug_assert_eq!(
-                        verify_indices.value(i) as usize,
-                        i,
-                        "SS-1 violated: row {} is out of sort order after sort_batch()",
-                        i
+                    quickwit_dst::check_invariant!(
+                        quickwit_dst::invariants::InvariantId::SS1,
+                        verify_indices.value(i) as usize == i,
+                        ": row {} is out of sort order after sort_batch()", i
                     );
                 }
             }
