@@ -138,6 +138,9 @@ indexer:
     enabled: true
     storage: 200Gi
     storageClass: gp3
+    annotations:
+      ebs.csi.aws.com/iops: "8000"
+      ebs.csi.aws.com/throughput: "500"
 
 searcher:
   replicaCount: 4
