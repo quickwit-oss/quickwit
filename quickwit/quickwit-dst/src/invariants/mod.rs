@@ -26,8 +26,10 @@
 //! No external dependencies — only `std`.
 
 mod check;
+pub mod recorder;
 pub mod registry;
 pub mod sort;
 pub mod window;
 
+pub use recorder::{record_invariant_check, set_invariant_recorder};
 pub use registry::InvariantId;

@@ -17,13 +17,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-//! Invariant checking macro.
+//! Invariant checking macro — Layers 3 + 4 of the verification stack.
 //!
-//! Wraps `debug_assert!` with the invariant ID, providing a single hook point
-//! for future Datadog metrics emission (Layer 4 of the verification stack).
+//! The condition is **always evaluated** (debug and release). Results are:
+//!
+//! - **Debug builds (Layer 3 — Prevention):** panics on violation via
+//!   `debug_assert!`, catching bugs during development and testing.
+//! - **All builds (Layer 4 — Production):** forwards the result to the
+//!   registered [`InvariantRecorder`](super::recorder::InvariantRecorder)
+//!   for Datadog metrics emission. No-op if no recorder is set.
 
-/// Check an invariant condition. In debug builds, panics on violation.
-/// In release builds, currently a no-op (future: emit Datadog metric).
+/// Check an invariant condition in all build profiles.
+///
+/// The condition is always evaluated. In debug builds, a violation panics.
+/// In all builds, the result is forwarded to the registered invariant
+/// recorder for metrics emission (see [`set_invariant_recorder`]).
+///
+/// [`set_invariant_recorder`]: crate::invariants::set_invariant_recorder
 ///
 /// # Examples
 ///
@@ -36,10 +46,14 @@
 /// ```
 #[macro_export]
 macro_rules! check_invariant {
-    ($id:expr, $cond:expr) => {
-        debug_assert!($cond, "{} violated", $id);
-    };
-    ($id:expr, $cond:expr, $fmt:literal $($arg:tt)*) => {
-        debug_assert!($cond, concat!("{} violated", $fmt), $id $($arg)*);
-    };
+    ($id:expr, $cond:expr) => {{
+        let passed = $cond;
+        $crate::invariants::record_invariant_check($id, passed);
+        debug_assert!(passed, "{} violated", $id);
+    }};
+    ($id:expr, $cond:expr, $fmt:literal $($arg:tt)*) => {{
+        let passed = $cond;
+        $crate::invariants::record_invariant_check($id, passed);
+        debug_assert!(passed, concat!("{} violated", $fmt), $id $($arg)*);
+    }};
 }
