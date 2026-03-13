@@ -94,15 +94,15 @@ impl Source for VecSource {
             .take(self.source_params.batch_num_docs)
             .cloned()
         {
-            batch_builder.add_doc(doc);
+            batch_builder.add_doc(doc, None);
         }
-        if batch_builder.docs.is_empty() {
+        if batch_builder.raw_docs.is_empty() {
             info!("reached end of source");
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }
         let from_item_idx = self.next_item_idx;
-        self.next_item_idx += batch_builder.docs.len();
+        self.next_item_idx += batch_builder.raw_docs.len();
         let to_item_idx = self.next_item_idx;
 
         batch_builder.checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
@@ -227,7 +227,7 @@ mod tests {
         assert_eq!(last_observation, json!({"next_item_idx": 10}));
         let messages = doc_processor_inbox.drain_for_test();
         let batch = messages[0].downcast_ref::<RawDocBatch>().unwrap();
-        assert_eq!(&batch.docs[0], "2");
+        assert_eq!(&batch.raw_docs[0].doc, "2");
         Ok(())
     }
 }

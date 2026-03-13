@@ -18,10 +18,16 @@ use bytes::Bytes;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 
+#[derive(Debug)]
+pub struct RawDoc {
+    pub doc: Bytes,
+    pub arrival_timestamp_secs_opt: Option<u64>,
+}
+
 pub struct RawDocBatch {
     // Do not directly append documents to this vector; otherwise, in-flight metrics will be
     // incorrect.
-    pub docs: Vec<Bytes>,
+    pub raw_docs: Vec<RawDoc>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
     _gauge_guard: GaugeGuard<'static>,
@@ -29,17 +35,20 @@ pub struct RawDocBatch {
 
 impl RawDocBatch {
     pub fn new(
-        docs: Vec<Bytes>,
+        raw_docs: Vec<RawDoc>,
         checkpoint_delta: SourceCheckpointDelta,
         force_commit: bool,
     ) -> Self {
-        let delta = docs.iter().map(|doc| doc.len() as i64).sum::<i64>();
+        let delta = raw_docs
+            .iter()
+            .map(|raw_doc| raw_doc.doc.len() as i64)
+            .sum::<i64>();
         let mut gauge_guard =
             GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.doc_processor_mailbox);
         gauge_guard.add(delta);
 
         Self {
-            docs,
+            raw_docs,
             checkpoint_delta,
             force_commit,
             _gauge_guard: gauge_guard,
@@ -48,9 +57,15 @@ impl RawDocBatch {
 
     #[cfg(test)]
     pub fn for_test(docs: &[&[u8]], range: std::ops::Range<u64>) -> Self {
-        let docs = docs.iter().map(|doc| Bytes::from(doc.to_vec())).collect();
+        let raw_docs = docs
+            .iter()
+            .map(|doc| RawDoc {
+                doc: Bytes::from(doc.to_vec()),
+                arrival_timestamp_secs_opt: None,
+            })
+            .collect();
         let checkpoint_delta = SourceCheckpointDelta::from_range(range);
-        Self::new(docs, checkpoint_delta, false)
+        Self::new(raw_docs, checkpoint_delta, false)
     }
 }
 
@@ -58,7 +73,7 @@ impl fmt::Debug for RawDocBatch {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("RawDocBatch")
-            .field("num_docs", &self.docs.len())
+            .field("num_docs", &self.raw_docs.len())
             .field("checkpoint_delta", &self.checkpoint_delta)
             .field("force_commit", &self.force_commit)
             .finish()
@@ -69,7 +84,7 @@ impl Default for RawDocBatch {
     fn default() -> Self {
         let _gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.doc_processor_mailbox);
         Self {
-            docs: Vec::new(),
+            raw_docs: Vec::new(),
             checkpoint_delta: SourceCheckpointDelta::default(),
             force_commit: false,
             _gauge_guard,
