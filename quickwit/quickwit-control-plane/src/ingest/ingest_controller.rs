@@ -325,17 +325,17 @@ impl IngestController {
     /// Syncs the ingester in a fire and forget manner.
     ///
     /// The returned oneshot is just here for unit test to wait for the operation to terminate.
-    fn sync_with_ingester(&self, ingester_node: &NodeId, model: &ControlPlaneModel) -> WaitHandle {
-        info!(ingester = %ingester_node, "sync_with_ingester");
+    fn sync_with_ingester(&self, ingester_id: &NodeId, model: &ControlPlaneModel) -> WaitHandle {
+        info!(ingester = %ingester_id, "sync_with_ingester");
         let (wait_drop_guard, wait_handle) = WaitHandle::new();
-        let Some(ingester) = self.ingester_pool.get(ingester_node) else {
+        let Some(ingester) = self.ingester_pool.get(ingester_id) else {
             // TODO: (Maybe) We should mark the ingester as unavailable, and stop advertise its
             // shard to routers.
-            warn!("failed to sync with ingester `{ingester_node}`: not available");
+            warn!("failed to sync with ingester `{ingester_id}`: not available");
             return wait_handle;
         };
         let mut retain_shards_req = RetainShardsRequest::default();
-        for (source_uid, shard_ids) in &*model.list_shards_for_node(ingester_node) {
+        for (source_uid, shard_ids) in &*model.list_shards_for_node(ingester_id) {
             let shards_for_source = RetainShardsForSource {
                 index_uid: Some(source_uid.index_uid.clone()),
                 source_id: source_uid.source_id.clone(),
@@ -345,8 +345,8 @@ impl IngestController {
                 .retain_shards_for_sources
                 .push(shards_for_source);
         }
-        info!(ingester = %ingester_node, "retain shards ingester");
-        let operation: String = format!("retain shards `{ingester_node}`");
+        info!(%ingester_id, "retain shards ingester");
+        let operation: String = format!("retain shards `{ingester_id}`");
         fire_and_forget(
             async move {
                 if let Err(retain_shards_err) =
@@ -1341,14 +1341,6 @@ mod tests {
 
     use super::*;
 
-    fn ingester_pool_entry(client: IngesterServiceClient) -> IngesterPoolEntry {
-        IngesterPoolEntry {
-            client,
-            status: IngesterStatus::Ready,
-            availability_zone: None,
-        }
-    }
-
     const TEST_SHARD_THROUGHPUT_LIMIT_MIB: f32 =
         DEFAULT_SHARD_THROUGHPUT_LIMIT.as_u64() as f32 / quickwit_common::shared_consts::MIB as f32;
 
@@ -1408,7 +1400,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         ingester_pool.insert(
             NodeId::from("test-ingester-1"),
-            ingester_pool_entry(client.clone()),
+            IngesterPoolEntry::ready_with_client(client.clone()),
         );
 
         let mut mock_ingester = MockIngesterService::new();
@@ -1439,7 +1431,7 @@ mod tests {
         let ingester = IngesterServiceClient::from_mock(mock_ingester);
         ingester_pool.insert(
             NodeId::from("test-ingester-2"),
-            ingester_pool_entry(ingester.clone()),
+            IngesterPoolEntry::ready_with_client(ingester.clone()),
         );
 
         let replication_factor = 2;
@@ -1628,7 +1620,7 @@ mod tests {
         let ingester_pool = IngesterPool::default();
         ingester_pool.insert(
             NodeId::from("test-ingester-1"),
-            ingester_pool_entry(client.clone()),
+            IngesterPoolEntry::ready_with_client(client.clone()),
         );
 
         let replication_factor = 1;
@@ -1742,7 +1734,7 @@ mod tests {
 
         ingester_pool.insert(
             NodeId::from("test-ingester-1"),
-            ingester_pool_entry(IngesterServiceClient::mocked()),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked()),
         );
 
         let leader_follower_pairs_opt =
@@ -1754,7 +1746,7 @@ mod tests {
 
         ingester_pool.insert(
             "test-ingester-2".into(),
-            ingester_pool_entry(IngesterServiceClient::mocked()),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked()),
         );
 
         let leader_follower_pairs = controller
@@ -1876,7 +1868,7 @@ mod tests {
 
         ingester_pool.insert(
             "test-ingester-3".into(),
-            ingester_pool_entry(IngesterServiceClient::mocked()),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::mocked()),
         );
         let unavailable_leaders = FnvHashSet::from_iter([NodeId::from("test-ingester-2")]);
         let leader_follower_pairs = controller
@@ -1970,7 +1962,7 @@ mod tests {
                 Ok(response)
             });
         let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-        ingester_pool.insert(ingester_id_0, ingester_pool_entry(ingester_0));
+        ingester_pool.insert(ingester_id_0, IngesterPoolEntry::ready_with_client(ingester_0));
 
         let ingester_id_1 = NodeId::from("test-ingester-1");
         let mut mock_ingester_1 = MockIngesterService::new();
@@ -1991,7 +1983,7 @@ mod tests {
 
                 Err(IngestV2Error::Internal("internal error".to_string()))
             });
-        let ingester_1 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_1));
+        let ingester_1 = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
         ingester_pool.insert(ingester_id_1, ingester_1);
 
         let ingester_id_2 = NodeId::from("test-ingester-2");
@@ -2001,7 +1993,7 @@ mod tests {
         let client_2 = IngesterServiceClient::tower()
             .stack_init_shards_layer(DelayLayer::new(INIT_SHARDS_REQUEST_TIMEOUT * 2))
             .build_from_mock(mock_ingester_2);
-        ingester_pool.insert(ingester_id_2, ingester_pool_entry(client_2));
+        ingester_pool.insert(ingester_id_2, IngesterPoolEntry::ready_with_client(client_2));
 
         let init_shards_response = controller
             .init_shards(Vec::new(), &Progress::default())
@@ -2209,7 +2201,7 @@ mod tests {
 
         ingester_pool.insert(
             NodeId::from("test-ingester-1"),
-            ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester)),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester)),
         );
         let source_uids: HashMap<SourceUid, usize> = HashMap::from_iter([(source_uid.clone(), 1)]);
         let unavailable_leaders = FnvHashSet::default();
@@ -2379,7 +2371,7 @@ mod tests {
                     "failed to close shards".to_string(),
                 ))
             });
-        let ingester = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester));
+        let ingester = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert("test-ingester".into(), ingester);
 
         let shard_infos = BTreeSet::from_iter([
@@ -2532,7 +2524,7 @@ mod tests {
             },
         );
 
-        let ingester = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester));
+        let ingester = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert("test-ingester".into(), ingester);
 
         let shard_infos = BTreeSet::from_iter([ShardInfo {
@@ -2678,7 +2670,7 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester));
+        let ingester = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert("test-ingester".into(), ingester);
 
         // Test failed to open shards.
@@ -2800,7 +2792,7 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester));
+        let ingester = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert("test-ingester".into(), ingester);
 
         // Test failed to close shard.
@@ -3032,15 +3024,15 @@ mod tests {
             });
         ingester_pool.insert(
             "node-1".into(),
-            ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_1)),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1)),
         );
         ingester_pool.insert(
             "node-2".into(),
-            ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_2)),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_2)),
         );
         ingester_pool.insert(
             "node-3".into(),
-            ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_3)),
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_3)),
         );
         let node_id = "node-1".into();
         let wait_handle = controller.sync_with_ingester(&node_id, &model);
@@ -3170,7 +3162,7 @@ mod tests {
                 Ok(response)
             });
         let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-        ingester_pool.insert(ingester_id_0.clone(), ingester_pool_entry(ingester_0));
+        ingester_pool.insert(ingester_id_0.clone(), IngesterPoolEntry::ready_with_client(ingester_0));
 
         let ingester_id_1 = NodeId::from("test-ingester-1");
         let mut mock_ingester_1 = MockIngesterService::new();
@@ -3188,7 +3180,7 @@ mod tests {
                 Err(IngestV2Error::Internal("internal error".to_string()))
             });
         let ingester_1 = IngesterServiceClient::from_mock(mock_ingester_1);
-        ingester_pool.insert(ingester_id_1.clone(), ingester_pool_entry(ingester_1));
+        ingester_pool.insert(ingester_id_1.clone(), IngesterPoolEntry::ready_with_client(ingester_1));
 
         let ingester_id_2 = NodeId::from("test-ingester-2");
         let mut mock_ingester_2 = MockIngesterService::new();
@@ -3197,7 +3189,7 @@ mod tests {
         let client_2 = IngesterServiceClient::tower()
             .stack_close_shards_layer(DelayLayer::new(CLOSE_SHARDS_REQUEST_TIMEOUT * 2))
             .build_from_mock(mock_ingester_2);
-        ingester_pool.insert(ingester_id_2.clone(), ingester_pool_entry(client_2));
+        ingester_pool.insert(ingester_id_2.clone(), IngesterPoolEntry::ready_with_client(client_2));
 
         // In this test:
         // - ingester 0 will close shard 0 successfully and fail to close shard 1;
@@ -3377,7 +3369,7 @@ mod tests {
                 Ok(response)
             });
         let ingester_0 = IngesterServiceClient::from_mock(mock_ingester_0);
-        ingester_pool.insert(ingester_id_0.clone(), ingester_pool_entry(ingester_0));
+        ingester_pool.insert(ingester_id_0.clone(), IngesterPoolEntry::ready_with_client(ingester_0));
 
         let ingester_id_1 = NodeId::from("test-ingester-1");
         let mut mock_ingester_1 = MockIngesterService::new();
@@ -3418,7 +3410,7 @@ mod tests {
             };
             Ok(response)
         });
-        let ingester_1 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_1));
+        let ingester_1 = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
         ingester_pool.insert(ingester_id_1.clone(), ingester_1);
 
         let num_opened_shards = controller

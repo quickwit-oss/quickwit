@@ -66,7 +66,8 @@ impl BroadcastIngesterCapacityScoreTask {
         let mut guard = state
             .lock_fully()
             .await
-            .map_err(|_| anyhow::anyhow!("failed to acquire ingester state lock"))?;
+            .context("failed to acquire ingester state lock")?;
+
         let usage = guard.mrecordlog.resource_usage();
         let disk_used = ByteSize::b(usage.disk_used_bytes as u64);
         let memory_used = ByteSize::b(usage.memory_used_bytes as u64);

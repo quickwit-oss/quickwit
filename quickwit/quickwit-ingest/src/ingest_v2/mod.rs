@@ -73,6 +73,26 @@ pub struct IngesterPoolEntry {
     pub availability_zone: Option<String>,
 }
 
+impl IngesterPoolEntry {
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn ready_with_client(client: IngesterServiceClient) -> Self {
+        IngesterPoolEntry {
+            client,
+            status: IngesterStatus::Ready,
+            availability_zone: None,
+        }
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn mocked_ingester() -> Self {
+        IngesterPoolEntry {
+            client: IngesterServiceClient::mocked(),
+            status: IngesterStatus::Ready,
+            availability_zone: None,
+        }
+    }
+}
+
 pub type IngesterPool = Pool<NodeId, IngesterPoolEntry>;
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.

@@ -647,14 +647,6 @@ mod tests {
     use crate::IngesterPoolEntry;
     use crate::ingest_v2::workbench::SubworkbenchFailure;
 
-    fn mocked_ingester() -> IngesterPoolEntry {
-        IngesterPoolEntry {
-            client: IngesterServiceClient::mocked(),
-            status: IngesterStatus::Ready,
-            availability_zone: None,
-        }
-    }
-
     #[tokio::test]
     async fn test_router_make_get_or_create_open_shard_request() {
         let self_node_id = "test-router".into();
@@ -743,7 +735,7 @@ mod tests {
         drop(rendezvous_1);
         drop(rendezvous_2);
 
-        ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
+        ingester_pool.insert("test-ingester-0".into(), IngesterPoolEntry::mocked_ingester());
         {
             // Ingester-0 is in pool and in table, but marked unavailable on the workbench
             // (simulating a prior transport error). has_open_nodes returns false → both
@@ -1178,8 +1170,8 @@ mod tests {
         let control_plane = ControlPlaneServiceClient::from_mock(MockControlPlaneService::new());
 
         let ingester_pool = IngesterPool::default();
-        ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
-        ingester_pool.insert("test-ingester-1".into(), mocked_ingester());
+        ingester_pool.insert("test-ingester-0".into(), IngesterPoolEntry::mocked_ingester());
+        ingester_pool.insert("test-ingester-1".into(), IngesterPoolEntry::mocked_ingester());
 
         let replication_factor = 1;
         let router = IngestRouter::new(
@@ -1696,7 +1688,7 @@ mod tests {
         // Give the async subscriber a moment to process.
         tokio::time::sleep(Duration::from_millis(10)).await;
 
-        ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
+        ingester_pool.insert("test-ingester-0".into(), IngesterPoolEntry::mocked_ingester());
         let state_guard = router.state.lock().await;
         let node = state_guard
             .routing_table
@@ -1843,7 +1835,7 @@ mod tests {
             .process_persist_results(&mut workbench, persist_futures)
             .await;
 
-        ingester_pool.insert("test-ingester-0".into(), mocked_ingester());
+        ingester_pool.insert("test-ingester-0".into(), IngesterPoolEntry::mocked_ingester());
         let state_guard = router.state.lock().await;
         let node = state_guard
             .routing_table

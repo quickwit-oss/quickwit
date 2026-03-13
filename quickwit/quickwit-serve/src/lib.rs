@@ -1013,6 +1013,8 @@ fn setup_ingester_pool(
                     );
                     Some(change)
                 }
+                // only update the ingester pool when the ingester status changes, to avoid
+                // unnecessary churn
                 ClusterChange::Update { previous, updated }
                     if updated.is_indexer()
                         && previous.ingester_status() != updated.ingester_status() =>

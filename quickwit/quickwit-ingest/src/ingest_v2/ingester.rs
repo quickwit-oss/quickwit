@@ -2873,6 +2873,98 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingester_persist_returns_routing_update() {
+        let (ingester_ctx, ingester) = IngesterForTest::default().build().await;
+
+        let index_uid_0 = IndexUid::for_test("test-index-0", 0);
+        let index_uid_1 = IndexUid::for_test("test-index-1", 0);
+        let source_id = SourceId::from("test-source");
+
+        let doc_mapping_uid = DocMappingUid::random();
+        let doc_mapping_json = format!(
+            r#"{{
+                "doc_mapping_uid": "{doc_mapping_uid}"
+            }}"#
+        );
+        let init_shards_request = InitShardsRequest {
+            subrequests: vec![
+                InitShardSubrequest {
+                    subrequest_id: 0,
+                    shard: Some(Shard {
+                        index_uid: Some(index_uid_0.clone()),
+                        source_id: source_id.clone(),
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        leader_id: ingester_ctx.node_id.to_string(),
+                        doc_mapping_uid: Some(doc_mapping_uid),
+                        ..Default::default()
+                    }),
+                    doc_mapping_json: doc_mapping_json.clone(),
+                    validate_docs: false,
+                },
+                InitShardSubrequest {
+                    subrequest_id: 1,
+                    shard: Some(Shard {
+                        index_uid: Some(index_uid_1.clone()),
+                        source_id: source_id.clone(),
+                        shard_id: Some(ShardId::from(1)),
+                        shard_state: ShardState::Open as i32,
+                        leader_id: ingester_ctx.node_id.to_string(),
+                        doc_mapping_uid: Some(doc_mapping_uid),
+                        ..Default::default()
+                    }),
+                    doc_mapping_json,
+                    validate_docs: false,
+                },
+            ],
+        };
+        ingester.init_shards(init_shards_request).await.unwrap();
+
+        let persist_request = PersistRequest {
+            leader_id: ingester_ctx.node_id.to_string(),
+            commit_type: CommitTypeV2::Force as i32,
+            subrequests: vec![
+                PersistSubrequest {
+                    subrequest_id: 0,
+                    index_uid: Some(index_uid_0.clone()),
+                    source_id: source_id.clone(),
+                    doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-010"}"#])),
+                },
+                PersistSubrequest {
+                    subrequest_id: 1,
+                    index_uid: Some(index_uid_1.clone()),
+                    source_id: source_id.clone(),
+                    doc_batch: Some(DocBatchV2::for_test([r#"{"doc": "test-doc-110"}"#])),
+                },
+            ],
+        };
+        let persist_response = ingester.persist(persist_request).await.unwrap();
+        assert_eq!(persist_response.successes.len(), 2);
+
+        let routing_update = persist_response
+            .routing_update
+            .expect("routing update should be present");
+
+        assert!(
+            routing_update.capacity_score > 0,
+            "capacity score should be non-zero after a small persist"
+        );
+
+        let mut source_shard_updates = routing_update.source_shard_updates;
+        source_shard_updates.sort_by(|a, b| a.index_uid().cmp(b.index_uid()));
+
+        assert_eq!(source_shard_updates.len(), 2);
+        assert_eq!(source_shard_updates[0].index_uid(), &index_uid_0);
+        assert_eq!(source_shard_updates[0].source_id, source_id.as_str());
+        assert_eq!(source_shard_updates[0].open_shard_count, 1);
+        assert_eq!(source_shard_updates[1].index_uid(), &index_uid_1);
+        assert_eq!(source_shard_updates[1].source_id, source_id.as_str());
+        assert_eq!(source_shard_updates[1].open_shard_count, 1);
+
+        assert!(routing_update.closed_shards.is_empty());
+    }
+
+    #[tokio::test]
     async fn test_ingester_open_replication_stream() {
         let (_ingester_ctx, ingester) = IngesterForTest::default()
             .with_node_id("test-follower")

@@ -74,6 +74,7 @@ message PersistSubrequest {
   quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   quickwit.ingest.DocBatchV2 doc_batch = 5;
+  reserved 4;
 }
 
 message PersistResponse {
@@ -119,6 +120,7 @@ message PersistFailure {
   quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   PersistFailureReason reason = 5;
+  reserved 4;
 }
 
 message SynReplicationMessage {

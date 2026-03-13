@@ -690,14 +690,6 @@ mod tests {
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
 
-    fn ingester_pool_entry(client: IngesterServiceClient) -> IngesterPoolEntry {
-        IngesterPoolEntry {
-            client,
-            status: IngesterStatus::Ready,
-            availability_zone: None,
-        }
-    }
-
     // In this test, we simulate a source to which we sequentially assign the following set of
     // shards []
     // [1] (triggers a reset, and the creation of a publish lock)
@@ -940,7 +932,7 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
+        let ingester_0 = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1137,7 +1129,7 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
+        let ingester_0 = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1302,7 +1294,7 @@ mod tests {
                 Ok(response)
             });
 
-        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
+        let ingester_0 = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1610,7 +1602,7 @@ mod tests {
                 })
             });
 
-        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
+        let ingester_0 = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let event_broker = EventBroker::default();
@@ -1710,7 +1702,7 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_0 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_0));
+        let ingester_0 = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_0));
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let mut mock_ingester_1 = MockIngesterService::new();
@@ -1737,7 +1729,7 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_1 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_1));
+        let ingester_1 = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_1));
         ingester_pool.insert("test-ingester-1".into(), ingester_1.clone());
 
         let mut mock_ingester_3 = MockIngesterService::new();
@@ -1757,7 +1749,7 @@ mod tests {
 
                 Ok(TruncateShardsResponse {})
             });
-        let ingester_3 = ingester_pool_entry(IngesterServiceClient::from_mock(mock_ingester_3));
+        let ingester_3 = IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester_3));
         ingester_pool.insert("test-ingester-3".into(), ingester_3.clone());
 
         let event_broker = EventBroker::default();

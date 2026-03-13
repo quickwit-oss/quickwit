@@ -56,7 +56,6 @@ jobs:
         run: |
           df -h
 
-
           if [ "$(df -BG / | awk 'NR==2 {gsub("G","",$4); print $4}')" -lt 30 ]; then
             echo "Less than 30GiB available. Running cleanup..."
             sudo rm -rf /usr/share/dotnet
