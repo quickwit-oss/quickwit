@@ -201,7 +201,7 @@ fn parse_raw_doc(
     };
     let json_doc_result = try_into_vrl_doc(input_format, raw_doc, num_bytes)
         .and_then(|vrl_doc| vrl_program.transform_doc(vrl_doc))
-        .and_then(JsonDoc::try_from_vrl_doc);
+        .and_then(|vrl_doc_opt| vrl_doc_opt.map(JsonDoc::try_from_vrl_doc).transpose());
 
     JsonDocIterator::from(json_doc_result)
 }
@@ -244,6 +244,18 @@ where E: Into<DocProcessorError>
     fn from(result: Result<JsonDoc, E>) -> Self {
         match result {
             Ok(json_doc) => Self::One(Some(Ok(json_doc))),
+            Err(error) => Self::One(Some(Err(error.into()))),
+        }
+    }
+}
+
+impl<E> From<Result<Option<JsonDoc>, E>> for JsonDocIterator
+where E: Into<DocProcessorError>,
+{
+    fn from(result: Result<Option<JsonDoc>, E>) -> Self {
+        match result {
+            Ok(None) => Self::One(None),
+            Ok(Some(json_doc)) => Self::One(Some(Ok(json_doc))),
             Err(error) => Self::One(Some(Err(error.into()))),
         }
     }
