@@ -58,7 +58,7 @@ impl ParquetField {
     }
 
     /// Whether this field is nullable.
-    pub fn nullable(&self) -> bool {
+    pub fn is_nullable(&self) -> bool {
         matches!(
             self,
             Self::MetricUnit
@@ -112,7 +112,7 @@ impl ParquetField {
 
     /// Convert to Arrow Field.
     pub fn to_arrow_field(&self) -> Field {
-        let field = Field::new(self.name(), self.arrow_type(), self.nullable());
+        let field = Field::new(self.name(), self.arrow_type(), self.is_nullable());
 
         // Add VARIANT extension type metadata for attributes fields
         match self {
