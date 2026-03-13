@@ -39,6 +39,9 @@ test-all:
 	QW_S3_ENDPOINT=http://localhost:4566 \
 	QW_S3_FORCE_PATH_STYLE_ACCESS=1 \
 	QW_TEST_DATABASE_URL=postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev \
+	QW_DISABLE_TELEMETRY=1 \
+	CP_ENABLE_REVERSE_CONNECTION=false \
+	QW_MAX_LOG_PAST_AGE_HOURS=10000000000 \
 	RUST_MIN_STACK=67108864 \
 	cargo nextest run --all-features --retries 5
 	cargo nextest run --test failpoints --features fail/failpoints
