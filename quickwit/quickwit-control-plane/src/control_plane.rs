@@ -2223,11 +2223,8 @@ mod tests {
                 assert!(&retain_shards_for_source.shard_ids.is_empty());
                 Ok(RetainShardsResponse {})
             });
-        let client = IngesterServiceClient::from_mock(mock_ingester);
-        let ingester = IngesterPoolEntry {
-            client,
-            status: IngesterStatus::Ready,
-        };
+        let ingester =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert("node1".into(), ingester);
 
         let cluster_config = ClusterConfig::for_test();
@@ -2273,11 +2270,8 @@ mod tests {
                 );
                 Ok(RetainShardsResponse {})
             });
-        let client = IngesterServiceClient::from_mock(mock_ingester);
-        let ingester = IngesterPoolEntry {
-            client,
-            status: IngesterStatus::Ready,
-        };
+        let ingester =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert("node1".into(), ingester);
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
@@ -2652,11 +2646,8 @@ mod tests {
             };
             Ok(response)
         });
-        let client = IngesterServiceClient::from_mock(mock_ingester);
-        let ingester = IngesterPoolEntry {
-            client,
-            status: IngesterStatus::Ready,
-        };
+        let ingester =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert(ingester_id, ingester);
 
         let mut mock_metastore = MockMetastoreService::new();
@@ -2810,11 +2801,8 @@ mod tests {
             };
             Ok(response)
         });
-        let client = IngesterServiceClient::from_mock(mock_ingester);
-        let ingester = IngesterPoolEntry {
-            client,
-            status: IngesterStatus::Ready,
-        };
+        let ingester =
+            IngesterPoolEntry::ready_with_client(IngesterServiceClient::from_mock(mock_ingester));
         ingester_pool.insert(ingester_id, ingester);
 
         let mut mock_metastore = MockMetastoreService::new();

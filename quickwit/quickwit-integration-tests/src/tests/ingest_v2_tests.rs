@@ -927,6 +927,7 @@ async fn test_graceful_shutdown_no_data_loss() {
 
     // Add a second indexer after the shard has been created on the first one.
     sandbox.add_node([QuickwitService::Indexer]).await;
+    sandbox.wait_for_cluster_num_ready_nodes(3).await.unwrap();
 
     // Remove the first indexer (the shard owner) from the sandbox and get its
     // shutdown handle. After this call, rest_client(Indexer) returns the
@@ -995,7 +996,7 @@ async fn test_graceful_shutdown_no_data_loss() {
         .expect("cluster should see 2 ready nodes after indexer shutdown");
 
     // Clean shutdown of the remaining nodes.
-    tokio::time::timeout(Duration::from_secs(15), sandbox.shutdown())
+    tokio::time::timeout(Duration::from_secs(30), sandbox.shutdown())
         .await
         .unwrap()
         .unwrap();

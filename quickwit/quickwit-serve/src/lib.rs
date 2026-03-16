@@ -83,8 +83,9 @@ use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
     IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
-    setup_local_shards_update_listener, start_ingest_api_service, try_get_ingester_status,
-    wait_for_ingester_decommission, wait_for_ingester_status,
+    setup_ingester_capacity_update_listener, setup_local_shards_update_listener,
+    start_ingest_api_service, try_get_ingester_status, wait_for_ingester_decommission,
+    wait_for_ingester_status,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{JanitorService, start_janitor_service};
@@ -934,8 +935,12 @@ async fn setup_ingest_v2(
         ingester_pool.clone(),
         replication_factor,
         event_broker.clone(),
+        node_config.availability_zone.clone(),
     );
     ingest_router.subscribe();
+    setup_ingester_capacity_update_listener(cluster.clone(), event_broker.clone())
+        .await
+        .forever();
 
     let ingest_router_service = IngestRouterServiceClient::tower()
         .stack_layer(INGEST_GRPC_SERVER_METRICS_LAYER.clone())
@@ -1008,12 +1013,12 @@ fn setup_ingester_pool(
                     );
                     Some(change)
                 }
+                // only update the ingester pool when the ingester status changes, to avoid
+                // unnecessary churn
                 ClusterChange::Update { previous, updated }
                     if updated.is_indexer()
                         && previous.ingester_status() != updated.ingester_status() =>
                 {
-                    // only update the ingester pool when the ingester status changes, to avoid
-                    // unnecessary churn
                     let change = build_ingester_insert_change(
                         &updated,
                         ingester_opt_clone,
@@ -1057,6 +1062,7 @@ fn build_ingester_insert_change(
     let pool_entry = IngesterPoolEntry {
         client: ingester_service,
         status: node.ingester_status(),
+        availability_zone: node.availability_zone().map(|az| az.to_string()),
     };
     Change::Insert(node_id, pool_entry)
 }
