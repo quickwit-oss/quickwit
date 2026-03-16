@@ -1098,7 +1098,7 @@ mod tests {
     }
 
     #[test]
-    fn test_retention_schedule_durationi_with_jitter() {
+    fn test_retention_schedule_duration_with_jitter() {
         let schedule_test_helper_fn = |schedule_str: &str| {
             let schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
             let retention_policy = RetentionPolicy {
@@ -1138,7 +1138,7 @@ mod tests {
     }
 
     #[test]
-    fn test_retention_schedule_durationi_with_default_jitter() {
+    fn test_retention_schedule_duration_with_default_jitter() {
         let schedule_test_helper_fn = |schedule_str: &str| {
             let schedule = Schedule::from_str(&prepend_at_char(schedule_str)).unwrap();
             let retention_policy = RetentionPolicy {
