@@ -1001,3 +1001,105 @@ async fn test_graceful_shutdown_no_data_loss() {
         .unwrap()
         .unwrap();
 }
+
+/// Verifies that after deleting an index and recreating it with the same name,
+/// ingest works correctly once the capacity broadcast has propagated (>2 broadcast
+/// cycles). Uses 2 ingesters to exercise the Chitchat broadcast path.
+#[tokio::test]
+async fn test_ingest_after_index_recreate_multi_node() {
+    quickwit_common::setup_logging_for_tests();
+
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
+        .add_node([QuickwitService::Indexer, QuickwitService::Janitor])
+        .add_node([
+            QuickwitService::ControlPlane,
+            QuickwitService::Metastore,
+            QuickwitService::Searcher,
+        ])
+        .build_and_start()
+        .await;
+
+    let index_id = "test-recreate-multi-node";
+    let index_config = format!(
+        r#"
+        version: 0.8
+        index_id: {index_id}
+        doc_mapping:
+            field_mappings:
+            - name: body
+              type: text
+        indexing_settings:
+            commit_timeout_secs: 1
+        ingest_settings:
+            min_shards: 2
+        "#
+    );
+
+    // Step 1: Create index and ingest to seed the routing table.
+    let original_metadata = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(index_config.clone(), ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    ingest(
+        &sandbox.rest_client(QuickwitService::Indexer),
+        index_id,
+        ingest_json!({"body": "first incarnation"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+
+    // Wait for the broadcast to propagate routing entries to all routers.
+    tokio::time::sleep(Duration::from_millis(60)).await;
+
+    // Step 2: Delete the index.
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
+
+    // Step 3: Wait for 2+ broadcast cycles (50ms each with testsuite feature) so that
+    // ingesters broadcast open_shard_count=0 and routers clear stale entries.
+    tokio::time::sleep(Duration::from_millis(120)).await;
+
+    // Step 4: Recreate with the same name — new incarnation.
+    let new_metadata = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(index_config, ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+
+    assert_ne!(
+        original_metadata.index_uid.incarnation_id,
+        new_metadata.index_uid.incarnation_id
+    );
+
+    // Step 5: Ingest into the recreated index. If stale routing entries weren't
+    // cleared, this would fail with NoShardsAvailable after exhausting retries.
+    let ingest_resp = ingest(
+        &sandbox.rest_client(QuickwitService::Indexer),
+        index_id,
+        ingest_json!({"body": "second incarnation"}),
+        CommitType::Force,
+    )
+    .await
+    .unwrap();
+    assert_eq!(ingest_resp.num_ingested_docs, Some(1));
+
+    // Cleanup.
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .delete(index_id, false)
+        .await
+        .unwrap();
+
+    sandbox.shutdown().await.unwrap();
+}

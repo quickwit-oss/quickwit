@@ -7024,6 +7024,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-indexing",
+ "quickwit-ingest",
  "quickwit-metastore",
  "quickwit-opentelemetry",
  "quickwit-proto",
