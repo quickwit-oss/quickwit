@@ -15,6 +15,7 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
@@ -477,6 +478,8 @@ pub struct QuickwitSegmentCollector {
     segment_top_k_collector: Option<Box<dyn QuickwitSegmentTopKCollector>>,
     aggregation: Option<AggregationSegmentCollectors>,
     num_hits: u64,
+    soft_deleted_doc_ids: Option<Arc<HashSet<u32>>>,
+    filtered_buffer: Vec<DocId>,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -526,19 +529,33 @@ impl SegmentCollector for QuickwitSegmentCollector {
 
     #[inline]
     fn collect_block(&mut self, filtered_docs: &[DocId]) {
+        // Apply soft-delete filter
+        let docs: &[DocId] = if let Some(ref excluded) = self.soft_deleted_doc_ids {
+            self.filtered_buffer.clear();
+            self.filtered_buffer.extend(
+                filtered_docs
+                    .iter()
+                    .copied()
+                    .filter(|id| !excluded.contains(id)),
+            );
+            &self.filtered_buffer
+        } else {
+            filtered_docs
+        };
+
         // Update results
-        self.num_hits += filtered_docs.len() as u64;
+        self.num_hits += docs.len() as u64;
 
         if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {
-            segment_top_k_collector.collect_top_k_block(filtered_docs);
+            segment_top_k_collector.collect_top_k_block(docs);
         }
 
         match self.aggregation.as_mut() {
             Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
-                collector.collect_block(filtered_docs)
+                collector.collect_block(docs)
             }
             Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
-                collector.collect_block(filtered_docs)
+                collector.collect_block(docs)
             }
             None => (),
         }
@@ -546,6 +563,11 @@ impl SegmentCollector for QuickwitSegmentCollector {
 
     #[inline]
     fn collect(&mut self, doc_id: DocId, score: Score) {
+        if let Some(ref excluded) = self.soft_deleted_doc_ids
+            && excluded.contains(&doc_id)
+        {
+            return;
+        }
         self.num_hits += 1;
         if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {
             segment_top_k_collector.collect_top_k(doc_id, score);
@@ -718,6 +740,7 @@ pub(crate) struct QuickwitCollector {
     pub aggregation: Option<QuickwitAggregations>,
     pub agg_context_params: AggContextParams,
     search_after: Option<PartialHit>,
+    soft_deleted_doc_ids: Option<Arc<HashSet<u32>>>,
 }
 
 impl QuickwitCollector {
@@ -814,6 +837,8 @@ impl Collector for QuickwitCollector {
             num_hits: 0,
             segment_top_k_collector,
             aggregation,
+            soft_deleted_doc_ids: self.soft_deleted_doc_ids.clone(),
+            filtered_buffer: Vec::new(),
         })
     }
 
@@ -1035,6 +1060,7 @@ pub(crate) fn make_collector_for_split(
     split_id: SplitId,
     search_request: &SearchRequest,
     agg_context_params: AggContextParams,
+    soft_deleted_doc_ids: Option<HashSet<u32>>,
 ) -> crate::Result<QuickwitCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
@@ -1049,6 +1075,7 @@ pub(crate) fn make_collector_for_split(
         aggregation,
         agg_context_params,
         search_after: search_request.search_after.clone(),
+        soft_deleted_doc_ids: soft_deleted_doc_ids.map(Arc::new),
     })
 }
 
@@ -1077,6 +1104,7 @@ pub(crate) fn make_merge_collector(
         aggregation,
         agg_context_params,
         search_after: search_request.search_after.clone(),
+        soft_deleted_doc_ids: None,
     })
 }
 
@@ -1297,6 +1325,8 @@ impl IncrementalCollector {
 #[cfg(test)]
 mod tests {
     use std::cmp::Ordering;
+    use std::collections::HashSet;
+    use std::sync::Arc;
 
     use quickwit_proto::search::{
         LeafSearchResponse, PartialHit, ResourceStats, SearchRequest, SortByValue, SortField,
@@ -1305,9 +1335,9 @@ mod tests {
     use tantivy::TantivyDocument;
     use tantivy::aggregation::agg_req::Aggregations;
     use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
-    use tantivy::collector::Collector;
+    use tantivy::collector::{Collector, SegmentCollector};
 
-    use super::{IncrementalCollector, make_merge_collector};
+    use super::{IncrementalCollector, QuickwitSegmentCollector, make_merge_collector};
     use crate::QuickwitAggregations;
     use crate::collector::{merge_intermediate_aggregation_result, top_k_partial_hits};
 
@@ -1579,6 +1609,7 @@ mod tests {
                     "fake_split_id".to_string(),
                     &make_request(slice_len as u64, sort_str),
                     Default::default(),
+                    None,
                 )
                 .unwrap();
                 let res = searcher
@@ -1675,6 +1706,7 @@ mod tests {
                 "fake_split_id".to_string(),
                 &request,
                 Default::default(),
+                None,
             )
             .unwrap();
             let res = searcher
@@ -1713,6 +1745,7 @@ mod tests {
                 "fake_split_id1".to_string(),
                 &request,
                 Default::default(),
+                None,
             )
             .unwrap();
             let res = searcher
@@ -1727,6 +1760,7 @@ mod tests {
                 "fake_split_id2".to_string(),
                 &request,
                 Default::default(),
+                None,
             )
             .unwrap();
             let res = searcher
@@ -1740,6 +1774,7 @@ mod tests {
                 "fake_split_id3".to_string(),
                 &request,
                 Default::default(),
+                None,
             )
             .unwrap();
             let res = searcher
@@ -2032,5 +2067,46 @@ mod tests {
                 .unwrap();
         let _merged: IntermediateAggregationResults = postcard::from_bytes(&serialized).unwrap();
         // Hopefully `_merged` is empty but the API does not allow us to assert that.
+    }
+
+    #[test]
+    fn test_segment_collector_collect_block_with_exclusion() {
+        let excluded: HashSet<u32> = [5, 10, 15].into_iter().collect();
+        let mut segment_collector = QuickwitSegmentCollector {
+            segment_top_k_collector: None,
+            aggregation: None,
+            num_hits: 0,
+            soft_deleted_doc_ids: Some(Arc::new(excluded)),
+            filtered_buffer: Vec::new(),
+        };
+        // Doc IDs 5 and 10 are soft-deleted, so only 1, 2, 3 should be counted.
+        let doc_ids: Vec<u32> = vec![1, 2, 3, 5, 10];
+        segment_collector.collect_block(&doc_ids);
+        assert_eq!(segment_collector.num_hits, 3);
+
+        // Doc ID 15 is also excluded, 20 and 25 are not.
+        segment_collector.collect_block(&[15, 20, 25]);
+        assert_eq!(segment_collector.num_hits, 5);
+    }
+
+    #[test]
+    fn test_segment_collector_collect_with_exclusion() {
+        let excluded: HashSet<u32> = [5, 10, 15].into_iter().collect();
+        let mut segment_collector = QuickwitSegmentCollector {
+            segment_top_k_collector: None,
+            aggregation: None,
+            num_hits: 0,
+            soft_deleted_doc_ids: Some(Arc::new(excluded)),
+            filtered_buffer: Vec::new(),
+        };
+        // Collecting a soft-deleted doc should not increment num_hits.
+        segment_collector.collect(5, 1.0);
+        assert_eq!(segment_collector.num_hits, 0);
+
+        segment_collector.collect(10, 1.0);
+        assert_eq!(segment_collector.num_hits, 0);
+
+        segment_collector.collect(15, 1.0);
+        assert_eq!(segment_collector.num_hits, 0);
     }
 }

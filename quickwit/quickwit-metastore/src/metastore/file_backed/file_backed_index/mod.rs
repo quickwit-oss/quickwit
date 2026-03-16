@@ -32,7 +32,7 @@ use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteTask, EntityKind, IndexStats, ListShardsSubrequest,
     ListShardsSubresponse, MetastoreError, MetastoreResult, OpenShardSubrequest,
-    OpenShardSubresponse, PruneShardsRequest, SplitStats,
+    OpenShardSubresponse, PruneShardsRequest, SplitDocIds, SplitStats,
 };
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -498,6 +498,35 @@ impl FileBackedIndex {
         Ok(())
     }
 
+    /// Soft-deletes individual documents within published splits.
+    pub(crate) fn soft_delete_documents(
+        &mut self,
+        split_doc_ids: &[SplitDocIds],
+    ) -> MetastoreResult<u64> {
+        let mut num_soft_deleted = 0u64;
+        for entry in split_doc_ids {
+            let split = self.splits.get_mut(&entry.split_id).ok_or_else(|| {
+                MetastoreError::NotFound(EntityKind::Split {
+                    split_id: entry.split_id.clone(),
+                })
+            })?;
+            if split.split_state != SplitState::Published {
+                return Err(MetastoreError::FailedPrecondition {
+                    entity: EntityKind::Split {
+                        split_id: entry.split_id.clone(),
+                    },
+                    message: format!("split `{}` is not in Published state", entry.split_id),
+                });
+            }
+            for &doc_id in &entry.doc_ids {
+                if split.split_metadata.soft_deleted_doc_ids.insert(doc_id) {
+                    num_soft_deleted += 1;
+                }
+            }
+        }
+        Ok(num_soft_deleted)
+    }
+
     /// Gets IndexStats for this index
     pub(crate) fn get_stats(&self) -> MetastoreResult<IndexStats> {
         let mut staged_stats = SplitStats::default();
@@ -814,7 +843,9 @@ mod tests {
 
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
     use quickwit_proto::ingest::Shard;
-    use quickwit_proto::metastore::{ListShardsSubrequest, SplitStats};
+    use quickwit_proto::metastore::{
+        EntityKind, ListShardsSubrequest, MetastoreError, SplitDocIds, SplitStats,
+    };
     use quickwit_proto::types::{IndexUid, SourceId};
 
     use super::FileBackedIndex;
@@ -1018,5 +1049,112 @@ mod tests {
         assert_eq!(stats.staged, expected_staged);
         assert_eq!(stats.published, expected_published);
         assert_eq!(stats.marked_for_deletion, expected_marked_for_deletion);
+    }
+
+    /// Helper: creates a `FileBackedIndex` with a single published split.
+    fn make_index_with_published_split(split_id: &str) -> FileBackedIndex {
+        let index_metadata =
+            IndexMetadata::for_test("test-index", "file:///qwdata/indexes/test-index");
+        let mut index = FileBackedIndex::new(index_metadata, Vec::new(), HashMap::new(), vec![]);
+        let split_metadata = SplitMetadata {
+            split_id: split_id.to_string(),
+            ..Default::default()
+        };
+        index.stage_split(split_metadata).unwrap();
+        index
+            .publish_splits([split_id], Vec::<&str>::new(), None, None)
+            .unwrap();
+        index
+    }
+
+    #[test]
+    fn test_soft_delete_documents_basic() {
+        let mut index = make_index_with_published_split("split-a");
+        let split_doc_ids = vec![SplitDocIds {
+            split_id: "split-a".to_string(),
+            doc_ids: vec![1, 5, 42],
+        }];
+        let num_deleted = index.soft_delete_documents(&split_doc_ids).unwrap();
+        assert_eq!(num_deleted, 3);
+
+        let split = index.splits.get("split-a").unwrap();
+        assert_eq!(
+            split.split_metadata.soft_deleted_doc_ids,
+            BTreeSet::from([1, 5, 42])
+        );
+    }
+
+    #[test]
+    fn test_soft_delete_documents_idempotent() {
+        let mut index = make_index_with_published_split("split-a");
+
+        // First call: delete doc IDs 1, 2, 3.
+        let split_doc_ids = vec![SplitDocIds {
+            split_id: "split-a".to_string(),
+            doc_ids: vec![1, 2, 3],
+        }];
+        let num_deleted = index.soft_delete_documents(&split_doc_ids).unwrap();
+        assert_eq!(num_deleted, 3);
+
+        // Second call: same IDs plus one new one.
+        let split_doc_ids = vec![SplitDocIds {
+            split_id: "split-a".to_string(),
+            doc_ids: vec![1, 2, 3, 4],
+        }];
+        let num_deleted = index.soft_delete_documents(&split_doc_ids).unwrap();
+        // Only doc_id 4 is new.
+        assert_eq!(num_deleted, 1);
+
+        let split = index.splits.get("split-a").unwrap();
+        assert_eq!(
+            split.split_metadata.soft_deleted_doc_ids,
+            BTreeSet::from([1, 2, 3, 4])
+        );
+    }
+
+    #[test]
+    fn test_soft_delete_documents_non_published_split_fails() {
+        let index_metadata =
+            IndexMetadata::for_test("test-index", "file:///qwdata/indexes/test-index");
+        let mut index = FileBackedIndex::new(index_metadata, Vec::new(), HashMap::new(), vec![]);
+        let split_metadata = SplitMetadata {
+            split_id: "staged-split".to_string(),
+            ..Default::default()
+        };
+        index.stage_split(split_metadata).unwrap();
+        // The split is still in Staged state — not Published.
+
+        let split_doc_ids = vec![SplitDocIds {
+            split_id: "staged-split".to_string(),
+            doc_ids: vec![10],
+        }];
+        let error = index.soft_delete_documents(&split_doc_ids).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                MetastoreError::FailedPrecondition {
+                    entity: EntityKind::Split { .. },
+                    ..
+                }
+            ),
+            "expected FailedPrecondition error, got: {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_soft_delete_documents_unknown_split_fails() {
+        let index_metadata =
+            IndexMetadata::for_test("test-index", "file:///qwdata/indexes/test-index");
+        let mut index = FileBackedIndex::new(index_metadata, Vec::new(), HashMap::new(), vec![]);
+
+        let split_doc_ids = vec![SplitDocIds {
+            split_id: "nonexistent-split".to_string(),
+            doc_ids: vec![1],
+        }];
+        let error = index.soft_delete_documents(&split_doc_ids).unwrap_err();
+        assert!(
+            matches!(error, MetastoreError::NotFound(EntityKind::Split { .. })),
+            "expected NotFound error, got: {error:?}"
+        );
     }
 }

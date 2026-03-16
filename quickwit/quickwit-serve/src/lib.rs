@@ -38,6 +38,7 @@ mod rest;
 mod rest_api_response;
 mod search_api;
 pub(crate) mod simple_list;
+mod soft_delete_api;
 pub mod tcp_listener;
 mod template_api;
 mod ui_handler;

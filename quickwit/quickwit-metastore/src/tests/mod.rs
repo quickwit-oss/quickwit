@@ -575,6 +575,29 @@ macro_rules! metastore_test_suite {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::get_identity::test_metastore_get_identity::<$metastore_type>().await;
             }
+
+            /// Soft-delete documents API tests
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_soft_delete_documents() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::split::test_metastore_soft_delete_documents::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_soft_delete_documents_idempotent() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::split::test_metastore_soft_delete_documents_idempotent::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_soft_delete_documents_non_published_split() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::split::test_metastore_soft_delete_documents_non_published_split::<$metastore_type>().await;
+            }
         }
     };
 }

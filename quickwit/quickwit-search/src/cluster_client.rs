@@ -328,6 +328,7 @@ mod tests {
                 timestamp_start: None,
                 timestamp_end: None,
                 num_docs: 0,
+                soft_deleted_doc_ids: Vec::new(),
             }],
             ..Default::default()
         }
@@ -355,6 +356,7 @@ mod tests {
                         timestamp_start: None,
                         timestamp_end: None,
                         num_docs: 0,
+                        soft_deleted_doc_ids: Vec::new(),
                     },
                     SplitIdAndFooterOffsets {
                         split_id: "split_2".to_string(),
@@ -363,6 +365,7 @@ mod tests {
                         timestamp_start: None,
                         timestamp_end: None,
                         num_docs: 0,
+                        soft_deleted_doc_ids: Vec::new(),
                     },
                 ],
             }],

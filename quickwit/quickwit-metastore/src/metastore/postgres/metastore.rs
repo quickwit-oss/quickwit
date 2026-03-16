@@ -43,8 +43,9 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SplitStats, StageSplitsRequest,
-    ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, SoftDeleteDocumentsRequest,
+    SoftDeleteDocumentsResponse, SplitStats, StageSplitsRequest, ToggleSourceRequest,
+    UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
@@ -604,6 +605,8 @@ impl MetastoreService for PostgresqlMetastore {
         let mut delete_opstamps = Vec::with_capacity(splits_metadata.len());
         let mut maturity_timestamps = Vec::with_capacity(splits_metadata.len());
         let mut node_ids = Vec::with_capacity(splits_metadata.len());
+        let mut soft_deleted_doc_ids_list: Vec<sqlx::types::Json<Vec<i32>>> =
+            Vec::with_capacity(splits_metadata.len());
 
         for split_metadata in splits_metadata {
             let split_metadata_json = serde_utils::to_json_str(&split_metadata)?;
@@ -631,6 +634,13 @@ impl MetastoreService for PostgresqlMetastore {
 
             let tags: Vec<String> = split_metadata.tags.into_iter().collect();
             tags_list.push(sqlx::types::Json(tags));
+            soft_deleted_doc_ids_list.push(sqlx::types::Json(
+                split_metadata
+                    .soft_deleted_doc_ids
+                    .iter()
+                    .map(|&id| id as i32)
+                    .collect(),
+            ));
             split_ids.push(split_metadata.split_id);
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
             node_ids.push(split_metadata.node_id);
@@ -641,7 +651,7 @@ impl MetastoreService for PostgresqlMetastore {
         run_with_tx!(self.connection_pool, tx, "stage splits", {
             let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"
                 INSERT INTO splits
-                    (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid, node_id)
+                    (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid, node_id, soft_deleted_doc_ids)
                 SELECT
                     split_id,
                     time_range_start,
@@ -654,10 +664,11 @@ impl MetastoreService for PostgresqlMetastore {
                     to_timestamp(maturity_timestamp),
                     $11 as split_state,
                     $12 as index_uid,
-                    node_id
+                    node_id,
+                    ARRAY(SELECT json_array_elements_text(soft_deleted_doc_ids_json::json)::INTEGER) AS soft_deleted_doc_ids
                 FROM
-                    UNNEST($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                    AS staged_splits (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp, node_id)
+                    UNNEST($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $13)
+                    AS staged_splits (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp, node_id, soft_deleted_doc_ids_json)
                 ON CONFLICT(index_uid, split_id) DO UPDATE
                     SET
                         time_range_start = excluded.time_range_start,
@@ -669,6 +680,7 @@ impl MetastoreService for PostgresqlMetastore {
                         delete_opstamp = excluded.delete_opstamp,
                         maturity_timestamp = excluded.maturity_timestamp,
                         node_id = excluded.node_id,
+                        soft_deleted_doc_ids = excluded.soft_deleted_doc_ids,
                         update_timestamp = CURRENT_TIMESTAMP,
                         create_timestamp = CURRENT_TIMESTAMP
                     WHERE splits.split_id = excluded.split_id AND splits.split_state = 'Staged'
@@ -686,6 +698,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .bind(&node_ids)
                 .bind(SplitState::Staged.as_str())
                 .bind(&index_uid)
+                .bind(&soft_deleted_doc_ids_list)
                 .fetch_all(tx.as_mut())
                 .await
                 .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
@@ -1163,6 +1176,59 @@ impl MetastoreService for PostgresqlMetastore {
             );
         }
         Ok(EmptyResponse {})
+    }
+
+    #[instrument(skip(self))]
+    async fn soft_delete_documents(
+        &self,
+        request: SoftDeleteDocumentsRequest,
+    ) -> MetastoreResult<SoftDeleteDocumentsResponse> {
+        let index_uid: IndexUid = request.index_uid().clone();
+        let split_doc_ids = request.split_doc_ids;
+
+        if split_doc_ids.is_empty() {
+            return Ok(SoftDeleteDocumentsResponse {
+                num_soft_deleted_doc_ids: 0,
+            });
+        }
+
+        const SOFT_DELETE_DOCS_QUERY: &str = r#"
+            UPDATE splits
+            SET
+                soft_deleted_doc_ids = ARRAY(
+                    SELECT DISTINCT unnest(soft_deleted_doc_ids || $3::INTEGER[])
+                ),
+                update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            WHERE
+                index_uid = $1
+                AND split_id = $2
+                AND split_state = 'Published'
+            RETURNING array_length(soft_deleted_doc_ids, 1)
+        "#;
+
+        // TODO should we return total or newly soft-deleted doc ids count?
+        let mut total_soft_deleted: u64 = 0;
+
+        run_with_tx!(self.connection_pool, tx, "soft delete documents", {
+            for split_doc in &split_doc_ids {
+                let doc_ids: Vec<i32> = split_doc.doc_ids.iter().map(|&id| id as i32).collect();
+
+                let result: Option<(Option<i32>,)> = sqlx::query_as(SOFT_DELETE_DOCS_QUERY)
+                    .bind(&index_uid)
+                    .bind(&split_doc.split_id)
+                    .bind(&doc_ids)
+                    .fetch_optional(tx.as_mut())
+                    .await
+                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
+
+                if let Some((Some(count),)) = result {
+                    total_soft_deleted += count as u64;
+                }
+            }
+            Ok(SoftDeleteDocumentsResponse {
+                num_soft_deleted_doc_ids: total_soft_deleted,
+            })
+        })
     }
 
     #[instrument(skip(self))]

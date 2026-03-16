@@ -20,7 +20,7 @@ use quickwit_config::{IndexConfig, SourceConfig, SourceParams};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteSplitsRequest, EntityKind, IndexMetadataRequest, ListSplitsRequest,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, PublishSplitsRequest,
-    StageSplitsRequest, UpdateSplitsDeleteOpstampRequest,
+    SoftDeleteDocumentsRequest, SplitDocIds, StageSplitsRequest, UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::types::{IndexUid, Position};
 use time::OffsetDateTime;
@@ -1805,4 +1805,311 @@ pub async fn test_metastore_update_splits_delete_opstamp<
 
         cleanup_index(&mut metastore, index_uid).await;
     }
+}
+
+pub async fn test_metastore_soft_delete_documents<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+
+    let index_id = append_random_suffix("test-soft-delete-docs");
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    let split_id = format!("{index_id}--split-1");
+    let split_metadata = SplitMetadata {
+        split_id: split_id.clone(),
+        index_uid: index_uid.clone(),
+        ..Default::default()
+    };
+
+    let stage_splits_request =
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata).unwrap();
+    metastore.stage_splits(stage_splits_request).await.unwrap();
+
+    let publish_splits_request = PublishSplitsRequest {
+        index_uid: Some(index_uid.clone()),
+        staged_split_ids: vec![split_id.clone()],
+        ..Default::default()
+    };
+    metastore
+        .publish_splits(publish_splits_request)
+        .await
+        .unwrap();
+
+    let soft_delete_request = SoftDeleteDocumentsRequest {
+        index_uid: Some(index_uid.clone()),
+        split_doc_ids: vec![SplitDocIds {
+            split_id: split_id.clone(),
+            doc_ids: vec![1, 5, 42],
+        }],
+    };
+    let response = metastore
+        .soft_delete_documents(soft_delete_request)
+        .await
+        .unwrap();
+    assert!(response.num_soft_deleted_doc_ids > 0);
+
+    let splits = metastore
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+
+    assert_eq!(splits.len(), 1);
+    let soft_deleted = &splits[0].split_metadata.soft_deleted_doc_ids;
+    assert!(soft_deleted.contains(&1));
+    assert!(soft_deleted.contains(&5));
+    assert!(soft_deleted.contains(&42));
+    assert_eq!(soft_deleted.len(), 3);
+
+    cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_soft_delete_documents_idempotent<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+
+    let index_id = append_random_suffix("test-soft-delete-idempotent");
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    let split_id = format!("{index_id}--split-1");
+    let split_metadata = SplitMetadata {
+        split_id: split_id.clone(),
+        index_uid: index_uid.clone(),
+        ..Default::default()
+    };
+
+    let stage_splits_request =
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata).unwrap();
+    metastore.stage_splits(stage_splits_request).await.unwrap();
+
+    let publish_splits_request = PublishSplitsRequest {
+        index_uid: Some(index_uid.clone()),
+        staged_split_ids: vec![split_id.clone()],
+        ..Default::default()
+    };
+    metastore
+        .publish_splits(publish_splits_request)
+        .await
+        .unwrap();
+
+    // First call: soft-delete doc IDs [1, 2, 3].
+    let soft_delete_request = SoftDeleteDocumentsRequest {
+        index_uid: Some(index_uid.clone()),
+        split_doc_ids: vec![SplitDocIds {
+            split_id: split_id.clone(),
+            doc_ids: vec![1, 2, 3],
+        }],
+    };
+    metastore
+        .soft_delete_documents(soft_delete_request)
+        .await
+        .unwrap();
+
+    // Second call: same doc IDs — must not return an error.
+    let soft_delete_request = SoftDeleteDocumentsRequest {
+        index_uid: Some(index_uid.clone()),
+        split_doc_ids: vec![SplitDocIds {
+            split_id: split_id.clone(),
+            doc_ids: vec![1, 2, 3],
+        }],
+    };
+    metastore
+        .soft_delete_documents(soft_delete_request)
+        .await
+        .unwrap();
+
+    // The set of soft-deleted IDs must still be exactly {1, 2, 3}.
+    let splits = metastore
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+
+    assert_eq!(splits.len(), 1);
+    let soft_deleted = &splits[0].split_metadata.soft_deleted_doc_ids;
+    assert_eq!(soft_deleted.len(), 3);
+    assert!(soft_deleted.contains(&1));
+    assert!(soft_deleted.contains(&2));
+    assert!(soft_deleted.contains(&3));
+
+    // Third call: same IDs plus one new one — must extend the set by exactly one.
+    let soft_delete_request = SoftDeleteDocumentsRequest {
+        index_uid: Some(index_uid.clone()),
+        split_doc_ids: vec![SplitDocIds {
+            split_id: split_id.clone(),
+            doc_ids: vec![1, 2, 3, 4],
+        }],
+    };
+    metastore
+        .soft_delete_documents(soft_delete_request)
+        .await
+        .unwrap();
+
+    let splits = metastore
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+
+    assert_eq!(splits.len(), 1);
+    let soft_deleted = &splits[0].split_metadata.soft_deleted_doc_ids;
+    assert_eq!(soft_deleted.len(), 4);
+    assert!(soft_deleted.contains(&1));
+    assert!(soft_deleted.contains(&2));
+    assert!(soft_deleted.contains(&3));
+    assert!(soft_deleted.contains(&4));
+
+    cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_soft_delete_documents_non_published_split<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+
+    let index_id = append_random_suffix("test-soft-delete-unpublished");
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    // Stage a split but do NOT publish it.
+    let staged_split_id = format!("{index_id}--split1");
+    let staged_split_metadata = SplitMetadata {
+        split_id: staged_split_id.clone(),
+        index_uid: index_uid.clone(),
+        ..Default::default()
+    };
+    let stage_splits_request =
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &staged_split_metadata)
+            .unwrap();
+    metastore.stage_splits(stage_splits_request).await.unwrap();
+
+    // Stage, publish, then mark another split for deletion.
+    let marked_split_id = format!("{index_id}--split2");
+    let marked_split_metadata = SplitMetadata {
+        split_id: marked_split_id.clone(),
+        index_uid: index_uid.clone(),
+        ..Default::default()
+    };
+    let stage_splits_request =
+        StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &marked_split_metadata)
+            .unwrap();
+    metastore.stage_splits(stage_splits_request).await.unwrap();
+
+    let publish_splits_request = PublishSplitsRequest {
+        index_uid: Some(index_uid.clone()),
+        staged_split_ids: vec![marked_split_id.clone()],
+        ..Default::default()
+    };
+    metastore
+        .publish_splits(publish_splits_request)
+        .await
+        .unwrap();
+
+    let mark_for_deletion_request =
+        MarkSplitsForDeletionRequest::new(index_uid.clone(), vec![marked_split_id.clone()]);
+    metastore
+        .mark_splits_for_deletion(mark_for_deletion_request)
+        .await
+        .unwrap();
+
+    // Attempt to soft-delete documents on the staged split.
+    // Implementations may return an error (file-backed) or silently skip (postgres) — both are
+    // valid. What matters is that the split's soft_deleted_doc_ids remains unmodified.
+    let soft_delete_request = SoftDeleteDocumentsRequest {
+        index_uid: Some(index_uid.clone()),
+        split_doc_ids: vec![SplitDocIds {
+            split_id: staged_split_id.clone(),
+            doc_ids: vec![10, 20],
+        }],
+    };
+    let _ = metastore.soft_delete_documents(soft_delete_request).await;
+
+    let list_staged_request = ListSplitsRequest::try_from_list_splits_query(
+        &ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged),
+    )
+    .unwrap();
+    let staged_splits = metastore
+        .list_splits(list_staged_request)
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+
+    assert_eq!(staged_splits.len(), 1);
+    assert!(
+        staged_splits[0]
+            .split_metadata
+            .soft_deleted_doc_ids
+            .is_empty(),
+        "staged split must not have any soft-deleted doc IDs"
+    );
+
+    // Attempt to soft-delete documents on the marked-for-deletion split.
+    let soft_delete_request = SoftDeleteDocumentsRequest {
+        index_uid: Some(index_uid.clone()),
+        split_doc_ids: vec![SplitDocIds {
+            split_id: marked_split_id.clone(),
+            doc_ids: vec![30, 40],
+        }],
+    };
+    let _ = metastore.soft_delete_documents(soft_delete_request).await;
+
+    let list_marked_request = ListSplitsRequest::try_from_list_splits_query(
+        &ListSplitsQuery::for_index(index_uid.clone())
+            .with_split_state(SplitState::MarkedForDeletion),
+    )
+    .unwrap();
+    let marked_splits = metastore
+        .list_splits(list_marked_request)
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+
+    assert_eq!(marked_splits.len(), 1);
+    assert!(
+        marked_splits[0]
+            .split_metadata
+            .soft_deleted_doc_ids
+            .is_empty(),
+        "marked-for-deletion split must not have any soft-deleted doc IDs"
+    );
+
+    cleanup_index(&mut metastore, index_uid).await;
 }

@@ -42,8 +42,9 @@ use tantivy::aggregation::{AggContextParams, AggregationLimitsGuard};
 use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
+use tantivy::query::EnableScoring;
 use tantivy::schema::Field;
-use tantivy::{DateTime, Index, ReloadPolicy, Searcher, TantivyError, Term};
+use tantivy::{DateTime, DocSet, Index, ReloadPolicy, Searcher, TantivyError, Term};
 use tokio::task::{JoinError, JoinSet};
 use tracing::*;
 
@@ -475,7 +476,10 @@ async fn leaf_search_single_split(
     //
     if is_metadata_count_request_with_ast(&query_ast, &search_request) {
         leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmup);
-        return Ok(Some(get_leaf_resp_from_count(split.num_docs)));
+        let effective_num_docs = split
+            .num_docs
+            .saturating_sub(split.soft_deleted_doc_ids.len() as u64);
+        return Ok(Some(get_leaf_resp_from_count(effective_num_docs)));
     }
 
     let split_id = split.split_id.to_string();
@@ -507,8 +511,17 @@ async fn leaf_search_single_split(
         limits: aggregations_limits,
         tokenizers: ctx.doc_mapper.tokenizer_manager().tantivy_manager().clone(),
     };
-    let mut collector =
-        make_collector_for_split(split_id.clone(), &search_request, agg_context_params)?;
+    let soft_deleted_doc_ids: Option<HashSet<u32>> = if split.soft_deleted_doc_ids.is_empty() {
+        None
+    } else {
+        Some(split.soft_deleted_doc_ids.iter().copied().collect())
+    };
+    let mut collector = make_collector_for_split(
+        split_id.clone(),
+        &search_request,
+        agg_context_params,
+        soft_deleted_doc_ids,
+    )?;
 
     let predicate_cache = if collector.requires_scoring() {
         // at the moment the predicate cache doesn't support scoring
@@ -576,9 +589,36 @@ async fn leaf_search_single_split(
                 collector.update_search_param(&simplified_search_request);
                 let mut leaf_search_response: LeafSearchResponse =
                     if is_metadata_count_request_with_ast(&query_ast, &simplified_search_request) {
-                        get_leaf_resp_from_count(searcher.num_docs())
+                        let num_docs = searcher
+                            .num_docs()
+                            .saturating_sub(split_clone.soft_deleted_doc_ids.len() as u64);
+                        get_leaf_resp_from_count(num_docs)
                     } else if collector.is_count_only() {
-                        let count = query.count(&searcher)? as u64;
+                        // `query.count()` uses raw Tantivy counting which is unaware of
+                        // Quickwit's soft-delete mechanism: soft-deleted doc IDs are not
+                        // registered as Tantivy-level deletions and are therefore not
+                        // reflected in the segment's alive_bitset.
+                        // We subtract the number of soft-deleted documents that also match
+                        // the query to get the correct count.
+                        //
+                        // We keep `query.count()` as the fast path (e.g. TermQuery reads
+                        // doc_freq directly from the term dictionary, avoiding any iteration)
+                        // and only pay the cost of checking soft-deleted doc IDs when there
+                        // are any.
+                        let mut count = query.count(&searcher)? as u64;
+                        if !split_clone.soft_deleted_doc_ids.is_empty() {
+                            let segment_reader = &searcher.segment_readers()[0];
+                            let weight =
+                                query.weight(EnableScoring::disabled_from_searcher(&searcher))?;
+                            let mut scorer = weight.scorer(segment_reader, 1.0)?;
+                            let mut soft_deleted_matching = 0u64;
+                            for &doc_id in &split_clone.soft_deleted_doc_ids {
+                                if scorer.seek(doc_id) == doc_id {
+                                    soft_deleted_matching += 1;
+                                }
+                            }
+                            count = count.saturating_sub(soft_deleted_matching);
+                        }
                         get_leaf_resp_from_count(count)
                     } else {
                         searcher.search(&query, &collector)?

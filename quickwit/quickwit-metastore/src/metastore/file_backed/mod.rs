@@ -55,8 +55,9 @@ use quickwit_proto::metastore::{
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
     MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
     OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
+    SoftDeleteDocumentsRequest, SoftDeleteDocumentsResponse, StageSplitsRequest,
+    ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -727,6 +728,23 @@ impl MetastoreService for FileBackedMetastore {
         })
         .await?;
         Ok(EmptyResponse {})
+    }
+
+    async fn soft_delete_documents(
+        &self,
+        request: SoftDeleteDocumentsRequest,
+    ) -> MetastoreResult<SoftDeleteDocumentsResponse> {
+        let index_uid = request.index_uid().clone();
+        let num_soft_deleted_doc_ids = self
+            .mutate(&index_uid, |index| {
+                let num_soft_deleted_doc_ids =
+                    index.soft_delete_documents(&request.split_doc_ids)?;
+                Ok(MutationOccurred::Yes(num_soft_deleted_doc_ids))
+            })
+            .await?;
+        Ok(SoftDeleteDocumentsResponse {
+            num_soft_deleted_doc_ids,
+        })
     }
 
     async fn add_source(&self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
