@@ -5,3 +5,6 @@
 
 # `ring` has a custom license that is mostly "ISC-style" but parts of it also fall under OpenSSL licensing.
 "ring-0.17.8" = { license = "ISC AND Custom" }
+
+# openssl-macros doesn't publish a repository URL on crates.io but it's part of the rust-openssl project.
+"openssl-macros-0.1.1" = { license = "MIT OR Apache-2.0", origin = "https://github.com/sfackler/rust-openssl" }
