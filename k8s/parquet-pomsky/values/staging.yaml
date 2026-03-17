@@ -164,7 +164,7 @@ extraConfigMaps:
   - name: pgpass-template
     data:
       pgpass.tpl: |
-        *:*:*:*:{% with secret "kv/data/orgstore/orgstore-parquet-cloudprem-metastore/orgstore-parquet-cloudprem-metastore-pg-proxy/k8s/quickhouse-incubator/cloudprem/credentials" %}{% .Data.data.password %}{% end %}
+        *:*:*:*:{% with secret "kv/orgstore/orgstore-parquet-cloudprem-metastore/orgstore-parquet-cloudprem-metastore-pg-proxy/k8s/quickhouse-incubator/cloudprem/credentials" %}{% .Data.data.password %}{% end %}
 
 
 config:
