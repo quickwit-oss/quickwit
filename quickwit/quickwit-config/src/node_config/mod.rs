@@ -847,6 +847,12 @@ impl WebsocketConfig {
         };
         site.to_string()
     }
+
+    fn redact(&mut self) {
+        if let Some(dd_api_key) = self.dd_api_key.as_mut() {
+            *dd_api_key = "***redacted***".to_string();
+        }
+    }
 }
 
 impl Default for WebsocketConfig {
@@ -893,6 +899,10 @@ impl CloudPremConfig {
             .validate(self.enable_reverse_connection, enabled_services)?;
 
         Ok(())
+    }
+
+    pub fn redact(&mut self) {
+        self.datadog_config.redact();
     }
 
     fn default_enable_reverse_connection() -> bool {
@@ -1005,6 +1015,7 @@ impl NodeConfig {
         self.metastore_configs.redact();
         self.metastore_uri.redact();
         self.storage_configs.redact();
+        self.cloudprem_config.redact();
     }
 
     /// Creates a config with defaults suitable for testing.
