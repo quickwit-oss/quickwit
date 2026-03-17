@@ -1,0 +1,10 @@
+schema-version: v2.2
+dd-service: parquet-pomsky
+team: quickhouse-incubator
+repos:
+  - url: https://github.com/DataDog/pomsky
+    name: pomsky
+contacts:
+  - name: quickhouse-incubator
+    type: slack
+    contact: https://dd.enterprise.slack.com/archives/C09EWQ5F6Q4

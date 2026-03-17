@@ -1,0 +1,59 @@
+load("@com_datadoghq_cnab_tools//rules/artifact:artifact.bzl", "artifact_reference")
+load("@com_datadoghq_cnab_tools//rules:cli_defaults.bzl", "REGISTRY")
+load("@com_datadoghq_cnab_tools//rules:workflow.bzl", "cnab_workflow")
+load("@com_datadoghq_datacenter_config//rules:helm.bzl", "dd_helm_cnab", "dd_helm_cnab_installation")
+
+artifact_reference(
+    name = "pomsky_image",
+    registry = REGISTRY,
+    repository = "pomsky",
+    tag = "parquet",
+    digest="$(image_digest)", # --define image_digest=$(crane digest registry.ddbuild.io/pomsky:parquet)
+)
+
+dd_helm_cnab(
+    name = "parquet-pomsky",
+    chart = "@pomsky_helm_charts//charts/quickwit:chart",
+    pushed_images = {
+        "pomsky_image": "pomsky",
+    },
+    registry = REGISTRY,
+    repository = "pomsky",
+    service_catalog_file = ":service.datadog.yaml",
+    tags = [
+        "service:parquet-pomsky",
+        "team:quickhouse-incubator",
+    ],
+    visibility = ["//visibility:public"],
+    with_datacenter_helm_files = False,
+)
+
+cnab_workflow(
+    name = "staging",
+    description = "Deploy Parquet-Pomsky to staging",
+    parallel = True,
+    tasks = [
+        ":parquet-pomsky.quickhouse-incubator.gizmo.us1.staging.dog",
+    ],
+    tags = [
+        "env:staging",
+        "service:parquet-pomsky",
+        "team:quickhouse-incubator",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+default_params = {
+    "manualJudgementSlackChannel": "quickhouse-ops",
+}
+
+# Parquet Staging deployment (pomsky-staging branch)
+dd_helm_cnab_installation(
+    name = "parquet-pomsky.quickhouse-incubator.gizmo.us1.staging.dog",
+    bundle = ":parquet-pomsky",
+    description = "Parquet-Pomsky Staging",
+    parameters = default_params,
+    value_files = [
+        "values/staging.yaml"
+    ],
+)
