@@ -512,6 +512,7 @@ async fn upload_split(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -594,6 +595,7 @@ mod tests {
                         split_id: "test-split".to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
+                        soft_deleted_doc_ids: BTreeSet::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -709,6 +711,7 @@ mod tests {
                 ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
+                soft_deleted_doc_ids: BTreeSet::new(),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_1,
@@ -737,6 +740,7 @@ mod tests {
                 ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
+                soft_deleted_doc_ids: BTreeSet::new(),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_2,
@@ -858,6 +862,7 @@ mod tests {
                         replaced_split_ids: Vec::new(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
+                        soft_deleted_doc_ids: BTreeSet::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -1041,6 +1046,7 @@ mod tests {
                         split_id: SPLIT_ULID_STR.to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
+                        soft_deleted_doc_ids: BTreeSet::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,

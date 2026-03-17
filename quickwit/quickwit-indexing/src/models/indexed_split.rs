@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::Path;
 
@@ -111,6 +112,7 @@ impl IndexedSplitBuilder {
                 secondary_time_range: None,
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: 0,
+                soft_deleted_doc_ids: BTreeSet::new(),
             },
             index_writer,
             split_scratch_directory,

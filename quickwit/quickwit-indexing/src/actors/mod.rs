@@ -25,6 +25,7 @@ mod merge_scheduler_service;
 mod merge_split_downloader;
 mod packager;
 mod publisher;
+mod query;
 mod sequencer;
 mod uploader;
 #[cfg(feature = "vrl")]

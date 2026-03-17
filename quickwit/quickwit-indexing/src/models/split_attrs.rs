@@ -68,6 +68,10 @@ pub struct SplitAttrs {
 
     // Number of merge operation the split has been through so far.
     pub num_merge_ops: usize,
+
+    /// Soft-deleted doc IDs carried forward from source splits.
+    /// Cleared during merge (MVP: doc_ids change during merge, so we can't remap them).
+    pub soft_deleted_doc_ids: BTreeSet<u32>,
 }
 
 impl fmt::Debug for SplitAttrs {
@@ -83,6 +87,10 @@ impl fmt::Debug for SplitAttrs {
             )
             .field("num_docs", &self.num_docs)
             .field("num_merge_ops", &self.num_merge_ops)
+            .field(
+                "soft_deleted_doc_ids_count",
+                &self.soft_deleted_doc_ids.len(),
+            )
             .finish()
     }
 }
