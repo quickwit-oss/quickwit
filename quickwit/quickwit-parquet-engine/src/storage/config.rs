@@ -14,12 +14,13 @@
 
 //! Parquet writer configuration for metrics storage.
 
+use arrow::datatypes::{DataType, Schema as ArrowSchema};
 use parquet::basic::Compression as ParquetCompression;
 use parquet::file::metadata::SortingColumn;
 use parquet::file::properties::{EnabledStatistics, WriterProperties, WriterPropertiesBuilder};
 use parquet::schema::types::ColumnPath;
 
-use crate::schema::ParquetField;
+use crate::schema::SORT_ORDER;
 
 /// Default row group size: 128K rows for efficient columnar scans.
 const DEFAULT_ROW_GROUP_SIZE: usize = 128 * 1024;
@@ -117,8 +118,9 @@ impl ParquetWriterConfig {
         self
     }
 
-    /// Convert to Parquet WriterProperties.
-    pub fn to_writer_properties(&self) -> WriterProperties {
+    /// Convert to Parquet WriterProperties using the given Arrow schema to configure
+    /// per-column settings like dictionary encoding and bloom filters.
+    pub fn to_writer_properties(&self, schema: &ArrowSchema) -> WriterProperties {
         let mut builder = WriterProperties::builder()
             .set_max_row_group_size(self.row_group_size)
             .set_data_page_size_limit(self.data_page_size)
@@ -126,7 +128,7 @@ impl ParquetWriterConfig {
             // Enable column index for efficient pruning on sorted data (64 bytes default)
             .set_column_index_truncate_length(Some(64))
             // Set sorting columns metadata for readers to use during pruning
-            .set_sorting_columns(Some(Self::sorting_columns()))
+            .set_sorting_columns(Some(Self::sorting_columns(schema)))
             // Enable row group level statistics (min/max/null_count) for query pruning
             // This allows DataFusion to skip row groups based on timestamp ranges
             .set_statistics_enabled(EnabledStatistics::Chunk);
@@ -142,77 +144,58 @@ impl ParquetWriterConfig {
             Compression::Uncompressed => builder.set_compression(ParquetCompression::UNCOMPRESSED),
         };
 
-        // Apply RLE_DICTIONARY encoding and bloom filters for dictionary columns
-        builder = Self::configure_dictionary_columns(builder);
+        // Apply dictionary encoding and bloom filters based on schema column types
+        builder = Self::configure_columns(builder, schema);
 
         builder.build()
     }
 
-    /// Configure dictionary encoding and bloom filters for high-cardinality columns.
+    /// Configure dictionary encoding and bloom filters based on the Arrow schema.
     ///
-    /// Dictionary-encoded columns benefit from:
-    /// - Dictionary encoding: Enabled by default, uses RLE for dictionary indices
-    /// - Bloom filters: Enable efficient equality filtering without scanning
-    ///
-    /// Note: Dictionary encoding is ON by default in Parquet. When enabled, the dictionary
-    /// indices are automatically encoded using RLE (run-length encoding), which efficiently
-    /// compresses runs of repeated values. This is ideal for sorted data where consecutive
-    /// rows often share the same dictionary index.
-    fn configure_dictionary_columns(
+    /// - Dictionary encoding is enabled on all Dictionary(Int32, Utf8) columns.
+    /// - Bloom filters are enabled on metric_name and sort order tag columns.
+    fn configure_columns(
         mut builder: WriterPropertiesBuilder,
+        schema: &ArrowSchema,
     ) -> WriterPropertiesBuilder {
-        // Dictionary-encoded columns - ensure dictionary encoding is explicitly enabled
-        // (default is true, but being explicit documents intent)
-        let dictionary_columns = [
-            ParquetField::MetricName,
-            ParquetField::TagService,
-            ParquetField::TagEnv,
-            ParquetField::TagDatacenter,
-            ParquetField::TagRegion,
-            ParquetField::TagHost,
-            ParquetField::ServiceName,
-        ];
-
-        // Columns that benefit from bloom filters (used in WHERE clauses)
-        // Note: We enable bloom filters on filtering columns, not timestamp_secs or value
-        let bloom_filter_columns = [
-            (ParquetField::MetricName, BLOOM_FILTER_NDV_METRIC_NAME),
-            (ParquetField::TagService, BLOOM_FILTER_NDV_TAGS),
-            (ParquetField::TagEnv, BLOOM_FILTER_NDV_TAGS),
-            (ParquetField::TagDatacenter, BLOOM_FILTER_NDV_TAGS),
-            (ParquetField::TagHost, BLOOM_FILTER_NDV_TAGS),
-            (ParquetField::ServiceName, BLOOM_FILTER_NDV_TAGS),
-        ];
-
-        // Ensure dictionary encoding is enabled on dictionary columns
-        // (dictionary encoding uses RLE for indices automatically)
-        for field in dictionary_columns {
+        for field in schema.fields() {
             let col_path = ColumnPath::new(vec![field.name().to_string()]);
-            builder = builder.set_column_dictionary_enabled(col_path, true);
-        }
 
-        // Enable bloom filters on filtering columns
-        for (field, ndv) in bloom_filter_columns {
-            let col_path = ColumnPath::new(vec![field.name().to_string()]);
-            builder = builder
-                .set_column_bloom_filter_enabled(col_path.clone(), true)
-                .set_column_bloom_filter_fpp(col_path.clone(), BLOOM_FILTER_FPP)
-                .set_column_bloom_filter_ndv(col_path, ndv);
-        }
+            // Enable dictionary encoding on all Dictionary(_, _) columns
+            if matches!(field.data_type(), DataType::Dictionary(_, _)) {
+                builder = builder.set_column_dictionary_enabled(col_path.clone(), true);
+            }
 
+            // Enable bloom filters on dictionary-typed metric_name and sort order tag columns.
+            // Exclude non-dictionary columns, like timestamp_secs.
+            let is_bloom_column = matches!(field.data_type(), DataType::Dictionary(_, _))
+                && (field.name() == "metric_name"
+                    || SORT_ORDER.contains(&field.name().as_str()));
+            if is_bloom_column {
+                let ndv = if field.name() == "metric_name" {
+                    BLOOM_FILTER_NDV_METRIC_NAME
+                } else {
+                    BLOOM_FILTER_NDV_TAGS
+                };
+                builder = builder
+                    .set_column_bloom_filter_enabled(col_path.clone(), true)
+                    .set_column_bloom_filter_fpp(col_path.clone(), BLOOM_FILTER_FPP)
+                    .set_column_bloom_filter_ndv(col_path, ndv);
+            }
+        }
         builder
     }
 
-    /// Get the sorting columns for parquet metadata.
-    /// Order: metric_name, tag_service, tag_env, tag_datacenter, tag_region, tag_host,
-    /// timestamp_secs.
-    fn sorting_columns() -> Vec<SortingColumn> {
-        ParquetField::sort_order()
+    /// Get the sorting columns for parquet metadata, computed from the schema
+    /// and SORT_ORDER. Only columns present in the schema are included.
+    fn sorting_columns(schema: &ArrowSchema) -> Vec<SortingColumn> {
+        SORT_ORDER
             .iter()
-            .map(|field| SortingColumn {
-                column_idx: field.column_index() as i32,
+            .filter_map(|name| schema.index_of(name).ok())
+            .map(|idx| SortingColumn {
+                column_idx: idx as i32,
                 descending: false,
-                nulls_first: true,
+                nulls_first: false,
             })
             .collect()
     }
@@ -220,7 +203,40 @@ impl ParquetWriterConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use arrow::datatypes::Field;
+
     use super::*;
+
+    /// Create a test schema with required fields + some tag columns.
+    fn create_test_schema() -> ArrowSchema {
+        ArrowSchema::new(vec![
+            Field::new(
+                "metric_name",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                false,
+            ),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new(
+                "service",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+            ),
+            Field::new(
+                "env",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+            ),
+            Field::new(
+                "host",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+            ),
+        ])
+    }
 
     #[test]
     fn test_default_config() {
@@ -245,71 +261,66 @@ mod tests {
     #[test]
     fn test_to_writer_properties_zstd() {
         let config = ParquetWriterConfig::default();
-        let props = config.to_writer_properties();
-        // WriterProperties doesn't expose compression directly, but we can verify it builds
+        let schema = create_test_schema();
+        let props = config.to_writer_properties(&schema);
         assert!(props.max_row_group_size() == 128 * 1024);
     }
 
     #[test]
     fn test_to_writer_properties_snappy() {
         let config = ParquetWriterConfig::new().with_compression(Compression::Snappy);
-        let props = config.to_writer_properties();
+        let schema = create_test_schema();
+        let props = config.to_writer_properties(&schema);
         assert!(props.max_row_group_size() == 128 * 1024);
     }
 
     #[test]
     fn test_to_writer_properties_uncompressed() {
         let config = ParquetWriterConfig::new().with_compression(Compression::Uncompressed);
-        let props = config.to_writer_properties();
+        let schema = create_test_schema();
+        let props = config.to_writer_properties(&schema);
         assert!(props.max_row_group_size() == 128 * 1024);
     }
 
     #[test]
     fn test_bloom_filter_configuration() {
         let config = ParquetWriterConfig::default();
-        let props = config.to_writer_properties();
+        let schema = create_test_schema();
+        let props = config.to_writer_properties(&schema);
 
         // Verify bloom filter is enabled on metric_name column
         let metric_name_path = ColumnPath::new(vec!["metric_name".to_string()]);
         let bloom_props = props.bloom_filter_properties(&metric_name_path);
         assert!(
             bloom_props.is_some(),
-            "Bloom filter should be enabled for metric_name"
+            "bloom filter should be enabled for metric_name"
         );
 
         let bloom_props = bloom_props.unwrap();
         assert!(
             (bloom_props.fpp - BLOOM_FILTER_FPP).abs() < 0.001,
-            "Bloom filter FPP should be {}",
+            "bloom filter FPP should be {}",
             BLOOM_FILTER_FPP
         );
         assert_eq!(
             bloom_props.ndv, BLOOM_FILTER_NDV_METRIC_NAME,
-            "Bloom filter NDV for metric_name should be {}",
+            "bloom filter NDV for metric_name should be {}",
             BLOOM_FILTER_NDV_METRIC_NAME
         );
 
-        // Verify bloom filter is enabled on tag columns
-        let tag_service_path = ColumnPath::new(vec!["tag_service".to_string()]);
-        let bloom_props = props.bloom_filter_properties(&tag_service_path);
+        // Verify bloom filter is enabled on service tag column (in SORT_ORDER)
+        let service_path = ColumnPath::new(vec!["service".to_string()]);
+        let bloom_props = props.bloom_filter_properties(&service_path);
         assert!(
             bloom_props.is_some(),
-            "Bloom filter should be enabled for tag_service"
+            "bloom filter should be enabled for service"
         );
 
         let bloom_props = bloom_props.unwrap();
         assert_eq!(
             bloom_props.ndv, BLOOM_FILTER_NDV_TAGS,
-            "Bloom filter NDV for tag columns should be {}",
+            "bloom filter NDV for tag columns should be {}",
             BLOOM_FILTER_NDV_TAGS
-        );
-
-        // Verify bloom filter is NOT enabled on timestamp_secs (not a filtering column)
-        let timestamp_path = ColumnPath::new(vec!["timestamp_secs".to_string()]);
-        let bloom_props = props.bloom_filter_properties(&timestamp_path);
-        assert!(
-            bloom_props.is_none(),
-            "Bloom filter should NOT be enabled for timestamp_secs"
         );
 
         // Verify bloom filter is NOT enabled on value column
@@ -317,21 +328,22 @@ mod tests {
         let bloom_props = props.bloom_filter_properties(&value_path);
         assert!(
             bloom_props.is_none(),
-            "Bloom filter should NOT be enabled for value"
+            "bloom filter should NOT be enabled for value"
         );
     }
 
     #[test]
     fn test_statistics_enabled() {
         let config = ParquetWriterConfig::default();
-        let props = config.to_writer_properties();
+        let schema = create_test_schema();
+        let props = config.to_writer_properties(&schema);
 
         // Verify statistics are enabled at Chunk (row group) level
         let metric_name_path = ColumnPath::new(vec!["metric_name".to_string()]);
         assert_eq!(
             props.statistics_enabled(&metric_name_path),
             EnabledStatistics::Chunk,
-            "Statistics should be enabled at Chunk level"
+            "statistics should be enabled at Chunk level"
         );
 
         // Verify for timestamp column as well (important for time range pruning)
@@ -339,31 +351,24 @@ mod tests {
         assert_eq!(
             props.statistics_enabled(&timestamp_path),
             EnabledStatistics::Chunk,
-            "Statistics should be enabled at Chunk level for timestamp"
+            "statistics should be enabled at Chunk level for timestamp"
         );
     }
 
     #[test]
     fn test_dictionary_encoding_enabled() {
         let config = ParquetWriterConfig::default();
-        let props = config.to_writer_properties();
+        let schema = create_test_schema();
+        let props = config.to_writer_properties(&schema);
 
-        // Verify dictionary encoding is enabled for dictionary columns
-        let dictionary_columns = [
-            "metric_name",
-            "tag_service",
-            "tag_env",
-            "tag_datacenter",
-            "tag_region",
-            "tag_host",
-            "service_name",
-        ];
+        // Verify dictionary encoding is enabled for dictionary-typed columns
+        let dictionary_columns = ["metric_name", "service", "env", "host"];
 
         for col_name in dictionary_columns {
             let col_path = ColumnPath::new(vec![col_name.to_string()]);
             assert!(
                 props.dictionary_enabled(&col_path),
-                "Dictionary encoding should be enabled for {}",
+                "dictionary encoding should be enabled for {}",
                 col_name
             );
         }
@@ -371,37 +376,31 @@ mod tests {
 
     #[test]
     fn test_sorting_columns_order() {
-        let sorting_cols = ParquetWriterConfig::sorting_columns();
+        let schema = create_test_schema();
+        let sorting_cols = ParquetWriterConfig::sorting_columns(&schema);
 
-        // Verify we have the expected number of sorting columns
+        // The test schema has metric_name (idx 0), timestamp_secs (idx 2),
+        // service (idx 4), env (idx 5), host (idx 6).
+        // SORT_ORDER is: metric_name, service, env, datacenter, region, host, timestamp_secs
+        // Only present columns are included, so: metric_name, service, env, host, timestamp_secs
         assert_eq!(
             sorting_cols.len(),
-            7,
-            "Should have 7 sorting columns: metric_name, 5 tags, timestamp"
+            5,
+            "should have 5 sorting columns from the test schema"
         );
 
-        // Verify sort order matches expected: metric_name, tag_service, tag_env,
-        // tag_datacenter, tag_region, tag_host, timestamp_secs
-        let expected_order = [
-            ParquetField::MetricName,
-            ParquetField::TagService,
-            ParquetField::TagEnv,
-            ParquetField::TagDatacenter,
-            ParquetField::TagRegion,
-            ParquetField::TagHost,
-            ParquetField::TimestampSecs,
-        ];
-
-        for (i, expected_field) in expected_order.iter().enumerate() {
-            assert_eq!(
-                sorting_cols[i].column_idx,
-                expected_field.column_index() as i32,
-                "Sorting column {} should be {}",
-                i,
-                expected_field.name()
-            );
-            assert!(!sorting_cols[i].descending, "Sorting should be ascending");
-            assert!(sorting_cols[i].nulls_first, "Nulls should be first");
+        // Verify all are ascending with nulls first
+        for col in &sorting_cols {
+            assert!(!col.descending, "sorting should be ascending");
+            assert!(!col.nulls_first, "nulls should be last");
         }
+
+        // Verify order matches SORT_ORDER filtered by schema presence:
+        // metric_name (idx 0), service (idx 4), env (idx 5), host (idx 6), timestamp_secs (idx 2)
+        assert_eq!(sorting_cols[0].column_idx, 0); // metric_name
+        assert_eq!(sorting_cols[1].column_idx, 4); // service
+        assert_eq!(sorting_cols[2].column_idx, 5); // env
+        assert_eq!(sorting_cols[3].column_idx, 6); // host
+        assert_eq!(sorting_cols[4].column_idx, 2); // timestamp_secs
     }
 }

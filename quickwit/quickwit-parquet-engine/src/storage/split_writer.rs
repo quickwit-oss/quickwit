@@ -25,7 +25,6 @@ use tracing::{debug, info, instrument};
 
 use super::config::ParquetWriterConfig;
 use super::writer::{ParquetWriteError, ParquetWriter};
-use crate::schema::{ParquetField, ParquetSchema};
 use crate::split::{MetricsSplitMetadata, ParquetSplit, SplitId, TAG_SERVICE, TimeRange};
 
 /// Writer that produces complete ParquetSplit with metadata from RecordBatch data.
@@ -40,16 +39,11 @@ impl ParquetSplitWriter {
     /// Create a new ParquetSplitWriter.
     ///
     /// # Arguments
-    /// * `schema` - The metrics schema for validation
     /// * `config` - Parquet writer configuration
     /// * `base_path` - Directory where split files will be written
-    pub fn new(
-        schema: ParquetSchema,
-        config: ParquetWriterConfig,
-        base_path: impl Into<PathBuf>,
-    ) -> Self {
+    pub fn new(config: ParquetWriterConfig, base_path: impl Into<PathBuf>) -> Self {
         Self {
-            writer: ParquetWriter::new(schema, config),
+            writer: ParquetWriter::new(config),
             base_path: base_path.into(),
         }
     }
