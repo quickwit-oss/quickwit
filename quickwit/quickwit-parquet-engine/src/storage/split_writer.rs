@@ -49,7 +49,7 @@ impl ParquetSplitWriter {
         base_path: impl Into<PathBuf>,
     ) -> Self {
         Self {
-            writer: ParquetWriter::new(schema, config),
+            writer: ParquetWriter::new(crate::schema::ParquetSchema::new(), config),
             base_path: base_path.into(),
         }
     }
