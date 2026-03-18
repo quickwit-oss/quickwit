@@ -49,6 +49,10 @@ use crate::{Split, SplitMetadata, SplitState};
 /// Splits batch size returned by the stream splits API
 pub(crate) const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
 
+/// Maximum number of soft-deleted document IDs allowed per split.
+/// Attempts to soft-delete documents that would push the total above this limit will fail.
+pub(crate) const MAX_SOFT_DELETED_DOCS_PER_SPLIT: usize = 10_000;
+
 /// An extended trait for [`MetastoreService`].
 #[async_trait]
 pub trait MetastoreServiceExt: MetastoreService {

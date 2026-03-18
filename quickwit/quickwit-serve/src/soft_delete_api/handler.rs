@@ -32,6 +32,8 @@ use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::with_arg;
 
+const MAX_SOFT_DELETED_DOCS_PER_SPLIT: u64 = 10_000;
+
 #[allow(dead_code)]
 #[derive(utoipa::OpenApi)]
 #[openapi(
@@ -59,7 +61,7 @@ pub struct SoftDeleteRequest {
 }
 
 fn default_max_soft_deletes() -> u64 {
-    10_000
+    MAX_SOFT_DELETED_DOCS_PER_SPLIT
 }
 
 /// Response from the soft-delete endpoint.
@@ -120,10 +122,18 @@ pub async fn post_soft_delete(
     let query_ast_json = serde_json::to_string(&query_ast)
         .map_err(|err| SearchError::Internal(format!("failed to serialize query AST: {err}")))?;
 
+    // Enforce a hits limit that guarantee we won't delete
+    // more than MAX_SOFT_DELETED_DOCS_PER_SPLIT per split
+    let max_hits = if request.max_hits > MAX_SOFT_DELETED_DOCS_PER_SPLIT {
+        MAX_SOFT_DELETED_DOCS_PER_SPLIT
+    } else {
+        request.max_hits
+    };
+
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
         query_ast: query_ast_json,
-        max_hits: request.max_hits,
+        max_hits,
         start_timestamp: request.start_timestamp,
         end_timestamp: request.end_timestamp,
         ..Default::default()

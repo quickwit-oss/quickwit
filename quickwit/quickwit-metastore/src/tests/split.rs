@@ -29,7 +29,7 @@ use tracing::{error, info};
 
 use super::DefaultForTest;
 use crate::checkpoint::{IndexCheckpointDelta, PartitionId, SourceCheckpointDelta};
-use crate::metastore::MetastoreServiceStreamSplitsExt;
+use crate::metastore::{MAX_SOFT_DELETED_DOCS_PER_SPLIT, MetastoreServiceStreamSplitsExt};
 use crate::tests::cleanup_index;
 use crate::{
     CreateIndexRequestExt, IndexMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
@@ -2109,6 +2109,127 @@ pub async fn test_metastore_soft_delete_documents_non_published_split<
             .soft_deleted_doc_ids
             .is_empty(),
         "marked-for-deletion split must not have any soft-deleted doc IDs"
+    );
+
+    cleanup_index(&mut metastore, index_uid).await;
+}
+
+pub async fn test_metastore_soft_delete_documents_limit_exceeded<
+    MetastoreToTest: MetastoreServiceExt + DefaultForTest,
+>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+
+    let index_id = append_random_suffix("test-soft-delete-limit");
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid()
+        .clone();
+
+    // Create and publish two splits.
+    let split_a_id = format!("{index_id}--split-a");
+    let split_b_id = format!("{index_id}--split-b");
+
+    for split_id in [&split_a_id, &split_b_id] {
+        let split_metadata = SplitMetadata {
+            split_id: split_id.clone(),
+            index_uid: index_uid.clone(),
+            ..Default::default()
+        };
+        let stage_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &split_metadata)
+                .unwrap();
+        metastore.stage_splits(stage_request).await.unwrap();
+
+        let publish_request = PublishSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            staged_split_ids: vec![split_id.clone()],
+            ..Default::default()
+        };
+        metastore.publish_splits(publish_request).await.unwrap();
+    }
+
+    // Pre-populate split-b with MAX - 1 soft-deleted doc IDs so one more would be fine but two
+    // would exceed the limit.
+    let initial_ids: Vec<u32> = (0..MAX_SOFT_DELETED_DOCS_PER_SPLIT as u32 - 1).collect();
+    let pre_populate_request = SoftDeleteDocumentsRequest {
+        index_uid: Some(index_uid.clone()),
+        split_doc_ids: vec![SplitDocIds {
+            split_id: split_b_id.clone(),
+            doc_ids: initial_ids,
+        }],
+    };
+    metastore
+        .soft_delete_documents(pre_populate_request)
+        .await
+        .unwrap();
+
+    // Request that would:
+    //   - soft-delete 1 doc on split-a (valid on its own)
+    //   - soft-delete 2 *new* docs on split-b (would push total from MAX-1 to MAX+1)
+    // The whole request must fail and neither split must be modified.
+    let overflow_request = SoftDeleteDocumentsRequest {
+        index_uid: Some(index_uid.clone()),
+        split_doc_ids: vec![
+            SplitDocIds {
+                split_id: split_a_id.clone(),
+                doc_ids: vec![100],
+            },
+            SplitDocIds {
+                split_id: split_b_id.clone(),
+                doc_ids: vec![
+                    MAX_SOFT_DELETED_DOCS_PER_SPLIT as u32 - 1,
+                    MAX_SOFT_DELETED_DOCS_PER_SPLIT as u32,
+                ],
+            },
+        ],
+    };
+    let error = metastore
+        .soft_delete_documents(overflow_request)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            MetastoreError::FailedPrecondition {
+                entity: EntityKind::Split { .. },
+                ..
+            }
+        ),
+        "expected FailedPrecondition when soft-deleted doc limit is exceeded, got: {error:?}"
+    );
+
+    // Verify atomicity: both splits must be unmodified after the failed request.
+    let splits = metastore
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
+
+    let split_a = splits
+        .iter()
+        .find(|s| s.split_metadata.split_id == split_a_id)
+        .expect("split-a must exist");
+    assert!(
+        split_a.split_metadata.soft_deleted_doc_ids.is_empty(),
+        "split-a must not have been modified (atomicity guarantee)"
+    );
+
+    let split_b = splits
+        .iter()
+        .find(|s| s.split_metadata.split_id == split_b_id)
+        .expect("split-b must exist");
+    assert_eq!(
+        split_b.split_metadata.soft_deleted_doc_ids.len(),
+        MAX_SOFT_DELETED_DOCS_PER_SPLIT - 1,
+        "split-b must not have been modified (atomicity guarantee)"
     );
 
     cleanup_index(&mut metastore, index_uid).await;

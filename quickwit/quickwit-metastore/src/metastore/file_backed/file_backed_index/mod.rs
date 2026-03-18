@@ -43,7 +43,7 @@ use tracing::{info, warn};
 
 use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::metastore::{SortBy, use_shard_api};
+use crate::metastore::{MAX_SOFT_DELETED_DOCS_PER_SPLIT, SortBy, use_shard_api};
 use crate::{IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState, split_tag_filter};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -503,9 +503,9 @@ impl FileBackedIndex {
         &mut self,
         split_doc_ids: &[SplitDocIds],
     ) -> MetastoreResult<u64> {
-        let mut num_soft_deleted = 0u64;
+        // First pass: validate all splits before making any changes to guarantee atomicity.
         for entry in split_doc_ids {
-            let split = self.splits.get_mut(&entry.split_id).ok_or_else(|| {
+            let split = self.splits.get(&entry.split_id).ok_or_else(|| {
                 MetastoreError::NotFound(EntityKind::Split {
                     split_id: entry.split_id.clone(),
                 })
@@ -518,6 +518,34 @@ impl FileBackedIndex {
                     message: format!("split `{}` is not in Published state", entry.split_id),
                 });
             }
+            let current_count = split.split_metadata.soft_deleted_doc_ids.len();
+            let new_unique_count = entry
+                .doc_ids
+                .iter()
+                .filter(|&&id| !split.split_metadata.soft_deleted_doc_ids.contains(&id))
+                .count();
+            if current_count + new_unique_count > MAX_SOFT_DELETED_DOCS_PER_SPLIT {
+                return Err(MetastoreError::FailedPrecondition {
+                    entity: EntityKind::Split {
+                        split_id: entry.split_id.clone(),
+                    },
+                    message: format!(
+                        "split `{}` would exceed the maximum number of soft-deleted documents \
+                         ({MAX_SOFT_DELETED_DOCS_PER_SPLIT}): current={current_count}, would be={}",
+                        entry.split_id,
+                        current_count + new_unique_count,
+                    ),
+                });
+            }
+        }
+
+        // Second pass: all splits are valid — apply changes.
+        let mut num_soft_deleted = 0u64;
+        for entry in split_doc_ids {
+            let split = self
+                .splits
+                .get_mut(&entry.split_id)
+                .expect("split existence validated in first pass");
             for &doc_id in &entry.doc_ids {
                 if split.split_metadata.soft_deleted_doc_ids.insert(doc_id) {
                     num_soft_deleted += 1;
@@ -850,6 +878,7 @@ mod tests {
 
     use super::FileBackedIndex;
     use crate::file_backed::file_backed_index::split_query_predicate;
+    use crate::metastore::MAX_SOFT_DELETED_DOCS_PER_SPLIT;
     use crate::{IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
 
     impl FileBackedIndex {
@@ -1155,6 +1184,46 @@ mod tests {
         assert!(
             matches!(error, MetastoreError::NotFound(EntityKind::Split { .. })),
             "expected NotFound error, got: {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_soft_delete_documents_limit_exceeded() {
+        let mut index = make_index_with_published_split("split-a");
+
+        // Pre-populate with MAX_SOFT_DELETED_DOCS_PER_SPLIT - 1 soft-deleted doc IDs.
+        let initial_ids: Vec<u32> = (0..MAX_SOFT_DELETED_DOCS_PER_SPLIT as u32 - 1).collect();
+        let initial_entries = vec![SplitDocIds {
+            split_id: "split-a".to_string(),
+            doc_ids: initial_ids,
+        }];
+        index.soft_delete_documents(&initial_entries).unwrap();
+
+        // Adding 2 more unique IDs would push the total to MAX + 1 — must fail.
+        let overflow_entries = vec![SplitDocIds {
+            split_id: "split-a".to_string(),
+            doc_ids: vec![
+                MAX_SOFT_DELETED_DOCS_PER_SPLIT as u32 - 1,
+                MAX_SOFT_DELETED_DOCS_PER_SPLIT as u32,
+            ],
+        }];
+        let error = index.soft_delete_documents(&overflow_entries).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                MetastoreError::FailedPrecondition {
+                    entity: EntityKind::Split { .. },
+                    ..
+                }
+            ),
+            "expected FailedPrecondition error when limit exceeded, got: {error:?}"
+        );
+
+        // The split must be unchanged — still at MAX - 1 entries.
+        let split = index.splits.get("split-a").unwrap();
+        assert_eq!(
+            split.split_metadata.soft_deleted_doc_ids.len(),
+            MAX_SOFT_DELETED_DOCS_PER_SPLIT - 1
         );
     }
 }

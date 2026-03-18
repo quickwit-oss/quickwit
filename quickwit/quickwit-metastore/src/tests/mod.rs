@@ -598,6 +598,13 @@ macro_rules! metastore_test_suite {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::split::test_metastore_soft_delete_documents_non_published_split::<$metastore_type>().await;
             }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_soft_delete_documents_limit_exceeded() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::split::test_metastore_soft_delete_documents_limit_exceeded::<$metastore_type>().await;
+            }
         }
     };
 }

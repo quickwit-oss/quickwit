@@ -73,8 +73,8 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    IndexesMetadataResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
-    UpdateSourceRequestExt, use_shard_api,
+    IndexesMetadataResponseExt, MAX_SOFT_DELETED_DOCS_PER_SPLIT, PublishSplitsRequestExt,
+    STREAM_SPLITS_CHUNK_SIZE, UpdateSourceRequestExt, use_shard_api,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -1192,6 +1192,20 @@ impl MetastoreService for PostgresqlMetastore {
             });
         }
 
+        // Computes the number of distinct soft-deleted doc IDs that would result from merging the
+        // current set with the requested ones. Returns no row when the split is not found or not
+        // in Published state (those cases are silently skipped, matching prior behaviour).
+        const SOFT_DELETE_DOCS_COUNT_QUERY: &str = r#"
+            SELECT
+                (SELECT count(DISTINCT v)::INTEGER
+                 FROM unnest(soft_deleted_doc_ids || $3::INTEGER[]) AS v) AS new_count
+            FROM splits
+            WHERE
+                index_uid = $1
+                AND split_id = $2
+                AND split_state = 'Published'
+        "#;
+
         const SOFT_DELETE_DOCS_QUERY: &str = r#"
             UPDATE splits
             SET
@@ -1206,10 +1220,39 @@ impl MetastoreService for PostgresqlMetastore {
             RETURNING array_length(soft_deleted_doc_ids, 1)
         "#;
 
-        // TODO should we return total or newly soft-deleted doc ids count?
         let mut total_soft_deleted: u64 = 0;
 
         run_with_tx!(self.connection_pool, tx, "soft delete documents", {
+            // Phase 1: validate that no split would exceed the soft-deleted docs limit.
+            // Any error here causes the transaction to roll back, so no split is modified.
+            for split_doc in &split_doc_ids {
+                let doc_ids: Vec<i32> = split_doc.doc_ids.iter().map(|&id| id as i32).collect();
+
+                let result: Option<(Option<i32>,)> = sqlx::query_as(SOFT_DELETE_DOCS_COUNT_QUERY)
+                    .bind(&index_uid)
+                    .bind(&split_doc.split_id)
+                    .bind(&doc_ids)
+                    .fetch_optional(tx.as_mut())
+                    .await
+                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
+
+                if let Some((Some(new_count),)) = result
+                    && new_count as usize > MAX_SOFT_DELETED_DOCS_PER_SPLIT
+                {
+                    return Err(MetastoreError::FailedPrecondition {
+                        entity: EntityKind::Split {
+                            split_id: split_doc.split_id.clone(),
+                        },
+                        message: format!(
+                            "split `{}` would exceed the maximum number of soft-deleted documents \
+                             ({MAX_SOFT_DELETED_DOCS_PER_SPLIT}): would be {new_count}",
+                            split_doc.split_id,
+                        ),
+                    });
+                }
+            }
+
+            // Phase 2: all validations passed — apply the updates.
             for split_doc in &split_doc_ids {
                 let doc_ids: Vec<i32> = split_doc.doc_ids.iter().map(|&id| id as i32).collect();
 
