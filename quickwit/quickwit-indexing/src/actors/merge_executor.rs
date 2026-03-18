@@ -28,11 +28,11 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::{
-    DeleteTask, ListDeleteTasksRequest, MarkSplitsForDeletionRequest, MetastoreService,
-    MetastoreServiceClient,
+    DeleteTask, ListDeleteTasksRequest, ListSplitsRequest, MarkSplitsForDeletionRequest,
+    MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{NodeId, SplitId};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
@@ -373,6 +373,13 @@ impl MergeExecutor {
         merge_scratch_directory: TempDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<IndexedSplit> {
+        // Snapshot soft-deleted doc IDs at merge start so we can detect concurrent
+        // modifications after the merge completes.
+        let soft_deleted_snapshot: HashMap<String, BTreeSet<u32>> = splits
+            .iter()
+            .map(|s| (s.split_id.clone(), s.soft_deleted_doc_ids.clone()))
+            .collect();
+
         let (union_index_meta, split_directories, per_split_metas) = open_split_directories(
             &tantivy_dirs,
             self.doc_mapper.tokenizer_manager().tantivy_manager(),
@@ -406,6 +413,9 @@ impl MergeExecutor {
             .await?;
         fail_point!("after-merge-split");
 
+        self.warn_if_soft_deletes_changed_during_merge(&splits, &soft_deleted_snapshot, ctx)
+            .await;
+
         // This will have the side effect of deleting the directory containing the downloaded
         // splits.
         let merged_index = open_index(
@@ -421,6 +431,68 @@ impl MergeExecutor {
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
         })
+    }
+
+    /// Re-reads the soft-deleted doc IDs for all input splits from the metastore and logs a
+    /// warning for each split whose set grew while the merge was running.
+    async fn warn_if_soft_deletes_changed_during_merge(
+        &self,
+        splits: &[SplitMetadata],
+        snapshot: &HashMap<String, BTreeSet<u32>>,
+        ctx: &ActorContext<Self>,
+    ) {
+        if splits.is_empty() {
+            return;
+        };
+        let index_uid = splits[0].index_uid.clone();
+        let list_splits_request = match ListSplitsRequest::try_from_index_uid(index_uid) {
+            Ok(request) => request,
+            Err(err) => {
+                warn!(error = ?err, "failed to build list_splits request for soft-delete race detection");
+                return;
+            }
+        };
+        let splits_stream = match ctx
+            .protect_future(self.metastore.list_splits(list_splits_request))
+            .await
+        {
+            Ok(stream) => stream,
+            Err(err) => {
+                warn!(error = ?err, "failed to list splits for soft-delete race detection");
+                return;
+            }
+        };
+        let fresh_splits = match ctx
+            .protect_future(splits_stream.collect_splits_metadata())
+            .await
+        {
+            Ok(splits) => splits,
+            Err(err) => {
+                warn!(error = ?err, "failed to collect split metadata for soft-delete race detection");
+                return;
+            }
+        };
+        for fresh_split in &fresh_splits {
+            let Some(snapshot_ids) = snapshot.get(&fresh_split.split_id) else {
+                continue;
+            };
+            let missed: BTreeSet<u32> = fresh_split
+                .soft_deleted_doc_ids
+                .difference(snapshot_ids)
+                .copied()
+                .collect();
+            if !missed.is_empty() {
+                warn!(
+                    split_id = %fresh_split.split_id,
+                    num_missed_soft_deletes = missed.len(),
+                    "soft-delete race condition detected: {} doc(s) were soft-deleted on split \
+                     `{}` while the merge was running; they will not be reflected in the merged \
+                     split and will remain searchable until the next merge cycle",
+                    missed.len(),
+                    fresh_split.split_id,
+                );
+            }
+        }
     }
 
     async fn process_delete_and_merge(
@@ -914,6 +986,140 @@ mod tests {
             .map(|r| r.num_docs())
             .sum();
         assert_eq!(num_live_docs, 3);
+
+        test_sandbox.assert_quit().await;
+        Ok(())
+    }
+
+    /// Verifies that when a soft-delete lands on an input split *while* the merge is running
+    /// (i.e. the merge task carries stale metadata with no soft-deletes, but the metastore
+    /// has been updated before the merge completes), the merge still succeeds and emits a
+    /// warning rather than failing.
+    #[tokio::test]
+    async fn test_merge_executor_soft_delete_race_condition_warning() -> anyhow::Result<()> {
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: datetime
+                input_formats:
+                - unix_timestamp
+                fast: true
+            timestamp_field: ts
+        "#;
+        let test_sandbox = TestSandbox::create(
+            "test-index-soft-delete-race",
+            doc_mapping_yaml,
+            "",
+            &["body"],
+        )
+        .await?;
+        for split_id in 0..4 {
+            let single_doc = std::iter::once(
+                serde_json::json!({"body": format!("split{split_id}"), "ts": 1631072713u64 + split_id}),
+            );
+            test_sandbox.add_documents(single_doc).await?;
+        }
+        let metastore = test_sandbox.metastore();
+        let index_uid = test_sandbox.index_uid();
+
+        // Read split metadata *before* the soft-delete — this is the stale snapshot that the
+        // merge task will carry, simulating a race where the delete arrives after the merge
+        // executor already read the metadata.
+        let stale_split_metas: Vec<SplitMetadata> = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits_metadata()
+            .await
+            .unwrap();
+        assert_eq!(stale_split_metas.len(), 4);
+
+        // Soft-delete doc_id=0 from the first split *after* the stale metadata was read.
+        // This simulates a concurrent user action that arrives while the merge is running.
+        let racing_split_id = stale_split_metas[0].split_id.clone();
+        metastore
+            .soft_delete_documents(quickwit_proto::metastore::SoftDeleteDocumentsRequest {
+                index_uid: Some(index_uid.clone()),
+                split_doc_ids: vec![quickwit_proto::metastore::SplitDocIds {
+                    split_id: racing_split_id.clone(),
+                    doc_ids: vec![0],
+                }],
+            })
+            .await?;
+
+        // Build the merge scratch using the stale metadata (no soft-deletes recorded).
+        let merge_scratch_directory = TempDirectory::for_test();
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
+        let mut tantivy_dirs: Vec<Box<dyn Directory>> = Vec::new();
+        for split_meta in &stale_split_metas {
+            let split_filename = split_file(split_meta.split_id());
+            let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
+            test_sandbox
+                .storage()
+                .copy_to_file(Path::new(&split_filename), &dest_filepath)
+                .await?;
+            tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap());
+        }
+        let merge_operation = MergeOperation::new_merge_operation(stale_split_metas);
+        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
+        let merge_scratch = MergeScratch {
+            merge_task,
+            tantivy_dirs,
+            merge_scratch_directory,
+            downloaded_splits_directory,
+        };
+        let pipeline_id = MergePipelineId {
+            node_id: test_sandbox.node_id(),
+            index_uid: index_uid.clone(),
+            source_id: test_sandbox.source_id(),
+        };
+        let (merge_packager_mailbox, merge_packager_inbox) =
+            test_sandbox.universe().create_test_mailbox();
+        let merge_executor = MergeExecutor::new(
+            pipeline_id,
+            test_sandbox.metastore(),
+            test_sandbox.doc_mapper(),
+            IoControls::default(),
+            merge_packager_mailbox,
+        );
+        let (merge_executor_mailbox, merge_executor_handle) = test_sandbox
+            .universe()
+            .spawn_builder()
+            .spawn(merge_executor);
+        merge_executor_mailbox.send_message(merge_scratch).await?;
+        merge_executor_handle.process_pending_and_observe().await;
+
+        // The merge must succeed despite the race condition.
+        let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
+        assert_eq!(
+            packager_msgs.len(),
+            1,
+            "merge must produce exactly one split batch"
+        );
+
+        let split_attrs = &packager_msgs[0].splits[0].split_attrs;
+        // The stale metadata had no soft-deletes, so all 4 docs are present in the merged
+        // segment. The racing soft-delete was missed and a warning was emitted.
+        assert_eq!(split_attrs.num_docs, 4);
+        assert_eq!(split_attrs.num_merge_ops, 1);
+
+        let reader = packager_msgs[0].splits[0]
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
+        let searcher = reader.searcher();
+        assert_eq!(searcher.segment_readers().len(), 1);
+        let num_live_docs: u32 = searcher
+            .segment_readers()
+            .iter()
+            .map(|r| r.num_docs())
+            .sum();
+        // All 4 docs are physically present; the racing soft-delete was not applied.
+        assert_eq!(num_live_docs, 4);
 
         test_sandbox.assert_quit().await;
         Ok(())
