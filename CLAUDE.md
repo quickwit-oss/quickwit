@@ -1,14 +1,16 @@
-# Quickhouse-Pomsky Development Guide
+# Pomsky Development Guide
 
-## Before Writing Any Code (Plan Mode)
+## What is Pomsky?
 
-**MUST** follow this sequence before implementation:
+**Fork of [Quickwit](https://github.com/quickwit-oss/quickwit)** — a cloud-native search engine for observability. This is the Datadog fork, adding:
 
-1. **Define the plan**: What are you doing and why? What invariants must hold?
-2. **Check ADR/roadmap**: `docs/internals/adr/README.md` → find relevant supplement
-3. **Read the spec**: If touching state machines or protocols, read `docs/internals/specs/tla/*.tla`
-4. **Write tests first**: DST tests define correctness, write them before code
-5. **Only then**: Start implementation
+- **Metrics engine** (`quickwit-metrics-engine`): DataFusion/Parquet-based analytics pipeline (current priority)
+- **Remote API** (`quickwit-remote-api`): gRPC/REST interface for remote operations
+- **Document transforms** (`quickwit-doc-transforms`): Preprocessing pipeline
+- **CloudPrem UI**: Datadog-specific frontend
+- **Tantivy + Parquet hybrid**: Full-text search via Tantivy, columnar analytics via Parquet
+
+**Signal priority**: Metrics first, then traces, then logs. Architectural decisions must generalize across all three.
 
 ## Core Policies
 
@@ -16,6 +18,7 @@
 - If TODOs or stubs are absolutely necessary, ensure user is made aware and they are recorded in any resulting plans, phases, or specs.
 - Produce code and make decisions that are consistent across metrics, traces, and logs. Metrics is the current priority, then traces, then logs — but decisions should generalize to all three.
 - Tests should be holistic: do not work around broken implementations by manipulating tests.
+- Follow [CODE_STYLE.md](CODE_STYLE.md) for all coding conventions.
 
 ## Known Pitfalls (Update When Claude Misbehaves)
 
@@ -42,29 +45,15 @@
 | Recreates futures in `select!` loops | Use `&mut fut` to resume, not recreate — dropping loses data | GAP-002 |
 | Holds locks across await points | Invariant violations on cancel. Use message passing or synchronous critical sections | GAP-002 |
 
-## What is Quickhouse-Pomsky?
+## Engineering Priority
 
-**Fork of [Quickwit](https://github.com/quickwit-oss/quickwit)** — a cloud-native search engine for observability. This is the DataDog fork, adding:
-
-- **Metrics engine** (`quickwit-metrics-engine`): DataFusion/Parquet-based analytics pipeline (current priority)
-- **Remote API** (`quickwit-remote-api`): gRPC/REST interface for remote operations
-- **Document transforms** (`quickwit-doc-transforms`): Preprocessing pipeline
-- **CloudPrem UI**: Datadog-specific frontend
-- **Tantivy + Parquet hybrid**: Full-text search via Tantivy, columnar analytics via Parquet
-
-**Signal priority**: Metrics first, then traces, then logs. Architectural decisions must generalize across all three.
-
-## Three Engineering Pillars
-
-Every code change **MUST** respect all three:
+**Safety > Performance > Developer Experience**
 
 | Pillar | Location | Purpose |
 |--------|----------|---------|
 | **Code Quality** | [CODE_STYLE.md](CODE_STYLE.md) + this doc | Coding standards & reliability |
-| **Formal Specs** | `docs/internals/specs/tla/`, `stateright_*.rs` | Protocol correctness |
-| **DST** | DST crate (when created) | Fault tolerance |
 
-**Priority**: Safety > Performance > Developer Experience
+> For formal specs (TLA+, Stateright) and DST pillars, activate `/sesh-mode`.
 
 ## Reliability Rules
 
@@ -90,22 +79,7 @@ let timestamp = DateTime::from_timestamp(secs, nsecs)
     .ok_or_else(|| anyhow!("invalid timestamp: {}", nanos))?;
 ```
 
-## The Verification Pyramid
-
-All verification layers share the same invariants:
-
-```
-         TLA+ Specs (docs/internals/specs/tla/*.tla)
-                    │ mirrors
-         Shared Invariants (invariants/)  ← SINGLE SOURCE
-                    │ used by
-    ┌───────────────┼───────────────┐
-    ▼               ▼               ▼
-Stateright      DST Tests      Production Metrics
-(exhaustive)    (simulation)   (Datadog)
-```
-
-## Testing Through Production Path (CRITICAL)
+## Testing Through Production Path
 
 **MUST NOT** claim a feature works unless tested through the actual network stack.
 
@@ -122,42 +96,10 @@ curl http://localhost:7280/api/v1/<index>/search -d '{"query": "*"}'
 
 **Bypasses to AVOID**: Testing indexing pipeline without the HTTP/gRPC server, testing search without the REST API layer.
 
-## Coding Style
-
-Follow [CODE_STYLE.md](CODE_STYLE.md) — the primary style reference. Key points:
-
-- **Readability over cleverness**: Optimize for "proofreadability"
-- **Naming**: Long descriptive names preferred; standard Rust snake_case
-- **Explanatory variables**: Introduce intermediary variables to convey semantics
-- **No shadowing**: Do not reuse variable names within a function
-- **Early returns**: Prefer early return over nested `else` chains
-- **Invariants as `debug_assert`**: Use assertions to help reviewers proofread
-- **Hidden contracts**: Avoid them; use types or `Result`/`Option` to enforce constraints
-- **Generics/macros sparingly**: Only where necessary; they hurt readability and compile time
-- **Async code**: Must not block for more than 500 microseconds; use `tokio::spawn_blocking` if unsure
-- **No silent error ignoring** (`let _ =` without justification)
-
-### Error and Log Messages
-
-- Concise, lowercase (except proper names), no trailing punctuation
-- Use `tracing` structured logging over string interpolation:
-  ```rust
-  // GOOD
-  warn!(remaining = remaining_attempts, "rpc retry failed");
-  // BAD
-  warn!("rpc retry failed ({remaining_attempts} attempts remaining)");
-  ```
-
-### Enforced Clippy Rules (`quickwit/clippy.toml`)
-
-These methods are **disallowed** and will fail CI:
-- `std::path::Path::exists` — not sound (no `Result`)
-- `Option::is_some_and`, `is_none_or`, `xor`, `map_or`, `map_or_else` — hurt readability
-
 ## Repository Layout
 
 ```
-quickhouse-pomsky/
+quickwit/
 ├── quickwit/                    # Main Rust workspace (all crates live here)
 │   ├── Cargo.toml               # Workspace root
 │   ├── Makefile                 # Inner build targets (fmt, fix, test-all, build)
@@ -180,59 +122,9 @@ quickhouse-pomsky/
 └── k8s/                         # Kubernetes local dev (kind cluster)
 ```
 
-## Crate Map
-
-```
-# Core services
-quickwit-cli/                # Main binary entry point — start here for E2E
-quickwit-serve/              # HTTP/gRPC server, REST API handlers
-quickwit-cluster/            # Cluster membership (chitchat protocol)
-quickwit-control-plane/      # Scheduling, shard management
-quickwit-config/             # Configuration types and parsing
-
-# Data path
-quickwit-ingest/             # Ingestion pipeline, WAL, sharding
-quickwit-indexing/           # Indexing actors, merge/compaction
-quickwit-search/             # Search execution, distributed search
-quickwit-query/              # Query parsing and AST
-quickwit-doc-mapper/         # Schema, field mappings, doc-to-term
-quickwit-doc-transforms/     # [DD] Log/trace preprocessing
-
-# Storage & metadata
-quickwit-metastore/          # Split metadata, index metadata
-quickwit-storage/            # Object storage abstraction (S3, Azure, GCS, local)
-quickwit-directories/        # Tantivy directory implementations
-
-# Protocols & APIs
-quickwit-proto/              # Protobuf definitions, generated gRPC code
-quickwit-opentelemetry/      # OTLP ingest (logs, traces)
-quickwit-jaeger/             # Jaeger-compatible trace API
-quickwit-rest-client/        # HTTP client for Quickwit API
-quickwit-remote-api/         # [DD] Remote gRPC/REST interface
-
-# Metrics (DD additions)
-quickwit-metrics-engine/     # DataFusion/Parquet metrics pipeline
-
-# Infrastructure
-quickwit-actors/             # Actor framework (mailbox, supervisor)
-quickwit-common/             # Shared utilities
-quickwit-datetime/           # Date/time parsing and formatting
-quickwit-macros/             # Proc macros
-quickwit-codegen/            # Code generation utilities
-quickwit-aws/                # AWS SDK helpers
-
-# Housekeeping
-quickwit-janitor/            # GC, retention, delete tasks
-quickwit-index-management/   # Index CRUD operations
-
-# Testing
-quickwit-integration-tests/  # Rust integration tests
-rest-api-tests/              # Python REST API tests (Elasticsearch compat)
-```
-
 ## Architecture Evolution
 
-Quickhouse-Pomsky tracks architectural change through three lenses. See `docs/internals/adr/EVOLUTION.md` for the full process.
+Pomsky tracks architectural change through three lenses. See `docs/internals/adr/EVOLUTION.md` for the full process.
 
 ```
                     Architecture Evolution
@@ -249,11 +141,6 @@ Quickhouse-Pomsky tracks architectural change through three lenses. See `docs/in
 | **Characteristics** | `docs/internals/adr/` | Track cloud-native requirements |
 | **Gaps** | `docs/internals/adr/gaps/` | Design limitation from incident/production |
 | **Deviations** | `docs/internals/adr/deviations/` | Intentional divergence from ADR intent |
-
-**Before implementing, check for**:
-- Open gaps (design limitations to be aware of)
-- Deviations (intentional divergence from ADRs)
-- Characteristic status (what's implemented vs planned)
 
 ## Common Commands
 
@@ -327,11 +214,6 @@ make k8s-down      # tear down
 - `rest-api-tests/`: Python YAML-driven tests for Elasticsearch API compatibility
 - Metrics E2E: `make test-metrics-e2e` against Docker Compose (Minio + Postgres)
 
-### DST (Deterministic Simulation Testing)
-- DST tests define correctness for stateful components
-- Write DST tests before implementation for new state machines
-- Shared invariants are the single source of truth across all verification layers
-
 ### Required for CI
 - `cargo nextest run --all-features --retries 5` (with Docker services running)
 - Failpoint tests: `cargo nextest run --test failpoints --features fail/failpoints`
@@ -387,8 +269,6 @@ Environment variables set during test-all:
 - [ ] Functions under 70 lines
 - [ ] Explanatory variables for complex expressions
 - [ ] Documentation explains "why"
-- [ ] ADR/roadmap updated if applicable
-- [ ] DST test for new state transitions
 - [ ] Integration test for new API endpoints
 
 ## Detailed Documentation
