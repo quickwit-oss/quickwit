@@ -32,20 +32,11 @@ enum RegexQueryParamsInner {
     Short(String),
 }
 
-#[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
+#[derive(Deserialize, Debug, Default, Eq, PartialEq, Clone)]
 #[serde(from = "RegexQueryParamsInner")]
 pub struct RegexQueryParams {
     value: String,
     case_insensitive: bool,
-}
-
-impl Default for RegexQueryParams {
-    fn default() -> Self {
-        Self {
-            value: String::new(),
-            case_insensitive: false,
-        }
-    }
 }
 
 impl From<RegexQueryParamsInner> for RegexQueryParams {
