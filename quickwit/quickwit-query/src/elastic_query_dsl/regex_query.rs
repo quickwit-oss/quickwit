@@ -18,12 +18,52 @@ use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::query_ast::{QueryAst, RegexQuery as AstRegexQuery};
 
-#[derive(Deserialize, Debug, Default, Eq, PartialEq, Clone)]
-#[serde(deny_unknown_fields)]
+/// Elasticsearch supports two formats for regexp queries:
+/// - Shorthand: `{"regexp": {"field": "pattern"}}`
+/// - Full:      `{"regexp": {"field": {"value": "pattern", "case_insensitive": true}}}`
+#[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
+#[serde(untagged)]
+enum RegexQueryParamsInner {
+    Full {
+        value: String,
+        #[serde(default)]
+        case_insensitive: bool,
+    },
+    Short(String),
+}
+
+#[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
+#[serde(from = "RegexQueryParamsInner")]
 pub struct RegexQueryParams {
     value: String,
-    #[serde(default)]
     case_insensitive: bool,
+}
+
+impl Default for RegexQueryParams {
+    fn default() -> Self {
+        Self {
+            value: String::new(),
+            case_insensitive: false,
+        }
+    }
+}
+
+impl From<RegexQueryParamsInner> for RegexQueryParams {
+    fn from(inner: RegexQueryParamsInner) -> Self {
+        match inner {
+            RegexQueryParamsInner::Full {
+                value,
+                case_insensitive,
+            } => Self {
+                value,
+                case_insensitive,
+            },
+            RegexQueryParamsInner::Short(value) => Self {
+                value,
+                case_insensitive: false,
+            },
+        }
+    }
 }
 
 pub type RegexQuery = OneFieldMap<RegexQueryParams>;
@@ -40,5 +80,37 @@ impl ConvertibleToQueryAst for RegexQuery {
             regex,
         }
         .into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_regex_query_shorthand_format() {
+        let json = serde_json::json!({"service": ".*logs.*"});
+        let query: RegexQuery = serde_json::from_value(json).unwrap();
+        assert_eq!(query.field, "service");
+        assert_eq!(query.value.value, ".*logs.*");
+        assert!(!query.value.case_insensitive);
+    }
+
+    #[test]
+    fn test_regex_query_full_format() {
+        let json = serde_json::json!({"service": {"value": ".*logs.*", "case_insensitive": true}});
+        let query: RegexQuery = serde_json::from_value(json).unwrap();
+        assert_eq!(query.field, "service");
+        assert_eq!(query.value.value, ".*logs.*");
+        assert!(query.value.case_insensitive);
+    }
+
+    #[test]
+    fn test_regex_query_full_format_default_case() {
+        let json = serde_json::json!({"service": {"value": ".*logs.*"}});
+        let query: RegexQuery = serde_json::from_value(json).unwrap();
+        assert_eq!(query.field, "service");
+        assert_eq!(query.value.value, ".*logs.*");
+        assert!(!query.value.case_insensitive);
     }
 }
