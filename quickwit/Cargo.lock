@@ -7611,6 +7611,7 @@ dependencies = [
 name = "quickwit-parquet-engine"
 version = "0.8.0"
 dependencies = [
+ "anyhow",
  "arrow",
  "parquet",
  "proptest",
