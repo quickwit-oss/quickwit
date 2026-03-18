@@ -35,6 +35,9 @@ mod uploader;
 mod vrl_processing;
 
 #[cfg(test)]
+pub(crate) mod parquet_test_helpers;
+
+#[cfg(test)]
 #[allow(
     clippy::disallowed_methods,
     clippy::needless_borrow,
