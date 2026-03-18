@@ -243,10 +243,9 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::{
-        ParquetPublisher, SplitsUpdateMailbox, UploaderType,
-        parquet_test_helpers::create_test_batch,
-    };
+    use quickwit_parquet_engine::test_helpers::create_test_batch;
+
+    use crate::actors::{ParquetPublisher, SplitsUpdateMailbox, UploaderType};
 
     fn create_test_uploader(
         universe: &Universe,

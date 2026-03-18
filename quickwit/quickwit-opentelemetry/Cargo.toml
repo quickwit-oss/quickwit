@@ -15,7 +15,6 @@ anyhow = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true }
 once_cell = { workspace = true }
-parquet = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

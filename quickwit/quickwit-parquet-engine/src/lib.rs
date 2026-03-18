@@ -27,5 +27,5 @@ pub mod schema;
 pub mod split;
 pub mod storage;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "testsuite"))]
 pub mod test_helpers;

@@ -401,14 +401,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_metrics_doc_processor_valid_arrow_ipc() {
-        use std::sync::Arc as StdArc;
+        use quickwit_parquet_engine::test_helpers::create_test_batch_with_tags;
 
-        use arrow::array::{
-            ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array,
-            UInt64Array,
-        };
-        use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
-        use arrow::record_batch::RecordBatch;
         let universe = Universe::with_accelerated_time();
 
         let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox::<ParquetIndexer>();
@@ -421,46 +415,7 @@ mod tests {
         let (metrics_doc_processor_mailbox, metrics_doc_processor_handle) =
             universe.spawn_builder().spawn(metrics_doc_processor);
 
-        // Create a test batch with the 4 required fields plus a tag column
-        let num_rows = 3;
-        let schema = StdArc::new(ArrowSchema::new(vec![
-            Field::new(
-                "metric_name",
-                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-                false,
-            ),
-            Field::new("metric_type", DataType::UInt8, false),
-            Field::new("timestamp_secs", DataType::UInt64, false),
-            Field::new("value", DataType::Float64, false),
-            Field::new(
-                "service",
-                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-                true,
-            ),
-        ]));
-
-        let metric_name: ArrayRef = {
-            let keys = Int32Array::from(vec![0i32; num_rows]);
-            let vals = StringArray::from(vec!["cpu.usage"]);
-            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
-        };
-        let metric_type: ArrayRef = StdArc::new(UInt8Array::from(vec![0u8; num_rows]));
-        let timestamp_secs: ArrayRef =
-            StdArc::new(UInt64Array::from(vec![100u64, 101u64, 102u64]));
-        let value: ArrayRef = StdArc::new(Float64Array::from(vec![42.0, 43.0, 44.0]));
-        let service: ArrayRef = {
-            let keys = Int32Array::from(vec![0i32; num_rows]);
-            let vals = StringArray::from(vec!["web"]);
-            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
-        };
-
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![metric_name, metric_type, timestamp_secs, value, service],
-        )
-        .unwrap();
-
-        // Serialize to Arrow IPC
+        let batch = create_test_batch_with_tags(3, &["service"]);
         let ipc_bytes = record_batch_to_ipc(&batch).unwrap();
 
         // Create RawDocBatch with the IPC bytes
@@ -569,13 +524,8 @@ mod tests {
     async fn test_metrics_doc_processor_with_indexer() {
         use std::sync::Arc as StdArc;
 
-        use arrow::array::{
-            ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array,
-            UInt64Array,
-        };
-        use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
-        use arrow::record_batch::RecordBatch;
         use quickwit_parquet_engine::storage::{ParquetSplitWriter, ParquetWriterConfig};
+        use quickwit_parquet_engine::test_helpers::create_test_batch_with_tags;
         use quickwit_proto::metastore::MockMetastoreService;
         use quickwit_storage::RamStorage;
 
@@ -625,47 +575,7 @@ mod tests {
         let (metrics_doc_processor_mailbox, metrics_doc_processor_handle) =
             universe.spawn_builder().spawn(metrics_doc_processor);
 
-        // Create a test batch with the 4 required fields plus a tag column
-        let num_rows = 5;
-        let schema = StdArc::new(ArrowSchema::new(vec![
-            Field::new(
-                "metric_name",
-                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-                false,
-            ),
-            Field::new("metric_type", DataType::UInt8, false),
-            Field::new("timestamp_secs", DataType::UInt64, false),
-            Field::new("value", DataType::Float64, false),
-            Field::new(
-                "service",
-                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-                true,
-            ),
-        ]));
-
-        let metric_name: ArrayRef = {
-            let keys = Int32Array::from(vec![0i32; num_rows]);
-            let vals = StringArray::from(vec!["cpu.usage"]);
-            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
-        };
-        let metric_type: ArrayRef = StdArc::new(UInt8Array::from(vec![0u8; num_rows]));
-        let timestamps: Vec<u64> = (0..num_rows).map(|i| 100 + i as u64).collect();
-        let timestamp_secs: ArrayRef = StdArc::new(UInt64Array::from(timestamps));
-        let values: Vec<f64> = (0..num_rows).map(|i| 42.0 + i as f64).collect();
-        let value: ArrayRef = StdArc::new(Float64Array::from(values));
-        let service: ArrayRef = {
-            let keys = Int32Array::from(vec![0i32; num_rows]);
-            let vals = StringArray::from(vec!["web"]);
-            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
-        };
-
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![metric_name, metric_type, timestamp_secs, value, service],
-        )
-        .unwrap();
-
-        // Serialize to Arrow IPC
+        let batch = create_test_batch_with_tags(5, &["service"]);
         let ipc_bytes = record_batch_to_ipc(&batch).unwrap();
 
         // Create RawDocBatch with force_commit to trigger split production

@@ -537,9 +537,10 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
+    use quickwit_parquet_engine::test_helpers::create_test_batch;
+
     use crate::actors::{
         ParquetPackager, ParquetPublisher, ParquetUploader, SplitsUpdateMailbox, UploaderType,
-        parquet_test_helpers::create_test_batch,
     };
 
     /// Create a test ParquetUploader and return its mailbox.
