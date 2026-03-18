@@ -24,7 +24,6 @@ use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 use quickwit_parquet_engine::ingest::{IngestError, ParquetIngestProcessor};
-use quickwit_parquet_engine::schema::ParquetSchema;
 use quickwit_proto::types::{IndexId, SourceId};
 use serde::Serialize;
 use tokio::runtime::Handle;
@@ -143,9 +142,11 @@ impl ParquetDocProcessor {
         source_id: SourceId,
         indexer_mailbox: Mailbox<ParquetIndexer>,
     ) -> Self {
-        let schema = ParquetSchema::new();
-        let processor = ParquetIngestProcessor::new(schema);
-        let counters = ParquetDocProcessorCounters::new(index_id.clone(), source_id.clone());
+        let processor = ParquetIngestProcessor;
+        let counters = ParquetDocProcessorCounters::new(
+            index_id.clone(),
+            source_id.clone(),
+        );
 
         info!(
             index_id = %index_id,
@@ -305,8 +306,9 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
         // Without this, a batch of consistently malformed data blocks offset progress
         // forever.
         if !checkpoint_forwarded && !checkpoint_delta.is_empty() {
-            let empty_batch =
-                RecordBatch::new_empty(self.processor.schema().arrow_schema().clone());
+            let empty_batch = RecordBatch::new_empty(std::sync::Arc::new(
+                arrow::datatypes::Schema::empty(),
+            ));
             let processed_batch =
                 ProcessedParquetBatch::new(empty_batch, checkpoint_delta, force_commit);
             ctx.send_message(&self.indexer_mailbox, processed_batch)
@@ -402,10 +404,10 @@ mod tests {
         use std::sync::Arc as StdArc;
 
         use arrow::array::{
-            ArrayRef, BinaryViewArray, DictionaryArray, Float64Array, Int32Array, StringArray,
-            StructArray, UInt8Array, UInt64Array,
+            ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array,
+            UInt64Array,
         };
-        use arrow::datatypes::{DataType, Field, Int32Type};
+        use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
         use arrow::record_batch::RecordBatch;
         let universe = Universe::with_accelerated_time();
 
@@ -419,99 +421,42 @@ mod tests {
         let (metrics_doc_processor_mailbox, metrics_doc_processor_handle) =
             universe.spawn_builder().spawn(metrics_doc_processor);
 
-        // Create a test batch matching the metrics schema
-        let schema = ParquetSchema::new();
+        // Create a test batch with the 4 required fields plus a tag column
         let num_rows = 3;
+        let schema = StdArc::new(ArrowSchema::new(vec![
+            Field::new(
+                "metric_name",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                false,
+            ),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new(
+                "service",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+            ),
+        ]));
 
-        // Helper to create dictionary arrays
-        fn create_dict_array(values: &[&str]) -> ArrayRef {
-            let keys: Vec<i32> = (0..values.len()).map(|i| i as i32).collect();
-            let string_array = StringArray::from(values.to_vec());
-            StdArc::new(
-                DictionaryArray::<Int32Type>::try_new(
-                    Int32Array::from(keys),
-                    StdArc::new(string_array),
-                )
-                .unwrap(),
-            )
-        }
-
-        fn create_nullable_dict_array(values: &[Option<&str>]) -> ArrayRef {
-            let keys: Vec<Option<i32>> = values
-                .iter()
-                .enumerate()
-                .map(|(i, v)| v.map(|_| i as i32))
-                .collect();
-            let string_values: Vec<&str> = values.iter().filter_map(|v| *v).collect();
-            let string_array = StringArray::from(string_values);
-            StdArc::new(
-                DictionaryArray::<Int32Type>::try_new(
-                    Int32Array::from(keys),
-                    StdArc::new(string_array),
-                )
-                .unwrap(),
-            )
-        }
-
-        let metric_name: ArrayRef = create_dict_array(&vec!["cpu.usage"; num_rows]);
+        let metric_name: ArrayRef = {
+            let keys = Int32Array::from(vec![0i32; num_rows]);
+            let vals = StringArray::from(vec!["cpu.usage"]);
+            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
+        };
         let metric_type: ArrayRef = StdArc::new(UInt8Array::from(vec![0u8; num_rows]));
-        let metric_unit: ArrayRef = StdArc::new(StringArray::from(vec![Some("bytes"); num_rows]));
-        let timestamp_secs: ArrayRef = StdArc::new(UInt64Array::from(vec![100u64, 101u64, 102u64]));
-        let start_timestamp_secs: ArrayRef =
-            StdArc::new(UInt64Array::from(vec![None::<u64>; num_rows]));
+        let timestamp_secs: ArrayRef =
+            StdArc::new(UInt64Array::from(vec![100u64, 101u64, 102u64]));
         let value: ArrayRef = StdArc::new(Float64Array::from(vec![42.0, 43.0, 44.0]));
-        let tag_service: ArrayRef = create_nullable_dict_array(&vec![Some("web"); num_rows]);
-        let tag_env: ArrayRef = create_nullable_dict_array(&vec![Some("prod"); num_rows]);
-        let tag_datacenter: ArrayRef =
-            create_nullable_dict_array(&vec![Some("us-east-1"); num_rows]);
-        let tag_region: ArrayRef = create_nullable_dict_array(&vec![None; num_rows]);
-        let tag_host: ArrayRef = create_nullable_dict_array(&vec![Some("host-001"); num_rows]);
-
-        // Create empty Variant (Struct with metadata and value BinaryView fields)
-        let metadata_array = StdArc::new(BinaryViewArray::from(vec![b"" as &[u8]; num_rows]));
-        let value_array = StdArc::new(BinaryViewArray::from(vec![b"" as &[u8]; num_rows]));
-        let attributes: ArrayRef = StdArc::new(StructArray::from(vec![
-            (
-                StdArc::new(Field::new("metadata", DataType::BinaryView, false)),
-                metadata_array.clone() as ArrayRef,
-            ),
-            (
-                StdArc::new(Field::new("value", DataType::BinaryView, false)),
-                value_array.clone() as ArrayRef,
-            ),
-        ]));
-
-        let service_name: ArrayRef = create_dict_array(&vec!["my-service"; num_rows]);
-
-        let resource_attributes: ArrayRef = StdArc::new(StructArray::from(vec![
-            (
-                StdArc::new(Field::new("metadata", DataType::BinaryView, false)),
-                metadata_array as ArrayRef,
-            ),
-            (
-                StdArc::new(Field::new("value", DataType::BinaryView, false)),
-                value_array as ArrayRef,
-            ),
-        ]));
+        let service: ArrayRef = {
+            let keys = Int32Array::from(vec![0i32; num_rows]);
+            let vals = StringArray::from(vec!["web"]);
+            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
+        };
 
         let batch = RecordBatch::try_new(
-            schema.arrow_schema().clone(),
-            vec![
-                metric_name,
-                metric_type,
-                metric_unit,
-                timestamp_secs,
-                start_timestamp_secs,
-                value,
-                tag_service,
-                tag_env,
-                tag_datacenter,
-                tag_region,
-                tag_host,
-                attributes,
-                service_name,
-                resource_attributes,
-            ],
+            schema,
+            vec![metric_name, metric_type, timestamp_secs, value, service],
         )
         .unwrap();
 
@@ -625,10 +570,10 @@ mod tests {
         use std::sync::Arc as StdArc;
 
         use arrow::array::{
-            ArrayRef, BinaryViewArray, DictionaryArray, Float64Array, Int32Array, StringArray,
-            StructArray, UInt8Array, UInt64Array,
+            ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array,
+            UInt64Array,
         };
-        use arrow::datatypes::{DataType, Field, Int32Type};
+        use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
         use arrow::record_batch::RecordBatch;
         use quickwit_parquet_engine::storage::{ParquetSplitWriter, ParquetWriterConfig};
         use quickwit_proto::metastore::MockMetastoreService;
@@ -657,9 +602,8 @@ mod tests {
         let (uploader_mailbox, _uploader_handle) = universe.spawn_builder().spawn(uploader);
 
         // Create ParquetPackager
-        let parquet_schema = ParquetSchema::new();
         let writer_config = ParquetWriterConfig::default();
-        let split_writer = ParquetSplitWriter::new(parquet_schema, writer_config, temp_dir.path());
+        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir.path());
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
@@ -681,100 +625,43 @@ mod tests {
         let (metrics_doc_processor_mailbox, metrics_doc_processor_handle) =
             universe.spawn_builder().spawn(metrics_doc_processor);
 
-        // Create a test batch
-        let schema = ParquetSchema::new();
+        // Create a test batch with the 4 required fields plus a tag column
         let num_rows = 5;
+        let schema = StdArc::new(ArrowSchema::new(vec![
+            Field::new(
+                "metric_name",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                false,
+            ),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new(
+                "service",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+            ),
+        ]));
 
-        fn create_dict_array(values: &[&str]) -> ArrayRef {
-            let keys: Vec<i32> = (0..values.len()).map(|i| i as i32).collect();
-            let string_array = StringArray::from(values.to_vec());
-            StdArc::new(
-                DictionaryArray::<Int32Type>::try_new(
-                    Int32Array::from(keys),
-                    StdArc::new(string_array),
-                )
-                .unwrap(),
-            )
-        }
-
-        fn create_nullable_dict_array(values: &[Option<&str>]) -> ArrayRef {
-            let keys: Vec<Option<i32>> = values
-                .iter()
-                .enumerate()
-                .map(|(i, v)| v.map(|_| i as i32))
-                .collect();
-            let string_values: Vec<&str> = values.iter().filter_map(|v| *v).collect();
-            let string_array = StringArray::from(string_values);
-            StdArc::new(
-                DictionaryArray::<Int32Type>::try_new(
-                    Int32Array::from(keys),
-                    StdArc::new(string_array),
-                )
-                .unwrap(),
-            )
-        }
-
-        let metric_name: ArrayRef = create_dict_array(&vec!["cpu.usage"; num_rows]);
+        let metric_name: ArrayRef = {
+            let keys = Int32Array::from(vec![0i32; num_rows]);
+            let vals = StringArray::from(vec!["cpu.usage"]);
+            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
+        };
         let metric_type: ArrayRef = StdArc::new(UInt8Array::from(vec![0u8; num_rows]));
-        let metric_unit: ArrayRef = StdArc::new(StringArray::from(vec![Some("bytes"); num_rows]));
         let timestamps: Vec<u64> = (0..num_rows).map(|i| 100 + i as u64).collect();
         let timestamp_secs: ArrayRef = StdArc::new(UInt64Array::from(timestamps));
-        let start_timestamp_secs: ArrayRef =
-            StdArc::new(UInt64Array::from(vec![None::<u64>; num_rows]));
         let values: Vec<f64> = (0..num_rows).map(|i| 42.0 + i as f64).collect();
         let value: ArrayRef = StdArc::new(Float64Array::from(values));
-        let tag_service: ArrayRef = create_nullable_dict_array(&vec![Some("web"); num_rows]);
-        let tag_env: ArrayRef = create_nullable_dict_array(&vec![Some("prod"); num_rows]);
-        let tag_datacenter: ArrayRef =
-            create_nullable_dict_array(&vec![Some("us-east-1"); num_rows]);
-        let tag_region: ArrayRef = create_nullable_dict_array(&vec![None; num_rows]);
-        let tag_host: ArrayRef = create_nullable_dict_array(&vec![Some("host-001"); num_rows]);
-
-        // Create empty Variant (Struct with metadata and value BinaryView fields)
-        let metadata_array = StdArc::new(BinaryViewArray::from(vec![b"" as &[u8]; num_rows]));
-        let value_array = StdArc::new(BinaryViewArray::from(vec![b"" as &[u8]; num_rows]));
-        let attributes: ArrayRef = StdArc::new(StructArray::from(vec![
-            (
-                StdArc::new(Field::new("metadata", DataType::BinaryView, false)),
-                metadata_array.clone() as ArrayRef,
-            ),
-            (
-                StdArc::new(Field::new("value", DataType::BinaryView, false)),
-                value_array.clone() as ArrayRef,
-            ),
-        ]));
-
-        let service_name: ArrayRef = create_dict_array(&vec!["my-service"; num_rows]);
-
-        let resource_attributes: ArrayRef = StdArc::new(StructArray::from(vec![
-            (
-                StdArc::new(Field::new("metadata", DataType::BinaryView, false)),
-                metadata_array as ArrayRef,
-            ),
-            (
-                StdArc::new(Field::new("value", DataType::BinaryView, false)),
-                value_array as ArrayRef,
-            ),
-        ]));
+        let service: ArrayRef = {
+            let keys = Int32Array::from(vec![0i32; num_rows]);
+            let vals = StringArray::from(vec!["web"]);
+            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
+        };
 
         let batch = RecordBatch::try_new(
-            schema.arrow_schema().clone(),
-            vec![
-                metric_name,
-                metric_type,
-                metric_unit,
-                timestamp_secs,
-                start_timestamp_secs,
-                value,
-                tag_service,
-                tag_env,
-                tag_datacenter,
-                tag_region,
-                tag_host,
-                attributes,
-                service_name,
-                resource_attributes,
-            ],
+            schema,
+            vec![metric_name, metric_type, timestamp_secs, value, service],
         )
         .unwrap();
 
