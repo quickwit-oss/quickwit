@@ -134,64 +134,29 @@ impl From<OtlpMetricsError> for tonic::Status {
     }
 }
 
-/// Represents a single metric data point document
+/// Represents a single metric data point document.
 #[derive(Debug, Clone)]
 pub struct MetricDataPoint {
-    // Metric identity
     pub metric_name: String,
     pub metric_type: MetricType,
-    pub metric_unit: Option<String>,
-
-    // Timestamps (seconds granularity)
     pub timestamp_secs: u64,
-    pub start_timestamp_secs: Option<u64>,
-
-    // Value (f64 only)
     pub value: f64,
-
-    // Explicit tag columns
-    pub tag_service: Option<String>,
-    pub tag_env: Option<String>,
-    pub tag_datacenter: Option<String>,
-    pub tag_region: Option<String>,
-    pub tag_host: Option<String>,
-
-    // Dynamic tags (remaining attributes)
-    pub attributes: HashMap<String, JsonValue>,
-
-    // Resource metadata
-    pub service_name: String,
-    pub resource_attributes: HashMap<String, JsonValue>,
-}
-
-struct ExplicitTags {
-    service: Option<String>,
-    env: Option<String>,
-    datacenter: Option<String>,
-    region: Option<String>,
-    host: Option<String>,
-}
-
-fn extract_string_tag(attributes: &mut HashMap<String, JsonValue>, key: &str) -> Option<String> {
-    attributes.remove(key).and_then(|v| match v {
-        JsonValue::String(s) => Some(s),
-        _ => None,
-    })
-}
-
-fn extract_explicit_tags(attributes: &mut HashMap<String, JsonValue>) -> ExplicitTags {
-    ExplicitTags {
-        service: extract_string_tag(attributes, "service"),
-        env: extract_string_tag(attributes, "env"),
-        datacenter: extract_string_tag(attributes, "datacenter"),
-        region: extract_string_tag(attributes, "region"),
-        host: extract_string_tag(attributes, "host"),
-    }
+    pub tags: HashMap<String, String>,
 }
 
 /// Convert nanoseconds to seconds
 fn nanos_to_secs(nanos: u64) -> u64 {
     nanos / 1_000_000_000
+}
+
+/// Convert a `serde_json::Value` to a plain `String`.
+fn json_value_to_string(value: JsonValue) -> String {
+    match value {
+        JsonValue::String(s) => s,
+        JsonValue::Number(n) => n.to_string(),
+        JsonValue::Bool(b) => b.to_string(),
+        other => serde_json::to_string(&other).unwrap_or_default(),
+    }
 }
 
 struct ParsedMetrics {
@@ -243,7 +208,7 @@ impl OtlpGrpcMetricsService {
             Status::internal("failed to parse metric records")
         })??;
 
-        if num_data_points == num_parse_errors {
+        if num_data_points > 0 && num_data_points == num_parse_errors {
             return Err(tonic::Status::internal(error_message));
         }
 
@@ -274,15 +239,19 @@ impl OtlpGrpcMetricsService {
         request: ExportMetricsServiceRequest,
         parent_span: RuntimeSpan,
     ) -> tonic::Result<ParsedMetrics> {
-        let data_points = parse_otlp_metrics(request)?;
-        let num_data_points = data_points.len() as u64;
+        let ParseOtlpResult {
+            data_points,
+            num_rejected,
+        } = parse_otlp_metrics(request);
+        let num_data_points = data_points.len() as u64 + num_rejected;
 
-        // Build Arrow RecordBatch from data points
-        let mut arrow_builder = ArrowMetricsBatchBuilder::with_capacity(num_data_points as usize);
+        // Build Arrow RecordBatch from valid data points
+        let mut arrow_builder =
+            ArrowMetricsBatchBuilder::with_capacity(data_points.len());
         let mut doc_uid_generator = DocUidGenerator::default();
-        let mut doc_uids = Vec::with_capacity(num_data_points as usize);
+        let mut doc_uids = Vec::with_capacity(data_points.len());
 
-        for data_point in &data_points {
+        for data_point in data_points {
             arrow_builder.append(data_point);
             doc_uids.push(doc_uid_generator.next_doc_uid());
         }
@@ -300,13 +269,22 @@ impl OtlpGrpcMetricsService {
         let current_span = RuntimeSpan::current();
         current_span.record("num_data_points", num_data_points);
         current_span.record("num_bytes", doc_batch.num_bytes());
-        current_span.record("num_parse_errors", 0u64);
+        current_span.record("num_parse_errors", num_rejected);
+
+        let error_message = if num_rejected > 0 {
+            format!(
+                "{num_rejected} data point(s) rejected (unsupported temporality or missing \
+                 required fields)"
+            )
+        } else {
+            String::new()
+        };
 
         let parsed_metrics = ParsedMetrics {
             doc_batch,
             num_data_points,
-            num_parse_errors: 0,
-            error_message: String::new(),
+            num_parse_errors: num_rejected,
+            error_message,
         };
         Ok(parsed_metrics)
     }
@@ -381,16 +359,19 @@ impl MetricsService for OtlpGrpcMetricsService {
     }
 }
 
-fn parse_otlp_metrics(
-    request: ExportMetricsServiceRequest,
-) -> Result<Vec<MetricDataPoint>, OtlpMetricsError> {
+struct ParseOtlpResult {
+    data_points: Vec<MetricDataPoint>,
+    num_rejected: u64,
+}
+
+fn parse_otlp_metrics(request: ExportMetricsServiceRequest) -> ParseOtlpResult {
     let mut data_points = Vec::new();
+    let mut num_rejected: u64 = 0;
 
     for resource_metrics in request.resource_metrics {
         let mut resource_attributes = extract_attributes(
             resource_metrics
                 .resource
-                .clone()
                 .map(|rsrc| rsrc.attributes)
                 .unwrap_or_default(),
         );
@@ -401,25 +382,23 @@ fn parse_otlp_metrics(
 
         for scope_metrics in resource_metrics.scope_metrics {
             for metric in scope_metrics.metrics {
-                parse_metric(
-                    &metric,
-                    &service_name,
-                    &resource_attributes,
-                    &mut data_points,
-                )?;
+                parse_metric(&metric, &service_name, &mut data_points, &mut num_rejected);
             }
         }
     }
 
-    Ok(data_points)
+    ParseOtlpResult {
+        data_points,
+        num_rejected,
+    }
 }
 
 fn parse_metric(
     metric: &Metric,
     service_name: &str,
-    resource_attributes: &HashMap<String, JsonValue>,
     data_points: &mut Vec<MetricDataPoint>,
-) -> Result<(), OtlpMetricsError> {
+    num_rejected: &mut u64,
+) {
     let metric_name = metric.name.clone();
     let metric_unit = if metric.unit.is_empty() {
         None
@@ -430,36 +409,47 @@ fn parse_metric(
     match &metric.data {
         Some(metric::Data::Gauge(gauge)) => {
             for dp in &gauge.data_points {
-                let data_point = create_number_data_point(
+                match create_number_data_point(
                     &metric_name,
                     MetricType::Gauge,
                     &metric_unit,
                     dp,
                     service_name,
-                    resource_attributes,
-                )?;
-                data_points.push(data_point);
+                ) {
+                    Ok(Some(data_point)) => data_points.push(data_point),
+                    Ok(None) => *num_rejected += 1,
+                    Err(err) => {
+                        warn!(error = %err, metric_name, "skipping invalid gauge data point");
+                        *num_rejected += 1;
+                    }
+                }
             }
         }
         Some(metric::Data::Sum(sum)) => {
-            // Only support DELTA temporality
             if sum.aggregation_temporality == AggregationTemporality::Cumulative as i32 {
-                return Err(OtlpMetricsError::InvalidArgument(
-                    "cumulative aggregation temporality is not supported, only delta is supported"
-                        .to_string(),
-                ));
+                warn!(
+                    metric_name,
+                    "skipping sum metric with cumulative temporality (only delta is supported)"
+                );
+                *num_rejected += sum.data_points.len() as u64;
+                return;
             }
 
             for dp in &sum.data_points {
-                let data_point = create_number_data_point(
+                match create_number_data_point(
                     &metric_name,
                     MetricType::Sum,
                     &metric_unit,
                     dp,
                     service_name,
-                    resource_attributes,
-                )?;
-                data_points.push(data_point);
+                ) {
+                    Ok(Some(data_point)) => data_points.push(data_point),
+                    Ok(None) => *num_rejected += 1,
+                    Err(err) => {
+                        warn!(error = %err, metric_name, "skipping invalid sum data point");
+                        *num_rejected += 1;
+                    }
+                }
             }
         }
         Some(metric::Data::Histogram(_)) => {
@@ -475,8 +465,6 @@ fn parse_metric(
             warn!("metric has no data, skipping");
         }
     }
-
-    Ok(())
 }
 
 fn create_number_data_point(
@@ -485,8 +473,20 @@ fn create_number_data_point(
     metric_unit: &Option<String>,
     dp: &NumberDataPoint,
     service_name: &str,
-    resource_attributes: &HashMap<String, JsonValue>,
-) -> Result<MetricDataPoint, OtlpMetricsError> {
+) -> Result<Option<MetricDataPoint>, OtlpMetricsError> {
+    // Convert timestamps to seconds
+    let timestamp_secs = nanos_to_secs(dp.time_unix_nano);
+
+    // Validate: skip data points with empty metric_name or zero timestamp
+    if metric_name.is_empty() {
+        warn!("skipping data point with empty metric_name");
+        return Ok(None);
+    }
+    if timestamp_secs == 0 {
+        warn!("skipping data point with zero timestamp_secs");
+        return Ok(None);
+    }
+
     // Extract value as f64
     let value = match &dp.value {
         Some(
@@ -500,34 +500,39 @@ fn create_number_data_point(
         None => 0.0,
     };
 
-    // Extract attributes and explicit tags
-    let mut attributes = extract_attributes(dp.attributes.clone());
-    let explicit_tags = extract_explicit_tags(&mut attributes);
+    // Extract attributes and convert all values to strings for tags
+    let attributes = extract_attributes(dp.attributes.clone());
+    let mut tags = HashMap::with_capacity(attributes.len() + 3);
 
-    // Convert timestamps to seconds
-    let timestamp_secs = nanos_to_secs(dp.time_unix_nano);
-    let start_timestamp_secs = if dp.start_time_unix_nano != 0 {
-        Some(nanos_to_secs(dp.start_time_unix_nano))
-    } else {
-        None
-    };
+    for (key, json_val) in attributes {
+        tags.insert(key, json_value_to_string(json_val));
+    }
 
-    Ok(MetricDataPoint {
+    // Add metric_unit and start_timestamp_secs using or_insert_with so a
+    // data-point attribute with the same name is not silently overwritten.
+    if let Some(unit) = metric_unit {
+        tags.entry("metric_unit".to_string())
+            .or_insert_with(|| unit.clone());
+    }
+
+    if dp.start_time_unix_nano != 0 {
+        let start_ts = nanos_to_secs(dp.start_time_unix_nano);
+        tags.entry("start_timestamp_secs".to_string())
+            .or_insert_with(|| start_ts.to_string());
+    }
+
+    // Fall back to the resource-level service.name if no data-point-level
+    // "service" tag was set. Data-point attributes take precedence.
+    tags.entry("service".to_string())
+        .or_insert_with(|| service_name.to_string());
+
+    Ok(Some(MetricDataPoint {
         metric_name: metric_name.to_string(),
         metric_type,
-        metric_unit: metric_unit.clone(),
         timestamp_secs,
-        start_timestamp_secs,
         value,
-        tag_service: explicit_tags.service,
-        tag_env: explicit_tags.env,
-        tag_datacenter: explicit_tags.datacenter,
-        tag_region: explicit_tags.region,
-        tag_host: explicit_tags.host,
-        attributes,
-        service_name: service_name.to_string(),
-        resource_attributes: resource_attributes.clone(),
-    })
+        tags,
+    }))
 }
 
 #[cfg(test)]
@@ -560,42 +565,6 @@ mod tests {
         assert_eq!(nanos_to_secs(1_000_000_000), 1);
         assert_eq!(nanos_to_secs(1_500_000_000), 1);
         assert_eq!(nanos_to_secs(2_000_000_000), 2);
-    }
-
-    #[test]
-    fn test_extract_explicit_tags() {
-        let mut attributes = HashMap::from([
-            ("service".to_string(), JsonValue::String("api".to_string())),
-            ("env".to_string(), JsonValue::String("prod".to_string())),
-            (
-                "datacenter".to_string(),
-                JsonValue::String("us-east".to_string()),
-            ),
-            (
-                "region".to_string(),
-                JsonValue::String("us-east-1".to_string()),
-            ),
-            (
-                "host".to_string(),
-                JsonValue::String("server-1".to_string()),
-            ),
-            (
-                "custom_tag".to_string(),
-                JsonValue::String("custom_value".to_string()),
-            ),
-        ]);
-
-        let explicit_tags = extract_explicit_tags(&mut attributes);
-
-        assert_eq!(explicit_tags.service, Some("api".to_string()));
-        assert_eq!(explicit_tags.env, Some("prod".to_string()));
-        assert_eq!(explicit_tags.datacenter, Some("us-east".to_string()));
-        assert_eq!(explicit_tags.region, Some("us-east-1".to_string()));
-        assert_eq!(explicit_tags.host, Some("server-1".to_string()));
-
-        // custom_tag should remain in attributes
-        assert_eq!(attributes.len(), 1);
-        assert!(attributes.contains_key("custom_tag"));
     }
 
     fn make_test_gauge_request() -> ExportMetricsServiceRequest {
@@ -747,35 +716,44 @@ mod tests {
     #[test]
     fn test_parse_gauge_metrics() {
         let request = make_test_gauge_request();
-        let data_points = parse_otlp_metrics(request).unwrap();
+        let data_points = parse_otlp_metrics(request).data_points;
 
         assert_eq!(data_points.len(), 1);
         let dp = &data_points[0];
         assert_eq!(dp.metric_name, "cpu.usage");
         assert_eq!(dp.metric_type, MetricType::Gauge);
-        assert_eq!(dp.metric_unit, Some("%".to_string()));
+        assert_eq!(dp.tags.get("metric_unit").map(|s| s.as_str()), Some("%"));
         assert_eq!(dp.timestamp_secs, 2);
-        assert_eq!(dp.start_timestamp_secs, Some(1));
+        assert_eq!(
+            dp.tags.get("start_timestamp_secs").map(|s| s.as_str()),
+            Some("1")
+        );
         assert_eq!(dp.value, 85.5);
-        assert_eq!(dp.tag_service, Some("api".to_string()));
-        assert_eq!(dp.tag_env, Some("prod".to_string()));
-        assert_eq!(dp.service_name, "test-service");
+        // Data-point attribute "service" takes precedence over resource-level service.name.
+        assert_eq!(dp.tags.get("service").map(|s| s.as_str()), Some("api"));
+        assert_eq!(dp.tags.get("env").map(|s| s.as_str()), Some("prod"));
     }
 
     #[test]
     fn test_parse_sum_delta_metrics() {
         let request = make_test_sum_delta_request();
-        let data_points = parse_otlp_metrics(request).unwrap();
+        let data_points = parse_otlp_metrics(request).data_points;
 
         assert_eq!(data_points.len(), 1);
         let dp = &data_points[0];
         assert_eq!(dp.metric_name, "http.requests");
         assert_eq!(dp.metric_type, MetricType::Sum);
-        assert_eq!(dp.metric_unit, Some("1".to_string()));
+        assert_eq!(dp.tags.get("metric_unit").map(|s| s.as_str()), Some("1"));
         assert_eq!(dp.timestamp_secs, 2);
         assert_eq!(dp.value, 100.0); // int converted to f64
-        assert_eq!(dp.tag_host, Some("server-1".to_string()));
-        assert_eq!(dp.service_name, "counter-service");
+        assert_eq!(
+            dp.tags.get("host").map(|s| s.as_str()),
+            Some("server-1")
+        );
+        assert_eq!(
+            dp.tags.get("service").map(|s| s.as_str()),
+            Some("counter-service")
+        );
     }
 
     #[test]
@@ -783,11 +761,10 @@ mod tests {
         let request = make_test_sum_cumulative_request();
         let result = parse_otlp_metrics(request);
 
-        assert!(result.is_err());
-        match result.unwrap_err() {
-            OtlpMetricsError::InvalidArgument(_) => {}
-            err => panic!("unexpected error type: {:?}", err),
-        }
+        // Cumulative sums are skipped (not a hard error) so other metrics in the same
+        // request can still be processed. The rejected count is incremented instead.
+        assert_eq!(result.data_points.len(), 0);
+        assert_eq!(result.num_rejected, 1);
     }
 
     /// Test parsing metrics with various attribute types
@@ -860,19 +837,17 @@ mod tests {
             }],
         };
 
-        let data_points = parse_otlp_metrics(request).unwrap();
+        let data_points = parse_otlp_metrics(request).data_points;
         assert_eq!(data_points.len(), 1);
 
         let dp = &data_points[0];
-        assert_eq!(dp.service_name, "test");
+        assert_eq!(dp.tags.get("service").map(|s| s.as_str()), Some("test"));
 
-        // Verify resource attributes contain the non-service.name attributes
-        assert!(dp.resource_attributes.contains_key("int_attr"));
-        assert!(dp.resource_attributes.contains_key("bool_attr"));
-        assert!(dp.resource_attributes.contains_key("double_attr"));
-
-        // Verify data point attributes
-        assert!(dp.attributes.contains_key("string_tag"));
+        // Verify data point attributes are in tags as strings
+        assert_eq!(
+            dp.tags.get("string_tag").map(|s| s.as_str()),
+            Some("value")
+        );
     }
 
     /// Test metrics with empty and missing values
@@ -908,17 +883,94 @@ mod tests {
             }],
         };
 
-        let data_points = parse_otlp_metrics(request).unwrap();
+        let data_points = parse_otlp_metrics(request).data_points;
         assert_eq!(data_points.len(), 1);
 
         let dp = &data_points[0];
         assert_eq!(dp.metric_name, "minimal.metric");
-        assert_eq!(dp.service_name, "unknown_service"); // Default value
-        assert!(dp.metric_unit.is_none());
-        assert!(dp.start_timestamp_secs.is_none());
-        assert!(dp.tag_service.is_none());
-        assert!(dp.tag_env.is_none());
-        assert!(dp.attributes.is_empty());
-        assert!(dp.resource_attributes.is_empty());
+        assert_eq!(
+            dp.tags.get("service").map(|s| s.as_str()),
+            Some("unknown_service")
+        );
+        // No metric_unit tag when unit is empty
+        assert!(dp.tags.get("metric_unit").is_none());
+        // No start_timestamp_secs tag when start time is 0
+        assert!(dp.tags.get("start_timestamp_secs").is_none());
+        // Only "service" should be in tags (no attributes, no unit, no start time)
+        assert_eq!(dp.tags.len(), 1);
+    }
+
+    /// Test that data points with empty metric_name are skipped
+    #[test]
+    fn test_skip_empty_metric_name() {
+        use quickwit_proto::opentelemetry::proto::metrics::v1::{
+            Gauge, ResourceMetrics, ScopeMetrics, number_data_point,
+        };
+
+        let request = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: None,
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics: vec![Metric {
+                        name: String::new(), // Empty name
+                        description: String::new(),
+                        unit: String::new(),
+                        data: Some(metric::Data::Gauge(Gauge {
+                            data_points: vec![NumberDataPoint {
+                                attributes: Vec::new(),
+                                start_time_unix_nano: 0,
+                                time_unix_nano: 1_000_000_000,
+                                exemplars: Vec::new(),
+                                flags: 0,
+                                value: Some(number_data_point::Value::AsDouble(1.0)),
+                            }],
+                        })),
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        };
+
+        let data_points = parse_otlp_metrics(request).data_points;
+        assert_eq!(data_points.len(), 0);
+    }
+
+    /// Test that data points with zero timestamp are skipped
+    #[test]
+    fn test_skip_zero_timestamp() {
+        use quickwit_proto::opentelemetry::proto::metrics::v1::{
+            Gauge, ResourceMetrics, ScopeMetrics, number_data_point,
+        };
+
+        let request = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: None,
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics: vec![Metric {
+                        name: "test.metric".to_string(),
+                        description: String::new(),
+                        unit: String::new(),
+                        data: Some(metric::Data::Gauge(Gauge {
+                            data_points: vec![NumberDataPoint {
+                                attributes: Vec::new(),
+                                start_time_unix_nano: 0,
+                                time_unix_nano: 0, // Zero timestamp
+                                exemplars: Vec::new(),
+                                flags: 0,
+                                value: Some(number_data_point::Value::AsDouble(1.0)),
+                            }],
+                        })),
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        };
+
+        let data_points = parse_otlp_metrics(request).data_points;
+        assert_eq!(data_points.len(), 0);
     }
 }

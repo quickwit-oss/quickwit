@@ -12,270 +12,137 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Arrow-based batch building for metrics with dictionary encoding.
+//! Arrow-based batch building for metrics with dynamic schema discovery.
 //!
 //! This module provides Arrow RecordBatch construction with dictionary-encoded
-//! string columns for efficient storage of metrics with low cardinality tags.
+//! string columns for efficient storage of metrics with dynamic tag keys.
+//! The schema is discovered at `finish()` time by scanning all accumulated
+//! data points for the union of tag keys.
 
+use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayBuilder, ArrayRef, Float64Builder, RecordBatch, StringBuilder, StringDictionaryBuilder,
-    UInt8Builder, UInt64Builder,
+    ArrayRef, Float64Builder, RecordBatch, StringDictionaryBuilder, UInt64Builder, UInt8Builder,
 };
-use arrow::datatypes::{DataType, Field, Fields, Int32Type, Schema as ArrowSchema};
+use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
-use parquet::variant::{VariantArrayBuilder, VariantBuilderExt, VariantType};
 use quickwit_proto::bytes::Bytes;
 use quickwit_proto::ingest::{DocBatchV2, DocFormat};
 use quickwit_proto::types::DocUid;
 
 use super::otel_metrics::{MetricDataPoint, MetricType};
 
-/// Creates the Arrow schema for metrics with dictionary-encoded string columns.
-///
-/// Dictionary encoding stores unique string values once and references them by
-/// integer index, providing significant compression for low cardinality tag values.
-pub fn metrics_arrow_schema() -> ArrowSchema {
-    ArrowSchema::new(vec![
-        // Dictionary-encoded string columns for low cardinality fields
-        Field::new(
-            "metric_name",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            false,
-        ),
-        // MetricType enum stored as UInt8 (only ~5 possible values)
-        Field::new("metric_type", DataType::UInt8, false),
-        Field::new("metric_unit", DataType::Utf8, true),
-        // Measurement timestamp in seconds since Unix epoch.
-        Field::new("timestamp_secs", DataType::UInt64, false),
-        Field::new("start_timestamp_secs", DataType::UInt64, true),
-        Field::new("value", DataType::Float64, false),
-        // Dictionary-encoded tag columns (low cardinality expected)
-        Field::new(
-            "tag_service",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        Field::new(
-            "tag_env",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        Field::new(
-            "tag_datacenter",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        Field::new(
-            "tag_region",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        Field::new(
-            "tag_host",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        // VARIANT fields for semi-structured attributes
-        // VariantArrayBuilder produces BinaryView fields, not Binary
-        Field::new(
-            "attributes",
-            DataType::Struct(Fields::from(vec![
-                Field::new("metadata", DataType::BinaryView, false),
-                Field::new("value", DataType::BinaryView, false),
-            ])),
-            true,
-        )
-        .with_extension_type(VariantType),
-        // Service name (low cardinality)
-        Field::new(
-            "service_name",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            false,
-        ),
-        Field::new(
-            "resource_attributes",
-            DataType::Struct(Fields::from(vec![
-                Field::new("metadata", DataType::BinaryView, false),
-                Field::new("value", DataType::BinaryView, false),
-            ])),
-            true,
-        )
-        .with_extension_type(VariantType),
-    ])
-}
-
 /// Builder for creating Arrow RecordBatch from MetricDataPoints.
 ///
-/// Uses dictionary encoding for low cardinality string columns
-/// (tags, service names, metric names) to achieve significant compression.
-/// Uses VARIANT encoding for semi-structured attributes.
+/// Accumulates data points and discovers the schema dynamically at `finish()`
+/// time. Uses dictionary encoding for string columns (metric_name, all tags).
 pub struct ArrowMetricsBatchBuilder {
-    metric_name: StringDictionaryBuilder<Int32Type>,
-    metric_type: UInt8Builder,
-    metric_unit: StringBuilder,
-    timestamp_secs: UInt64Builder,
-    start_timestamp_secs: UInt64Builder,
-    value: Float64Builder,
-    tag_service: StringDictionaryBuilder<Int32Type>,
-    tag_env: StringDictionaryBuilder<Int32Type>,
-    tag_datacenter: StringDictionaryBuilder<Int32Type>,
-    tag_region: StringDictionaryBuilder<Int32Type>,
-    tag_host: StringDictionaryBuilder<Int32Type>,
-    attributes: VariantArrayBuilder,
-    service_name: StringDictionaryBuilder<Int32Type>,
-    resource_attributes: VariantArrayBuilder,
+    data_points: Vec<MetricDataPoint>,
 }
 
 impl ArrowMetricsBatchBuilder {
     /// Creates a new builder with pre-allocated capacity.
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            metric_name: StringDictionaryBuilder::new(),
-            metric_type: UInt8Builder::with_capacity(capacity),
-            metric_unit: StringBuilder::with_capacity(capacity, capacity * 8),
-            timestamp_secs: UInt64Builder::with_capacity(capacity),
-            start_timestamp_secs: UInt64Builder::with_capacity(capacity),
-            value: Float64Builder::with_capacity(capacity),
-            tag_service: StringDictionaryBuilder::new(),
-            tag_env: StringDictionaryBuilder::new(),
-            tag_datacenter: StringDictionaryBuilder::new(),
-            tag_region: StringDictionaryBuilder::new(),
-            tag_host: StringDictionaryBuilder::new(),
-            attributes: VariantArrayBuilder::new(capacity),
-            service_name: StringDictionaryBuilder::new(),
-            resource_attributes: VariantArrayBuilder::new(capacity),
+            data_points: Vec::with_capacity(capacity),
         }
     }
 
     /// Appends a MetricDataPoint to the batch.
-    pub fn append(&mut self, data_point: &MetricDataPoint) {
-        self.metric_name.append_value(&data_point.metric_name);
-        self.metric_type.append_value(data_point.metric_type as u8);
-
-        match &data_point.metric_unit {
-            Some(unit) => self.metric_unit.append_value(unit),
-            None => self.metric_unit.append_null(),
-        }
-
-        self.timestamp_secs.append_value(data_point.timestamp_secs);
-        match data_point.start_timestamp_secs {
-            Some(ts) => self.start_timestamp_secs.append_value(ts),
-            None => self.start_timestamp_secs.append_null(),
-        }
-        self.value.append_value(data_point.value);
-
-        append_optional_dict(&mut self.tag_service, &data_point.tag_service);
-        append_optional_dict(&mut self.tag_env, &data_point.tag_env);
-        append_optional_dict(&mut self.tag_datacenter, &data_point.tag_datacenter);
-        append_optional_dict(&mut self.tag_region, &data_point.tag_region);
-        append_optional_dict(&mut self.tag_host, &data_point.tag_host);
-
-        if data_point.attributes.is_empty() {
-            self.attributes.append_null();
-        } else {
-            append_variant_object(&mut self.attributes, &data_point.attributes);
-        }
-
-        self.service_name.append_value(&data_point.service_name);
-
-        if data_point.resource_attributes.is_empty() {
-            self.resource_attributes.append_null();
-        } else {
-            append_variant_object(
-                &mut self.resource_attributes,
-                &data_point.resource_attributes,
-            );
-        }
+    pub fn append(&mut self, data_point: MetricDataPoint) {
+        self.data_points.push(data_point);
     }
 
     /// Finalizes and returns the RecordBatch.
-    pub fn finish(mut self) -> RecordBatch {
-        // Build variant arrays and convert to ArrayRef
-        let attributes_array = self.attributes.build();
-        let resource_attributes_array = self.resource_attributes.build();
+    ///
+    /// Performs two passes:
+    /// 1. Schema discovery: scans all data points to collect the union of tag keys.
+    /// 2. Array building: creates per-column builders and populates them.
+    pub fn finish(self) -> RecordBatch {
+        let num_rows = self.data_points.len();
 
-        let arrays: Vec<ArrayRef> = vec![
-            Arc::new(self.metric_name.finish()),
-            Arc::new(self.metric_type.finish()),
-            Arc::new(self.metric_unit.finish()),
-            Arc::new(self.timestamp_secs.finish()),
-            Arc::new(self.start_timestamp_secs.finish()),
-            Arc::new(self.value.finish()),
-            Arc::new(self.tag_service.finish()),
-            Arc::new(self.tag_env.finish()),
-            Arc::new(self.tag_datacenter.finish()),
-            Arc::new(self.tag_region.finish()),
-            Arc::new(self.tag_host.finish()),
-            ArrayRef::from(attributes_array),
-            Arc::new(self.service_name.finish()),
-            ArrayRef::from(resource_attributes_array),
-        ];
+        // Pass 1: discover all tag keys across all data points.
+        let mut tag_keys: BTreeSet<&str> = BTreeSet::new();
+        for dp in &self.data_points {
+            for key in dp.tags.keys() {
+                tag_keys.insert(key.as_str());
+            }
+        }
+        let sorted_tag_keys: Vec<&str> = tag_keys.into_iter().collect();
 
-        RecordBatch::try_new(Arc::new(metrics_arrow_schema()), arrays)
+        // Build the Arrow schema dynamically
+        let mut fields = Vec::with_capacity(4 + sorted_tag_keys.len());
+        fields.push(Field::new(
+            "metric_name",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            false,
+        ));
+        fields.push(Field::new("metric_type", DataType::UInt8, false));
+        fields.push(Field::new("timestamp_secs", DataType::UInt64, false));
+        fields.push(Field::new("value", DataType::Float64, false));
+
+        for &tag_key in &sorted_tag_keys {
+            fields.push(Field::new(
+                tag_key,
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+            ));
+        }
+
+        let schema = Arc::new(ArrowSchema::new(fields));
+
+        // Pass 2: build arrays
+        let mut metric_name_builder: StringDictionaryBuilder<Int32Type> =
+            StringDictionaryBuilder::new();
+        let mut metric_type_builder = UInt8Builder::with_capacity(num_rows);
+        let mut timestamp_secs_builder = UInt64Builder::with_capacity(num_rows);
+        let mut value_builder = Float64Builder::with_capacity(num_rows);
+
+        let mut tag_builders: Vec<StringDictionaryBuilder<Int32Type>> = sorted_tag_keys
+            .iter()
+            .map(|_| StringDictionaryBuilder::new())
+            .collect();
+
+        for dp in &self.data_points {
+            metric_name_builder.append_value(&dp.metric_name);
+            metric_type_builder.append_value(dp.metric_type as u8);
+            timestamp_secs_builder.append_value(dp.timestamp_secs);
+            value_builder.append_value(dp.value);
+
+            for (tag_idx, tag_key) in sorted_tag_keys.iter().enumerate() {
+                match dp.tags.get(*tag_key) {
+                    Some(tag_val) => tag_builders[tag_idx].append_value(tag_val),
+                    None => tag_builders[tag_idx].append_null(),
+                }
+            }
+        }
+
+        let mut arrays: Vec<ArrayRef> = Vec::with_capacity(4 + sorted_tag_keys.len());
+        arrays.push(Arc::new(metric_name_builder.finish()));
+        arrays.push(Arc::new(metric_type_builder.finish()));
+        arrays.push(Arc::new(timestamp_secs_builder.finish()));
+        arrays.push(Arc::new(value_builder.finish()));
+
+        for tag_builder in &mut tag_builders {
+            arrays.push(Arc::new(tag_builder.finish()));
+        }
+
+        RecordBatch::try_new(schema, arrays)
             .expect("record batch should match Arrow schema")
     }
 
     /// Returns the number of rows appended so far.
     pub fn len(&self) -> usize {
-        self.timestamp_secs.len()
+        self.data_points.len()
     }
 
     /// Returns true if no rows have been appended.
     pub fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.data_points.is_empty()
     }
-}
-
-/// Helper to append optional string values to dictionary builder.
-fn append_optional_dict(builder: &mut StringDictionaryBuilder<Int32Type>, value: &Option<String>) {
-    match value {
-        Some(s) => builder.append_value(s),
-        None => builder.append_null(),
-    }
-}
-
-/// Helper to append a HashMap as a VARIANT object to the builder.
-fn append_variant_object(
-    builder: &mut VariantArrayBuilder,
-    map: &std::collections::HashMap<String, serde_json::Value>,
-) {
-    // Use a macro-like approach with fold to build the object
-    // We need to chain with_field calls which consume and return the builder
-    let obj_builder = builder.new_object();
-
-    // Build object by folding over the map entries
-    let final_builder = map.iter().fold(obj_builder, |b, (key, value)| {
-        match value {
-            serde_json::Value::Null => b.with_field(key.as_str(), ()),
-            serde_json::Value::Bool(v) => b.with_field(key.as_str(), *v),
-            serde_json::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    b.with_field(key.as_str(), i)
-                } else if let Some(f) = n.as_f64() {
-                    b.with_field(key.as_str(), f)
-                } else {
-                    b.with_field(key.as_str(), ())
-                }
-            }
-            serde_json::Value::String(s) => b.with_field(key.as_str(), s.as_str()),
-            serde_json::Value::Array(arr) => {
-                // For arrays, serialize to JSON string as fallback
-                let json_str = serde_json::to_string(arr).unwrap_or_default();
-                b.with_field(key.as_str(), json_str.as_str())
-            }
-            serde_json::Value::Object(obj) => {
-                // For nested objects, serialize to JSON string as fallback
-                let json_str = serde_json::to_string(obj).unwrap_or_default();
-                b.with_field(key.as_str(), json_str.as_str())
-            }
-        }
-    });
-
-    final_builder.finish();
 }
 
 /// Error type for Arrow IPC operations.
@@ -462,32 +329,26 @@ impl ArrowDocBatchV2Builder {
 mod tests {
     use std::collections::HashMap;
 
-    use serde_json::Value as JsonValue;
-
     use super::*;
 
     fn make_test_data_point() -> MetricDataPoint {
+        let mut tags = HashMap::new();
+        tags.insert("service".to_string(), "api".to_string());
+        tags.insert("env".to_string(), "prod".to_string());
+        tags.insert("datacenter".to_string(), "us-east-1a".to_string());
+        tags.insert("region".to_string(), "us-east-1".to_string());
+        tags.insert("host".to_string(), "server-001".to_string());
+        tags.insert("endpoint".to_string(), "/health".to_string());
+        tags.insert("metric_unit".to_string(), "%".to_string());
+        tags.insert("start_timestamp_secs".to_string(), "1704067190".to_string());
+        tags.insert("service_name".to_string(), "api-service".to_string());
+
         MetricDataPoint {
             metric_name: "cpu.usage".to_string(),
             metric_type: MetricType::Gauge,
-            metric_unit: Some("%".to_string()),
             timestamp_secs: 1704067200,
-            start_timestamp_secs: Some(1704067190),
             value: 85.5,
-            tag_service: Some("api".to_string()),
-            tag_env: Some("prod".to_string()),
-            tag_datacenter: Some("us-east-1a".to_string()),
-            tag_region: Some("us-east-1".to_string()),
-            tag_host: Some("server-001".to_string()),
-            attributes: HashMap::from([(
-                "endpoint".to_string(),
-                JsonValue::String("/health".to_string()),
-            )]),
-            service_name: "api-service".to_string(),
-            resource_attributes: HashMap::from([(
-                "k8s.pod".to_string(),
-                JsonValue::String("pod-123".to_string()),
-            )]),
+            tags,
         }
     }
 
@@ -495,38 +356,36 @@ mod tests {
     fn test_arrow_batch_builder_single_row() {
         let dp = make_test_data_point();
         let mut builder = ArrowMetricsBatchBuilder::with_capacity(1);
-        builder.append(&dp);
+        builder.append(dp);
 
         assert_eq!(builder.len(), 1);
         assert!(!builder.is_empty());
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 1);
-        assert_eq!(batch.num_columns(), 14);
+        // 4 fixed columns + 9 tag columns
+        assert_eq!(batch.num_columns(), 13);
     }
 
     #[test]
     fn test_arrow_batch_builder_multiple_rows() {
         let mut builder = ArrowMetricsBatchBuilder::with_capacity(100);
 
-        for i in 0..100 {
+        for idx in 0..100 {
+            let mut tags = HashMap::new();
+            tags.insert("service".to_string(), format!("service-{}", idx % 10));
+            tags.insert("env".to_string(), "prod".to_string());
+            tags.insert("host".to_string(), format!("host-{}", idx % 5));
+            tags.insert("service_name".to_string(), "test-service".to_string());
+
             let dp = MetricDataPoint {
                 metric_name: "test.metric".to_string(),
                 metric_type: MetricType::Gauge,
-                metric_unit: None,
-                timestamp_secs: 1704067200 + i as u64,
-                start_timestamp_secs: None,
-                value: i as f64 * 0.1,
-                tag_service: Some(format!("service-{}", i % 10)), // 10 unique values
-                tag_env: Some("prod".to_string()),                // 1 unique value
-                tag_datacenter: None,
-                tag_region: None,
-                tag_host: Some(format!("host-{}", i % 5)), // 5 unique values
-                attributes: HashMap::new(),
-                service_name: "test-service".to_string(),
-                resource_attributes: HashMap::new(),
+                timestamp_secs: 1704067200 + idx as u64,
+                value: idx as f64 * 0.1,
+                tags,
             };
-            builder.append(&dp);
+            builder.append(dp);
         }
 
         assert_eq!(builder.len(), 100);
@@ -539,89 +398,108 @@ mod tests {
         let mut builder = ArrowMetricsBatchBuilder::with_capacity(1000);
 
         // Create 1000 data points with only 10 unique service values
-        for i in 0..1000 {
+        for idx in 0..1000 {
+            let mut tags = HashMap::new();
+            tags.insert("service".to_string(), format!("service-{}", idx % 10));
+            tags.insert("env".to_string(), "prod".to_string());
+            tags.insert("datacenter".to_string(), format!("dc-{}", idx % 4));
+            tags.insert("service_name".to_string(), format!("svc-{}", idx % 5));
+
             let dp = MetricDataPoint {
                 metric_name: "test.metric".to_string(),
                 metric_type: MetricType::Gauge,
-                metric_unit: None,
-                timestamp_secs: 1704067200 + i as u64,
-                start_timestamp_secs: None,
-                value: i as f64,
-                tag_service: Some(format!("service-{}", i % 10)),
-                tag_env: Some("prod".to_string()),
-                tag_datacenter: Some(format!("dc-{}", i % 4)),
-                tag_region: None,
-                tag_host: None,
-                attributes: HashMap::new(),
-                service_name: format!("svc-{}", i % 5),
-                resource_attributes: HashMap::new(),
+                timestamp_secs: 1704067200 + idx as u64,
+                value: idx as f64,
+                tags,
             };
-            builder.append(&dp);
+            builder.append(dp);
         }
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 1000);
 
         // Verify the batch was created successfully with dictionary encoding
-        // The dictionary arrays should have far fewer unique values than rows
         let schema = batch.schema();
 
-        // Check that tag_service uses dictionary encoding
-        let tag_service_field = schema.field_with_name("tag_service").unwrap();
+        // Check that the service tag uses dictionary encoding
+        let service_field = schema.field_with_name("service").unwrap();
         assert!(matches!(
-            tag_service_field.data_type(),
+            service_field.data_type(),
             DataType::Dictionary(_, _)
         ));
     }
 
     #[test]
     fn test_null_handling() {
+        let mut tags = HashMap::new();
+        tags.insert("service_name".to_string(), "unknown".to_string());
+
         let dp = MetricDataPoint {
             metric_name: "minimal.metric".to_string(),
             metric_type: MetricType::Gauge,
-            metric_unit: None, // null
             timestamp_secs: 1704067200,
-            start_timestamp_secs: None, // null
             value: 0.0,
-            tag_service: None, // null
-            tag_env: None,     // null
-            tag_datacenter: None,
-            tag_region: None,
-            tag_host: None,
-            attributes: HashMap::new(), // empty -> null
-            service_name: "unknown".to_string(),
-            resource_attributes: HashMap::new(), // empty -> null
+            tags,
         };
 
         let mut builder = ArrowMetricsBatchBuilder::with_capacity(1);
-        builder.append(&dp);
+        builder.append(dp);
         let batch = builder.finish();
 
         assert_eq!(batch.num_rows(), 1);
-        // The batch should handle nulls correctly
+        // 4 fixed columns + 1 tag column (service_name)
+        assert_eq!(batch.num_columns(), 5);
     }
 
     #[test]
-    fn test_schema_field_count() {
-        let schema = metrics_arrow_schema();
-        assert_eq!(schema.fields().len(), 14);
+    fn test_dynamic_schema_discovery() {
+        let mut builder = ArrowMetricsBatchBuilder::with_capacity(2);
 
-        // Verify field names
+        // First data point has tags: env, host
+        let mut tags1 = HashMap::new();
+        tags1.insert("env".to_string(), "prod".to_string());
+        tags1.insert("host".to_string(), "server-1".to_string());
+
+        builder.append(MetricDataPoint {
+            metric_name: "metric.a".to_string(),
+            metric_type: MetricType::Gauge,
+            timestamp_secs: 1704067200,
+            value: 1.0,
+            tags: tags1,
+        });
+
+        // Second data point has tags: env, region (different set)
+        let mut tags2 = HashMap::new();
+        tags2.insert("env".to_string(), "staging".to_string());
+        tags2.insert("region".to_string(), "us-west".to_string());
+
+        builder.append(MetricDataPoint {
+            metric_name: "metric.b".to_string(),
+            metric_type: MetricType::Sum,
+            timestamp_secs: 1704067201,
+            value: 2.0,
+            tags: tags2,
+        });
+
+        let batch = builder.finish();
+        assert_eq!(batch.num_rows(), 2);
+        // 4 fixed + 3 tag columns (env, host, region) - sorted alphabetically
+        assert_eq!(batch.num_columns(), 7);
+
+        let schema = batch.schema();
         let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
-        assert!(field_names.contains(&"metric_name"));
-        assert!(field_names.contains(&"metric_type"));
-        assert!(field_names.contains(&"metric_unit"));
-        assert!(field_names.contains(&"timestamp_secs"));
-        assert!(field_names.contains(&"start_timestamp_secs"));
-        assert!(field_names.contains(&"value"));
-        assert!(field_names.contains(&"tag_service"));
-        assert!(field_names.contains(&"tag_env"));
-        assert!(field_names.contains(&"tag_datacenter"));
-        assert!(field_names.contains(&"tag_region"));
-        assert!(field_names.contains(&"tag_host"));
-        assert!(field_names.contains(&"attributes"));
-        assert!(field_names.contains(&"service_name"));
-        assert!(field_names.contains(&"resource_attributes"));
+        assert_eq!(
+            field_names,
+            vec![
+                "metric_name",
+                "metric_type",
+                "timestamp_secs",
+                "value",
+                "env",
+                "host",
+                "region",
+            ]
+        );
     }
 
     #[test]
@@ -638,24 +516,20 @@ mod tests {
     fn test_ipc_round_trip() {
         // Build a RecordBatch
         let mut builder = ArrowMetricsBatchBuilder::with_capacity(10);
-        for i in 0..10 {
+        for idx in 0..10 {
+            let mut tags = HashMap::new();
+            tags.insert("service".to_string(), format!("service-{}", idx % 3));
+            tags.insert("env".to_string(), "prod".to_string());
+            tags.insert("service_name".to_string(), "test-service".to_string());
+
             let dp = MetricDataPoint {
                 metric_name: "test.metric".to_string(),
                 metric_type: MetricType::Gauge,
-                metric_unit: None,
-                timestamp_secs: 1704067200 + i as u64,
-                start_timestamp_secs: None,
-                value: i as f64 * 0.1,
-                tag_service: Some(format!("service-{}", i % 3)),
-                tag_env: Some("prod".to_string()),
-                tag_datacenter: None,
-                tag_region: None,
-                tag_host: None,
-                attributes: HashMap::new(),
-                service_name: "test-service".to_string(),
-                resource_attributes: HashMap::new(),
+                timestamp_secs: 1704067200 + idx as u64,
+                value: idx as f64 * 0.1,
+                tags,
             };
-            builder.append(&dp);
+            builder.append(dp);
         }
         let original_batch = builder.finish();
 
@@ -682,24 +556,18 @@ mod tests {
         let mut doc_uid_generator = DocUidGenerator::default();
         let mut doc_uids = Vec::new();
 
-        for i in 0..5 {
+        for idx in 0..5 {
+            let mut tags = HashMap::new();
+            tags.insert("service_name".to_string(), "test".to_string());
+
             let dp = MetricDataPoint {
                 metric_name: "test.metric".to_string(),
                 metric_type: MetricType::Gauge,
-                metric_unit: None,
-                timestamp_secs: 1704067200 + i as u64,
-                start_timestamp_secs: None,
-                value: i as f64,
-                tag_service: None,
-                tag_env: None,
-                tag_datacenter: None,
-                tag_region: None,
-                tag_host: None,
-                attributes: HashMap::new(),
-                service_name: "test".to_string(),
-                resource_attributes: HashMap::new(),
+                timestamp_secs: 1704067200 + idx as u64,
+                value: idx as f64,
+                tags,
             };
-            builder.append(&dp);
+            builder.append(dp);
             doc_uids.push(doc_uid_generator.next_doc_uid());
         }
         let batch = builder.finish();

@@ -37,7 +37,7 @@ mod traces;
 
 pub use arrow_metrics::{
     ArrowDocBatchV2Builder, ArrowIpcError, ArrowMetricsBatchBuilder, ipc_to_json_values,
-    ipc_to_record_batch, metrics_arrow_schema, record_batch_to_ipc,
+    ipc_to_record_batch, record_batch_to_ipc,
 };
 pub use logs::{
     JsonLogIterator, OTEL_LOGS_INDEX_ID, OtlpGrpcLogsService, OtlpLogsError, parse_otlp_logs_json,
