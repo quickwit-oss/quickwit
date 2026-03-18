@@ -26,3 +26,6 @@ pub mod metrics;
 pub mod schema;
 pub mod split;
 pub mod storage;
+
+#[cfg(test)]
+pub mod test_helpers;

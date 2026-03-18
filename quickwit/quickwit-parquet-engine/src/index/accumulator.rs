@@ -14,15 +14,18 @@
 
 //! Batch accumulator for producing splits from RecordBatches.
 
+use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Instant;
 
+use arrow::array::{new_null_array, ArrayRef};
 use arrow::compute::concat_batches;
+use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use tracing::{debug, info};
 
 use super::config::ParquetIndexingConfig;
 use crate::metrics::PARQUET_ENGINE_METRICS;
-use crate::schema::ParquetSchema;
 
 /// Error type for index operations.
 #[derive(Debug, thiserror::Error)]
@@ -38,11 +41,14 @@ pub enum IndexingError {
 /// Batches are accumulated until either `max_rows` or `max_bytes` threshold is reached,
 /// at which point they are concatenated and returned for downstream processing (writing to
 /// Parquet by the ParquetPackager actor).
+///
+/// Consecutive batches may have different column sets. The accumulator tracks the union
+/// schema incrementally and aligns all batches to it on flush.
 pub struct ParquetBatchAccumulator {
     /// Configuration for accumulation thresholds.
     config: ParquetIndexingConfig,
-    /// Metrics schema for concatenation.
-    schema: ParquetSchema,
+    /// Union of all fields seen across pending batches.
+    union_fields: BTreeMap<String, (DataType, bool)>,
     /// Pending batches waiting to be flushed.
     pending_batches: Vec<RecordBatch>,
     /// Total rows in pending batches.
@@ -57,11 +63,9 @@ impl ParquetBatchAccumulator {
     /// # Arguments
     /// * `config` - Configuration for accumulation thresholds
     pub fn new(config: ParquetIndexingConfig) -> Self {
-        let schema = ParquetSchema::new();
-
         Self {
             config,
-            schema,
+            union_fields: BTreeMap::new(),
             pending_batches: Vec::new(),
             pending_rows: 0,
             pending_bytes: 0,
@@ -83,6 +87,13 @@ impl ParquetBatchAccumulator {
             .index_rows_total
             .inc_by(batch_rows as u64);
 
+        // Merge fields into union schema before pushing (we need the schema reference)
+        for field in batch.schema().fields() {
+            self.union_fields
+                .entry(field.name().clone())
+                .or_insert_with(|| (field.data_type().clone(), field.is_nullable()));
+        }
+
         self.pending_batches.push(batch);
         self.pending_rows += batch_rows;
         self.pending_bytes += batch_bytes;
@@ -92,7 +103,7 @@ impl ParquetBatchAccumulator {
             batch_bytes,
             total_pending_rows = self.pending_rows,
             total_pending_bytes = self.pending_bytes,
-            "Added batch to accumulator"
+            "added batch to accumulator"
         );
 
         let flushed = if self.should_flush() {
@@ -101,7 +112,7 @@ impl ParquetBatchAccumulator {
                 pending_bytes = self.pending_bytes,
                 max_rows = self.config.max_rows,
                 max_bytes = self.config.max_bytes,
-                "Threshold exceeded, triggering flush"
+                "threshold exceeded, triggering flush"
             );
             self.flush_internal()?
         } else {
@@ -119,6 +130,7 @@ impl ParquetBatchAccumulator {
     /// Discard all pending data without producing output.
     pub fn discard(&mut self) {
         self.pending_batches.clear();
+        self.union_fields.clear();
         self.pending_rows = 0;
         self.pending_bytes = 0;
     }
@@ -136,14 +148,33 @@ impl ParquetBatchAccumulator {
             return Ok(None);
         }
 
-        // Concatenate all pending batches into one
-        let combined = concat_batches(self.schema.arrow_schema(), self.pending_batches.iter())?;
+        // Build the union schema from accumulated fields.
+        // All fields are marked nullable=true regardless of their source schema:
+        // any field that appears in some batches but not others will be null-filled
+        // for the missing batches, so non-nullable would cause Arrow to reject the concat.
+        let fields: Vec<Field> = self
+            .union_fields
+            .iter()
+            .map(|(name, (data_type, _nullable))| Field::new(name, data_type.clone(), true))
+            .collect();
+        let union_schema: SchemaRef = Arc::new(ArrowSchema::new(fields));
+
+        // Align each pending batch to the union schema
+        let aligned: Vec<RecordBatch> = self
+            .pending_batches
+            .iter()
+            .map(|batch| align_batch_to_schema(batch, &union_schema))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        // Concatenate all aligned batches
+        let combined = concat_batches(&union_schema, aligned.iter())?;
 
         let num_rows = combined.num_rows();
-        info!(num_rows, "Flushed accumulated batches");
+        info!(num_rows, "flushed accumulated batches");
 
         // Reset state
         self.pending_batches.clear();
+        self.union_fields.clear();
         self.pending_rows = 0;
         self.pending_bytes = 0;
 
@@ -173,6 +204,24 @@ impl ParquetBatchAccumulator {
     }
 }
 
+/// Align a RecordBatch to a target schema, inserting null columns where needed.
+fn align_batch_to_schema(
+    batch: &RecordBatch,
+    target_schema: &SchemaRef,
+) -> Result<RecordBatch, arrow::error::ArrowError> {
+    let num_rows = batch.num_rows();
+    let batch_schema = batch.schema();
+    let columns: Vec<ArrayRef> = target_schema
+        .fields()
+        .iter()
+        .map(|field| match batch_schema.index_of(field.name()) {
+            Ok(idx) => Arc::clone(batch.column(idx)),
+            Err(_) => new_null_array(field.data_type(), num_rows),
+        })
+        .collect();
+    RecordBatch::try_new(target_schema.clone(), columns)
+}
+
 /// Estimate the memory size of a RecordBatch.
 fn estimate_batch_bytes(batch: &RecordBatch) -> usize {
     batch
@@ -184,106 +233,9 @@ fn estimate_batch_bytes(batch: &RecordBatch) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
-    use arrow::array::{
-        ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array, UInt64Array,
-    };
-    use arrow::datatypes::Int32Type;
-    use parquet::variant::{VariantArrayBuilder, VariantBuilderExt};
+    use crate::test_helpers::{create_test_batch, create_test_batch_with_tags};
 
     use super::*;
-
-    /// Create dictionary array for string fields with Int32 keys.
-    fn create_dict_array(values: &[&str]) -> ArrayRef {
-        let keys: Vec<i32> = (0..values.len()).map(|i| i as i32).collect();
-        let string_array = StringArray::from(values.to_vec());
-        Arc::new(
-            DictionaryArray::<Int32Type>::try_new(Int32Array::from(keys), Arc::new(string_array))
-                .unwrap(),
-        )
-    }
-
-    /// Create nullable dictionary array for optional string fields.
-    fn create_nullable_dict_array(values: &[Option<&str>]) -> ArrayRef {
-        let keys: Vec<Option<i32>> = values
-            .iter()
-            .enumerate()
-            .map(|(i, v)| v.map(|_| i as i32))
-            .collect();
-        let string_values: Vec<&str> = values.iter().filter_map(|v| *v).collect();
-        let string_array = StringArray::from(string_values);
-        Arc::new(
-            DictionaryArray::<Int32Type>::try_new(Int32Array::from(keys), Arc::new(string_array))
-                .unwrap(),
-        )
-    }
-
-    /// Create a VARIANT array for testing with specified number of rows.
-    fn create_variant_array(num_rows: usize, fields: Option<&[(&str, &str)]>) -> ArrayRef {
-        let mut builder = VariantArrayBuilder::new(num_rows);
-        for _ in 0..num_rows {
-            match fields {
-                Some(kv_pairs) => {
-                    let mut obj = builder.new_object();
-                    for (key, value) in kv_pairs {
-                        obj = obj.with_field(key, *value);
-                    }
-                    obj.finish();
-                }
-                None => {
-                    builder.append_null();
-                }
-            }
-        }
-        ArrayRef::from(builder.build())
-    }
-
-    /// Create a test batch matching the metrics schema.
-    fn create_test_batch(num_rows: usize) -> RecordBatch {
-        let schema = ParquetSchema::new();
-
-        let metric_names: Vec<&str> = vec!["cpu.usage"; num_rows];
-        let metric_name: ArrayRef = create_dict_array(&metric_names);
-        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; num_rows]));
-        let metric_unit: ArrayRef = Arc::new(StringArray::from(vec![Some("bytes"); num_rows]));
-        let timestamps: Vec<u64> = (0..num_rows).map(|i| 100 + i as u64).collect();
-        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
-        let start_timestamp_secs: ArrayRef =
-            Arc::new(UInt64Array::from(vec![None::<u64>; num_rows]));
-        let values: Vec<f64> = (0..num_rows).map(|i| 42.0 + i as f64).collect();
-        let value: ArrayRef = Arc::new(Float64Array::from(values));
-        let tag_service: ArrayRef = create_nullable_dict_array(&vec![Some("web"); num_rows]);
-        let tag_env: ArrayRef = create_nullable_dict_array(&vec![Some("prod"); num_rows]);
-        let tag_datacenter: ArrayRef =
-            create_nullable_dict_array(&vec![Some("us-east-1"); num_rows]);
-        let tag_region: ArrayRef = create_nullable_dict_array(&vec![None; num_rows]);
-        let tag_host: ArrayRef = create_nullable_dict_array(&vec![Some("host-001"); num_rows]);
-        let attributes: ArrayRef = create_variant_array(num_rows, None);
-        let service_name: ArrayRef = create_dict_array(&vec!["my-service"; num_rows]);
-        let resource_attributes: ArrayRef = create_variant_array(num_rows, None);
-
-        RecordBatch::try_new(
-            schema.arrow_schema().clone(),
-            vec![
-                metric_name,
-                metric_type,
-                metric_unit,
-                timestamp_secs,
-                start_timestamp_secs,
-                value,
-                tag_service,
-                tag_env,
-                tag_datacenter,
-                tag_region,
-                tag_host,
-                attributes,
-                service_name,
-                resource_attributes,
-            ],
-        )
-        .unwrap()
-    }
 
     #[test]
     fn test_accumulator_below_threshold() {
@@ -349,6 +301,87 @@ mod tests {
 
         let combined = accumulator.flush().unwrap().unwrap();
         assert_eq!(combined.num_rows(), 50);
+    }
+
+    #[test]
+    fn test_accumulator_merges_different_tag_sets() {
+        let config = ParquetIndexingConfig::default().with_max_rows(1000);
+        let mut accumulator = ParquetBatchAccumulator::new(config);
+
+        // First batch has "service" tag
+        let batch1 = create_test_batch_with_tags(3, &["service"]);
+        let _ = accumulator.add_batch(batch1).unwrap();
+
+        // Second batch has "host" tag
+        let batch2 = create_test_batch_with_tags(2, &["host"]);
+        let _ = accumulator.add_batch(batch2).unwrap();
+
+        let combined = accumulator.flush().unwrap().unwrap();
+        assert_eq!(combined.num_rows(), 5);
+
+        // Union schema should have all 4 required fields + both tags
+        let schema = combined.schema();
+        assert!(schema.index_of("metric_name").is_ok());
+        assert!(schema.index_of("metric_type").is_ok());
+        assert!(schema.index_of("timestamp_secs").is_ok());
+        assert!(schema.index_of("value").is_ok());
+        assert!(schema.index_of("service").is_ok());
+        assert!(schema.index_of("host").is_ok());
+        assert_eq!(schema.fields().len(), 6);
+
+        // First 3 rows should have null "host", last 2 rows should have null "service"
+        let host_idx = schema.index_of("host").unwrap();
+        let host_col = combined.column(host_idx);
+        assert_eq!(host_col.null_count(), 3); // first batch had no host
+
+        let service_idx = schema.index_of("service").unwrap();
+        let service_col = combined.column(service_idx);
+        assert_eq!(service_col.null_count(), 2); // second batch had no service
+
+        // No duplicate column names — each name appears exactly once.
+        let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
+        let unique_count = field_names.iter().collect::<std::collections::HashSet<_>>().len();
+        assert_eq!(
+            unique_count,
+            field_names.len(),
+            "duplicate columns in union schema: {field_names:?}"
+        );
+    }
+
+    #[test]
+    fn test_accumulator_no_duplicates_with_overlapping_tags() {
+        let config = ParquetIndexingConfig::default().with_max_rows(1000);
+        let mut accumulator = ParquetBatchAccumulator::new(config);
+
+        // Both batches share "service"; second also has "host".
+        // "service" must appear exactly once in the flushed schema.
+        let batch1 = create_test_batch_with_tags(3, &["service"]);
+        let batch2 = create_test_batch_with_tags(2, &["service", "host"]);
+        let _ = accumulator.add_batch(batch1).unwrap();
+        let _ = accumulator.add_batch(batch2).unwrap();
+
+        let combined = accumulator.flush().unwrap().unwrap();
+        assert_eq!(combined.num_rows(), 5);
+
+        let schema = combined.schema();
+        let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
+        let unique_count = field_names.iter().collect::<std::collections::HashSet<_>>().len();
+        assert_eq!(
+            unique_count,
+            field_names.len(),
+            "duplicate columns in union schema: {field_names:?}"
+        );
+
+        // 4 required + service + host = 6
+        assert_eq!(schema.fields().len(), 6);
+
+        // Rows from batch1 have no "host" → 3 nulls; batch2 has "host" for all 2 rows → 0 nulls.
+        let host_idx = schema.index_of("host").unwrap();
+        assert_eq!(combined.column(host_idx).null_count(), 3);
+
+        // "service" present in both batches → 0 nulls total.
+        let service_idx = schema.index_of("service").unwrap();
+        assert_eq!(combined.column(service_idx).null_count(), 0);
     }
 
     #[test]
