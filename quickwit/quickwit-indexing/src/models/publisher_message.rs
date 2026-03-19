@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
 use itertools::Itertools;
@@ -36,6 +37,7 @@ pub struct SplitsUpdate {
     /// If `None`, the split batch was built in the `IndexingPipeline`.
     pub merge_task: Option<MergeTask>,
     pub parent_span: Span,
+    pub soft_deleted_snapshot: Option<HashMap<String, BTreeSet<u32>>>,
 }
 
 impl fmt::Debug for SplitsUpdate {

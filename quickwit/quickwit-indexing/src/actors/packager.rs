@@ -157,6 +157,7 @@ impl Handler<IndexedSplitBatch> for Packager {
                 batch.publish_token_opt,
                 batch.merge_task_opt,
                 batch.batch_parent_span,
+                batch.soft_deleted_snapshot,
             ),
         )
         .await?;
@@ -579,6 +580,7 @@ mod tests {
                 publish_token_opt: None,
                 merge_task_opt: None,
                 batch_parent_span: Span::none(),
+                soft_deleted_snapshot: None,
             })
             .await?;
         assert_eq!(

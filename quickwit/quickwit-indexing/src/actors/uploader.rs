@@ -27,11 +27,9 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
-use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
-use quickwit_proto::types::{IndexUid, PublishToken};
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
 use tokio::sync::oneshot::Sender;
@@ -40,10 +38,10 @@ use tracing::{Instrument, Span, debug, info, instrument, warn};
 
 use crate::actors::Publisher;
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
-use crate::merge_policy::{MergePolicy, MergeTask};
+use crate::merge_policy::MergePolicy;
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
-    EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate, create_split_metadata,
+    EmptySplit, PackagedSplit, PackagedSplitBatch, SplitsUpdate, create_split_metadata,
 };
 use crate::split_store::IndexingSplitStore;
 
@@ -388,15 +386,25 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     packaged_splits_and_metadata.push((packaged_split, metadata));
                 }
 
-                let splits_update = make_publish_operation(
+                assert!(!packaged_splits_and_metadata.is_empty());
+                let replaced_split_ids = packaged_splits_and_metadata
+                    .iter()
+                    .flat_map(|(split, _)| split.split_attrs.replaced_split_ids.clone())
+                    .collect::<HashSet<_>>();
+                let splits_update = SplitsUpdate {
                     index_uid,
-                    packaged_splits_and_metadata,
-                    batch.checkpoint_delta_opt,
-                    batch.publish_lock,
-                    batch.publish_token_opt,
-                    batch.merge_task_opt,
-                    batch.batch_parent_span,
-                );
+                    new_splits: packaged_splits_and_metadata
+                        .into_iter()
+                        .map(|split_and_meta| split_and_meta.1)
+                        .collect_vec(),
+                    replaced_split_ids: Vec::from_iter(replaced_split_ids),
+                    checkpoint_delta_opt: batch.checkpoint_delta_opt,
+                    publish_lock: batch.publish_lock,
+                    publish_token_opt: batch.publish_token_opt,
+                    merge_task: batch.merge_task_opt,
+                    parent_span: batch.batch_parent_span,
+                    soft_deleted_snapshot: batch.soft_deleted_snapshot,
+                };
 
                 let target = match &split_update_sender {
                     SplitsUpdateSender::Sequencer(_) => "sequencer",
@@ -445,39 +453,11 @@ impl Handler<EmptySplit> for Uploader {
             publish_token_opt: empty_split.publish_token_opt,
             merge_task: None,
             parent_span: empty_split.batch_parent_span,
+            soft_deleted_snapshot: None,
         };
 
         split_update_sender.send(splits_update, ctx).await?;
         Ok(())
-    }
-}
-
-fn make_publish_operation(
-    index_uid: IndexUid,
-    packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
-    checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-    publish_lock: PublishLock,
-    publish_token_opt: Option<PublishToken>,
-    merge_task: Option<MergeTask>,
-    parent_span: Span,
-) -> SplitsUpdate {
-    assert!(!packaged_splits_and_metadatas.is_empty());
-    let replaced_split_ids = packaged_splits_and_metadatas
-        .iter()
-        .flat_map(|(split, _)| split.split_attrs.replaced_split_ids.clone())
-        .collect::<HashSet<_>>();
-    SplitsUpdate {
-        index_uid,
-        new_splits: packaged_splits_and_metadatas
-            .into_iter()
-            .map(|split_and_meta| split_and_meta.1)
-            .collect_vec(),
-        replaced_split_ids: Vec::from_iter(replaced_split_ids),
-        checkpoint_delta_opt,
-        publish_lock,
-        publish_token_opt,
-        merge_task,
-        parent_span,
     }
 }
 
@@ -521,14 +501,14 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
-    use quickwit_proto::types::{DocMappingUid, NodeId};
+    use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
 
     use super::*;
     use crate::merge_policy::{NopMergePolicy, default_merge_policy};
-    use crate::models::{SplitAttrs, SplitsUpdate};
+    use crate::models::{PublishLock, SplitAttrs, SplitsUpdate};
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
@@ -608,6 +588,7 @@ mod tests {
                 None,
                 None,
                 Span::none(),
+                None,
             ))
             .await?;
         assert_eq!(
@@ -756,6 +737,7 @@ mod tests {
                 None,
                 None,
                 Span::none(),
+                None,
             ))
             .await?;
         assert_eq!(
@@ -875,6 +857,7 @@ mod tests {
                 None,
                 None,
                 Span::none(),
+                None,
             ))
             .await?;
         assert_eq!(
@@ -1059,6 +1042,7 @@ mod tests {
                 None,
                 None,
                 Span::none(),
+                None,
             ))
             .await?;
         assert_eq!(

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::path::PathBuf;
 
@@ -67,6 +67,7 @@ pub struct PackagedSplitBatch {
     /// If `None`, the split batch was built in the `IndexingPipeline`.
     pub merge_task_opt: Option<MergeTask>,
     pub batch_parent_span: Span,
+    pub soft_deleted_snapshot: Option<HashMap<String, BTreeSet<u32>>>,
 }
 
 impl PackagedSplitBatch {
@@ -81,6 +82,7 @@ impl PackagedSplitBatch {
         publish_token_opt: Option<PublishToken>,
         merge_task_opt: Option<MergeTask>,
         batch_parent_span: Span,
+        soft_deleted_snapshot: Option<HashMap<String, BTreeSet<u32>>>,
     ) -> Self {
         assert!(!splits.is_empty());
         assert!(
@@ -97,6 +99,7 @@ impl PackagedSplitBatch {
             publish_token_opt,
             merge_task_opt,
             batch_parent_span,
+            soft_deleted_snapshot,
         }
     }
 

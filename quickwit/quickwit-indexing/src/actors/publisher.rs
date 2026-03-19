@@ -12,11 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::{BTreeSet, HashMap};
+
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
-use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, PublishSplitsRequest};
+use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
+use quickwit_proto::metastore::{
+    ListSplitsRequest, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
+};
+use quickwit_proto::types::IndexUid;
 use serde::Serialize;
 use tracing::{info, instrument, warn};
 
@@ -131,6 +137,7 @@ impl Handler<SplitsUpdate> for Publisher {
             checkpoint_delta_opt,
             publish_lock,
             publish_token_opt,
+            soft_deleted_snapshot,
             ..
         } = split_update;
 
@@ -144,6 +151,15 @@ impl Handler<SplitsUpdate> for Publisher {
             .map(|split| split.split_id.clone())
             .collect();
         if let Some(_guard) = publish_lock.acquire().await {
+            if let Some(ref snapshot) = soft_deleted_snapshot {
+                warn_if_soft_deletes_changed_during_merge(
+                    &index_uid,
+                    snapshot,
+                    &self.metastore,
+                    ctx,
+                )
+                .await;
+            }
             let publish_splits_request = PublishSplitsRequest {
                 index_uid: Some(index_uid),
                 staged_split_ids: split_ids.clone(),
@@ -204,6 +220,64 @@ impl Handler<SplitsUpdate> for Publisher {
         }
         fail_point!("publisher:after");
         Ok(())
+    }
+}
+
+/// Re-reads the soft-deleted doc IDs for all input splits from the metastore and logs a
+/// warning for each split whose soft-delete set grew while the merge was running.
+async fn warn_if_soft_deletes_changed_during_merge(
+    index_uid: &IndexUid,
+    snapshot: &HashMap<String, BTreeSet<u32>>,
+    metastore: &MetastoreServiceClient,
+    ctx: &ActorContext<Publisher>,
+) {
+    let list_splits_request = match ListSplitsRequest::try_from_index_uid(index_uid.clone()) {
+        Ok(request) => request,
+        Err(err) => {
+            warn!(error = ?err, "failed to build list_splits request for soft-delete race detection");
+            return;
+        }
+    };
+    let splits_stream = match ctx
+        .protect_future(metastore.list_splits(list_splits_request))
+        .await
+    {
+        Ok(stream) => stream,
+        Err(err) => {
+            warn!(error = ?err, "failed to list splits for soft-delete race detection");
+            return;
+        }
+    };
+    let fresh_splits = match ctx
+        .protect_future(splits_stream.collect_splits_metadata())
+        .await
+    {
+        Ok(splits) => splits,
+        Err(err) => {
+            warn!(error = ?err, "failed to collect split metadata for soft-delete race detection");
+            return;
+        }
+    };
+    for fresh_split in &fresh_splits {
+        let Some(snapshot_ids) = snapshot.get(&fresh_split.split_id) else {
+            continue;
+        };
+        let missed: BTreeSet<u32> = fresh_split
+            .soft_deleted_doc_ids
+            .difference(snapshot_ids)
+            .copied()
+            .collect();
+        if !missed.is_empty() {
+            warn!(
+                split_id = %fresh_split.split_id,
+                num_missed_soft_deletes = missed.len(),
+                "soft-delete race condition detected: {} doc(s) were soft-deleted on split \
+                 `{}` while the merge was running; they will not be reflected in the merged \
+                 split and will remain searchable until the next merge cycle",
+                missed.len(),
+                fresh_split.split_id,
+            );
+        }
     }
 }
 
@@ -271,6 +345,7 @@ mod tests {
                     publish_token_opt: None,
                     merge_task: None,
                     parent_span: tracing::Span::none(),
+                    soft_deleted_snapshot: None,
                 })
                 .await
                 .is_ok()
@@ -346,6 +421,7 @@ mod tests {
                     publish_token_opt: None,
                     merge_task: None,
                     parent_span: tracing::Span::none(),
+                    soft_deleted_snapshot: None,
                 })
                 .await
                 .is_ok()
@@ -413,6 +489,7 @@ mod tests {
             publish_token_opt: None,
             merge_task: None,
             parent_span: Span::none(),
+            soft_deleted_snapshot: None,
         };
         assert!(
             publisher_mailbox
@@ -457,6 +534,7 @@ mod tests {
                 publish_token_opt: None,
                 merge_task: None,
                 parent_span: Span::none(),
+                soft_deleted_snapshot: None,
             })
             .await
             .unwrap();
@@ -466,6 +544,81 @@ mod tests {
 
         let merger_messages = merge_planner_inbox.drain_for_test();
         assert!(merger_messages.is_empty());
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_publisher_warns_on_soft_delete_race_condition() {
+        use std::collections::BTreeSet;
+
+        use quickwit_common::ServiceStream;
+        use quickwit_metastore::{ListSplitsResponseExt, Split, SplitState};
+        use quickwit_proto::metastore::ListSplitsResponse;
+
+        let universe = Universe::with_accelerated_time();
+        let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
+        let racing_split_id = "racing-split".to_string();
+
+        let mut mock_metastore = MockMetastoreService::new();
+
+        // list_splits returns the racing split with a new soft-delete absent from the snapshot.
+        let racing_split_id_clone = racing_split_id.clone();
+        mock_metastore
+            .expect_list_splits()
+            .times(1)
+            .returning(move |_| {
+                let split = Split {
+                    split_metadata: SplitMetadata {
+                        split_id: racing_split_id_clone.clone(),
+                        soft_deleted_doc_ids: BTreeSet::from([0u32]),
+                        ..Default::default()
+                    },
+                    split_state: SplitState::Published,
+                    update_timestamp: 0,
+                    publish_timestamp: None,
+                };
+                let response = ListSplitsResponse::try_from_splits(vec![split]).unwrap();
+                Ok(ServiceStream::from(vec![Ok(response)]))
+            });
+
+        mock_metastore
+            .expect_publish_splits()
+            .times(1)
+            .returning(|_| Ok(EmptyResponse {}));
+
+        let publisher = Publisher::new(
+            PublisherType::MergePublisher,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            None,
+            None,
+        );
+        let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
+
+        // Snapshot shows the racing split had no soft-deletes at merge start (stale read).
+        let mut snapshot = std::collections::HashMap::new();
+        snapshot.insert(racing_split_id.clone(), BTreeSet::new());
+
+        publisher_mailbox
+            .send_message(SplitsUpdate {
+                index_uid: ref_index_uid.clone(),
+                new_splits: vec![SplitMetadata {
+                    split_id: "merged-split".to_string(),
+                    ..Default::default()
+                }],
+                replaced_split_ids: vec![racing_split_id],
+                checkpoint_delta_opt: None,
+                publish_lock: PublishLock::default(),
+                publish_token_opt: None,
+                merge_task: None,
+                parent_span: Span::none(),
+                soft_deleted_snapshot: Some(snapshot),
+            })
+            .await
+            .unwrap();
+
+        // Publish must still succeed despite the race condition (warning is non-fatal).
+        let observation = publisher_handle.process_pending_and_observe().await.state;
+        assert_eq!(observation.num_replace_operations, 1);
         universe.assert_quit().await;
     }
 }

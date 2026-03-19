@@ -28,11 +28,11 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata};
+use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::{
-    DeleteTask, ListDeleteTasksRequest, ListSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreService, MetastoreServiceClient,
+    DeleteTask, ListDeleteTasksRequest, MarkSplitsForDeletionRequest, MetastoreService,
+    MetastoreServiceClient,
 };
 use quickwit_proto::types::{NodeId, SplitId};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
@@ -90,7 +90,10 @@ impl Handler<MergeScratch> for MergeExecutor {
     ) -> Result<(), ActorExitStatus> {
         let start = Instant::now();
         let merge_task = merge_scratch.merge_task;
-        let indexed_split_opt: Option<IndexedSplit> = match merge_task.operation_type {
+        let (indexed_split_opt, soft_deleted_snapshot_opt): (
+            Option<IndexedSplit>,
+            Option<HashMap<String, BTreeSet<u32>>>,
+        ) = match merge_task.operation_type {
             MergeOperationType::Merge => {
                 let merge_res = self
                     .process_merge(
@@ -102,7 +105,7 @@ impl Handler<MergeScratch> for MergeExecutor {
                     )
                     .await;
                 match merge_res {
-                    Ok(indexed_split) => Some(indexed_split),
+                    Ok((indexed_split, snapshot)) => (Some(indexed_split), Some(snapshot)),
                     Err(err) => {
                         // A failure in a merge is a bit special.
                         //
@@ -128,14 +131,17 @@ impl Handler<MergeScratch> for MergeExecutor {
                 );
                 assert_eq!(merge_scratch.tantivy_dirs.len(), 1);
                 let split_with_docs_to_delete = merge_task.splits[0].clone();
-                self.process_delete_and_merge(
-                    merge_task.merge_split_id.clone(),
-                    split_with_docs_to_delete,
-                    merge_scratch.tantivy_dirs,
-                    merge_scratch.merge_scratch_directory,
-                    ctx,
+                (
+                    self.process_delete_and_merge(
+                        merge_task.merge_split_id.clone(),
+                        split_with_docs_to_delete,
+                        merge_scratch.tantivy_dirs,
+                        merge_scratch.merge_scratch_directory,
+                        ctx,
+                    )
+                    .await?,
+                    None,
                 )
-                .await?
             }
         };
         if let Some(indexed_split) = indexed_split_opt {
@@ -154,6 +160,7 @@ impl Handler<MergeScratch> for MergeExecutor {
                     publish_token_opt: None,
                     batch_parent_span: merge_task.merge_parent_span.clone(),
                     merge_task_opt: Some(merge_task),
+                    soft_deleted_snapshot: soft_deleted_snapshot_opt,
                 },
             )
             .await?;
@@ -372,7 +379,7 @@ impl MergeExecutor {
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: TempDirectory,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<IndexedSplit> {
+    ) -> anyhow::Result<(IndexedSplit, HashMap<String, BTreeSet<u32>>)> {
         // Snapshot soft-deleted doc IDs at merge start so we can detect concurrent
         // modifications after the merge completes.
         let soft_deleted_snapshot: HashMap<String, BTreeSet<u32>> = splits
@@ -413,9 +420,6 @@ impl MergeExecutor {
             .await?;
         fail_point!("after-merge-split");
 
-        self.warn_if_soft_deletes_changed_during_merge(&splits, &soft_deleted_snapshot, ctx)
-            .await;
-
         // This will have the side effect of deleting the directory containing the downloaded
         // splits.
         let merged_index = open_index(
@@ -425,74 +429,13 @@ impl MergeExecutor {
         ctx.record_progress();
 
         let split_attrs = merge_split_attrs(self.pipeline_id.clone(), merge_split_id, &splits)?;
-        Ok(IndexedSplit {
+        let indexed_split = IndexedSplit {
             split_attrs,
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
-        })
-    }
-
-    /// Re-reads the soft-deleted doc IDs for all input splits from the metastore and logs a
-    /// warning for each split whose set grew while the merge was running.
-    async fn warn_if_soft_deletes_changed_during_merge(
-        &self,
-        splits: &[SplitMetadata],
-        snapshot: &HashMap<String, BTreeSet<u32>>,
-        ctx: &ActorContext<Self>,
-    ) {
-        if splits.is_empty() {
-            return;
         };
-        let index_uid = splits[0].index_uid.clone();
-        let list_splits_request = match ListSplitsRequest::try_from_index_uid(index_uid) {
-            Ok(request) => request,
-            Err(err) => {
-                warn!(error = ?err, "failed to build list_splits request for soft-delete race detection");
-                return;
-            }
-        };
-        let splits_stream = match ctx
-            .protect_future(self.metastore.list_splits(list_splits_request))
-            .await
-        {
-            Ok(stream) => stream,
-            Err(err) => {
-                warn!(error = ?err, "failed to list splits for soft-delete race detection");
-                return;
-            }
-        };
-        let fresh_splits = match ctx
-            .protect_future(splits_stream.collect_splits_metadata())
-            .await
-        {
-            Ok(splits) => splits,
-            Err(err) => {
-                warn!(error = ?err, "failed to collect split metadata for soft-delete race detection");
-                return;
-            }
-        };
-        for fresh_split in &fresh_splits {
-            let Some(snapshot_ids) = snapshot.get(&fresh_split.split_id) else {
-                continue;
-            };
-            let missed: BTreeSet<u32> = fresh_split
-                .soft_deleted_doc_ids
-                .difference(snapshot_ids)
-                .copied()
-                .collect();
-            if !missed.is_empty() {
-                warn!(
-                    split_id = %fresh_split.split_id,
-                    num_missed_soft_deletes = missed.len(),
-                    "soft-delete race condition detected: {} doc(s) were soft-deleted on split \
-                     `{}` while the merge was running; they will not be reflected in the merged \
-                     split and will remain searchable until the next merge cycle",
-                    missed.len(),
-                    fresh_split.split_id,
-                );
-            }
-        }
+        Ok((indexed_split, soft_deleted_snapshot))
     }
 
     async fn process_delete_and_merge(
@@ -1102,9 +1045,24 @@ mod tests {
 
         let split_attrs = &packager_msgs[0].splits[0].split_attrs;
         // The stale metadata had no soft-deletes, so all 4 docs are present in the merged
-        // segment. The racing soft-delete was missed and a warning was emitted.
+        // segment. The racing soft-delete was missed.
         assert_eq!(split_attrs.num_docs, 4);
         assert_eq!(split_attrs.num_merge_ops, 1);
+
+        // The snapshot carried in the batch reflects the stale state (no soft-deletes).
+        let snapshot = packager_msgs[0]
+            .soft_deleted_snapshot
+            .as_ref()
+            .expect("merge operation must carry a soft_deleted_snapshot");
+        assert_eq!(
+            snapshot.len(),
+            4,
+            "all 4 input splits must appear in the snapshot"
+        );
+        assert!(
+            snapshot[&racing_split_id].is_empty(),
+            "racing split had no soft-deletes at merge start (stale read)"
+        );
 
         let reader = packager_msgs[0].splits[0]
             .index
