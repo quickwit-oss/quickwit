@@ -337,10 +337,10 @@ impl IndexingPipeline {
                 let publisher_counters = handles.publisher.last_observation();
 
                 let mut stats = self.previous_generations_statistics.clone();
-                stats.num_docs += doc_counters.valid_rows.load(Ordering::Relaxed);
+                stats.num_docs += doc_counters.valid_rows;
                 stats.num_invalid_docs += doc_counters.num_errors();
-                stats.total_bytes_processed += doc_counters.bytes_total.load(Ordering::Relaxed);
-                stats.num_local_splits += indexer_counters.batches_flushed.load(Ordering::Relaxed);
+                stats.total_bytes_processed += doc_counters.bytes_total;
+                stats.num_local_splits += indexer_counters.batches_flushed;
                 stats.num_staged_splits +=
                     uploader_counters.num_staged_splits.load(Ordering::Relaxed);
                 stats.num_uploaded_splits += uploader_counters
