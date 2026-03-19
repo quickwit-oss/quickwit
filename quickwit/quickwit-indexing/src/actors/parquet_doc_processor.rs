@@ -17,8 +17,6 @@
 //! This actor processes RawDocBatch messages containing Arrow IPC data and routes
 //! them directly to the metrics engine, bypassing Tantivy document conversion.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 use arrow::record_batch::RecordBatch;
@@ -49,22 +47,22 @@ pub fn is_arrow_ipc(bytes: &[u8]) -> bool {
 }
 
 /// Counters for ParquetDocProcessor.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ParquetDocProcessorCounters {
     /// Index identifier.
     pub index_id: IndexId,
     /// Source identifier.
     pub source_id: SourceId,
     /// Number of valid batches processed.
-    pub valid_batches: AtomicU64,
+    pub valid_batches: u64,
     /// Number of valid rows processed.
-    pub valid_rows: AtomicU64,
+    pub valid_rows: u64,
     /// Number of batches that failed to parse.
-    pub parse_errors: AtomicU64,
+    pub parse_errors: u64,
     /// Number of batches that were not Arrow IPC format.
-    pub format_errors: AtomicU64,
+    pub format_errors: u64,
     /// Total bytes processed.
-    pub bytes_total: AtomicU64,
+    pub bytes_total: u64,
 }
 
 impl ParquetDocProcessorCounters {
@@ -73,47 +71,43 @@ impl ParquetDocProcessorCounters {
         Self {
             index_id,
             source_id,
-            valid_batches: AtomicU64::new(0),
-            valid_rows: AtomicU64::new(0),
-            parse_errors: AtomicU64::new(0),
-            format_errors: AtomicU64::new(0),
-            bytes_total: AtomicU64::new(0),
+            valid_batches: 0u64,
+            valid_rows: 0u64,
+            parse_errors: 0u64,
+            format_errors: 0u64,
+            bytes_total: 0u64,
         }
     }
 
     /// Record a successfully processed batch.
-    pub fn record_valid(&self, num_rows: usize, num_bytes: usize) {
-        self.valid_batches.fetch_add(1, Ordering::Relaxed);
-        self.valid_rows
-            .fetch_add(num_rows as u64, Ordering::Relaxed);
-        self.bytes_total
-            .fetch_add(num_bytes as u64, Ordering::Relaxed);
+    pub fn record_valid(&mut self, num_rows: usize, num_bytes: usize) {
+        self.valid_batches += 1;
+        self.valid_rows += num_rows as u64;
+        self.bytes_total += num_bytes as u64;
     }
 
     /// Record a parse error.
-    pub fn record_parse_error(&self, num_bytes: usize) {
-        self.parse_errors.fetch_add(1, Ordering::Relaxed);
-        self.bytes_total
-            .fetch_add(num_bytes as u64, Ordering::Relaxed);
+    pub fn record_parse_error(&mut self, num_bytes: usize) {
+        self.parse_errors += 1;
+        self.bytes_total += num_bytes as u64;
     }
 
     /// Record a format error (not Arrow IPC).
-    pub fn record_format_error(&self, num_bytes: usize) {
-        self.format_errors.fetch_add(1, Ordering::Relaxed);
-        self.bytes_total
-            .fetch_add(num_bytes as u64, Ordering::Relaxed);
+    pub fn record_format_error(&mut self, num_bytes: usize) {
+        self.format_errors += 1;
+        self.bytes_total += num_bytes as u64;
     }
 
     /// Get total number of batches processed (valid or not).
     pub fn num_processed_batches(&self) -> u64 {
-        self.valid_batches.load(Ordering::Relaxed)
-            + self.parse_errors.load(Ordering::Relaxed)
-            + self.format_errors.load(Ordering::Relaxed)
+        self.valid_batches
+            + self.parse_errors
+            + self.format_errors
     }
 
     /// Get total number of errors.
     pub fn num_errors(&self) -> u64 {
-        self.parse_errors.load(Ordering::Relaxed) + self.format_errors.load(Ordering::Relaxed)
+        self.parse_errors + self.format_errors
     }
 }
 
@@ -140,7 +134,7 @@ pub struct ParquetDocProcessor {
     /// Processor for converting Arrow IPC to RecordBatch.
     processor: ParquetIngestProcessor,
     /// Processing counters.
-    counters: Arc<ParquetDocProcessorCounters>,
+    counters: ParquetDocProcessorCounters,
     /// Publish lock for coordinating with sources.
     publish_lock: PublishLock,
     /// Mailbox for forwarding batches to ParquetIndexer.
@@ -156,10 +150,10 @@ impl ParquetDocProcessor {
     ) -> Self {
         let schema = ParquetSchema::new();
         let processor = ParquetIngestProcessor::new(schema);
-        let counters = Arc::new(ParquetDocProcessorCounters::new(
+        let counters = ParquetDocProcessorCounters::new(
             index_id.clone(),
             source_id.clone(),
-        ));
+        );
 
         info!(
             index_id = %index_id,
@@ -178,7 +172,7 @@ impl ParquetDocProcessor {
 
 #[async_trait]
 impl Actor for ParquetDocProcessor {
-    type ObservableState = Arc<ParquetDocProcessorCounters>;
+    type ObservableState = ParquetDocProcessorCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
         self.counters.clone()

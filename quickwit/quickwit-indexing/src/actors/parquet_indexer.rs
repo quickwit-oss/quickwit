@@ -19,8 +19,6 @@
 //! Parquet encoding and file writing.
 
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use arrow::record_batch::RecordBatch;
@@ -51,34 +49,33 @@ struct CommitTimeout {
 }
 
 /// Counters for ParquetIndexer observability.
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Clone)]
 pub struct ParquetIndexerCounters {
     /// Number of batches received.
-    pub batches_received: AtomicU64,
+    pub batches_received: u64,
     /// Number of rows indexed.
-    pub rows_indexed: AtomicU64,
+    pub rows_indexed: u64,
     /// Number of batches flushed to packager.
-    pub batches_flushed: AtomicU64,
+    pub batches_flushed: u64,
     /// Number of errors encountered.
-    pub errors: AtomicU64,
+    pub errors: u64,
 }
 
 impl ParquetIndexerCounters {
     /// Record a batch received.
-    pub fn record_batch(&self, num_rows: usize) {
-        self.batches_received.fetch_add(1, Ordering::Relaxed);
-        self.rows_indexed
-            .fetch_add(num_rows as u64, Ordering::Relaxed);
+    pub fn record_batch(&mut self, num_rows: usize) {
+        self.batches_received += 1u64;
+        self.rows_indexed += num_rows as u64;
     }
 
     /// Record a flush (concatenated batch sent to packager).
-    pub fn record_flush(&self) {
-        self.batches_flushed.fetch_add(1, Ordering::Relaxed);
+    pub fn record_flush(&mut self) {
+        self.batches_flushed += 1;
     }
 
     /// Record an error.
-    pub fn record_error(&self) {
-        self.errors.fetch_add(1, Ordering::Relaxed);
+    pub fn record_error(&mut self) {
+        self.errors += 1;
     }
 }
 
@@ -128,7 +125,7 @@ pub struct ParquetIndexer {
     /// Optional publish token.
     publish_token_opt: Option<PublishToken>,
     /// Observability counters.
-    counters: Arc<ParquetIndexerCounters>,
+    counters: ParquetIndexerCounters,
     /// Current workbench ID for tracing.
     workbench_id: Ulid,
     /// Mailbox for sending concatenated batches to packager.
@@ -157,7 +154,7 @@ impl ParquetIndexer {
     ) -> Self {
         let config = config.unwrap_or_default();
         let accumulator = ParquetBatchAccumulator::new(config);
-        let counters = Arc::new(ParquetIndexerCounters::default());
+        let counters = ParquetIndexerCounters::default();
         let commit_timeout = commit_timeout.unwrap_or(DEFAULT_COMMIT_TIMEOUT);
 
         info!(
@@ -210,12 +207,10 @@ impl ParquetIndexer {
             force_commit = batch.force_commit,
             total_batches = self
                 .counters
-                .batches_received
-                .load(std::sync::atomic::Ordering::Relaxed),
+                .batches_received,
             total_rows = self
                 .counters
-                .rows_indexed
-                .load(std::sync::atomic::Ordering::Relaxed),
+                .rows_indexed,
             "received batch for accumulation"
         );
 
@@ -335,7 +330,7 @@ impl ParquetIndexer {
 
 #[async_trait]
 impl Actor for ParquetIndexer {
-    type ObservableState = Arc<ParquetIndexerCounters>;
+    type ObservableState = ParquetIndexerCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
         self.counters.clone()

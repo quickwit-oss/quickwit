@@ -97,7 +97,7 @@ impl<P: Actor> Clone for SplitsUpdateMailbox<P> {
 
 // Manual Debug impl to avoid a spurious `P: Debug` bound from #[derive(Debug)].
 impl<P: Actor> std::fmt::Debug for SplitsUpdateMailbox<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Sequencer(m) => f.debug_tuple("Sequencer").field(m).finish(),
             Self::Publisher(m) => f.debug_tuple("Publisher").field(m).finish(),
@@ -128,6 +128,9 @@ impl<P: Actor> SplitsUpdateMailbox<P> {
     {
         match self {
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox) => {
+                // We send the future to the sequencer right away.
+                // The sequencer will then resolve the future in their arrival order and ensure that
+                // the publisher publishes splits in order.
                 let (tx, rx) = oneshot::channel::<SequencerCommand<M>>();
                 ctx.send_message(sequencer_mailbox, rx).await?;
                 Ok(SplitsUpdateSender::Sequencer(tx))
