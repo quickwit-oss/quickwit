@@ -35,6 +35,7 @@ mod scroll_context;
 mod search_job_placer;
 mod search_response_rest;
 mod service;
+mod soft_delete_query;
 pub(crate) mod top_k_collector;
 
 mod metrics;
