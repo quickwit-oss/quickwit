@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use serde::de::{self, MapAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 use crate::elastic_query_dsl::ConvertibleToQueryAst;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
@@ -22,46 +21,27 @@ use crate::query_ast::{QueryAst, RegexQuery as AstRegexQuery};
 /// Elasticsearch supports two formats for regexp queries:
 /// - Shorthand: `{"regexp": {"field": "pattern"}}`
 /// - Full:      `{"regexp": {"field": {"value": "pattern", "case_insensitive": true}}}`
-#[derive(Debug, Default, Eq, PartialEq, Clone)]
-pub struct RegexQueryParams {
-    value: String,
-    case_insensitive: bool,
+#[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
+#[serde(untagged)]
+pub enum RegexQueryParams {
+    Full {
+        #[serde(rename = "value")]
+        pattern: String,
+        #[serde(default)]
+        case_insensitive: bool,
+    },
+    Shorthand(String),
 }
 
-impl<'de> Deserialize<'de> for RegexQueryParams {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct RegexQueryParamsVisitor;
-
-        impl<'de> Visitor<'de> for RegexQueryParamsVisitor {
-            type Value = RegexQueryParams;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a string pattern or an object with `value` and optional `case_insensitive`")
-            }
-
-            fn visit_str<E: de::Error>(self, value: &str) -> Result<RegexQueryParams, E> {
-                Ok(RegexQueryParams {
-                    value: value.to_string(),
-                    case_insensitive: false,
-                })
-            }
-
-            fn visit_map<M: MapAccess<'de>>(self, map: M) -> Result<RegexQueryParams, M::Error> {
-                #[derive(Deserialize)]
-                struct FullParams {
-                    value: String,
-                    #[serde(default)]
-                    case_insensitive: bool,
-                }
-                let full = FullParams::deserialize(de::value::MapAccessDeserializer::new(map))?;
-                Ok(RegexQueryParams {
-                    value: full.value,
-                    case_insensitive: full.case_insensitive,
-                })
-            }
+impl RegexQueryParams {
+    fn into_tuple(self) -> (String, bool) {
+        match self {
+            RegexQueryParams::Full {
+                pattern,
+                case_insensitive,
+            } => (pattern, case_insensitive),
+            RegexQueryParams::Shorthand(pattern) => (pattern, false),
         }
-
-        deserializer.deserialize_any(RegexQueryParamsVisitor)
     }
 }
 
@@ -69,10 +49,12 @@ pub type RegexQuery = OneFieldMap<RegexQueryParams>;
 
 impl ConvertibleToQueryAst for RegexQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
-        let regex = if self.value.case_insensitive {
-            format!("(?i){}", self.value.value)
+        let (pattern, case_insensitive) = self.value.into_tuple();
+
+        let regex = if case_insensitive {
+            format!("(?i){pattern}")
         } else {
-            self.value.value.clone()
+            pattern
         };
         Ok(AstRegexQuery {
             field: self.field,
@@ -91,8 +73,9 @@ mod tests {
         let json = serde_json::json!({"service": ".*logs.*"});
         let query: RegexQuery = serde_json::from_value(json).unwrap();
         assert_eq!(query.field, "service");
-        assert_eq!(query.value.value, ".*logs.*");
-        assert!(!query.value.case_insensitive);
+        let (pattern, case_insensitive) = query.value.into_tuple();
+        assert_eq!(pattern, ".*logs.*");
+        assert!(!case_insensitive);
     }
 
     #[test]
@@ -100,8 +83,9 @@ mod tests {
         let json = serde_json::json!({"service": {"value": ".*logs.*", "case_insensitive": true}});
         let query: RegexQuery = serde_json::from_value(json).unwrap();
         assert_eq!(query.field, "service");
-        assert_eq!(query.value.value, ".*logs.*");
-        assert!(query.value.case_insensitive);
+        let (pattern, case_insensitive) = query.value.into_tuple();
+        assert_eq!(pattern, ".*logs.*");
+        assert!(case_insensitive);
     }
 
     #[test]
@@ -109,7 +93,8 @@ mod tests {
         let json = serde_json::json!({"service": {"value": ".*logs.*"}});
         let query: RegexQuery = serde_json::from_value(json).unwrap();
         assert_eq!(query.field, "service");
-        assert_eq!(query.value.value, ".*logs.*");
-        assert!(!query.value.case_insensitive);
+        let (pattern, case_insensitive) = query.value.into_tuple();
+        assert_eq!(pattern, ".*logs.*");
+        assert!(!case_insensitive);
     }
 }
