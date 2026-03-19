@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Write};
 use std::str::FromStr;
 use std::time::Duration;
@@ -79,7 +79,8 @@ use crate::metastore::{
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
-    MetastoreServiceExt, Split, SplitState, StageSplitsRequestExt, UpdateIndexRequestExt,
+    MetastoreServiceExt, Split, SplitMetadata, SplitState, StageSplitsRequestExt,
+    UpdateIndexRequestExt,
 };
 
 /// PostgreSQL metastore implementation.
@@ -605,8 +606,6 @@ impl MetastoreService for PostgresqlMetastore {
         let mut delete_opstamps = Vec::with_capacity(splits_metadata.len());
         let mut maturity_timestamps = Vec::with_capacity(splits_metadata.len());
         let mut node_ids = Vec::with_capacity(splits_metadata.len());
-        let mut soft_deleted_doc_ids_list: Vec<sqlx::types::Json<Vec<i32>>> =
-            Vec::with_capacity(splits_metadata.len());
 
         for split_metadata in splits_metadata {
             let split_metadata_json = serde_utils::to_json_str(&split_metadata)?;
@@ -634,13 +633,6 @@ impl MetastoreService for PostgresqlMetastore {
 
             let tags: Vec<String> = split_metadata.tags.into_iter().collect();
             tags_list.push(sqlx::types::Json(tags));
-            soft_deleted_doc_ids_list.push(sqlx::types::Json(
-                split_metadata
-                    .soft_deleted_doc_ids
-                    .iter()
-                    .map(|&id| id as i32)
-                    .collect(),
-            ));
             split_ids.push(split_metadata.split_id);
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
             node_ids.push(split_metadata.node_id);
@@ -651,7 +643,7 @@ impl MetastoreService for PostgresqlMetastore {
         run_with_tx!(self.connection_pool, tx, "stage splits", {
             let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"
                 INSERT INTO splits
-                    (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid, node_id, soft_deleted_doc_ids)
+                    (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid, node_id)
                 SELECT
                     split_id,
                     time_range_start,
@@ -664,11 +656,10 @@ impl MetastoreService for PostgresqlMetastore {
                     to_timestamp(maturity_timestamp),
                     $11 as split_state,
                     $12 as index_uid,
-                    node_id,
-                    ARRAY(SELECT json_array_elements_text(soft_deleted_doc_ids_json::json)::INTEGER) AS soft_deleted_doc_ids
+                    node_id
                 FROM
-                    UNNEST($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $13)
-                    AS staged_splits (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp, node_id, soft_deleted_doc_ids_json)
+                    UNNEST($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    AS staged_splits (split_id, time_range_start, time_range_end, secondary_time_range_start, secondary_time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp, node_id)
                 ON CONFLICT(index_uid, split_id) DO UPDATE
                     SET
                         time_range_start = excluded.time_range_start,
@@ -680,7 +671,6 @@ impl MetastoreService for PostgresqlMetastore {
                         delete_opstamp = excluded.delete_opstamp,
                         maturity_timestamp = excluded.maturity_timestamp,
                         node_id = excluded.node_id,
-                        soft_deleted_doc_ids = excluded.soft_deleted_doc_ids,
                         update_timestamp = CURRENT_TIMESTAMP,
                         create_timestamp = CURRENT_TIMESTAMP
                     WHERE splits.split_id = excluded.split_id AND splits.split_state = 'Staged'
@@ -698,7 +688,6 @@ impl MetastoreService for PostgresqlMetastore {
                 .bind(&node_ids)
                 .bind(SplitState::Staged.as_str())
                 .bind(&index_uid)
-                .bind(&soft_deleted_doc_ids_list)
                 .fetch_all(tx.as_mut())
                 .await
                 .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
@@ -1192,82 +1181,103 @@ impl MetastoreService for PostgresqlMetastore {
             });
         }
 
-        // Computes the number of distinct soft-deleted doc IDs that would result from merging the
-        // current set with the requested ones. Returns no row when the split is not found or not
-        // in Published state (those cases are silently skipped, matching prior behaviour).
-        const SOFT_DELETE_DOCS_COUNT_QUERY: &str = r#"
-            SELECT
-                (SELECT count(DISTINCT v)::INTEGER
-                 FROM unnest(soft_deleted_doc_ids || $3::INTEGER[]) AS v) AS new_count
+        // Fetches current metadata for all requested splits in a single round-trip, locking
+        // the rows for the duration of the transaction.
+        const FETCH_SPLITS_METADATA_QUERY: &str = r#"
+            SELECT split_id, split_metadata_json
             FROM splits
             WHERE
                 index_uid = $1
-                AND split_id = $2
+                AND split_id = ANY($2)
                 AND split_state = 'Published'
+            FOR UPDATE
         "#;
 
-        const SOFT_DELETE_DOCS_QUERY: &str = r#"
+        // Updates all modified splits in a single round-trip via UNNEST.
+        const UPDATE_SPLITS_METADATA_QUERY: &str = r#"
             UPDATE splits
             SET
-                soft_deleted_doc_ids = ARRAY(
-                    SELECT DISTINCT unnest(soft_deleted_doc_ids || $3::INTEGER[])
-                ),
+                split_metadata_json = updates.split_metadata_json,
                 update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            FROM UNNEST($1::TEXT[], $2::TEXT[]) AS updates(split_id, split_metadata_json)
             WHERE
-                index_uid = $1
-                AND split_id = $2
-                AND split_state = 'Published'
-            RETURNING array_length(soft_deleted_doc_ids, 1)
+                splits.index_uid = $3
+                AND splits.split_id = updates.split_id
+                AND splits.split_state = 'Published'
         "#;
 
-        let mut total_soft_deleted: u64 = 0;
+        // Build a lookup map: split_id → new doc IDs to add.
+        let new_ids_by_split: HashMap<&str, BTreeSet<u32>> = split_doc_ids
+            .iter()
+            .map(|s| (s.split_id.as_str(), s.doc_ids.iter().copied().collect()))
+            .collect();
+
+        let requested_split_ids: Vec<&str> =
+            split_doc_ids.iter().map(|s| s.split_id.as_str()).collect();
 
         run_with_tx!(self.connection_pool, tx, "soft delete documents", {
-            // Phase 1: validate that no split would exceed the soft-deleted docs limit.
+            // Phase 1: fetch and lock all relevant splits, merge new doc IDs, validate limits.
             // Any error here causes the transaction to roll back, so no split is modified.
-            for split_doc in &split_doc_ids {
-                let doc_ids: Vec<i32> = split_doc.doc_ids.iter().map(|&id| id as i32).collect();
+            let rows: Vec<(String, String)> = sqlx::query_as(FETCH_SPLITS_METADATA_QUERY)
+                .bind(&index_uid)
+                .bind(&requested_split_ids)
+                .fetch_all(tx.as_mut())
+                .await
+                .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
-                let result: Option<(Option<i32>,)> = sqlx::query_as(SOFT_DELETE_DOCS_COUNT_QUERY)
-                    .bind(&index_uid)
-                    .bind(&split_doc.split_id)
-                    .bind(&doc_ids)
-                    .fetch_optional(tx.as_mut())
-                    .await
-                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
+            let mut updated_split_ids: Vec<String> = Vec::with_capacity(rows.len());
+            let mut updated_metadata_jsons: Vec<String> = Vec::with_capacity(rows.len());
+            let mut total_soft_deleted: u64 = 0;
 
-                if let Some((Some(new_count),)) = result
-                    && new_count as usize > MAX_SOFT_DELETED_DOCS_PER_SPLIT
-                {
+            for (split_id, split_metadata_json) in rows {
+                let new_ids = new_ids_by_split
+                    .get(split_id.as_str())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut split_metadata = serde_json::from_str::<SplitMetadata>(
+                    &split_metadata_json,
+                )
+                .map_err(|error| MetastoreError::JsonDeserializeError {
+                    struct_name: "SplitMetadata".to_string(),
+                    message: error.to_string(),
+                })?;
+
+                let old_count = split_metadata.soft_deleted_doc_ids.len();
+                split_metadata.soft_deleted_doc_ids.extend(new_ids);
+                let new_count = split_metadata.soft_deleted_doc_ids.len();
+                if old_count == new_count {
+                    continue;
+                }
+
+                if new_count > MAX_SOFT_DELETED_DOCS_PER_SPLIT {
                     return Err(MetastoreError::FailedPrecondition {
                         entity: EntityKind::Split {
-                            split_id: split_doc.split_id.clone(),
+                            split_id: split_id.clone(),
                         },
                         message: format!(
-                            "split `{}` would exceed the maximum number of soft-deleted documents \
-                             ({MAX_SOFT_DELETED_DOCS_PER_SPLIT}): would be {new_count}",
-                            split_doc.split_id,
+                            "split `{split_id}` would exceed the maximum number of soft-deleted \
+                             documents ({MAX_SOFT_DELETED_DOCS_PER_SPLIT}): would be {new_count}",
                         ),
                     });
                 }
+
+                updated_metadata_jsons.push(serde_utils::to_json_str(&split_metadata)?);
+                updated_split_ids.push(split_id);
+                total_soft_deleted += new_count as u64;
             }
 
-            // Phase 2: all validations passed — apply the updates.
-            for split_doc in &split_doc_ids {
-                let doc_ids: Vec<i32> = split_doc.doc_ids.iter().map(|&id| id as i32).collect();
-
-                let result: Option<(Option<i32>,)> = sqlx::query_as(SOFT_DELETE_DOCS_QUERY)
+            // Phase 2: all validations passed — apply all updates in a single query.
+            if !updated_split_ids.is_empty() {
+                sqlx::query(UPDATE_SPLITS_METADATA_QUERY)
+                    .bind(&updated_split_ids)
+                    .bind(&updated_metadata_jsons)
                     .bind(&index_uid)
-                    .bind(&split_doc.split_id)
-                    .bind(&doc_ids)
-                    .fetch_optional(tx.as_mut())
+                    .execute(tx.as_mut())
                     .await
                     .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
-
-                if let Some((Some(count),)) = result {
-                    total_soft_deleted += count as u64;
-                }
             }
+
             Ok(SoftDeleteDocumentsResponse {
                 num_soft_deleted_doc_ids: total_soft_deleted,
             })

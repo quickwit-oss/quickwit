@@ -135,8 +135,6 @@ pub(super) struct PgSplit {
     pub secondary_time_range_start: Option<i64>,
     /// The max timestamp for the secondary time dimension.
     pub secondary_time_range_end: Option<i64>,
-    /// Soft-deleted tantivy doc IDs for this split.
-    pub soft_deleted_doc_ids: Vec<i32>,
 }
 
 impl PgSplit {
@@ -179,11 +177,6 @@ impl TryInto<Split> for PgSplit {
             .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
         split_metadata.index_uid = self.index_uid;
         split_metadata.delete_opstamp = self.delete_opstamp as u64;
-        split_metadata.soft_deleted_doc_ids = self
-            .soft_deleted_doc_ids
-            .into_iter()
-            .map(|id| id as u32)
-            .collect();
         Ok(Split {
             split_metadata,
             split_state,
