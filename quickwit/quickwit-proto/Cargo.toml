@@ -57,5 +57,6 @@ tonic-prost-build = { workspace = true }
 quickwit-codegen = { workspace = true }
 
 [features]
+mysql = ["sea-query", "sqlx"]
 postgres = ["sea-query", "sqlx"]
 testsuite = ["mockall", "futures"]

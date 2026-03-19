@@ -24,6 +24,8 @@ use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 
 use crate::metastore::file_backed::FileBackedMetastoreFactory;
+#[cfg(feature = "mysql")]
+use crate::metastore::mysql::MysqlMetastoreFactory;
 #[cfg(feature = "postgres")]
 use crate::metastore::postgres::PostgresqlMetastoreFactory;
 use crate::{MetastoreFactory, MetastoreResolverError};
@@ -62,6 +64,7 @@ impl MetastoreResolver {
             Protocol::Ram => MetastoreBackend::File,
             Protocol::S3 => MetastoreBackend::File,
             Protocol::PostgreSQL => MetastoreBackend::PostgreSQL,
+            Protocol::MySQL => MetastoreBackend::MySQL,
             _ => {
                 return Err(MetastoreResolverError::UnsupportedBackend(
                     "no implementation exists for this backend".to_string(),
@@ -128,6 +131,31 @@ impl MetastoreResolver {
                     "Quickwit was compiled without the `postgres` feature",
                 ),
                 PostgresMetastoreConfig::default().into(),
+            );
+        }
+        #[cfg(feature = "mysql")]
+        {
+            builder = builder.register(
+                MysqlMetastoreFactory::default(),
+                metastore_configs
+                    .find_mysql()
+                    .cloned()
+                    .unwrap_or_default()
+                    .into(),
+            );
+        }
+        #[cfg(not(feature = "mysql"))]
+        {
+            use quickwit_config::MysqlMetastoreConfig;
+
+            use crate::UnsupportedMetastore;
+
+            builder = builder.register(
+                UnsupportedMetastore::new(
+                    MetastoreBackend::MySQL,
+                    "Quickwit was compiled without the `mysql` feature",
+                ),
+                MysqlMetastoreConfig::default().into(),
             );
         }
         builder

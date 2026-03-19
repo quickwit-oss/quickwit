@@ -169,7 +169,7 @@ impl prost::Message for IndexUid {
     }
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", feature = "mysql"))]
 impl TryFrom<String> for IndexUid {
     type Error = InvalidIndexUid;
 
@@ -204,20 +204,37 @@ impl sqlx::postgres::PgHasArrayType for IndexUid {
     }
 }
 
+#[cfg(feature = "mysql")]
+impl sqlx::Type<sqlx::MySql> for IndexUid {
+    fn type_info() -> sqlx::mysql::MySqlTypeInfo {
+        <String as sqlx::Type<sqlx::MySql>>::type_info()
+    }
+}
+
+#[cfg(feature = "mysql")]
+impl sqlx::Encode<'_, sqlx::MySql> for IndexUid {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <sqlx::MySql as sqlx::Database>::ArgumentBuffer<'_>,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        <String as sqlx::Encode<'_, sqlx::MySql>>::encode_by_ref(&self.to_string(), buf)
+    }
+}
+
 impl PartialEq<(&'static str, u128)> for IndexUid {
     fn eq(&self, (index_id, incarnation_id): &(&str, u128)) -> bool {
         self.index_id == *index_id && self.incarnation_id == Ulid::from(*incarnation_id)
     }
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", feature = "mysql"))]
 impl From<IndexUid> for sea_query::Value {
     fn from(index_uid: IndexUid) -> Self {
         index_uid.to_string().into()
     }
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", feature = "mysql"))]
 impl From<&IndexUid> for sea_query::Value {
     fn from(index_uid: &IndexUid) -> Self {
         index_uid.to_string().into()

@@ -178,7 +178,7 @@ impl MetastoreError {
     }
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", feature = "mysql"))]
 impl From<sqlx::Error> for MetastoreError {
     fn from(error: sqlx::Error) -> Self {
         MetastoreError::Db {

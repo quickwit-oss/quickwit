@@ -459,16 +459,12 @@ pub async fn serve_quickwit(
                         node_config.metastore_uri
                     )
                 })?;
-            let max_in_flight_requests = if node_config.metastore_uri.protocol().is_database() {
-                node_config
-                    .metastore_configs
-                    .find_postgres()
-                    .map(|config| config.max_connections.get() * 2)
-                    .unwrap_or_default()
-                    .max(100)
-            } else {
-                100
-            };
+            let max_in_flight_requests = node_config
+                .metastore_configs
+                .find_database_max_connections(node_config.metastore_uri.protocol())
+                .map(|max_conn| max_conn.get() * 2)
+                .unwrap_or(100)
+                .max(100);
             // These layers apply to all the RPCs of the metastore.
             let shared_layer = ServiceBuilder::new()
                 .layer(METASTORE_GRPC_SERVER_METRICS_LAYER.clone())

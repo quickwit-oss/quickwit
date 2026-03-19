@@ -38,8 +38,11 @@ docker-compose-monitoring:
 docker-rm-postgres-volume:
 	docker volume rm quickwit_postgres_data
 
+docker-rm-mysql-volume:
+	docker volume rm quickwit_mysql_data
+
 docker-rm-volumes:
-	docker volume rm quickwit_azurite_data quickwit_fake_gcs_server_data quickwit_grafana_conf quickwit_grafana_data quickwit_localstack_data quickwit_postgres_data
+	docker volume rm quickwit_azurite_data quickwit_fake_gcs_server_data quickwit_grafana_conf quickwit_grafana_data quickwit_localstack_data quickwit_mysql_data quickwit_postgres_data
 
 doc:
 	@$(MAKE) -C $(QUICKWIT_SRC) doc

@@ -133,7 +133,7 @@ impl FromStr for DocMappingUid {
     }
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", feature = "mysql"))]
 impl TryFrom<String> for DocMappingUid {
     type Error = anyhow::Error;
 
@@ -156,6 +156,23 @@ impl sqlx::Encode<'_, sqlx::Postgres> for DocMappingUid {
         buf: &mut sqlx::postgres::PgArgumentBuffer,
     ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
         sqlx::Encode::<sqlx::Postgres>::encode(self.0.to_string(), buf)
+    }
+}
+
+#[cfg(feature = "mysql")]
+impl sqlx::Type<sqlx::MySql> for DocMappingUid {
+    fn type_info() -> sqlx::mysql::MySqlTypeInfo {
+        <String as sqlx::Type<sqlx::MySql>>::type_info()
+    }
+}
+
+#[cfg(feature = "mysql")]
+impl sqlx::Encode<'_, sqlx::MySql> for DocMappingUid {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <sqlx::MySql as sqlx::Database>::ArgumentBuffer<'_>,
+    ) -> Result<sqlx::encode::IsNull, sqlx::error::BoxDynError> {
+        <String as sqlx::Encode<'_, sqlx::MySql>>::encode_by_ref(&self.0.to_string(), buf)
     }
 }
 
