@@ -124,6 +124,7 @@ impl PendingRequests {
     }
 }
 
+#[tracing::instrument(skip_all, fields(req_id = full_request.req_id))]
 async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest) -> AnyResponse {
     use any_request::Request;
     use any_response::Response;
