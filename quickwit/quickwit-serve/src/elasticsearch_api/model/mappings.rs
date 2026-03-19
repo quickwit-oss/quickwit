@@ -99,6 +99,10 @@ fn build_properties(field_mappings: &[FieldMappingEntry]) -> HashMap<String, Fie
 
 fn field_mapping_from_entry(entry: &FieldMappingEntry) -> Option<FieldMapping> {
     match &entry.mapping_type {
+        // Quickwit text fields behave like ES keyword fields: they support exact
+        // match, prefix, and regexp queries. Reporting them as "keyword" enables
+        // downstream connectors (e.g. Trino ES connector) to push down filters and
+        // LIKE predicates, which they only do for keyword-typed fields.
         FieldMappingType::Text(..) => Some(FieldMapping::Leaf { typ: "keyword" }),
         FieldMappingType::I64(..) => Some(FieldMapping::Leaf { typ: "long" }),
         FieldMappingType::U64(..) => Some(FieldMapping::Leaf { typ: "long" }),
