@@ -46,7 +46,7 @@ searcher:
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `function_name` | Name of the AWS Lambda function to invoke. | `quickwit-lambda-search` |
+| `function_name` | Name of the AWS Lambda function to invoke. | `cloudprem-lambda-search` |
 | `max_splits_per_invocation` | Maximum number of splits to send in a single Lambda invocation. Must be at least 1. | `10` |
 | `offload_threshold` | Number of pending local searches before offloading to Lambda. A value of `0` offloads everything to Lambda. | `100` |
 | `auto_deploy` | Auto-deployment configuration. If set, Quickwit automatically deploys or updates the Lambda function at startup. | (none) |
@@ -95,7 +95,7 @@ The IAM role or user running Quickwit needs the following permissions to invoke 
       "Action": [
         "lambda:InvokeFunction"
       ],
-      "Resource": "arn:aws:lambda:*:*:function:quickwit-lambda-search:*"
+      "Resource": "arn:aws:lambda:*:*:function:cloudprem-lambda-search:*"
     }
   ]
 }
@@ -117,7 +117,7 @@ If using `auto_deploy`, additional permissions are required for deployment:
         "lambda:ListVersionsByFunction",
         "lambda:DeleteFunction"
       ],
-      "Resource": "arn:aws:lambda:*:*:function:quickwit-lambda-search"
+      "Resource": "arn:aws:lambda:*:*:function:cloudprem-lambda-search"
     },
     {
       "Effect": "Allow",
@@ -219,7 +219,7 @@ Full configuration (auto-deployment):
 ```yaml
 searcher:
   lambda:
-    function_name: quickwit-lambda-search
+    function_name: cloudprem-lambda-search
     max_splits_per_invocation: 10
     offload_threshold: 10
     auto_deploy:
@@ -233,7 +233,7 @@ Aggressive offloading (send everything to Lambda):
 ```yaml
 searcher:
   lambda:
-    function_name: quickwit-lambda-search
+    function_name: cloudprem-lambda-search
     offload_threshold: 0
     auto_deploy:
       execution_role_arn: arn:aws:iam::123456789012:role/quickwit-lambda-role

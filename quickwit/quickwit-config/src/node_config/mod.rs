@@ -346,7 +346,7 @@ impl LambdaConfig {
     }
 
     fn default_function_name() -> String {
-        "quickwit-lambda-search".to_string()
+        "cloudprem-lambda-search".to_string()
     }
     fn default_max_splits_per_invocation() -> NonZeroUsize {
         NonZeroUsize::new(10).unwrap()
