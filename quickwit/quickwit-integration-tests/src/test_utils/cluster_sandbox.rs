@@ -325,6 +325,7 @@ impl ClusterSandbox {
         self.add_node_inner(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: false,
+            create_datadog_index: false,
         })
         .await;
     }
