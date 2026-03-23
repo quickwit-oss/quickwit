@@ -4648,9 +4648,9 @@ dependencies = [
 
 [[package]]
 name = "lz4_flex"
-version = "0.11.5"
+version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08ab2867e3eeeca90e844d1940eab391c9dc5228783db2ed999acbc0a9ed375a"
+checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
 dependencies = [
  "twox-hash",
 ]
@@ -5480,6 +5480,18 @@ dependencies = [
  "pin-project-lite",
  "thiserror 2.0.17",
  "tracing",
+]
+
+[[package]]
+name = "opentelemetry-appender-tracing"
+version = "0.31.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef6a1ac5ca3accf562b8c306fa8483c85f4390f768185ab775f242f7fe8fdcc2"
+dependencies = [
+ "opentelemetry",
+ "tracing",
+ "tracing-core",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -6776,6 +6788,7 @@ dependencies = [
  "once_cell",
  "openssl-probe 0.1.6",
  "opentelemetry",
+ "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "predicates",
@@ -10972,7 +10985,7 @@ dependencies = [
  "jsonschema 0.37.4",
  "lalrpop",
  "lalrpop-util",
- "lz4_flex 0.11.5",
+ "lz4_flex 0.11.6",
  "md-5",
  "nom 8.0.0",
  "nom-language",
@@ -11072,7 +11085,7 @@ dependencies = [
  "jsonschema 0.38.1",
  "lalrpop",
  "lalrpop-util",
- "lz4_flex 0.11.5",
+ "lz4_flex 0.11.6",
  "md-5",
  "nom 8.0.0",
  "nom-language",

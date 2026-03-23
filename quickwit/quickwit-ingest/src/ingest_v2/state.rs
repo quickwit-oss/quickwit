@@ -19,13 +19,17 @@ use std::path::Path;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
+use bytesize::ByteSize;
+use itertools::Itertools;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
+use quickwit_cluster::Cluster;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
+use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::control_plane::AdviseResetShardsResponse;
 use quickwit_proto::ingest::ingester::IngesterStatus;
-use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardState};
+use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, ShardIds, ShardState};
 use quickwit_proto::types::{DocMappingUid, IndexUid, Position, QueueId, SourceId, split_queue_id};
 use tokio::sync::{Mutex, MutexGuard, RwLock, RwLockMappedWriteGuard, RwLockWriteGuard, watch};
 use tracing::{error, info};
@@ -33,9 +37,10 @@ use tracing::{error, info};
 use super::models::IngesterShard;
 use super::rate_meter::RateMeter;
 use super::replication::{ReplicationStreamTaskHandle, ReplicationTaskHandle};
+use super::wal_capacity_tracker::WalCapacityTracker;
 use crate::ingest_v2::mrecordlog_utils::{force_delete_queue, queue_position_range};
 use crate::mrecordlog_async::MultiRecordLogAsync;
-use crate::{FollowerId, LeaderId};
+use crate::{FollowerId, LeaderId, OpenShardCounts};
 
 /// Stores the state of the ingester and attempts to prevent deadlocks by exposing an API that
 /// guarantees that the internal data structures are always locked in the same order.
@@ -58,6 +63,8 @@ pub(super) struct InnerIngesterState {
     pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
     // Replication tasks running for each replication stream opened with leaders.
     pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
+    cluster: Cluster,
+    pub wal_capacity_tracker: WalCapacityTracker,
     status: IngesterStatus,
     status_tx: watch::Sender<IngesterStatus>,
 }
@@ -67,9 +74,12 @@ impl InnerIngesterState {
         self.status
     }
 
-    pub fn set_status(&mut self, status: IngesterStatus) {
+    pub async fn set_status(&mut self, status: IngesterStatus) {
         self.status = status;
         self.status_tx.send(status).expect("channel should be open");
+        self.cluster
+            .set_self_key_value(INGESTER_STATUS_KEY, status.as_json_str_name())
+            .await;
     }
 
     /// Returns the shard with the most available permits for this index and source.
@@ -87,20 +97,62 @@ impl InnerIngesterState {
             .max_by_key(|(available_permits, _)| *available_permits)
             .map(|(_, shard)| shard)
     }
+
+    /// Returns per-source open shard counts and closed shard IDs for all advertisable,
+    /// non-replica shards.
+    pub fn get_shard_snapshot(&self) -> (OpenShardCounts, Vec<ShardIds>) {
+        let grouped = self
+            .shards
+            .values()
+            .filter(|shard| shard.is_advertisable && !shard.is_replica())
+            .map(|shard| ((shard.index_uid.clone(), shard.source_id.clone()), shard))
+            .into_group_map();
+
+        let mut open_counts = Vec::new();
+        let mut closed_shards = Vec::new();
+
+        for ((index_uid, source_id), shards) in grouped {
+            let mut open_count = 0;
+            let mut closed_ids = Vec::new();
+
+            for shard in shards {
+                if shard.is_open() {
+                    open_count += 1;
+                } else if shard.is_closed() {
+                    closed_ids.push(shard.shard_id.clone());
+                }
+            }
+            open_counts.push((index_uid.clone(), source_id.clone(), open_count));
+            if !closed_ids.is_empty() {
+                closed_shards.push(ShardIds {
+                    index_uid: Some(index_uid),
+                    source_id,
+                    shard_ids: closed_ids,
+                });
+            }
+        }
+        (open_counts, closed_shards)
+    }
 }
 
 impl IngesterState {
-    fn new() -> Self {
+    async fn create(cluster: Cluster, disk_capacity: ByteSize, memory_capacity: ByteSize) -> Self {
         let status = IngesterStatus::Initializing;
         let (status_tx, status_rx) = watch::channel(status);
-        let inner = InnerIngesterState {
+        let mut inner = InnerIngesterState {
             shards: Default::default(),
             doc_mappers: Default::default(),
             replication_streams: Default::default(),
             replication_tasks: Default::default(),
+            cluster,
+            wal_capacity_tracker: WalCapacityTracker::new(disk_capacity, memory_capacity),
             status,
             status_tx,
         };
+        // We call `set_status` here instead of setting it directly because it also updates the
+        // ingester status in chitchat.
+        inner.set_status(IngesterStatus::Initializing).await;
+
         let inner = Arc::new(Mutex::new(inner));
         let mrecordlog = Arc::new(RwLock::new(None));
 
@@ -111,8 +163,14 @@ impl IngesterState {
         }
     }
 
-    pub fn load(wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) -> Self {
-        let state = Self::new();
+    pub async fn load(
+        cluster: Cluster,
+        wal_dir_path: &Path,
+        disk_capacity: ByteSize,
+        memory_capacity: ByteSize,
+        rate_limiter_settings: RateLimiterSettings,
+    ) -> Self {
+        let state = Self::create(cluster, disk_capacity, memory_capacity).await;
         let state_clone = state.clone();
         let wal_dir_path = wal_dir_path.to_path_buf();
 
@@ -125,15 +183,26 @@ impl IngesterState {
     }
 
     #[cfg(test)]
-    pub async fn for_test() -> (tempfile::TempDir, Self) {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let mut state = IngesterState::load(temp_dir.path(), RateLimiterSettings::default());
+    pub async fn for_test(cluster: Cluster) -> (tempfile::TempDir, Self) {
+        Self::for_test_with_disk_capacity(cluster, ByteSize::mb(256)).await
+    }
 
-        state
-            .status_rx
-            .wait_for(|status| *status == IngesterStatus::Ready)
-            .await
-            .unwrap();
+    #[cfg(test)]
+    pub async fn for_test_with_disk_capacity(
+        cluster: Cluster,
+        disk_capacity: ByteSize,
+    ) -> (tempfile::TempDir, Self) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut state = IngesterState::load(
+            cluster,
+            temp_dir.path(),
+            disk_capacity,
+            ByteSize::mb(256),
+            RateLimiterSettings::default(),
+        )
+        .await;
+
+        state.wait_for_ready().await;
 
         (temp_dir, state)
     }
@@ -142,8 +211,10 @@ impl IngesterState {
     /// queues. Empty queues are deleted, while non-empty queues are recovered. However, the
     /// corresponding shards are closed and become read-only.
     pub async fn init(&self, wal_dir_path: &Path, rate_limiter_settings: RateLimiterSettings) {
-        let mut inner_guard = self.inner.lock().await;
+        // Acquire locks in the same order as `lock_fully` (mrecordlog first, then inner) to
+        // prevent ABBA deadlocks with the broadcast capacity task.
         let mut mrecordlog_guard = self.mrecordlog.write().await;
+        let mut inner_guard = self.inner.lock().await;
 
         let now = Instant::now();
 
@@ -168,7 +239,7 @@ impl IngesterState {
             }
             Err(error) => {
                 error!("failed to open WAL: {error}");
-                inner_guard.set_status(IngesterStatus::Failed);
+                inner_guard.set_status(IngesterStatus::Failed).await;
                 return;
             }
         };
@@ -229,7 +300,7 @@ impl IngesterState {
             info!("deleted {num_deleted_shards} empty shard(s)");
         }
         mrecordlog_guard.replace(mrecordlog);
-        inner_guard.set_status(IngesterStatus::Ready);
+        inner_guard.set_status(IngesterStatus::Ready).await;
     }
 
     pub async fn wait_for_ready(&mut self) {
@@ -386,38 +457,32 @@ impl FullyLockedIngesterState<'_> {
         truncate_up_to_position_inclusive: Position,
         initiator: &'static str,
     ) {
-        // TODO: Replace with if-let-chains when stabilized.
-        let Some(truncate_up_to_offset_inclusive) = truncate_up_to_position_inclusive.as_u64()
-        else {
-            return;
-        };
-        let Some(shard) = self.inner.shards.get_mut(queue_id) else {
-            return;
-        };
-        if shard.truncation_position_inclusive >= truncate_up_to_position_inclusive {
-            return;
-        }
-        match self
-            .mrecordlog
-            .truncate(queue_id, truncate_up_to_offset_inclusive)
-            .await
+        if let Some(truncate_up_to_offset_inclusive) = truncate_up_to_position_inclusive.as_u64()
+            && let Some(shard) = self.inner.shards.get_mut(queue_id)
+            && shard.truncation_position_inclusive < truncate_up_to_position_inclusive
         {
-            Ok(_) => {
-                info!(
-                    "truncated shard `{queue_id}` at {truncate_up_to_position_inclusive} \
-                     initiated via `{initiator}`"
-                );
-                shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
-            }
-            Err(TruncateError::MissingQueue(_)) => {
-                error!("failed to truncate shard `{queue_id}`: WAL queue not found");
-                self.shards.remove(queue_id);
-                info!("deleted dangling shard `{queue_id}`");
-            }
-            Err(TruncateError::IoError(io_error)) => {
-                error!("failed to truncate shard `{queue_id}`: {io_error}");
-            }
-        };
+            match self
+                .mrecordlog
+                .truncate(queue_id, truncate_up_to_offset_inclusive)
+                .await
+            {
+                Ok(_) => {
+                    info!(
+                        "truncated shard `{queue_id}` at {truncate_up_to_position_inclusive} \
+                         initiated via `{initiator}`"
+                    );
+                    shard.truncation_position_inclusive = truncate_up_to_position_inclusive;
+                }
+                Err(TruncateError::MissingQueue(_)) => {
+                    error!("failed to truncate shard `{queue_id}`: WAL queue not found");
+                    self.shards.remove(queue_id);
+                    info!("deleted dangling shard `{queue_id}`");
+                }
+                Err(TruncateError::IoError(io_error)) => {
+                    error!("failed to truncate shard `{queue_id}`: {io_error}");
+                }
+            };
+        }
     }
 
     /// Deletes and truncates the shards as directed by the `advise_reset_shards_response` returned
@@ -467,14 +532,28 @@ impl WeakIngesterState {
 #[cfg(test)]
 mod tests {
     use bytesize::ByteSize;
-    use quickwit_proto::types::ShardId;
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_config::service::QuickwitService;
+    use quickwit_proto::types::{NodeId, ShardId, SourceId};
     use tokio::time::timeout;
 
     use super::*;
 
+    async fn test_cluster() -> Cluster {
+        create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap()
+    }
+
     #[tokio::test]
     async fn test_ingester_state_does_not_lock_while_initializing() {
-        let state = IngesterState::new();
+        let cluster = test_cluster().await;
+        let state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
         let inner_guard = state.inner.lock().await;
 
         assert_eq!(inner_guard.status(), IngesterStatus::Initializing);
@@ -489,9 +568,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_failed() {
-        let state = IngesterState::new();
+        let cluster = test_cluster().await;
+        let state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
 
-        state.inner.lock().await.set_status(IngesterStatus::Failed);
+        state
+            .inner
+            .lock()
+            .await
+            .set_status(IngesterStatus::Failed)
+            .await;
 
         let error = state.lock_partially().await.unwrap_err().to_string();
         assert!(error.to_string().ends_with("failed to initialize ingester"));
@@ -502,7 +587,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_state_init() {
-        let mut state = IngesterState::new();
+        let cluster = test_cluster().await;
+        let mut state = IngesterState::create(cluster, ByteSize::mb(256), ByteSize::mb(256)).await;
         let temp_dir = tempfile::tempdir().unwrap();
 
         state
@@ -539,7 +625,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_find_most_capacity_shard_returns_shard_with_least_used_capacity() {
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let mut state_guard = state.lock_partially().await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -577,7 +671,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_find_most_capacity_shard_skips_closed_shards() {
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let mut locked_state = state.lock_partially().await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -619,7 +721,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_find_most_capacity_shard_returns_none_for_unknown_index_or_source() {
-        let (_temp_dir, state) = IngesterState::for_test().await;
+        let cluster = create_cluster_for_test(
+            Vec::new(),
+            &[QuickwitService::Indexer.as_str()],
+            &ChannelTransport::default(),
+            true,
+        )
+        .await
+        .unwrap();
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
         let mut locked_state = state.lock_partially().await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -641,5 +751,113 @@ mod tests {
         let shard_opt =
             locked_state.find_most_capacity_shard_mut(&index_uid, &SourceId::from("other-source"));
         assert!(shard_opt.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ingester_state_set_status() {
+        let cluster = test_cluster().await;
+        let state =
+            IngesterState::create(cluster.clone(), ByteSize::mb(256), ByteSize::mb(256)).await;
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        state
+            .init(temp_dir.path(), RateLimiterSettings::default())
+            .await;
+
+        let mut state_guard = state.lock_fully().await.unwrap();
+        state_guard.set_status(IngesterStatus::Failed).await;
+        assert_eq!(state_guard.status(), IngesterStatus::Failed);
+        assert_eq!(*state.status_rx.borrow(), IngesterStatus::Failed);
+
+        let status_json_str = cluster
+            .get_self_key_value(INGESTER_STATUS_KEY)
+            .await
+            .unwrap();
+        let status = IngesterStatus::from_json_str_name(&status_json_str).unwrap();
+        assert_eq!(status, IngesterStatus::Failed);
+    }
+
+    fn open_shard(
+        index_uid: IndexUid,
+        source_id: SourceId,
+        shard_id: ShardId,
+        is_replica: bool,
+    ) -> IngesterShard {
+        let builder = if is_replica {
+            IngesterShard::new_replica(index_uid, source_id, shard_id, NodeId::from("test-leader"))
+        } else {
+            IngesterShard::new_solo(index_uid, source_id, shard_id)
+        };
+        builder.advertisable().build()
+    }
+
+    #[tokio::test]
+    async fn test_get_shard_snapshot() {
+        let cluster = test_cluster().await;
+        let (_temp_dir, state) = IngesterState::for_test(cluster).await;
+        let mut state_guard = state.lock_partially().await.unwrap();
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+
+        // source-a: 2 open shards + 1 closed shard + 1 replica (ignored).
+        let s = open_shard(
+            index_uid.clone(),
+            "source-a".into(),
+            ShardId::from(1),
+            false,
+        );
+        state_guard.shards.insert(s.queue_id(), s);
+        let s = open_shard(
+            index_uid.clone(),
+            "source-a".into(),
+            ShardId::from(2),
+            false,
+        );
+        state_guard.shards.insert(s.queue_id(), s);
+        let s = IngesterShard::new_solo(index_uid.clone(), "source-a".into(), ShardId::from(3))
+            .with_state(ShardState::Closed)
+            .advertisable()
+            .build();
+        state_guard.shards.insert(s.queue_id(), s);
+        let s = open_shard(index_uid.clone(), "source-a".into(), ShardId::from(4), true);
+        state_guard.shards.insert(s.queue_id(), s);
+
+        // source-b: 2 closed shards, no open shards.
+        let s = IngesterShard::new_solo(index_uid.clone(), "source-b".into(), ShardId::from(5))
+            .with_state(ShardState::Closed)
+            .advertisable()
+            .build();
+        state_guard.shards.insert(s.queue_id(), s);
+        let s = IngesterShard::new_solo(index_uid.clone(), "source-b".into(), ShardId::from(6))
+            .with_state(ShardState::Closed)
+            .advertisable()
+            .build();
+        state_guard.shards.insert(s.queue_id(), s);
+
+        let (mut open_counts, mut closed_shards) = state_guard.get_shard_snapshot();
+
+        // Open counts: source-a has 2, source-b has 0.
+        open_counts.sort_by(|a, b| a.1.cmp(&b.1));
+        assert_eq!(open_counts.len(), 2);
+        assert_eq!(
+            open_counts[0],
+            (index_uid.clone(), SourceId::from("source-a"), 2)
+        );
+        assert_eq!(
+            open_counts[1],
+            (index_uid.clone(), SourceId::from("source-b"), 0)
+        );
+
+        // Closed shards: source-a has shard 3, source-b has shards 5 and 6.
+        closed_shards.sort_by(|a, b| a.source_id.cmp(&b.source_id));
+        assert_eq!(closed_shards.len(), 2);
+
+        assert_eq!(closed_shards[0].source_id, "source-a");
+        assert_eq!(closed_shards[0].shard_ids, vec![ShardId::from(3)]);
+
+        assert_eq!(closed_shards[1].source_id, "source-b");
+        let mut source_b_ids = closed_shards[1].shard_ids.clone();
+        source_b_ids.sort();
+        assert_eq!(source_b_ids, vec![ShardId::from(5), ShardId::from(6)]);
     }
 }

@@ -869,6 +869,8 @@ impl HitMapper {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_proto::ingest::ingester::IngesterStatus;
+
     use super::*;
 
     #[tokio::test]
@@ -882,6 +884,7 @@ mod tests {
                 QuickwitService::Searcher.as_str(),
             ],
             &[],
+            IngesterStatus::Ready,
         )
         .await;
         let node_labels: Vec<Label> = node_labels(&cluster_node);

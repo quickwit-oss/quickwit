@@ -22,6 +22,7 @@ json:
       tokenizer: default
       fast: true
     timestamp_field: date
+    tag_fields: ["tags"]
     field_mappings:
       - name: date
         type: datetime
@@ -31,6 +32,10 @@ json:
         fast: true
       - name: host
         type: ip
+        fast: true
+      - name: tags
+        type: array<text>
+        tokenizer: raw
         fast: true
 ---
 # Create index

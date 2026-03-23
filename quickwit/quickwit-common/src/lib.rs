@@ -37,6 +37,7 @@ pub mod rate_limited_tracing;
 pub mod rate_limiter;
 pub mod rendezvous_hasher;
 pub mod retry;
+pub mod ring_buffer;
 pub mod runtimes;
 pub mod serialized_json_size;
 pub mod shared_consts;
