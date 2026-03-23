@@ -99,7 +99,11 @@ fn build_properties(field_mappings: &[FieldMappingEntry]) -> HashMap<String, Fie
 
 fn field_mapping_from_entry(entry: &FieldMappingEntry) -> Option<FieldMapping> {
     match &entry.mapping_type {
-        FieldMappingType::Text(..) => Some(FieldMapping::Leaf { typ: "text" }),
+        // Quickwit text fields behave like ES keyword fields: they support exact
+        // match, prefix, and regexp queries. Reporting them as "keyword" enables
+        // downstream connectors (e.g. Trino ES connector) to push down filters and
+        // LIKE predicates, which they only do for keyword-typed fields.
+        FieldMappingType::Text(..) => Some(FieldMapping::Leaf { typ: "keyword" }),
         FieldMappingType::I64(..) => Some(FieldMapping::Leaf { typ: "long" }),
         FieldMappingType::U64(..) => Some(FieldMapping::Leaf { typ: "long" }),
         FieldMappingType::F64(..) => Some(FieldMapping::Leaf { typ: "double" }),
@@ -115,7 +119,7 @@ fn field_mapping_from_entry(entry: &FieldMappingEntry) -> Option<FieldMapping> {
                 properties,
             })
         }
-        FieldMappingType::Concatenate(_) => None,
+        FieldMappingType::Concatenate(_) => Some(FieldMapping::Leaf { typ: "keyword" }),
     }
 }
 
@@ -178,7 +182,7 @@ mod tests {
         let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
         let mapping = field_mapping_from_entry(&entry).unwrap();
         let serialized = serde_json::to_value(&mapping).unwrap();
-        assert_eq!(serialized, json!({ "type": "text" }));
+        assert_eq!(serialized, json!({ "type": "keyword" }));
     }
 
     #[test]
@@ -209,21 +213,23 @@ mod tests {
                 "type": "object",
                 "properties": {
                     "id": { "type": "long" },
-                    "label": { "type": "text" }
+                    "label": { "type": "keyword" }
                 }
             })
         );
     }
 
     #[test]
-    fn test_field_mapping_from_entry_concatenate_skipped() {
+    fn test_field_mapping_from_entry_concatenate_exposed_as_keyword() {
         let entry_json = json!({
             "name": "concat_field",
             "type": "concatenate",
             "concatenate_fields": ["field_a", "field_b"]
         });
         let entry: FieldMappingEntry = serde_json::from_value(entry_json).unwrap();
-        assert!(field_mapping_from_entry(&entry).is_none());
+        let mapping = field_mapping_from_entry(&entry).unwrap();
+        let serialized = serde_json::to_value(&mapping).unwrap();
+        assert_eq!(serialized, json!({ "type": "keyword" }));
     }
 
     #[test]
@@ -251,7 +257,7 @@ mod tests {
         let props = build_properties(&entries);
         let to_json = |fm: &FieldMapping| serde_json::to_value(fm).unwrap();
 
-        assert_eq!(to_json(&props["title"]), json!({ "type": "text" }));
+        assert_eq!(to_json(&props["title"]), json!({ "type": "keyword" }));
         assert_eq!(to_json(&props["count"]), json!({ "type": "long" }));
         assert_eq!(to_json(&props["unsigned"]), json!({ "type": "long" }));
         assert_eq!(to_json(&props["score"]), json!({ "type": "double" }));
@@ -263,7 +269,7 @@ mod tests {
 
         let meta = to_json(&props["metadata"]);
         assert_eq!(meta["type"], "object");
-        assert_eq!(meta["properties"]["source"]["type"], "text");
+        assert_eq!(meta["properties"]["source"]["type"], "keyword");
     }
 
     #[test]
