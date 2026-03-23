@@ -113,6 +113,9 @@ enum PersistFailureReason {
   PERSIST_FAILURE_REASON_TIMEOUT = 5;
   PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE = 6;
   PERSIST_FAILURE_REASON_NODE_UNAVAILABLE = 7;
+  reserved 1;
+  reserved 2;
+  reserved 3;
 }
 
 message PersistFailure {
