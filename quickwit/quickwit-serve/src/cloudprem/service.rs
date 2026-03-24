@@ -10,7 +10,7 @@ use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_common::ServiceStream;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{RetentionPolicy, SourceConfig, validate_identifier};
+use quickwit_config::{NodeConfig, RetentionPolicy, SourceConfig, validate_identifier};
 use quickwit_metastore::{
     CreateIndexResponseExt, IndexMetadataResponseExt, ListIndexesMetadataResponseExt,
 };
@@ -22,12 +22,13 @@ use quickwit_proto::cloudprem::index::{
 use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
-    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse, Event,
-    EventTracker, FetchOneRequest, FetchOneResponse, GetClusterDiagnosticsRequest,
-    GetClusterDiagnosticsResponse, GetIndexRoutingTableRequest, GetIndexRoutingTableResponse,
-    GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse, NodeDiagnostics, NodeMetrics,
-    PingRequest, PingResponse, PullClusterMetricsResponse, SetIndexRoutingTableRequest,
-    SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest, UpdateIndexResponse,
+    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse,
+    EsHttpRequest, EsHttpResponse, Event, EventTracker, FetchOneRequest, FetchOneResponse,
+    GetClusterDiagnosticsRequest, GetClusterDiagnosticsResponse, GetIndexRoutingTableRequest,
+    GetIndexRoutingTableResponse, GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse,
+    NodeDiagnostics, NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
+    SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest,
+    UpdateIndexResponse,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, GetNodeDiagnosticsRequest, PullMetricsRequest,
@@ -75,6 +76,7 @@ pub struct CloudPremServiceImpl {
     metastore_client: MetastoreServiceClient,
     cluster: Cluster,
     default_index_root_uri: Uri,
+    node_config: Arc<NodeConfig>,
 }
 
 impl fmt::Debug for CloudPremServiceImpl {
@@ -89,12 +91,14 @@ impl CloudPremServiceImpl {
         metastore_client: MetastoreServiceClient,
         cluster: Cluster,
         default_index_root_uri: Uri,
+        node_config: Arc<NodeConfig>,
     ) -> Self {
         CloudPremServiceImpl {
             search_service,
             metastore_client,
             cluster,
             default_index_root_uri,
+            node_config,
         }
     }
 }
@@ -765,6 +769,19 @@ impl CloudPremService for CloudPremServiceImpl {
         Ok(GetClusterDiagnosticsResponse {
             cluster_diagnostics,
         })
+    }
+
+    async fn es_query(&self, request: EsHttpRequest) -> CloudPremResult<EsHttpResponse> {
+        info!(method=%request.method, path=%request.path, "received EsQuery request");
+        super::es_query::handle_es_query(
+            request,
+            self.search_service.clone(),
+            self.metastore_client.clone(),
+            self.cluster.clone(),
+            self.node_config.clone(),
+            crate::BuildInfo::get(),
+        )
+        .await
     }
 }
 

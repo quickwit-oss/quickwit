@@ -7,7 +7,7 @@ pub struct AnyRequest {
     pub context: ::core::option::Option<Context>,
     #[prost(
         oneof = "any_request::Request",
-        tags = "11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 31, 99"
+        tags = "11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31, 99"
     )]
     pub request: ::core::option::Option<any_request::Request>,
 }
@@ -46,6 +46,8 @@ pub mod any_request {
         GetIndexRoutingTable(super::GetIndexRoutingTableRequest),
         #[prost(message, tag = "28")]
         SetIndexRoutingTable(super::SetIndexRoutingTableRequest),
+        #[prost(message, tag = "30")]
+        EsQuery(super::EsHttpRequest),
         #[prost(message, tag = "31")]
         GetClusterDiagnostics(super::GetClusterDiagnosticsRequest),
         #[prost(message, tag = "99")]
@@ -60,7 +62,7 @@ pub struct AnyResponse {
     pub grpc_code: u32,
     #[prost(
         oneof = "any_response::Response",
-        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 31"
+        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31"
     )]
     pub response: ::core::option::Option<any_response::Response>,
 }
@@ -107,6 +109,8 @@ pub mod any_response {
         GetIndexRoutingTable(super::GetIndexRoutingTableResponse),
         #[prost(message, tag = "28")]
         SetIndexRoutingTable(super::SetIndexRoutingTableResponse),
+        #[prost(message, tag = "30")]
+        EsQuery(super::EsHttpResponse),
         #[prost(message, tag = "31")]
         GetClusterDiagnostics(super::GetClusterDiagnosticsResponse),
     }
@@ -785,6 +789,31 @@ pub struct FirstLastEntry {
     #[prost(bytes = "vec", tag = "6")]
     pub encoded_values: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EsHttpRequest {
+    #[prost(string, tag = "1")]
+    pub method: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub path: ::prost::alloc::string::String,
+    #[prost(bytes = "vec", tag = "3")]
+    pub body: ::prost::alloc::vec::Vec<u8>,
+    #[prost(map = "string, string", tag = "4")]
+    pub headers: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    #[prost(int64, tag = "998")]
+    pub org_id: i64,
+    #[prost(string, tag = "999")]
+    pub cluster_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct EsHttpResponse {
+    #[prost(uint32, tag = "1")]
+    pub status_code: u32,
+    #[prost(bytes = "vec", tag = "2")]
+    pub body: ::prost::alloc::vec::Vec<u8>,
+}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -863,6 +892,11 @@ impl RpcName for SetIndexRoutingTableRequest {
 impl RpcName for GetClusterDiagnosticsRequest {
     fn rpc_name() -> &'static str {
         "get_cluster_diagnostics"
+    }
+}
+impl RpcName for EsHttpRequest {
+    fn rpc_name() -> &'static str {
+        "es_query"
     }
 }
 impl RpcName for AnyResponse {
@@ -945,6 +979,11 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: GetClusterDiagnosticsRequest,
     ) -> crate::cloudprem::CloudPremResult<GetClusterDiagnosticsResponse>;
+    ///Elasticsearch HTTP passthrough for Trino ES connector.
+    async fn es_query(
+        &self,
+        request: EsHttpRequest,
+    ) -> crate::cloudprem::CloudPremResult<EsHttpResponse>;
     ///Response are sent to the bridge by the front, which initialised the connection
     async fn inverted_request_stream(
         &self,
@@ -1148,6 +1187,12 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<GetClusterDiagnosticsResponse> {
         self.inner.0.get_cluster_diagnostics(request).await
     }
+    async fn es_query(
+        &self,
+        request: EsHttpRequest,
+    ) -> crate::cloudprem::CloudPremResult<EsHttpResponse> {
+        self.inner.0.es_query(request).await
+    }
     async fn inverted_request_stream(
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
@@ -1259,6 +1304,12 @@ pub mod mock_cloud_prem_service {
             request: super::GetClusterDiagnosticsRequest,
         ) -> crate::cloudprem::CloudPremResult<super::GetClusterDiagnosticsResponse> {
             self.inner.lock().await.get_cluster_diagnostics(request).await
+        }
+        async fn es_query(
+            &self,
+            request: super::EsHttpRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::EsHttpResponse> {
+            self.inner.lock().await.es_query(request).await
         }
         async fn inverted_request_stream(
             &self,
@@ -1522,6 +1573,22 @@ impl tower::Service<GetClusterDiagnosticsRequest> for InnerCloudPremServiceClien
         Box::pin(fut)
     }
 }
+impl tower::Service<EsHttpRequest> for InnerCloudPremServiceClient {
+    type Response = EsHttpResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: EsHttpRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.es_query(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<quickwit_common::ServiceStream<AnyResponse>>
 for InnerCloudPremServiceClient {
     type Response = CloudPremServiceStream<AnyRequest>;
@@ -1622,6 +1689,11 @@ struct CloudPremServiceTowerServiceStack {
         GetClusterDiagnosticsResponse,
         crate::cloudprem::CloudPremError,
     >,
+    es_query_svc: quickwit_common::tower::BoxService<
+        EsHttpRequest,
+        EsHttpResponse,
+        crate::cloudprem::CloudPremError,
+    >,
     inverted_request_stream_svc: quickwit_common::tower::BoxService<
         quickwit_common::ServiceStream<AnyResponse>,
         CloudPremServiceStream<AnyRequest>,
@@ -1719,6 +1791,12 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
         request: GetClusterDiagnosticsRequest,
     ) -> crate::cloudprem::CloudPremResult<GetClusterDiagnosticsResponse> {
         self.get_cluster_diagnostics_svc.clone().ready().await?.call(request).await
+    }
+    async fn es_query(
+        &self,
+        request: EsHttpRequest,
+    ) -> crate::cloudprem::CloudPremResult<EsHttpResponse> {
+        self.es_query_svc.clone().ready().await?.call(request).await
     }
     async fn inverted_request_stream(
         &self,
@@ -1877,6 +1955,16 @@ type GetClusterDiagnosticsLayer = quickwit_common::tower::BoxLayer<
     GetClusterDiagnosticsResponse,
     crate::cloudprem::CloudPremError,
 >;
+type EsQueryLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        EsHttpRequest,
+        EsHttpResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    EsHttpRequest,
+    EsHttpResponse,
+    crate::cloudprem::CloudPremError,
+>;
 type InvertedRequestStreamLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         quickwit_common::ServiceStream<AnyResponse>,
@@ -1904,6 +1992,7 @@ pub struct CloudPremServiceTowerLayerStack {
     get_index_routing_table_layers: Vec<GetIndexRoutingTableLayer>,
     set_index_routing_table_layers: Vec<SetIndexRoutingTableLayer>,
     get_cluster_diagnostics_layers: Vec<GetClusterDiagnosticsLayer>,
+    es_query_layers: Vec<EsQueryLayer>,
     inverted_request_stream_layers: Vec<InvertedRequestStreamLayer>,
 }
 impl CloudPremServiceTowerLayerStack {
@@ -2300,6 +2389,31 @@ impl CloudPremServiceTowerLayerStack {
         >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
+                    EsHttpRequest,
+                    EsHttpResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                EsHttpRequest,
+                EsHttpResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                EsHttpRequest,
+                Response = EsHttpResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                EsHttpRequest,
+                EsHttpResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<EsHttpRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
                     quickwit_common::ServiceStream<AnyResponse>,
                     CloudPremServiceStream<AnyRequest>,
                     crate::cloudprem::CloudPremError,
@@ -2352,6 +2466,7 @@ impl CloudPremServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.get_cluster_diagnostics_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.es_query_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.inverted_request_stream_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
@@ -2659,6 +2774,25 @@ impl CloudPremServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_es_query_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    EsHttpRequest,
+                    EsHttpResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                EsHttpRequest,
+                Response = EsHttpResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<EsHttpRequest>>::Future: Send + 'static,
+    {
+        self.es_query_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn stack_inverted_request_stream_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
@@ -2861,6 +2995,14 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let es_query_svc = self
+            .es_query_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let inverted_request_stream_svc = self
             .inverted_request_stream_layers
             .into_iter()
@@ -2886,6 +3028,7 @@ impl CloudPremServiceTowerLayerStack {
             get_index_routing_table_svc,
             set_index_routing_table_svc,
             get_cluster_diagnostics_svc,
+            es_query_svc,
             inverted_request_stream_svc,
         };
         CloudPremServiceClient::new(tower_svc_stack)
@@ -3075,6 +3218,12 @@ where
             >,
         >
         + tower::Service<
+            EsHttpRequest,
+            Response = EsHttpResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<EsHttpResponse, crate::cloudprem::CloudPremError>,
+        >
+        + tower::Service<
             quickwit_common::ServiceStream<AnyResponse>,
             Response = CloudPremServiceStream<AnyRequest>,
             Error = crate::cloudprem::CloudPremError,
@@ -3172,6 +3321,12 @@ where
         &self,
         request: GetClusterDiagnosticsRequest,
     ) -> crate::cloudprem::CloudPremResult<GetClusterDiagnosticsResponse> {
+        self.clone().call(request).await
+    }
+    async fn es_query(
+        &self,
+        request: EsHttpRequest,
+    ) -> crate::cloudprem::CloudPremResult<EsHttpResponse> {
         self.clone().call(request).await
     }
     async fn inverted_request_stream(
@@ -3425,6 +3580,20 @@ where
                 GetClusterDiagnosticsRequest::rpc_name(),
             ))
     }
+    async fn es_query(
+        &self,
+        request: EsHttpRequest,
+    ) -> crate::cloudprem::CloudPremResult<EsHttpResponse> {
+        self.inner
+            .clone()
+            .es_query(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                EsHttpRequest::rpc_name(),
+            ))
+    }
     async fn inverted_request_stream(
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
@@ -3635,6 +3804,17 @@ for CloudPremServiceGrpcServerAdapter {
         self.inner
             .0
             .get_cluster_diagnostics(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn es_query(
+        &self,
+        request: tonic::Request<EsHttpRequest>,
+    ) -> Result<tonic::Response<EsHttpResponse>, tonic::Status> {
+        self.inner
+            .0
+            .es_query(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -4130,6 +4310,28 @@ pub mod cloud_prem_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Elasticsearch HTTP passthrough for Trino ES connector.
+        pub async fn es_query(
+            &mut self,
+            request: impl tonic::IntoRequest<super::EsHttpRequest>,
+        ) -> std::result::Result<tonic::Response<super::EsHttpResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/EsQuery",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("cloudprem.CloudPremService", "EsQuery"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Response are sent to the bridge by the front, which initialised the connection
         pub async fn inverted_request_stream(
             &mut self,
@@ -4283,6 +4485,11 @@ pub mod cloud_prem_service_grpc_server {
             tonic::Response<super::GetClusterDiagnosticsResponse>,
             tonic::Status,
         >;
+        /// Elasticsearch HTTP passthrough for Trino ES connector.
+        async fn es_query(
+            &self,
+            request: tonic::Request<super::EsHttpRequest>,
+        ) -> std::result::Result<tonic::Response<super::EsHttpResponse>, tonic::Status>;
         /// Server streaming response type for the InvertedRequestStream method.
         type InvertedRequestStreamStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::AnyRequest, tonic::Status>,
@@ -5073,6 +5280,51 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetClusterDiagnosticsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/EsQuery" => {
+                    #[allow(non_camel_case_types)]
+                    struct EsQuerySvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<super::EsHttpRequest>
+                    for EsQuerySvc<T> {
+                        type Response = super::EsHttpResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::EsHttpRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CloudPremServiceGrpc>::es_query(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = EsQuerySvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
