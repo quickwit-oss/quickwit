@@ -1,4 +1,4 @@
-FROM node:24@sha256:b2b2184ba9b78c022e1d6a7924ec6fba577adf28f15c9d9c457730cc4ad3807a AS ui-builder
+FROM registry.ddbuild.io/images/pomsky/node:24@sha256:b2b2184ba9b78c022e1d6a7924ec6fba577adf28f15c9d9c457730cc4ad3807a AS ui-builder
 
 COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 
@@ -7,7 +7,7 @@ WORKDIR /quickwit/quickwit-ui
 RUN touch .gitignore_for_build_directory \
     && NODE_ENV=production make install build
 
-FROM node:20@sha256:8cdc6b9b711af0711cc6139955cc1331fab5e0a995afd3260c52736fbc338059 AS cloudprem-ui-loader
+FROM registry.ddbuild.io/images/pomsky/node:20@sha256:8cdc6b9b711af0711cc6139955cc1331fab5e0a995afd3260c52736fbc338059 AS cloudprem-ui-loader
 COPY quickwit/cloudprem-ui /quickwit/cloudprem-ui
 WORKDIR /quickwit/cloudprem-ui
 
@@ -19,7 +19,7 @@ ENV CLOUDPREM_UI_VERSION=$CLOUDPREM_UI_VERSION
 RUN touch .gitignore_for_build_directory \
     && make load-cloudprem-ui
 
-FROM rust:bookworm@sha256:b5efaabfd787a695d2e46b37d3d9c54040e11f4c10bc2e714bbadbfcc0cd6c39 AS bin-builder
+FROM registry.ddbuild.io/images/pomsky/rust:bookworm@sha256:b5efaabfd787a695d2e46b37d3d9c54040e11f4c10bc2e714bbadbfcc0cd6c39 AS bin-builder
 
 ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
