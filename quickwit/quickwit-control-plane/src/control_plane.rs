@@ -39,6 +39,7 @@ use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMet
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
+    GetPhysicalIndexingPlanRequest, GetPhysicalIndexingPlanResponse, IndexerPlan, ShardInfo,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::ingest::ingester::IngesterStatus;
@@ -971,6 +972,59 @@ impl Handler<AdviseResetShardsRequest> for ControlPlane {
         let response = self
             .ingest_controller
             .advise_reset_shards(request, &self.model);
+        Ok(Ok(response))
+    }
+}
+
+#[async_trait]
+impl Handler<GetPhysicalIndexingPlanRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<GetPhysicalIndexingPlanResponse>;
+
+    async fn handle(
+        &mut self,
+        _request: GetPhysicalIndexingPlanRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let state = self.indexing_scheduler.observable_state();
+
+        let indexer_plans = state
+            .last_applied_physical_plan
+            .as_ref()
+            .map(|plan| {
+                plan.indexing_tasks_per_indexer()
+                    .iter()
+                    .map(|(node_id, tasks)| IndexerPlan {
+                        node_id: node_id.clone(),
+                        tasks: tasks.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let has_plan = state.last_applied_physical_plan.is_some();
+
+        let shard_infos: Vec<ShardInfo> = self
+            .model
+            .all_shards_with_source()
+            .flat_map(|(source_uid, shard_entries)| {
+                shard_entries.map(move |entry| ShardInfo {
+                    shard_id: entry.shard.shard_id.as_ref().map(|s| s.to_string()).unwrap_or_default(),
+                    index_uid: source_uid.index_uid.to_string(),
+                    source_id: source_uid.source_id.to_string(),
+                    leader_id: entry.leader_id.clone(),
+                    follower_id: entry.follower_id.clone(),
+                    shard_state: entry.shard_state().as_json_str_name().to_string(),
+                    short_term_ingestion_rate: entry.short_term_ingestion_rate.0 as f32,
+                    long_term_ingestion_rate: entry.long_term_ingestion_rate.0 as f32,
+                })
+            })
+            .collect();
+
+        let response = GetPhysicalIndexingPlanResponse {
+            has_plan,
+            indexer_plans,
+            shard_infos,
+        };
         Ok(Ok(response))
     }
 }
@@ -2903,6 +2957,138 @@ mod tests {
             shard["publish_position_inclusive"],
             json!(Position::Beginning)
         );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_physical_indexing_plan_no_plan() {
+        let universe = Universe::with_accelerated_time();
+        let self_node_id: NodeId = "test-node".into();
+        let indexer_pool = IndexerPool::default();
+        let ingester_pool = IngesterPool::default();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(|_| Ok(ListIndexesMetadataResponse::for_test(Vec::new())));
+
+        let cluster_config = ClusterConfig::for_test();
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
+            &universe,
+            cluster_config,
+            self_node_id,
+            cluster_change_stream_factory,
+            indexer_pool,
+            ingester_pool,
+            MetastoreServiceClient::from_mock(mock_metastore),
+        );
+
+        let response = control_plane_mailbox
+            .ask_for_res(GetPhysicalIndexingPlanRequest {})
+            .await
+            .unwrap();
+
+        assert!(!response.has_plan);
+        assert!(response.indexer_plans.is_empty());
+        assert!(response.shard_infos.is_empty());
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_get_physical_indexing_plan_with_ingest_v2_shards() {
+        let universe = Universe::with_accelerated_time();
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let index_uid_clone = index_uid.clone();
+
+        // Mock metastore: returns one index with ingest v2 source and one open shard.
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(|_| {
+                let mut index_metadata =
+                    IndexMetadata::for_test("test-index", "ram:///test-index");
+                let mut source_config = SourceConfig::ingest_v2();
+                source_config.enabled = true;
+                index_metadata.add_source(source_config).unwrap();
+                Ok(ListIndexesMetadataResponse::for_test(vec![index_metadata]))
+            });
+        mock_metastore
+            .expect_list_shards()
+            .returning(move |_| {
+                Ok(ListShardsResponse {
+                    subresponses: vec![ListShardsSubresponse {
+                        index_uid: Some(index_uid_clone.clone()),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
+                        shards: vec![Shard {
+                            index_uid: Some(index_uid_clone.clone()),
+                            source_id: INGEST_V2_SOURCE_ID.to_string(),
+                            shard_id: Some(ShardId::from(1)),
+                            leader_id: "test-indexer".to_string(),
+                            shard_state: ShardState::Open as i32,
+                            ..Default::default()
+                        }],
+                    }],
+                })
+            });
+
+        // Put an indexer in the pool so the scheduler produces a plan.
+        let indexer_pool = IndexerPool::default();
+        let mut mock_indexer = MockIndexingService::new();
+        mock_indexer
+            .expect_apply_indexing_plan()
+            .returning(|_| Ok(ApplyIndexingPlanResponse {}));
+        indexer_pool.insert(
+            NodeId::from("test-indexer"),
+            IndexerNodeInfo {
+                node_id: NodeId::from("test-indexer"),
+                generation_id: 0,
+                client: IndexingServiceClient::from_mock(mock_indexer),
+                indexing_tasks: Vec::new(),
+                indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            },
+        );
+
+        let ingester_pool = IngesterPool::default();
+        let cluster_config = ClusterConfig::for_test();
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) = ControlPlane::spawn(
+            &universe,
+            cluster_config,
+            NodeId::from("test-node"),
+            cluster_change_stream_factory,
+            indexer_pool,
+            ingester_pool,
+            MetastoreServiceClient::from_mock(mock_metastore),
+        );
+
+        let response = control_plane_mailbox
+            .ask_for_res(GetPhysicalIndexingPlanRequest {})
+            .await
+            .unwrap();
+
+        // Plan should exist with one indexer.
+        assert!(response.has_plan);
+        assert_eq!(response.indexer_plans.len(), 1);
+        assert_eq!(response.indexer_plans[0].node_id, "test-indexer");
+
+        // The plan should have a task for the ingest v2 source with the shard.
+        let v2_tasks: Vec<_> = response.indexer_plans[0]
+            .tasks
+            .iter()
+            .filter(|t| t.source_id == INGEST_V2_SOURCE_ID)
+            .collect();
+        assert_eq!(v2_tasks.len(), 1);
+        assert_eq!(v2_tasks[0].shard_ids.len(), 1);
+
+        // shard_infos should contain the shard with its leader.
+        assert_eq!(response.shard_infos.len(), 1);
+        assert_eq!(response.shard_infos[0].leader_id, "test-indexer");
+        assert_eq!(response.shard_infos[0].shard_state, "open");
+        assert_eq!(response.shard_infos[0].source_id, INGEST_V2_SOURCE_ID);
 
         universe.assert_quit().await;
     }

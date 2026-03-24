@@ -423,3 +423,4 @@ async fn test_scheduler_scheduling_multiple_indexers() {
 
     universe.assert_quit().await;
 }
+

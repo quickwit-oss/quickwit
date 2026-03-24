@@ -69,6 +69,9 @@ service ControlPlaneService {
 
   // Performs a debounced shard pruning request to the metastore.
   rpc PruneShards(quickwit.metastore.PruneShardsRequest) returns (quickwit.metastore.EmptyResponse);
+
+  // Returns the current physical indexing plan.
+  rpc GetPhysicalIndexingPlan(GetPhysicalIndexingPlanRequest) returns (GetPhysicalIndexingPlanResponse);
 }
 
 // Shard API
@@ -124,4 +127,38 @@ message AdviseResetShardsRequest {
 message AdviseResetShardsResponse {
   repeated quickwit.ingest.ShardIds shards_to_delete = 1;
   repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
+}
+
+// Physical Indexing Plan API
+
+message GetPhysicalIndexingPlanRequest {}
+
+message GetPhysicalIndexingPlanResponse {
+  // Whether the scheduler has produced a plan.
+  bool has_plan = 1;
+  // One entry per indexer node the plan assigns work to.
+  repeated IndexerPlan indexer_plans = 2;
+  // Shard location and state info for all known shards.
+  repeated ShardInfo shard_infos = 3;
+}
+
+message IndexerPlan {
+  string node_id = 1;
+  repeated quickwit.indexing.IndexingTask tasks = 2;
+}
+
+message ShardInfo {
+  string shard_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  // The ingester node hosting this shard (primary).
+  string leader_id = 4;
+  // The ingester node holding a replica, if any.
+  optional string follower_id = 5;
+  // open, closed, unavailable.
+  string shard_state = 6;
+  // Short-term ingestion rate in MiB/s.
+  float short_term_ingestion_rate = 7;
+  // Long-term ingestion rate in MiB/s.
+  float long_term_ingestion_rate = 8;
 }

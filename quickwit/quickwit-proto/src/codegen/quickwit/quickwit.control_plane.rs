@@ -73,6 +73,55 @@ pub struct AdviseResetShardsResponse {
     pub shards_to_truncate: ::prost::alloc::vec::Vec<super::ingest::ShardIdPositions>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GetPhysicalIndexingPlanRequest {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetPhysicalIndexingPlanResponse {
+    /// Whether the scheduler has produced a plan.
+    #[prost(bool, tag = "1")]
+    pub has_plan: bool,
+    /// One entry per indexer node the plan assigns work to.
+    #[prost(message, repeated, tag = "2")]
+    pub indexer_plans: ::prost::alloc::vec::Vec<IndexerPlan>,
+    /// Shard location and state info for all known shards.
+    #[prost(message, repeated, tag = "3")]
+    pub shard_infos: ::prost::alloc::vec::Vec<ShardInfo>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IndexerPlan {
+    #[prost(string, tag = "1")]
+    pub node_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "2")]
+    pub tasks: ::prost::alloc::vec::Vec<super::indexing::IndexingTask>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ShardInfo {
+    #[prost(string, tag = "1")]
+    pub shard_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub source_id: ::prost::alloc::string::String,
+    /// The ingester node hosting this shard (primary).
+    #[prost(string, tag = "4")]
+    pub leader_id: ::prost::alloc::string::String,
+    /// The ingester node holding a replica, if any.
+    #[prost(string, optional, tag = "5")]
+    pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// open, closed, unavailable.
+    #[prost(string, tag = "6")]
+    pub shard_state: ::prost::alloc::string::String,
+    /// Short-term ingestion rate in MiB/s.
+    #[prost(float, tag = "7")]
+    pub short_term_ingestion_rate: f32,
+    /// Long-term ingestion rate in MiB/s.
+    #[prost(float, tag = "8")]
+    pub long_term_ingestion_rate: f32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -180,6 +229,11 @@ pub trait ControlPlaneService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    ///Returns the current physical indexing plan.
+    async fn get_physical_indexing_plan(
+        &self,
+        request: GetPhysicalIndexingPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetPhysicalIndexingPlanResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceClient {
@@ -352,6 +406,12 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.inner.0.prune_shards(request).await
     }
+    async fn get_physical_indexing_plan(
+        &self,
+        request: GetPhysicalIndexingPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetPhysicalIndexingPlanResponse> {
+        self.inner.0.get_physical_indexing_plan(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_control_plane_service {
@@ -439,6 +499,14 @@ pub mod mock_control_plane_service {
             super::super::metastore::EmptyResponse,
         > {
             self.inner.lock().await.prune_shards(request).await
+        }
+        async fn get_physical_indexing_plan(
+            &self,
+            request: super::GetPhysicalIndexingPlanRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::GetPhysicalIndexingPlanResponse,
+        > {
+            self.inner.lock().await.get_physical_indexing_plan(request).await
         }
     }
 }
@@ -613,6 +681,22 @@ for InnerControlPlaneServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<GetPhysicalIndexingPlanRequest> for InnerControlPlaneServiceClient {
+    type Response = GetPhysicalIndexingPlanResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: GetPhysicalIndexingPlanRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.get_physical_indexing_plan(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerServiceStack {
@@ -666,6 +750,11 @@ struct ControlPlaneServiceTowerServiceStack {
     prune_shards_svc: quickwit_common::tower::BoxService<
         super::metastore::PruneShardsRequest,
         super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    get_physical_indexing_plan_svc: quickwit_common::tower::BoxService<
+        GetPhysicalIndexingPlanRequest,
+        GetPhysicalIndexingPlanResponse,
         crate::control_plane::ControlPlaneError,
     >,
 }
@@ -734,6 +823,12 @@ impl ControlPlaneService for ControlPlaneServiceTowerServiceStack {
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.prune_shards_svc.clone().ready().await?.call(request).await
+    }
+    async fn get_physical_indexing_plan(
+        &self,
+        request: GetPhysicalIndexingPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetPhysicalIndexingPlanResponse> {
+        self.get_physical_indexing_plan_svc.clone().ready().await?.call(request).await
     }
 }
 type CreateIndexLayer = quickwit_common::tower::BoxLayer<
@@ -836,6 +931,16 @@ type PruneShardsLayer = quickwit_common::tower::BoxLayer<
     super::metastore::EmptyResponse,
     crate::control_plane::ControlPlaneError,
 >;
+type GetPhysicalIndexingPlanLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        GetPhysicalIndexingPlanRequest,
+        GetPhysicalIndexingPlanResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    GetPhysicalIndexingPlanRequest,
+    GetPhysicalIndexingPlanResponse,
+    crate::control_plane::ControlPlaneError,
+>;
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerLayerStack {
     create_index_layers: Vec<CreateIndexLayer>,
@@ -848,6 +953,7 @@ pub struct ControlPlaneServiceTowerLayerStack {
     get_or_create_open_shards_layers: Vec<GetOrCreateOpenShardsLayer>,
     advise_reset_shards_layers: Vec<AdviseResetShardsLayer>,
     prune_shards_layers: Vec<PruneShardsLayer>,
+    get_physical_indexing_plan_layers: Vec<GetPhysicalIndexingPlanLayer>,
 }
 impl ControlPlaneServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -1120,6 +1226,33 @@ impl ControlPlaneServiceTowerLayerStack {
         >>::Service as tower::Service<
             super::metastore::PruneShardsRequest,
         >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetPhysicalIndexingPlanRequest,
+                    GetPhysicalIndexingPlanResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetPhysicalIndexingPlanRequest,
+                GetPhysicalIndexingPlanResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service: tower::Service<
+                GetPhysicalIndexingPlanRequest,
+                Response = GetPhysicalIndexingPlanResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                GetPhysicalIndexingPlanRequest,
+                GetPhysicalIndexingPlanResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >>::Service as tower::Service<
+            GetPhysicalIndexingPlanRequest,
+        >>::Future: Send + 'static,
     {
         self.create_index_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -1140,6 +1273,8 @@ impl ControlPlaneServiceTowerLayerStack {
         self.advise_reset_shards_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.prune_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.get_physical_indexing_plan_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
@@ -1353,6 +1488,28 @@ impl ControlPlaneServiceTowerLayerStack {
         self.prune_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_get_physical_indexing_plan_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    GetPhysicalIndexingPlanRequest,
+                    GetPhysicalIndexingPlanResponse,
+                    crate::control_plane::ControlPlaneError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                GetPhysicalIndexingPlanRequest,
+                Response = GetPhysicalIndexingPlanResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            GetPhysicalIndexingPlanRequest,
+        >>::Future: Send + 'static,
+    {
+        self.get_physical_indexing_plan_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
     where
         T: ControlPlaneService,
@@ -1496,6 +1653,14 @@ impl ControlPlaneServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let get_physical_indexing_plan_svc = self
+            .get_physical_indexing_plan_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = ControlPlaneServiceTowerServiceStack {
             inner: inner_client,
             create_index_svc,
@@ -1508,6 +1673,7 @@ impl ControlPlaneServiceTowerLayerStack {
             get_or_create_open_shards_svc,
             advise_reset_shards_svc,
             prune_shards_svc,
+            get_physical_indexing_plan_svc,
         };
         ControlPlaneServiceClient::new(tower_svc_stack)
     }
@@ -1673,6 +1839,15 @@ where
                 super::metastore::EmptyResponse,
                 crate::control_plane::ControlPlaneError,
             >,
+        >
+        + tower::Service<
+            GetPhysicalIndexingPlanRequest,
+            Response = GetPhysicalIndexingPlanResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                GetPhysicalIndexingPlanResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
         >,
 {
     async fn create_index(
@@ -1737,6 +1912,12 @@ where
         &self,
         request: super::metastore::PruneShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.clone().call(request).await
+    }
+    async fn get_physical_indexing_plan(
+        &self,
+        request: GetPhysicalIndexingPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetPhysicalIndexingPlanResponse> {
         self.clone().call(request).await
     }
 }
@@ -1918,6 +2099,20 @@ where
                 super::metastore::PruneShardsRequest::rpc_name(),
             ))
     }
+    async fn get_physical_indexing_plan(
+        &self,
+        request: GetPhysicalIndexingPlanRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetPhysicalIndexingPlanResponse> {
+        self.inner
+            .clone()
+            .get_physical_indexing_plan(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                GetPhysicalIndexingPlanRequest::rpc_name(),
+            ))
+    }
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
@@ -2045,6 +2240,17 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .0
             .prune_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn get_physical_indexing_plan(
+        &self,
+        request: tonic::Request<GetPhysicalIndexingPlanRequest>,
+    ) -> Result<tonic::Response<GetPhysicalIndexingPlanResponse>, tonic::Status> {
+        self.inner
+            .0
+            .get_physical_indexing_plan(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -2450,6 +2656,36 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the current physical indexing plan.
+        pub async fn get_physical_indexing_plan(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetPhysicalIndexingPlanRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetPhysicalIndexingPlanResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/GetPhysicalIndexingPlan",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "GetPhysicalIndexingPlan",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -2544,6 +2780,14 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::super::metastore::PruneShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        >;
+        /// Returns the current physical indexing plan.
+        async fn get_physical_indexing_plan(
+            &self,
+            request: tonic::Request<super::GetPhysicalIndexingPlanRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetPhysicalIndexingPlanResponse>,
             tonic::Status,
         >;
     }
@@ -3122,6 +3366,59 @@ pub mod control_plane_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = PruneShardsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/GetPhysicalIndexingPlan" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetPhysicalIndexingPlanSvc<T: ControlPlaneServiceGrpc>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<super::GetPhysicalIndexingPlanRequest>
+                    for GetPhysicalIndexingPlanSvc<T> {
+                        type Response = super::GetPhysicalIndexingPlanResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::GetPhysicalIndexingPlanRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ControlPlaneServiceGrpc>::get_physical_indexing_plan(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetPhysicalIndexingPlanSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -138,6 +138,12 @@ impl RpcName for AdviseResetShardsRequest {
     }
 }
 
+impl RpcName for GetPhysicalIndexingPlanRequest {
+    fn rpc_name() -> &'static str {
+        "get_physical_indexing_plan"
+    }
+}
+
 impl GetOrCreateOpenShardsFailureReason {
     pub fn create_failure(
         &self,
