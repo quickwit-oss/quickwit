@@ -174,30 +174,33 @@ fn time_formatter() -> UtcTime<Vec<BorrowedFormatItem<'static>>> {
 enum EventFormat<'a> {
     Full(Format<Full, UtcTime<Vec<BorrowedFormatItem<'a>>>>),
     Json(Format<Json>),
+    Ddg(DdgFormat),
 }
 
 impl EventFormat<'_> {
-    /// Gets the log format from the environment variable `QW_LOG_FORMAT`. Returns a JSON
-    /// formatter if the variable is set to `json`, otherwise returns a full formatter.
+    /// Gets the log format from the environment variable `QW_LOG_FORMAT`.
     fn get_from_env() -> Self {
-        if get_from_env_opt::<String>("QW_LOG_FORMAT", false)
-            .map(|log_format| log_format.eq_ignore_ascii_case("json"))
-            .unwrap_or(false)
+        match get_from_env_opt::<String>("QW_LOG_FORMAT", false)
+            .as_deref()
+            .map(str::to_ascii_lowercase)
+            .as_deref()
         {
-            let json_format = tracing_subscriber::fmt::format().json();
-            EventFormat::Json(json_format)
-        } else {
-            let full_format = tracing_subscriber::fmt::format()
-                .with_target(true)
-                .with_timer(time_formatter());
-
-            EventFormat::Full(full_format)
+            Some("json") => EventFormat::Json(tracing_subscriber::fmt::format().json()),
+            Some("ddg") => EventFormat::Ddg(DdgFormat::new()),
+            _ => {
+                let full_format = tracing_subscriber::fmt::format()
+                    .with_target(true)
+                    .with_timer(time_formatter());
+                EventFormat::Full(full_format)
+            }
         }
     }
 
     fn format_fields(&self) -> FieldFormat {
         match self {
-            EventFormat::Full(_) => FieldFormat::Default(DefaultFields::new()),
+            EventFormat::Full(_) | EventFormat::Ddg(_) => {
+                FieldFormat::Default(DefaultFields::new())
+            }
             EventFormat::Json(_) => FieldFormat::Json(JsonFields::new()),
         }
     }
@@ -217,7 +220,67 @@ where
         match self {
             EventFormat::Full(format) => format.format_event(ctx, writer, event),
             EventFormat::Json(format) => format.format_event(ctx, writer, event),
+            EventFormat::Ddg(format) => format.format_event(ctx, writer, event),
         }
+    }
+}
+
+/// Outputs JSON with `timestamp`, `level`, `service`, and `message` fields.
+/// The `service` is extracted from the tracing target (crate name).
+/// The `message` is formatted using the regular text formatter (level, target, spans, fields).
+///
+/// Example output:
+/// ```json
+/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"quickwit_search","message":"INFO quickwit_search: hello"}
+/// ```
+struct DdgFormat {
+    text_format: Format<Full, ()>,
+}
+
+impl DdgFormat {
+    fn new() -> Self {
+        Self {
+            text_format: tracing_subscriber::fmt::format()
+                .with_target(true)
+                .without_time(),
+        }
+    }
+}
+
+impl<S, N> FormatEvent<S, N> for DdgFormat
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &FmtContext<'_, S, N>,
+        mut writer: Writer<'_>,
+        event: &Event<'_>,
+    ) -> fmt::Result {
+        // Render the event as text using the Full formatter (without timestamp)
+        let mut message = String::with_capacity(256);
+        self.text_format
+            .format_event(ctx, Writer::new(&mut message), event)?;
+        let message = message.trim();
+
+        // Timestamp (RFC 3339)
+        let timestamp = time::OffsetDateTime::now_utc()
+            .format(&time::format_description::well_known::Rfc3339)
+            .map_err(|_| fmt::Error)?;
+
+        let level = event.metadata().level().as_str();
+
+        // Extract crate name from the target (e.g. "quickwit_cli::logger" -> "quickwit_cli")
+        let target = event.metadata().target();
+        let service = target.split("::").next().unwrap_or(target);
+
+        // Write JSON with properly escaped message
+        let escaped_message = serde_json::to_string(message).map_err(|_| fmt::Error)?;
+        writeln!(
+            writer,
+            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"{service}","message":{escaped_message}}}"#
+        )
     }
 }
 
@@ -361,5 +424,226 @@ pub(super) mod jemalloc_profiled {
                     .with_ansi(ansi_colors)
                     .with_filter(startup_env_filter(level)?),
             ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Mutex};
+
+    use tracing_subscriber::layer::SubscriberExt;
+
+    use super::*;
+
+    /// A shared buffer writer for capturing log output in tests.
+    #[derive(Clone, Default)]
+    struct TestMakeWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl TestMakeWriter {
+        fn get_string(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for TestMakeWriter {
+        type Writer = TestWriter;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            TestWriter(self.0.clone())
+        }
+    }
+
+    struct TestWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for TestWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().write_all(buf)?;
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Sets up a subscriber with `DdgFormat` and captures the output.
+    fn capture_ddg_log<F: FnOnce()>(f: F) -> serde_json::Value {
+        let writer = TestMakeWriter::default();
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .event_format(DdgFormat::new())
+                .fmt_fields(FieldFormat::Default(DefaultFields::new()))
+                .with_ansi(false)
+                .with_writer(writer.clone()),
+        );
+        tracing::subscriber::with_default(subscriber, f);
+        let output = writer.get_string();
+        serde_json::from_str(&output).expect("output should be valid JSON")
+    }
+
+    const TARGET: &str = "quickwit_cli::logger::tests";
+
+    #[test]
+    fn test_ddg_format_has_expected_fields() {
+        let json = capture_ddg_log(|| tracing::info!("hello"));
+        let obj = json.as_object().unwrap();
+        assert_eq!(obj.len(), 4, "{obj:?}");
+        assert!(obj.contains_key("timestamp"));
+        assert!(obj.contains_key("level"));
+        assert!(obj.contains_key("service"));
+        assert!(obj.contains_key("message"));
+    }
+
+    #[test]
+    fn test_ddg_format_basic_message() {
+        let json = capture_ddg_log(|| tracing::info!("hello world"));
+        assert_eq!(json["level"], "INFO");
+        assert_eq!(json["service"], "quickwit_cli");
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!("INFO {TARGET}: hello world")
+        );
+    }
+
+    #[test]
+    fn test_ddg_format_with_fields() {
+        let json = capture_ddg_log(|| {
+            tracing::info!(key = "value", count = 42, "processing request");
+        });
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!("INFO {TARGET}: processing request key=\"value\" count=42")
+        );
+    }
+
+    #[test]
+    fn test_ddg_format_with_span() {
+        let json = capture_ddg_log(|| {
+            let span = tracing::info_span!("my_span", id = 123);
+            let _guard = span.enter();
+            tracing::info!("inside span");
+        });
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!("INFO my_span{{id=123}}: {TARGET}: inside span")
+        );
+    }
+
+    /// Captures raw text output using the production Full formatter (with timestamp, no ANSI).
+    fn capture_full_log<F: FnOnce()>(f: F) -> String {
+        let writer = TestMakeWriter::default();
+        let full_format = tracing_subscriber::fmt::format()
+            .with_target(true)
+            .with_timer(time_formatter());
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .event_format(full_format)
+                .fmt_fields(DefaultFields::new())
+                .with_ansi(false)
+                .with_writer(writer.clone()),
+        );
+        tracing::subscriber::with_default(subscriber, f);
+        writer.get_string().trim_end().to_string()
+    }
+
+    #[test]
+    fn test_ddg_format_with_nested_spans() {
+        let make_event = || {
+            let outer = tracing::info_span!("outer", req_id = 42);
+            let _outer_guard = outer.enter();
+            let inner = tracing::info_span!("inner", step = "parse");
+            let _inner_guard = inner.enter();
+            tracing::info!("deep inside");
+        };
+
+        // Compare DDG message against production Full formatter output.
+        // The only difference is the leading timestamp.
+        let full_output = capture_full_log(make_event);
+        let json = capture_ddg_log(make_event);
+        let ddg_message = json["message"].as_str().unwrap();
+
+        // Full output: "2025-03-23T14:30:45.123Z  INFO outer{...}: target: deep inside"
+        // DDG message:                            "INFO outer{...}: target: deep inside"
+        // The timestamp adds one extra space of padding, so we trim both and compare.
+        let full_without_timestamp = full_output
+            .find("  ")
+            .map(|pos| &full_output[pos..])
+            .unwrap_or(&full_output);
+        assert_eq!(
+            ddg_message.trim_start(),
+            full_without_timestamp.trim_start(),
+        );
+
+        assert_eq!(
+            ddg_message,
+            format!("INFO outer{{req_id=42}}:inner{{step=\"parse\"}}: {TARGET}: deep inside")
+        );
+    }
+
+    #[test]
+    fn test_ddg_format_escapes_special_chars() {
+        let json = capture_ddg_log(|| {
+            tracing::info!(r#"hello "world" with\backslash"#);
+        });
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!(r#"INFO {TARGET}: hello "world" with\backslash"#)
+        );
+    }
+
+    #[test]
+    fn test_ddg_format_escapes_newlines() {
+        let json = capture_ddg_log(|| {
+            tracing::info!("line1\nline2\ttab");
+        });
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!("INFO {TARGET}: line1\nline2\ttab")
+        );
+    }
+
+    #[test]
+    fn test_ddg_format_levels() {
+        for (expected_level, log_fn) in [
+            (
+                "WARN",
+                Box::new(|| tracing::warn!("w")) as Box<dyn FnOnce()>,
+            ),
+            ("ERROR", Box::new(|| tracing::error!("e"))),
+            ("INFO", Box::new(|| tracing::info!("i"))),
+        ] {
+            let json = capture_ddg_log(log_fn);
+            assert_eq!(json["level"], expected_level);
+        }
+    }
+
+    #[test]
+    fn test_ddg_format_timestamp_is_rfc3339() {
+        let json = capture_ddg_log(|| tracing::info!("hello"));
+        let ts = json["timestamp"].as_str().unwrap();
+        time::OffsetDateTime::parse(ts, &time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|err| panic!("timestamp is not valid RFC 3339: {ts}: {err}"));
+    }
+
+    #[test]
+    fn test_ddg_format_with_bool_and_float_fields() {
+        let json = capture_ddg_log(|| {
+            tracing::info!(enabled = true, ratio = 0.75, "status check");
+        });
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!("INFO {TARGET}: status check enabled=true ratio=0.75")
+        );
+    }
+
+    #[test]
+    fn test_ddg_format_fields_only() {
+        let json = capture_ddg_log(|| {
+            tracing::info!(action = "ping");
+        });
+        assert_eq!(
+            json["message"].as_str().unwrap(),
+            format!("INFO {TARGET}: action=\"ping\"")
+        );
     }
 }
