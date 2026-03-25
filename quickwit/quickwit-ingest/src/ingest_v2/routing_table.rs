@@ -407,7 +407,7 @@ mod tests {
         // Node with capacity_score=0 is not eligible.
         table.apply_capacity_update(
             "node-2".into(),
-            IndexUid::for_test("test-index", 0),
+            index_uid.clone(),
             "test-source".into(),
             0,
             2,
