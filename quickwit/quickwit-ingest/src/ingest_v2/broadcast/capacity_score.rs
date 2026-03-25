@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(parsed.open_shard_count, 3);
 
         // Cycle 2: source disappears. Broadcasts 0 with TTL, key still exists.
-        let _current = task.broadcast_capacity(7, &[], &current).await;
+        let _current = task.broadcast_capacity(7, &vec![], &current).await;
 
         let value = cluster.get_self_key_value(&key).await.unwrap();
         let parsed: IngesterCapacityScore = serde_json::from_str(&value).unwrap();
