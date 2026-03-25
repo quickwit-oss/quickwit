@@ -974,3 +974,59 @@ async fn test_get_indexes() {
 
     sandbox.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn test_extra_fts_indexing_and_search() {
+    // Test that extra_fts fields are populated by PomChi and searchable.
+    // The datadog tokenizer splits on whitespace (not dots), so error messages
+    // use space-separated words for testable FTS.
+    let mut docs: Vec<Value> = serde_json::from_value(serde_json::json!([
+        {
+            "message": "{\"error\":{\"message\":\"connection refused by remote host\",\"stack\":\"RuntimeError at handle_request line 42\"},\"title\":\"payment service crash\"}",
+            "status": "error",
+            "timestamp": 1762360556800u64,
+            "hostname": "test-host",
+            "service": "service123",
+            "ddsource": "java",
+            "ddtags": "env:dev"
+        }
+    ]))
+    .unwrap();
+
+    // Verify PomChi produces extra_fts
+    let msg: DatadogLogMsg = serde_json::from_value(docs[0].clone()).unwrap();
+    let processed = pomchi::ProcessedLog::from_datadog_log_msg(msg);
+    let serialized = serde_json::to_value(&processed).unwrap();
+    assert!(
+        serialized.get("extra_fts").is_some(),
+        "PomChi should produce extra_fts, got keys: {:?}",
+        serialized.as_object().map(|m| m.keys().collect::<Vec<_>>())
+    );
+    let extra_fts = serialized.get("extra_fts").unwrap();
+    assert_eq!(
+        extra_fts["error_message"],
+        "connection refused by remote host"
+    );
+    assert_eq!(extra_fts["title"], "payment service crash");
+
+    let sandbox = setup_env(&mut docs).await;
+
+    // Verify the document was indexed
+    sandbox.assert_hit_count("datadog", "source:java", 1).await;
+
+    // FTS for a word in extra_fts.error_message (via default_search_fields)
+    sandbox.assert_hit_count("datadog", "refused", 1).await;
+
+    // FTS for a word in extra_fts.title
+    sandbox.assert_hit_count("datadog", "crash", 1).await;
+
+    // FTS for a word in extra_fts.error_stack
+    sandbox.assert_hit_count("datadog", "RuntimeError", 1).await;
+
+    // Negative: word not in any field
+    sandbox
+        .assert_hit_count("datadog", "nonexistentword12345", 0)
+        .await;
+
+    sandbox.shutdown().await.unwrap();
+}

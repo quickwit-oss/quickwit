@@ -13,6 +13,7 @@ json:
   indexing_settings:
     commit_timeout_secs: 1
   doc_mapping: !include ../../config/cloudprem/datadog-logs.yaml::doc_mapping
+  search_settings: !include ../../config/cloudprem/datadog-logs.yaml::search_settings
 ---
 # Set routing table to route all logs to datadog index
 method: PUT
@@ -81,6 +82,24 @@ data: |
       "service": "service123",
       "ddsource": "rust",
       "ddtags": "env:dev,region:us-east"
+    }
+  ]
+---
+# Ingest document with error.message, error.stack, and title for extra_fts testing
+method: POST
+endpoint: /api/v2/logs
+headers:
+  Content-Type: application/json
+data: |
+  [
+    {
+      "message": "{\"error\":{\"message\":\"connection refused by remote host\",\"stack\":\"RuntimeError at handle_request line 42\"},\"title\":\"payment service crash\"}",
+      "status": "ERROR",
+      "timestamp": 1762360556800,
+      "hostname": "test-host",
+      "service": "service123",
+      "ddsource": "java",
+      "ddtags": "env:dev"
     }
   ]
 sleep_after: 10

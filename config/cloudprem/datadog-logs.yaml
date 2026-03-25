@@ -14,7 +14,11 @@ retention:
   schedule: hourly
 
 search_settings:
-  default_search_fields: []
+  default_search_fields:
+    - message
+    - extra_fts.error_message
+    - extra_fts.error_stack
+    - extra_fts.title
 
 # TODO: replace ALL default tokenizer with ddg tokenizer
 # There would be two tokenizers: ddg and ddg_ignore_case (for message and all)
@@ -42,7 +46,7 @@ doc_mapping:
   # CAUTION: Update this UID (this is actually an ULID) when you modify the doc mapping.
   # It has no semantic meaning. The Datadog index doc mapping is only updated
   # if and only if this UID differs from the current doc mapping UID.
-  doc_mapping_uid: "01KCKZM549X2BHRYZ330F5BMHA"
+  doc_mapping_uid: "01KCKZM549X2BHRYZ330F5BMHB"
   mode: dynamic
   field_mappings:
     # TODO: Add RFC3164
@@ -87,16 +91,19 @@ doc_mapping:
       indexed: false
       fast: false
 
-    # The subfields are `message` and `stack`. Are there others?
-    # If all fields are clear, we can convert to object.
-    # TODO: This is unused currently in the Pomsky processing
-    # We need to move errors from custom to its own field because the tokenization is different
-    - name: error
+    # FTS-indexed copies of custom.error.message, custom.error.stack, and
+    # custom.title. The custom field uses the raw tokenizer (exact match),
+    # so bare text queries won't find values inside these sub-fields.
+    # This JSON field duplicates them with the datadog tokenizer.
+    # Populated during ingest by PomChi ExtraFts; not stored (index-only).
+    # Note: search must target sub-fields explicitly (e.g. extra_fts.error_message)
+    # because searching the parent JSON field name alone uses an empty json_path
+    # which doesn't match sub-field terms in Tantivy's inverted index.
+    - name: extra_fts
       type: json
       tokenizer: datadog
       record: position
-      fast: false # We can use custom.error for aggregations instead
-      # downstream expects the error to be in custom.error, so we will store it only there
+      fast: false
       stored: false
 
     # other text like core attributes
@@ -157,7 +164,7 @@ doc_mapping:
         # TODO: Check if we need to cover queries addressing tags, e.g. tags `*:"env:prod"` or tag `*:prod`
         # Generally this could be extracted by a query processor
         # - tag OR tags
-        - error
+        # error field removed — FTS on error sub-fields now handled by extra_fts
         - source
         - service
         - service_type

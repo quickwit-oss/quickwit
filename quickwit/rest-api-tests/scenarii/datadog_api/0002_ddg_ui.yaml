@@ -5,7 +5,7 @@ params:
   to_ts: 1762361456481
 expected:
   metadata:
-    count: 4
+    count: 5
 ---
 endpoint: cloudprem/api/v1/search
 params:
@@ -14,7 +14,7 @@ params:
   to_ts: 1762361456481
 expected:
   metadata:
-    count: 2
+    count: 3
 ---
 method: POST
 endpoint: cloudprem/api/v1/aggregate
@@ -72,7 +72,7 @@ expected:
   - 1762361280000.0
   - 1762361400000.0
   values:
-  - [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+  - [2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
   - [2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   from_date: 1762360556481
   to_date: 1762361456481
@@ -93,10 +93,10 @@ data: |
     "limit": 50
   }
 expected:
-  hit_count: 4
-  result: 
+  hit_count: 5
+  result:
     fields:
     - field: error
-      value: 2
+      value: 3
     - field: info
       value: 2

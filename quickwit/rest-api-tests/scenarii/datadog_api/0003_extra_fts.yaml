@@ -1,0 +1,40 @@
+# Tests for extra_fts: FTS queries should find text inside
+# custom.error.message, custom.error.stack, and custom.title
+# via the extra_fts field indexed with the datadog tokenizer.
+# Note: the datadog tokenizer does NOT split on dots, so search
+# terms must be space-delimited words, not dot-separated fragments.
+
+# Step 1: Verify document was ingested
+endpoint: api/v1/datadog/search
+params:
+  query: "source:java"
+expected:
+  num_hits: 1
+---
+# Step 2: FTS for a word in extra_fts.error_message
+endpoint: api/v1/datadog/search
+params:
+  query: "refused"
+expected:
+  num_hits: 1
+---
+# Step 3: FTS for a word in extra_fts.title
+endpoint: api/v1/datadog/search
+params:
+  query: "crash"
+expected:
+  num_hits: 1
+---
+# Step 4: FTS for a word in extra_fts.error_stack
+endpoint: api/v1/datadog/search
+params:
+  query: "RuntimeError"
+expected:
+  num_hits: 1
+---
+# Step 5: Negative — word not in any field
+endpoint: api/v1/datadog/search
+params:
+  query: "nonexistentword12345"
+expected:
+  num_hits: 0
