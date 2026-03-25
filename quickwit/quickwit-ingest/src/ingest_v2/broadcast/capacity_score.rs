@@ -40,7 +40,6 @@ pub struct IngesterCapacityScore {
 pub struct BroadcastIngesterCapacityScoreTask {
     cluster: Cluster,
     weak_state: WeakIngesterState,
-    pending_removal: BTreeSet<SourceUid>,
 }
 
 impl BroadcastIngesterCapacityScoreTask {
@@ -48,7 +47,6 @@ impl BroadcastIngesterCapacityScoreTask {
         let mut broadcaster = Self {
             cluster,
             weak_state,
-            pending_removal: BTreeSet::new(),
         };
         tokio::spawn(async move { broadcaster.run().await })
     }
@@ -104,7 +102,7 @@ impl BroadcastIngesterCapacityScoreTask {
     }
 
     async fn broadcast_capacity(
-        &mut self,
+        &self,
         capacity_score: usize,
         open_shard_counts: &OpenShardCounts,
         previous_sources: &BTreeSet<SourceUid>,
@@ -124,38 +122,23 @@ impl BroadcastIngesterCapacityScoreTask {
             let value = serde_json::to_string(&capacity)
                 .expect("`IngesterCapacityScore` should be JSON serializable");
             self.cluster.set_self_key_value(key, value).await;
-            self.pending_removal.remove(&source_uid);
             current_sources.insert(source_uid);
         }
 
-        let removed_sources: Vec<SourceUid> = previous_sources
-            .difference(&current_sources)
-            .cloned()
-            .collect();
-
-        // When a source disappears (e.g. index deleted), broadcast open_shard_count=0 for one
-        // cycle, then remove the key the second cycle. This is the only way routers learn to clear
-        // stale routing entries.
-        for removed_source in removed_sources {
-            if self.pending_removal.remove(&removed_source) {
-                // this is the second broadcast cycle that this source has been in the "removed"
-                // state, clean it up.
-                let key = make_key(INGESTER_CAPACITY_SCORE_PREFIX, &removed_source);
-                self.cluster.remove_self_key(&key).await;
-            } else {
-                // this is the first broadcast cycle that this key has been in the "removed" state,
-                // broadcast that it has no open shards.
-                let key = make_key(INGESTER_CAPACITY_SCORE_PREFIX, &removed_source);
-                let capacity = IngesterCapacityScore {
-                    capacity_score,
-                    open_shard_count: 0,
-                };
-                let value = serde_json::to_string(&capacity)
-                    .expect("`IngesterCapacityScore` should be JSON serializable");
-                self.cluster.set_self_key_value(key, value).await;
-                self.pending_removal.insert(removed_source.clone());
-                current_sources.insert(removed_source);
-            }
+        // When a source disappears (e.g. index deleted), broadcast open_shard_count=0 with a TTL
+        // so Chitchat auto-cleans the key. This is the only way routers learn to clear stale
+        // routing entries — Chitchat key removal doesn't reliably fire subscribers.
+        for removed_source in previous_sources.difference(&current_sources) {
+            let key = make_key(INGESTER_CAPACITY_SCORE_PREFIX, removed_source);
+            let capacity = IngesterCapacityScore {
+                capacity_score,
+                open_shard_count: 0,
+            };
+            let value = serde_json::to_string(&capacity)
+                .expect("`IngesterCapacityScore` should be JSON serializable");
+            self.cluster
+                .set_self_key_value_delete_after_ttl(key, value)
+                .await;
         }
 
         current_sources
@@ -223,7 +206,6 @@ mod tests {
         let task = BroadcastIngesterCapacityScoreTask {
             cluster,
             weak_state,
-            pending_removal: BTreeSet::new(),
         };
         assert!(task.snapshot().await.is_err());
     }
@@ -257,10 +239,9 @@ mod tests {
 
         assert_eq!(capacity_score, 6);
 
-        let mut task = BroadcastIngesterCapacityScoreTask {
+        let task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
             weak_state: state.weak(),
-            pending_removal: BTreeSet::new(),
         };
 
         let update_counter = Arc::new(AtomicUsize::new(0));
@@ -296,17 +277,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_removed_source_broadcasts_zero_then_deletes_key() {
+    async fn test_removed_source_broadcasts_zero_with_ttl() {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
             .await
             .unwrap();
 
         let (_temp_dir, state) = IngesterState::for_test(cluster.clone()).await;
-        let mut task = BroadcastIngesterCapacityScoreTask {
+        let task = BroadcastIngesterCapacityScoreTask {
             cluster: cluster.clone(),
             weak_state: state.weak(),
-            pending_removal: BTreeSet::new(),
         };
 
         let index_uid = IndexUid::for_test("test-index", 0);
@@ -315,7 +295,6 @@ mod tests {
             source_id: SourceId::from("test-source"),
         };
         let key = make_key(INGESTER_CAPACITY_SCORE_PREFIX, &source_uid);
-        let empty_counts: Vec<(IndexUid, SourceId, usize)> = vec![];
 
         // Cycle 1: source is alive.
         let open_counts: Vec<(IndexUid, SourceId, usize)> =
@@ -328,19 +307,13 @@ mod tests {
         let parsed: IngesterCapacityScore = serde_json::from_str(&value).unwrap();
         assert_eq!(parsed.open_shard_count, 3);
 
-        // Cycle 2: source disappears. Broadcasts 0, key still exists.
-        let current = task.broadcast_capacity(7, &empty_counts, &current).await;
+        // Cycle 2: source disappears. Broadcasts 0 with TTL, key still exists.
+        let empty_counts: Vec<(IndexUid, SourceId, usize)> = vec![];
+        let _current = task.broadcast_capacity(7, &empty_counts, &current).await;
 
-        assert!(task.pending_removal.contains(&source_uid));
         let value = cluster.get_self_key_value(&key).await.unwrap();
         let parsed: IngesterCapacityScore = serde_json::from_str(&value).unwrap();
         assert_eq!(parsed.capacity_score, 7);
         assert_eq!(parsed.open_shard_count, 0);
-
-        // Cycle 3: source still gone. Key removed.
-        let _current = task.broadcast_capacity(7, &empty_counts, &current).await;
-
-        assert!(!task.pending_removal.contains(&source_uid));
-        assert!(cluster.get_self_key_value(&key).await.is_none());
     }
 }
