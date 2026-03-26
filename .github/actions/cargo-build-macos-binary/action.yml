@@ -15,7 +15,7 @@ runs:
   steps:
     - run: echo "ASSET_FULL_NAME=quickwit-${{ inputs.version }}-${{ inputs.target }}" >> $GITHUB_ENV
       shell: bash
-    - uses: actions/setup-node@v3
+    - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
       with:
         node-version: 20
         cache: "yarn"
@@ -54,13 +54,13 @@ runs:
           BINARY_VERSION=${{ inputs.version }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
       shell: bash
     - name: Save binary archive for three days
-      uses: actions/upload-artifact@v4.4.0
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
         name: ${{ env.ASSET_FULL_NAME }}.tar.gz
         path: ./${{ env.ASSET_FULL_NAME }}.tar.gz
         retention-days: 3
     - name: Deploy archive to GitHub release
-      uses: quickwit-inc/upload-to-github-release@v1
+      uses: quickwit-inc/upload-to-github-release@98857380fc282f8075a62c6af230fe92bd93aff8 # v1.3.2
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
       with:
