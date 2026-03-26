@@ -129,7 +129,6 @@ google-cloud-googleapis = { version = "0.16", features = ["pubsub"] }
 google-cloud-pubsub = "0.30"
 governor = "0.10.4"
 heck = "0.5"
-hashbrown = "0.15"
 hex = "0.4"
 home = "0.5"
 hostname = "0.4"

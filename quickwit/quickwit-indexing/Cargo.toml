@@ -27,7 +27,6 @@ google-cloud-auth = { workspace = true, optional = true }
 google-cloud-gax = { workspace = true, optional = true }
 google-cloud-googleapis = { workspace = true, optional = true }
 google-cloud-pubsub = { workspace = true, optional = true }
-hashbrown = { workspace = true }
 heck = { workspace = true }
 itertools = { workspace = true }
 libz-sys = { workspace = true, optional = true }
