@@ -18,6 +18,8 @@ use std::{env, fmt};
 use anyhow::Context;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{KeyValue, global};
+use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
@@ -56,7 +58,10 @@ pub fn setup_logging_and_tracing(
     level: Level,
     ansi_colors: bool,
     build_info: &BuildInfo,
-) -> anyhow::Result<(EnvFilterReloadFn, Option<SdkTracerProvider>)> {
+) -> anyhow::Result<(
+    EnvFilterReloadFn,
+    Option<(SdkTracerProvider, SdkLoggerProvider)>,
+)> {
     #[cfg(feature = "tokio-console")]
     {
         if get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
@@ -93,11 +98,11 @@ pub fn setup_logging_and_tracing(
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     let provider_opt = if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
-        let otlp_exporter = opentelemetry_otlp::SpanExporter::builder()
+        let span_exporter = opentelemetry_otlp::SpanExporter::builder()
             .with_tonic()
             .build()
             .context("failed to initialize OpenTelemetry OTLP exporter")?;
-        let batch_processor = trace::BatchSpanProcessor::builder(otlp_exporter)
+        let span_processor = trace::BatchSpanProcessor::builder(span_exporter)
             .with_batch_config(
                 BatchConfigBuilder::default()
                     // Quickwit can generate a lot of spans, especially in debug mode, and the
@@ -112,17 +117,33 @@ pub fn setup_logging_and_tracing(
             .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
             .build();
 
-        let provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-            .with_span_processor(batch_processor)
+        let logs_exporter = opentelemetry_otlp::LogExporter::builder()
+            .with_tonic()
+            .build()
+            .context("failed to initialize OpenTelemetry OTLP logs")?;
+
+        let logger_provider = SdkLoggerProvider::builder()
+            .with_resource(resource.clone())
+            .with_batch_exporter(logs_exporter)
+            .build();
+
+        let tracing_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+            .with_span_processor(span_processor)
             .with_resource(resource)
             .build();
-        let tracer = provider.tracer("quickwit");
+
+        let tracer = tracing_provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
+
+        // Bridge between tracing logs and otel tracing events
+        let logs_otel_layer = OpenTelemetryTracingBridge::new(&logger_provider);
+
         registry
             .with(telemetry_layer)
+            .with(logs_otel_layer)
             .try_init()
             .context("failed to register tracing subscriber")?;
-        Some(provider)
+        Some((tracing_provider, logger_provider))
     } else {
         registry
             .try_init()

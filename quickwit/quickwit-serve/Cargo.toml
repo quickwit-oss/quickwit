@@ -47,6 +47,7 @@ tokio = { workspace = true }
 tokio-rustls = { workspace = true }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
+tonic = { workspace = true }
 tonic-health = { workspace = true }
 tonic-reflection = { workspace = true }
 tower = { workspace = true, features = ["limit"] }
@@ -72,7 +73,7 @@ quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
-quickwit-lambda-client = { workspace = true }
+quickwit-lambda-client = { workspace = true, optional = true }
 quickwit-storage = { workspace = true }
 quickwit-telemetry = { workspace = true }
 
@@ -114,4 +115,7 @@ testsuite = []
 sqs-for-tests = [
   "quickwit-indexing/sqs",
   "quickwit-indexing/sqs-test-helpers"
+]
+lambda = [
+  "quickwit-lambda-client"
 ]
