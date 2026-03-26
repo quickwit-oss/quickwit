@@ -13,8 +13,11 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - run: echo "ASSET_FULL_NAME=quickwit-${{ inputs.version }}-${{ inputs.target }}" >> $GITHUB_ENV
+    - run: echo "ASSET_FULL_NAME=quickwit-${INPUTS_VERSION}-${INPUTS_TARGET}" >> $GITHUB_ENV
       shell: bash
+      env:
+        INPUTS_VERSION: ${{ inputs.version }}
+        INPUTS_TARGET: ${{ inputs.target }}
     - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
       with:
         node-version: 20
@@ -31,9 +34,11 @@ runs:
       shell: bash
       run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
     - name: Add target ${{ inputs.target }}
-      run: rustup target add ${{ inputs.target }}
+      run: rustup target add ${INPUTS_TARGET}
       shell: bash
       working-directory: ./quickwit
+      env:
+        INPUTS_TARGET: ${{ inputs.target }}
     - name: Retrieve and export commit date, hash, and tags
       run: |
           echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
@@ -50,9 +55,12 @@ runs:
         QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
     - name: Bundle archive
       run: |
-        make archive BINARY_FILE=quickwit/target/${{ inputs.target }}/release/quickwit \
-          BINARY_VERSION=${{ inputs.version }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+        make archive BINARY_FILE=quickwit/target/${INPUTS_TARGET}/release/quickwit \
+          BINARY_VERSION=${INPUTS_VERSION} ARCHIVE_NAME=${ASSET_FULL_NAME}
       shell: bash
+      env:
+        INPUTS_TARGET: ${{ inputs.target }}
+        INPUTS_VERSION: ${{ inputs.version }}
     - name: Save binary archive for three days
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:

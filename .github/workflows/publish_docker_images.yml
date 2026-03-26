@@ -76,14 +76,17 @@ jobs:
 
       - name: Retrieve commit date, hash, and tags
         run: |
-          echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
-          echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
-          echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" && "${GITHUB_REF#refs/tags/}" == *"jemprof"* ]]; then
-            echo "CARGO_FEATURES=release-jemalloc-profiled" >> $GITHUB_ENV
+          echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> "$GITHUB_ENV"
+          if [[ "${EVENT_NAME}" == "push" && "${REF_TYPE}" == "tag" && "${GITHUB_REF#refs/tags/}" == *"jemprof"* ]]; then
+            echo "CARGO_FEATURES=release-jemalloc-profiled" >> "$GITHUB_ENV"
           else
-            echo "CARGO_FEATURES=release-feature-set" >> $GITHUB_ENV
+            echo "CARGO_FEATURES=release-feature-set" >> "$GITHUB_ENV"
           fi
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
 
       - name: Build and push image
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7.0.0
@@ -157,4 +160,6 @@ jobs:
             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${STEPS_META_OUTPUTS_VERSION}
+        env:
+          STEPS_META_OUTPUTS_VERSION: ${{ steps.meta.outputs.version }}

@@ -13,8 +13,11 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - run: echo "ASSET_FULL_NAME=quickwit-${{ inputs.version }}-${{ inputs.target }}" >> $GITHUB_ENV
+    - run: echo "ASSET_FULL_NAME=quickwit-${INPUTS_VERSION}-${INPUTS_TARGET}" >> $GITHUB_ENV
       shell: bash
+      env:
+        INPUTS_VERSION: ${{ inputs.version }}
+        INPUTS_TARGET: ${{ inputs.target }}
     - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
       with:
         node-version: 20
@@ -37,18 +40,22 @@ runs:
           echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
       shell: bash
     - name: Build Quickwit
-      run: cross build --release --features release-feature-vendored-set --target ${{ inputs.target }} --bin quickwit
+      run: cross build --release --features release-feature-vendored-set --target ${INPUTS_TARGET} --bin quickwit
       shell: bash
       env:
         QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
         QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}
         QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
+        INPUTS_TARGET: ${{ inputs.target }}
       working-directory: ./quickwit
     - name: Bundle archive
       run: |
-        make archive BINARY_FILE=quickwit/target/${{ inputs.target }}/release/quickwit \
-          BINARY_VERSION=${{ inputs.version }} ARCHIVE_NAME=${{ env.ASSET_FULL_NAME }}
+        make archive BINARY_FILE=quickwit/target/${INPUTS_TARGET}/release/quickwit \
+          BINARY_VERSION=${INPUTS_VERSION} ARCHIVE_NAME=${ASSET_FULL_NAME}
       shell: bash
+      env:
+        INPUTS_TARGET: ${{ inputs.target }}
+        INPUTS_VERSION: ${{ inputs.version }}
     - name: Save binary archive for three days
       uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       with:
