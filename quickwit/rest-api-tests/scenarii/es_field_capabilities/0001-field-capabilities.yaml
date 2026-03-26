@@ -31,10 +31,10 @@ expected:
         searchable: true
         aggregatable: true
     mixed: # This is a little weird case (values [5, -5.5]), since coercion happens only on the columnar side. That's why `long` is not aggregatable.
-      long: 
+      long:
         metadata_field: false
         searchable: true
-        aggregatable: false 
+        aggregatable: false
       double:
         metadata_field: false
         searchable: true
@@ -88,10 +88,10 @@ expected:
   fields:
     $expect: "not 'id' in val" # Filtered by start_timestamp
     mixed: # This is a little weird case (values [5, -5.5]), since coercion happens only on the columnar side. That's why `long` is not aggregatable.
-      long: 
+      long:
         metadata_field: false
         searchable: true
-        aggregatable: false 
+        aggregatable: false
       double:
         metadata_field: false
         searchable: true
@@ -103,8 +103,6 @@ expected:
         aggregatable: true
 ---
 # Test fields parameter with `.dynamic` suffix
-engines:
-  - quickwit
 method: [GET]
 engines:
   - quickwit
@@ -193,9 +191,6 @@ expected:
 ---
 # Compare with elastic search
 method: [GET]
-engines:
-  - quickwit
-  - elasticsearch
 endpoint: fieldcaps/_field_caps?fields=nested.*ponse
 expected:
   indices:
@@ -210,9 +205,6 @@ expected:
 ---
 # Compare ip field with elastic search
 method: [GET]
-engines:
-  - quickwit
-  - elasticsearch
 endpoint: fieldcaps*/_field_caps?fields=host
 expected:
   indices:
@@ -295,9 +287,6 @@ expected:
 ---
 # Wildcard on index name + Wildcard without match
 method: [GET]
-engines:
-  - quickwit
-  - elasticsearch
 endpoint: fieldca*,blub*/_field_caps?fields=date
 expected:
   indices:
@@ -313,24 +302,140 @@ expected:
 ---
 # Exact match index + Non matching exact index
 method: [GET]
-engines:
-  - quickwit
-  - elasticsearch
 endpoint: fieldcaps,blub/_field_caps?fields=date
 status_code: 404
 ---
 # Compare ip field with elastic search
 method: [GET]
-engines:
-  - quickwit
-  - elasticsearch
 endpoint: doesnotexist/_field_caps?fields=date
 status_code: 404
 ---
 # Compare ip field with elastic search
 method: [GET]
+endpoint: doesno*texist/_field_caps?fields=date
+status_code: 200
+---
+# Test _field_caps API with index_filter (term query)
+# Note: term queries require exact token match; 'fritz' is lowercase due to default tokenizer
+method: [POST]
+endpoint: fieldcaps/_field_caps?fields=*
+json:
+  index_filter:
+    term:
+      name: "fritz"
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    name:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+      text:
+        type: text
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+---
+# Test _field_caps API with index_filter (match_all query)
+method: [POST]
+endpoint: fieldcaps/_field_caps?fields=name
+json:
+  index_filter:
+    match_all: {}
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    name:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+      text:
+        type: text
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+---
+# Test _field_caps API with index_filter (bool query)
+method: [POST]
+endpoint: fieldcaps/_field_caps?fields=response,name
+json:
+  index_filter:
+    bool:
+      must:
+        - term:
+            name: "fritz"
+      filter:
+        - range:
+            response:
+              gte: 30
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    response:
+      long:
+        type: long
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+    name:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+      text:
+        type: text
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+---
+# Test _field_caps API with invalid index_filter
+method: [POST]
+endpoint: fieldcaps/_field_caps?fields=*
+json:
+  index_filter:
+    invalid_query_type:
+      field: "value"
+status_code: 400
+---
+# Test _field_caps API with empty index_filter (should return 400 like ES)
+method: [POST]
 engines:
   - quickwit
   - elasticsearch
-endpoint: doesno*texist/_field_caps?fields=date
-status_code: 200
+endpoint: fieldcaps/_field_caps?fields=name
+json:
+  index_filter: {}
+status_code: 400
+---
+# Test _field_caps API with index_filter using tag field for split pruning (QW-only)
+method: [POST]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=name
+json:
+  index_filter:
+    term:
+      tags: "nice"
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    name:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+      text:
+        type: text
+        metadata_field: false
+        searchable: true
+        aggregatable: true

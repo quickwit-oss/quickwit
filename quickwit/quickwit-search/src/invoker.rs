@@ -36,3 +36,27 @@ pub trait LambdaLeafSearchInvoker: Send + Sync + 'static {
         request: LeafSearchRequest,
     ) -> Result<Vec<LambdaSingleSplitResult>, SearchError>;
 }
+
+#[async_trait]
+impl<T> LambdaLeafSearchInvoker for Box<T>
+where T: LambdaLeafSearchInvoker + ?Sized
+{
+    async fn invoke_leaf_search(
+        &self,
+        request: LeafSearchRequest,
+    ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
+        (**self).invoke_leaf_search(request).await
+    }
+}
+
+#[async_trait]
+impl<T> LambdaLeafSearchInvoker for std::sync::Arc<T>
+where T: LambdaLeafSearchInvoker + ?Sized
+{
+    async fn invoke_leaf_search(
+        &self,
+        request: LeafSearchRequest,
+    ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
+        (**self).invoke_leaf_search(request).await
+    }
+}

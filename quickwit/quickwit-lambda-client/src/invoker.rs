@@ -12,21 +12,95 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context as _;
 use async_trait::async_trait;
 use aws_sdk_lambda::Client as LambdaClient;
+use aws_sdk_lambda::error::{DisplayErrorContext, SdkError};
+use aws_sdk_lambda::operation::invoke::InvokeError;
 use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::InvocationType;
 use base64::prelude::*;
 use prost::Message;
+use quickwit_common::retry::RetryParams;
 use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePayload};
 use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest};
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 
 use crate::metrics::LAMBDA_METRICS;
+
+/// Upper bound on the retry-after hint we will honor from Lambda rate-limit responses.
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(10);
+
+/// Richer error type used internally by the invoker so that rate-limit retry-after hints
+/// are not lost before the retry loop can consume them.
+enum LambdaInvokeError {
+    /// Lambda returned a throttling error. The optional duration is the `Retry-After` hint
+    /// provided by Lambda; `None` means no hint was present.
+    RateLimited(Option<Duration>),
+    /// The invocation timed out.
+    Timeout(String),
+    /// A non-retryable error.
+    Permanent(SearchError),
+}
+
+impl LambdaInvokeError {
+    fn into_search_error(self) -> SearchError {
+        match self {
+            Self::RateLimited(_) => SearchError::TooManyRequests,
+            Self::Timeout(msg) => SearchError::Timeout(msg),
+            Self::Permanent(err) => err,
+        }
+    }
+}
+
+impl From<SearchError> for LambdaInvokeError {
+    fn from(err: SearchError) -> Self {
+        LambdaInvokeError::Permanent(err)
+    }
+}
+
+fn invoke_error_to_lambda_error(error: SdkError<InvokeError>) -> LambdaInvokeError {
+    if let SdkError::ServiceError(ref service_error) = error {
+        match service_error.err() {
+            InvokeError::TooManyRequestsException(exc) => {
+                let retry_after = exc
+                    .retry_after_seconds()
+                    .and_then(|raw| raw.parse::<f64>().ok())
+                    .filter(|secs| secs.is_finite() && *secs > 0.0)
+                    .map(|secs| Duration::from_secs_f64(secs).min(MAX_RETRY_AFTER));
+                return LambdaInvokeError::RateLimited(retry_after);
+            }
+            InvokeError::EniLimitReachedException(_)
+            | InvokeError::SubnetIpAddressLimitReachedException(_)
+            | InvokeError::Ec2ThrottledException(_)
+            | InvokeError::ResourceConflictException(_) => {
+                return LambdaInvokeError::RateLimited(None);
+            }
+            _ => {}
+        }
+    }
+
+    let is_timeout = match &error {
+        SdkError::TimeoutError(_) => true,
+        SdkError::DispatchFailure(failure) => failure.is_timeout(),
+        SdkError::ServiceError(service_error) => matches!(
+            service_error.err(),
+            InvokeError::EfsMountTimeoutException(_) | InvokeError::SnapStartTimeoutException(_)
+        ),
+        _ => false,
+    };
+
+    let error_msg = format!("lambda invocation failed: {}", DisplayErrorContext(&error));
+
+    if is_timeout {
+        LambdaInvokeError::Timeout(error_msg)
+    } else {
+        LambdaInvokeError::Permanent(SearchError::Internal(error_msg))
+    }
+}
 
 /// Create a Lambda invoker for a specific version.
 ///
@@ -35,7 +109,7 @@ use crate::metrics::LAMBDA_METRICS;
 pub(crate) async fn create_lambda_invoker_for_version(
     function_name: String,
     version: String,
-) -> anyhow::Result<Arc<dyn LambdaLeafSearchInvoker>> {
+) -> anyhow::Result<AwsLambdaInvoker> {
     let aws_config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let client = LambdaClient::new(&aws_config);
     let invoker = AwsLambdaInvoker {
@@ -44,11 +118,11 @@ pub(crate) async fn create_lambda_invoker_for_version(
         version,
     };
     invoker.validate().await?;
-    Ok(Arc::new(invoker))
+    Ok(invoker)
 }
 
 /// AWS Lambda implementation of RemoteFunctionInvoker.
-struct AwsLambdaInvoker {
+pub(crate) struct AwsLambdaInvoker {
     client: LambdaClient,
     function_name: String,
     /// The version number to invoke (e.g., "7", "12").
@@ -79,6 +153,13 @@ impl AwsLambdaInvoker {
     }
 }
 
+/// Retry parameters used for exponential backoff when no `Retry-After` hint is available.
+const LAMBDA_RETRY_PARAMS: RetryParams = RetryParams {
+    base_delay: Duration::from_secs(1),
+    max_delay: Duration::from_secs(10),
+    max_attempts: 3,
+};
+
 #[async_trait]
 impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
     #[instrument(skip(self, request), fields(function_name = %self.function_name, version = %self.version))]
@@ -87,9 +168,7 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
         request: LeafSearchRequest,
     ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
         let start = std::time::Instant::now();
-
-        let result = self.invoke_leaf_search_inner(request).await;
-
+        let result = self.invoke_leaf_search_with_retry(request).await;
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
         LAMBDA_METRICS
@@ -100,16 +179,50 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
             .leaf_search_duration_seconds
             .with_label_values([status])
             .observe(elapsed);
-
         result
     }
 }
 
 impl AwsLambdaInvoker {
-    async fn invoke_leaf_search_inner(
+    async fn invoke_leaf_search_with_retry(
         &self,
         request: LeafSearchRequest,
     ) -> Result<Vec<LambdaSingleSplitResult>, SearchError> {
+        let mut error = match self.invoke_leaf_search_once(request.clone()).await {
+            Ok(results) => return Ok(results),
+            Err(error) => error,
+        };
+
+        for num_attempts in 1..LAMBDA_RETRY_PARAMS.max_attempts {
+            // Determine whether to retry and how long to wait.
+            let delay = match &error {
+                LambdaInvokeError::RateLimited(retry_after) => {
+                    retry_after.unwrap_or_else(|| LAMBDA_RETRY_PARAMS.compute_delay(num_attempts))
+                }
+                LambdaInvokeError::Timeout(_) => LAMBDA_RETRY_PARAMS.compute_delay(num_attempts),
+                LambdaInvokeError::Permanent(_) => return Err(error.into_search_error()),
+            };
+
+            warn!(
+                num_attempts = num_attempts,
+                delay_ms = delay.as_millis(),
+                "lambda invocation failed, retrying"
+            );
+            tokio::time::sleep(delay).await;
+
+            match self.invoke_leaf_search_once(request.clone()).await {
+                Ok(results) => return Ok(results),
+                Err(e) => error = e,
+            };
+        }
+
+        Err(error.into_search_error())
+    }
+
+    async fn invoke_leaf_search_once(
+        &self,
+        request: LeafSearchRequest,
+    ) -> Result<Vec<LambdaSingleSplitResult>, LambdaInvokeError> {
         // Serialize request to protobuf bytes, then base64 encode
         let request_bytes = request.encode_to_vec();
         let payload = LambdaSearchRequestPayload {
@@ -141,7 +254,7 @@ impl AwsLambdaInvoker {
         let response = invoke_builder
             .send()
             .await
-            .map_err(|e| SearchError::Internal(format!("Lambda invocation error: {}", e)))?;
+            .map_err(invoke_error_to_lambda_error)?;
 
         // Check for function error
         if let Some(error) = response.function_error() {
@@ -152,7 +265,8 @@ impl AwsLambdaInvoker {
             return Err(SearchError::Internal(format!(
                 "lambda function error: {}: {}",
                 error, error_payload
-            )));
+            ))
+            .into());
         }
 
         // Deserialize response

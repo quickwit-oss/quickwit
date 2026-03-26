@@ -42,8 +42,8 @@ Currently Quickwit exposes metrics for three caches: `fastfields`, `shortlived`,
 
 | Namespace | Metric Name | Description | Type |
 | --------- | ----------- | ----------- | ---- |
-| `quickwit_ingest` | `ingested_num_bytes` | Total size of the docs ingested in bytes | `counter` |
-| `quickwit_ingest` | `ingested_num_docs` | Number of docs received to be ingested | `counter` |
+| `quickwit_ingest` | `docs_bytes_total` | Total size of the docs ingested, measured in ingester's leader, after validation and before persistence/replication | `counter` |
+| `quickwit_ingest` | `docs_total` | Total number of the docs ingested, measured in ingester's leader, after validation and before persistence/replication | `counter` |
 | `quickwit_ingest` | `queue_count` | Number of queues currently active | `counter` |
 
 ## Metastore Metrics

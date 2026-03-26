@@ -179,12 +179,13 @@ fn _check_macro_works() {
 
 #[doc(hidden)]
 pub use coarsetime::Instant as CoarsetimeInstant;
+pub use rate_limited_debug;
+pub use rate_limited_error;
+pub use rate_limited_info;
+pub use rate_limited_trace;
 #[doc(hidden)]
 pub use rate_limited_tracing;
-pub use {
-    rate_limited_debug, rate_limited_error, rate_limited_info, rate_limited_trace,
-    rate_limited_warn,
-};
+pub use rate_limited_warn;
 
 #[cfg(test)]
 mod tests {

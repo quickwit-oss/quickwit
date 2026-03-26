@@ -19,7 +19,9 @@ use std::str::FromStr;
 
 use anyhow::Context;
 use chitchat::{ChitchatId, NodeState, Version};
+use quickwit_common::shared_consts::INGESTER_STATUS_KEY;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
+use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::types::NodeId;
 use tracing::{error, warn};
 
@@ -46,6 +48,8 @@ pub(crate) trait NodeStateExt {
     fn is_ready(&self) -> bool;
 
     fn size_bytes(&self) -> usize;
+
+    fn ingester_status(&self) -> IngesterStatus;
 
     fn availability_zone(&self) -> Option<String>;
 }
@@ -79,6 +83,12 @@ impl NodeStateExt for NodeState {
             .sum()
     }
 
+    fn ingester_status(&self) -> IngesterStatus {
+        self.get(INGESTER_STATUS_KEY)
+            .and_then(IngesterStatus::from_json_str_name)
+            .unwrap_or_default()
+    }
+
     fn availability_zone(&self) -> Option<String> {
         self.get(AVAILABILITY_ZONE_KEY).map(|az| az.to_string())
     }
@@ -108,6 +118,10 @@ pub struct ClusterMember {
     pub indexing_tasks: Vec<IndexingTask>,
     /// Indexing cpu capacity of the node expressed in milli cpu.
     pub indexing_cpu_capacity: CpuCapacity,
+    /// Status of the ingester service running on the node. `IngesterStatus::Unspecified` if the
+    /// node is not an ingester.
+    pub ingester_status: IngesterStatus,
+    /// Whether the node is ready to serve requests.
     pub is_ready: bool,
     /// Availability zone the node is running in, if enabled.
     pub availability_zone: Option<String>,
@@ -159,10 +173,12 @@ pub(crate) fn build_cluster_member(
         .map(|enabled_services_str| {
             parse_enabled_services_str(enabled_services_str, &chitchat_id.node_id)
         })?;
-    let availability_zone = node_state.availability_zone();
     let grpc_advertise_addr = node_state.grpc_advertise_addr()?;
     let indexing_tasks = parse_indexing_tasks(node_state);
     let indexing_cpu_capacity = parse_indexing_cpu_capacity(node_state);
+    let ingester_status = node_state.ingester_status();
+    let availability_zone = node_state.availability_zone();
+
     let member = ClusterMember {
         node_id: chitchat_id.node_id.into(),
         generation_id: chitchat_id.generation_id.into(),
@@ -172,6 +188,7 @@ pub(crate) fn build_cluster_member(
         grpc_advertise_addr,
         indexing_tasks,
         indexing_cpu_capacity,
+        ingester_status,
         availability_zone,
     };
     Ok(member)

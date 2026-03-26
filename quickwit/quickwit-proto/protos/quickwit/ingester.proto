@@ -300,6 +300,8 @@ enum IngesterStatus {
   INGESTER_STATUS_INITIALIZING = 1;
   // The ingester is ready and accepts read and write requests.
   INGESTER_STATUS_READY = 2;
+  // The ingester is about to be decommissioned. It still accepts read and write requests, but will not accept write requests in a few seconds and should be avoided by future write requests.
+  INGESTER_STATUS_RETIRING = 6;
   // The ingester is being decommissioned. It accepts read requests but rejects write requests
   // (open shards, persist, and replicate requests). It will transition to `Decommissioned` once
   // all shards are fully indexed.

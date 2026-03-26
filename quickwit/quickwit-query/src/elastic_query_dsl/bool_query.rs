@@ -21,10 +21,9 @@ use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::{self, QueryAst};
 
 /// # Unsupported features
-/// - minimum_should_match
 /// - named queries
 #[serde_as]
-#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct BoolQuery {
     #[serde_as(deserialize_as = "DefaultOnNull<OneOrMany<_, PreferMany>>")]
@@ -43,7 +42,13 @@ pub struct BoolQuery {
     pub boost: Option<NotNaNf32>,
     #[serde(default)]
     pub minimum_should_match: Option<MinimumShouldMatch>,
+    #[serde(alias = "adjust_pure_negative", default, skip_serializing)]
+    _adjust_pure_negative: Option<serde::de::IgnoredAny>,
 }
+
+// `IgnoredAny` implements `PartialEq` but not `Eq`, so we derive `PartialEq`
+// and manually assert `Eq` (safe because `IgnoredAny` is a unit struct).
+impl Eq for BoolQuery {}
 
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(untagged)]
@@ -126,6 +131,7 @@ impl BoolQuery {
             filter: Vec::new(),
             boost: None,
             minimum_should_match: None,
+            _adjust_pure_negative: None,
         }
     }
 }
@@ -199,7 +205,8 @@ mod tests {
                 should: Vec::new(),
                 filter: Vec::new(),
                 boost: None,
-                minimum_should_match: None
+                minimum_should_match: None,
+                _adjust_pure_negative: None,
             }
         );
     }
@@ -220,6 +227,7 @@ mod tests {
                 filter: vec![term_query_from_field_value("product_id", "2").into(),],
                 boost: None,
                 minimum_should_match: None,
+                _adjust_pure_negative: None,
             }
         );
     }
@@ -243,8 +251,23 @@ mod tests {
                 filter: Vec::new(),
                 boost: None,
                 minimum_should_match: None,
+                _adjust_pure_negative: None,
             }
         );
+    }
+
+    #[test]
+    fn test_dsl_bool_query_deserialize_adjust_pure_negative() {
+        let bool_query_json = r#"{
+            "must": [
+                { "term": {"product_id": {"value": "1" }} }
+            ],
+            "adjust_pure_negative": true
+        }"#;
+        let bool_query: BoolQuery = serde_json::from_str(bool_query_json).unwrap();
+        assert!(bool_query._adjust_pure_negative.is_some());
+        assert_eq!(bool_query.must.len(), 1);
+        bool_query.convert_to_query_ast().unwrap();
     }
 
     #[test]
