@@ -203,6 +203,24 @@ pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata:
     let _ = Span::current().set_parent(parent_cx);
 }
 
+/// `HeaderMap` extracts OpenTelemetry tracing keys from HTTP headers.
+struct HeaderMap<'a>(&'a http::HeaderMap);
+
+impl Extractor for HeaderMap<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(|metadata| metadata.to_str().ok())
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        self.0.keys().map(|key| key.as_str()).collect()
+    }
+}
+
+/// Extracts an OpenTelemetry context from HTTP [`http::HeaderMap`].
+pub fn extract_context_from_request_headers(headers: &http::HeaderMap) -> ::opentelemetry::Context {
+    global::get_text_map_propagator(|prop| prop.extract(&HeaderMap(headers)))
+}
+
 impl search::SortOrder {
     #[inline(always)]
     pub fn compare_opt<T: Ord>(&self, this: &Option<T>, other: &Option<T>) -> Ordering {

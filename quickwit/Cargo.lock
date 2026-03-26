@@ -7394,6 +7394,8 @@ dependencies = [
  "mime_guess",
  "mockall",
  "once_cell",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "percent-encoding",
  "pprof",
  "prost 0.14.1",
@@ -7438,6 +7440,8 @@ dependencies = [
  "tower 0.5.2",
  "tower-http",
  "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
  "utoipa",
  "warp",
  "zstd",
@@ -10132,6 +10136,7 @@ dependencies = [
  "tower 0.5.2",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
