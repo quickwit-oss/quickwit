@@ -200,6 +200,9 @@ async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest
                     .await
             ))
         }
+        Request::GetClusterDiagnostics(req) => {
+            Response::GetClusterDiagnostics(handle_err!(server.get_cluster_diagnostics(req).await))
+        }
 
         _ => return unimplemented("Unimplemented request"),
     };

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,14 +23,15 @@ use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse, Event,
-    EventTracker, FetchOneRequest, FetchOneResponse, GetIndexRoutingTableRequest,
-    GetIndexRoutingTableResponse, GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse,
-    NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
-    SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest,
-    UpdateIndexResponse,
+    EventTracker, FetchOneRequest, FetchOneResponse, GetClusterDiagnosticsRequest,
+    GetClusterDiagnosticsResponse, GetIndexRoutingTableRequest, GetIndexRoutingTableResponse,
+    GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse, NodeDiagnostics, NodeMetrics,
+    PingRequest, PingResponse, PullClusterMetricsResponse, SetIndexRoutingTableRequest,
+    SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest, UpdateIndexResponse,
 };
 use quickwit_proto::developer::{
-    DeveloperService as _, DeveloperServiceClient, PullMetricsRequest, PullMetricsResponse,
+    DeveloperService as _, DeveloperServiceClient, GetNodeDiagnosticsRequest, PullMetricsRequest,
+    PullMetricsResponse,
 };
 use quickwit_proto::metastore::{
     CreateIndexRequest as MetastoreCreateIndexRequest,
@@ -47,6 +49,7 @@ use quickwit_query::cloudprem::sanitize_metric_id_aggregations;
 use quickwit_query::query_ast::{BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use quickwit_search::{SearchError, SearchService};
 use serde_json::Value as JsonValue;
+use tokio::time::timeout;
 use tokio_stream::StreamExt as _;
 use tracing::{debug, error, info, warn};
 
@@ -64,6 +67,7 @@ fn resolve_index_patterns(index_id_patterns: &[String]) -> Vec<String> {
 }
 
 const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
+const GET_NODE_DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[allow(dead_code)]
 pub struct CloudPremServiceImpl {
@@ -699,6 +703,69 @@ impl CloudPremService for CloudPremServiceImpl {
 
         Ok(SetIndexRoutingTableResponse {})
     }
+
+    async fn get_cluster_diagnostics(
+        &self,
+        _request: GetClusterDiagnosticsRequest,
+    ) -> CloudPremResult<GetClusterDiagnosticsResponse> {
+        info!("received GetClusterDiagnostics request");
+
+        let ready_nodes = self.cluster.ready_nodes().await;
+        let mut cluster_diagnostics: HashMap<String, NodeDiagnostics> =
+            HashMap::with_capacity(ready_nodes.len());
+
+        let mut get_node_diagnostics_futures = FuturesUnordered::new();
+
+        for ready_node in ready_nodes {
+            let node_id = ready_node.node_id().to_owned();
+            let client = DeveloperServiceClient::from_channel(
+                ready_node.grpc_advertise_addr(),
+                ready_node.channel(),
+                DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
+                Some(CompressionEncoding::Zstd),
+            );
+            let get_node_diagnostics_future = async move {
+                let get_node_diagnostics_res = timeout(
+                    GET_NODE_DIAGNOSTICS_TIMEOUT,
+                    client.get_node_diagnostics(GetNodeDiagnosticsRequest {}),
+                )
+                .await;
+                (node_id, get_node_diagnostics_res)
+            };
+            get_node_diagnostics_futures.push(get_node_diagnostics_future);
+        }
+
+        while let Some(future_res) = get_node_diagnostics_futures.next().await {
+            let (node_id, get_node_diagnostics_res) = future_res;
+            let node_diagnostics: NodeDiagnostics = match get_node_diagnostics_res {
+                Ok(Ok(resp)) => NodeDiagnostics {
+                    status_code: 200,
+                    build_info_json: resp.build_info_json,
+                    runtime_info_json: resp.runtime_info_json,
+                    node_config_json: resp.node_config_json,
+                },
+                Ok(Err(error)) => {
+                    error!(%node_id, %error, "failed to get diagnostics from node");
+                    NodeDiagnostics {
+                        status_code: error.error_code().http_status_code().as_u16() as u32,
+                        ..Default::default()
+                    }
+                }
+                Err(_elapsed) => {
+                    error!(%node_id, "GetNodeDiagnostics request timed out");
+                    NodeDiagnostics {
+                        status_code: http::StatusCode::REQUEST_TIMEOUT.as_u16() as u32,
+                        ..Default::default()
+                    }
+                }
+            };
+            cluster_diagnostics.insert(node_id.to_string(), node_diagnostics);
+        }
+
+        Ok(GetClusterDiagnosticsResponse {
+            cluster_diagnostics,
+        })
+    }
 }
 
 /// Converts quickwit IndexMetadata to cloudprem proto format.
@@ -748,7 +815,7 @@ async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
         DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
         Some(CompressionEncoding::Zstd),
     );
-    let pull_metrics_result = tokio::time::timeout(
+    let pull_metrics_result = timeout(
         PULL_METRICS_TIMEOUT,
         client.pull_metrics(PullMetricsRequest {}),
     )
