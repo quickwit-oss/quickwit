@@ -277,25 +277,37 @@ fn matches_any_pattern(field_name: &str, field_patterns: &[FieldPattern]) -> boo
 enum FieldPattern {
     Match { field: String },
     Wildcard { prefix: String, suffix: String },
+    Contains { infix: String },
 }
 
 impl FromStr for FieldPattern {
     type Err = crate::SearchError;
 
     fn from_str(field_pattern: &str) -> crate::Result<Self> {
-        match field_pattern.find('*') {
+        if field_pattern.starts_with('*') && field_pattern.ends_with('*') {
+            let infix = field_pattern.trim_matches('*').to_string();
+            if infix.contains('*') {
+                return Err(crate::SearchError::InvalidArgument(format!(
+                    "invalid field pattern `{field_pattern}`: 'contains' type patterns can't have a wildcard in the middle"
+                )));
+            }
+            return Ok(Self::Contains { infix });
+        }
+
+        match field_pattern.split_once('*') {
             None => Ok(FieldPattern::Match {
                 field: field_pattern.to_string(),
             }),
-            Some(pos) => {
-                let prefix = field_pattern[..pos].to_string();
-                let suffix = field_pattern[pos + 1..].to_string();
+            Some((prefix, suffix)) => {
                 if suffix.contains("*") {
                     return Err(crate::SearchError::InvalidArgument(format!(
                         "invalid field pattern `{field_pattern}`: we only support one wildcard"
                     )));
                 }
-                Ok(FieldPattern::Wildcard { prefix, suffix })
+                Ok(FieldPattern::Wildcard {
+                    prefix: prefix.to_string(),
+                    suffix: suffix.to_string(),
+                })
             }
         }
     }
@@ -308,6 +320,7 @@ impl FieldPattern {
             FieldPattern::Wildcard { prefix, suffix } => {
                 field_name.starts_with(prefix) && field_name.ends_with(suffix)
             }
+            FieldPattern::Contains { infix } => field_name.contains(infix),
         }
     }
 }
@@ -842,6 +855,15 @@ mod tests {
         assert!(!inner_pattern.matches("tito"));
         assert!(inner_pattern.matches("towhateverti"));
 
+        let contains_pattern = FieldPattern::from_str("*my_field*").unwrap();
+        assert!(!contains_pattern.matches(""));
+        assert!(!contains_pattern.matches("my_fiel"));
+        assert!(contains_pattern.matches("my_field"));
+        assert!(contains_pattern.matches("prefix_my_field"));
+        assert!(contains_pattern.matches("my_field_suffix"));
+        assert!(contains_pattern.matches("prefix_my_field_suffix"));
+
         assert!(FieldPattern::from_str("to**").is_err());
+        assert!(FieldPattern::from_str("*a*b*").is_err());
     }
 }
