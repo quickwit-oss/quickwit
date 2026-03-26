@@ -4,14 +4,14 @@ endpoint: indexes/allowedtypes
 status_code: null
 ---
 method: DELETE
-endpoint: indexes/tag-simple
+endpoint: indexes/simple
 status_code: null
 ---
 method: POST
 endpoint: indexes/
 json:
   version: "0.7"
-  index_id: tag-simple
+  index_id: simple
   doc_mapping:
     field_mappings:
       - name: seq
@@ -21,7 +21,7 @@ json:
     tag_fields: ["tag"]
 ---
 method: POST
-endpoint: tag-simple/ingest
+endpoint: simple/ingest
 params:
   commit: force
 ndjson:
@@ -29,7 +29,7 @@ ndjson:
   - {"seq": 2, "tag": 2}
 ---
 method: POST
-endpoint: tag-simple/ingest
+endpoint: simple/ingest
 params:
   commit: force
 ndjson:
@@ -37,7 +37,7 @@ ndjson:
   - {"seq": 3, "tag": null}
 ---
 method: POST
-endpoint: tag-simple/ingest
+endpoint: simple/ingest
 params:
   commit: force
 ndjson:

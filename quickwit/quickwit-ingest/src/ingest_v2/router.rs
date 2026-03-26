@@ -672,12 +672,17 @@ mod tests {
 
         {
             let mut state_guard = router.state.lock().await;
-            state_guard.routing_table.apply_capacity_update(
-                "test-ingester-0".into(),
+            state_guard.routing_table.merge_from_shards(
                 IndexUid::for_test("test-index-0", 0),
                 "test-source".to_string(),
-                8,
-                1,
+                vec![Shard {
+                    index_uid: Some(IndexUid::for_test("test-index-0", 0)),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(1u64)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-ingester-0".to_string(),
+                    ..Default::default()
+                }],
             );
         }
 
