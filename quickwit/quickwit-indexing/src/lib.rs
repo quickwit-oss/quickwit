@@ -43,6 +43,8 @@ mod split_store;
 #[cfg(any(test, feature = "testsuite"))]
 mod test_utils;
 
+mod soft_delete_query;
+
 use quickwit_proto::indexing::CpuCapacity;
 #[cfg(any(test, feature = "testsuite"))]
 pub use test_utils::{MockSplitBuilder, TestSandbox, mock_split, mock_split_meta};

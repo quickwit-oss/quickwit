@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashSet;
-use std::iter::FromIterator;
+use std::collections::{BTreeSet, HashMap};
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -368,6 +367,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
                 event_broker.publish(ReportSplitsRequest { report_splits });
 
+                let mut soft_deleted_snapshot: HashMap<String, BTreeSet<u32>> = HashMap::new();
                 for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
                     let upload_result = upload_split(
                         &packaged_split,
@@ -383,27 +383,23 @@ impl Handler<PackagedSplitBatch> for Uploader {
                         return;
                     }
 
+                    soft_deleted_snapshot.extend(packaged_split.split_attrs.soft_deleted_snapshot.clone());
                     packaged_splits_and_metadata.push((packaged_split, metadata));
                 }
 
                 assert!(!packaged_splits_and_metadata.is_empty());
-                let replaced_split_ids = packaged_splits_and_metadata
-                    .iter()
-                    .flat_map(|(split, _)| split.split_attrs.replaced_split_ids.clone())
-                    .collect::<HashSet<_>>();
                 let splits_update = SplitsUpdate {
                     index_uid,
                     new_splits: packaged_splits_and_metadata
                         .into_iter()
                         .map(|split_and_meta| split_and_meta.1)
                         .collect_vec(),
-                    replaced_split_ids: Vec::from_iter(replaced_split_ids),
                     checkpoint_delta_opt: batch.checkpoint_delta_opt,
                     publish_lock: batch.publish_lock,
                     publish_token_opt: batch.publish_token_opt,
                     merge_task: batch.merge_task_opt,
                     parent_span: batch.batch_parent_span,
-                    soft_deleted_snapshot: batch.soft_deleted_snapshot,
+                    soft_deleted_snapshot: Some(soft_deleted_snapshot),
                 };
 
                 let target = match &split_update_sender {
@@ -447,7 +443,6 @@ impl Handler<EmptySplit> for Uploader {
         let splits_update = SplitsUpdate {
             index_uid: empty_split.index_uid,
             new_splits: Vec::new(),
-            replaced_split_ids: Vec::new(),
             checkpoint_delta_opt: Some(empty_split.checkpoint_delta),
             publish_lock: empty_split.publish_lock,
             publish_token_opt: empty_split.publish_token_opt,
@@ -571,11 +566,11 @@ mod tests {
                         secondary_time_range: None,
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
-                        replaced_split_ids: Vec::new(),
                         split_id: "test-split".to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                         soft_deleted_doc_ids: BTreeSet::new(),
+                        soft_deleted_snapshot: HashMap::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -588,7 +583,6 @@ mod tests {
                 None,
                 None,
                 Span::none(),
-                None,
             ))
             .await?;
         assert_eq!(
@@ -610,7 +604,6 @@ mod tests {
             index_uid,
             new_splits,
             checkpoint_delta_opt,
-            replaced_split_ids,
             ..
         } = publisher_message;
 
@@ -623,7 +616,6 @@ mod tests {
             checkpoint_delta.source_delta,
             SourceCheckpointDelta::from_range(3..15)
         );
-        assert!(replaced_split_ids.is_empty());
         let mut files = ram_storage.list_files().await;
         files.sort();
         assert_eq!(&files, &[PathBuf::from("test-split.split")]);
@@ -686,13 +678,13 @@ mod tests {
                         ..=DateTime::from_timestamp_secs(1_628_203_640),
                 ),
                 secondary_time_range: None,
-                replaced_split_ids: vec![
-                    "replaced-split-1".to_string(),
-                    "replaced-split-2".to_string(),
-                ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
                 soft_deleted_doc_ids: BTreeSet::new(),
+                soft_deleted_snapshot: HashMap::from([
+                    ("replaced-split-1".to_string(), BTreeSet::new()),
+                    ("replaced-split-2".to_string(), BTreeSet::new()),
+                ]),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_1,
@@ -715,13 +707,13 @@ mod tests {
                         ..=DateTime::from_timestamp_secs(1_628_203_640),
                 ),
                 secondary_time_range: None,
-                replaced_split_ids: vec![
-                    "replaced-split-1".to_string(),
-                    "replaced-split-2".to_string(),
-                ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
                 soft_deleted_doc_ids: BTreeSet::new(),
+                soft_deleted_snapshot: HashMap::from([
+                    ("replaced-split-1".to_string(), BTreeSet::new()),
+                    ("replaced-split-2".to_string(), BTreeSet::new()),
+                ]),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_2,
@@ -737,7 +729,6 @@ mod tests {
                 None,
                 None,
                 Span::none(),
-                None,
             ))
             .await?;
         assert_eq!(
@@ -758,22 +749,21 @@ mod tests {
         let SplitsUpdate {
             index_uid,
             new_splits,
-            mut replaced_split_ids,
             checkpoint_delta_opt,
+            soft_deleted_snapshot,
             ..
         } = publisher_message;
         assert_eq!(index_uid.index_id, "test-index");
         // Sort first to avoid test failing.
-        replaced_split_ids.sort();
         assert_eq!(new_splits.len(), 2);
         assert_eq!(new_splits[0].split_id(), "test-split-1");
         assert_eq!(new_splits[1].split_id(), "test-split-2");
         assert_eq!(
-            &replaced_split_ids,
-            &[
-                "replaced-split-1".to_string(),
-                "replaced-split-2".to_string()
-            ]
+            &soft_deleted_snapshot,
+            &Some(HashMap::from([
+                ("replaced-split-1".to_string(), BTreeSet::new()),
+                ("replaced-split-2".to_string(), BTreeSet::new()),
+            ]))
         );
         assert!(checkpoint_delta_opt.is_none());
 
@@ -841,10 +831,10 @@ mod tests {
                         secondary_time_range: None,
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
-                        replaced_split_ids: Vec::new(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                         soft_deleted_doc_ids: BTreeSet::new(),
+                        soft_deleted_snapshot: HashMap::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -857,7 +847,6 @@ mod tests {
                 None,
                 None,
                 Span::none(),
-                None,
             ))
             .await?;
         assert_eq!(
@@ -867,13 +856,14 @@ mod tests {
         let SplitsUpdate {
             index_uid,
             new_splits,
-            replaced_split_ids,
+            soft_deleted_snapshot,
             ..
         } = publisher_inbox.recv_typed_message().await.unwrap();
 
         assert_eq!(index_uid.index_id, "test-index");
         assert_eq!(new_splits.len(), 1);
-        assert!(replaced_split_ids.is_empty());
+        assert!(soft_deleted_snapshot.is_some());
+        assert!(soft_deleted_snapshot.unwrap().is_empty());
         universe.assert_quit().await;
         Ok(())
     }
@@ -931,7 +921,7 @@ mod tests {
             index_uid,
             new_splits,
             checkpoint_delta_opt,
-            replaced_split_ids,
+            soft_deleted_snapshot,
             ..
         } = publisher_message;
 
@@ -943,7 +933,7 @@ mod tests {
             checkpoint_delta.source_delta,
             SourceCheckpointDelta::from_range(3..15)
         );
-        assert!(replaced_split_ids.is_empty());
+        assert!(soft_deleted_snapshot.is_none() || soft_deleted_snapshot.unwrap().is_empty());
         let files = ram_storage.list_files().await;
         assert!(files.is_empty());
         universe.assert_quit().await;
@@ -1025,11 +1015,11 @@ mod tests {
                         secondary_time_range: None,
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
-                        replaced_split_ids: Vec::new(),
                         split_id: SPLIT_ULID_STR.to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                         soft_deleted_doc_ids: BTreeSet::new(),
+                        soft_deleted_snapshot: HashMap::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -1042,7 +1032,6 @@ mod tests {
                 None,
                 None,
                 Span::none(),
-                None,
             ))
             .await?;
         assert_eq!(

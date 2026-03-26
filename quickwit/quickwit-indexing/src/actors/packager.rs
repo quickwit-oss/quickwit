@@ -157,7 +157,6 @@ impl Handler<IndexedSplitBatch> for Packager {
                 batch.publish_token_opt,
                 batch.merge_task_opt,
                 batch.batch_parent_span,
-                batch.soft_deleted_snapshot,
             ),
         )
         .await?;
@@ -379,6 +378,7 @@ fn u64_from_term_data(data: &[u8]) -> anyhow::Result<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::ops::RangeInclusive;
 
     use quickwit_actors::{ObservationType, Universe};
@@ -528,10 +528,10 @@ mod tests {
                 uncompressed_docs_size_in_bytes: num_docs * 15,
                 time_range: timerange_opt,
                 secondary_time_range: None,
-                replaced_split_ids: Vec::new(),
                 delete_opstamp: 0,
                 num_merge_ops: 0,
                 soft_deleted_doc_ids: BTreeSet::new(),
+                soft_deleted_snapshot: HashMap::new(),
             },
             index,
             split_scratch_directory,
@@ -580,7 +580,6 @@ mod tests {
                 publish_token_opt: None,
                 merge_task_opt: None,
                 batch_parent_span: Span::none(),
-                soft_deleted_snapshot: None,
             })
             .await?;
         assert_eq!(

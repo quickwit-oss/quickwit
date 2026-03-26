@@ -18,13 +18,14 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
+use quickwit_common::Progress;
 use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
 use quickwit_proto::metastore::{
     ListSplitsRequest, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
 };
 use quickwit_proto::types::IndexUid;
 use serde::Serialize;
-use tracing::{info, instrument, warn};
+use tracing::{error, info, instrument, warn};
 
 use crate::actors::MergePlanner;
 use crate::models::{NewSplits, SplitsUpdate};
@@ -133,7 +134,6 @@ impl Handler<SplitsUpdate> for Publisher {
         let SplitsUpdate {
             index_uid,
             new_splits,
-            replaced_split_ids,
             checkpoint_delta_opt,
             publish_lock,
             publish_token_opt,
@@ -150,20 +150,26 @@ impl Handler<SplitsUpdate> for Publisher {
             .iter()
             .map(|split| split.split_id.clone())
             .collect();
+        let replaced_split_ids = soft_deleted_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.keys().cloned().collect())
+            .unwrap_or_default();
         if let Some(_guard) = publish_lock.acquire().await {
-            if let Some(ref snapshot) = soft_deleted_snapshot {
+            if let Some(ref snapshot) = soft_deleted_snapshot
+                && !snapshot.is_empty()
+            {
                 warn_if_soft_deletes_changed_during_merge(
                     &index_uid,
                     snapshot,
                     &self.metastore,
-                    ctx,
+                    ctx.progress(),
                 )
                 .await;
             }
             let publish_splits_request = PublishSplitsRequest {
                 index_uid: Some(index_uid),
                 staged_split_ids: split_ids.clone(),
-                replaced_split_ids: replaced_split_ids.clone(),
+                replaced_split_ids,
                 index_checkpoint_delta_json_opt,
                 publish_token_opt: publish_token_opt.clone(),
             };
@@ -210,7 +216,7 @@ impl Handler<SplitsUpdate> for Publisher {
                     .await;
             }
 
-            if replaced_split_ids.is_empty() {
+            if soft_deleted_snapshot.is_none() || soft_deleted_snapshot.unwrap().is_empty() {
                 self.counters.num_published_splits += 1;
             } else {
                 self.counters.num_replace_operations += 1;
@@ -229,7 +235,7 @@ async fn warn_if_soft_deletes_changed_during_merge(
     index_uid: &IndexUid,
     snapshot: &HashMap<String, BTreeSet<u32>>,
     metastore: &MetastoreServiceClient,
-    ctx: &ActorContext<Publisher>,
+    progress: &Progress,
 ) {
     let list_splits_request = match ListSplitsRequest::try_from_index_uid(index_uid.clone()) {
         Ok(request) => request,
@@ -238,7 +244,7 @@ async fn warn_if_soft_deletes_changed_during_merge(
             return;
         }
     };
-    let splits_stream = match ctx
+    let splits_stream = match progress
         .protect_future(metastore.list_splits(list_splits_request))
         .await
     {
@@ -248,7 +254,7 @@ async fn warn_if_soft_deletes_changed_during_merge(
             return;
         }
     };
-    let fresh_splits = match ctx
+    let fresh_splits = match progress
         .protect_future(splits_stream.collect_splits_metadata())
         .await
     {
@@ -268,12 +274,11 @@ async fn warn_if_soft_deletes_changed_during_merge(
             .copied()
             .collect();
         if !missed.is_empty() {
-            warn!(
+            error!(
                 split_id = %fresh_split.split_id,
                 num_missed_soft_deletes = missed.len(),
                 "soft-delete race condition detected: {} doc(s) were soft-deleted on split \
-                 `{}` while the merge was running; they will not be reflected in the merged \
-                 split and will remain searchable until the next merge cycle",
+                 `{}` while the merge was running",
                 missed.len(),
                 fresh_split.split_id,
             );
@@ -283,6 +288,8 @@ async fn warn_if_soft_deletes_changed_during_merge(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeSet, HashMap};
+
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
@@ -336,7 +343,6 @@ mod tests {
                         split_id: "split".to_string(),
                         ..Default::default()
                     }],
-                    replaced_split_ids: Vec::new(),
                     checkpoint_delta_opt: Some(IndexCheckpointDelta {
                         source_id: "source".to_string(),
                         source_delta: SourceCheckpointDelta::from_range(1..3),
@@ -412,7 +418,6 @@ mod tests {
                 .send_message(SplitsUpdate {
                     index_uid: ref_index_uid.clone(),
                     new_splits: Vec::new(),
-                    replaced_split_ids: Vec::new(),
                     checkpoint_delta_opt: Some(IndexCheckpointDelta {
                         source_id: "source".to_string(),
                         source_delta: SourceCheckpointDelta::from_range(1..3),
@@ -457,12 +462,21 @@ mod tests {
         let mut mock_metastore = MockMetastoreService::new();
         let ref_index_uid: IndexUid = IndexUid::for_test("index", 1);
         let ref_index_uid_clone = ref_index_uid.clone();
+        mock_metastore.expect_list_splits().times(1).returning(|_| {
+            use quickwit_common::ServiceStream;
+            use quickwit_metastore::ListSplitsResponseExt;
+            use quickwit_proto::metastore::ListSplitsResponse;
+            let response = ListSplitsResponse::try_from_splits(vec![]).unwrap();
+            Ok(ServiceStream::from(vec![Ok(response)]))
+        });
         mock_metastore
             .expect_publish_splits()
             .withf(move |publish_splits_requests| {
+                let mut replaced_split_ids = publish_splits_requests.replaced_split_ids.clone();
+                replaced_split_ids.sort();
                 publish_splits_requests.index_uid() == &ref_index_uid_clone
                     && publish_splits_requests.staged_split_ids[..] == ["split3"]
-                    && publish_splits_requests.replaced_split_ids[..] == ["split1", "split2"]
+                    && replaced_split_ids[..] == ["split1", "split2"]
                     && publish_splits_requests
                         .index_checkpoint_delta_json_opt()
                         .is_empty()
@@ -483,13 +497,15 @@ mod tests {
                 split_id: "split3".to_string(),
                 ..Default::default()
             }],
-            replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
             checkpoint_delta_opt: None,
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             merge_task: None,
             parent_span: Span::none(),
-            soft_deleted_snapshot: None,
+            soft_deleted_snapshot: Some(HashMap::from([
+                ("split1".to_string(), BTreeSet::new()),
+                ("split2".to_string(), BTreeSet::new()),
+            ])),
         };
         assert!(
             publisher_mailbox
@@ -528,7 +544,6 @@ mod tests {
             .send_message(SplitsUpdate {
                 index_uid: IndexUid::new_with_random_ulid("index"),
                 new_splits: vec![SplitMetadata::for_test("test-split".to_string())],
-                replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: None,
                 publish_lock,
                 publish_token_opt: None,
@@ -605,7 +620,6 @@ mod tests {
                     split_id: "merged-split".to_string(),
                     ..Default::default()
                 }],
-                replaced_split_ids: vec![racing_split_id],
                 checkpoint_delta_opt: None,
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,

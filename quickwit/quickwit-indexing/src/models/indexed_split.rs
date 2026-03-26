@@ -106,13 +106,13 @@ impl IndexedSplitBuilder {
                 partition_id,
                 split_id,
                 num_docs: 0,
-                replaced_split_ids: Vec::new(),
                 uncompressed_docs_size_in_bytes: 0,
                 time_range: None,
                 secondary_time_range: None,
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: 0,
                 soft_deleted_doc_ids: BTreeSet::new(),
+                soft_deleted_snapshot: HashMap::new(),
             },
             index_writer,
             split_scratch_directory,
@@ -165,7 +165,6 @@ pub struct IndexedSplitBatch {
     /// If `None`, the split batch was built in the `IndexingPipeline`.
     pub merge_task_opt: Option<MergeTask>,
     pub batch_parent_span: Span,
-    pub soft_deleted_snapshot: Option<HashMap<String, BTreeSet<u32>>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

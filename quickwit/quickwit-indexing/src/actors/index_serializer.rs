@@ -92,7 +92,6 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             publish_token_opt: batch_builder.publish_token_opt,
             merge_task_opt: None,
             batch_parent_span: batch_builder.batch_parent_span,
-            soft_deleted_snapshot: None,
         };
         ctx.send_message(&self.packager_mailbox, indexed_split_batch)
             .await?;

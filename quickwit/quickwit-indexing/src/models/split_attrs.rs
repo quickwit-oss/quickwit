@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
@@ -61,8 +61,6 @@ pub struct SplitAttrs {
     pub time_range: Option<RangeInclusive<DateTime>>,
     pub secondary_time_range: Option<RangeInclusive<DateTime>>,
 
-    pub replaced_split_ids: Vec<String>,
-
     /// Delete opstamp.
     pub delete_opstamp: u64,
 
@@ -72,6 +70,8 @@ pub struct SplitAttrs {
     /// Soft-deleted doc IDs carried forward from source splits.
     /// Cleared during merge (MVP: doc_ids change during merge, so we can't remap them).
     pub soft_deleted_doc_ids: BTreeSet<u32>,
+
+    pub soft_deleted_snapshot: HashMap<SplitId, BTreeSet<u32>>,
 }
 
 impl fmt::Debug for SplitAttrs {
@@ -79,7 +79,6 @@ impl fmt::Debug for SplitAttrs {
         f.debug_struct("SplitAttrs")
             .field("split_id", &self.split_id)
             .field("partition_id", &self.partition_id)
-            .field("replaced_split_ids", &self.replaced_split_ids)
             .field("time_range", &self.time_range)
             .field(
                 "uncompressed_docs_size_in_bytes",

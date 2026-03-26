@@ -45,10 +45,10 @@ use tokio::runtime::Handle;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::actors::Packager;
-use crate::actors::query::SoftDeletedDocIdsQuery;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperationType;
 use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
+use crate::soft_delete_query::SoftDeletedDocIdsQuery;
 
 #[derive(Clone)]
 pub struct MergeExecutor {
@@ -90,10 +90,7 @@ impl Handler<MergeScratch> for MergeExecutor {
     ) -> Result<(), ActorExitStatus> {
         let start = Instant::now();
         let merge_task = merge_scratch.merge_task;
-        let (indexed_split_opt, soft_deleted_snapshot_opt): (
-            Option<IndexedSplit>,
-            Option<HashMap<String, BTreeSet<u32>>>,
-        ) = match merge_task.operation_type {
+        let indexed_split_opt: Option<IndexedSplit> = match merge_task.operation_type {
             MergeOperationType::Merge => {
                 let merge_res = self
                     .process_merge(
@@ -105,19 +102,21 @@ impl Handler<MergeScratch> for MergeExecutor {
                     )
                     .await;
                 match merge_res {
-                    Ok((indexed_split, snapshot)) => (Some(indexed_split), Some(snapshot)),
+                    Ok(indexed_split) => Some(indexed_split),
                     Err(err) => {
                         // A failure in a merge is a bit special.
                         //
                         // Instead of failing the pipeline, we just log it.
-                        // The idea is to limit the risk associated with a potential split of death.
+                        // The idea is to limit the risk associated with a potential split of
+                        // death.
                         //
-                        // Such a split is now not tracked by the merge planner and won't undergo a
-                        // merge until the merge pipeline is restarted.
+                        // Such a split is now not tracked by the merge planner and won't
+                        // undergo a merge until the merge pipeline
+                        // is restarted.
                         //
-                        // With a merge policy that marks splits as mature after a day or so, this
-                        // limits the noise associated to those failed
-                        // merges.
+                        // With a merge policy that marks splits as mature after a day or so,
+                        // this limits the noise associated to those
+                        // failed merges.
                         error!(task=?merge_task, err=?err, "failed to merge splits");
                         return Ok(());
                     }
@@ -131,17 +130,14 @@ impl Handler<MergeScratch> for MergeExecutor {
                 );
                 assert_eq!(merge_scratch.tantivy_dirs.len(), 1);
                 let split_with_docs_to_delete = merge_task.splits[0].clone();
-                (
-                    self.process_delete_and_merge(
-                        merge_task.merge_split_id.clone(),
-                        split_with_docs_to_delete,
-                        merge_scratch.tantivy_dirs,
-                        merge_scratch.merge_scratch_directory,
-                        ctx,
-                    )
-                    .await?,
-                    None,
+                self.process_delete_and_merge(
+                    merge_task.merge_split_id.clone(),
+                    split_with_docs_to_delete,
+                    merge_scratch.tantivy_dirs,
+                    merge_scratch.merge_scratch_directory,
+                    ctx,
                 )
+                .await?
             }
         };
         if let Some(indexed_split) = indexed_split_opt {
@@ -160,7 +156,6 @@ impl Handler<MergeScratch> for MergeExecutor {
                     publish_token_opt: None,
                     batch_parent_span: merge_task.merge_parent_span.clone(),
                     merge_task_opt: Some(merge_task),
-                    soft_deleted_snapshot: soft_deleted_snapshot_opt,
                 },
             )
             .await?;
@@ -299,9 +294,14 @@ pub fn merge_split_attrs(
     } else {
         0
     };
-    let replaced_split_ids: Vec<SplitId> = splits
+    let soft_deleted_snapshot = splits
         .iter()
-        .map(|split| split.split_id().to_string())
+        .map(|split| {
+            (
+                split.split_id().to_string(),
+                split.soft_deleted_doc_ids.clone(),
+            )
+        })
         .collect();
     let delete_opstamp = splits
         .iter()
@@ -325,13 +325,14 @@ pub fn merge_split_attrs(
         doc_mapping_uid,
         split_id: merge_split_id,
         partition_id,
-        replaced_split_ids,
         time_range,
         secondary_time_range,
         num_docs,
         uncompressed_docs_size_in_bytes,
         delete_opstamp,
         num_merge_ops: max_merge_ops(splits) + 1,
+        // Snapshot of the deleted docs before merge
+        soft_deleted_snapshot,
         // Soft-deleted doc IDs are cleared during merge because tantivy reassigns doc_ids.
         soft_deleted_doc_ids: BTreeSet::new(),
     })
@@ -379,14 +380,7 @@ impl MergeExecutor {
         tantivy_dirs: Vec<Box<dyn Directory>>,
         merge_scratch_directory: TempDirectory,
         ctx: &ActorContext<Self>,
-    ) -> anyhow::Result<(IndexedSplit, HashMap<String, BTreeSet<u32>>)> {
-        // Snapshot soft-deleted doc IDs at merge start so we can detect concurrent
-        // modifications after the merge completes.
-        let soft_deleted_snapshot: HashMap<String, BTreeSet<u32>> = splits
-            .iter()
-            .map(|s| (s.split_id.clone(), s.soft_deleted_doc_ids.clone()))
-            .collect();
-
+    ) -> anyhow::Result<IndexedSplit> {
         let (union_index_meta, split_directories, per_split_metas) = open_split_directories(
             &tantivy_dirs,
             self.doc_mapper.tokenizer_manager().tantivy_manager(),
@@ -435,7 +429,7 @@ impl MergeExecutor {
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
         };
-        Ok((indexed_split, soft_deleted_snapshot))
+        Ok(indexed_split)
     }
 
     async fn process_delete_and_merge(
@@ -562,13 +556,16 @@ impl MergeExecutor {
                 doc_mapping_uid: split.doc_mapping_uid,
                 split_id: merge_split_id,
                 partition_id: split.partition_id,
-                replaced_split_ids: vec![split.split_id.clone()],
                 time_range,
                 secondary_time_range: None,
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: split.num_merge_ops,
+                soft_deleted_snapshot: HashMap::from([(
+                    split.split_id.clone(),
+                    split.soft_deleted_doc_ids.clone(),
+                )]),
                 // Soft-deleted doc IDs have been hard-deleted during the merge via DocIdsQuery,
                 // so the resulting split carries no soft-delete metadata.
                 soft_deleted_doc_ids: BTreeSet::new(),
@@ -936,10 +933,10 @@ mod tests {
 
     /// Verifies that when a soft-delete lands on an input split *while* the merge is running
     /// (i.e. the merge task carries stale metadata with no soft-deletes, but the metastore
-    /// has been updated before the merge completes), the merge still succeeds and emits a
-    /// warning rather than failing.
+    /// has been updated before the merge completes), the merge still succeeds and emits an
+    /// error rather than failing.
     #[tokio::test]
-    async fn test_merge_executor_soft_delete_race_condition_warning() -> anyhow::Result<()> {
+    async fn test_merge_executor_soft_delete_race_condition() -> anyhow::Result<()> {
         let doc_mapping_yaml = r#"
             field_mappings:
               - name: body
@@ -1050,10 +1047,7 @@ mod tests {
         assert_eq!(split_attrs.num_merge_ops, 1);
 
         // The snapshot carried in the batch reflects the stale state (no soft-deletes).
-        let snapshot = packager_msgs[0]
-            .soft_deleted_snapshot
-            .as_ref()
-            .expect("merge operation must carry a soft_deleted_snapshot");
+        let snapshot = &packager_msgs[0].splits[0].split_attrs.soft_deleted_snapshot;
         assert_eq!(
             snapshot.len(),
             4,

@@ -32,7 +32,7 @@ use crate::rest::recover_fn;
 use crate::rest_api_response::into_rest_api_response;
 use crate::with_arg;
 
-const MAX_SOFT_DELETED_DOCS_PER_SPLIT: u64 = 10_000;
+const MAX_SOFT_DELETED_HITS: u64 = 100;
 
 #[allow(dead_code)]
 #[derive(utoipa::OpenApi)]
@@ -48,9 +48,6 @@ pub struct SoftDeleteApi;
 pub struct SoftDeleteRequest {
     /// Query text in Tantivy query language to match events to soft-delete.
     pub query: String,
-    /// Fields to search on (defaults to doc mapper default fields).
-    #[serde(default)]
-    pub search_fields: Option<Vec<String>>,
     /// Maximum number of events to soft-delete in a single call (default: 10000).
     #[serde(default = "default_max_soft_deletes")]
     pub max_hits: u64,
@@ -61,7 +58,7 @@ pub struct SoftDeleteRequest {
 }
 
 fn default_max_soft_deletes() -> u64 {
-    MAX_SOFT_DELETED_DOCS_PER_SPLIT
+    MAX_SOFT_DELETED_HITS
 }
 
 /// Response from the soft-delete endpoint.
@@ -118,14 +115,16 @@ pub async fn post_soft_delete(
     metastore: MetastoreServiceClient,
 ) -> Result<SoftDeleteResponse, SearchError> {
     // 1. Build a SearchRequest from the soft-delete query.
-    let query_ast = query_ast_from_user_text(&request.query, request.search_fields);
+    // Validate the query and make sure it doesn't require default search fields
+    query_ast_from_user_text(&request.query, None).parse_user_query(&[])?;
+    let query_ast = query_ast_from_user_text(&request.query, None);
     let query_ast_json = serde_json::to_string(&query_ast)
         .map_err(|err| SearchError::Internal(format!("failed to serialize query AST: {err}")))?;
 
     // Enforce a hits limit that guarantee we won't delete
-    // more than MAX_SOFT_DELETED_DOCS_PER_SPLIT per split
-    let max_hits = if request.max_hits > MAX_SOFT_DELETED_DOCS_PER_SPLIT {
-        MAX_SOFT_DELETED_DOCS_PER_SPLIT
+    // more than MAX_SOFT_DELETED_HITS per split
+    let max_hits = if request.max_hits > MAX_SOFT_DELETED_HITS {
+        MAX_SOFT_DELETED_HITS
     } else {
         request.max_hits
     };

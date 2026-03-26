@@ -137,7 +137,6 @@ pub struct SplitMetadata {
     pub doc_mapping_uid: DocMappingUid,
 
     /// Set of tantivy doc_ids that have been soft-deleted from this split.
-    #[serde(default)]
     pub soft_deleted_doc_ids: BTreeSet<u32>,
 }
 
