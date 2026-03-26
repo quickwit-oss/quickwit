@@ -487,6 +487,7 @@ impl crate::TestableForRegression for IndexConfig {
             ],
             timestamp_field: Some("timestamp".to_string()),
             secondary_timestamp_field: None,
+            indexation_time_field: None,
             tag_fields: BTreeSet::from_iter(["tenant_id".to_string(), "log_level".to_string()]),
             partition_key: Some("tenant_id".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),
