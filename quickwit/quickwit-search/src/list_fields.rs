@@ -288,7 +288,8 @@ impl FromStr for FieldPattern {
             let infix = field_pattern.trim_matches('*').to_string();
             if infix.contains('*') {
                 return Err(crate::SearchError::InvalidArgument(format!(
-                    "invalid field pattern `{field_pattern}`: 'contains' type patterns can't have a wildcard in the middle"
+                    "invalid field pattern `{field_pattern}`: 'contains' type patterns can't have \
+                     a wildcard in the middle"
                 )));
             }
             return Ok(Self::Contains { infix });
