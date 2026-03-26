@@ -13,6 +13,8 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
+    cooldown:
+      default-days: 14
 
   # Docker dependencies
   - package-ecosystem: docker
@@ -20,6 +22,8 @@ updates:
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 14
 
   # GitHub Actions
   - package-ecosystem: github-actions
@@ -31,6 +35,8 @@ updates:
         patterns:
           - "*"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 14
 
   # NPM dependencies
   - package-ecosystem: npm
@@ -42,3 +48,5 @@ updates:
         patterns:
           - "*"
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 14
