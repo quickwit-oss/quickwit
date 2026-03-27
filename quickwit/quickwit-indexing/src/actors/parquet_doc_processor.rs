@@ -97,9 +97,7 @@ impl ParquetDocProcessorCounters {
 
     /// Get total number of batches processed (valid or not).
     pub fn num_processed_batches(&self) -> u64 {
-        self.valid_batches
-            + self.parse_errors
-            + self.format_errors
+        self.valid_batches + self.parse_errors + self.format_errors
     }
 
     /// Get total number of errors.
@@ -147,10 +145,7 @@ impl ParquetDocProcessor {
     ) -> Self {
         let schema = ParquetSchema::new();
         let processor = ParquetIngestProcessor::new(schema);
-        let counters = ParquetDocProcessorCounters::new(
-            index_id.clone(),
-            source_id.clone(),
-        );
+        let counters = ParquetDocProcessorCounters::new(index_id.clone(), source_id.clone());
 
         info!(
             index_id = %index_id,

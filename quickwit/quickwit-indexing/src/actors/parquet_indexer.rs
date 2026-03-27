@@ -204,12 +204,8 @@ impl ParquetIndexer {
         debug!(
             num_rows = num_rows,
             force_commit = batch.force_commit,
-            total_batches = self
-                .counters
-                .batches_received,
-            total_rows = self
-                .counters
-                .rows_indexed,
+            total_batches = self.counters.batches_received,
+            total_rows = self.counters.rows_indexed,
             "received batch for accumulation"
         );
 
@@ -530,8 +526,8 @@ impl Handler<CommitTimeout> for ParquetIndexer {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering;
     use std::sync::Arc;
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
     use arrow::array::{

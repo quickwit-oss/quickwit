@@ -17,8 +17,8 @@
 //! These tests wire up the full metrics pipeline:
 //! ParquetDocProcessor → ParquetIndexer → ParquetUploader → ParquetPublisher
 
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use arrow::array::{
