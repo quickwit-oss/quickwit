@@ -86,6 +86,7 @@ struct CacheKey {
     /// requested, and the timerange covered by the split.
     merged_time_range: HalfOpenRange,
     /// The number of soft deleted documents in the split.
+    /// This assumes that the list of deleted docs is append only for a split.
     soft_deleted_docs_len: usize,
 }
 

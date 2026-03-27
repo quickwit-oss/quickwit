@@ -47,7 +47,9 @@ use tracing::{debug, error, info, instrument, warn};
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperationType;
-use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
+use crate::models::{
+    IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, ReplacedSplit, SplitAttrs,
+};
 use crate::soft_delete_query::SoftDeletedDocIdsQuery;
 
 #[derive(Clone)]
@@ -296,11 +298,9 @@ pub fn merge_split_attrs(
     };
     let soft_deleted_snapshot = splits
         .iter()
-        .map(|split| {
-            (
-                split.split_id().to_string(),
-                split.soft_deleted_doc_ids.clone(),
-            )
+        .map(|split| ReplacedSplit {
+            split_id: split.split_id.clone(),
+            soft_deleted_doc_ids: split.soft_deleted_doc_ids.clone(),
         })
         .collect();
     let delete_opstamp = splits
@@ -332,9 +332,7 @@ pub fn merge_split_attrs(
         delete_opstamp,
         num_merge_ops: max_merge_ops(splits) + 1,
         // Snapshot of the deleted docs before merge
-        soft_deleted_snapshot,
-        // Soft-deleted doc IDs are cleared during merge because tantivy reassigns doc_ids.
-        soft_deleted_doc_ids: BTreeSet::new(),
+        replaced_splits: soft_deleted_snapshot,
     })
 }
 
@@ -562,13 +560,10 @@ impl MergeExecutor {
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: split.num_merge_ops,
-                soft_deleted_snapshot: HashMap::from([(
-                    split.split_id.clone(),
-                    split.soft_deleted_doc_ids.clone(),
-                )]),
-                // Soft-deleted doc IDs have been hard-deleted during the merge via DocIdsQuery,
-                // so the resulting split carries no soft-delete metadata.
-                soft_deleted_doc_ids: BTreeSet::new(),
+                replaced_splits: vec![ReplacedSplit {
+                    split_id: split.split_id.clone(),
+                    soft_deleted_doc_ids: split.soft_deleted_doc_ids.clone(),
+                }],
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
@@ -910,7 +905,6 @@ mod tests {
         assert_eq!(split_attrs_after_merge.num_docs, 3);
         assert_eq!(split_attrs_after_merge.uncompressed_docs_size_in_bytes, 102);
         assert_eq!(split_attrs_after_merge.num_merge_ops, 1);
-        assert!(split_attrs_after_merge.soft_deleted_doc_ids.is_empty());
 
         let reader = packager_msgs[0].splits[0]
             .index
@@ -1047,14 +1041,18 @@ mod tests {
         assert_eq!(split_attrs.num_merge_ops, 1);
 
         // The snapshot carried in the batch reflects the stale state (no soft-deletes).
-        let snapshot = &packager_msgs[0].splits[0].split_attrs.soft_deleted_snapshot;
+        let replaced_splits = &packager_msgs[0].splits[0].split_attrs.replaced_splits;
         assert_eq!(
-            snapshot.len(),
+            replaced_splits.len(),
             4,
             "all 4 input splits must appear in the snapshot"
         );
+        let racing_split_snapshot = replaced_splits
+            .iter()
+            .find(|replaced_split| replaced_split.split_id == racing_split_id)
+            .expect("racing split must be present in the snapshot");
         assert!(
-            snapshot[&racing_split_id].is_empty(),
+            racing_split_snapshot.soft_deleted_doc_ids.is_empty(),
             "racing split had no soft-deletes at merge start (stale read)"
         );
 

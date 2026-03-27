@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 
 use itertools::Itertools;
@@ -23,6 +22,7 @@ use tracing::Span;
 
 use crate::merge_policy::MergeTask;
 use crate::models::PublishLock;
+use crate::models::split_attrs::ReplacedSplit;
 
 pub struct SplitsUpdate {
     pub index_uid: IndexUid,
@@ -36,7 +36,7 @@ pub struct SplitsUpdate {
     /// If `None`, the split batch was built in the `IndexingPipeline`.
     pub merge_task: Option<MergeTask>,
     pub parent_span: Span,
-    pub soft_deleted_snapshot: Option<HashMap<String, BTreeSet<u32>>>,
+    pub replaced_splits: Vec<ReplacedSplit>,
 }
 
 impl fmt::Debug for SplitsUpdate {

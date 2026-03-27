@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
@@ -24,6 +24,12 @@ use tantivy::DateTime;
 use time::OffsetDateTime;
 
 use crate::merge_policy::MergePolicy;
+
+#[derive(PartialEq, Eq, Debug, Default, Clone)]
+pub struct ReplacedSplit {
+    pub split_id: SplitId,
+    pub soft_deleted_doc_ids: BTreeSet<u32>,
+}
 
 pub struct SplitAttrs {
     /// ID of the node that produced the split.
@@ -67,11 +73,7 @@ pub struct SplitAttrs {
     // Number of merge operation the split has been through so far.
     pub num_merge_ops: usize,
 
-    /// Soft-deleted doc IDs carried forward from source splits.
-    /// Cleared during merge (MVP: doc_ids change during merge, so we can't remap them).
-    pub soft_deleted_doc_ids: BTreeSet<u32>,
-
-    pub soft_deleted_snapshot: HashMap<SplitId, BTreeSet<u32>>,
+    pub replaced_splits: Vec<ReplacedSplit>,
 }
 
 impl fmt::Debug for SplitAttrs {
@@ -86,10 +88,6 @@ impl fmt::Debug for SplitAttrs {
             )
             .field("num_docs", &self.num_docs)
             .field("num_merge_ops", &self.num_merge_ops)
-            .field(
-                "soft_deleted_doc_ids_count",
-                &self.soft_deleted_doc_ids.len(),
-            )
             .finish()
     }
 }

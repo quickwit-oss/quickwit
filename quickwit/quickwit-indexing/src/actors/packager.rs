@@ -378,7 +378,6 @@ fn u64_from_term_data(data: &[u8]) -> anyhow::Result<u64> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::ops::RangeInclusive;
 
     use quickwit_actors::{ObservationType, Universe};
@@ -530,8 +529,7 @@ mod tests {
                 secondary_time_range: None,
                 delete_opstamp: 0,
                 num_merge_ops: 0,
-                soft_deleted_doc_ids: BTreeSet::new(),
-                soft_deleted_snapshot: HashMap::new(),
+                replaced_splits: Vec::new(),
             },
             index,
             split_scratch_directory,

@@ -23,12 +23,12 @@ use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
 use quickwit_proto::metastore::{
     ListSplitsRequest, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
 };
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, SplitId};
 use serde::Serialize;
 use tracing::{error, info, instrument, warn};
 
 use crate::actors::MergePlanner;
-use crate::models::{NewSplits, SplitsUpdate};
+use crate::models::{NewSplits, ReplacedSplit, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -137,7 +137,7 @@ impl Handler<SplitsUpdate> for Publisher {
             checkpoint_delta_opt,
             publish_lock,
             publish_token_opt,
-            soft_deleted_snapshot,
+            replaced_splits,
             ..
         } = split_update;
 
@@ -150,17 +150,15 @@ impl Handler<SplitsUpdate> for Publisher {
             .iter()
             .map(|split| split.split_id.clone())
             .collect();
-        let replaced_split_ids = soft_deleted_snapshot
-            .as_ref()
-            .map(|snapshot| snapshot.keys().cloned().collect())
-            .unwrap_or_default();
+        let replaced_split_ids = replaced_splits
+            .iter()
+            .map(|replaced| replaced.split_id.clone())
+            .collect();
         if let Some(_guard) = publish_lock.acquire().await {
-            if let Some(ref snapshot) = soft_deleted_snapshot
-                && !snapshot.is_empty()
-            {
+            if !replaced_splits.is_empty() {
                 warn_if_soft_deletes_changed_during_merge(
                     &index_uid,
-                    snapshot,
+                    &replaced_splits,
                     &self.metastore,
                     ctx.progress(),
                 )
@@ -216,7 +214,7 @@ impl Handler<SplitsUpdate> for Publisher {
                     .await;
             }
 
-            if soft_deleted_snapshot.is_none() || soft_deleted_snapshot.unwrap().is_empty() {
+            if replaced_splits.is_empty() {
                 self.counters.num_published_splits += 1;
             } else {
                 self.counters.num_replace_operations += 1;
@@ -233,7 +231,7 @@ impl Handler<SplitsUpdate> for Publisher {
 /// warning for each split whose soft-delete set grew while the merge was running.
 async fn warn_if_soft_deletes_changed_during_merge(
     index_uid: &IndexUid,
-    snapshot: &HashMap<String, BTreeSet<u32>>,
+    replaced_splits: &[ReplacedSplit],
     metastore: &MetastoreServiceClient,
     progress: &Progress,
 ) {
@@ -264,6 +262,10 @@ async fn warn_if_soft_deletes_changed_during_merge(
             return;
         }
     };
+    let snapshot: HashMap<&SplitId, &BTreeSet<u32>> = replaced_splits
+        .iter()
+        .map(|n| (&n.split_id, &n.soft_deleted_doc_ids))
+        .collect();
     for fresh_split in &fresh_splits {
         let Some(snapshot_ids) = snapshot.get(&fresh_split.split_id) else {
             continue;
@@ -288,8 +290,6 @@ async fn warn_if_soft_deletes_changed_during_merge(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{BTreeSet, HashMap};
-
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
@@ -351,7 +351,7 @@ mod tests {
                     publish_token_opt: None,
                     merge_task: None,
                     parent_span: tracing::Span::none(),
-                    soft_deleted_snapshot: None,
+                    replaced_splits: Vec::new(),
                 })
                 .await
                 .is_ok()
@@ -426,7 +426,7 @@ mod tests {
                     publish_token_opt: None,
                     merge_task: None,
                     parent_span: tracing::Span::none(),
-                    soft_deleted_snapshot: None,
+                    replaced_splits: Vec::new(),
                 })
                 .await
                 .is_ok()
@@ -502,10 +502,16 @@ mod tests {
             publish_token_opt: None,
             merge_task: None,
             parent_span: Span::none(),
-            soft_deleted_snapshot: Some(HashMap::from([
-                ("split1".to_string(), BTreeSet::new()),
-                ("split2".to_string(), BTreeSet::new()),
-            ])),
+            replaced_splits: vec![
+                ReplacedSplit {
+                    split_id: "split1".to_string(),
+                    ..Default::default()
+                },
+                ReplacedSplit {
+                    split_id: "split2".to_string(),
+                    ..Default::default()
+                },
+            ],
         };
         assert!(
             publisher_mailbox
@@ -549,7 +555,7 @@ mod tests {
                 publish_token_opt: None,
                 merge_task: None,
                 parent_span: Span::none(),
-                soft_deleted_snapshot: None,
+                replaced_splits: Vec::new(),
             })
             .await
             .unwrap();
@@ -610,8 +616,10 @@ mod tests {
         let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
         // Snapshot shows the racing split had no soft-deletes at merge start (stale read).
-        let mut snapshot = std::collections::HashMap::new();
-        snapshot.insert(racing_split_id.clone(), BTreeSet::new());
+        let replaced_splits = vec![ReplacedSplit {
+            split_id: racing_split_id.clone(),
+            ..Default::default()
+        }];
 
         publisher_mailbox
             .send_message(SplitsUpdate {
@@ -625,7 +633,7 @@ mod tests {
                 publish_token_opt: None,
                 merge_task: None,
                 parent_span: Span::none(),
-                soft_deleted_snapshot: Some(snapshot),
+                replaced_splits,
             })
             .await
             .unwrap();

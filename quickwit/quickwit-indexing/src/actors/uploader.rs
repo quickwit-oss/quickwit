@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{BTreeSet, HashMap};
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -367,7 +366,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
                 event_broker.publish(ReportSplitsRequest { report_splits });
 
-                let mut soft_deleted_snapshot: HashMap<String, BTreeSet<u32>> = HashMap::new();
+                let mut replaced_splits = Vec::new();
                 for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
                     let upload_result = upload_split(
                         &packaged_split,
@@ -383,7 +382,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                         return;
                     }
 
-                    soft_deleted_snapshot.extend(packaged_split.split_attrs.soft_deleted_snapshot.clone());
+                    replaced_splits.extend(packaged_split.split_attrs.replaced_splits.iter().cloned());
                     packaged_splits_and_metadata.push((packaged_split, metadata));
                 }
 
@@ -399,7 +398,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     publish_token_opt: batch.publish_token_opt,
                     merge_task: batch.merge_task_opt,
                     parent_span: batch.batch_parent_span,
-                    soft_deleted_snapshot: Some(soft_deleted_snapshot),
+                    replaced_splits,
                 };
 
                 let target = match &split_update_sender {
@@ -448,7 +447,7 @@ impl Handler<EmptySplit> for Uploader {
             publish_token_opt: empty_split.publish_token_opt,
             merge_task: None,
             parent_span: empty_split.batch_parent_span,
-            soft_deleted_snapshot: None,
+            replaced_splits: Vec::new(),
         };
 
         split_update_sender.send(splits_update, ctx).await?;
@@ -503,7 +502,7 @@ mod tests {
 
     use super::*;
     use crate::merge_policy::{NopMergePolicy, default_merge_policy};
-    use crate::models::{PublishLock, SplitAttrs, SplitsUpdate};
+    use crate::models::{PublishLock, ReplacedSplit, SplitAttrs, SplitsUpdate};
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
@@ -569,8 +568,7 @@ mod tests {
                         split_id: "test-split".to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
-                        soft_deleted_doc_ids: BTreeSet::new(),
-                        soft_deleted_snapshot: HashMap::new(),
+                        replaced_splits: Vec::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -680,11 +678,10 @@ mod tests {
                 secondary_time_range: None,
                 delete_opstamp: 0,
                 num_merge_ops: 0,
-                soft_deleted_doc_ids: BTreeSet::new(),
-                soft_deleted_snapshot: HashMap::from([
-                    ("replaced-split-1".to_string(), BTreeSet::new()),
-                    ("replaced-split-2".to_string(), BTreeSet::new()),
-                ]),
+                replaced_splits: Vec::from([ReplacedSplit {
+                    split_id: "replaced-split-1".to_string(),
+                    soft_deleted_doc_ids: BTreeSet::new(),
+                }]),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_1,
@@ -709,11 +706,10 @@ mod tests {
                 secondary_time_range: None,
                 delete_opstamp: 0,
                 num_merge_ops: 0,
-                soft_deleted_doc_ids: BTreeSet::new(),
-                soft_deleted_snapshot: HashMap::from([
-                    ("replaced-split-1".to_string(), BTreeSet::new()),
-                    ("replaced-split-2".to_string(), BTreeSet::new()),
-                ]),
+                replaced_splits: Vec::from([ReplacedSplit {
+                    split_id: "replaced-split-2".to_string(),
+                    soft_deleted_doc_ids: BTreeSet::new(),
+                }]),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_2,
@@ -750,7 +746,7 @@ mod tests {
             index_uid,
             new_splits,
             checkpoint_delta_opt,
-            soft_deleted_snapshot,
+            replaced_splits,
             ..
         } = publisher_message;
         assert_eq!(index_uid.index_id, "test-index");
@@ -759,11 +755,17 @@ mod tests {
         assert_eq!(new_splits[0].split_id(), "test-split-1");
         assert_eq!(new_splits[1].split_id(), "test-split-2");
         assert_eq!(
-            &soft_deleted_snapshot,
-            &Some(HashMap::from([
-                ("replaced-split-1".to_string(), BTreeSet::new()),
-                ("replaced-split-2".to_string(), BTreeSet::new()),
-            ]))
+            &replaced_splits,
+            &vec![
+                ReplacedSplit {
+                    split_id: "replaced-split-1".to_string(),
+                    soft_deleted_doc_ids: BTreeSet::new(),
+                },
+                ReplacedSplit {
+                    split_id: "replaced-split-2".to_string(),
+                    soft_deleted_doc_ids: BTreeSet::new(),
+                },
+            ]
         );
         assert!(checkpoint_delta_opt.is_none());
 
@@ -833,8 +835,7 @@ mod tests {
                         num_docs: 10,
                         delete_opstamp: 10,
                         num_merge_ops: 0,
-                        soft_deleted_doc_ids: BTreeSet::new(),
-                        soft_deleted_snapshot: HashMap::new(),
+                        replaced_splits: Vec::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -856,14 +857,13 @@ mod tests {
         let SplitsUpdate {
             index_uid,
             new_splits,
-            soft_deleted_snapshot,
+            replaced_splits,
             ..
         } = publisher_inbox.recv_typed_message().await.unwrap();
 
         assert_eq!(index_uid.index_id, "test-index");
         assert_eq!(new_splits.len(), 1);
-        assert!(soft_deleted_snapshot.is_some());
-        assert!(soft_deleted_snapshot.unwrap().is_empty());
+        assert!(replaced_splits.is_empty());
         universe.assert_quit().await;
         Ok(())
     }
@@ -921,7 +921,7 @@ mod tests {
             index_uid,
             new_splits,
             checkpoint_delta_opt,
-            soft_deleted_snapshot,
+            replaced_splits,
             ..
         } = publisher_message;
 
@@ -933,7 +933,7 @@ mod tests {
             checkpoint_delta.source_delta,
             SourceCheckpointDelta::from_range(3..15)
         );
-        assert!(soft_deleted_snapshot.is_none() || soft_deleted_snapshot.unwrap().is_empty());
+        assert!(replaced_splits.is_empty());
         let files = ram_storage.list_files().await;
         assert!(files.is_empty());
         universe.assert_quit().await;
@@ -1018,8 +1018,7 @@ mod tests {
                         split_id: SPLIT_ULID_STR.to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
-                        soft_deleted_doc_ids: BTreeSet::new(),
-                        soft_deleted_snapshot: HashMap::new(),
+                        replaced_splits: Vec::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
