@@ -174,6 +174,7 @@ darling_macro,https://github.com/TedDriggs/darling,MIT,Ted Driggs <ted.driggs@ou
 dashmap,https://github.com/xacrimon/dashmap,MIT,Acrimon <joel.wejdenstal@gmail.com>
 data-encoding,https://github.com/ia0/data-encoding,MIT,Julien Cretin <git@ia0.eu>
 data-url,https://github.com/servo/rust-url,MIT OR Apache-2.0,Simon Sapin <simon.sapin@exyr.org>
+datasketches,https://github.com/apache/datasketches-rust,Apache-2.0,The datasketches Authors
 dbl,https://github.com/RustCrypto/utils,MIT OR Apache-2.0,RustCrypto Developers
 deadpool,https://github.com/bikeshedder/deadpool,MIT OR Apache-2.0,Michael P. Jung <michael.jung@terreon.de>
 deadpool-runtime,https://github.com/bikeshedder/deadpool,MIT OR Apache-2.0,Michael P. Jung <michael.jung@terreon.de>
@@ -299,7 +300,6 @@ hyper-rustls,https://github.com/rustls/hyper-rustls,Apache-2.0 OR ISC OR MIT,The
 hyper-timeout,https://github.com/hjr3/hyper-timeout,MIT OR Apache-2.0,Herman J. Radtke III <herman@hermanradtke.com>
 hyper-tls,https://github.com/hyperium/hyper-tls,MIT OR Apache-2.0,Sean McArthur <sean@seanmonstar.com>
 hyper-util,https://github.com/hyperium/hyper-util,MIT,Sean McArthur <sean@seanmonstar.com>
-hyperloglogplus,https://github.com/tabac/hyperloglog.rs,MIT,Tasos Bakogiannis <t.bakogiannis@gmail.com>
 iana-time-zone,https://github.com/strawlab/iana-time-zone,MIT OR Apache-2.0,"Andrew Straw <strawman@astraw.com>, René Kijewski <rene.kijewski@fu-berlin.de>, Ryan Lopopolo <rjl@hyperbo.la>"
 iana-time-zone-haiku,https://github.com/strawlab/iana-time-zone,MIT OR Apache-2.0,René Kijewski <crates.io@k6i.de>
 icu_collections,https://github.com/unicode-org/icu4x,Unicode-3.0,The ICU4X Project Developers
