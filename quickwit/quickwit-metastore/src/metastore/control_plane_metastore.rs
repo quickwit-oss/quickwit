@@ -23,7 +23,7 @@ use quickwit_proto::metastore::{
     DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
     FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexRoutingTableRequest, GetIndexRoutingTableResponse,
+    GetClusterIdentityResponse,
     GetIndexTemplateRequest, GetIndexTemplateResponse, IndexMetadataRequest, IndexMetadataResponse,
     IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
@@ -34,7 +34,7 @@ use quickwit_proto::metastore::{
     MarkMetricsSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreResult,
     MetastoreService, MetastoreServiceClient, MetastoreServiceStream, OpenShardsRequest,
     OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, SetIndexRoutingTableRequest, StageMetricsSplitsRequest,
+    ResetSourceCheckpointRequest, StageMetricsSplitsRequest,
     StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
@@ -291,24 +291,6 @@ impl MetastoreService for ControlPlaneMetastore {
         request: GetClusterIdentityRequest,
     ) -> MetastoreResult<GetClusterIdentityResponse> {
         self.metastore.get_cluster_identity(request).await
-    }
-
-    // Index Routing Table API
-
-    async fn get_index_routing_table(
-        &self,
-        request: GetIndexRoutingTableRequest,
-    ) -> MetastoreResult<GetIndexRoutingTableResponse> {
-        self.metastore.get_index_routing_table(request).await
-    }
-
-    // Proxied through control plane so it can validate invariants and gossip changes.
-    async fn set_index_routing_table(
-        &self,
-        request: SetIndexRoutingTableRequest,
-    ) -> MetastoreResult<EmptyResponse> {
-        let response = self.control_plane.set_index_routing_table(request).await?;
-        Ok(response)
     }
 
     // Metrics Splits API - Proxy to underlying metastore

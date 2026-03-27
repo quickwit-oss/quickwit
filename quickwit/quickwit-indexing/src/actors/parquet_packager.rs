@@ -37,7 +37,6 @@ use tracing::{info, warn};
 
 use crate::actors::ParquetUploader;
 use crate::actors::parquet_indexer::ParquetSplitBatch;
-use crate::metrics::INDEXER_METRICS;
 use crate::models::PublishLock;
 
 /// A concatenated RecordBatch ready to be written to a Parquet file.
@@ -188,18 +187,6 @@ impl Handler<ParquetBatchForPackager> for ParquetPackager {
                 Ok(split) => {
                     let size_bytes = split.metadata.size_bytes;
                     self.counters.record_split(size_bytes);
-                    INDEXER_METRICS
-                        .dd_parquet_splits_produced
-                        .get("packager")
-                        .increment(1);
-                    INDEXER_METRICS
-                        .dd_parquet_split_num_rows
-                        .get("packager")
-                        .record(split.metadata.num_rows as f64);
-                    INDEXER_METRICS
-                        .dd_parquet_split_size_bytes
-                        .get("packager")
-                        .record(size_bytes as f64);
 
                     info!(
                         split_id = %split.metadata.split_id,

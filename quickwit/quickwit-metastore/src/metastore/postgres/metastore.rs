@@ -33,8 +33,8 @@ use quickwit_proto::metastore::{
     DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
     EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
-    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexRoutingTableRequest,
-    GetIndexRoutingTableResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
+    GetClusterIdentityRequest, GetClusterIdentityResponse,
+    GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
     IndexStats, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
     LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
@@ -46,7 +46,7 @@ use quickwit_proto::metastore::{
     MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult, MetastoreService,
     MetastoreServiceStream, OpenShardSubrequest, OpenShardSubresponse, OpenShardsRequest,
     OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, SetIndexRoutingTableRequest, SplitStats,
+    ResetSourceCheckpointRequest, SplitStats,
     StageMetricsSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
     UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
     serde_utils,
@@ -1767,47 +1767,6 @@ impl MetastoreService for PostgresqlMetastore {
         .fetch_one(&self.connection_pool)
         .await?;
         Ok(GetClusterIdentityResponse { uuid })
-    }
-
-    // Index Routing Table API
-
-    async fn get_index_routing_table(
-        &self,
-        _request: GetIndexRoutingTableRequest,
-    ) -> MetastoreResult<GetIndexRoutingTableResponse> {
-        let routing_table_json_opt: Option<(String,)> = sqlx::query_as(
-            r"
-                SELECT value FROM kv WHERE key = 'index_routing_table'
-            ",
-        )
-        .fetch_optional(&self.connection_pool)
-        .await?;
-
-        let rules = if let Some((routing_table_json,)) = routing_table_json_opt {
-            serde_utils::from_json_str(&routing_table_json)?
-        } else {
-            Vec::new()
-        };
-        Ok(GetIndexRoutingTableResponse { rules })
-    }
-
-    async fn set_index_routing_table(
-        &self,
-        request: SetIndexRoutingTableRequest,
-    ) -> MetastoreResult<EmptyResponse> {
-        let routing_table_json = serde_utils::to_json_str(&request.rules)?;
-
-        sqlx::query(
-            r"
-                INSERT INTO kv (key, value)
-                VALUES ('index_routing_table', $1)
-                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-            ",
-        )
-        .bind(routing_table_json)
-        .execute(&self.connection_pool)
-        .await?;
-        Ok(EmptyResponse {})
     }
 
     // Metrics Splits API

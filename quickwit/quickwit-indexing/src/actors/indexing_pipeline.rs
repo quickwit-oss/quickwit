@@ -19,6 +19,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use heck::ToUpperCamelCase;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Mailbox,
     QueueCapacity, Supervisable,

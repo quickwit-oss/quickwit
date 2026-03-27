@@ -45,8 +45,8 @@ use quickwit_proto::metastore::{
     DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
     EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
-    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexRoutingTableRequest,
-    GetIndexRoutingTableResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
+    GetClusterIdentityRequest, GetClusterIdentityResponse,
+    GetIndexTemplateRequest, GetIndexTemplateResponse,
     IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
     IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
@@ -57,7 +57,7 @@ use quickwit_proto::metastore::{
     MarkMetricsSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreError,
     MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SetIndexRoutingTableRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest,
     StageMetricsSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
     UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
     serde_utils,
@@ -1280,37 +1280,6 @@ impl MetastoreService for FileBackedMetastore {
         Ok(GetClusterIdentityResponse {
             uuid: state_wlock_guard.identity.hyphenated().to_string(),
         })
-    }
-
-    // Index Routing Table API
-
-    async fn get_index_routing_table(
-        &self,
-        _request: GetIndexRoutingTableRequest,
-    ) -> MetastoreResult<GetIndexRoutingTableResponse> {
-        let state_rlock_guard = self.state.read().await;
-        Ok(GetIndexRoutingTableResponse {
-            rules: state_rlock_guard.index_routing_table.clone(),
-        })
-    }
-
-    async fn set_index_routing_table(
-        &self,
-        request: SetIndexRoutingTableRequest,
-    ) -> MetastoreResult<EmptyResponse> {
-        let mut state_wlock_guard = self.state.write().await;
-
-        let previous_routing_table =
-            mem::replace(&mut state_wlock_guard.index_routing_table, request.rules);
-
-        let manifest = state_wlock_guard.as_manifest();
-
-        if let Err(error) = save_manifest(&*self.storage, &manifest).await {
-            // Rollback on error.
-            state_wlock_guard.index_routing_table = previous_routing_table;
-            return Err(error);
-        }
-        Ok(EmptyResponse {})
     }
 
     // Metrics Splits API

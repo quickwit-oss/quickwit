@@ -25,7 +25,6 @@ use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::jaeger::storage::v2::trace_reader_server::TraceReaderServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
-use quickwit_proto::opentelemetry::proto::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
@@ -183,18 +182,6 @@ pub(crate) async fn start_grpc_server(
         } else {
             None
         };
-    let otlp_metrics_grpc_service =
-        if let Some(otlp_metrics_service) = services.otlp_metrics_service_opt.clone() {
-            enabled_grpc_services.insert("otlp-metrics");
-            let metrics_service = MetricsServiceServer::new(otlp_metrics_service)
-                .accept_compressed(CompressionEncoding::Gzip)
-                .accept_compressed(CompressionEncoding::Zstd)
-                .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
-                .max_encoding_message_size(grpc_config.max_message_size.0 as usize);
-            Some(metrics_service)
-        } else {
-            None
-        };
     // Mount gRPC search service if `QuickwitService::Searcher` is enabled on node.
     let search_grpc_service = if services
         .node_config
@@ -260,7 +247,6 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(jaeger_v2_grpc_service)
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(otlp_log_grpc_service)
-        .add_optional_service(otlp_metrics_grpc_service)
         .add_optional_service(otlp_trace_grpc_service)
         .add_optional_service(search_grpc_service);
 

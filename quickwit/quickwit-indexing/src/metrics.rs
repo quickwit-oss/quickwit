@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use metrics::{Gauge, Histogram as MetricsHistogram, gauge, histogram};
 use once_cell::sync::Lazy;
-use quickwit_common::dd_metrics::{DDCounters, DDHistograms};
 use quickwit_common::metrics::{
     IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
     new_gauge_vec,
@@ -33,27 +31,6 @@ pub struct IndexerMetrics {
     // We use a lazy counter, as most users do not use Kafka.
     #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
     pub kafka_rebalance_total: Lazy<IntCounter>,
-
-    // ParquetDocProcessor DD metrics
-    pub dd_parquet_processed_events: DDCounters,
-    pub dd_parquet_processed_events_bytes: DDCounters,
-    pub dd_parquet_doc_processor_batch_duration_seconds: MetricsHistogram,
-
-    // ParquetIndexer DD metrics
-    pub dd_parquet_splits_produced: DDCounters,
-    pub dd_parquet_split_num_rows: DDHistograms,
-    pub dd_parquet_split_size_bytes: DDHistograms,
-    pub dd_parquet_accumulator_pending_rows: Gauge,
-    pub dd_parquet_accumulator_pending_bytes: Gauge,
-
-    // ParquetUploader DD metrics
-    pub dd_parquet_uploads: DDCounters,
-    pub dd_parquet_upload_duration_seconds: DDHistograms,
-
-    pub dd_indexed_events: DDCounters,
-    pub dd_indexed_events_bytes: DDCounters,
-    pub dd_pending_merge_ops: Gauge,
-    pub processing_pipeline_thread_cpu_micros_total: IntCounterVec<4>,
 }
 
 impl Default for IndexerMetrics {
@@ -129,90 +106,6 @@ impl Default for IndexerMetrics {
                     &[],
                 )
             }),
-            // ParquetDocProcessor DD metrics
-            dd_parquet_processed_events: DDCounters::new(
-                "parquet_pipeline_processed_events.count",
-                "status",
-                &["valid", "parse_error", "format_error"],
-            ),
-            dd_parquet_processed_events_bytes: DDCounters::new(
-                "parquet_pipeline_processed_events_bytes.count",
-                "status",
-                &["valid", "parse_error", "format_error"],
-            ),
-            dd_parquet_doc_processor_batch_duration_seconds: histogram!(
-                "parquet_pipeline_doc_processor_batch.duration_seconds"
-            ),
-
-            // ParquetIndexer DD metrics
-            dd_parquet_splits_produced: DDCounters::new(
-                "parquet_pipeline_splits_produced.count",
-                "trigger",
-                &["threshold", "force_commit", "commit_timeout", "shutdown"],
-            ),
-            dd_parquet_split_num_rows: DDHistograms::new(
-                "parquet_pipeline_split_num_rows.histogram",
-                "trigger",
-                &["threshold", "force_commit", "commit_timeout", "shutdown"],
-            ),
-            dd_parquet_split_size_bytes: DDHistograms::new(
-                "parquet_pipeline_split_size_bytes.histogram",
-                "trigger",
-                &["threshold", "force_commit", "commit_timeout", "shutdown"],
-            ),
-            dd_parquet_accumulator_pending_rows: gauge!(
-                "parquet_pipeline_accumulator_pending_rows.gauge"
-            ),
-            dd_parquet_accumulator_pending_bytes: gauge!(
-                "parquet_pipeline_accumulator_pending_bytes.gauge"
-            ),
-
-            // ParquetUploader DD metrics
-            dd_parquet_uploads: DDCounters::new(
-                "parquet_pipeline_uploads.count",
-                "status",
-                &["success", "staging_error", "upload_error", "read_error"],
-            ),
-            dd_parquet_upload_duration_seconds: DDHistograms::new(
-                "parquet_pipeline_uploads.duration_seconds",
-                "status",
-                &["success", "staging_error", "upload_error", "read_error"],
-            ),
-
-            dd_indexed_events: DDCounters::new(
-                "indexed_events.count",
-                "indexing_status",
-                &[
-                    "valid",
-                    "schema_error",
-                    "processing_pipeline_error",
-                    "transform_error",
-                    "json_parse_error",
-                    "otlp_parse_error",
-                    "outside_time_range",
-                ],
-            ),
-            dd_indexed_events_bytes: DDCounters::new(
-                "indexed_events_bytes.count",
-                "indexing_status",
-                &[
-                    "valid",
-                    "schema_error",
-                    "processing_pipeline_error",
-                    "transform_error",
-                    "json_parse_error",
-                    "otlp_parse_error",
-                    "outside_time_range",
-                ],
-            ),
-            dd_pending_merge_ops: gauge!("pending_merge_ops.gauge"),
-            processing_pipeline_thread_cpu_micros_total: new_counter_vec(
-                "processing_pipeline_thread_cpu_micros_total",
-                "Total thread CPU time spent in processing pipeline (microseconds).",
-                "indexing",
-                &[],
-                ["index", "pipeline_uid", "source", "service"],
-            ),
         }
     }
 }

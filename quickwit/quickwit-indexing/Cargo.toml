@@ -23,6 +23,7 @@ fail = { workspace = true }
 flume = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
+heck = { workspace = true }
 google-cloud-auth = { workspace = true, optional = true }
 google-cloud-gax = { workspace = true, optional = true }
 google-cloud-googleapis = { workspace = true, optional = true }

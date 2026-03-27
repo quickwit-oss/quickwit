@@ -17,8 +17,6 @@
 //! This actor processes RawDocBatch messages containing Arrow IPC data and routes
 //! them directly to the metrics engine, bypassing Tantivy document conversion.
 
-use std::time::Instant;
-
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -33,7 +31,6 @@ use tokio::runtime::Handle;
 use tracing::{debug, info, instrument};
 
 use super::ParquetIndexer;
-use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock, RawDocBatch,
 };
@@ -226,8 +223,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
         raw_doc_batch: RawDocBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let start = Instant::now();
-
         if self.publish_lock.is_dead() {
             debug!("publish lock is dead, skipping batch");
             return Ok(());
@@ -265,14 +260,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                     "metrics pipeline only accepts Arrow IPC format (from OTLP gRPC)"
                 );
                 self.counters.record_format_error(num_bytes);
-                INDEXER_METRICS
-                    .dd_parquet_processed_events
-                    .get("format_error")
-                    .increment(1);
-                INDEXER_METRICS
-                    .dd_parquet_processed_events_bytes
-                    .get("format_error")
-                    .increment(num_bytes as u64);
                 continue;
             }
 
@@ -281,14 +268,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                 Ok(batch) => {
                     let num_rows = batch.num_rows();
                     self.counters.record_valid(num_rows, num_bytes);
-                    INDEXER_METRICS
-                        .dd_parquet_processed_events
-                        .get("valid")
-                        .increment(num_rows as u64);
-                    INDEXER_METRICS
-                        .dd_parquet_processed_events_bytes
-                        .get("valid")
-                        .increment(num_bytes as u64);
 
                     {
                         let should_force_commit = force_commit && is_last_doc;
@@ -320,14 +299,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                         "Arrow IPC processing failed: {error}"
                     );
                     self.counters.record_parse_error(num_bytes);
-                    INDEXER_METRICS
-                        .dd_parquet_processed_events
-                        .get("parse_error")
-                        .increment(1);
-                    INDEXER_METRICS
-                        .dd_parquet_processed_events_bytes
-                        .get("parse_error")
-                        .increment(num_bytes as u64);
                 }
             }
 
@@ -346,10 +317,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
             ctx.send_message(&self.indexer_mailbox, processed_batch)
                 .await?;
         }
-
-        INDEXER_METRICS
-            .dd_parquet_doc_processor_batch_duration_seconds
-            .record(start.elapsed().as_secs_f64());
 
         Ok(())
     }

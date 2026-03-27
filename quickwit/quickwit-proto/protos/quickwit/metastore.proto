@@ -205,12 +205,6 @@ service MetastoreService {
   // Get cluster identity
   rpc GetClusterIdentity(GetClusterIdentityRequest) returns (GetClusterIdentityResponse);
 
-  // Gets the index routing table. Returns None if not set.
-  rpc GetIndexRoutingTable(GetIndexRoutingTableRequest) returns (GetIndexRoutingTableResponse);
-
-  // Sets the index routing table.
-  rpc SetIndexRoutingTable(SetIndexRoutingTableRequest) returns (EmptyResponse);
-
   // ========================================
   // Metrics Split API
   // ========================================
@@ -592,29 +586,6 @@ message GetClusterIdentityRequest {
 
 message GetClusterIdentityResponse {
   string uuid = 1;
-}
-
-//
-// Index Routing Table API
-//
-
-// A routing rule maps a filter pattern to an index.
-message IndexRoutingRule {
-  string filter = 1;
-  string index_id = 2;
-}
-
-message GetIndexRoutingTableRequest {}
-
-message GetIndexRoutingTableResponse {
-  // The routing table as an ordered list of routing rules.
-  // Returns an empty array if no routing table is set.
-  repeated IndexRoutingRule rules = 1;
-}
-
-message SetIndexRoutingTableRequest {
-  // The routing table as an ordered list of routing rules.
-  repeated IndexRoutingRule rules = 1;
 }
 
 // ========================================

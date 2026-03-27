@@ -35,7 +35,6 @@ use tracing::{debug, info, info_span, warn};
 use ulid::Ulid;
 
 use crate::actors::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
-use crate::metrics::INDEXER_METRICS;
 use crate::models::{NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).
@@ -232,10 +231,6 @@ impl ParquetIndexer {
                         num_rows = combined.num_rows(),
                         "accumulator flushed from threshold"
                     );
-                    INDEXER_METRICS
-                        .dd_parquet_splits_produced
-                        .get("threshold")
-                        .increment(1);
                 }
                 threshold_batch
             }
@@ -260,15 +255,7 @@ impl ParquetIndexer {
         if force_commit && flushed.is_none() {
             debug!("force commit requested, flushing accumulator");
             flushed = self.flush_accumulator()?;
-            if flushed.is_some() {
-                INDEXER_METRICS
-                    .dd_parquet_splits_produced
-                    .get("force_commit")
-                    .increment(1);
-            }
         }
-
-        self.update_accumulator_gauges();
 
         if let Some(ref combined) = flushed {
             self.counters.record_flush();
@@ -307,16 +294,6 @@ impl ParquetIndexer {
     /// Take the current checkpoint delta and reset it.
     fn take_checkpoint_delta(&mut self) -> SourceCheckpointDelta {
         std::mem::take(&mut self.checkpoint_delta)
-    }
-
-    /// Update accumulator gauge DD metrics.
-    fn update_accumulator_gauges(&self) {
-        INDEXER_METRICS
-            .dd_parquet_accumulator_pending_rows
-            .set(self.accumulator.pending_rows() as f64);
-        INDEXER_METRICS
-            .dd_parquet_accumulator_pending_bytes
-            .set(self.accumulator.pending_bytes() as f64);
     }
 
     /// Create an IndexCheckpointDelta from the current source delta.
@@ -394,7 +371,6 @@ impl Actor for ParquetIndexer {
                         .send_message(&self.packager_mailbox, batch_for_packager)
                         .await;
                 }
-                self.update_accumulator_gauges();
             }
         }
         Ok(())
@@ -479,7 +455,6 @@ impl Handler<NewPublishLock> for ParquetIndexer {
         self.checkpoint_delta = SourceCheckpointDelta::default();
         self.workbench_id = Ulid::new();
         self.commit_timeout_scheduled = false;
-        self.update_accumulator_gauges();
 
         Ok(())
     }
@@ -522,10 +497,6 @@ impl Handler<CommitTimeout> for ParquetIndexer {
         // Flush the accumulator
         if let Some(combined) = self.flush_accumulator()? {
             self.counters.record_flush();
-            INDEXER_METRICS
-                .dd_parquet_splits_produced
-                .get("commit_timeout")
-                .increment(1);
             info!(
                 num_rows = combined.num_rows(),
                 "Flushed batch on commit timeout"
@@ -552,8 +523,6 @@ impl Handler<CommitTimeout> for ParquetIndexer {
                     )
                 })?;
         }
-
-        self.update_accumulator_gauges();
 
         Ok(())
     }
