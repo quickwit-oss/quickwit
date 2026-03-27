@@ -304,13 +304,12 @@ impl IndexerState {
         counters.num_doc_batches_in_workbench += 1;
         let indexation_time_opt = self
             .indexation_time_field_opt
-            .map(|_| OffsetDateTime::now_utc());
+            .map(|_| DateTime::from_utc(OffsetDateTime::now_utc()));
         for mut doc in batch.docs {
             if let (Some(indexation_time), Some(indexation_time_field)) =
                 (indexation_time_opt, self.indexation_time_field_opt)
             {
-                doc.doc
-                    .add_date(indexation_time_field, DateTime::from_utc(indexation_time));
+                doc.doc.add_date(indexation_time_field, indexation_time);
             }
             let ProcessedDoc {
                 doc,
@@ -600,11 +599,16 @@ impl Indexer {
                     cooperative_indexing_permits,
                 )
             });
-        let indexation_time_field_opt = doc_mapper.indexation_time_field_name().map(|name| {
-            schema
-                .get_field(name)
-                .expect("failed to find timestamp field in schema")
-        });
+        let indexation_time_field_opt =
+            doc_mapper
+                .indexation_time_field_name()
+                .and_then(|name| match schema.get_field(name) {
+                    Ok(field) => Some(field),
+                    Err(_) => {
+                        warn!("failed to find indexation time field '{}' in schema", name);
+                        None
+                    }
+                });
 
         Self {
             indexer_state: IndexerState {
