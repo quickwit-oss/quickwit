@@ -686,7 +686,7 @@ mod tests {
                     max_num_retries: 2
                 }),
                 warmup_memory_budget: ByteSize::gb(100),
-                warmup_single_split_initial_allocation: ByteSize::gb(1),
+                warmup_single_split_initial_allocation: ByteSize::mb(300),
                 lambda: Some(LambdaConfig {
                     function_name: "quickwit-lambda-leaf-search".to_string(),
                     max_splits_per_invocation: NonZeroUsize::new(10).unwrap(),

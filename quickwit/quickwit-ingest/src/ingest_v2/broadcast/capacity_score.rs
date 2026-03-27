@@ -125,9 +125,20 @@ impl BroadcastIngesterCapacityScoreTask {
             current_sources.insert(source_uid);
         }
 
+        // When a source disappears (e.g. index deleted), broadcast open_shard_count=0 with a TTL
+        // so Chitchat auto-cleans the key. This is the only way routers learn to clear stale
+        // routing entries — Chitchat key removal doesn't reliably fire subscribers.
         for removed_source in previous_sources.difference(&current_sources) {
             let key = make_key(INGESTER_CAPACITY_SCORE_PREFIX, removed_source);
-            self.cluster.remove_self_key(&key).await;
+            let capacity = IngesterCapacityScore {
+                capacity_score,
+                open_shard_count: 0,
+            };
+            let value = serde_json::to_string(&capacity)
+                .expect("`IngesterCapacityScore` should be JSON serializable");
+            self.cluster
+                .set_self_key_value_delete_after_ttl(key, value)
+                .await;
         }
 
         current_sources
@@ -263,5 +274,45 @@ mod tests {
         let deserialized: IngesterCapacityScore = serde_json::from_str(&value).unwrap();
         assert_eq!(deserialized.capacity_score, 6);
         assert_eq!(deserialized.open_shard_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_removed_source_broadcasts_zero_with_ttl() {
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+
+        let (_temp_dir, state) = IngesterState::for_test(cluster.clone()).await;
+        let task = BroadcastIngesterCapacityScoreTask {
+            cluster: cluster.clone(),
+            weak_state: state.weak(),
+        };
+
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: SourceId::from("test-source"),
+        };
+        let key = make_key(INGESTER_CAPACITY_SCORE_PREFIX, &source_uid);
+
+        // Cycle 1: source is alive.
+        let open_counts: Vec<(IndexUid, SourceId, usize)> =
+            vec![(index_uid.clone(), "test-source".into(), 3)];
+        let current = task
+            .broadcast_capacity(7, &open_counts, &BTreeSet::new())
+            .await;
+
+        let value = cluster.get_self_key_value(&key).await.unwrap();
+        let parsed: IngesterCapacityScore = serde_json::from_str(&value).unwrap();
+        assert_eq!(parsed.open_shard_count, 3);
+
+        // Cycle 2: source disappears. Broadcasts 0 with TTL, key still exists.
+        let _current = task.broadcast_capacity(7, &vec![], &current).await;
+
+        let value = cluster.get_self_key_value(&key).await.unwrap();
+        let parsed: IngesterCapacityScore = serde_json::from_str(&value).unwrap();
+        assert_eq!(parsed.capacity_score, 7);
+        assert_eq!(parsed.open_shard_count, 0);
     }
 }
