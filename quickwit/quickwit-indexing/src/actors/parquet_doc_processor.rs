@@ -356,6 +356,8 @@ impl Handler<NewPublishToken> for ParquetDocProcessor {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
+
     use quickwit_actors::Universe;
     use quickwit_parquet_engine::ingest::record_batch_to_ipc;
     use quickwit_proto::types::IndexUid;
@@ -383,7 +385,7 @@ mod tests {
 
     #[test]
     fn test_counters() {
-        let counters =
+        let mut counters =
             ParquetDocProcessorCounters::new("test-index".to_string(), "test-source".to_string());
 
         counters.record_valid(100, 1024);
@@ -391,11 +393,11 @@ mod tests {
         counters.record_parse_error(256);
         counters.record_format_error(128);
 
-        assert_eq!(counters.valid_batches.load(Ordering::Relaxed), 2);
-        assert_eq!(counters.valid_rows.load(Ordering::Relaxed), 150);
-        assert_eq!(counters.parse_errors.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.format_errors.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.bytes_total.load(Ordering::Relaxed), 1920);
+        assert_eq!(counters.valid_batches, 2);
+        assert_eq!(counters.valid_rows, 150);
+        assert_eq!(counters.parse_errors, 1);
+        assert_eq!(counters.format_errors, 1);
+        assert_eq!(counters.bytes_total, 1920);
         assert_eq!(counters.num_processed_batches(), 4);
         assert_eq!(counters.num_errors(), 2);
     }
@@ -537,10 +539,10 @@ mod tests {
             .state;
 
         // Verify counters
-        assert_eq!(counters.valid_batches.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.valid_rows.load(Ordering::Relaxed), 3);
-        assert_eq!(counters.parse_errors.load(Ordering::Relaxed), 0);
-        assert_eq!(counters.format_errors.load(Ordering::Relaxed), 0);
+        assert_eq!(counters.valid_batches, 1);
+        assert_eq!(counters.valid_rows, 3);
+        assert_eq!(counters.parse_errors, 0);
+        assert_eq!(counters.format_errors, 0);
 
         universe.assert_quit().await;
     }
@@ -574,8 +576,8 @@ mod tests {
             .state;
 
         // JSON is rejected as format error (only Arrow IPC is accepted)
-        assert_eq!(counters.valid_batches.load(Ordering::Relaxed), 0);
-        assert_eq!(counters.format_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.valid_batches, 0);
+        assert_eq!(counters.format_errors, 1);
 
         universe.assert_quit().await;
     }
@@ -801,17 +803,17 @@ mod tests {
             .state;
 
         // Verify doc processor counters
-        assert_eq!(doc_counters.valid_batches.load(Ordering::Relaxed), 1);
-        assert_eq!(doc_counters.valid_rows.load(Ordering::Relaxed), 5);
+        assert_eq!(doc_counters.valid_batches, 1);
+        assert_eq!(doc_counters.valid_rows, 5);
 
         // Process in indexer
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Verify indexer received and processed the batch
-        assert_eq!(indexer_counters.batches_received.load(Ordering::Relaxed), 1);
-        assert_eq!(indexer_counters.rows_indexed.load(Ordering::Relaxed), 5);
+        assert_eq!(indexer_counters.batches_received, 1);
+        assert_eq!(indexer_counters.rows_indexed, 5);
         // Should have flushed a batch due to force_commit
-        assert_eq!(indexer_counters.batches_flushed.load(Ordering::Relaxed), 1);
+        assert_eq!(indexer_counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;

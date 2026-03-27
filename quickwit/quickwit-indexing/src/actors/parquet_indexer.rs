@@ -530,7 +530,8 @@ impl Handler<CommitTimeout> for ParquetIndexer {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering as AtomicOrdering;
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
     use std::time::Duration;
 
     use arrow::array::{
@@ -618,7 +619,7 @@ mod tests {
             || async {
                 uploader_handle.process_pending_and_observe().await;
                 let counters = uploader_handle.last_observation();
-                counters.num_staged_splits.load(AtomicOrdering::Relaxed) >= expected_splits
+                counters.num_staged_splits.load(Ordering::Relaxed) >= expected_splits
             },
             Duration::from_secs(15),
             Duration::from_millis(50),
@@ -746,8 +747,8 @@ mod tests {
 
         let counters = indexer_handle.process_pending_and_observe().await.state;
 
-        assert_eq!(counters.batches_received.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.rows_indexed.load(Ordering::Relaxed), 10);
+        assert_eq!(counters.batches_received, 1);
+        assert_eq!(counters.rows_indexed, 10);
 
         universe.assert_quit().await;
     }
@@ -785,23 +786,13 @@ mod tests {
         let counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Should have flushed a batch due to force_commit
-        assert_eq!(counters.batches_received.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.batches_flushed.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.batches_received, 1);
+        assert_eq!(counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert_eq!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
-        assert!(
-            packager_counters
-                .bytes_written
-                .load(AtomicOrdering::Relaxed)
-                > 0
-        );
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 1);
+        assert!(packager_counters.bytes_written.load(Ordering::Relaxed) > 0);
 
         // Verify uploader received the split
         uploader_handle.process_pending_and_observe().await;
@@ -847,7 +838,7 @@ mod tests {
         let counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Should not process anything when publish lock is dead
-        assert_eq!(counters.batches_received.load(Ordering::Relaxed), 0);
+        assert_eq!(counters.batches_received, 0);
 
         universe.assert_quit().await;
     }
@@ -885,18 +876,13 @@ mod tests {
         let counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Should have flushed due to exceeding threshold
-        assert_eq!(counters.batches_received.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.rows_indexed.load(Ordering::Relaxed), 100);
-        assert!(counters.batches_flushed.load(Ordering::Relaxed) >= 1);
+        assert_eq!(counters.batches_received, 1);
+        assert_eq!(counters.rows_indexed, 100);
+        assert!(counters.batches_flushed >= 1);
 
         // Verify packager produced split(s)
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed)
-                >= 1
-        );
+        assert!(packager_counters.splits_produced.load(Ordering::Relaxed) >= 1);
 
         // Verify uploader received the splits
         uploader_handle.process_pending_and_observe().await;
@@ -941,16 +927,11 @@ mod tests {
 
         assert!(exit_status.is_success());
         // Should have flushed on shutdown
-        assert_eq!(counters.batches_flushed.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert_eq!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 1);
 
         universe.assert_quit().await;
     }
@@ -987,7 +968,7 @@ mod tests {
 
         // No flush yet (waiting for threshold or timeout)
         let counters = indexer_handle.observe().await;
-        assert_eq!(counters.batches_flushed.load(Ordering::Relaxed), 0);
+        assert_eq!(counters.batches_flushed, 0);
 
         // Wait for commit timeout to trigger
         universe
@@ -997,16 +978,11 @@ mod tests {
 
         // Should have flushed due to commit timeout
         let counters = indexer_handle.observe().await;
-        assert_eq!(counters.batches_flushed.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert_eq!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 1);
 
         // Verify uploader received the split
         uploader_handle.process_pending_and_observe().await;
@@ -1066,27 +1042,12 @@ mod tests {
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Verify indexer flushed a batch
-        assert_eq!(
-            indexer_counters
-                .batches_received
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
-        assert_eq!(
-            indexer_counters
-                .batches_flushed
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
+        assert_eq!(indexer_counters.batches_received, 1);
+        assert_eq!(indexer_counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert_eq!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 1);
 
         // Wait for the uploader to stage the split
         wait_for_staged_splits(&uploader_handle, 1)

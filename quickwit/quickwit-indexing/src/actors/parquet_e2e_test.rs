@@ -17,8 +17,8 @@
 //! These tests wire up the full metrics pipeline:
 //! ParquetDocProcessor → ParquetIndexer → ParquetUploader → ParquetPublisher
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::Duration;
 
 use arrow::array::{
@@ -252,11 +252,10 @@ async fn test_metrics_pipeline_e2e() {
     doc_processor_handle.process_pending_and_observe().await;
     let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
 
-    assert_eq!(indexer_counters.batches_received.load(Ordering::Relaxed), 5);
-    assert_eq!(indexer_counters.rows_indexed.load(Ordering::Relaxed), 100);
+    assert_eq!(indexer_counters.batches_received, 5);
+    assert_eq!(indexer_counters.rows_indexed, 100);
     assert_eq!(
-        indexer_counters.batches_flushed.load(Ordering::Relaxed),
-        0,
+        indexer_counters.batches_flushed, 0,
         "No flushes without force_commit"
     );
 
@@ -276,21 +275,11 @@ async fn test_metrics_pipeline_e2e() {
         .await
         .expect("Publisher should have published 1 split");
 
+    assert_eq!(doc_processor_counters.valid_batches, 6);
+    assert_eq!(doc_processor_counters.valid_rows, 110);
+    assert_eq!(doc_processor_counters.parse_errors, 0);
     assert_eq!(
-        doc_processor_counters.valid_batches.load(Ordering::Relaxed),
-        6
-    );
-    assert_eq!(
-        doc_processor_counters.valid_rows.load(Ordering::Relaxed),
-        110
-    );
-    assert_eq!(
-        doc_processor_counters.parse_errors.load(Ordering::Relaxed),
-        0
-    );
-    assert_eq!(
-        indexer_counters.batches_flushed.load(Ordering::Relaxed),
-        1,
+        indexer_counters.batches_flushed, 1,
         "force_commit should flush 1 batch"
     );
     // Verify packager produced the split
