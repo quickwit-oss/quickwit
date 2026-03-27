@@ -50,14 +50,14 @@ async fn update_index_metrics(
         .await?;
 
     for index_stats in response.index_stats {
-        let index_uid = index_stats
+        let index_id = index_stats
             .index_uid
             .expect("`index_uid` should be populated")
-            .to_string();
+            .index_id;
 
         // update total_size_bytes
         index_metrics.dd_index_size_bytes.set(
-            index_uid.clone(),
+            index_id.clone(),
             index_stats
                 .staged
                 .map(|split_stats| split_stats.total_size_bytes as f64)
@@ -74,7 +74,7 @@ async fn update_index_metrics(
 
         // update num_splits
         index_metrics.dd_num_splits.set(
-            index_uid.clone(),
+            index_id.clone(),
             index_stats
                 .staged
                 .map(|split_stats| split_stats.num_splits as f64)
@@ -112,23 +112,23 @@ impl DDIndexGauges {
 
     pub fn set(
         &mut self,
-        index_uid: String,
+        index_id: String,
         staged_value: f64,
         published_value: f64,
         marked_for_deletion_value: f64,
     ) -> anyhow::Result<()> {
         // if gauges entry is not found, register a new one
-        let gauges = self.gauges.entry(index_uid.clone()).or_insert_with(|| {
+        let gauges = self.gauges.entry(index_id.clone()).or_insert_with(|| {
             let staged_labels = vec![
-                Label::new("index", index_uid.clone()),
+                Label::new("index", index_id.clone()),
                 Label::new("split_state", "staged".to_string()),
             ];
             let published_labels = vec![
-                Label::new("index", index_uid.clone()),
+                Label::new("index", index_id.clone()),
                 Label::new("split_state", "published".to_string()),
             ];
             let marked_for_deletion_labels = vec![
-                Label::new("index", index_uid),
+                Label::new("index", index_id),
                 Label::new("split_state", "marked_for_deletion".to_string()),
             ];
             (
@@ -227,7 +227,7 @@ mod tests {
             snapshot
                 .get(&format!(
                     "Key(split_size_bytes.gauge, [index = {}, split_state = staged])",
-                    index_uid
+                    index_id
                 ))
                 .unwrap(),
             &DebugValue::Gauge(OrderedFloat(2048.0))
@@ -236,7 +236,7 @@ mod tests {
             snapshot
                 .get(&format!(
                     "Key(split_size_bytes.gauge, [index = {}, split_state = published])",
-                    index_uid
+                    index_id
                 ))
                 .unwrap(),
             &DebugValue::Gauge(OrderedFloat(0.0))
@@ -245,7 +245,7 @@ mod tests {
             snapshot
                 .get(&format!(
                     "Key(split_size_bytes.gauge, [index = {}, split_state = marked_for_deletion])",
-                    index_uid
+                    index_id
                 ))
                 .unwrap(),
             &DebugValue::Gauge(OrderedFloat(0.0))
@@ -255,7 +255,7 @@ mod tests {
             snapshot
                 .get(&format!(
                     "Key(num_splits.gauge, [index = {}, split_state = staged])",
-                    index_uid
+                    index_id
                 ))
                 .unwrap(),
             &DebugValue::Gauge(OrderedFloat(1.0))
@@ -264,7 +264,7 @@ mod tests {
             snapshot
                 .get(&format!(
                     "Key(num_splits.gauge, [index = {}, split_state = published])",
-                    index_uid
+                    index_id
                 ))
                 .unwrap(),
             &DebugValue::Gauge(OrderedFloat(0.0))
@@ -273,7 +273,7 @@ mod tests {
             snapshot
                 .get(&format!(
                     "Key(num_splits.gauge, [index = {}, split_state = marked_for_deletion])",
-                    index_uid
+                    index_id
                 ))
                 .unwrap(),
             &DebugValue::Gauge(OrderedFloat(0.0))
