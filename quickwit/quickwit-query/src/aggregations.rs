@@ -18,9 +18,11 @@ use tantivy::aggregation::Key as TantivyKey;
 use tantivy::aggregation::agg_result::{
     AggregationResult as TantivyAggregationResult, AggregationResults as TantivyAggregationResults,
     BucketEntries as TantivyBucketEntries, BucketEntry as TantivyBucketEntry,
-    BucketResult as TantivyBucketResult, FilterBucketResult, MetricResult as TantivyMetricResult,
+    BucketResult as TantivyBucketResult, CompositeBucketEntry as TantivyCompositeBucketEntry,
+    CompositeKey as TantivyCompositeKey, FilterBucketResult, MetricResult as TantivyMetricResult,
     RangeBucketEntry as TantivyRangeBucketEntry,
 };
+use tantivy::aggregation::bucket::AfterKey as TantivyAfterKey;
 use tantivy::aggregation::metric::{
     ExtendedStats, PercentileValues as TantivyPercentileValues, PercentileValuesVecEntry,
     PercentilesMetricResult as TantivyPercentilesMetricResult, SingleMetricResult, Stats,
@@ -169,9 +171,19 @@ pub enum BucketResult {
         /// The upper bound error for the doc count of each term.
         doc_count_error_upper_bound: Option<u64>,
     },
+    /// This is the filter aggregation result
     Filter {
         doc_count: u64,
         sub_aggregation: AggregationResults,
+    },
+    /// This is the composite aggregation result
+    Composite {
+        /// The buckets
+        buckets: Vec<CompositeBucketEntry>,
+        /// The key to start after when paginating.
+        /// Uses tantivy's AfterKey directly since it carries type-tagged
+        /// serialization needed for correct pagination round-tripping.
+        after_key: FxHashMap<String, TantivyAfterKey>,
     },
 }
 
@@ -196,6 +208,10 @@ impl From<TantivyBucketResult> for BucketResult {
             TantivyBucketResult::Filter(filter_bucket_result) => BucketResult::Filter {
                 doc_count: filter_bucket_result.doc_count,
                 sub_aggregation: filter_bucket_result.sub_aggregations.into(),
+            },
+            TantivyBucketResult::Composite { buckets, after_key } => BucketResult::Composite {
+                buckets: buckets.into_iter().map(Into::into).collect(),
+                after_key,
             },
         }
     }
@@ -226,6 +242,10 @@ impl From<BucketResult> for TantivyBucketResult {
                 doc_count,
                 sub_aggregations: sub_aggregation.into(),
             }),
+            BucketResult::Composite { buckets, after_key } => TantivyBucketResult::Composite {
+                buckets: buckets.into_iter().map(Into::into).collect(),
+                after_key,
+            },
         }
     }
 }
@@ -423,5 +443,77 @@ impl From<PercentilesMetricResult> for TantivyPercentilesMetricResult {
             PercentileValues::HashMap(map) => TantivyPercentileValues::HashMap(map),
         };
         TantivyPercentilesMetricResult { values }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum CompositeKey {
+    /// Boolean key
+    Bool(bool),
+    /// String key
+    Str(String),
+    /// `i64` key
+    I64(i64),
+    /// `u64` key
+    U64(u64),
+    /// `f64` key
+    F64(f64),
+    /// Null key
+    Null,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CompositeBucketEntry {
+    /// The identifier of the bucket.
+    pub key: FxHashMap<String, CompositeKey>,
+    /// Number of documents in the bucket.
+    pub doc_count: u64,
+    /// Sub-aggregations in this bucket.
+    pub sub_aggregation: AggregationResults,
+}
+
+impl From<TantivyCompositeKey> for CompositeKey {
+    fn from(value: TantivyCompositeKey) -> CompositeKey {
+        match value {
+            TantivyCompositeKey::Bool(b) => CompositeKey::Bool(b),
+            TantivyCompositeKey::Str(s) => CompositeKey::Str(s),
+            TantivyCompositeKey::I64(i) => CompositeKey::I64(i),
+            TantivyCompositeKey::U64(u) => CompositeKey::U64(u),
+            TantivyCompositeKey::F64(f) => CompositeKey::F64(f),
+            TantivyCompositeKey::Null => CompositeKey::Null,
+        }
+    }
+}
+
+impl From<CompositeKey> for TantivyCompositeKey {
+    fn from(value: CompositeKey) -> TantivyCompositeKey {
+        match value {
+            CompositeKey::Bool(b) => TantivyCompositeKey::Bool(b),
+            CompositeKey::Str(s) => TantivyCompositeKey::Str(s),
+            CompositeKey::I64(i) => TantivyCompositeKey::I64(i),
+            CompositeKey::U64(u) => TantivyCompositeKey::U64(u),
+            CompositeKey::F64(f) => TantivyCompositeKey::F64(f),
+            CompositeKey::Null => TantivyCompositeKey::Null,
+        }
+    }
+}
+
+impl From<TantivyCompositeBucketEntry> for CompositeBucketEntry {
+    fn from(value: TantivyCompositeBucketEntry) -> CompositeBucketEntry {
+        CompositeBucketEntry {
+            key: value.key.into_iter().map(|(k, v)| (k, v.into())).collect(),
+            doc_count: value.doc_count,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
+    }
+}
+
+impl From<CompositeBucketEntry> for TantivyCompositeBucketEntry {
+    fn from(value: CompositeBucketEntry) -> TantivyCompositeBucketEntry {
+        TantivyCompositeBucketEntry {
+            key: value.key.into_iter().map(|(k, v)| (k, v.into())).collect(),
+            doc_count: value.doc_count,
+            sub_aggregation: value.sub_aggregation.into(),
+        }
     }
 }
