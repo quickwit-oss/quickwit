@@ -980,15 +980,15 @@ fn metrics_split_matches_query(split: &StoredMetricsSplit, query: &ListMetricsSp
     }
 
     // Filter by compaction scope
-    if let Some(ws) = query.window_start {
-        if split.metadata.window_start() != Some(ws) {
-            return false;
-        }
+    if let Some(ws) = query.window_start
+        && split.metadata.window_start() != Some(ws)
+    {
+        return false;
     }
-    if let Some(ref sf) = query.sort_fields {
-        if split.metadata.sort_fields != *sf {
-            return false;
-        }
+    if let Some(ref sf) = query.sort_fields
+        && split.metadata.sort_fields != *sf
+    {
+        return false;
     }
 
     true

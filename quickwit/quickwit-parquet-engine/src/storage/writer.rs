@@ -710,8 +710,9 @@ mod tests {
     fn test_meta07_self_describing_parquet_roundtrip() {
         use std::fs::File;
 
-        use crate::split::{SplitId, TimeRange};
         use parquet::file::reader::{FileReader, SerializedFileReader};
+
+        use crate::split::{SplitId, TimeRange};
 
         let sort_schema_str = "metric_name|host|env|timestamp/V2";
         let window_start_secs: i64 = 1700006400;
@@ -769,8 +770,8 @@ mod tests {
             .expect("self-describing file must contain qh.num_merge_ops")
             .parse()
             .expect("num_merge_ops must be parseable as u32");
-        let recovered_row_keys_b64 = find_kv(PARQUET_META_ROW_KEYS)
-            .expect("self-describing file must contain qh.row_keys");
+        let recovered_row_keys_b64 =
+            find_kv(PARQUET_META_ROW_KEYS).expect("self-describing file must contain qh.row_keys");
         let recovered_row_keys = BASE64
             .decode(&recovered_row_keys_b64)
             .expect("row_keys must be valid base64");

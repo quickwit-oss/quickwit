@@ -75,9 +75,9 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    IndexesMetadataResponseExt, ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt,
-    PublishMetricsSplitsRequestExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
-    StageMetricsSplitsRequestExt, UpdateSourceRequestExt, use_shard_api,
+    IndexesMetadataResponseExt, ListMetricsSplitsResponseExt, PublishMetricsSplitsRequestExt,
+    PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE, StageMetricsSplitsRequestExt,
+    UpdateSourceRequestExt, use_shard_api,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -1804,7 +1804,8 @@ impl MetastoreService for PostgresqlMetastore {
         let mut size_bytes_list = Vec::with_capacity(splits_metadata.len());
         let mut split_metadata_jsons = Vec::with_capacity(splits_metadata.len());
         let mut window_starts: Vec<Option<i64>> = Vec::with_capacity(splits_metadata.len());
-        let mut window_duration_secs_list: Vec<Option<i32>> = Vec::with_capacity(splits_metadata.len());
+        let mut window_duration_secs_list: Vec<Option<i32>> =
+            Vec::with_capacity(splits_metadata.len());
         let mut sort_fields_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
         let mut num_merge_ops_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
         let mut row_keys_list: Vec<Option<Vec<u8>>> = Vec::with_capacity(splits_metadata.len());
