@@ -7243,7 +7243,6 @@ dependencies = [
  "google-cloud-gax",
  "google-cloud-googleapis",
  "google-cloud-pubsub",
- "heck 0.5.0",
  "itertools 0.14.0",
  "libz-sys",
  "mockall",

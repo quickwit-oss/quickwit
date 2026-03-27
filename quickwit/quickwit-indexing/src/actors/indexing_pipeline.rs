@@ -423,11 +423,9 @@ impl IndexingPipeline {
             root_dir=%self.params.indexing_directory.path().display(),
             "spawning indexing pipeline",
         );
-        let (source_mailbox, source_inbox) =
-            ctx.spawn_ctx().create_mailbox::<SourceActor<DocProcessor>>(
-                "SourceActor",
-                QueueCapacity::Unbounded,
-            );
+        let (source_mailbox, source_inbox) = ctx
+            .spawn_ctx()
+            .create_mailbox::<SourceActor<DocProcessor>>("SourceActor", QueueCapacity::Unbounded);
 
         // Publisher
         let publisher = Publisher::new(
