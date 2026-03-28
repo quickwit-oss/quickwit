@@ -14,6 +14,8 @@
 
 pub mod file_backed;
 pub(crate) mod index_metadata;
+#[cfg(feature = "mysql")]
+pub mod mysql;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 

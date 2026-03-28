@@ -70,7 +70,8 @@ use crate::merge_policy_config::{
     ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
 };
 pub use crate::metastore_config::{
-    MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
+    MetastoreBackend, MetastoreConfig, MetastoreConfigs, MysqlAuthMode, MysqlMetastoreConfig,
+    PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
     CacheConfig, CachePolicy, DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig,

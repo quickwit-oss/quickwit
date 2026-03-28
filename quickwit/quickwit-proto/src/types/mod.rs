@@ -276,7 +276,7 @@ impl ToOwned for NodeIdRef {
     }
 }
 
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", feature = "mysql"))]
 impl From<&NodeId> for sea_query::Value {
     fn from(node_id: &NodeId) -> Self {
         node_id.to_string().into()

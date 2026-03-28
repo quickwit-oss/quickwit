@@ -37,6 +37,7 @@ pub enum Protocol {
     Ram = 6,
     S3 = 7,
     Google = 8,
+    MySQL = 9,
 }
 
 impl Protocol {
@@ -50,6 +51,7 @@ impl Protocol {
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
             Protocol::Google => "gs",
+            Protocol::MySQL => "mysql",
         }
     }
 
@@ -66,7 +68,7 @@ impl Protocol {
     }
 
     pub fn is_database(&self) -> bool {
-        matches!(&self, Protocol::PostgreSQL)
+        matches!(&self, Protocol::PostgreSQL | Protocol::MySQL)
     }
 }
 
@@ -86,6 +88,7 @@ impl FromStr for Protocol {
             "grpc" => Ok(Protocol::Grpc),
             "actor" => Ok(Protocol::Actor),
             "pg" | "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
+            "mysql" => Ok(Protocol::MySQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
             "gs" => Ok(Protocol::Google),
@@ -199,7 +202,7 @@ impl Uri {
 
     /// Returns the last component of the URI.
     pub fn file_name(&self) -> Option<&Path> {
-        if self.protocol() == Protocol::PostgreSQL {
+        if self.protocol().is_database() {
             return None;
         }
         let path = self.path();
@@ -236,8 +239,8 @@ impl Uri {
                 .join(path)
                 .to_string_lossy()
                 .to_string(),
-            Protocol::PostgreSQL => bail!(
-                "cannot join PostgreSQL URI `{}` with path `{:?}`",
+            Protocol::PostgreSQL | Protocol::MySQL => bail!(
+                "cannot join database URI `{}` with path `{:?}`",
                 self.uri,
                 path
             ),
@@ -573,6 +576,9 @@ mod tests {
         Uri::for_test("postgres://username:password@localhost:5432/metastore")
             .join("table")
             .unwrap_err();
+        Uri::for_test("mysql://username:password@localhost:3306/metastore")
+            .join("table")
+            .unwrap_err();
     }
 
     #[test]
@@ -586,6 +592,11 @@ mod tests {
         );
         assert!(
             Uri::for_test("postgres://localhost:5432/db")
+                .parent()
+                .is_none()
+        );
+        assert!(
+            Uri::for_test("mysql://localhost:3306/db")
                 .parent()
                 .is_none()
         );
@@ -678,6 +689,11 @@ mod tests {
         );
         assert!(
             Uri::for_test("postgres://localhost:5432/db")
+                .file_name()
+                .is_none()
+        );
+        assert!(
+            Uri::for_test("mysql://localhost:3306/db")
                 .file_name()
                 .is_none()
         );
@@ -803,6 +819,17 @@ mod tests {
                     format!("Uri {{ uri: \"{expected_uri}\" }}")
                 );
             }
+        }
+        assert_eq!(
+            Uri::for_test("mysql://localhost:3306/metastore").as_redacted_str(),
+            "mysql://localhost:3306/metastore"
+        );
+        {
+            let uri = Uri::from_str("mysql://username:password@localhost:3306/metastore").unwrap();
+            let expected_uri =
+                "mysql://username:***redacted***@localhost:3306/metastore".to_string();
+            assert_eq!(uri.as_redacted_str(), expected_uri);
+            assert_eq!(format!("{uri}"), expected_uri);
         }
     }
 
