@@ -679,10 +679,9 @@ pub async fn serve_quickwit(
     .context("failed to start searcher service")?;
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
-    // throughput. Ingesters (routers) do so to update their shard table.
+    // throughput.
     let local_shards_update_listener_handle_opt = if node_config
         .is_service_enabled(QuickwitService::ControlPlane)
-        || node_config.is_service_enabled(QuickwitService::Indexer)
     {
         Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
     } else {
