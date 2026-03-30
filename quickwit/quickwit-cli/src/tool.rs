@@ -660,51 +660,101 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let mut index_service = IndexService::new(metastore, storage_resolver);
+
+    if quickwit_common::is_metrics_index(&args.index_id) {
+        let removal_info = index_service
+            .garbage_collect_parquet_index(&args.index_id, args.grace_period, args.dry_run)
+            .await?;
+        return print_parquet_gc_result(args.dry_run, removal_info);
+    }
+
     let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
+    print_tantivy_gc_result(args.dry_run, removal_info)
+}
+
+fn print_tantivy_gc_result(
+    dry_run: bool,
+    removal_info: quickwit_index_management::SplitRemovalInfo,
+) -> anyhow::Result<()> {
     if removal_info.removed_split_entries.is_empty() && removal_info.failed_splits.is_empty() {
         println!("No dangling files to garbage collect.");
         return Ok(());
     }
 
-    if args.dry_run {
+    if dry_run {
         println!("The following files will be garbage collected.");
-        for split_info in removal_info.removed_split_entries {
-            println!(" - {}", split_info.file_name.display());
+        for entry in &removal_info.removed_split_entries {
+            println!(" - {}", entry.file_name.display());
         }
         return Ok(());
     }
 
     if !removal_info.failed_splits.is_empty() {
         println!("The following splits were attempted to be removed, but failed.");
-        for split_info in &removal_info.failed_splits {
-            println!(" - {}", split_info.split_id);
+        for split in &removal_info.failed_splits {
+            println!(" - {}", split.split_id);
         }
-        println!(
-            "{} Splits were unable to be removed.",
-            removal_info.failed_splits.len()
-        );
+        println!("{} Splits were unable to be removed.", removal_info.failed_splits.len());
     }
 
     let deleted_bytes: u64 = removal_info
         .removed_split_entries
         .iter()
-        .map(|split_info| split_info.file_size_bytes.as_u64())
+        .map(|s| s.file_size_bytes.as_u64())
         .sum();
-    println!(
-        "{}MB of storage garbage collected.",
-        deleted_bytes / 1_000_000
-    );
+    println!("{}MB of storage garbage collected.", deleted_bytes / 1_000_000);
 
     if removal_info.failed_splits.is_empty() {
+        println!("{} Index successfully garbage collected.", "✔".color(GREEN_COLOR));
+    } else if removal_info.removed_split_entries.is_empty() {
+        println!("{} Failed to garbage collect index.", "✘".color(RED_COLOR));
+    } else {
         println!(
-            "{} Index successfully garbage collected.",
-            "✔".color(GREEN_COLOR)
+            "{} Index partially garbage collected.",
+            "✘".color(RED_COLOR)
         );
-    } else if removal_info.removed_split_entries.is_empty()
-        && !removal_info.failed_splits.is_empty()
+    }
+
+    Ok(())
+}
+
+fn print_parquet_gc_result(
+    dry_run: bool,
+    removal_info: quickwit_index_management::ParquetSplitRemovalInfo,
+) -> anyhow::Result<()> {
+    if removal_info.removed_parquet_splits_entries.is_empty()
+        && removal_info.failed_parquet_splits.is_empty()
     {
+        println!("No dangling files to garbage collect.");
+        return Ok(());
+    }
+
+    if dry_run {
+        println!("The following files will be garbage collected.");
+        for entry in &removal_info.removed_parquet_splits_entries {
+            println!(" - {}.parquet", entry.split_id);
+        }
+        return Ok(());
+    }
+
+    if !removal_info.failed_parquet_splits.is_empty() {
+        println!("The following splits were attempted to be removed, but failed.");
+        for split in &removal_info.failed_parquet_splits {
+            println!(" - {}", split.split_id);
+        }
+        println!(
+            "{} Splits were unable to be removed.",
+            removal_info.failed_parquet_splits.len()
+        );
+    }
+
+    println!("{}MB of storage garbage collected.", removal_info.removed_bytes() / 1_000_000);
+
+    if removal_info.failed_parquet_splits.is_empty() {
+        println!("{} Index successfully garbage collected.", "✔".color(GREEN_COLOR));
+    } else if removal_info.removed_parquet_splits_entries.is_empty() {
         println!("{} Failed to garbage collect index.", "✘".color(RED_COLOR));
     } else {
         println!(
