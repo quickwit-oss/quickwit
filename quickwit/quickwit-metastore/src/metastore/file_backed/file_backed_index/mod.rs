@@ -854,11 +854,34 @@ impl FileBackedIndex {
         &self,
         query: &ListMetricsSplitsQuery,
     ) -> Vec<StoredMetricsSplit> {
-        self.metrics_splits
+        let mut splits: Vec<&StoredMetricsSplit> = self
+            .metrics_splits
             .values()
             .filter(|split| metrics_split_matches_query(split, query))
-            .cloned()
-            .collect()
+            .collect();
+
+        // Sort by split_id for stable pagination (mirrors Postgres ORDER BY split_id ASC).
+        splits.sort_unstable_by(|a, b| {
+            a.metadata.split_id.as_str().cmp(b.metadata.split_id.as_str())
+        });
+
+        // Apply cursor: skip splits up to and including after_split_id.
+        let splits = if let Some(ref after) = query.after_split_id {
+            let pos =
+                splits.partition_point(|s| s.metadata.split_id.as_str() <= after.as_str());
+            &splits[pos..]
+        } else {
+            &splits[..]
+        };
+
+        // Apply limit.
+        let splits = if let Some(limit) = query.limit {
+            &splits[..splits.len().min(limit)]
+        } else {
+            splits
+        };
+
+        splits.iter().map(|s| (*s).clone()).collect()
     }
 
     /// Marks metrics splits for deletion.
@@ -975,6 +998,20 @@ fn metrics_split_matches_query(split: &StoredMetricsSplit, query: &ListMetricsSp
                 return false;
             }
         } else {
+            return false;
+        }
+    }
+
+    // Filter by update timestamp
+    if let Some(update_timestamp_lte) = query.update_timestamp_lte {
+        if split.update_timestamp > update_timestamp_lte {
+            return false;
+        }
+    }
+
+    // Filter by max time_range_end (retention policy: splits whose data ends before cutoff)
+    if let Some(max_time_range_end) = query.max_time_range_end {
+        if (split.metadata.time_range.end_secs as i64) > max_time_range_end {
             return false;
         }
     }

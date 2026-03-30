@@ -77,6 +77,13 @@ pub struct ListMetricsSplitsQuery {
     pub tag_host: Option<String>,
     /// Limit number of results.
     pub limit: Option<usize>,
+    /// Only return splits whose split_id are lexicographically after this split
+    pub after_split_id: Option<String>,
+    /// Filter splits with update_timestamp <= this value (epoch seconds).
+    pub update_timestamp_lte: Option<i64>,
+    /// Filter splits whose `time_range_end` (exclusive upper bound) <= this
+    /// value.
+    pub max_time_range_end: Option<i64>,
 }
 
 impl ListMetricsSplitsQuery {
@@ -105,6 +112,30 @@ impl ListMetricsSplitsQuery {
     /// Filter by metric names.
     pub fn with_metric_names(mut self, names: Vec<String>) -> Self {
         self.metric_names = names;
+        self
+    }
+
+    /// Filter splits updated at or before the given timestamp (epoch seconds).
+    pub fn with_update_timestamp_lte(mut self, timestamp: i64) -> Self {
+        self.update_timestamp_lte = Some(timestamp);
+        self
+    }
+
+    /// Limit number of results returned.
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// Set the pagination cursor: return only splits with split_id > `split_id`.
+    pub fn with_after_split_id(mut self, split_id: impl Into<String>) -> Self {
+        self.after_split_id = Some(split_id.into());
+        self
+    }
+
+    /// Filter splits whose `time_range_end` (exclusive) <= the given timestamp.
+    pub fn with_max_time_range_end(mut self, timestamp: i64) -> Self {
+        self.max_time_range_end = Some(timestamp);
         self
     }
 }
