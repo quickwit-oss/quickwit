@@ -44,6 +44,7 @@ use tantivy::schema::{Field, Schema, Value};
 use tantivy::store::{Compressor, ZstdCompressor};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, IndexBuilder, IndexSettings};
+use time::OffsetDateTime;
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
 use tracing::{Span, info, info_span, warn};
@@ -99,6 +100,7 @@ struct IndexerState {
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
     cooperative_indexing_opt: Option<CooperativeIndexingCycle>,
+    indexation_time_field_opt: Option<Field>,
 }
 
 impl IndexerState {
@@ -300,7 +302,15 @@ impl IndexerState {
             .context("batch delta does not follow indexer checkpoint")?;
         let mut memory_usage_delta: i64 = 0;
         counters.num_doc_batches_in_workbench += 1;
-        for doc in batch.docs {
+        let indexation_time_opt = self
+            .indexation_time_field_opt
+            .map(|_| DateTime::from_utc(OffsetDateTime::now_utc()));
+        for mut doc in batch.docs {
+            if let (Some(indexation_time), Some(indexation_time_field)) =
+                (indexation_time_opt, self.indexation_time_field_opt)
+            {
+                doc.doc.add_date(indexation_time_field, indexation_time);
+            }
             let ProcessedDoc {
                 doc,
                 timestamp_opt,
@@ -589,6 +599,17 @@ impl Indexer {
                     cooperative_indexing_permits,
                 )
             });
+        let indexation_time_field_opt =
+            doc_mapper
+                .indexation_time_field_name()
+                .and_then(|name| match schema.get_field(name) {
+                    Ok(field) => Some(field),
+                    Err(_) => {
+                        warn!("failed to find indexation time field '{}' in schema", name);
+                        None
+                    }
+                });
+
         Self {
             indexer_state: IndexerState {
                 pipeline_id,
@@ -604,6 +625,7 @@ impl Indexer {
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
                 cooperative_indexing_opt,
+                indexation_time_field_opt,
             },
             index_serializer_mailbox,
             indexing_workbench_opt: None,
@@ -743,7 +765,7 @@ mod tests {
         EmptyResponse, LastDeleteOpstampResponse, MockMetastoreService,
     };
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
-    use tantivy::{DateTime, doc};
+    use tantivy::{DateTime, DocAddress, ReloadPolicy, TantivyDocument, doc};
 
     use super::*;
     use crate::actors::indexer::{IndexerCounters, record_timestamp};
@@ -1848,6 +1870,163 @@ mod tests {
         );
 
         batch.splits.into_iter().next().unwrap().finalize()?;
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    fn doc_mapper_with_indexation_time() -> DocMapper {
+        const JSON_CONFIG_VALUE: &str = r#"
+        {
+            "store_source": true,
+            "index_field_presence": true,
+            "default_search_fields": ["body"],
+            "timestamp_field": "timestamp",
+            "indexation_time_field": "indexed_at",
+            "field_mappings": [
+                {
+                    "name": "timestamp",
+                    "type": "datetime",
+                    "output_format": "unix_timestamp_secs",
+                    "fast": true
+                },
+                {
+                    "name": "body",
+                    "type": "text",
+                    "stored": true
+                },
+                {
+                    "name": "indexed_at",
+                    "type": "datetime",
+                    "output_format": "unix_timestamp_secs",
+                    "fast": true,
+                    "stored": true
+                }
+            ]
+        }"#;
+        serde_json::from_str::<DocMapper>(JSON_CONFIG_VALUE).unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_indexer_sets_indexation_time() -> anyhow::Result<()> {
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
+        let pipeline_id = IndexingPipelineId {
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            node_id: NodeId::from("test-node"),
+            pipeline_uid: PipelineUid::default(),
+        };
+        let doc_mapper = Arc::new(doc_mapper_with_indexation_time());
+        let last_delete_opstamp = 10;
+        let schema = doc_mapper.schema();
+        let body_field = schema.get_field("body").unwrap();
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let indexed_at_field = schema.get_field("indexed_at").unwrap();
+        let indexing_directory = TempDirectory::for_test();
+        let mut indexing_settings = IndexingSettings::for_test();
+        indexing_settings.split_num_docs_target = 3;
+        let universe = Universe::with_accelerated_time();
+        let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_last_delete_opstamp()
+            .times(1)
+            .returning(move |delete_opstamp_request| {
+                assert_eq!(delete_opstamp_request.index_uid(), &index_uid);
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
+            });
+        mock_metastore.expect_publish_splits().never();
+        let indexer = Indexer::new(
+            pipeline_id,
+            doc_mapper,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            indexing_directory,
+            indexing_settings,
+            None,
+            index_serializer_mailbox,
+        );
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+
+        // Send 3 docs in a single batch so they all share the same indexation timestamp
+        // (the timestamp is sampled once per batch in `index_batch`).
+        indexer_mailbox
+            .send_message(ProcessedDocBatch::new(
+                vec![
+                    ProcessedDoc {
+                        doc: doc!(
+                            body_field => "document 1",
+                            timestamp_field => DateTime::from_timestamp_secs(1_662_000_001),
+                        ),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_000_001)),
+                        partition: 1,
+                        num_bytes: 30,
+                    },
+                    ProcessedDoc {
+                        doc: doc!(
+                            body_field => "document 2",
+                            timestamp_field => DateTime::from_timestamp_secs(1_662_000_002),
+                        ),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_000_002)),
+                        partition: 1,
+                        num_bytes: 30,
+                    },
+                    ProcessedDoc {
+                        doc: doc!(
+                            body_field => "document 3",
+                            timestamp_field => DateTime::from_timestamp_secs(1_662_000_003),
+                        ),
+                        timestamp_opt: Some(DateTime::from_timestamp_secs(1_662_000_003)),
+                        partition: 1,
+                        num_bytes: 30,
+                    },
+                ],
+                SourceCheckpointDelta::from_range(0..3),
+                false,
+            ))
+            .await?;
+
+        indexer_handle.process_pending_and_observe().await;
+        let messages: Vec<IndexedSplitBatchBuilder> = index_serializer_inbox.drain_for_test_typed();
+        assert_eq!(messages.len(), 1);
+        let batch = messages.into_iter().next().unwrap();
+        assert_eq!(batch.commit_trigger, CommitTrigger::NumDocsLimit);
+        assert_eq!(batch.splits.len(), 1);
+        assert_eq!(batch.splits[0].split_attrs.num_docs, 3);
+
+        // Finalize the split and open the tantivy index to verify the `indexed_at` field.
+        let indexed_split = batch.splits.into_iter().next().unwrap().finalize()?;
+        let reader = indexed_split
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
+        let searcher = reader.searcher();
+
+        // Collect every `indexed_at` value present in the split.
+        let mut indexed_at_values: Vec<DateTime> = Vec::new();
+        for (segment_ord, segment_reader) in searcher.segment_readers().iter().enumerate() {
+            for doc_id in 0..segment_reader.max_doc() {
+                let doc_address = DocAddress::new(segment_ord as u32, doc_id);
+                let doc: TantivyDocument = searcher.doc(doc_address)?;
+                let indexed_at = doc
+                    .get_first(indexed_at_field)
+                    .and_then(|val| val.as_datetime())
+                    .expect("indexed_at field must be set on every indexed document");
+                indexed_at_values.push(indexed_at);
+            }
+        }
+
+        // All 3 documents must have been stamped with the indexation time.
+        assert_eq!(indexed_at_values.len(), 3);
+        // Because the timestamp is captured once for the whole batch, every document
+        // in the batch must carry exactly the same `indexed_at` value.
+        let first = indexed_at_values[0];
+        for val in &indexed_at_values {
+            assert_eq!(
+                *val, first,
+                "all documents in the same batch must share the same indexed_at timestamp"
+            );
+        }
+
         universe.assert_quit().await;
         Ok(())
     }

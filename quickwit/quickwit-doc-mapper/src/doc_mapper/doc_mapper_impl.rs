@@ -78,6 +78,8 @@ pub struct DocMapper {
     timestamp_field_path: Option<Vec<String>>,
     /// Secondary timestamp field name.
     secondary_timestamp_field_name: Option<String>,
+    /// Indexation time field name.
+    indexation_time_field_name: Option<String>,
     /// Root node of the field mapping tree.
     /// See [`MappingNode`].
     field_mappings: MappingNode,
@@ -128,6 +130,31 @@ fn validate_timestamp_field(
     Ok(())
 }
 
+fn validate_indexation_time_field(
+    indexation_field_path: &str,
+    mapping_root_node: &MappingNode,
+) -> anyhow::Result<()> {
+    if indexation_field_path.starts_with('.') || indexation_field_path.starts_with("\\.") {
+        bail!("indexation_time field `{indexation_field_path}` should not start with a `.`");
+    }
+    if indexation_field_path.ends_with('.') {
+        bail!("indexation_time field `{indexation_field_path}` should not end with a `.`");
+    }
+    let Some(indexation_time_field_type) =
+        mapping_root_node.find_field_mapping_type(indexation_field_path)
+    else {
+        bail!("could not find indexation_time field `{indexation_field_path}` in field mappings");
+    };
+    if let FieldMappingType::DateTime(_, cardinality) = &indexation_time_field_type {
+        if cardinality != &Cardinality::SingleValued {
+            bail!("indexation_time field `{indexation_field_path}` should be single-valued");
+        }
+    } else {
+        bail!("indexation_time field `{indexation_field_path}` should be a datetime field");
+    }
+    Ok(())
+}
+
 impl From<DocMapper> for DocMapperBuilder {
     fn from(default_doc_mapper: DocMapper) -> Self {
         let partition_key_str = default_doc_mapper.partition_key.to_string();
@@ -142,6 +169,7 @@ impl From<DocMapper> for DocMapperBuilder {
             field_mappings: default_doc_mapper.field_mappings.into(),
             timestamp_field: default_doc_mapper.timestamp_field_name,
             secondary_timestamp_field: default_doc_mapper.secondary_timestamp_field_name,
+            indexation_time_field: default_doc_mapper.indexation_time_field_name,
             tag_fields: default_doc_mapper.tag_field_names,
             partition_key: partition_key_opt,
             max_num_partitions: default_doc_mapper.max_num_partitions,
@@ -203,6 +231,9 @@ impl TryFrom<DocMapperBuilder> for DocMapper {
         } else {
             None
         };
+        if let Some(indexation_time_field_name) = &doc_mapping.indexation_time_field {
+            validate_indexation_time_field(indexation_time_field_name, &field_mappings)?;
+        }
         let schema = schema_builder.build();
 
         let tokenizer_manager = create_default_quickwit_tokenizer_manager();
@@ -293,6 +324,7 @@ impl TryFrom<DocMapperBuilder> for DocMapper {
             timestamp_field_name: doc_mapping.timestamp_field,
             timestamp_field_path,
             secondary_timestamp_field_name: doc_mapping.secondary_timestamp_field,
+            indexation_time_field_name: doc_mapping.indexation_time_field,
             field_mappings,
             concatenate_dynamic_fields,
             tag_field_names,
@@ -679,6 +711,11 @@ impl DocMapper {
     /// Returns the secondary timestamp field name.
     pub fn secondary_timestamp_field_name(&self) -> Option<&str> {
         self.secondary_timestamp_field_name.as_deref()
+    }
+
+    /// Returns the indexation time field name.
+    pub fn indexation_time_field_name(&self) -> Option<&str> {
+        self.indexation_time_field_name.as_deref()
     }
 
     /// Returns the tag `NameField`s on the current schema.
