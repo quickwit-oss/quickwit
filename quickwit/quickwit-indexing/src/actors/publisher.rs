@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_common::Progress;
-use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
+use quickwit_metastore::{ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
 use quickwit_proto::metastore::{
     ListSplitsRequest, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
 };
@@ -235,7 +235,14 @@ async fn warn_if_soft_deletes_changed_during_merge(
     metastore: &MetastoreServiceClient,
     progress: &Progress,
 ) {
-    let list_splits_request = match ListSplitsRequest::try_from_index_uid(index_uid.clone()) {
+    let query = ListSplitsQuery::for_index(index_uid.clone()).with_split_ids(
+        replaced_splits
+            .iter()
+            .map(|replaced| replaced.split_id.clone())
+            .collect(),
+    );
+
+    let list_splits_request = match ListSplitsRequest::try_from_list_splits_query(&query) {
         Ok(request) => request,
         Err(err) => {
             warn!(error = ?err, "failed to build list_splits request for soft-delete race detection");

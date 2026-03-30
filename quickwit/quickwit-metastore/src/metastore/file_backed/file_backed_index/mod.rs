@@ -781,6 +781,11 @@ impl Debug for Stamper {
 }
 
 fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
+    if let Some(split_ids) = &query.split_ids
+        && !split_ids.contains(&split.split_metadata.split_id)
+    {
+        return false;
+    }
     if !split_tag_filter(&split.split_metadata, query.tags.as_ref()) {
         return false;
     }
@@ -1006,6 +1011,15 @@ mod tests {
 
         let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_max_time_range_end(50);
+        assert!(split_query_predicate(&&split_1, &query));
+        assert!(split_query_predicate(&&split_2, &query));
+        assert!(!split_query_predicate(&&split_3, &query));
+
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_split_ids(vec![
+                split_1.split_metadata.split_id.clone(),
+                split_2.split_metadata.split_id.clone(),
+            ]);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));

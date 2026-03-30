@@ -644,6 +644,10 @@ pub struct ListSplitsQuery {
     /// A specific node ID to filter by.
     pub node_id: Option<NodeId>,
 
+    /// A non-empty list of split IDs to fetch, or
+    /// None to ignore this filter.
+    pub split_ids: Option<Vec<SplitId>>,
+
     /// The maximum number of splits to retrieve.
     pub limit: Option<usize>,
 
@@ -743,6 +747,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            split_ids: None,
         }
     }
 
@@ -769,6 +774,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            split_ids: None,
         })
     }
 
@@ -791,12 +797,19 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            split_ids: None,
         }
     }
 
     /// Selects splits produced by the specified node.
     pub fn with_node_id(mut self, node_id: NodeId) -> Self {
         self.node_id = Some(node_id);
+        self
+    }
+
+    /// Selects splits produced by the specified node.
+    pub fn with_split_ids(mut self, split_ids: Vec<SplitId>) -> Self {
+        self.split_ids = Some(split_ids);
         self
     }
 
