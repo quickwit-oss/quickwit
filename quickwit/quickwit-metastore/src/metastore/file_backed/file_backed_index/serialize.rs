@@ -20,6 +20,7 @@ use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::{DocMappingUid, SourceId};
 use serde::{Deserialize, Serialize};
 
+use super::StoredMetricsSplit;
 use super::shards::Shards;
 use crate::file_backed::file_backed_index::FileBackedIndex;
 use crate::metastore::DeleteTask;
@@ -68,6 +69,9 @@ pub(crate) struct FileBackedIndexV0_8 {
     shards: HashMap<SourceId, Vec<Shard>>,
     #[serde(default)]
     delete_tasks: Vec<DeleteTask>,
+    /// Metrics splits (for metrics pipeline).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    metrics_splits: Vec<StoredMetricsSplit>,
 }
 
 impl From<FileBackedIndex> for FileBackedIndexV0_8 {
@@ -97,11 +101,17 @@ impl From<FileBackedIndex> for FileBackedIndexV0_8 {
             .into_iter()
             .sorted_by_key(|delete_task| delete_task.opstamp)
             .collect();
+        let metrics_splits = index
+            .metrics_splits
+            .into_values()
+            .sorted_by_key(|split| split.update_timestamp)
+            .collect();
         Self {
             metadata: index.metadata,
             splits,
             shards,
             delete_tasks,
+            metrics_splits,
         }
     }
 }
@@ -129,11 +139,12 @@ impl From<FileBackedIndexV0_8> for FileBackedIndex {
                 per_source_shards.insert(source_id.clone(), Shards::empty(index_uid, source_id));
             }
         }
-        Self::new(
+        Self::new_with_metrics_splits(
             index.metadata,
             index.splits,
             per_source_shards,
             index.delete_tasks,
+            index.metrics_splits,
         )
     }
 }

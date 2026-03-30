@@ -43,6 +43,7 @@ utoipa = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
+quickwit-parquet-engine = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-storage = { workspace = true }
@@ -66,5 +67,5 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 ci-test = []
-postgres = ["quickwit-proto/postgres", "sea-query", "sea-query-binder", "sqlx"]
+postgres = ["quickwit-proto/postgres", "quickwit-parquet-engine/postgres", "sea-query", "sea-query-binder", "sqlx"]
 testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]

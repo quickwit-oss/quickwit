@@ -66,12 +66,11 @@ pub mod opentelemetry {
                     include!("codegen/opentelemetry/opentelemetry.proto.collector.logs.v1.rs");
                 }
             }
-            // One can dream.
-            // pub mod metrics {
-            //     pub mod v1 {
-            //         include!("codegen/opentelemetry/opentelemetry.proto.collector.metrics.v1.rs"
-            // );     }
-            // }
+            pub mod metrics {
+                pub mod v1 {
+                    include!("codegen/opentelemetry/opentelemetry.proto.collector.metrics.v1.rs");
+                }
+            }
             pub mod trace {
                 pub mod v1 {
                     include!("codegen/opentelemetry/opentelemetry.proto.collector.trace.v1.rs");
@@ -88,14 +87,11 @@ pub mod opentelemetry {
                 include!("codegen/opentelemetry/opentelemetry.proto.logs.v1.rs");
             }
         }
-        // pub mod metrics {
-        //     pub mod experimental {
-        //         include!("codegen/opentelemetry/opentelemetry.proto.metrics.experimental.rs");
-        //     }
-        //     pub mod v1 {
-        //         tonic::include_proto!("codegen/opentelemetry/opentelemetry.proto.metrics.v1");
-        //     }
-        // }
+        pub mod metrics {
+            pub mod v1 {
+                include!("codegen/opentelemetry/opentelemetry.proto.metrics.v1.rs");
+            }
+        }
         pub mod resource {
             pub mod v1 {
                 include!("codegen/opentelemetry/opentelemetry.proto.resource.v1.rs");

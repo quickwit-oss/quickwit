@@ -34,7 +34,7 @@ use super::local_state::QueueLocalState;
 use super::message::{MessageType, PreProcessingError, ReadyMessage};
 use super::shared_state::{QueueSharedState, checkpoint_messages};
 use super::visibility::{VisibilitySettings, spawn_visibility_task};
-use crate::actors::DocProcessor;
+use crate::actors::Processor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 use crate::source::{SourceContext, SourceRuntime};
 
@@ -146,10 +146,10 @@ impl QueueCoordinator {
         ))
     }
 
-    pub async fn initialize(
+    pub async fn initialize<P: Processor>(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        doc_processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<(), ActorExitStatus> {
         let publish_lock = self.publish_lock.clone();
         ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
@@ -163,7 +163,10 @@ impl QueueCoordinator {
     }
 
     /// Polls messages from the queue and prepares them for processing
-    async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+    async fn poll_messages<P: Processor>(
+        &mut self,
+        ctx: &SourceContext<P>,
+    ) -> Result<(), ActorExitStatus> {
         let raw_messages = self
             .queue_receiver
             .receive(1, self.visibility_settings.deadline_for_receive)
@@ -249,10 +252,10 @@ impl QueueCoordinator {
         Ok(())
     }
 
-    pub async fn emit_batches(
+    pub async fn emit_batches<P: Processor>(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        doc_processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<Duration, ActorExitStatus> {
         if let Some(in_progress_ref) = self.local_state.read_in_progress_mut() {
             // TODO: should we kill the publish lock if the message visibility extension failed?
@@ -290,10 +293,10 @@ impl QueueCoordinator {
         Ok(Duration::ZERO)
     }
 
-    pub async fn suggest_truncate(
+    pub async fn suggest_truncate<P: Processor>(
         &mut self,
         checkpoint: SourceCheckpoint,
-        _ctx: &SourceContext,
+        _ctx: &SourceContext<P>,
     ) -> anyhow::Result<()> {
         let committed_partition_ids = checkpoint
             .iter()
@@ -326,6 +329,7 @@ mod tests {
     use ulid::Ulid;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::doc_file_reader::file_test_helpers::{DUMMY_DOC, generate_dummy_doc_file};
     use crate::source::queue_sources::memory_queue::MemoryQueueForTests;

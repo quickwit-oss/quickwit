@@ -1,0 +1,31 @@
+[package]
+name = "quickwit-parquet-engine"
+description = "Quickwit Parquet Engine - DataFusion/Parquet based metrics storage"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+arrow = { workspace = true }
+parquet = { workspace = true }
+quickwit-common = { workspace = true }
+sea-query = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+ulid = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+
+[features]
+postgres = ["sea-query"]
+testsuite = []

@@ -16,13 +16,19 @@ use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
-use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, PublishSplitsRequest};
+use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+use quickwit_proto::metastore::{
+    MetastoreService, MetastoreServiceClient, PublishMetricsSplitsRequest, PublishSplitsRequest,
+};
 use serde::Serialize;
-use tracing::{info, instrument, warn};
+use tracing::{info, instrument};
 
-use crate::actors::MergePlanner;
-use crate::models::{NewSplits, SplitsUpdate};
+use crate::actors::{DocProcessor, MergePlanner, ParquetDocProcessor, Processor};
+use crate::models::{NewSplits, ParquetSplitsUpdate, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
+
+/// Type alias for the metrics publisher specialization.
+pub type ParquetPublisher = Publisher<ParquetDocProcessor>;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct PublisherCounters {
@@ -35,6 +41,7 @@ pub struct PublisherCounters {
 pub enum PublisherType {
     MainPublisher,
     MergePublisher,
+    ParquetPublisher,
 }
 
 impl PublisherType {
@@ -42,6 +49,7 @@ impl PublisherType {
         match self {
             PublisherType::MainPublisher => "Publisher",
             PublisherType::MergePublisher => "MergePublisher",
+            PublisherType::ParquetPublisher => "ParquetPublisher",
         }
     }
 }
@@ -51,22 +59,34 @@ impl PublisherType {
 #[derive(Debug)]
 pub(crate) struct DisconnectMergePlanner;
 
-#[derive(Clone)]
-pub struct Publisher {
+pub struct Publisher<P: Processor = DocProcessor> {
     publisher_type: PublisherType,
     metastore: MetastoreServiceClient,
     merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
-    source_mailbox_opt: Option<Mailbox<SourceActor>>,
+    source_mailbox_opt: Option<Mailbox<SourceActor<P>>>,
     counters: PublisherCounters,
 }
 
-impl Publisher {
+// Manual Clone impl to avoid a spurious `P: Clone` bound from #[derive(Clone)].
+impl<P: Processor> Clone for Publisher<P> {
+    fn clone(&self) -> Self {
+        Self {
+            publisher_type: self.publisher_type,
+            metastore: self.metastore.clone(),
+            merge_planner_mailbox_opt: self.merge_planner_mailbox_opt.clone(),
+            source_mailbox_opt: self.source_mailbox_opt.clone(),
+            counters: self.counters.clone(),
+        }
+    }
+}
+
+impl<P: Processor> Publisher<P> {
     pub fn new(
         publisher_type: PublisherType,
         metastore: MetastoreServiceClient,
         merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
-        source_mailbox_opt: Option<Mailbox<SourceActor>>,
-    ) -> Publisher {
+        source_mailbox_opt: Option<Mailbox<SourceActor<P>>>,
+    ) -> Publisher<P> {
         Publisher {
             publisher_type,
             metastore,
@@ -77,8 +97,35 @@ impl Publisher {
     }
 }
 
+fn serialize_checkpoint_delta(
+    checkpoint_delta_opt: &Option<IndexCheckpointDelta>,
+) -> anyhow::Result<Option<String>> {
+    checkpoint_delta_opt
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .context("failed to serialize `IndexCheckpointDelta`")
+}
+
+async fn suggest_truncate<A: Actor, P: Processor>(
+    ctx: &ActorContext<A>,
+    source_mailbox_opt: &Option<Mailbox<SourceActor<P>>>,
+    checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+) {
+    if let Some(source_mailbox) = source_mailbox_opt.as_ref()
+        && let Some(checkpoint) = checkpoint_delta_opt
+    {
+        let _ = ctx
+            .send_message(
+                source_mailbox,
+                SuggestTruncate(checkpoint.source_delta.get_source_checkpoint()),
+            )
+            .await;
+    }
+}
+
 #[async_trait]
-impl Actor for Publisher {
+impl<P: Processor> Actor for Publisher<P> {
     type ObservableState = PublisherCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -93,12 +140,13 @@ impl Actor for Publisher {
         match self.publisher_type {
             PublisherType::MainPublisher => QueueCapacity::Bounded(1),
             PublisherType::MergePublisher => QueueCapacity::Unbounded,
+            PublisherType::ParquetPublisher => QueueCapacity::Bounded(1),
         }
     }
 }
 
 #[async_trait]
-impl Handler<DisconnectMergePlanner> for Publisher {
+impl<P: Processor> Handler<DisconnectMergePlanner> for Publisher<P> {
     type Reply = ();
 
     async fn handle(
@@ -113,7 +161,7 @@ impl Handler<DisconnectMergePlanner> for Publisher {
 }
 
 #[async_trait]
-impl Handler<SplitsUpdate> for Publisher {
+impl Handler<SplitsUpdate> for Publisher<DocProcessor> {
     type Reply = ();
 
     #[instrument(name="publisher", parent=split_update.parent_span.id(),  skip(self, ctx))]
@@ -134,11 +182,7 @@ impl Handler<SplitsUpdate> for Publisher {
             ..
         } = split_update;
 
-        let index_checkpoint_delta_json_opt = checkpoint_delta_opt
-            .as_ref()
-            .map(serde_json::to_string)
-            .transpose()
-            .context("failed to serialize `IndexCheckpointDelta`")?;
+        let index_checkpoint_delta_json_opt = serialize_checkpoint_delta(&checkpoint_delta_opt)?;
         let split_ids: Vec<String> = new_splits
             .iter()
             .map(|split| split.split_id.clone())
@@ -163,25 +207,7 @@ impl Handler<SplitsUpdate> for Publisher {
             return Ok(());
         }
         info!("publish-new-splits");
-        if let Some(source_mailbox) = self.source_mailbox_opt.as_ref()
-            && let Some(checkpoint) = checkpoint_delta_opt
-        {
-            // We voluntarily do not log anything here.
-            //
-            // Not being to send the truncation message is a common event and should not be
-            // considered an error. For instance, if the source is a
-            // FileSource, it will terminate upon EOF and drop its
-            // mailbox.
-            let suggest_truncate_res = ctx
-                .send_message(
-                    source_mailbox,
-                    SuggestTruncate(checkpoint.source_delta.get_source_checkpoint()),
-                )
-                .await;
-            if let Err(send_truncate_err) = suggest_truncate_res {
-                warn!(error=?send_truncate_err, "failed to send truncate message from publisher to source");
-            }
-        }
+        suggest_truncate(ctx, &self.source_mailbox_opt, checkpoint_delta_opt).await;
 
         if !new_splits.is_empty() {
             // The merge planner is not necessarily awake and this is not an error.
@@ -207,6 +233,65 @@ impl Handler<SplitsUpdate> for Publisher {
     }
 }
 
+#[async_trait]
+impl Handler<ParquetSplitsUpdate> for Publisher<ParquetDocProcessor> {
+    type Reply = ();
+
+    #[instrument(name = "parquet_publisher", parent = split_update.parent_span.id(), skip(self, ctx))]
+    async fn handle(
+        &mut self,
+        split_update: ParquetSplitsUpdate,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), quickwit_actors::ActorExitStatus> {
+        let ParquetSplitsUpdate {
+            index_uid,
+            new_splits,
+            replaced_split_ids,
+            checkpoint_delta_opt,
+            publish_lock,
+            publish_token_opt,
+            ..
+        } = split_update;
+
+        let index_checkpoint_delta_json_opt = serialize_checkpoint_delta(&checkpoint_delta_opt)?;
+        let split_ids: Vec<String> = new_splits
+            .iter()
+            .map(|split| split.split_id.as_str().to_string())
+            .collect();
+        if let Some(_guard) = publish_lock.acquire().await {
+            let publish_request = PublishMetricsSplitsRequest {
+                index_uid: Some(index_uid.clone()),
+                staged_split_ids: split_ids.clone(),
+                replaced_split_ids: replaced_split_ids.clone(),
+                index_checkpoint_delta_json_opt,
+                publish_token_opt: publish_token_opt.clone(),
+            };
+            ctx.protect_future(self.metastore.publish_metrics_splits(publish_request))
+                .await
+                .context("failed to publish metrics splits")?;
+        } else {
+            info!(
+                split_ids=?split_ids,
+                "Splits' publish lock is dead."
+            );
+            return Ok(());
+        }
+        info!("publish-metrics-splits");
+        suggest_truncate(ctx, &self.source_mailbox_opt, checkpoint_delta_opt).await;
+
+        if !split_ids.is_empty() {
+            if replaced_split_ids.is_empty() {
+                self.counters.num_published_splits += 1;
+            } else {
+                self.counters.num_replace_operations += 1;
+            }
+        } else {
+            self.counters.num_empty_splits += 1;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use quickwit_actors::Universe;
@@ -220,6 +305,7 @@ mod tests {
 
     use super::*;
     use crate::models::PublishLock;
+    use crate::source::SuggestTruncate;
 
     #[tokio::test]
     async fn test_publisher_publish_operation() {
@@ -466,6 +552,171 @@ mod tests {
 
         let merger_messages = merge_planner_inbox.drain_for_test();
         assert!(merger_messages.is_empty());
+        universe.assert_quit().await;
+    }
+}
+
+#[cfg(test)]
+mod parquet_publisher_tests {
+    use quickwit_actors::Universe;
+    use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
+    use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
+    use quickwit_proto::metastore::{EmptyResponse, MetastoreServiceClient, MockMetastoreService};
+    use quickwit_proto::types::IndexUid;
+    use tracing::Span;
+
+    use super::*;
+    use crate::models::PublishLock;
+
+    fn create_test_metrics_split_metadata(index_uid: &str, split_id: &str) -> MetricsSplitMetadata {
+        MetricsSplitMetadata::builder()
+            .index_uid(index_uid)
+            .split_id(SplitId::new(split_id))
+            .time_range(TimeRange::new(1000, 2000))
+            .num_rows(100)
+            .size_bytes(1024)
+            .build()
+    }
+
+    #[tokio::test]
+    async fn test_metrics_publisher_publishes_splits() {
+        let universe = Universe::with_accelerated_time();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_publish_metrics_splits()
+            .withf(|request| {
+                request.index_uid().to_string().starts_with("test-index:")
+                    && request.staged_split_ids == vec!["split-1".to_string()]
+                    && request.replaced_split_ids.is_empty()
+                    && request.index_checkpoint_delta_json_opt.is_some()
+                    && request.publish_token_opt.is_none()
+            })
+            .times(1)
+            .returning(|_| Ok(EmptyResponse {}));
+
+        let publisher = ParquetPublisher::new(
+            PublisherType::ParquetPublisher,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            None,
+            None,
+        );
+        let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
+
+        let update = ParquetSplitsUpdate {
+            index_uid: IndexUid::for_test("test-index", 0),
+            new_splits: vec![create_test_metrics_split_metadata(
+                "test-index:00000000000000000000000000",
+                "split-1",
+            )],
+            replaced_split_ids: Vec::new(),
+            checkpoint_delta_opt: Some(IndexCheckpointDelta {
+                source_id: "test-source".to_string(),
+                source_delta: SourceCheckpointDelta::from_range(0..10),
+            }),
+            publish_lock: PublishLock::default(),
+            publish_token_opt: None,
+            parent_span: Span::none(),
+        };
+
+        publisher_mailbox.send_message(update).await.unwrap();
+
+        let observation = publisher_handle.process_pending_and_observe().await.state;
+        assert_eq!(observation.num_published_splits, 1);
+        assert_eq!(observation.num_replace_operations, 0);
+        assert_eq!(observation.num_empty_splits, 0);
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_publisher_handles_empty_splits() {
+        let universe = Universe::with_accelerated_time();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_publish_metrics_splits()
+            .withf(|request| {
+                request.index_uid().to_string().starts_with("test-index:")
+                    && request.staged_split_ids.is_empty()
+                    && request.replaced_split_ids.is_empty()
+                    && request.index_checkpoint_delta_json_opt.is_some()
+            })
+            .times(1)
+            .returning(|_| Ok(EmptyResponse {}));
+
+        let publisher = ParquetPublisher::new(
+            PublisherType::ParquetPublisher,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            None,
+            None,
+        );
+        let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
+
+        let update = ParquetSplitsUpdate {
+            index_uid: IndexUid::for_test("test-index", 0),
+            new_splits: Vec::new(),
+            replaced_split_ids: Vec::new(),
+            checkpoint_delta_opt: Some(IndexCheckpointDelta {
+                source_id: "test-source".to_string(),
+                source_delta: SourceCheckpointDelta::from_range(0..1),
+            }),
+            publish_lock: PublishLock::default(),
+            publish_token_opt: None,
+            parent_span: Span::none(),
+        };
+
+        publisher_mailbox.send_message(update).await.unwrap();
+
+        let observation = publisher_handle.process_pending_and_observe().await.state;
+        assert_eq!(observation.num_published_splits, 0);
+        assert_eq!(observation.num_replace_operations, 0);
+        assert_eq!(observation.num_empty_splits, 1);
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_publisher_respects_publish_lock() {
+        let universe = Universe::with_accelerated_time();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore.expect_publish_metrics_splits().never();
+
+        let publisher = ParquetPublisher::new(
+            PublisherType::ParquetPublisher,
+            MetastoreServiceClient::from_mock(mock_metastore),
+            None,
+            None,
+        );
+        let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
+
+        let publish_lock = PublishLock::default();
+        publish_lock.kill().await;
+
+        let update = ParquetSplitsUpdate {
+            index_uid: IndexUid::for_test("test-index", 0),
+            new_splits: vec![create_test_metrics_split_metadata(
+                "test-index:00000000000000000000000000",
+                "split-1",
+            )],
+            replaced_split_ids: Vec::new(),
+            checkpoint_delta_opt: Some(IndexCheckpointDelta {
+                source_id: "test-source".to_string(),
+                source_delta: SourceCheckpointDelta::from_range(0..10),
+            }),
+            publish_lock,
+            publish_token_opt: None,
+            parent_span: Span::none(),
+        };
+
+        publisher_mailbox.send_message(update).await.unwrap();
+
+        let observation = publisher_handle.process_pending_and_observe().await.state;
+        assert_eq!(observation.num_published_splits, 0);
+        assert_eq!(observation.num_replace_operations, 0);
+        assert_eq!(observation.num_empty_splits, 0);
+
         universe.assert_quit().await;
     }
 }

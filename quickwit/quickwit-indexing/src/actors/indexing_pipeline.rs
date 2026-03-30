@@ -15,6 +15,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -22,10 +23,10 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, HEARTBEAT, Handler, Health, Mailbox,
     QueueCapacity, Supervisable,
 };
-use quickwit_common::KillSwitch;
 use quickwit_common::metrics::OwnedGaugeGuard;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
+use quickwit_common::{KillSwitch, is_metrics_index};
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
@@ -43,11 +44,15 @@ use crate::actors::index_serializer::IndexSerializer;
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
-use crate::actors::{Indexer, Packager, Publisher, Uploader};
+use crate::actors::{
+    Indexer, Packager, ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetPublisher,
+    ParquetUploader, Publisher, Uploader,
+};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
 use crate::source::{
-    AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
+    AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_parquet_sources,
+    quickwit_supported_sources,
 };
 use crate::split_store::IndexingSplitStore;
 
@@ -78,9 +83,10 @@ pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
 /// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
+/// Handles for standard Tantivy-based indexing pipeline.
 struct IndexingPipelineHandles {
-    source_mailbox: Mailbox<SourceActor>,
-    source_handle: ActorHandle<SourceActor>,
+    source_mailbox: Mailbox<SourceActor<DocProcessor>>,
+    source_handle: ActorHandle<SourceActor<DocProcessor>>,
     doc_processor: ActorHandle<DocProcessor>,
     indexer: ActorHandle<Indexer>,
     index_serializer: ActorHandle<IndexSerializer>,
@@ -102,6 +108,42 @@ impl IndexingPipelineHandles {
     }
 }
 
+/// Handles for metrics Parquet/DataFusion indexing pipeline.
+struct ParquetIndexingPipelineHandles {
+    source_mailbox: Mailbox<SourceActor<ParquetDocProcessor>>,
+    source_handle: ActorHandle<SourceActor<ParquetDocProcessor>>,
+    doc_processor: ActorHandle<ParquetDocProcessor>,
+    indexer: ActorHandle<ParquetIndexer>,
+    packager: ActorHandle<ParquetPackager>,
+    uploader: ActorHandle<ParquetUploader>,
+    sequencer: ActorHandle<Sequencer<ParquetPublisher>>,
+    publisher: ActorHandle<ParquetPublisher>,
+    next_check_for_progress: Instant,
+}
+
+impl ParquetIndexingPipelineHandles {
+    fn should_check_for_progress(&mut self) -> bool {
+        let now = Instant::now();
+        let check_for_progress = now > self.next_check_for_progress;
+        if check_for_progress {
+            self.next_check_for_progress = now + *HEARTBEAT;
+        }
+        check_for_progress
+    }
+}
+
+/// Enum representing either a standard or metrics pipeline's actor handles.
+///
+/// This allows `IndexingPipeline` to properly manage both pipeline types
+/// without resorting to `Option<T>` workarounds where `None` implicitly means
+/// "metrics pipeline".
+enum PipelineHandles {
+    /// Standard Tantivy-based pipeline for logs/traces.
+    Standard(IndexingPipelineHandles),
+    /// Parquet/DataFusion pipeline for time-series data.
+    Parquet(ParquetIndexingPipelineHandles),
+}
+
 // Messages
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -113,7 +155,7 @@ pub struct IndexingPipeline {
     params: IndexingPipelineParams,
     previous_generations_statistics: IndexingStatistics,
     statistics: IndexingStatistics,
-    handles_opt: Option<IndexingPipelineHandles>,
+    handles_opt: Option<PipelineHandles>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
 
@@ -176,20 +218,31 @@ impl IndexingPipeline {
     }
 
     fn supervisables(&self) -> Vec<&dyn Supervisable> {
-        if let Some(handles) = &self.handles_opt {
-            let supervisables: Vec<&dyn Supervisable> = vec![
-                &handles.source_handle,
-                &handles.doc_processor,
-                &handles.indexer,
-                &handles.index_serializer,
-                &handles.packager,
-                &handles.uploader,
-                &handles.sequencer,
-                &handles.publisher,
-            ];
-            supervisables
-        } else {
-            Vec::new()
+        match &self.handles_opt {
+            Some(PipelineHandles::Standard(handles)) => {
+                vec![
+                    &handles.source_handle,
+                    &handles.doc_processor,
+                    &handles.indexer,
+                    &handles.index_serializer,
+                    &handles.packager,
+                    &handles.uploader,
+                    &handles.sequencer,
+                    &handles.publisher,
+                ]
+            }
+            Some(PipelineHandles::Parquet(handles)) => {
+                vec![
+                    &handles.source_handle,
+                    &handles.doc_processor,
+                    &handles.indexer,
+                    &handles.packager,
+                    &handles.uploader,
+                    &handles.sequencer,
+                    &handles.publisher,
+                ]
+            }
+            None => Vec::new(),
         }
     }
 
@@ -251,26 +304,60 @@ impl IndexingPipeline {
     }
 
     fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
-        let Some(handles) = &self.handles_opt else {
-            return;
-        };
-        handles.doc_processor.refresh_observe();
-        handles.indexer.refresh_observe();
-        handles.uploader.refresh_observe();
-        handles.publisher.refresh_observe();
-        self.statistics = self
-            .previous_generations_statistics
-            .clone()
-            .add_actor_counters(
-                &handles.doc_processor.last_observation(),
-                &handles.indexer.last_observation(),
-                &handles.uploader.last_observation(),
-                &handles.publisher.last_observation(),
-            )
-            .set_generation(self.statistics.generation)
-            .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
-        let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
-        self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        // Update statistics based on pipeline type
+        match &self.handles_opt {
+            Some(PipelineHandles::Standard(handles)) => {
+                handles.doc_processor.refresh_observe();
+                handles.indexer.refresh_observe();
+                handles.uploader.refresh_observe();
+                handles.publisher.refresh_observe();
+                self.statistics = self
+                    .previous_generations_statistics
+                    .clone()
+                    .add_actor_counters(
+                        &handles.doc_processor.last_observation(),
+                        &handles.indexer.last_observation(),
+                        &handles.uploader.last_observation(),
+                        &handles.publisher.last_observation(),
+                    )
+                    .set_generation(self.statistics.generation)
+                    .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+                let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
+                self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+            }
+            Some(PipelineHandles::Parquet(handles)) => {
+                handles.doc_processor.refresh_observe();
+                handles.indexer.refresh_observe();
+                handles.uploader.refresh_observe();
+                handles.publisher.refresh_observe();
+
+                let doc_counters = handles.doc_processor.last_observation();
+                let indexer_counters = handles.indexer.last_observation();
+                let uploader_counters = handles.uploader.last_observation();
+                let publisher_counters = handles.publisher.last_observation();
+
+                let mut stats = self.previous_generations_statistics.clone();
+                stats.num_docs += doc_counters.valid_rows;
+                stats.num_invalid_docs += doc_counters.num_errors();
+                stats.total_bytes_processed += doc_counters.bytes_total;
+                stats.num_local_splits += indexer_counters.batches_flushed;
+                stats.num_staged_splits +=
+                    uploader_counters.num_staged_splits.load(Ordering::Relaxed);
+                stats.num_uploaded_splits += uploader_counters
+                    .num_uploaded_splits
+                    .load(Ordering::Relaxed);
+                stats.num_published_splits += publisher_counters.num_published_splits;
+                stats.num_empty_splits += publisher_counters.num_empty_splits;
+                stats.generation = self.statistics.generation;
+                stats.num_spawn_attempts = self.statistics.num_spawn_attempts;
+                self.statistics = stats;
+            }
+            None => {
+                // Pipeline not yet spawned
+            }
+        }
+        // Always update params_fingerprint, shard_ids, and emit observation.
+        // This ensures shard assignments are reported to the control plane via chitchat.
         self.statistics.params_fingerprint = self.params.params_fingerprint;
         self.statistics.shard_ids.clone_from(&self.shard_ids);
         ctx.observe(self);
@@ -281,14 +368,12 @@ impl IndexingPipeline {
         &mut self,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let Some(handles) = self.handles_opt.as_mut() else {
-            return Ok(());
+        // Check if it's time to verify progress based on pipeline type
+        let check_for_progress = match &mut self.handles_opt {
+            Some(PipelineHandles::Standard(handles)) => handles.should_check_for_progress(),
+            Some(PipelineHandles::Parquet(handles)) => handles.should_check_for_progress(),
+            None => return Ok(()),
         };
-
-        // While we check if the actor has terminated or not, we do not check for progress
-        // at every single loop. Instead, we wait for the `HEARTBEAT` duration to have elapsed,
-        // since our last check.
-        let check_for_progress = handles.should_check_for_progress();
         let health = self.healthcheck(check_for_progress);
         match health {
             Health::Healthy => {}
@@ -323,6 +408,12 @@ impl IndexingPipeline {
         self.kill_switch = ctx.kill_switch().child();
 
         let index_id = &self.params.pipeline_id.index_uid.index_id;
+
+        // Route metrics indexes to the Parquet/DataFusion pipeline
+        if is_metrics_index(index_id) {
+            return self.spawn_parquet_pipeline(ctx).await;
+        }
+
         let source_id = &self.params.pipeline_id.source_id;
 
         info!(
@@ -334,7 +425,7 @@ impl IndexingPipeline {
         );
         let (source_mailbox, source_inbox) = ctx
             .spawn_ctx()
-            .create_mailbox::<SourceActor>("SourceActor", QueueCapacity::Unbounded);
+            .create_mailbox::<SourceActor<DocProcessor>>("SourceActor", QueueCapacity::Unbounded);
 
         // Publisher
         let publisher = Publisher::new(
@@ -452,7 +543,7 @@ impl IndexingPipeline {
             .await?;
         let actor_source = SourceActor {
             source,
-            doc_processor_mailbox,
+            processor_mailbox: doc_processor_mailbox,
         };
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
@@ -467,7 +558,7 @@ impl IndexingPipeline {
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
-        self.handles_opt = Some(IndexingPipelineHandles {
+        self.handles_opt = Some(PipelineHandles::Standard(IndexingPipelineHandles {
             source_mailbox,
             source_handle,
             doc_processor: doc_processor_handle,
@@ -478,20 +569,181 @@ impl IndexingPipeline {
             sequencer: sequencer_handle,
             publisher: publisher_handle,
             next_check_for_progress: Instant::now() + *HEARTBEAT,
+        }));
+        Ok(())
+    }
+
+    /// Spawn the parquet pipeline using ParquetDocProcessor and ParquetIndexer.
+    ///
+    /// This pipeline routes metrics data through the Parquet/DataFusion path instead of
+    /// the Tantivy path. The output is ParquetSplit files written to the indexing directory.
+    #[instrument(
+        name="spawn_parquet_pipeline",
+        level="info",
+        skip_all,
+        fields(
+            index=%self.params.pipeline_id.index_uid.index_id,
+            r#gen=self.generation()
+        ))]
+    async fn spawn_parquet_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
+        let index_id = &self.params.pipeline_id.index_uid.index_id;
+        let source_id = &self.params.pipeline_id.source_id;
+
+        info!(
+            index_id,
+            source_id,
+            pipeline_uid=%self.params.pipeline_id.pipeline_uid,
+            root_dir=%self.params.indexing_directory.path().display(),
+            "spawning parquet indexing pipeline for metrics",
+        );
+
+        let (source_mailbox, source_inbox) = ctx
+            .spawn_ctx()
+            .create_mailbox::<SourceActor<ParquetDocProcessor>>(
+                "SourceActor",
+                QueueCapacity::Unbounded,
+            );
+
+        // ParquetPublisher
+        let parquet_publisher = ParquetPublisher::new(
+            PublisherType::ParquetPublisher,
+            self.params.metastore.clone(),
+            None,
+            Some(source_mailbox.clone()),
+        );
+        let (parquet_publisher_mailbox, parquet_publisher_handle) = ctx
+            .spawn_actor()
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn(parquet_publisher);
+
+        // Sequencer for ordered delivery
+        let parquet_sequencer = Sequencer::new(parquet_publisher_mailbox);
+        let (parquet_sequencer_mailbox, parquet_sequencer_handle) = ctx
+            .spawn_actor()
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn(parquet_sequencer);
+
+        // ParquetUploader
+        let parquet_uploader = ParquetUploader::new(
+            super::UploaderType::IndexUploader,
+            self.params.metastore.clone(),
+            self.params.storage.clone(),
+            SplitsUpdateMailbox::Sequencer(parquet_sequencer_mailbox),
+            self.params.max_concurrent_split_uploads_index,
+        );
+        let (parquet_uploader_mailbox, parquet_uploader_handle) = ctx
+            .spawn_actor()
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn(parquet_uploader);
+
+        // ParquetPackager
+        let parquet_schema = quickwit_parquet_engine::schema::ParquetSchema::new();
+        let writer_config = quickwit_parquet_engine::storage::ParquetWriterConfig::default();
+        let split_writer = quickwit_parquet_engine::storage::ParquetSplitWriter::new(
+            parquet_schema,
+            writer_config,
+            self.params.indexing_directory.path(),
+        );
+        let parquet_packager = ParquetPackager::new(split_writer, parquet_uploader_mailbox);
+        let (parquet_packager_mailbox, parquet_packager_handle) = ctx
+            .spawn_actor()
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn(parquet_packager);
+
+        // ParquetIndexer
+        let commit_timeout =
+            Duration::from_secs(self.params.indexing_settings.commit_timeout_secs as u64);
+        let parquet_indexer = ParquetIndexer::new(
+            self.params.pipeline_id.index_uid.clone(),
+            source_id.to_string(),
+            None,
+            parquet_packager_mailbox,
+            Some(commit_timeout),
+        );
+        let (parquet_indexer_mailbox, parquet_indexer_handle) = ctx
+            .spawn_actor()
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn(parquet_indexer);
+
+        // ParquetDocProcessor
+        let parquet_doc_processor = ParquetDocProcessor::new(
+            index_id.to_string(),
+            source_id.to_string(),
+            parquet_indexer_mailbox,
+        );
+        let (parquet_doc_processor_mailbox, parquet_doc_processor_handle) = ctx
+            .spawn_actor()
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn(parquet_doc_processor);
+
+        // Source (using parquet source loader)
+        let source_runtime = SourceRuntime {
+            pipeline_id: self.params.pipeline_id.clone(),
+            source_config: self.params.source_config.clone(),
+            metastore: self.params.metastore.clone(),
+            ingester_pool: self.params.ingester_pool.clone(),
+            queues_dir_path: self.params.queues_dir_path.clone(),
+            storage_resolver: self.params.source_storage_resolver.clone(),
+            event_broker: self.params.event_broker.clone(),
+            indexing_setting: self.params.indexing_settings.clone(),
+        };
+        let source = ctx
+            .protect_future(quickwit_supported_parquet_sources().load_source(source_runtime))
+            .await?;
+        let actor_source = SourceActor {
+            source,
+            processor_mailbox: parquet_doc_processor_mailbox,
+        };
+        let (source_mailbox, source_handle) = ctx
+            .spawn_actor()
+            .set_mailboxes(source_mailbox, source_inbox)
+            .set_kill_switch(self.kill_switch.clone())
+            .spawn(actor_source);
+        let assign_shards_message = AssignShards(Assignment {
+            shard_ids: self.shard_ids.clone(),
         });
+        source_mailbox.send_message(assign_shards_message).await?;
+
+        // Increment generation once we are sure there will be no spawning error.
+        self.previous_generations_statistics = self.statistics.clone();
+        self.statistics.generation += 1;
+        self.handles_opt = Some(PipelineHandles::Parquet(ParquetIndexingPipelineHandles {
+            source_mailbox,
+            source_handle,
+            doc_processor: parquet_doc_processor_handle,
+            indexer: parquet_indexer_handle,
+            packager: parquet_packager_handle,
+            uploader: parquet_uploader_handle,
+            sequencer: parquet_sequencer_handle,
+            publisher: parquet_publisher_handle,
+            next_check_for_progress: Instant::now() + *HEARTBEAT,
+        }));
         Ok(())
     }
 
     async fn terminate(&mut self) {
         self.kill_switch.kill();
         if let Some(handles) = self.handles_opt.take() {
-            tokio::join!(
-                handles.source_handle.kill(),
-                handles.indexer.kill(),
-                handles.packager.kill(),
-                handles.uploader.kill(),
-                handles.publisher.kill(),
-            );
+            match handles {
+                PipelineHandles::Standard(handles) => {
+                    tokio::join!(
+                        handles.source_handle.kill(),
+                        handles.indexer.kill(),
+                        handles.packager.kill(),
+                        handles.uploader.kill(),
+                        handles.publisher.kill(),
+                    );
+                }
+                PipelineHandles::Parquet(handles) => {
+                    tokio::join!(
+                        handles.source_handle.kill(),
+                        handles.indexer.kill(),
+                        handles.packager.kill(),
+                        handles.uploader.kill(),
+                        handles.publisher.kill(),
+                    );
+                }
+            }
         }
     }
 }
@@ -557,15 +809,28 @@ impl Handler<AssignShards> for IndexingPipeline {
             .clone_from(&assign_shards_message.0.shard_ids);
         // If the pipeline is running, we forward the message to its source.
         // If it is not, it will be respawned soon, and the shards will be assigned afterward.
-        if let Some(handles) = &mut self.handles_opt {
-            info!(
-                shard_ids=?assign_shards_message.0.shard_ids,
-                "assigning shards to indexing pipeline"
-            );
-            handles
-                .source_mailbox
-                .send_message(assign_shards_message)
-                .await?;
+        match &mut self.handles_opt {
+            Some(PipelineHandles::Standard(handles)) => {
+                info!(
+                    shard_ids=?assign_shards_message.0.shard_ids,
+                    "assigning shards to indexing pipeline"
+                );
+                handles
+                    .source_mailbox
+                    .send_message(assign_shards_message)
+                    .await?;
+            }
+            Some(PipelineHandles::Parquet(handles)) => {
+                info!(
+                    shard_ids=?assign_shards_message.0.shard_ids,
+                    "assigning shards to parquet indexing pipeline"
+                );
+                handles
+                    .source_mailbox
+                    .send_message(assign_shards_message)
+                    .await?;
+            }
+            None => {}
         }
         // We perform observe to make sure the set of shard ids is up to date.
         self.perform_observe(ctx);

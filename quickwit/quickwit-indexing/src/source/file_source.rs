@@ -25,7 +25,7 @@ use quickwit_proto::types::SourceId;
 use super::doc_file_reader::ObjectUriBatchReader;
 #[cfg(feature = "queue-sources")]
 use super::queue_sources::coordinator::QueueCoordinator;
-use crate::actors::DocProcessor;
+use crate::actors::Processor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 enum FileSourceState {
@@ -51,17 +51,17 @@ impl fmt::Debug for FileSource {
 }
 
 #[async_trait]
-impl Source for FileSource {
+impl<P: Processor> Source<P> for FileSource {
     #[allow(unused_variables)]
     async fn initialize(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<(), ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
             FileSourceState::Notification(coordinator) => {
-                coordinator.initialize(doc_processor_mailbox, ctx).await
+                coordinator.initialize(processor_mailbox, ctx).await
             }
             FileSourceState::Filepath { .. } => Ok(()),
         }
@@ -70,13 +70,13 @@ impl Source for FileSource {
     #[allow(unused_variables)]
     async fn emit_batches(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<Duration, ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
             FileSourceState::Notification(coordinator) => {
-                coordinator.emit_batches(doc_processor_mailbox, ctx).await?;
+                coordinator.emit_batches(processor_mailbox, ctx).await?;
             }
             FileSourceState::Filepath {
                 batch_reader,
@@ -88,11 +88,11 @@ impl Source for FileSource {
                     .await?;
                 *num_bytes_processed += batch_builder.num_bytes;
                 *num_lines_processed += batch_builder.docs.len() as u64;
-                doc_processor_mailbox
+                processor_mailbox
                     .send_message(batch_builder.build())
                     .await?;
                 if batch_reader.is_eof() {
-                    ctx.send_exit_with_success(doc_processor_mailbox).await?;
+                    ctx.send_exit_with_success(processor_mailbox).await?;
                     return Err(ActorExitStatus::Success);
                 }
             }
@@ -108,7 +108,7 @@ impl Source for FileSource {
     async fn suggest_truncate(
         &mut self,
         checkpoint: SourceCheckpoint,
-        ctx: &SourceContext,
+        ctx: &SourceContext<P>,
     ) -> anyhow::Result<()> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
@@ -209,6 +209,7 @@ mod tests {
     use quickwit_proto::types::{IndexUid, Position};
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::doc_file_reader::file_test_helpers::{
         DUMMY_DOC, generate_dummy_doc_file, generate_index_doc_file,
@@ -224,7 +225,7 @@ mod tests {
 
     async fn aux_test_file_source(gzip: bool) {
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox::<DocProcessor>();
         let params = if gzip {
             FileSourceParams::from_filepath("data/test_corpus.json.gz").unwrap()
         } else {
@@ -245,7 +246,7 @@ mod tests {
             .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
-            doc_processor_mailbox,
+            processor_mailbox: doc_processor_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
@@ -276,7 +277,8 @@ mod tests {
     async fn aux_test_file_source_several_batch(gzip: bool) {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let lines = BATCH_NUM_BYTES_LIMIT as usize / DUMMY_DOC.len() + 1;
         let (temp_file, temp_file_size) = generate_dummy_doc_file(gzip, lines).await;
         let filepath = temp_file.path().to_str().unwrap();
@@ -297,7 +299,7 @@ mod tests {
             .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
-            doc_processor_mailbox,
+            processor_mailbox: doc_processor_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
@@ -341,7 +343,8 @@ mod tests {
     async fn aux_test_file_source_resume_from_checkpoint(gzip: bool) {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let temp_file = generate_index_doc_file(gzip, 100).await;
         let temp_file_path = temp_file.path().to_str().unwrap();
         let uri = Uri::from_str(temp_file_path).unwrap();
@@ -373,7 +376,7 @@ mod tests {
             .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
-            doc_processor_mailbox,
+            processor_mailbox: doc_processor_mailbox,
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
@@ -407,6 +410,7 @@ mod localstack_tests {
     use quickwit_metastore::metastore_for_test;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
     use crate::source::doc_file_reader::file_test_helpers::generate_dummy_doc_file;
@@ -450,11 +454,12 @@ mod localstack_tests {
 
         // actor setup
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         {
             let actor = SourceActor {
                 source: Box::new(sqs_source),
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
+                processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
 
