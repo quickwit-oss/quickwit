@@ -862,13 +862,15 @@ impl FileBackedIndex {
 
         // Sort by split_id for stable pagination (mirrors Postgres ORDER BY split_id ASC).
         splits.sort_unstable_by(|a, b| {
-            a.metadata.split_id.as_str().cmp(b.metadata.split_id.as_str())
+            a.metadata
+                .split_id
+                .as_str()
+                .cmp(b.metadata.split_id.as_str())
         });
 
         // Apply cursor: skip splits up to and including after_split_id.
         let splits = if let Some(ref after) = query.after_split_id {
-            let pos =
-                splits.partition_point(|s| s.metadata.split_id.as_str() <= after.as_str());
+            let pos = splits.partition_point(|s| s.metadata.split_id.as_str() <= after.as_str());
             &splits[pos..]
         } else {
             &splits[..]

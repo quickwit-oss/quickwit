@@ -18,7 +18,7 @@ use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
 use quickwit_indexing::actors::MergeSchedulerService;
-use quickwit_metastore::{SplitInfo};
+use quickwit_metastore::SplitInfo;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageResolver;

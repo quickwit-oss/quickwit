@@ -301,8 +301,7 @@ async fn delete_marked_parquet_splits(
         // To detect if this is the last page, we check if the number of splits is less than the
         // limit.
         assert!(splits.len() <= DELETE_PARQUET_SPLITS_BATCH_SIZE);
-        let splits_to_delete_possibly_remaining =
-            splits.len() == DELETE_PARQUET_SPLITS_BATCH_SIZE;
+        let splits_to_delete_possibly_remaining = splits.len() == DELETE_PARQUET_SPLITS_BATCH_SIZE;
 
         // Set split after which to search for the next loop.
         let Some(last_split) = splits.last() else {
@@ -368,7 +367,10 @@ async fn delete_parquet_splits_from_storage_and_metastore(
 
     let storage_failed: Vec<ParquetSplitInfo> = failed_stds
         .into_iter()
-        .map(|s| ParquetSplitInfo { split_id: s.split_id, file_size_bytes: s.size_bytes })
+        .map(|s| ParquetSplitInfo {
+            split_id: s.split_id,
+            file_size_bytes: s.size_bytes,
+        })
         .collect();
 
     if succeeded_stds.is_empty() {
@@ -381,8 +383,11 @@ async fn delete_parquet_splits_from_storage_and_metastore(
         index_uid: Some(index_uid.clone()),
         split_ids: ids_to_delete,
     };
-    let metastore_result =
-        protect_future(progress_opt, metastore.delete_metrics_splits(delete_request)).await;
+    let metastore_result = protect_future(
+        progress_opt,
+        metastore.delete_metrics_splits(delete_request),
+    )
+    .await;
 
     if let Some(progress) = progress_opt {
         progress.record_progress();
@@ -390,7 +395,10 @@ async fn delete_parquet_splits_from_storage_and_metastore(
 
     let succeeded: Vec<ParquetSplitInfo> = succeeded_stds
         .into_iter()
-        .map(|s| ParquetSplitInfo { split_id: s.split_id, file_size_bytes: s.size_bytes })
+        .map(|s| ParquetSplitInfo {
+            split_id: s.split_id,
+            file_size_bytes: s.size_bytes,
+        })
         .collect();
 
     match metastore_result {

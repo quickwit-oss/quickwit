@@ -696,7 +696,10 @@ fn print_tantivy_gc_result(
         for split in &removal_info.failed_splits {
             println!(" - {}", split.split_id);
         }
-        println!("{} Splits were unable to be removed.", removal_info.failed_splits.len());
+        println!(
+            "{} Splits were unable to be removed.",
+            removal_info.failed_splits.len()
+        );
     }
 
     let deleted_bytes: u64 = removal_info
@@ -704,10 +707,16 @@ fn print_tantivy_gc_result(
         .iter()
         .map(|s| s.file_size_bytes.as_u64())
         .sum();
-    println!("{}MB of storage garbage collected.", deleted_bytes / 1_000_000);
+    println!(
+        "{}MB of storage garbage collected.",
+        deleted_bytes / 1_000_000
+    );
 
     if removal_info.failed_splits.is_empty() {
-        println!("{} Index successfully garbage collected.", "✔".color(GREEN_COLOR));
+        println!(
+            "{} Index successfully garbage collected.",
+            "✔".color(GREEN_COLOR)
+        );
     } else if removal_info.removed_split_entries.is_empty() {
         println!("{} Failed to garbage collect index.", "✘".color(RED_COLOR));
     } else {
@@ -750,10 +759,16 @@ fn print_parquet_gc_result(
         );
     }
 
-    println!("{}MB of storage garbage collected.", removal_info.removed_bytes() / 1_000_000);
+    println!(
+        "{}MB of storage garbage collected.",
+        removal_info.removed_bytes() / 1_000_000
+    );
 
     if removal_info.failed_parquet_splits.is_empty() {
-        println!("{} Index successfully garbage collected.", "✔".color(GREEN_COLOR));
+        println!(
+            "{} Index successfully garbage collected.",
+            "✔".color(GREEN_COLOR)
+        );
     } else if removal_info.removed_parquet_splits_entries.is_empty() {
         println!("{} Failed to garbage collect index.", "✘".color(RED_COLOR));
     } else {

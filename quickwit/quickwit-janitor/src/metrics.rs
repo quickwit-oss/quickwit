@@ -13,9 +13,7 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{
-    IntCounterVec, IntGaugeVec, new_counter_vec, new_gauge_vec,
-};
+use quickwit_common::metrics::{IntCounterVec, IntGaugeVec, new_counter_vec, new_gauge_vec};
 
 pub struct JanitorMetrics {
     pub ongoing_num_delete_operations_total: IntGaugeVec<1>,

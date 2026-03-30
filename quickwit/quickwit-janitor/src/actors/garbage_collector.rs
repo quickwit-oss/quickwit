@@ -113,32 +113,13 @@ impl GarbageCollector {
             counters: GarbageCollectorCounters::default(),
         }
     }
-    // if !deleted_file_entries.is_empty() {
-    //         let num_deleted_splits = deleted_file_entries.len();
-    //         let num_deleted_bytes = deleted_file_entries
-    //             .iter()
-    //             .map(|entry| entry.file_size_bytes.as_u64() as usize)
-    //             .sum::<usize>();
-    //         let deleted_files: HashSet<&Path> = deleted_file_entries
-    //             .iter()
-    //             .map(|deleted_entry| deleted_entry.file_name.as_path())
-    //             .take(5)
-    //             .collect();
-    //         info!(
-    //             num_deleted_splits = num_deleted_splits,
-    //             "Janitor deleted {:?} and {} other splits.", deleted_files, num_deleted_splits,
-    //         );
-    //         self.counters.num_deleted_files += num_deleted_splits;
-    //         self.counters.num_deleted_bytes += num_deleted_bytes;
 
     fn record_gc_result(&mut self, result: &GcRunResult, split_type: &str) {
         self.counters.num_failed_splits += result.num_failed;
         if result.num_deleted_splits > 0 {
             info!(
                 "Janitor deleted {:?} and {} other {} splits.",
-                result.sample_deleted_files,
-                result.num_deleted_splits,
-                split_type,
+                result.sample_deleted_files, result.num_deleted_splits, split_type,
             );
             self.counters.num_deleted_files += result.num_deleted_splits;
             self.counters.num_deleted_bytes += result.num_deleted_bytes;
@@ -222,22 +203,40 @@ impl GarbageCollector {
             .await;
 
             let tantivy_run_duration = tantivy_start.elapsed().as_secs();
-            JANITOR_METRICS.gc_seconds_total.with_label_values(["tantivy"]).inc_by(tantivy_run_duration);
+            JANITOR_METRICS
+                .gc_seconds_total
+                .with_label_values(["tantivy"])
+                .inc_by(tantivy_run_duration);
 
             let result = match gc_res {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run += 1;
-                    JANITOR_METRICS.gc_runs.with_label_values(["success", "tantivy"]).inc();
+                    JANITOR_METRICS
+                        .gc_runs
+                        .with_label_values(["success", "tantivy"])
+                        .inc();
                     GcRunResult {
                         num_deleted_splits: removal_info.removed_split_entries.len(),
-                        num_deleted_bytes: removal_info.removed_split_entries.iter().map(|e| e.file_size_bytes.as_u64() as usize).sum(),
+                        num_deleted_bytes: removal_info
+                            .removed_split_entries
+                            .iter()
+                            .map(|e| e.file_size_bytes.as_u64() as usize)
+                            .sum(),
                         num_failed: removal_info.failed_splits.len(),
-                        sample_deleted_files: removal_info.removed_split_entries.iter().take(5).map(|e| e.file_name.display().to_string()).collect(),
+                        sample_deleted_files: removal_info
+                            .removed_split_entries
+                            .iter()
+                            .take(5)
+                            .map(|e| e.file_name.display().to_string())
+                            .collect(),
                     }
                 }
                 Err(error) => {
                     self.counters.num_failed_gc_run += 1;
-                    JANITOR_METRICS.gc_runs.with_label_values(["error", "tantivy"]).inc();
+                    JANITOR_METRICS
+                        .gc_runs
+                        .with_label_values(["error", "tantivy"])
+                        .inc();
                     error!(error=?error, "failed to run garbage collection");
                     GcRunResult::failed()
                 }
@@ -260,22 +259,36 @@ impl GarbageCollector {
             .await;
 
             let parquet_run_duration = parquet_start.elapsed().as_secs();
-            JANITOR_METRICS.gc_seconds_total.with_label_values(["parquet"]).inc_by(parquet_run_duration);
+            JANITOR_METRICS
+                .gc_seconds_total
+                .with_label_values(["parquet"])
+                .inc_by(parquet_run_duration);
 
             let result = match gc_res {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run += 1;
-                    JANITOR_METRICS.gc_runs.with_label_values(["success", "parquet"]).inc();
+                    JANITOR_METRICS
+                        .gc_runs
+                        .with_label_values(["success", "parquet"])
+                        .inc();
                     GcRunResult {
                         num_deleted_splits: removal_info.removed_split_count(),
                         num_deleted_bytes: removal_info.removed_bytes() as usize,
                         num_failed: removal_info.failed_split_count(),
-                        sample_deleted_files: removal_info.removed_parquet_splits_entries.iter().take(5).map(|e| format!("{}.parquet", e.split_id)).collect(),
+                        sample_deleted_files: removal_info
+                            .removed_parquet_splits_entries
+                            .iter()
+                            .take(5)
+                            .map(|e| format!("{}.parquet", e.split_id))
+                            .collect(),
                     }
                 }
                 Err(error) => {
                     self.counters.num_failed_gc_run += 1;
-                    JANITOR_METRICS.gc_runs.with_label_values(["error", "parquet"]).inc();
+                    JANITOR_METRICS
+                        .gc_runs
+                        .with_label_values(["error", "parquet"])
+                        .inc();
                     error!(error=?error, "failed to run parquet garbage collection");
                     GcRunResult::failed()
                 }
@@ -865,15 +878,13 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let mut mock = MockMetastoreService::new();
 
-        mock.expect_list_indexes_metadata()
-            .times(1)
-            .returning(|_| {
-                let indexes = vec![IndexMetadata::for_test(
-                    "otel-metrics-v0_1",
-                    "ram://indexes/otel-metrics-v0_1",
-                )];
-                Ok(ListIndexesMetadataResponse::for_test(indexes))
-            });
+        mock.expect_list_indexes_metadata().times(1).returning(|_| {
+            let indexes = vec![IndexMetadata::for_test(
+                "otel-metrics-v0_1",
+                "ram://indexes/otel-metrics-v0_1",
+            )];
+            Ok(ListIndexesMetadataResponse::for_test(indexes))
+        });
 
         let marked_split = MetricsSplitRecord {
             state: MetricsSplitState::MarkedForDeletion,
@@ -903,10 +914,8 @@ mod tests {
                 Ok(EmptyResponse {})
             });
 
-        let garbage_collect_actor = GarbageCollector::new(
-            MetastoreServiceClient::from_mock(mock),
-            storage_resolver,
-        );
+        let garbage_collect_actor =
+            GarbageCollector::new(MetastoreServiceClient::from_mock(mock), storage_resolver);
         let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 

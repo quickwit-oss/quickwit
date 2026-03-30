@@ -95,7 +95,7 @@ pub async fn run_execute_retention_policy(
 }
 
 /// Detect all expired parquet splits based on a retention policy and
-/// mark them as `MarkedForDeletion`. 
+/// mark them as `MarkedForDeletion`.
 pub async fn run_execute_parquet_retention_policy(
     index_uid: &IndexUid,
     metastore: MetastoreServiceClient,
@@ -133,12 +133,12 @@ pub async fn run_execute_parquet_retention_policy(
         expired_split_ids.len()
     );
 
-    ctx.protect_future(
-        metastore.mark_metrics_splits_for_deletion(MarkMetricsSplitsForDeletionRequest {
+    ctx.protect_future(metastore.mark_metrics_splits_for_deletion(
+        MarkMetricsSplitsForDeletionRequest {
             index_uid: Some(index_uid.clone()),
             split_ids: expired_split_ids,
-        }),
-    )
+        },
+    ))
     .await?;
 
     Ok(expired_splits.len())

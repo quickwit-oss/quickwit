@@ -424,7 +424,11 @@ pub(crate) async fn delete_split_files(
     storage: &dyn Storage,
     splits: Vec<SplitToDelete>,
     progress_opt: Option<&Progress>,
-) -> (Vec<SplitToDelete>, Vec<SplitToDelete>, Option<BulkDeleteError>) {
+) -> (
+    Vec<SplitToDelete>,
+    Vec<SplitToDelete>,
+    Option<BulkDeleteError>,
+) {
     if splits.is_empty() {
         return (Vec::new(), Vec::new(), None);
     }
@@ -438,8 +442,9 @@ pub(crate) async fn delete_split_files(
         Ok(()) => (splits, Vec::new(), None),
         Err(bulk_err) => {
             let success_paths: HashSet<&PathBuf> = bulk_err.successes.iter().collect();
-            let (succeeded, failed) =
-                splits.into_iter().partition(|s| success_paths.contains(&s.path));
+            let (succeeded, failed) = splits
+                .into_iter()
+                .partition(|s| success_paths.contains(&s.path));
             (succeeded, failed, Some(bulk_err))
         }
     }
@@ -478,8 +483,14 @@ pub async fn delete_splits_from_storage_and_metastore(
     let (succeeded_stds, failed_stds, storage_err) =
         delete_split_files(&*storage, splits_to_delete, progress_opt).await;
 
-    let successes: Vec<SplitInfo> = succeeded_stds.iter().map(|s| split_infos[&s.path].clone()).collect();
-    let storage_failures: Vec<SplitInfo> = failed_stds.iter().map(|s| split_infos[&s.path].clone()).collect();
+    let successes: Vec<SplitInfo> = succeeded_stds
+        .iter()
+        .map(|s| split_infos[&s.path].clone())
+        .collect();
+    let storage_failures: Vec<SplitInfo> = failed_stds
+        .iter()
+        .map(|s| split_infos[&s.path].clone())
+        .collect();
 
     let mut storage_error: Option<BulkDeleteError> = None;
     if let Some(bulk_delete_error) = storage_err {
