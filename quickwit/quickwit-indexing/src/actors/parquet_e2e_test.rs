@@ -24,15 +24,13 @@ use std::time::Duration;
 use arrow::array::{
     ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array, UInt64Array,
 };
-use arrow::datatypes::Int32Type;
+use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use arrow::record_batch::RecordBatch;
 use bytes::Bytes;
-use parquet::variant::{VariantArrayBuilder, VariantBuilderExt};
 use quickwit_actors::{ActorHandle, Universe};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 use quickwit_parquet_engine::ingest::record_batch_to_ipc;
-use quickwit_parquet_engine::schema::ParquetSchema;
 use quickwit_parquet_engine::storage::{ParquetSplitWriter, ParquetWriterConfig};
 use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
 use quickwit_proto::types::IndexUid;
@@ -65,48 +63,6 @@ async fn wait_for_published_splits(
     .map_err(|_| anyhow::anyhow!("Timeout waiting for {} published splits", expected_splits))
 }
 
-fn create_dict_array(values: &[&str]) -> ArrayRef {
-    let keys: Vec<i32> = (0..values.len()).map(|i| i as i32).collect();
-    let string_array = StringArray::from(values.to_vec());
-    Arc::new(
-        DictionaryArray::<Int32Type>::try_new(Int32Array::from(keys), Arc::new(string_array))
-            .unwrap(),
-    )
-}
-
-fn create_nullable_dict_array(values: &[Option<&str>]) -> ArrayRef {
-    let keys: Vec<Option<i32>> = values
-        .iter()
-        .enumerate()
-        .map(|(i, v)| v.map(|_| i as i32))
-        .collect();
-    let string_values: Vec<&str> = values.iter().filter_map(|v| *v).collect();
-    let string_array = StringArray::from(string_values);
-    Arc::new(
-        DictionaryArray::<Int32Type>::try_new(Int32Array::from(keys), Arc::new(string_array))
-            .unwrap(),
-    )
-}
-
-fn create_variant_array(num_rows: usize, fields: Option<&[(&str, &str)]>) -> ArrayRef {
-    let mut builder = VariantArrayBuilder::new(num_rows);
-    for _ in 0..num_rows {
-        match fields {
-            Some(kv_pairs) => {
-                let mut obj = builder.new_object();
-                for &(key, value) in kv_pairs {
-                    obj = obj.with_field(key, value);
-                }
-                obj.finish();
-            }
-            None => {
-                builder.append_null();
-            }
-        }
-    }
-    ArrayRef::from(builder.build())
-}
-
 fn create_test_batch(
     num_rows: usize,
     metric_name: &str,
@@ -114,44 +70,46 @@ fn create_test_batch(
     base_timestamp: u64,
     base_value: f64,
 ) -> RecordBatch {
-    let schema = ParquetSchema::new();
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new(
+            "metric_name",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            false,
+        ),
+        Field::new("metric_type", DataType::UInt8, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+        Field::new(
+            "service",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            true,
+        ),
+    ]));
 
-    let metric_names: Vec<&str> = vec![metric_name; num_rows];
-    let metric_name_arr: ArrayRef = create_dict_array(&metric_names);
+    let metric_name_arr: ArrayRef = {
+        let keys = Int32Array::from(vec![0i32; num_rows]);
+        let vals = StringArray::from(vec![metric_name]);
+        Arc::new(DictionaryArray::<Int32Type>::try_new(keys, Arc::new(vals)).unwrap())
+    };
     let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; num_rows]));
-    let metric_unit: ArrayRef = Arc::new(StringArray::from(vec![Some("count"); num_rows]));
     let timestamps: Vec<u64> = (0..num_rows).map(|i| base_timestamp + i as u64).collect();
     let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
-    let start_timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(vec![None::<u64>; num_rows]));
     let values: Vec<f64> = (0..num_rows).map(|i| base_value + i as f64).collect();
     let value: ArrayRef = Arc::new(Float64Array::from(values));
-    let tag_service: ArrayRef = create_nullable_dict_array(&vec![Some(service); num_rows]);
-    let tag_env: ArrayRef = create_nullable_dict_array(&vec![Some("prod"); num_rows]);
-    let tag_datacenter: ArrayRef = create_nullable_dict_array(&vec![Some("us-east-1"); num_rows]);
-    let tag_region: ArrayRef = create_nullable_dict_array(&vec![None; num_rows]);
-    let tag_host: ArrayRef = create_nullable_dict_array(&vec![Some("host-001"); num_rows]);
-    let attributes: ArrayRef = create_variant_array(num_rows, None);
-    let service_names: Vec<&str> = vec![service; num_rows];
-    let service_name: ArrayRef = create_dict_array(&service_names);
-    let resource_attributes: ArrayRef = create_variant_array(num_rows, None);
+    let service_arr: ArrayRef = {
+        let keys = Int32Array::from(vec![0i32; num_rows]);
+        let vals = StringArray::from(vec![service]);
+        Arc::new(DictionaryArray::<Int32Type>::try_new(keys, Arc::new(vals)).unwrap())
+    };
 
     RecordBatch::try_new(
-        schema.arrow_schema().clone(),
+        schema,
         vec![
             metric_name_arr,
             metric_type,
-            metric_unit,
             timestamp_secs,
-            start_timestamp_secs,
             value,
-            tag_service,
-            tag_env,
-            tag_datacenter,
-            tag_region,
-            tag_host,
-            attributes,
-            service_name,
-            resource_attributes,
+            service_arr,
         ],
     )
     .unwrap()
@@ -213,9 +171,8 @@ async fn test_metrics_pipeline_e2e() {
     let (uploader_mailbox, _uploader_handle) = universe.spawn_builder().spawn(uploader);
 
     // ParquetPackager between indexer and uploader
-    let parquet_schema = ParquetSchema::new();
     let writer_config = ParquetWriterConfig::default();
-    let split_writer = ParquetSplitWriter::new(parquet_schema, writer_config, temp_dir.path());
+    let split_writer = ParquetSplitWriter::new(writer_config, temp_dir.path());
     let packager = ParquetPackager::new(split_writer, uploader_mailbox);
     let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
