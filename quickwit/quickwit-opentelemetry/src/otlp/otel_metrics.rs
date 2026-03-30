@@ -246,8 +246,7 @@ impl OtlpGrpcMetricsService {
         let num_data_points = data_points.len() as u64 + num_rejected;
 
         // Build Arrow RecordBatch from valid data points
-        let mut arrow_builder =
-            ArrowMetricsBatchBuilder::with_capacity(data_points.len());
+        let mut arrow_builder = ArrowMetricsBatchBuilder::with_capacity(data_points.len());
         let mut doc_uid_generator = DocUidGenerator::default();
         let mut doc_uids = Vec::with_capacity(data_points.len());
 
@@ -746,10 +745,7 @@ mod tests {
         assert_eq!(dp.tags.get("metric_unit").map(|s| s.as_str()), Some("1"));
         assert_eq!(dp.timestamp_secs, 2);
         assert_eq!(dp.value, 100.0); // int converted to f64
-        assert_eq!(
-            dp.tags.get("host").map(|s| s.as_str()),
-            Some("server-1")
-        );
+        assert_eq!(dp.tags.get("host").map(|s| s.as_str()), Some("server-1"));
         assert_eq!(
             dp.tags.get("service").map(|s| s.as_str()),
             Some("counter-service")
@@ -844,10 +840,7 @@ mod tests {
         assert_eq!(dp.tags.get("service").map(|s| s.as_str()), Some("test"));
 
         // Verify data point attributes are in tags as strings
-        assert_eq!(
-            dp.tags.get("string_tag").map(|s| s.as_str()),
-            Some("value")
-        );
+        assert_eq!(dp.tags.get("string_tag").map(|s| s.as_str()), Some("value"));
     }
 
     /// Test metrics with empty and missing values

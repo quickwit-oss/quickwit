@@ -533,12 +533,11 @@ mod tests {
     use quickwit_actors::{ActorHandle, Universe};
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_parquet_engine::storage::{ParquetSplitWriter, ParquetWriterConfig};
+    use quickwit_parquet_engine::test_helpers::create_test_batch;
     use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use quickwit_parquet_engine::test_helpers::create_test_batch;
-
     use crate::actors::{
         ParquetPackager, ParquetPublisher, ParquetUploader, SplitsUpdateMailbox, UploaderType,
     };
@@ -617,7 +616,6 @@ mod tests {
         .await
         .map_err(|_| anyhow::anyhow!("Timeout waiting for {} staged splits", expected_splits))
     }
-
 
     #[tokio::test]
     async fn test_metrics_indexer_receives_batch() {

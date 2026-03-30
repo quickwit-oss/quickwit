@@ -7591,7 +7591,6 @@ dependencies = [
  "arrow",
  "async-trait",
  "once_cell",
- "parquet",
  "prost 0.14.3",
  "quickwit-common",
  "quickwit-config",

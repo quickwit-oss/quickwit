@@ -143,10 +143,7 @@ impl ParquetDocProcessor {
         indexer_mailbox: Mailbox<ParquetIndexer>,
     ) -> Self {
         let processor = ParquetIngestProcessor;
-        let counters = ParquetDocProcessorCounters::new(
-            index_id.clone(),
-            source_id.clone(),
-        );
+        let counters = ParquetDocProcessorCounters::new(index_id.clone(), source_id.clone());
 
         info!(
             index_id = %index_id,
@@ -306,9 +303,8 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
         // Without this, a batch of consistently malformed data blocks offset progress
         // forever.
         if !checkpoint_forwarded && !checkpoint_delta.is_empty() {
-            let empty_batch = RecordBatch::new_empty(std::sync::Arc::new(
-                arrow::datatypes::Schema::empty(),
-            ));
+            let empty_batch =
+                RecordBatch::new_empty(std::sync::Arc::new(arrow::datatypes::Schema::empty()));
             let processed_batch =
                 ProcessedParquetBatch::new(empty_batch, checkpoint_delta, force_commit);
             ctx.send_message(&self.indexer_mailbox, processed_batch)

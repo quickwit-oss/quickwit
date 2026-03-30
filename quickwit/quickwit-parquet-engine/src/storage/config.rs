@@ -169,8 +169,7 @@ impl ParquetWriterConfig {
             // Enable bloom filters on dictionary-typed metric_name and sort order tag columns.
             // Exclude non-dictionary columns, like timestamp_secs.
             let is_bloom_column = matches!(field.data_type(), DataType::Dictionary(_, _))
-                && (field.name() == "metric_name"
-                    || SORT_ORDER.contains(&field.name().as_str()));
+                && (field.name() == "metric_name" || SORT_ORDER.contains(&field.name().as_str()));
             if is_bloom_column {
                 let ndv = if field.name() == "metric_name" {
                     BLOOM_FILTER_NDV_METRIC_NAME

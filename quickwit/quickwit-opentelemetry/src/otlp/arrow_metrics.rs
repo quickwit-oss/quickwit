@@ -24,7 +24,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, Float64Builder, RecordBatch, StringDictionaryBuilder, UInt64Builder, UInt8Builder,
+    ArrayRef, Float64Builder, RecordBatch, StringDictionaryBuilder, UInt8Builder, UInt64Builder,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use arrow::ipc::reader::StreamReader;
@@ -130,8 +130,7 @@ impl ArrowMetricsBatchBuilder {
             arrays.push(Arc::new(tag_builder.finish()));
         }
 
-        RecordBatch::try_new(schema, arrays)
-            .expect("record batch should match Arrow schema")
+        RecordBatch::try_new(schema, arrays).expect("record batch should match Arrow schema")
     }
 
     /// Returns the number of rows appended so far.

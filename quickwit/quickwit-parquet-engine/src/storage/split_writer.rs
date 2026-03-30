@@ -219,11 +219,12 @@ mod tests {
 
     use arrow::array::{ArrayRef, Float64Array, UInt8Array, UInt64Array};
     use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
-    use crate::test_helpers::{create_dict_array, create_nullable_dict_array};
 
     use super::*;
+    use crate::test_helpers::{create_dict_array, create_nullable_dict_array};
 
-    /// Create a test batch with required fields, optional service column, and specified tag columns.
+    /// Create a test batch with required fields, optional service column, and specified tag
+    /// columns.
     fn create_test_batch_with_options(
         num_rows: usize,
         metric_names: &[&str],

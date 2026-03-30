@@ -161,11 +161,13 @@ impl ParquetWriter {
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::{ArrayRef, DictionaryArray, Float64Array, StringArray, UInt64Array, UInt8Array};
+    use arrow::array::{
+        ArrayRef, DictionaryArray, Float64Array, StringArray, UInt8Array, UInt64Array,
+    };
     use arrow::datatypes::{DataType, Field, Int32Type, Schema};
-    use crate::test_helpers::create_test_batch_with_tags;
 
     use super::*;
+    use crate::test_helpers::create_test_batch_with_tags;
 
     fn create_test_batch() -> RecordBatch {
         create_test_batch_with_tags(1, &["service", "env"])
@@ -224,7 +226,10 @@ mod tests {
         .unwrap();
 
         let result = writer.write_to_bytes(&wrong_batch);
-        assert!(matches!(result, Err(ParquetWriteError::SchemaValidation(_))));
+        assert!(matches!(
+            result,
+            Err(ParquetWriteError::SchemaValidation(_))
+        ));
     }
 
     #[test]
@@ -251,7 +256,10 @@ mod tests {
         .unwrap();
 
         let result = writer.write_to_bytes(&wrong_batch);
-        assert!(matches!(result, Err(ParquetWriteError::SchemaValidation(_))));
+        assert!(matches!(
+            result,
+            Err(ParquetWriteError::SchemaValidation(_))
+        ));
     }
 
     #[test]

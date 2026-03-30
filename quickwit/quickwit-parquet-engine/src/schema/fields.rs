@@ -14,7 +14,7 @@
 
 //! Parquet field definitions with sort order constants and validation.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use arrow::datatypes::DataType;
 
 /// Required field names that must exist in every batch.
@@ -55,7 +55,9 @@ pub fn validate_required_fields(schema: &arrow::datatypes::Schema) -> Result<()>
                 if *actual_type != expected_type {
                     bail!(
                         "field '{}' has type {:?}, expected {:?}",
-                        name, actual_type, expected_type
+                        name,
+                        actual_type,
+                        expected_type
                     );
                 }
             }

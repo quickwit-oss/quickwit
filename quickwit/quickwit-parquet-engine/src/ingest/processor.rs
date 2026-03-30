@@ -111,7 +111,10 @@ fn ipc_to_record_batch(ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
         return Err(IngestError::UnexpectedBatchCount(batches.len()));
     }
 
-    Ok(batches.into_iter().next().expect("len verified to be 1 above"))
+    Ok(batches
+        .into_iter()
+        .next()
+        .expect("len verified to be 1 above"))
 }
 
 /// Serialize a RecordBatch to Arrow IPC stream format.
@@ -129,9 +132,8 @@ pub fn record_batch_to_ipc(batch: &RecordBatch) -> Result<Vec<u8>, IngestError> 
 
 #[cfg(test)]
 mod tests {
-    use crate::test_helpers::create_test_batch;
-
     use super::*;
+    use crate::test_helpers::create_test_batch;
 
     #[test]
     fn test_process_ipc() {

@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use arrow::array::{new_null_array, ArrayRef};
+use arrow::array::{ArrayRef, new_null_array};
 use arrow::compute::concat_batches;
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
 use arrow::record_batch::RecordBatch;
@@ -233,9 +233,8 @@ fn estimate_batch_bytes(batch: &RecordBatch) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_helpers::{create_test_batch, create_test_batch_with_tags};
-
     use super::*;
+    use crate::test_helpers::{create_test_batch, create_test_batch_with_tags};
 
     #[test]
     fn test_accumulator_below_threshold() {
@@ -340,7 +339,10 @@ mod tests {
 
         // No duplicate column names — each name appears exactly once.
         let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
-        let unique_count = field_names.iter().collect::<std::collections::HashSet<_>>().len();
+        let unique_count = field_names
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len();
         assert_eq!(
             unique_count,
             field_names.len(),
@@ -365,7 +367,10 @@ mod tests {
 
         let schema = combined.schema();
         let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
-        let unique_count = field_names.iter().collect::<std::collections::HashSet<_>>().len();
+        let unique_count = field_names
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len();
         assert_eq!(
             unique_count,
             field_names.len(),
