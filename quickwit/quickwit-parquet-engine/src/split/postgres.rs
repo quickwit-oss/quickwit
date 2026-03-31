@@ -228,9 +228,8 @@ mod tests {
             .add_high_cardinality_tag_key(TAG_HOST)
             .build();
 
-        let insertable =
-            InsertableParquetSplit::from_metadata(&metadata, SplitState::Staged)
-                .expect("conversion should succeed");
+        let insertable = InsertableParquetSplit::from_metadata(&metadata, SplitState::Staged)
+            .expect("conversion should succeed");
 
         assert_eq!(insertable.split_id, "test-split-001");
         assert_eq!(insertable.split_state, "Staged");
@@ -262,9 +261,8 @@ mod tests {
             .add_low_cardinality_tag(TAG_SERVICE, "test-service")
             .build();
 
-        let insertable =
-            InsertableParquetSplit::from_metadata(&original, SplitState::Published)
-                .expect("conversion should succeed");
+        let insertable = InsertableParquetSplit::from_metadata(&original, SplitState::Published)
+            .expect("conversion should succeed");
 
         let pg_row = PgParquetSplit {
             split_id: insertable.split_id,

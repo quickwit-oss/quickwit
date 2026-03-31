@@ -66,16 +66,14 @@ async fn stage_splits(
         ParquetSplitKind::Sketches => {
             let stage_request =
                 quickwit_proto::metastore::StageSketchSplitsRequest::try_from_splits_metadata(
-                    index_uid,
-                    splits,
+                    index_uid, splits,
                 )?;
             metastore.stage_sketch_splits(stage_request).await?;
         }
         ParquetSplitKind::Metrics => {
             let stage_request =
                 quickwit_proto::metastore::StageMetricsSplitsRequest::try_from_splits_metadata(
-                    index_uid,
-                    splits,
+                    index_uid, splits,
                 )?;
             metastore.stage_metrics_splits(stage_request).await?;
         }
@@ -261,11 +259,8 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 }
 
                 // Stage splits in metastore based on split type
-                let stage_result = stage_splits(
-                    metastore.clone(),
-                    index_uid.clone(),
-                    &splits,
-                ).await;
+                let stage_result =
+                    stage_splits(metastore.clone(), index_uid.clone(), &splits).await;
 
                 if let Err(e) = stage_result {
                     warn!(error = %e, "failed to stage splits");
@@ -276,7 +271,9 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     return;
                 }
 
-                counters.num_staged_splits.fetch_add(splits.len() as u64, Ordering::SeqCst);
+                counters
+                    .num_staged_splits
+                    .fetch_add(splits.len() as u64, Ordering::SeqCst);
                 info!(
                     index_uid = %index_uid,
                     num_splits = splits.len(),
@@ -311,10 +308,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     let payload: Box<dyn quickwit_storage::PutPayload> = Box::new(file_content);
 
                     // Upload to S3 using the filename directly (matches logs pipeline)
-                    if let Err(e) = split_store
-                        .put(Path::new(&parquet_file), payload)
-                        .await
-                    {
+                    if let Err(e) = split_store.put(Path::new(&parquet_file), payload).await {
                         warn!(
                             error = %e,
                             split_id = %split.split_id_str(),
@@ -401,7 +395,9 @@ mod tests {
     fn create_test_metrics_split(index_uid: &str, split_id: &str) -> ParquetSplitMetadata {
         ParquetSplitMetadata::builder()
             .index_uid(index_uid)
-            .split_id(quickwit_parquet_engine::split::ParquetSplitId::new(split_id))
+            .split_id(quickwit_parquet_engine::split::ParquetSplitId::new(
+                split_id,
+            ))
             .time_range(TimeRange::new(1000, 2000))
             .num_rows(100)
             .size_bytes(1024)
@@ -410,7 +406,10 @@ mod tests {
 
     /// Create placeholder parquet files in the temp directory for testing.
     /// The uploader expects to read these files from output_dir.
-    fn create_placeholder_parquet_files(temp_dir: &std::path::Path, splits: &[ParquetSplitMetadata]) {
+    fn create_placeholder_parquet_files(
+        temp_dir: &std::path::Path,
+        splits: &[ParquetSplitMetadata],
+    ) {
         for split in splits {
             let parquet_filename = split.parquet_filename();
             let file_path = temp_dir.join(&parquet_filename);

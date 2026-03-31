@@ -505,10 +505,7 @@ mod tests {
     fn test_split_state() {
         assert_eq!(SplitState::Staged.as_str(), "Staged");
         assert_eq!(SplitState::Published.as_str(), "Published");
-        assert_eq!(
-            SplitState::MarkedForDeletion.as_str(),
-            "MarkedForDeletion"
-        );
+        assert_eq!(SplitState::MarkedForDeletion.as_str(), "MarkedForDeletion");
         assert_eq!(format!("{}", SplitState::Published), "Published");
     }
 

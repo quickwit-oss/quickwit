@@ -31,28 +31,27 @@ use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
     DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
-    DeleteSketchSplitsRequest,
-    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
-    EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
-    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexRoutingTableRequest,
-    GetIndexRoutingTableResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexStats, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
-    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListMetricsSplitsRequest, ListMetricsSplitsResponse,
-    ListShardsRequest, ListShardsResponse, ListShardsSubresponse, ListSketchSplitsRequest,
-    ListSketchSplitsResponse, ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
-    MarkMetricsSplitsForDeletionRequest, MarkSketchSplitsForDeletionRequest,
-    MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult, MetastoreService,
-    MetastoreServiceStream, OpenShardSubrequest, OpenShardSubresponse, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest,
-    PublishSketchSplitsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    SetIndexRoutingTableRequest, SplitStats, StageMetricsSplitsRequest,
-    StageSketchSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
-    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
-    serde_utils,
+    DeleteShardsResponse, DeleteSketchSplitsRequest, DeleteSourceRequest, DeleteSplitsRequest,
+    DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest,
+    FindIndexTemplateMatchesResponse, GetClusterIdentityRequest, GetClusterIdentityResponse,
+    GetIndexRoutingTableRequest, GetIndexRoutingTableResponse, GetIndexTemplateRequest,
+    GetIndexTemplateResponse, IndexMetadataFailure, IndexMetadataFailureReason,
+    IndexMetadataRequest, IndexMetadataResponse, IndexStats, IndexTemplateMatch,
+    IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListMetricsSplitsRequest, ListMetricsSplitsResponse, ListShardsRequest, ListShardsResponse,
+    ListShardsSubresponse, ListSketchSplitsRequest, ListSketchSplitsResponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkMetricsSplitsForDeletionRequest,
+    MarkSketchSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
+    PublishMetricsSplitsRequest, PublishSketchSplitsRequest, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, SetIndexRoutingTableRequest, SplitStats,
+    StageMetricsSplitsRequest, StageSketchSplitsRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
@@ -376,6 +375,7 @@ use quickwit_parquet_engine::split::{
     InsertableParquetSplit, ParquetSplitKind, ParquetSplitMetadata, ParquetSplitRecord,
     PgParquetSplit, SplitState as ParquetSplitState,
 };
+
 use crate::metastore::ListParquetSplitsQuery;
 
 impl PostgresqlMetastore {
@@ -433,10 +433,8 @@ impl PostgresqlMetastore {
             tag_env_json.push(serde_json::to_string(&insertable.tag_env).map_err(json_err)?);
             tag_datacenter_json
                 .push(serde_json::to_string(&insertable.tag_datacenter).map_err(json_err)?);
-            tag_region_json
-                .push(serde_json::to_string(&insertable.tag_region).map_err(json_err)?);
-            tag_host_json
-                .push(serde_json::to_string(&insertable.tag_host).map_err(json_err)?);
+            tag_region_json.push(serde_json::to_string(&insertable.tag_region).map_err(json_err)?);
+            tag_host_json.push(serde_json::to_string(&insertable.tag_host).map_err(json_err)?);
             high_card_tag_keys_json.push(
                 serde_json::to_string(&insertable.high_cardinality_tag_keys).map_err(json_err)?,
             );
@@ -639,58 +637,62 @@ impl PostgresqlMetastore {
             let mut tx: Transaction<'_, Postgres> = self.connection_pool.begin().await?;
             let tx_ref = &mut tx;
             let op_result: MetastoreResult<EmptyResponse> = async {
-            let mut index_metadata_inner = index_metadata(tx_ref, &index_uid.index_id, true).await?;
-            if index_metadata_inner.index_uid != index_uid {
-                return Err(MetastoreError::NotFound(EntityKind::Index {
-                    index_id: index_uid.index_id.clone(),
-                }));
-            }
-            let index_uid_inner = index_metadata_inner.index_uid.clone();
-
-            if let Some(checkpoint_delta) = checkpoint_delta_opt {
-                let source_id = checkpoint_delta.source_id.clone();
-                let source = index_metadata_inner.sources.get(&source_id).ok_or_else(|| {
-                    MetastoreError::NotFound(EntityKind::Source {
-                        index_id: index_uid_inner.index_id.to_string(),
-                        source_id: source_id.to_string(),
-                    })
-                })?;
-
-                if use_shard_api(&source.source_params) {
-                    let publish_token = publish_token_opt.clone().ok_or_else(|| {
-                        let message = format!(
-                            "publish token is required for publishing splits for source \
-                             `{source_id}`"
-                        );
-                        MetastoreError::InvalidArgument { message }
-                    })?;
-                    try_apply_delta_v2(
-                        tx_ref,
-                        &index_uid_inner,
-                        &source_id,
-                        checkpoint_delta.source_delta,
-                        publish_token,
-                    )
-                    .await?;
-                } else {
-                    index_metadata_inner
-                        .checkpoint
-                        .try_apply_delta(checkpoint_delta)
-                        .map_err(|error| {
-                            let entity = EntityKind::CheckpointDelta {
-                                index_id: index_uid_inner.index_id.to_string(),
-                                source_id,
-                            };
-                            let message = error.to_string();
-                            MetastoreError::FailedPrecondition { entity, message }
-                        })?;
+                let mut index_metadata_inner =
+                    index_metadata(tx_ref, &index_uid.index_id, true).await?;
+                if index_metadata_inner.index_uid != index_uid {
+                    return Err(MetastoreError::NotFound(EntityKind::Index {
+                        index_id: index_uid.index_id.clone(),
+                    }));
                 }
-            }
-            let index_metadata_json = serde_utils::to_json_str(&index_metadata_inner)?;
+                let index_uid_inner = index_metadata_inner.index_uid.clone();
 
-            // table_name is a &'static str from ParquetSplitKind, safe for SQL interpolation.
-            let publish_query = format!(
-                r#"
+                if let Some(checkpoint_delta) = checkpoint_delta_opt {
+                    let source_id = checkpoint_delta.source_id.clone();
+                    let source = index_metadata_inner
+                        .sources
+                        .get(&source_id)
+                        .ok_or_else(|| {
+                            MetastoreError::NotFound(EntityKind::Source {
+                                index_id: index_uid_inner.index_id.to_string(),
+                                source_id: source_id.to_string(),
+                            })
+                        })?;
+
+                    if use_shard_api(&source.source_params) {
+                        let publish_token = publish_token_opt.clone().ok_or_else(|| {
+                            let message = format!(
+                                "publish token is required for publishing splits for source \
+                                 `{source_id}`"
+                            );
+                            MetastoreError::InvalidArgument { message }
+                        })?;
+                        try_apply_delta_v2(
+                            tx_ref,
+                            &index_uid_inner,
+                            &source_id,
+                            checkpoint_delta.source_delta,
+                            publish_token,
+                        )
+                        .await?;
+                    } else {
+                        index_metadata_inner
+                            .checkpoint
+                            .try_apply_delta(checkpoint_delta)
+                            .map_err(|error| {
+                                let entity = EntityKind::CheckpointDelta {
+                                    index_id: index_uid_inner.index_id.to_string(),
+                                    source_id,
+                                };
+                                let message = error.to_string();
+                                MetastoreError::FailedPrecondition { entity, message }
+                            })?;
+                    }
+                }
+                let index_metadata_json = serde_utils::to_json_str(&index_metadata_inner)?;
+
+                // table_name is a &'static str from ParquetSplitKind, safe for SQL interpolation.
+                let publish_query = format!(
+                    r#"
                 WITH publish AS (
                     UPDATE {table_name}
                     SET
@@ -724,49 +726,51 @@ impl PostgresqlMetastore {
                     (SELECT COUNT(*) FROM publish) as published_count,
                     (SELECT COUNT(*) FROM mark_for_deletion) as marked_count
                 "#,
-            );
+                );
 
-            let (published_count, marked_count): (i64, i64) =
-                sqlx::query_as(&publish_query)
+                let (published_count, marked_count): (i64, i64) = sqlx::query_as(&publish_query)
                     .bind(&index_uid_inner)
                     .bind(index_metadata_json)
                     .bind(&staged_split_ids)
                     .bind(&replaced_split_ids)
                     .fetch_one(tx_ref.as_mut())
                     .await
-                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid_inner.index_id, sqlx_error))?;
+                    .map_err(|sqlx_error| {
+                        convert_sqlx_err(&index_uid_inner.index_id, sqlx_error)
+                    })?;
 
-            if published_count as usize != staged_split_ids.len() {
-                let entity = EntityKind::Splits {
-                    split_ids: staged_split_ids.clone(),
-                };
-                let message = format!(
-                    "expected to publish {} splits, but only {} were in Staged state",
-                    staged_split_ids.len(),
-                    published_count
+                if published_count as usize != staged_split_ids.len() {
+                    let entity = EntityKind::Splits {
+                        split_ids: staged_split_ids.clone(),
+                    };
+                    let message = format!(
+                        "expected to publish {} splits, but only {} were in Staged state",
+                        staged_split_ids.len(),
+                        published_count
+                    );
+                    return Err(MetastoreError::FailedPrecondition { entity, message });
+                }
+
+                if marked_count as usize != replaced_split_ids.len() {
+                    let entity = EntityKind::Splits {
+                        split_ids: replaced_split_ids.clone(),
+                    };
+                    let message = format!(
+                        "expected to mark {} splits for deletion, but only {} were in Published \
+                         state",
+                        replaced_split_ids.len(),
+                        marked_count
+                    );
+                    return Err(MetastoreError::FailedPrecondition { entity, message });
+                }
+
+                info!(
+                    index_uid = %index_uid_inner,
+                    published_count,
+                    marked_count,
+                    "published {label} splits successfully"
                 );
-                return Err(MetastoreError::FailedPrecondition { entity, message });
-            }
-
-            if marked_count as usize != replaced_split_ids.len() {
-                let entity = EntityKind::Splits {
-                    split_ids: replaced_split_ids.clone(),
-                };
-                let message = format!(
-                    "expected to mark {} splits for deletion, but only {} were in Published state",
-                    replaced_split_ids.len(),
-                    marked_count
-                );
-                return Err(MetastoreError::FailedPrecondition { entity, message });
-            }
-
-            info!(
-                index_uid = %index_uid_inner,
-                published_count,
-                marked_count,
-                "published {label} splits successfully"
-            );
-            Ok(EmptyResponse {})
+                Ok(EmptyResponse {})
             }
             .await;
             match &op_result {
@@ -2484,7 +2488,6 @@ impl MetastoreService for PostgresqlMetastore {
         self.stage_parquet_splits_impl(ParquetSplitKind::Metrics, index_uid, splits_metadata)
             .await
     }
-
 
     #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
     async fn publish_metrics_splits(

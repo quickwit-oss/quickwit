@@ -23,7 +23,9 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-use quickwit_parquet_engine::ingest::{IngestError, ParquetIngestProcessor, SketchParquetIngestProcessor};
+use quickwit_parquet_engine::ingest::{
+    IngestError, ParquetIngestProcessor, SketchParquetIngestProcessor,
+};
 use quickwit_proto::types::{IndexId, SourceId};
 use serde::Serialize;
 use tokio::runtime::Handle;
@@ -158,10 +160,7 @@ impl ParquetDocProcessor {
         source_id: SourceId,
         indexer_mailbox: Mailbox<ParquetIndexer>,
     ) -> Self {
-        let counters = ParquetDocProcessorCounters::new(
-            index_id.clone(),
-            source_id.clone(),
-        );
+        let counters = ParquetDocProcessorCounters::new(index_id.clone(), source_id.clone());
 
         info!(
             index_id = %index_id,
@@ -576,10 +575,7 @@ mod tests {
             quickwit_parquet_engine::schema::SORT_ORDER,
             temp_dir.path(),
         );
-        let packager = ParquetPackager::new(
-            split_writer,
-            uploader_mailbox,
-        );
+        let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
         // Create ParquetIndexer

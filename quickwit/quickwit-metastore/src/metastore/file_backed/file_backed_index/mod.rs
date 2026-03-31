@@ -28,9 +28,7 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_config::{
     DocMapping, IndexingSettings, IngestSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
-use quickwit_parquet_engine::split::{
-    ParquetSplitMetadata, SplitState as ParquetSplitState,
-};
+use quickwit_parquet_engine::split::{ParquetSplitMetadata, SplitState as ParquetSplitState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteTask, EntityKind, IndexStats, ListShardsSubrequest,
@@ -772,7 +770,11 @@ impl FileBackedIndex {
         publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<bool> {
         self.apply_checkpoint_delta(checkpoint_delta_opt, publish_token_opt)?;
-        publish_parquet_splits(&mut self.metrics_splits, staged_split_ids, replaced_split_ids)
+        publish_parquet_splits(
+            &mut self.metrics_splits,
+            staged_split_ids,
+            replaced_split_ids,
+        )
     }
 
     /// Lists metrics splits matching the query.
@@ -813,7 +815,11 @@ impl FileBackedIndex {
         publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<bool> {
         self.apply_checkpoint_delta(checkpoint_delta_opt, publish_token_opt)?;
-        publish_parquet_splits(&mut self.sketch_splits, staged_split_ids, replaced_split_ids)
+        publish_parquet_splits(
+            &mut self.sketch_splits,
+            staged_split_ids,
+            replaced_split_ids,
+        )
     }
 
     /// Lists sketch splits matching the query.

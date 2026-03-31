@@ -116,10 +116,16 @@ impl ArrowSketchBatchBuilder {
         let mut min_builder = Float64Builder::with_capacity(num_rows);
         let mut max_builder = Float64Builder::with_capacity(num_rows);
         let mut flags_builder = UInt32Builder::with_capacity(num_rows);
-        let mut keys_builder = ListBuilder::new(Int16Builder::new())
-            .with_field(Field::new("item", DataType::Int16, false));
-        let mut counts_builder = ListBuilder::new(UInt64Builder::new())
-            .with_field(Field::new("item", DataType::UInt64, false));
+        let mut keys_builder = ListBuilder::new(Int16Builder::new()).with_field(Field::new(
+            "item",
+            DataType::Int16,
+            false,
+        ));
+        let mut counts_builder = ListBuilder::new(UInt64Builder::new()).with_field(Field::new(
+            "item",
+            DataType::UInt64,
+            false,
+        ));
 
         let mut tag_builders: Vec<StringDictionaryBuilder<Int32Type>> = sorted_tag_keys
             .iter()

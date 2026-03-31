@@ -280,10 +280,7 @@ mod tests {
             quickwit_parquet_engine::schema::SORT_ORDER,
             temp_dir,
         );
-        let packager = ParquetPackager::new(
-            split_writer,
-            uploader_mailbox,
-        );
+        let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)
     }
 

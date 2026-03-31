@@ -70,7 +70,8 @@ impl ParquetWriter {
     /// missing columns are skipped.
     fn sort_batch(&self, batch: &RecordBatch) -> Result<RecordBatch, ParquetWriteError> {
         let schema = batch.schema();
-        let mut sort_columns: Vec<SortColumn> = self.sort_order
+        let mut sort_columns: Vec<SortColumn> = self
+            .sort_order
             .iter()
             .filter_map(|name| schema.index_of(name).ok())
             .map(|idx| SortColumn {
@@ -161,9 +162,8 @@ mod tests {
     use arrow::datatypes::{DataType, Field, Int32Type, Schema};
 
     use super::*;
-    use crate::test_helpers::create_test_batch_with_tags;
-
     use crate::schema::SORT_ORDER;
+    use crate::test_helpers::create_test_batch_with_tags;
 
     fn create_test_batch() -> RecordBatch {
         create_test_batch_with_tags(1, &["service", "env"])

@@ -41,7 +41,8 @@ pub struct ParquetEngineMetrics {
     pub index_batches_total: IntCounter,
     /// Total number of rows accumulated during indexing.
     pub index_rows_total: IntCounter,
-    /// Total number of bytes received from IPC payloads during ingestion, by kind (points/sketches).
+    /// Total number of bytes received from IPC payloads during ingestion, by kind
+    /// (points/sketches).
     pub ingest_bytes_total: IntCounterVec<1>,
     /// Histogram of add_batch durations (seconds), including any triggered flush.
     pub index_batch_duration_seconds: Histogram,

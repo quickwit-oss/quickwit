@@ -317,8 +317,7 @@ async fn test_file_backed_metastore_metrics_operations() {
     // Verify staged
     let query = ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Staged".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let staged: Vec<ParquetSplitRecord> = list_response.deserialize_splits().unwrap();
     assert_eq!(staged.len(), 2);
@@ -339,8 +338,7 @@ async fn test_file_backed_metastore_metrics_operations() {
     // Verify published
     let query = ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Published".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let published: Vec<ParquetSplitRecord> = list_response.deserialize_splits().unwrap();
     assert_eq!(published.len(), 1);
@@ -350,8 +348,7 @@ async fn test_file_backed_metastore_metrics_operations() {
     let query = ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Published".to_string()])
         .with_time_range(1000, 1100);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let in_range: Vec<ParquetSplitRecord> = list_response.deserialize_splits().unwrap();
     assert_eq!(in_range.len(), 1);
@@ -359,8 +356,7 @@ async fn test_file_backed_metastore_metrics_operations() {
     let query = ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Published".to_string()])
         .with_time_range(5000, 5100);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let out_of_range: Vec<ParquetSplitRecord> = list_response.deserialize_splits().unwrap();
     assert_eq!(out_of_range.len(), 0);
@@ -369,8 +365,7 @@ async fn test_file_backed_metastore_metrics_operations() {
     let query = ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Published".to_string()])
         .with_metric_names(vec!["cpu.usage".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let by_metric: Vec<ParquetSplitRecord> = list_response.deserialize_splits().unwrap();
     assert_eq!(by_metric.len(), 1);
@@ -582,10 +577,7 @@ async fn test_sketch_pipeline_e2e() {
     assert_eq!(doc_counters.parse_errors, 0);
 
     let packager_counters = packager_handle.process_pending_and_observe().await.state;
-    assert_eq!(
-        packager_counters.splits_produced.load(Ordering::Relaxed),
-        1
-    );
+    assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 1);
     assert!(packager_counters.bytes_written.load(Ordering::Relaxed) > 0);
 
     // Verify the parquet file was uploaded to storage

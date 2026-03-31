@@ -26,6 +26,7 @@ use crate::schema::validate_required_sketch_fields;
 ///
 /// Validates required sketch fields and DDSketch-specific invariants:
 /// - keys and counts arrays must have the same length per row
+#[derive(Default)]
 pub struct SketchParquetIngestProcessor;
 
 impl SketchParquetIngestProcessor {

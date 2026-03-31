@@ -40,8 +40,8 @@ use quickwit_proto::metastore::{
     ListSketchSplitsRequest, ListSketchSplitsResponse, ListSplitsRequest, ListSplitsResponse,
     MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
     MetastoreServiceStream, PublishMetricsSplitsRequest, PublishSketchSplitsRequest,
-    PublishSplitsRequest, StageMetricsSplitsRequest, StageSketchSplitsRequest,
-    StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest, serde_utils,
+    PublishSplitsRequest, StageMetricsSplitsRequest, StageSketchSplitsRequest, StageSplitsRequest,
+    UpdateIndexRequest, UpdateSourceRequest, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use serde::{Deserialize, Serialize};

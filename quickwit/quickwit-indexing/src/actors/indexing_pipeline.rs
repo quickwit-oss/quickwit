@@ -412,7 +412,9 @@ impl IndexingPipeline {
         // Route metrics and sketches indexes to the Parquet/DataFusion pipeline
         if is_parquet_pipeline_index(index_id) {
             let use_sketch_processors = is_sketches_index(index_id);
-            return self.spawn_parquet_pipeline(ctx, use_sketch_processors).await;
+            return self
+                .spawn_parquet_pipeline(ctx, use_sketch_processors)
+                .await;
         }
 
         let source_id = &self.params.pipeline_id.source_id;
@@ -660,8 +662,7 @@ impl IndexingPipeline {
             sort_order,
             self.params.indexing_directory.path(),
         );
-        let parquet_packager =
-            ParquetPackager::new(split_writer_kind, parquet_uploader_mailbox);
+        let parquet_packager = ParquetPackager::new(split_writer_kind, parquet_uploader_mailbox);
         let (parquet_packager_mailbox, parquet_packager_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
