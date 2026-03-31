@@ -25,7 +25,9 @@ use tracing::{debug, info, instrument};
 
 use super::config::ParquetWriterConfig;
 use super::writer::{ParquetWriteError, ParquetWriter};
-use crate::split::{MetricsSplitMetadata, ParquetSplit, SplitId, TAG_SERVICE, TimeRange};
+use crate::split::{
+    ParquetSplit, ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, TAG_SERVICE, TimeRange,
+};
 
 /// Writer that produces complete ParquetSplit with metadata from RecordBatch data.
 pub struct ParquetSplitWriter {
@@ -68,7 +70,7 @@ impl ParquetSplitWriter {
         index_uid: &str,
     ) -> Result<ParquetSplit, ParquetWriteError> {
         // Generate unique split ID
-        let split_id = SplitId::generate();
+        let split_id = ParquetSplitId::generate(ParquetSplitKind::Metrics);
 
         let file_path = self.base_path.join(format!("{}.parquet", split_id));
 
@@ -93,7 +95,8 @@ impl ParquetSplitWriter {
         let service_names = extract_service_names(batch)?;
 
         // Build metadata
-        let metadata = MetricsSplitMetadata::builder()
+        let metadata = ParquetSplitMetadata::builder()
+            .kind(ParquetSplitKind::Metrics)
             .split_id(split_id.clone())
             .index_uid(index_uid)
             .time_range(time_range)

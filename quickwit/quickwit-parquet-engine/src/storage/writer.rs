@@ -107,7 +107,7 @@ impl ParquetWriter {
     }
 
     /// Write a RecordBatch to Parquet bytes in memory.
-    /// The batch is sorted before writing by: metric_name, common tags, timestamp.
+    /// The batch is sorted before writing by the configured sort order.
     #[instrument(skip(self, batch), fields(batch_rows = batch.num_rows()))]
     pub fn write_to_bytes(&self, batch: &RecordBatch) -> Result<Vec<u8>, ParquetWriteError> {
         validate_required_fields(&batch.schema())
@@ -129,7 +129,7 @@ impl ParquetWriter {
     }
 
     /// Write a RecordBatch to a Parquet file.
-    /// The batch is sorted before writing by: metric_name, common tags, timestamp.
+    /// The batch is sorted before writing by the configured sort order.
     ///
     /// Returns the number of bytes written.
     #[instrument(skip(self, batch), fields(batch_rows = batch.num_rows(), path = %path.display()))]
