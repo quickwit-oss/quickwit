@@ -227,6 +227,7 @@ etcetera,https://github.com/lunacookies/etcetera,MIT OR Apache-2.0,The etcetera 
 event-listener,https://github.com/smol-rs/event-listener,Apache-2.0 OR MIT,Stjepan Glavina <stjepang@gmail.com>
 event-listener,https://github.com/smol-rs/event-listener,Apache-2.0 OR MIT,"Stjepan Glavina <stjepang@gmail.com>, John Nunley <dev@notgull.net>"
 event-listener-strategy,https://github.com/smol-rs/event-listener-strategy,Apache-2.0 OR MIT,John Nunley <dev@notgull.net>
+event-percolation,ssh://git@github.com/DataDog/event-percolation,Datadog,The event-percolation Authors
 fail,https://github.com/tikv/fail-rs,Apache-2.0,The TiKV Project Developers
 fancy-regex,https://github.com/fancy-regex/fancy-regex,MIT,"Raph Levien <raph@google.com>, Robin Stocker <robin@nibor.org>"
 fancy-regex,https://github.com/fancy-regex/fancy-regex,MIT,"Raph Levien <raph@google.com>, Robin Stocker <robin@nibor.org>, Keith Hall <keith.hall@available.systems>"
@@ -242,6 +243,7 @@ float-cmp,https://github.com/mikedilger/float-cmp,MIT,Mike Dilger <mike@mikedilg
 fluent-uri,https://github.com/yescallop/fluent-uri-rs,MIT,Scallop Ye <yescallop@gmail.com>
 flume,https://github.com/zesterer/flume,Apache-2.0 OR MIT,Joshua Barretto <joshua.s.barretto@gmail.com>
 fnv,https://github.com/servo/rust-fnv,Apache-2.0  OR  MIT,Alex Crichton <alex@alexcrichton.com>
+focaccia,https://github.com/artichoke/focaccia,MIT AND Unicode-3.0,Ryan Lopopolo <rjl@hyperbo.la>
 foldhash,https://github.com/orlp/foldhash,Zlib,Orson Peters <orsonpeters@gmail.com>
 foreign-types,https://github.com/sfackler/foreign-types,MIT OR Apache-2.0,Steven Fackler <sfackler@gmail.com>
 foreign-types-shared,https://github.com/sfackler/foreign-types,MIT OR Apache-2.0,Steven Fackler <sfackler@gmail.com>
@@ -591,6 +593,7 @@ rust-embed-utils,https://pyrossh.dev/repos/rust-embed,MIT,pyrossh
 rust-stemmers,https://github.com/CurrySoftware/rust-stemmers,MIT OR BSD-3-Clause,"Jakob Demler <jdemler@curry-software.com>, CurrySoftware <info@curry-software.com>"
 rust_decimal,https://github.com/paupino/rust-decimal,MIT,Paul Mason <paul@form1.co.nz>
 rustc-demangle,https://github.com/rust-lang/rustc-demangle,MIT OR Apache-2.0,Alex Crichton <alex@alexcrichton.com>
+rustc-hash,https://github.com/rust-lang-nursery/rustc-hash,Apache-2.0 OR MIT,The Rust Project Developers
 rustc-hash,https://github.com/rust-lang/rustc-hash,Apache-2.0 OR MIT,The Rust Project Developers
 rustix,https://github.com/bytecodealliance/rustix,Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT,"Dan Gohman <dev@sunfishcode.online>, Jakub Konka <kubkon@jakubkonka.com>"
 rustls,https://github.com/rustls/rustls,Apache-2.0 OR ISC OR MIT,The rustls Authors

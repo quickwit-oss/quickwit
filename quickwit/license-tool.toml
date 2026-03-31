@@ -10,3 +10,6 @@
 "ring-0.17.8" = { license = "ISC AND Custom" }
 
 "pomchi" = { license = "Datadog" }
+
+"event-percolation" = { license = "Datadog" }
+
