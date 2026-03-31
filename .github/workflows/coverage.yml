@@ -45,6 +45,7 @@ jobs:
           - "8080:8080"
         env:
           SERVICES: kinesis,s3,sqs
+          LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT: 1
         options: >-
           --health-cmd "curl -k https://localhost:4566"
           --health-interval 10s
