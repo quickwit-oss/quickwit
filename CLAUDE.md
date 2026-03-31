@@ -253,16 +253,18 @@ Environment variables set during test-all:
 
 **MUST** (required for merge):
 - [ ] `cargo clippy --workspace --all-features --tests` passes with no warnings
-- [ ] `cargo +nightly fmt -- --check` passes
+- [ ] `cargo +nightly fmt --all -- --check` passes (run `cargo +nightly fmt --all` to fix; applies to **all** changed `.rs` files including tests — CI checks every file, not just lib code)
 - [ ] `debug_assert!` for non-obvious invariants
 - [ ] No `unwrap()` in library code
 - [ ] No silent error ignoring (`let _ =`)
 - [ ] New files under 500 lines (split by responsibility if larger)
 - [ ] No unnecessary `.clone()` (OK in actor/async code for clarity)
 - [ ] Tests through production path (HTTP/gRPC)
-- [ ] License headers present (run `bash quickwit/scripts/check_license_headers.sh`)
+- [ ] License headers present (run `bash quickwit/scripts/check_license_headers.sh` — every `.rs`, `.proto`, and `.py` file needs the Apache 2.0 header)
 - [ ] Log format correct (run `bash quickwit/scripts/check_log_format.sh`)
 - [ ] `typos` passes (spellcheck)
+- [ ] `cargo machete` passes (no unused dependencies in Cargo.toml)
+- [ ] `cargo doc --no-deps` passes (each PR must compile independently, not just the final stack)
 - [ ] Tests pass: `cargo nextest run --all-features`
 
 **SHOULD** (expected unless justified):
