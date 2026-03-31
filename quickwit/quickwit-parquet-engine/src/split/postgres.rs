@@ -71,6 +71,12 @@ pub struct PgMetricsSplit {
     pub size_bytes: i64,
     pub split_metadata_json: String,
     pub update_timestamp: i64,
+    pub window_start: Option<i64>,
+    pub window_duration_secs: i32,
+    pub sort_fields: String,
+    pub num_merge_ops: i32,
+    pub row_keys: Option<Vec<u8>>,
+    pub zonemap_regexes: String,
 }
 
 /// Insertable row for metrics_splits table.
@@ -92,6 +98,12 @@ pub struct InsertableMetricsSplit {
     pub num_rows: i64,
     pub size_bytes: i64,
     pub split_metadata_json: String,
+    pub window_start: Option<i64>,
+    pub window_duration_secs: i32,
+    pub sort_fields: String,
+    pub num_merge_ops: i32,
+    pub row_keys: Option<Vec<u8>>,
+    pub zonemap_regexes: String,
 }
 
 impl InsertableMetricsSplit {
@@ -101,6 +113,12 @@ impl InsertableMetricsSplit {
         state: MetricsSplitState,
     ) -> Result<Self, serde_json::Error> {
         let split_metadata_json = serde_json::to_string(metadata)?;
+
+        let zonemap_regexes_json = if metadata.zonemap_regexes.is_empty() {
+            "{}".to_string()
+        } else {
+            serde_json::to_string(&metadata.zonemap_regexes)?
+        };
 
         Ok(Self {
             split_id: metadata.split_id.as_str().to_string(),
@@ -118,6 +136,12 @@ impl InsertableMetricsSplit {
             num_rows: metadata.num_rows as i64,
             size_bytes: metadata.size_bytes as i64,
             split_metadata_json,
+            window_start: metadata.window_start(),
+            window_duration_secs: metadata.window_duration_secs() as i32,
+            sort_fields: metadata.sort_fields.clone(),
+            num_merge_ops: metadata.num_merge_ops as i32,
+            row_keys: metadata.row_keys_proto.clone(),
+            zonemap_regexes: zonemap_regexes_json,
         })
     }
 }
@@ -134,10 +158,17 @@ impl PgMetricsSplit {
         // Primary path: deserialize from JSON (authoritative)
         let metadata: MetricsSplitMetadata = serde_json::from_str(&self.split_metadata_json)?;
 
-        // Overlay database columns (for consistency verification in debug builds)
+        // SS-5: Verify consistency between JSON blob and SQL columns.
         debug_assert_eq!(metadata.split_id.as_str(), self.split_id);
         debug_assert_eq!(metadata.time_range.start_secs, self.time_range_start as u64);
         debug_assert_eq!(metadata.time_range.end_secs, self.time_range_end as u64);
+        debug_assert_eq!(metadata.window_start(), self.window_start);
+        debug_assert_eq!(
+            metadata.window_duration_secs(),
+            self.window_duration_secs as u32
+        );
+        debug_assert_eq!(metadata.sort_fields, self.sort_fields);
+        debug_assert_eq!(metadata.num_merge_ops, self.num_merge_ops as u32);
 
         Ok(metadata)
     }
@@ -259,6 +290,12 @@ mod tests {
             size_bytes: insertable.size_bytes,
             split_metadata_json: insertable.split_metadata_json,
             update_timestamp: 1704067200,
+            window_start: insertable.window_start,
+            window_duration_secs: insertable.window_duration_secs,
+            sort_fields: insertable.sort_fields,
+            num_merge_ops: insertable.num_merge_ops,
+            row_keys: insertable.row_keys,
+            zonemap_regexes: insertable.zonemap_regexes,
         };
 
         let recovered = pg_row.to_metadata().expect("should deserialize");

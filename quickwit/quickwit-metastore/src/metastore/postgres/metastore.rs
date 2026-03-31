@@ -2312,6 +2312,12 @@ impl MetastoreService for PostgresqlMetastore {
                     size_bytes: row.13,
                     split_metadata_json: row.14,
                     update_timestamp: row.15,
+                    window_start: None,
+                    window_duration_secs: 0,
+                    sort_fields: String::new(),
+                    num_merge_ops: 0,
+                    row_keys: None,
+                    zonemap_regexes: String::new(),
                 };
 
                 let state = pg_split.split_state().unwrap_or(MetricsSplitState::Staged);
