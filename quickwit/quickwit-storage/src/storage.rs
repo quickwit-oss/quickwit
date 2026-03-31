@@ -181,7 +181,7 @@ impl DownloadTempFile {
     }
 
     pub async fn persist(mut self) -> io::Result<u64> {
-        TempPath::from_path(&self.temp_filepath).persist(&self.target_filepath)?;
+        TempPath::try_from_path(&self.temp_filepath)?.persist(&self.target_filepath)?;
         self.has_attempted_deletion = true;
         let num_bytes = std::fs::metadata(&self.target_filepath)?.len();
         Ok(num_bytes)

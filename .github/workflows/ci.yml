@@ -143,7 +143,7 @@ jobs:
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get -y install protobuf-compiler
+          sudo apt-get -y install protobuf-compiler libcurl4-openssl-dev
       - name: Setup nightly Rust Toolchain (for rustfmt)
         if: steps.modified.outputs.rust_src == 'true'
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # master
