@@ -189,6 +189,7 @@ impl DocBatchV2 {
             doc_uids,
             doc_buffer: Bytes::from(doc_buffer),
             doc_lengths,
+            doc_format: DocFormat::Json as i32,
         }
     }
 }

@@ -47,6 +47,7 @@ jobs:
           - "8080:8080"
         env:
           SERVICES: kinesis,s3,sqs
+          LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT: 1
         options: >-
           --health-cmd "curl -k https://localhost:4566"
           --health-interval 10s
@@ -142,6 +143,7 @@ jobs:
           sudo apt update
           sudo apt install libsasl2-dev
           sudo apt install libsasl2-2
+          sudo apt install libcurl4-openssl-dev
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v.6.2.0
         with:

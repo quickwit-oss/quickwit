@@ -273,6 +273,7 @@ impl prost::Message for Position {
                         error
                     },
                 )?;
+                #[allow(deprecated)]
                 let byte_string = ByteString::try_from(value)
                     .map_err(|_| DecodeError::new("position is not valid UTF-8"))?;
                 *self = Self::from(byte_string);
