@@ -112,7 +112,8 @@ impl SketchParquetIngestProcessor {
                     "sketch array length mismatch: keys and counts must have same length"
                 );
                 return Err(IngestError::SchemaValidation(format!(
-                    "sketch array length mismatch at row {}: keys has {} elements but counts has {}",
+                    "sketch array length mismatch at row {}: keys has {} elements but counts has \
+                     {}",
                     row, keys_len, counts_len,
                 )));
             }
@@ -126,11 +127,10 @@ pub(crate) mod tests {
     use std::sync::Arc;
 
     use arrow::array::{
-        ArrayRef, DictionaryArray, Float64Array, Int16Array, Int32Array, ListArray, StringArray,
-        UInt32Array, UInt64Array,
+        ArrayRef, Float64Array, Int16Array, ListArray, UInt32Array, UInt64Array,
     };
     use arrow::buffer::OffsetBuffer;
-    use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
+    use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 
     use super::*;
     use crate::ingest::processor::record_batch_to_ipc;

@@ -697,8 +697,7 @@ impl ListSplitsResponseExt for ListSplitsResponse {
 // Parquet Splits Extension Traits (unified via macros)
 // =====================================================
 
-use quickwit_parquet_engine::split::ParquetSplitMetadata;
-use quickwit_parquet_engine::split::ParquetSplitRecord;
+use quickwit_parquet_engine::split::{ParquetSplitMetadata, ParquetSplitRecord};
 
 /// Helper trait to build stage requests for parquet splits.
 pub trait StageParquetSplitsRequestExt: Sized {

@@ -261,9 +261,7 @@ impl FileBackedMetastore {
     }
 
     async fn read<T, F>(&self, index_uid: &IndexUid, view: F) -> MetastoreResult<T>
-    where
-        F: FnOnce(&FileBackedIndex) -> MetastoreResult<T>,
-    {
+    where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
         self.read_any(
             index_uid.index_id.as_str(),
             Some(index_uid.incarnation_id),
