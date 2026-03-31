@@ -116,18 +116,28 @@ jobs:
           workspaces: "./quickwit -> target"
 
       - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
-        id: octo-sts
+        id: octo-sts-pomchi
         with:
           scope: DataDog/PomChi
           policy: access
 
-      - name: Configure git rewrite (STS token)
+      - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
+        id: octo-sts-event-percolation
+        with:
+          scope: DataDog/event-percolation
+          policy: access_pomsky
+
+      - name: Configure git rewrite (STS tokens)
         env:
-          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          POMCHI_TOKEN: ${{ steps.octo-sts-pomchi.outputs.token }}
+          EP_TOKEN: ${{ steps.octo-sts-event-percolation.outputs.token }}
         run: |
-          echo "::add-mask::${GH_TOKEN}"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
+          echo "::add-mask::${POMCHI_TOKEN}"
+          echo "::add-mask::${EP_TOKEN}"
+          git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi"
+          git config --global --add url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "[email protected]:DataDog/PomChi"
+          git config --global url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"
+          git config --global --add url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "[email protected]:DataDog/event-percolation"
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/install-action@aba36d755ec7ca22d38b12111787c26115943952
@@ -193,18 +203,28 @@ jobs:
               - quickwit/**/*.proto
               - .github/workflows/ci.yml
       - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
-        id: octo-sts
+        id: octo-sts-pomchi
         with:
           scope: DataDog/PomChi
           policy: access
 
-      - name: Configure git rewrite (STS token)
+      - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
+        id: octo-sts-event-percolation
+        with:
+          scope: DataDog/event-percolation
+          policy: access_pomsky
+
+      - name: Configure git rewrite (STS tokens)
         env:
-          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          POMCHI_TOKEN: ${{ steps.octo-sts-pomchi.outputs.token }}
+          EP_TOKEN: ${{ steps.octo-sts-event-percolation.outputs.token }}
         run: |
-          echo "::add-mask::${GH_TOKEN}"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
+          echo "::add-mask::${POMCHI_TOKEN}"
+          echo "::add-mask::${EP_TOKEN}"
+          git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi"
+          git config --global --add url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "[email protected]:DataDog/PomChi"
+          git config --global url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"
+          git config --global --add url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "[email protected]:DataDog/event-percolation"
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: sudo apt update && sudo apt-get -y install protobuf-compiler
@@ -288,18 +308,28 @@ jobs:
           toolchain: stable
 
       - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
-        id: octo-sts
+        id: octo-sts-pomchi
         with:
           scope: DataDog/PomChi
           policy: access
 
-      - name: Configure git rewrite (STS token)
+      - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
+        id: octo-sts-event-percolation
+        with:
+          scope: DataDog/event-percolation
+          policy: access_pomsky
+
+      - name: Configure git rewrite (STS tokens)
         env:
-          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          POMCHI_TOKEN: ${{ steps.octo-sts-pomchi.outputs.token }}
+          EP_TOKEN: ${{ steps.octo-sts-event-percolation.outputs.token }}
         run: |
-          echo "::add-mask::${GH_TOKEN}"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
+          echo "::add-mask::${POMCHI_TOKEN}"
+          echo "::add-mask::${EP_TOKEN}"
+          git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi"
+          git config --global --add url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "[email protected]:DataDog/PomChi"
+          git config --global url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"
+          git config --global --add url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "[email protected]:DataDog/event-percolation"
 
       - name: Cache cargo tools
         uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
