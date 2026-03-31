@@ -19,6 +19,13 @@
 
 mod fields;
 mod parquet;
+pub mod sketch_fields;
+pub mod sketch_schema;
 
-pub use fields::{REQUIRED_FIELDS, SORT_ORDER, required_field_type, validate_required_fields};
+pub use fields::{
+    REQUIRED_FIELDS, SKETCH_REQUIRED_FIELDS, SKETCH_SORT_ORDER, SORT_ORDER, required_field_type,
+    sketch_required_field_type, validate_required_fields, validate_required_sketch_fields,
+};
 pub use parquet::ParquetSchema;
+pub use sketch_fields::SketchParquetField;
+pub use sketch_schema::SketchParquetSchema;
