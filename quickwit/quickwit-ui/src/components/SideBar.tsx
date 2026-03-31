@@ -12,9 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import CodeOutlinedIcon from "@mui/icons-material/CodeOutlined";
-import GroupWorkOutlinedIcon from "@mui/icons-material/GroupWorkOutlined";
-import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
+import { Code2, Database, Network, Settings } from "lucide-react";
 import {
   ListItemButton,
   ListSubheader,
@@ -24,7 +22,6 @@ import {
 import List from "@mui/material/List";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
-import DatabaseIcon from "./icons/DatabaseIcon";
 import * as React from "react";
 import { Link as RouterLink, LinkProps as RouterLinkProps } from "react-router";
 import { useLocalStorage } from "../providers/LocalStorageProvider";
@@ -88,7 +85,7 @@ const SideBar = () => {
         <ListItemLink
           to={searchUrl}
           primary={<Typography variant="body1">Query editor</Typography>}
-          icon={<CodeOutlinedIcon sx={{ fontSize: "18px" }} />}
+          icon={<Code2 size={18} />}
         />
         <ListSubheader sx={{ lineHeight: "25px", paddingTop: "10px" }}>
           <Typography variant="body1">Admin</Typography>
@@ -96,22 +93,22 @@ const SideBar = () => {
         <ListItemLink
           to="/indexes"
           primary={<Typography variant="body1">Indexes</Typography>}
-          icon={<DatabaseIcon />}
+          icon={<Database size={18} />}
         />
         <ListItemLink
           to="/cluster"
           primary={<Typography variant="body1">Cluster</Typography>}
-          icon={<GroupWorkOutlinedIcon sx={{ fontSize: "18px" }} />}
+          icon={<Network size={18} />}
         />
         <ListItemLink
           to="/node-info"
           primary={<Typography variant="body1">Node info</Typography>}
-          icon={<SettingsOutlinedIcon sx={{ fontSize: "18px" }} />}
+          icon={<Settings size={18} />}
         />
         <ListItemLink
           to="/api-playground"
           primary={<Typography variant="body1">API </Typography>}
-          icon={<CodeOutlinedIcon sx={{ fontSize: "18px" }} />}
+          icon={<Code2 size={18} />}
         />
       </List>
     </SideBarWrapper>
