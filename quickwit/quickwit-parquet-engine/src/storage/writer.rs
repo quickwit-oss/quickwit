@@ -27,7 +27,6 @@ use thiserror::Error;
 use tracing::{debug, instrument};
 
 use super::config::ParquetWriterConfig;
-use crate::schema::{SORT_ORDER, validate_required_fields};
 
 /// Errors that can occur during parquet writing.
 #[derive(Debug, Error)]
@@ -49,15 +48,16 @@ pub enum ParquetWriteError {
     SchemaValidation(String),
 }
 
-/// Writer for metrics data to Parquet format.
+/// Writer for data to Parquet format with configurable sort order.
 pub struct ParquetWriter {
     config: ParquetWriterConfig,
+    sort_order: &'static [&'static str],
 }
 
 impl ParquetWriter {
-    /// Create a new ParquetWriter.
-    pub fn new(config: ParquetWriterConfig) -> Self {
-        Self { config }
+    /// Create a new ParquetWriter with a custom sort order.
+    pub fn new(config: ParquetWriterConfig, sort_order: &'static [&'static str]) -> Self {
+        Self { config, sort_order }
     }
 
     /// Get the writer configuration.
@@ -70,7 +70,7 @@ impl ParquetWriter {
     /// missing columns are skipped.
     fn sort_batch(&self, batch: &RecordBatch) -> Result<RecordBatch, ParquetWriteError> {
         let schema = batch.schema();
-        let mut sort_columns: Vec<SortColumn> = SORT_ORDER
+        let mut sort_columns: Vec<SortColumn> = self.sort_order
             .iter()
             .filter_map(|name| schema.index_of(name).ok())
             .map(|idx| SortColumn {
@@ -110,9 +110,6 @@ impl ParquetWriter {
     /// The batch is sorted before writing by the configured sort order.
     #[instrument(skip(self, batch), fields(batch_rows = batch.num_rows()))]
     pub fn write_to_bytes(&self, batch: &RecordBatch) -> Result<Vec<u8>, ParquetWriteError> {
-        validate_required_fields(&batch.schema())
-            .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?;
-
         // Sort the batch before writing for efficient pruning
         let sorted_batch = self.sort_batch(batch)?;
 
@@ -138,9 +135,6 @@ impl ParquetWriter {
         batch: &RecordBatch,
         path: &Path,
     ) -> Result<u64, ParquetWriteError> {
-        validate_required_fields(&batch.schema())
-            .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?;
-
         // Sort the batch before writing for efficient pruning
         let sorted_batch = self.sort_batch(batch)?;
 
@@ -169,6 +163,8 @@ mod tests {
     use super::*;
     use crate::test_helpers::create_test_batch_with_tags;
 
+    use crate::schema::SORT_ORDER;
+
     fn create_test_batch() -> RecordBatch {
         create_test_batch_with_tags(1, &["service", "env"])
     }
@@ -176,13 +172,13 @@ mod tests {
     #[test]
     fn test_writer_creation() {
         let config = ParquetWriterConfig::default();
-        let _writer = ParquetWriter::new(config);
+        let _writer = ParquetWriter::new(config, SORT_ORDER);
     }
 
     #[test]
     fn test_write_to_bytes() {
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config);
+        let writer = ParquetWriter::new(config, SORT_ORDER);
 
         let batch = create_test_batch();
         let bytes = writer.write_to_bytes(&batch).unwrap();
@@ -195,7 +191,7 @@ mod tests {
     #[test]
     fn test_write_to_file() {
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config);
+        let writer = ParquetWriter::new(config, SORT_ORDER);
 
         let batch = create_test_batch();
         let temp_dir = std::env::temp_dir();
@@ -211,7 +207,7 @@ mod tests {
     #[test]
     fn test_schema_validation_missing_field() {
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config);
+        let writer = ParquetWriter::new(config, SORT_ORDER);
 
         // Create a batch missing required fields
         let wrong_schema = Arc::new(Schema::new(vec![Field::new(
@@ -235,7 +231,7 @@ mod tests {
     #[test]
     fn test_schema_validation_wrong_type() {
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config);
+        let writer = ParquetWriter::new(config, SORT_ORDER);
 
         // Create a batch where metric_name has wrong type (Utf8 instead of Dictionary)
         let wrong_schema = Arc::new(Schema::new(vec![
@@ -267,7 +263,7 @@ mod tests {
         use super::super::config::Compression;
 
         let config = ParquetWriterConfig::new().with_compression(Compression::Snappy);
-        let writer = ParquetWriter::new(config);
+        let writer = ParquetWriter::new(config, SORT_ORDER);
 
         let batch = create_test_batch();
         let bytes = writer.write_to_bytes(&batch).unwrap();
@@ -283,7 +279,7 @@ mod tests {
         use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config);
+        let writer = ParquetWriter::new(config, SORT_ORDER);
 
         // Create a schema with required fields + service tag for sort verification
         let schema = Arc::new(Schema::new(vec![

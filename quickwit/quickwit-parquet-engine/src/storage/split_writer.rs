@@ -26,26 +26,27 @@ use tracing::{debug, info, instrument};
 use super::config::ParquetWriterConfig;
 use super::writer::{ParquetWriteError, ParquetWriter};
 use crate::split::{
-    ParquetSplit, ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, TAG_SERVICE, TimeRange,
+    ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, TAG_SERVICE, TimeRange,
 };
 
-/// Writer that produces complete ParquetSplit with metadata from RecordBatch data.
+/// Writer that produces Parquet split files with metadata from RecordBatch data.
 pub struct ParquetSplitWriter {
-    /// The underlying Parquet writer.
+    kind: ParquetSplitKind,
     writer: ParquetWriter,
-    /// Base directory for split files.
     base_path: PathBuf,
 }
 
 impl ParquetSplitWriter {
     /// Create a new ParquetSplitWriter.
-    ///
-    /// # Arguments
-    /// * `config` - Parquet writer configuration
-    /// * `base_path` - Directory where split files will be written
-    pub fn new(config: ParquetWriterConfig, base_path: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        kind: ParquetSplitKind,
+        config: ParquetWriterConfig,
+        sort_order: &'static [&'static str],
+        base_path: impl Into<PathBuf>,
+    ) -> Self {
         Self {
-            writer: ParquetWriter::new(config),
+            kind,
+            writer: ParquetWriter::new(config, sort_order),
             base_path: base_path.into(),
         }
     }
@@ -55,32 +56,20 @@ impl ParquetSplitWriter {
         &self.base_path
     }
 
-    /// Write a RecordBatch to a Parquet file and return a ParquetSplit with metadata.
-    ///
-    /// # Arguments
-    /// * `batch` - The RecordBatch to write
-    /// * `index_uid` - The index unique identifier for the split metadata
-    ///
-    /// # Returns
-    /// A ParquetSplit containing metadata extracted from the batch and the file path.
-    #[instrument(skip(self, batch), fields(batch_rows = batch.num_rows()))]
+    /// Write a RecordBatch to a Parquet file and return split metadata.
+    #[instrument(skip(self, batch), fields(batch_rows = batch.num_rows(), kind = %self.kind))]
     pub fn write_split(
         &self,
         batch: &RecordBatch,
         index_uid: &str,
-    ) -> Result<ParquetSplit, ParquetWriteError> {
-        // Generate unique split ID
-        let split_id = ParquetSplitId::generate(ParquetSplitKind::Metrics);
-
+    ) -> Result<ParquetSplitMetadata, ParquetWriteError> {
+        let split_id = ParquetSplitId::generate(self.kind);
         let file_path = self.base_path.join(format!("{}.parquet", split_id));
 
-        // Ensure the base directory exists
         std::fs::create_dir_all(&self.base_path)?;
 
-        // Write batch to file
         let size_bytes = self.writer.write_to_file(batch, &file_path)?;
 
-        // Extract time range from batch
         let time_range = extract_time_range(batch)?;
         debug!(
             start_secs = time_range.start_secs,
@@ -88,30 +77,24 @@ impl ParquetSplitWriter {
             "extracted time range from batch"
         );
 
-        // Extract distinct metric names from batch
         let metric_names = extract_metric_names(batch)?;
+        let service_names = extract_dict_column_values(batch, "service");
 
-        // Extract distinct service names from batch
-        let service_names = extract_service_names(batch)?;
-
-        // Build metadata
-        let metadata = ParquetSplitMetadata::builder()
-            .kind(ParquetSplitKind::Metrics)
+        let mut metadata = ParquetSplitMetadata::builder()
+            .kind(self.kind)
             .split_id(split_id.clone())
             .index_uid(index_uid)
             .time_range(time_range)
             .num_rows(batch.num_rows() as u64)
             .size_bytes(size_bytes);
 
-        // Add metric names
-        let metadata = metric_names
-            .into_iter()
-            .fold(metadata, |m, name| m.add_metric_name(name));
+        for name in metric_names {
+            metadata = metadata.add_metric_name(name);
+        }
 
-        // Add service names as low-cardinality tags
-        let metadata = service_names.into_iter().fold(metadata, |m, name| {
-            m.add_low_cardinality_tag(TAG_SERVICE, name)
-        });
+        for name in service_names {
+            metadata = metadata.add_low_cardinality_tag(TAG_SERVICE, name);
+        }
 
         let metadata = metadata.build();
 
@@ -122,7 +105,7 @@ impl ParquetSplitWriter {
             "split file written successfully"
         );
 
-        Ok(ParquetSplit::new(metadata))
+        Ok(metadata)
     }
 }
 
@@ -156,50 +139,29 @@ fn extract_metric_names(batch: &RecordBatch) -> Result<HashSet<String>, ParquetW
         .schema()
         .index_of("metric_name")
         .map_err(|_| ParquetWriteError::SchemaValidation("missing metric_name column".into()))?;
-    let metric_col = batch.column(metric_idx);
-    let mut names = HashSet::new();
-
-    // The column is Dictionary(Int32, Utf8)
-    if let Some(dict_array) = metric_col
-        .as_any()
-        .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
-    {
-        let values = dict_array.values();
-        if let Some(string_values) = values.as_any().downcast_ref::<arrow::array::StringArray>() {
-            // Get all dictionary values that are actually used
-            for i in 0..dict_array.len() {
-                if !dict_array.is_null(i)
-                    && let Ok(key) = dict_array.keys().value(i).try_into()
-                {
-                    let key: usize = key;
-                    if key < string_values.len() && !string_values.is_null(key) {
-                        names.insert(string_values.value(key).to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(names)
+    Ok(extract_dict_column_values_at(batch, metric_idx))
 }
 
-/// Extracts distinct service names from a RecordBatch.
-fn extract_service_names(batch: &RecordBatch) -> Result<HashSet<String>, ParquetWriteError> {
-    let service_idx = match batch.schema().index_of("service").ok() {
-        Some(idx) => idx,
-        None => return Ok(HashSet::new()),
-    };
-    let service_col = batch.column(service_idx);
+/// Extracts distinct string values from a dictionary-encoded column by name.
+/// Returns an empty set if the column doesn't exist or isn't dictionary-encoded.
+fn extract_dict_column_values(batch: &RecordBatch, column_name: &str) -> HashSet<String> {
+    match batch.schema().index_of(column_name).ok() {
+        Some(idx) => extract_dict_column_values_at(batch, idx),
+        None => HashSet::new(),
+    }
+}
+
+/// Extracts distinct string values from a dictionary-encoded column by index.
+fn extract_dict_column_values_at(batch: &RecordBatch, col_idx: usize) -> HashSet<String> {
+    let col = batch.column(col_idx);
     let mut names = HashSet::new();
 
-    // The column is Dictionary(Int32, Utf8)
-    if let Some(dict_array) = service_col
+    if let Some(dict_array) = col
         .as_any()
         .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
     {
         let values = dict_array.values();
         if let Some(string_values) = values.as_any().downcast_ref::<arrow::array::StringArray>() {
-            // Get all dictionary values that are actually used
             for i in 0..dict_array.len() {
                 if !dict_array.is_null(i)
                     && let Ok(key) = dict_array.keys().value(i).try_into()
@@ -213,7 +175,7 @@ fn extract_service_names(batch: &RecordBatch) -> Result<HashSet<String>, Parquet
         }
     }
 
-    Ok(names)
+    names
 }
 
 #[cfg(test)]
@@ -224,6 +186,7 @@ mod tests {
     use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 
     use super::*;
+    use crate::schema::SORT_ORDER;
     use crate::test_helpers::{create_dict_array, create_nullable_dict_array};
 
     /// Create a test batch with required fields, optional service column, and specified tag
@@ -299,21 +262,26 @@ mod tests {
         let config = ParquetWriterConfig::default();
         let temp_dir = tempfile::tempdir().unwrap();
 
-        let writer = ParquetSplitWriter::new(config, temp_dir.path());
+        let writer = ParquetSplitWriter::new(
+            ParquetSplitKind::Metrics,
+            config,
+            SORT_ORDER,
+            temp_dir.path(),
+        );
 
         let batch = create_test_batch(10);
-        let split = writer.write_split(&batch, "test-index").unwrap();
+        let metadata = writer.write_split(&batch, "test-index").unwrap();
 
         // Verify file exists
-        let file_path = temp_dir.path().join(split.metadata.parquet_filename());
+        let file_path = temp_dir.path().join(metadata.parquet_filename());
         assert!(
             std::fs::metadata(&file_path).is_ok(),
             "Parquet file should exist"
         );
 
         // Verify metadata
-        assert_eq!(split.metadata.num_rows, 10);
-        assert!(split.metadata.size_bytes > 0);
+        assert_eq!(metadata.num_rows, 10);
+        assert!(metadata.size_bytes > 0);
     }
 
     #[test]
@@ -321,7 +289,12 @@ mod tests {
         let config = ParquetWriterConfig::default();
         let temp_dir = tempfile::tempdir().unwrap();
 
-        let writer = ParquetSplitWriter::new(config, temp_dir.path());
+        let writer = ParquetSplitWriter::new(
+            ParquetSplitKind::Metrics,
+            config,
+            SORT_ORDER,
+            temp_dir.path(),
+        );
 
         // Create batch with timestamps [100, 150, 200]
         let batch = create_test_batch_with_options(
@@ -331,11 +304,10 @@ mod tests {
             Some(&["my-service", "my-service", "my-service"]),
             &[],
         );
-        let split = writer.write_split(&batch, "test-index").unwrap();
+        let metadata = writer.write_split(&batch, "test-index").unwrap();
 
-        // Verify time range
-        assert_eq!(split.metadata.time_range.start_secs, 100);
-        assert_eq!(split.metadata.time_range.end_secs, 201); // exclusive
+        assert_eq!(metadata.time_range.start_secs, 100);
+        assert_eq!(metadata.time_range.end_secs, 201); // exclusive
     }
 
     #[test]
@@ -343,7 +315,12 @@ mod tests {
         let config = ParquetWriterConfig::default();
         let temp_dir = tempfile::tempdir().unwrap();
 
-        let writer = ParquetSplitWriter::new(config, temp_dir.path());
+        let writer = ParquetSplitWriter::new(
+            ParquetSplitKind::Metrics,
+            config,
+            SORT_ORDER,
+            temp_dir.path(),
+        );
 
         // Create batch with specific metric names
         let batch = create_test_batch_with_options(
@@ -353,11 +330,10 @@ mod tests {
             Some(&["my-service", "my-service", "my-service"]),
             &[],
         );
-        let split = writer.write_split(&batch, "test-index").unwrap();
+        let metadata = writer.write_split(&batch, "test-index").unwrap();
 
-        // Verify metric names (distinct values)
-        assert!(split.metadata.metric_names.contains("cpu.usage"));
-        assert!(split.metadata.metric_names.contains("memory.used"));
-        assert_eq!(split.metadata.metric_names.len(), 2);
+        assert!(metadata.metric_names.contains("cpu.usage"));
+        assert!(metadata.metric_names.contains("memory.used"));
+        assert_eq!(metadata.metric_names.len(), 2);
     }
 }

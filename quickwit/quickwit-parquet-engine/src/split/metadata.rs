@@ -59,6 +59,12 @@ impl ParquetSplitKind {
     }
 }
 
+impl std::fmt::Display for ParquetSplitKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
 /// Default kind used by serde for backwards-compatible deserialization.
 fn default_metrics_kind() -> ParquetSplitKind {
     ParquetSplitKind::Metrics
