@@ -17,14 +17,13 @@ import {
   Box,
   IconButton,
   Link,
-  SvgIcon,
   styled,
   Tooltip,
   Typography,
 } from "@mui/material";
+import DiscordIcon from "./icons/DiscordIcon";
 import AppBar from "@mui/material/AppBar";
 import Toolbar from "@mui/material/Toolbar";
-import { Discord } from "@styled-icons/fa-brands/Discord";
 import { useEffect, useMemo, useState } from "react";
 import quickwitLogoUrl from "../assets/img/quickwit-logo-with-title.svg";
 import { Client } from "../services/client";
@@ -76,9 +75,7 @@ const TopBar = () => {
         </Link>
         <Link href="https://discord.gg/rpRRTezWhW" target="_blank">
           <IconButton size="large">
-            <SvgIcon>
-              <Discord />
-            </SvgIcon>
+            <DiscordIcon />
           </IconButton>
         </Link>
         <Link href="https://github.com/quickwit-inc/quickwit" target="_blank">

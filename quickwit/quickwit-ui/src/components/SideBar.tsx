@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import CodeIcon from "@mui/icons-material/Code";
+import GroupWorkIcon from "@mui/icons-material/GroupWork";
+import SettingsIcon from "@mui/icons-material/Settings";
 import {
   ListItemButton,
   ListSubheader,
@@ -21,10 +24,7 @@ import {
 import List from "@mui/material/List";
 import ListItemIcon from "@mui/material/ListItemIcon";
 import ListItemText from "@mui/material/ListItemText";
-import { Database } from "@styled-icons/feather/Database";
-import { Settings } from "@styled-icons/feather/Settings";
-import { GroupWork } from "@styled-icons/material-outlined/GroupWork";
-import { CodeSSlash } from "@styled-icons/remix-line/CodeSSlash";
+import DatabaseIcon from "./icons/DatabaseIcon";
 import * as React from "react";
 import { Link as RouterLink, LinkProps as RouterLinkProps } from "react-router";
 import { useLocalStorage } from "../providers/LocalStorageProvider";
@@ -88,7 +88,7 @@ const SideBar = () => {
         <ListItemLink
           to={searchUrl}
           primary={<Typography variant="body1">Query editor</Typography>}
-          icon={<CodeSSlash size="18px" />}
+          icon={<CodeIcon sx={{ fontSize: "18px" }} />}
         />
         <ListSubheader sx={{ lineHeight: "25px", paddingTop: "10px" }}>
           <Typography variant="body1">Admin</Typography>
@@ -96,22 +96,22 @@ const SideBar = () => {
         <ListItemLink
           to="/indexes"
           primary={<Typography variant="body1">Indexes</Typography>}
-          icon={<Database size="18px" />}
+          icon={<DatabaseIcon />}
         />
         <ListItemLink
           to="/cluster"
           primary={<Typography variant="body1">Cluster</Typography>}
-          icon={<GroupWork size="18px" />}
+          icon={<GroupWorkIcon sx={{ fontSize: "18px" }} />}
         />
         <ListItemLink
           to="/node-info"
           primary={<Typography variant="body1">Node info</Typography>}
-          icon={<Settings size="18px" />}
+          icon={<SettingsIcon sx={{ fontSize: "18px" }} />}
         />
         <ListItemLink
           to="/api-playground"
           primary={<Typography variant="body1">API </Typography>}
-          icon={<CodeSSlash size="18px" />}
+          icon={<CodeIcon sx={{ fontSize: "18px" }} />}
         />
       </List>
     </SideBarWrapper>
