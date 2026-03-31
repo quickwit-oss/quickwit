@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -336,6 +335,7 @@ impl Handler<Loop> for GarbageCollector {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::ops::Bound;
     use std::path::Path;
     use std::sync::Arc;

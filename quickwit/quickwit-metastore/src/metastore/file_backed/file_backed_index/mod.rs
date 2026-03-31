@@ -1005,17 +1005,17 @@ fn metrics_split_matches_query(split: &StoredMetricsSplit, query: &ListMetricsSp
     }
 
     // Filter by update timestamp
-    if let Some(update_timestamp_lte) = query.update_timestamp_lte {
-        if split.update_timestamp > update_timestamp_lte {
-            return false;
-        }
+    if let Some(update_timestamp_lte) = query.update_timestamp_lte
+        && split.update_timestamp > update_timestamp_lte
+    {
+        return false;
     }
 
     // Filter by max time_range_end (retention policy: splits whose data ends before cutoff)
-    if let Some(max_time_range_end) = query.max_time_range_end {
-        if (split.metadata.time_range.end_secs as i64) > max_time_range_end {
-            return false;
-        }
+    if let Some(max_time_range_end) = query.max_time_range_end
+        && (split.metadata.time_range.end_secs as i64) > max_time_range_end
+    {
+        return false;
     }
 
     true
