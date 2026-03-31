@@ -223,6 +223,19 @@ pub fn is_metrics_index(index_id: &str) -> bool {
     index_id.starts_with("otel-metrics") || index_id.starts_with("metrics-")
 }
 
+/// Returns whether the given index ID corresponds to a sketches index.
+///
+/// Sketches indexes use the Parquet/DataFusion pipeline with sketch-specific
+/// processors and writers.
+pub fn is_sketches_index(index_id: &str) -> bool {
+    index_id.starts_with("sketches-")
+}
+
+/// Returns whether the given index ID uses the Parquet/DataFusion pipeline.
+pub fn is_parquet_pipeline_index(index_id: &str) -> bool {
+    is_metrics_index(index_id) || is_sketches_index(index_id)
+}
+
 #[macro_export]
 macro_rules! ignore_error_kind {
     ($kind:path, $expr:expr) => {
@@ -442,6 +455,21 @@ mod tests {
         assert!(!is_metrics_index("logs-default"));
         assert!(!is_metrics_index("metrics")); // No hyphen after "metrics"
         assert!(!is_metrics_index("my-metrics-index")); // Not prefixed
+    }
+
+    #[test]
+    fn test_is_sketches_index() {
+        assert!(is_sketches_index("sketches-default"));
+        assert!(!is_sketches_index("otel-metrics"));
+        assert!(!is_sketches_index("my-index"));
+    }
+
+    #[test]
+    fn test_is_parquet_pipeline_index() {
+        assert!(is_parquet_pipeline_index("otel-metrics"));
+        assert!(is_parquet_pipeline_index("sketches-default"));
+        assert!(!is_parquet_pipeline_index("otel-logs-v0_7"));
+        assert!(!is_parquet_pipeline_index("my-index"));
     }
 
     #[test]

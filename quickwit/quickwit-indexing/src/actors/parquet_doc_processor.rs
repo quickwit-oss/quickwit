@@ -23,7 +23,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-use quickwit_parquet_engine::ingest::{IngestError, ParquetIngestProcessor};
+use quickwit_parquet_engine::ingest::{IngestError, ParquetIngestProcessor, SketchParquetIngestProcessor};
 use quickwit_proto::types::{IndexId, SourceId};
 use serde::Serialize;
 use tokio::runtime::Handle;
@@ -116,17 +116,32 @@ pub enum ParquetDocProcessorError {
     Ingest(#[from] IngestError),
 }
 
-/// ParquetDocProcessor actor that routes Arrow IPC batches to the metrics engine.
+/// Enum wrapping the ingest processor variant for metrics vs sketches.
+pub enum IngestProcessor {
+    Metrics(ParquetIngestProcessor),
+    Sketches(SketchParquetIngestProcessor),
+}
+
+impl IngestProcessor {
+    fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
+        match self {
+            Self::Metrics(p) => p.process_ipc(ipc_bytes),
+            Self::Sketches(p) => p.process_ipc(ipc_bytes),
+        }
+    }
+}
+
+/// ParquetDocProcessor actor that routes Arrow IPC batches to the parquet engine.
 ///
 /// This actor receives RawDocBatch messages containing Arrow IPC data and converts
-/// them to RecordBatch using ParquetIngestProcessor. The resulting batches are
-/// forwarded to ParquetIndexer for accumulation and split production.
+/// them to RecordBatch using the configured ingest processor. The resulting batches
+/// are forwarded to ParquetIndexer for accumulation and split production.
 ///
 /// Unlike DocProcessor which converts to Tantivy documents, this actor works
-/// exclusively with Arrow RecordBatch for high-throughput metrics ingestion.
+/// exclusively with Arrow RecordBatch for high-throughput metrics/sketch ingestion.
 pub struct ParquetDocProcessor {
     /// Processor for converting Arrow IPC to RecordBatch.
-    processor: ParquetIngestProcessor,
+    processor: IngestProcessor,
     /// Processing counters.
     counters: ParquetDocProcessorCounters,
     /// Publish lock for coordinating with sources.
@@ -138,12 +153,15 @@ pub struct ParquetDocProcessor {
 impl ParquetDocProcessor {
     /// Creates a new ParquetDocProcessor.
     pub fn new(
+        processor: IngestProcessor,
         index_id: IndexId,
         source_id: SourceId,
         indexer_mailbox: Mailbox<ParquetIndexer>,
     ) -> Self {
-        let processor = ParquetIngestProcessor;
-        let counters = ParquetDocProcessorCounters::new(index_id.clone(), source_id.clone());
+        let counters = ParquetDocProcessorCounters::new(
+            index_id.clone(),
+            source_id.clone(),
+        );
 
         info!(
             index_id = %index_id,
@@ -403,6 +421,7 @@ mod tests {
 
         let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox::<ParquetIndexer>();
         let metrics_doc_processor = ParquetDocProcessor::new(
+            IngestProcessor::Metrics(ParquetIngestProcessor),
             "test-metrics-index".to_string(),
             "test-source".to_string(),
             indexer_mailbox,
@@ -444,6 +463,7 @@ mod tests {
 
         let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox::<ParquetIndexer>();
         let metrics_doc_processor = ParquetDocProcessor::new(
+            IngestProcessor::Metrics(ParquetIngestProcessor),
             "test-metrics-index".to_string(),
             "test-source".to_string(),
             indexer_mailbox,
@@ -479,6 +499,7 @@ mod tests {
 
         let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox::<ParquetIndexer>();
         let metrics_doc_processor = ParquetDocProcessor::new(
+            IngestProcessor::Metrics(ParquetIngestProcessor),
             "test-metrics-index".to_string(),
             "test-source".to_string(),
             indexer_mailbox,
@@ -549,8 +570,16 @@ mod tests {
 
         // Create ParquetPackager
         let writer_config = ParquetWriterConfig::default();
-        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir.path());
-        let packager = ParquetPackager::new(split_writer, uploader_mailbox);
+        let split_writer = ParquetSplitWriter::new(
+            quickwit_parquet_engine::split::ParquetSplitKind::Metrics,
+            writer_config,
+            quickwit_parquet_engine::schema::SORT_ORDER,
+            temp_dir.path(),
+        );
+        let packager = ParquetPackager::new(
+            split_writer,
+            uploader_mailbox,
+        );
         let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
         // Create ParquetIndexer
@@ -564,6 +593,7 @@ mod tests {
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         let metrics_doc_processor = ParquetDocProcessor::new(
+            IngestProcessor::Metrics(ParquetIngestProcessor),
             "test-index".to_string(),
             "test-source".to_string(),
             indexer_mailbox,
