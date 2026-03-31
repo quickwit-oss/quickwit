@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import CodeIcon from "@mui/icons-material/Code";
-import GroupWorkIcon from "@mui/icons-material/GroupWork";
-import SettingsIcon from "@mui/icons-material/Settings";
+import CodeOutlinedIcon from "@mui/icons-material/CodeOutlined";
+import GroupWorkOutlinedIcon from "@mui/icons-material/GroupWorkOutlined";
+import SettingsOutlinedIcon from "@mui/icons-material/SettingsOutlined";
 import {
   ListItemButton,
   ListSubheader,
@@ -88,7 +88,7 @@ const SideBar = () => {
         <ListItemLink
           to={searchUrl}
           primary={<Typography variant="body1">Query editor</Typography>}
-          icon={<CodeIcon sx={{ fontSize: "18px" }} />}
+          icon={<CodeOutlinedIcon sx={{ fontSize: "18px" }} />}
         />
         <ListSubheader sx={{ lineHeight: "25px", paddingTop: "10px" }}>
           <Typography variant="body1">Admin</Typography>
@@ -101,17 +101,17 @@ const SideBar = () => {
         <ListItemLink
           to="/cluster"
           primary={<Typography variant="body1">Cluster</Typography>}
-          icon={<GroupWorkIcon sx={{ fontSize: "18px" }} />}
+          icon={<GroupWorkOutlinedIcon sx={{ fontSize: "18px" }} />}
         />
         <ListItemLink
           to="/node-info"
           primary={<Typography variant="body1">Node info</Typography>}
-          icon={<SettingsIcon sx={{ fontSize: "18px" }} />}
+          icon={<SettingsOutlinedIcon sx={{ fontSize: "18px" }} />}
         />
         <ListItemLink
           to="/api-playground"
           primary={<Typography variant="body1">API </Typography>}
-          icon={<CodeIcon sx={{ fontSize: "18px" }} />}
+          icon={<CodeOutlinedIcon sx={{ fontSize: "18px" }} />}
         />
       </List>
     </SideBarWrapper>
