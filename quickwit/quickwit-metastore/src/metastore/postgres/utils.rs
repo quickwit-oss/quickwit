@@ -109,7 +109,7 @@ pub(super) fn append_query_filters_and_order_by(
 
     if let Some(split_ids) = &query.split_ids {
         sql.cond_where(Expr::col(Splits::SplitId).is_in(split_ids));
-    };
+    }
 
     if let Some(node_id) = &query.node_id {
         sql.cond_where(Expr::col(Splits::NodeId).eq(node_id));

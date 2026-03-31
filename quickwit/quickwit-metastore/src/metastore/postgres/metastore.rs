@@ -1207,10 +1207,11 @@ impl MetastoreService for PostgresqlMetastore {
         "#;
 
         // Build a lookup map: split_id → new doc IDs to add.
-        let new_ids_by_split: HashMap<&str, BTreeSet<u32>> = split_doc_ids
-            .iter()
-            .map(|s| (s.split_id.as_str(), s.doc_ids.iter().copied().collect()))
-            .collect();
+        let mut new_ids_by_split: HashMap<&str, BTreeSet<u32>> = HashMap::new();
+        for split in &split_doc_ids {
+            let entry = new_ids_by_split.entry(split.split_id.as_str()).or_default();
+            entry.extend(split.doc_ids.iter().copied());
+        }
 
         let requested_split_ids: Vec<&str> =
             split_doc_ids.iter().map(|s| s.split_id.as_str()).collect();
@@ -1264,7 +1265,7 @@ impl MetastoreService for PostgresqlMetastore {
 
                 updated_metadata_jsons.push(serde_utils::to_json_str(&split_metadata)?);
                 updated_split_ids.push(split_id);
-                total_soft_deleted += new_count as u64;
+                total_soft_deleted += (new_count - old_count) as u64;
             }
 
             // Phase 2: all validations passed — apply all updates in a single query.

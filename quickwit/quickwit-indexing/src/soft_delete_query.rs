@@ -73,7 +73,7 @@ impl DocSet for SortedDocIdScorer {
     }
 
     fn size_hint(&self) -> u32 {
-        self.doc_ids.len() as u32
+        self.doc_ids.len().saturating_sub(self.pos) as u32
     }
 }
 

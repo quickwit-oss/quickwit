@@ -807,7 +807,7 @@ impl ListSplitsQuery {
         self
     }
 
-    /// Selects splits produced by the specified node.
+    /// Selects only splits with the specified IDs.
     pub fn with_split_ids(mut self, split_ids: Vec<SplitId>) -> Self {
         self.split_ids = Some(split_ids);
         self

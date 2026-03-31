@@ -89,7 +89,6 @@ impl Weight for SoftDeleteWeight {
 
 /// A tantivy [`Query`] that wraps another query and excludes a fixed set of
 /// soft-deleted doc IDs from every result set it produces.
-/// ```
 pub(crate) struct SoftDeleteQuery {
     inner: Box<dyn Query>,
     /// Sorted, deduplicated tantivy doc IDs to exclude.

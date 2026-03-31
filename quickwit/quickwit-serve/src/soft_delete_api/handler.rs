@@ -48,7 +48,7 @@ pub struct SoftDeleteApi;
 pub struct SoftDeleteRequest {
     /// Query text in Tantivy query language to match events to soft-delete.
     pub query: String,
-    /// Maximum number of events to soft-delete in a single call (default: 10000).
+    /// Maximum number of events to soft-delete in a single call (default: 100).
     #[serde(default = "default_max_soft_deletes")]
     pub max_hits: u64,
     /// If set, restrict soft-delete to documents with a `timestamp >= start_timestamp`.
@@ -116,8 +116,8 @@ pub async fn post_soft_delete(
 ) -> Result<SoftDeleteResponse, SearchError> {
     // 1. Build a SearchRequest from the soft-delete query.
     // Validate the query and make sure it doesn't require default search fields
-    query_ast_from_user_text(&request.query, None).parse_user_query(&[])?;
     let query_ast = query_ast_from_user_text(&request.query, None);
+    query_ast.clone().parse_user_query(&[])?;
     let query_ast_json = serde_json::to_string(&query_ast)
         .map_err(|err| SearchError::Internal(format!("failed to serialize query AST: {err}")))?;
 

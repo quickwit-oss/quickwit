@@ -227,8 +227,8 @@ impl Handler<SplitsUpdate> for Publisher {
     }
 }
 
-/// Re-reads the soft-deleted doc IDs for all input splits from the metastore and logs a
-/// warning for each split whose soft-delete set grew while the merge was running.
+/// Re-reads the soft-deleted doc IDs for all input splits from the metastore and logs an
+/// error for each split whose soft-delete set grew while the merge was running.
 async fn warn_if_soft_deletes_changed_during_merge(
     index_uid: &IndexUid,
     replaced_splits: &[ReplacedSplit],
