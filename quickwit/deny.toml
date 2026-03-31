@@ -106,6 +106,13 @@ version = "*"
 expression = "MIT"
 license-files = []
 
+# event-percolation does not have a license, so we arbitrarily declare it as MIT in order to allow it.
+[[licenses.clarify]]
+name = "event-percolation"
+version = "*"
+expression = "MIT"
+license-files = []
+
 [licenses.private]
 # If true, ignores workspace crates that aren't published, or are only
 # published to private registries
