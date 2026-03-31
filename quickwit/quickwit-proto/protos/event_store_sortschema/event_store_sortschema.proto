@@ -1,0 +1,231 @@
+// Copyright 2021-Present Datadog, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+// Vendored from dd-source: domains/event-platform/shared/libs/event-store-proto/protos/event_store_sortschema/
+// Keep identical to upstream -- do NOT strip unused fields.
+
+package sortschema;
+
+option java_package = "com.dd.event.store.sortschema.proto";
+option java_multiple_files = true;
+option go_package = "github.com/DataDog/dd-source/domains/event-platform/shared/libs/event-store-proto/protos/event_store_sortschema";
+
+// NOTE:  Be thoughtful making changes to this file.  Everything included here is
+//        included in the metadata of every fragment, and in each fragment header.
+
+enum SortColumnDirection {
+    // SortDirectionUnknown will pop up if someone forgets to initialize a field.
+    SortDirectionUnknown = 0;
+
+    // SortDirectionAscending sorts columns in ascending value order.
+    SortDirectionAscending = 1;
+
+    // SortDirectionDescending sorts columns in descending value order.
+    SortDirectionDescending = 2;
+}
+
+// SortColumn represents a single column that's participating in the sort order
+// for rows in the fragment files.
+//
+// NOTE: Carefully consider whether you need to modify the implementation of
+//       schemautils.go/EquivalentSchemas function whenever this struct is modified.
+message SortColumn {
+    string name = 1;
+    // This integer corresponds 1:1 with the application-level column type which is also a number.
+    // We do that instead of breaking out a separate ENUM here to avoid having to maintain a bunch
+    // of mapping code that converts from column types to protobuf ENUMs and back again for no reason.
+    uint64 column_type = 2;
+    SortColumnDirection sort_direction = 3;
+
+    // NOTE: If we decide later to form lexicographic keys from the schema,
+    //       it may be useful to supply an integer here which would indicate
+    //       the sort precedence and could be used for tagging for e.g.
+    //       orderedcode lexicographic keys.
+}
+
+// SortSchema represents a set of column names and precedence values which define
+// the partial lexicographical sort order of rows in a fragment file, built from the
+// individual column orderings.  Precedence of the columns for sorting is given by
+// the order of the columns in the SortSchema.  "timestamp" must appear, with
+// SortColumnType INT64, SortDirection DESCENDING, last.
+//
+// NOTE: Carefully consider whether you need to modify the implementation of
+//       schemautils.go/EquivalentSchemas function whenever this struct is modified.
+message SortSchema {
+    // Very common schemas used all over the place are assigned a unique version number (reference
+    // in dd-go/logs/apps/logs-event-store/storage/fragment/schema_versions.go).
+    //
+    // This version number can be used in place of the complete schema description in the fragment
+    // metadata entries, to reduce their size. When this value is not null, the other fields in the
+    // SortSchema are not used and don't need to be set.
+    uint64 version = 4;
+
+    repeated SortColumn column = 1;
+
+    // Used in metrics, etc.
+    string name = 2;
+
+    // SortVersion specifies what type of sorting of the data has been done.
+    // Fragments with different SortVersion numbers are *never* merged by the
+    // compactor.
+    enum SortVersion {
+        // The initial version of per-file locality sorting had a bug where it sorted
+        // the rows by the full values of string fields in the sort columns, but reported
+        // trimmed values in the RowKeys.  This could yield what appeared to be
+        // "out of order" keys because keys that only differ in the portion that was
+        // trimmed could sort differently than trimmed values, and this would yield
+        // what looked like overlapping fragments after m:n merges.  Fragments produced
+        // this way are not compatible with the LSM algorithm and must be excluded.
+        INCORRECT_TRIM = 0;
+
+        // Files marked with this version use LessTrimmed both in their production
+        // in the writer, and in the merges produced by the compactor.  Trimming has
+        // a "budget" that allows the leading string fields to take up "more"
+        // characters if they need to without overflowing into huge values in the
+        // metadata server.  This budgeting is intended to cover when e.g. "service"
+        // is a leading tag with long service names.
+        TRIMMED_WITH_BUDGET = 1;
+    }
+
+    SortVersion sort_version = 3;
+
+    // Cutoff position for LSM compaction comparisons. Only columns 0 through
+    // lsm_comparison_cutoff-1 are considered for fragment locality decisions.
+    // Allows sorting by columns that improve compression without creating
+    // unnecessary extra compaction work.
+    // This cutoff is represented in the sort schema string format with an `&`
+    // at the beginning of the name of the first column that should be
+    // ignored, like "service__s|&env__s|timestamp/V1" which would only use
+    // "service__s" for locality comparisons.
+    // When unset, or explicitly set to 0, the schema utils will use the
+    // legacy logic of ignoring timestamp and tiebreaker, if they are present.
+    int32 lsm_comparison_cutoff = 5;
+}
+
+// A ColumnValue is a string, int, uint or float which corresponds to a sort column.
+message ColumnValue {
+    oneof value {
+        bytes type_string = 1;
+        int64 type_int = 2;
+        double type_float = 3;
+    }
+}
+
+// ColumnValues represent a set of column values that correspond with a particular
+// SortSchema.
+message ColumnValues {
+    repeated ColumnValue column = 1;
+}
+
+// RowKeys represent the "row keys" of the first and last rows of a fragment file.
+// The values are the values of the sort columns at the first and last row, respectively.
+message RowKeys {
+    // These are the values of the sort colums at the first row, thus defining the
+    // lower inclusive boundary of the fragment file, i.e. using the minimum values of any
+    // multi-values in the column values(1), which is what the sorting operates upon.
+    ColumnValues min_row_values = 1;
+
+    // These are the values of the sort columns at the last row, thus defining the
+    // upper boundary of the sorted rows of the fragment file, i.e. using the minimum
+    // values of any multi-values in the column values(1), which is what the sorting
+    // operates upon.
+    //
+    // Note that the string fields in min_row_values and max_row_values are trimmed
+    // to avoid storing "too large" values in the metadata server, and the sort order
+    // of the rows in the fragment files are determined using these trimmed keys to
+    // match.
+    //
+    // During m:n merging of fragments, when boundaries of fragments are selected,
+    // they are selected at transitions of key values of the trimmed keys so that the
+    // [min_row_values, max_row_values] ranges of the output fragments do not overlap.
+    // This property is important for two reasons.  First, we want to prune fragments
+    // from queries based on the values of the sort schema columns.  By making the
+    // fragments non-overlapping, we enable this pruning.  Secondly, we don't want
+    // compaction strategies like the classic LSM strategy to re-merge the same
+    // fragments over and over.
+    //
+    // An interesting consequence of the key trimming is that a fragment may have
+    // a row in it with values that come "after" the max_row_values keys outside
+    // of the "trimmed" range of the column values.  For example, if the trim budget
+    // for a column is four characters, and the fragment ends at "abcd", "abcd" and
+    // "abcd123" would yield the same trimmed key value and would both be stored in
+    // the same fragment.  However "abce" would be stored in a different fragment.
+    ColumnValues max_row_values = 2;
+
+    // This set of values defines the all-inclusive range boundary of the file considering
+    // the max values of any multi-values in the column values(2).  This boundary is the
+    // boundary w.r.t. queries.
+    ColumnValues all_inclusive_max_row_values = 3;
+
+
+    // For track table expirations (splitting M fragments into N1 expired fragments and N2 live fragments),
+    // there is a potential for output fragments to overlap in key range. This is because the sort schema of track
+    // table starts with retention at intake + scopeID, and retention can change between the moment the fragment
+    // is created and the moment it is expired. To give an example, say a fragment has scopeIDs 1, 2, 3, 4, 5,
+    // all with a retention at intake of 7 days. If the retention for 3 and 5 is changed to 15 days,
+    // then 7 days later at expiration the fragment will be split into two fragments,
+    // one "expired" with scopeIDs 1, 2 and 4 and one "live" with scopeIDs 3 and 5.
+    // The row keys will be (7:1..., 7:4...) for the first fragment, and (7:3...,7:5...) for the second,
+    // which overlap. To avoid this, we add an `expired` boolean to the row keys, so we allow a live and an expired
+    // fragment to overlap in key range.
+    bool expired = 4;
+
+    // Footnotes:
+    //
+    //   (1) For min_row_values and max_row_values with multi-values in the column
+    //       values, the sort order is by the minimum value of a multi-value for an
+    //       ascending-sort-order column and the maximum value for a descending-sort-order
+    //       column.
+    //   (2) For all_inclusive_max_row_values, the value of any multi-values encountered
+    //       that is used is the maximum value for an ascending-sort-order column and
+    //       the minimum value for a descending-sort-order column.
+
+
+
+    // Example:
+    //
+    // Let's say we have the following columns.  Values at each row enclosed with [brackets].
+    // Column B is sorted in descending order.  The others are sorted in ascending order.
+    //
+    //     Column A           Column B          Column C
+    //     ========           ========          ========
+    // 1:  [1, 2, 99]         [B]               [x, y]
+    // 2:  [1, 4]             [A, C]            [y]
+    // 3:  [2]                [B, C]            [z]
+    // 4:  [2]                [A, B, C]         [x]
+    // 5:  [2]                [A]               [y, z]
+    // 6:  [3]                [B]               [x, y, z]
+    //
+    // min_row_key is {A=1, B=B, C=x}
+    // max_row_key is {A=3, B=B, C=x}
+    // all_inclusive_max_row_key is {A=99, B=B, C=y}
+    //
+    // The idea with these keys is that [min_row_key, max_row_key] defines the range that
+    // covers a single fragment file for the purposes of computing overlaps for deciding
+    // what to perform an m:n merge to "flatten" files that overlap in key range so that
+    // queries don't have to visit all the files.
+    //
+    // If there are no multi-valued sort columns, this is the end of the story.  However
+    // if there are multi-valued sort columns, the range that a given file covers in
+    // terms of queries is given by [min_row_key, all_inclusive_max_row_key].  A lot of
+    // overlaps with these ranges indicate "atomic rows" for a table that cause queries
+    // to hit more files, degrading performance.
+    //
+    // Initially the compactor will only consider [min_row_key, max_row_key], with the
+    // all_inclusive_max_row_key present for diagnostics.  In the future we may use
+    // this key to determine whether we want to do anything "special" with files that
+    // have atomic rows, such as duplicating the rows at each value of the multi-value.
+}

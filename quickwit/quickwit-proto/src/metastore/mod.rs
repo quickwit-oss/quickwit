@@ -193,6 +193,15 @@ impl From<TimeoutExceeded> for MetastoreError {
     }
 }
 
+impl From<crate::SortFieldsError> for MetastoreError {
+    fn from(err: crate::SortFieldsError) -> Self {
+        MetastoreError::Internal {
+            message: "sort fields error".to_string(),
+            cause: err.to_string(),
+        }
+    }
+}
+
 impl ServiceError for MetastoreError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
