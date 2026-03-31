@@ -25,7 +25,7 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::{IndexUid, Position};
+use quickwit_proto::types::{IndexUid, NodeIdRef, Position};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
     BaseConsumer, CommitMode, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
@@ -240,6 +240,7 @@ impl KafkaSource {
         let (events_tx, events_rx) = mpsc::channel(100);
         let (truncate_tx, truncate_rx) = watch::channel(SourceCheckpoint::default());
         let (client_config, consumer, group_id) = create_consumer(
+            source_runtime.node_id(),
             source_runtime.index_uid(),
             source_runtime.source_id(),
             source_params,
@@ -654,6 +655,7 @@ pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Res
 
 /// Creates a new `KafkaSourceConsumer`.
 fn create_consumer(
+    node_id: &NodeIdRef,
     index_uid: &IndexUid,
     source_id: &str,
     params: KafkaSourceParams,
@@ -676,6 +678,7 @@ fn create_consumer(
             params.enable_backfill_mode.to_string(),
         )
         .set("group.id", &group_id)
+        .set("client.id", node_id.as_str())
         .set_log_level(log_level)
         .create_with_context(RdKafkaContext {
             topic: params.topic,
