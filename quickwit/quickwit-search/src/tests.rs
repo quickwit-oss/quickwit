@@ -1887,3 +1887,277 @@ fn test_global_doc_address_ser_deser() {
     let doc_address_deser: GlobalDocAddress = doc_address_string.parse().unwrap();
     assert_eq!(doc_address_deser, doc_address);
 }
+
+#[tokio::test]
+async fn test_single_node_soft_delete_excludes_from_search() -> anyhow::Result<()> {
+    use quickwit_metastore::IndexMetadataResponseExt;
+    use quickwit_proto::metastore::{
+        IndexMetadataRequest, MetastoreService, SoftDeleteDocumentsRequest, SplitDocIds,
+    };
+
+    let index_id = "test-soft-delete-search";
+    let doc_mapping_yaml = r#"
+        field_mappings:
+          - name: title
+            type: text
+    "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title"]).await?;
+    let docs = vec![
+        json!({"title": "alpha"}),
+        json!({"title": "beta"}),
+        json!({"title": "gamma"}),
+    ];
+    test_sandbox.add_documents(docs).await?;
+
+    // Search all — should find 3
+    let search_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper("*", &["title"]),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let result = single_node_search(
+        search_request.clone(),
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(result.num_hits, 3);
+
+    // Search for "alpha" specifically to find its doc_id and split_id
+    let alpha_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper("alpha", &["title"]),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let alpha_result = single_node_search(
+        alpha_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(alpha_result.num_hits, 1);
+    let alpha_hit = &alpha_result.hits[0];
+    let partial_hit = alpha_hit.partial_hit.as_ref().unwrap();
+    let split_id = partial_hit.split_id.clone();
+    let doc_id = partial_hit.doc_id;
+
+    // Soft-delete that document via the metastore
+    let index_uid = test_sandbox
+        .metastore()
+        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .await?
+        .deserialize_index_metadata()?
+        .index_uid;
+
+    let metastore = test_sandbox.metastore();
+    metastore
+        .soft_delete_documents(SoftDeleteDocumentsRequest {
+            index_uid: Some(index_uid),
+            split_doc_ids: vec![SplitDocIds {
+                split_id: split_id.clone(),
+                doc_ids: vec![doc_id],
+            }],
+        })
+        .await?;
+
+    // Search all again — should find only 2
+    let result = single_node_search(
+        search_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(result.num_hits, 2);
+
+    // Verify that the soft-deleted document ("alpha") is not in the results
+    for hit in &result.hits {
+        let hit_json: JsonValue = serde_json::from_str(&hit.json)?;
+        assert_ne!(hit_json["title"], "alpha");
+    }
+
+    test_sandbox.assert_quit().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_single_node_soft_delete_count_only() -> anyhow::Result<()> {
+    use quickwit_metastore::IndexMetadataResponseExt;
+    use quickwit_proto::metastore::{
+        IndexMetadataRequest, MetastoreService, SoftDeleteDocumentsRequest, SplitDocIds,
+    };
+
+    let index_id = "test-soft-delete-count-only";
+    let doc_mapping_yaml = r#"
+        field_mappings:
+          - name: title
+            type: text
+    "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title"]).await?;
+    let docs = vec![
+        json!({"title": "alpha"}),
+        json!({"title": "beta"}),
+        json!({"title": "gamma"}),
+    ];
+    test_sandbox.add_documents(docs).await?;
+
+    // Count-only search (max_hits: 0) — should find 3
+    let count_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper("*", &["title"]),
+        max_hits: 0,
+        ..Default::default()
+    };
+    let result = single_node_search(
+        count_request.clone(),
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(result.num_hits, 3);
+    assert!(result.hits.is_empty());
+
+    // Find the doc_id for "alpha" so we can soft-delete it
+    let alpha_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper("alpha", &["title"]),
+        max_hits: 10,
+        ..Default::default()
+    };
+    let alpha_result = single_node_search(
+        alpha_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(alpha_result.num_hits, 1);
+    let partial_hit = alpha_result.hits[0].partial_hit.as_ref().unwrap();
+    let split_id = partial_hit.split_id.clone();
+    let doc_id = partial_hit.doc_id;
+
+    // Soft-delete that document via the metastore
+    let index_uid = test_sandbox
+        .metastore()
+        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .await?
+        .deserialize_index_metadata()?
+        .index_uid;
+
+    let metastore = test_sandbox.metastore();
+    metastore
+        .soft_delete_documents(SoftDeleteDocumentsRequest {
+            index_uid: Some(index_uid),
+            split_doc_ids: vec![SplitDocIds {
+                split_id,
+                doc_ids: vec![doc_id],
+            }],
+        })
+        .await?;
+
+    // Count-only search again — should find only 2
+    let result = single_node_search(
+        count_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(result.num_hits, 2);
+    assert!(result.hits.is_empty());
+
+    test_sandbox.assert_quit().await;
+    Ok(())
+}
+
+/// Regression test: the `is_count_only` path (non-MatchAll query with max_hits=0) was calling
+/// `query.count(&searcher)` which bypasses Quickwit's soft-delete filter entirely.
+/// MatchAll + max_hits=0 goes through `is_metadata_count_request_with_ast` (already correct);
+/// this test specifically exercises the `is_count_only` branch with a real term query.
+#[tokio::test]
+async fn test_single_node_soft_delete_count_only_term_query() -> anyhow::Result<()> {
+    use quickwit_metastore::IndexMetadataResponseExt;
+    use quickwit_proto::metastore::{
+        IndexMetadataRequest, MetastoreService, SoftDeleteDocumentsRequest, SplitDocIds,
+    };
+
+    let index_id = "test-soft-delete-count-only-term-query";
+    let doc_mapping_yaml = r#"
+        field_mappings:
+          - name: title
+            type: text
+    "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["title"]).await?;
+    let docs = vec![
+        json!({"title": "alpha"}),
+        json!({"title": "beta"}),
+        json!({"title": "gamma"}),
+    ];
+    test_sandbox.add_documents(docs).await?;
+
+    // Use a non-MatchAll query so that the `is_count_only` branch is taken instead of
+    // `is_metadata_count_request_with_ast`. "alpha OR beta OR gamma" matches all 3 docs
+    // but is not `QueryAst::MatchAll`.
+    let count_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper("alpha OR beta OR gamma", &["title"]),
+        max_hits: 0,
+        ..Default::default()
+    };
+    let result = single_node_search(
+        count_request.clone(),
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(result.num_hits, 3);
+    assert!(result.hits.is_empty());
+
+    // Locate the doc_id for "alpha" so we can soft-delete it.
+    let alpha_result = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: qast_json_helper("alpha", &["title"]),
+            max_hits: 10,
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(alpha_result.num_hits, 1);
+    let partial_hit = alpha_result.hits[0].partial_hit.as_ref().unwrap();
+    let split_id = partial_hit.split_id.clone();
+    let doc_id = partial_hit.doc_id;
+
+    // Soft-delete the "alpha" document.
+    let index_uid = test_sandbox
+        .metastore()
+        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .await?
+        .deserialize_index_metadata()?
+        .index_uid;
+    test_sandbox
+        .metastore()
+        .soft_delete_documents(SoftDeleteDocumentsRequest {
+            index_uid: Some(index_uid),
+            split_doc_ids: vec![SplitDocIds {
+                split_id,
+                doc_ids: vec![doc_id],
+            }],
+        })
+        .await?;
+
+    // Count-only term query: before the fix this returned 3 (soft-deleted doc was counted);
+    // after the fix it must return 2.
+    let result = single_node_search(
+        count_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+    assert_eq!(result.num_hits, 2);
+    assert!(result.hits.is_empty());
+
+    test_sandbox.assert_quit().await;
+    Ok(())
+}

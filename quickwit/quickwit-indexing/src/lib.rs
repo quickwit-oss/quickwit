@@ -38,6 +38,7 @@ mod controlled_directory;
 pub mod merge_policy;
 mod metrics;
 pub mod models;
+mod soft_delete_query;
 pub mod source;
 mod split_store;
 #[cfg(any(test, feature = "testsuite"))]

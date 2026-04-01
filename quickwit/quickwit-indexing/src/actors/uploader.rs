@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashSet;
-use std::iter::FromIterator;
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -27,11 +25,9 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
-use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
-use quickwit_proto::types::{IndexUid, PublishToken};
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
 use tokio::sync::oneshot::Sender;
@@ -40,10 +36,10 @@ use tracing::{Instrument, Span, debug, info, instrument, warn};
 
 use crate::actors::Publisher;
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
-use crate::merge_policy::{MergePolicy, MergeTask};
+use crate::merge_policy::MergePolicy;
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
-    EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate, create_split_metadata,
+    EmptySplit, PackagedSplit, PackagedSplitBatch, SplitsUpdate, create_split_metadata,
 };
 use crate::split_store::IndexingSplitStore;
 
@@ -370,6 +366,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
                 event_broker.publish(ReportSplitsRequest { report_splits });
 
+                let mut replaced_splits = Vec::new();
                 for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
                     let upload_result = upload_split(
                         &packaged_split,
@@ -385,18 +382,24 @@ impl Handler<PackagedSplitBatch> for Uploader {
                         return;
                     }
 
+                    replaced_splits.extend(packaged_split.split_attrs.replaced_splits.iter().cloned());
                     packaged_splits_and_metadata.push((packaged_split, metadata));
                 }
 
-                let splits_update = make_publish_operation(
+                assert!(!packaged_splits_and_metadata.is_empty());
+                let splits_update = SplitsUpdate {
                     index_uid,
-                    packaged_splits_and_metadata,
-                    batch.checkpoint_delta_opt,
-                    batch.publish_lock,
-                    batch.publish_token_opt,
-                    batch.merge_task_opt,
-                    batch.batch_parent_span,
-                );
+                    new_splits: packaged_splits_and_metadata
+                        .into_iter()
+                        .map(|split_and_meta| split_and_meta.1)
+                        .collect_vec(),
+                    checkpoint_delta_opt: batch.checkpoint_delta_opt,
+                    publish_lock: batch.publish_lock,
+                    publish_token_opt: batch.publish_token_opt,
+                    merge_task: batch.merge_task_opt,
+                    parent_span: batch.batch_parent_span,
+                    replaced_splits,
+                };
 
                 let target = match &split_update_sender {
                     SplitsUpdateSender::Sequencer(_) => "sequencer",
@@ -439,45 +442,16 @@ impl Handler<EmptySplit> for Uploader {
         let splits_update = SplitsUpdate {
             index_uid: empty_split.index_uid,
             new_splits: Vec::new(),
-            replaced_split_ids: Vec::new(),
             checkpoint_delta_opt: Some(empty_split.checkpoint_delta),
             publish_lock: empty_split.publish_lock,
             publish_token_opt: empty_split.publish_token_opt,
             merge_task: None,
             parent_span: empty_split.batch_parent_span,
+            replaced_splits: Vec::new(),
         };
 
         split_update_sender.send(splits_update, ctx).await?;
         Ok(())
-    }
-}
-
-fn make_publish_operation(
-    index_uid: IndexUid,
-    packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
-    checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-    publish_lock: PublishLock,
-    publish_token_opt: Option<PublishToken>,
-    merge_task: Option<MergeTask>,
-    parent_span: Span,
-) -> SplitsUpdate {
-    assert!(!packaged_splits_and_metadatas.is_empty());
-    let replaced_split_ids = packaged_splits_and_metadatas
-        .iter()
-        .flat_map(|(split, _)| split.split_attrs.replaced_split_ids.clone())
-        .collect::<HashSet<_>>();
-    SplitsUpdate {
-        index_uid,
-        new_splits: packaged_splits_and_metadatas
-            .into_iter()
-            .map(|split_and_meta| split_and_meta.1)
-            .collect_vec(),
-        replaced_split_ids: Vec::from_iter(replaced_split_ids),
-        checkpoint_delta_opt,
-        publish_lock,
-        publish_token_opt,
-        merge_task,
-        parent_span,
     }
 }
 
@@ -512,6 +486,7 @@ async fn upload_split(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -520,14 +495,14 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
-    use quickwit_proto::types::{DocMappingUid, NodeId};
+    use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId};
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
 
     use super::*;
     use crate::merge_policy::{NopMergePolicy, default_merge_policy};
-    use crate::models::{SplitAttrs, SplitsUpdate};
+    use crate::models::{PublishLock, ReplacedSplit, SplitAttrs, SplitsUpdate};
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
@@ -590,10 +565,10 @@ mod tests {
                         secondary_time_range: None,
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
-                        replaced_split_ids: Vec::new(),
                         split_id: "test-split".to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
+                        replaced_splits: Vec::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -627,7 +602,6 @@ mod tests {
             index_uid,
             new_splits,
             checkpoint_delta_opt,
-            replaced_split_ids,
             ..
         } = publisher_message;
 
@@ -640,7 +614,6 @@ mod tests {
             checkpoint_delta.source_delta,
             SourceCheckpointDelta::from_range(3..15)
         );
-        assert!(replaced_split_ids.is_empty());
         let mut files = ram_storage.list_files().await;
         files.sort();
         assert_eq!(&files, &[PathBuf::from("test-split.split")]);
@@ -703,12 +676,12 @@ mod tests {
                         ..=DateTime::from_timestamp_secs(1_628_203_640),
                 ),
                 secondary_time_range: None,
-                replaced_split_ids: vec![
-                    "replaced-split-1".to_string(),
-                    "replaced-split-2".to_string(),
-                ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
+                replaced_splits: Vec::from([ReplacedSplit {
+                    split_id: "replaced-split-1".to_string(),
+                    soft_deleted_doc_ids: BTreeSet::new(),
+                }]),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_1,
@@ -731,12 +704,12 @@ mod tests {
                         ..=DateTime::from_timestamp_secs(1_628_203_640),
                 ),
                 secondary_time_range: None,
-                replaced_split_ids: vec![
-                    "replaced-split-1".to_string(),
-                    "replaced-split-2".to_string(),
-                ],
                 delete_opstamp: 0,
                 num_merge_ops: 0,
+                replaced_splits: Vec::from([ReplacedSplit {
+                    split_id: "replaced-split-2".to_string(),
+                    soft_deleted_doc_ids: BTreeSet::new(),
+                }]),
             },
             serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_2,
@@ -772,21 +745,26 @@ mod tests {
         let SplitsUpdate {
             index_uid,
             new_splits,
-            mut replaced_split_ids,
             checkpoint_delta_opt,
+            replaced_splits,
             ..
         } = publisher_message;
         assert_eq!(index_uid.index_id, "test-index");
         // Sort first to avoid test failing.
-        replaced_split_ids.sort();
         assert_eq!(new_splits.len(), 2);
         assert_eq!(new_splits[0].split_id(), "test-split-1");
         assert_eq!(new_splits[1].split_id(), "test-split-2");
         assert_eq!(
-            &replaced_split_ids,
-            &[
-                "replaced-split-1".to_string(),
-                "replaced-split-2".to_string()
+            &replaced_splits,
+            &vec![
+                ReplacedSplit {
+                    split_id: "replaced-split-1".to_string(),
+                    soft_deleted_doc_ids: BTreeSet::new(),
+                },
+                ReplacedSplit {
+                    split_id: "replaced-split-2".to_string(),
+                    soft_deleted_doc_ids: BTreeSet::new(),
+                },
             ]
         );
         assert!(checkpoint_delta_opt.is_none());
@@ -855,9 +833,9 @@ mod tests {
                         secondary_time_range: None,
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
-                        replaced_split_ids: Vec::new(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
+                        replaced_splits: Vec::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,
@@ -879,13 +857,13 @@ mod tests {
         let SplitsUpdate {
             index_uid,
             new_splits,
-            replaced_split_ids,
+            replaced_splits,
             ..
         } = publisher_inbox.recv_typed_message().await.unwrap();
 
         assert_eq!(index_uid.index_id, "test-index");
         assert_eq!(new_splits.len(), 1);
-        assert!(replaced_split_ids.is_empty());
+        assert!(replaced_splits.is_empty());
         universe.assert_quit().await;
         Ok(())
     }
@@ -943,7 +921,7 @@ mod tests {
             index_uid,
             new_splits,
             checkpoint_delta_opt,
-            replaced_split_ids,
+            replaced_splits,
             ..
         } = publisher_message;
 
@@ -955,7 +933,7 @@ mod tests {
             checkpoint_delta.source_delta,
             SourceCheckpointDelta::from_range(3..15)
         );
-        assert!(replaced_split_ids.is_empty());
+        assert!(replaced_splits.is_empty());
         let files = ram_storage.list_files().await;
         assert!(files.is_empty());
         universe.assert_quit().await;
@@ -1037,10 +1015,10 @@ mod tests {
                         secondary_time_range: None,
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
-                        replaced_split_ids: Vec::new(),
                         split_id: SPLIT_ULID_STR.to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
+                        replaced_splits: Vec::new(),
                     },
                     serialized_split_fields: Vec::new(),
                     split_scratch_directory,

@@ -128,6 +128,7 @@ mod tests {
             timestamp_start: None,
             timestamp_end: None,
             num_docs: 0,
+            soft_deleted_doc_ids: Vec::new(),
         };
         let client_for_retry = retry_client(
             &search_job_placer,

@@ -25,6 +25,14 @@ use time::OffsetDateTime;
 
 use crate::merge_policy::MergePolicy;
 
+#[derive(PartialEq, Eq, Debug, Default, Clone)]
+pub struct ReplacedSplit {
+    pub split_id: SplitId,
+    /// Snapshot of the split's soft-deletes. These will be consolidated into
+    /// the split during the merge.
+    pub soft_deleted_doc_ids: BTreeSet<u32>,
+}
+
 pub struct SplitAttrs {
     /// ID of the node that produced the split.
     pub node_id: NodeId,
@@ -61,13 +69,13 @@ pub struct SplitAttrs {
     pub time_range: Option<RangeInclusive<DateTime>>,
     pub secondary_time_range: Option<RangeInclusive<DateTime>>,
 
-    pub replaced_split_ids: Vec<String>,
-
     /// Delete opstamp.
     pub delete_opstamp: u64,
 
     // Number of merge operation the split has been through so far.
     pub num_merge_ops: usize,
+
+    pub replaced_splits: Vec<ReplacedSplit>,
 }
 
 impl fmt::Debug for SplitAttrs {
@@ -75,7 +83,14 @@ impl fmt::Debug for SplitAttrs {
         f.debug_struct("SplitAttrs")
             .field("split_id", &self.split_id)
             .field("partition_id", &self.partition_id)
-            .field("replaced_split_ids", &self.replaced_split_ids)
+            .field(
+                "replaced_split_ids",
+                &self
+                    .replaced_splits
+                    .iter()
+                    .map(|s| &s.split_id)
+                    .collect::<Vec<_>>(),
+            )
             .field("time_range", &self.time_range)
             .field(
                 "uncompressed_docs_size_in_bytes",
@@ -137,6 +152,7 @@ pub fn create_split_metadata(
         footer_offsets,
         delete_opstamp: split_attrs.delete_opstamp,
         num_merge_ops: split_attrs.num_merge_ops,
+        soft_deleted_doc_ids: BTreeSet::new(),
     }
 }
 

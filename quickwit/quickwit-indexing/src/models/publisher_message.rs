@@ -22,11 +22,11 @@ use tracing::Span;
 
 use crate::merge_policy::MergeTask;
 use crate::models::PublishLock;
+use crate::models::split_attrs::ReplacedSplit;
 
 pub struct SplitsUpdate {
     pub index_uid: IndexUid,
     pub new_splits: Vec<SplitMetadata>,
-    pub replaced_split_ids: Vec<String>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
     pub publish_token_opt: Option<PublishToken>,
@@ -36,6 +36,7 @@ pub struct SplitsUpdate {
     /// If `None`, the split batch was built in the `IndexingPipeline`.
     pub merge_task: Option<MergeTask>,
     pub parent_span: Span,
+    pub replaced_splits: Vec<ReplacedSplit>,
 }
 
 impl fmt::Debug for SplitsUpdate {

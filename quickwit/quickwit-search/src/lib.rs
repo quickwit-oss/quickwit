@@ -35,6 +35,7 @@ mod scroll_context;
 mod search_job_placer;
 mod search_response_rest;
 mod service;
+mod soft_delete_query;
 pub(crate) mod top_k_collector;
 
 mod metrics;
@@ -172,6 +173,11 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
             .as_ref()
             .map(|time_range| *time_range.end()),
         num_docs: split_metadata.num_docs as u64,
+        soft_deleted_doc_ids: split_metadata
+            .soft_deleted_doc_ids
+            .iter()
+            .copied()
+            .collect(),
     }
 }
 

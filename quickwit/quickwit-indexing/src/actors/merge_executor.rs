@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
@@ -40,14 +40,17 @@ use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{Advice, DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::index::SegmentId;
 use tantivy::tokenizer::TokenizerManager;
-use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentReader};
+use tantivy::{DateTime, Directory, DocId, Index, IndexMeta, IndexWriter, SegmentReader};
 use tokio::runtime::Handle;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperationType;
-use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
+use crate::models::{
+    IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, ReplacedSplit, SplitAttrs,
+};
+use crate::soft_delete_query::SoftDeletedDocIdsQuery;
 
 #[derive(Clone)]
 pub struct MergeExecutor {
@@ -106,14 +109,16 @@ impl Handler<MergeScratch> for MergeExecutor {
                         // A failure in a merge is a bit special.
                         //
                         // Instead of failing the pipeline, we just log it.
-                        // The idea is to limit the risk associated with a potential split of death.
+                        // The idea is to limit the risk associated with a potential split of
+                        // death.
                         //
-                        // Such a split is now not tracked by the merge planner and won't undergo a
-                        // merge until the merge pipeline is restarted.
+                        // Such a split is now not tracked by the merge planner and won't
+                        // undergo a merge until the merge pipeline
+                        // is restarted.
                         //
-                        // With a merge policy that marks splits as mature after a day or so, this
-                        // limits the noise associated to those failed
-                        // merges.
+                        // With a merge policy that marks splits as mature after a day or so,
+                        // this limits the noise associated to those
+                        // failed merges.
                         error!(task=?merge_task, err=?err, "failed to merge splits");
                         return Ok(());
                     }
@@ -171,21 +176,23 @@ fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMe
     Ok(union_index_meta)
 }
 
+type OpenSplitDirsResult = anyhow::Result<(IndexMeta, Vec<Box<dyn Directory>>, Vec<IndexMeta>)>;
+
 fn open_split_directories(
     // Directories containing the splits to merge
     tantivy_dirs: &[Box<dyn Directory>],
     tokenizer_manager: &TokenizerManager,
-) -> anyhow::Result<(IndexMeta, Vec<Box<dyn Directory>>)> {
+) -> OpenSplitDirsResult {
     let mut directories: Vec<Box<dyn Directory>> = Vec::new();
-    let mut index_metas = Vec::new();
+    let mut index_metas: Vec<IndexMeta> = Vec::new();
     for tantivy_dir in tantivy_dirs {
         directories.push(tantivy_dir.clone());
-
         let index_meta = open_index(tantivy_dir.clone(), tokenizer_manager)?.load_metas()?;
         index_metas.push(index_meta);
     }
+    let per_split_metas = index_metas.clone();
     let union_index_meta = combine_index_meta(index_metas)?;
-    Ok((union_index_meta, directories))
+    Ok((union_index_meta, directories, per_split_metas))
 }
 
 /// Creates a directory with a single `meta.json` file describe in `index_meta`
@@ -278,11 +285,23 @@ pub fn merge_split_attrs(
     let partition_id = combine_partition_ids_aux(splits.iter().map(|split| split.partition_id));
     let time_range: Option<RangeInclusive<DateTime>> = merge_time_range(splits);
     let secondary_time_range = merge_secondary_time_range_if_exists(splits);
-    let uncompressed_docs_size_in_bytes = sum_doc_sizes_in_bytes(splits);
-    let num_docs = sum_num_docs(splits);
-    let replaced_split_ids: Vec<SplitId> = splits
+    let total_soft_deleted: u64 = splits
         .iter()
-        .map(|split| split.split_id().to_string())
+        .map(|split| split.soft_deleted_doc_ids.len() as u64)
+        .sum();
+    let raw_num_docs = sum_num_docs(splits);
+    let num_docs = raw_num_docs.saturating_sub(total_soft_deleted);
+    let uncompressed_docs_size_in_bytes = if raw_num_docs > 0 {
+        (sum_doc_sizes_in_bytes(splits) as f64 * num_docs as f64 / raw_num_docs as f64) as u64
+    } else {
+        0
+    };
+    let replaced_splits = splits
+        .iter()
+        .map(|split| ReplacedSplit {
+            split_id: split.split_id.clone(),
+            soft_deleted_doc_ids: split.soft_deleted_doc_ids.clone(),
+        })
         .collect();
     let delete_opstamp = splits
         .iter()
@@ -306,13 +325,13 @@ pub fn merge_split_attrs(
         doc_mapping_uid,
         split_id: merge_split_id,
         partition_id,
-        replaced_split_ids,
         time_range,
         secondary_time_range,
         num_docs,
         uncompressed_docs_size_in_bytes,
         delete_opstamp,
         num_merge_ops: max_merge_ops(splits) + 1,
+        replaced_splits,
     })
 }
 
@@ -322,6 +341,16 @@ fn max_merge_ops(splits: &[SplitMetadata]) -> usize {
         .map(|split| split.num_merge_ops)
         .max()
         .unwrap_or(0)
+}
+
+struct MergeDirectoriesInput {
+    union_index_meta: IndexMeta,
+    split_directories: Vec<Box<dyn Directory>>,
+    delete_tasks: Vec<DeleteTask>,
+    /// Required when `delete_tasks` is non-empty; unused otherwise.
+    doc_mapper_opt: Option<Arc<DocMapper>>,
+    /// Maps each segment ID to the sorted list of soft-deleted doc IDs to remove.
+    soft_deleted_docs: HashMap<SegmentId, Vec<DocId>>,
 }
 
 impl MergeExecutor {
@@ -349,18 +378,33 @@ impl MergeExecutor {
         merge_scratch_directory: TempDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<IndexedSplit> {
-        let (union_index_meta, split_directories) = open_split_directories(
+        let (union_index_meta, split_directories, per_split_metas) = open_split_directories(
             &tantivy_dirs,
             self.doc_mapper.tokenizer_manager().tantivy_manager(),
         )?;
+        // Build a mapping from each segment ID to the soft-deleted doc IDs of its parent split.
+        let soft_deleted_docs: HashMap<SegmentId, Vec<DocId>> = per_split_metas
+            .iter()
+            .zip(splits.iter())
+            .filter(|(_, split)| !split.soft_deleted_doc_ids.is_empty())
+            .flat_map(|(meta, split)| {
+                let doc_ids: Vec<DocId> = split.soft_deleted_doc_ids.iter().copied().collect();
+                meta.segments
+                    .iter()
+                    .map(move |seg_meta| (seg_meta.id(), doc_ids.clone()))
+            })
+            .collect();
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         fail_point!("before-merge-split");
         let controlled_directory = self
             .merge_split_directories(
-                union_index_meta,
-                split_directories,
-                Vec::new(),
-                None,
+                MergeDirectoriesInput {
+                    union_index_meta,
+                    split_directories,
+                    delete_tasks: Vec::new(),
+                    doc_mapper_opt: None,
+                    soft_deleted_docs,
+                },
                 merge_scratch_directory.path(),
                 ctx,
             )
@@ -376,12 +420,13 @@ impl MergeExecutor {
         ctx.record_progress();
 
         let split_attrs = merge_split_attrs(self.pipeline_id.clone(), merge_split_id, &splits)?;
-        Ok(IndexedSplit {
+        let indexed_split = IndexedSplit {
             split_attrs,
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
             controlled_directory_opt: Some(controlled_directory),
-        })
+        };
+        Ok(indexed_split)
     }
 
     async fn process_delete_and_merge(
@@ -417,16 +462,34 @@ impl MergeExecutor {
             num_delete_tasks = delete_tasks.len()
         );
 
-        let (union_index_meta, split_directories) = open_split_directories(
+        let (union_index_meta, split_directories, per_split_metas) = open_split_directories(
             &tantivy_dirs,
             self.doc_mapper.tokenizer_manager().tantivy_manager(),
         )?;
+        // Build a mapping from each segment ID to the soft-deleted doc IDs of the input split.
+        let soft_deleted_docs: HashMap<SegmentId, Vec<DocId>> =
+            if split.soft_deleted_doc_ids.is_empty() {
+                HashMap::new()
+            } else {
+                let doc_ids: Vec<DocId> = split.soft_deleted_doc_ids.iter().copied().collect();
+                per_split_metas
+                    .iter()
+                    .flat_map(|meta| {
+                        meta.segments
+                            .iter()
+                            .map(|seg_meta| (seg_meta.id(), doc_ids.clone()))
+                    })
+                    .collect()
+            };
         let controlled_directory = self
             .merge_split_directories(
-                union_index_meta,
-                split_directories,
-                delete_tasks,
-                Some(self.doc_mapper.clone()),
+                MergeDirectoriesInput {
+                    union_index_meta,
+                    split_directories,
+                    delete_tasks,
+                    doc_mapper_opt: Some(self.doc_mapper.clone()),
+                    soft_deleted_docs,
+                },
                 merge_scratch_directory.path(),
                 ctx,
             )
@@ -490,13 +553,16 @@ impl MergeExecutor {
                 doc_mapping_uid: split.doc_mapping_uid,
                 split_id: merge_split_id,
                 partition_id: split.partition_id,
-                replaced_split_ids: vec![split.split_id.clone()],
                 time_range,
                 secondary_time_range: None,
                 num_docs,
                 uncompressed_docs_size_in_bytes,
                 delete_opstamp: last_delete_opstamp,
                 num_merge_ops: split.num_merge_ops,
+                replaced_splits: vec![ReplacedSplit {
+                    split_id: split.split_id.clone(),
+                    soft_deleted_doc_ids: split.soft_deleted_doc_ids.clone(),
+                }],
             },
             index: merged_index,
             split_scratch_directory: merge_scratch_directory,
@@ -507,13 +573,17 @@ impl MergeExecutor {
 
     async fn merge_split_directories(
         &self,
-        union_index_meta: IndexMeta,
-        split_directories: Vec<Box<dyn Directory>>,
-        delete_tasks: Vec<DeleteTask>,
-        doc_mapper_opt: Option<Arc<DocMapper>>,
+        input: MergeDirectoriesInput,
         output_path: &Path,
         ctx: &ActorContext<MergeExecutor>,
     ) -> anyhow::Result<ControlledDirectory> {
+        let MergeDirectoriesInput {
+            union_index_meta,
+            split_directories,
+            delete_tasks,
+            doc_mapper_opt,
+            soft_deleted_docs,
+        } = input;
         let shadowing_meta_json_directory = create_shadowing_meta_json_directory(union_index_meta)?;
 
         // This directory is here to receive the merged split, as well as the final meta.json file.
@@ -543,6 +613,12 @@ impl MergeExecutor {
 
         let mut index_writer: IndexWriter = union_index.writer_with_num_threads(1, 15_000_000)?;
         let num_delete_tasks = delete_tasks.len();
+        let has_soft_deletes = !soft_deleted_docs.is_empty();
+        // Hard-delete soft-deleted doc IDs before applying delete-task queries so that both
+        // sources of deletion are committed together in a single pass.
+        if has_soft_deletes {
+            index_writer.delete_query(Box::new(SoftDeletedDocIdsQuery::new(soft_deleted_docs)))?;
+        }
         if num_delete_tasks > 0 {
             let doc_mapper = doc_mapper_opt
                 .ok_or_else(|| anyhow!("doc mapper must be present if there are delete tasks"))?;
@@ -564,6 +640,8 @@ impl MergeExecutor {
                     doc_mapper.query(union_index.schema(), parsed_query_ast, false, None)?;
                 index_writer.delete_query(query)?;
             }
+        }
+        if has_soft_deletes || num_delete_tasks > 0 {
             debug!("commit-delete-operations");
             index_writer.commit()?;
         }
@@ -574,13 +652,13 @@ impl MergeExecutor {
             .map(|segment_meta| segment_meta.id())
             .collect();
 
-        // A merge is useless if there is no delete and only one segment.
-        if num_delete_tasks == 0 && segment_ids.len() <= 1 {
+        // A merge is useless if there are no deletions and only one segment.
+        if !has_soft_deletes && num_delete_tasks == 0 && segment_ids.len() <= 1 {
             return Ok(output_directory);
         }
 
-        // If after deletion there is no longer any document, don't try to merge.
-        if num_delete_tasks != 0 && segment_ids.is_empty() {
+        // If after deletion there are no remaining documents, don't try to merge.
+        if (has_soft_deletes || num_delete_tasks != 0) && segment_ids.is_empty() {
             return Ok(output_directory);
         }
 
@@ -709,6 +787,287 @@ mod tests {
             .try_into()?;
         let searcher = reader.searcher();
         assert_eq!(searcher.segment_readers().len(), 1);
+        test_sandbox.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_merge_executor_with_soft_deleted_docs() -> anyhow::Result<()> {
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: datetime
+                input_formats:
+                - unix_timestamp
+                fast: true
+            timestamp_field: ts
+        "#;
+        let test_sandbox =
+            TestSandbox::create("test-index-soft-delete", doc_mapping_yaml, "", &["body"]).await?;
+        for split_id in 0..4 {
+            let single_doc = std::iter::once(
+                serde_json::json!({"body ": format!("split{split_id}"), "ts": 1631072713u64 + split_id }),
+            );
+            test_sandbox.add_documents(single_doc).await?;
+        }
+        let metastore = test_sandbox.metastore();
+        let index_uid = test_sandbox.index_uid();
+
+        // Load the initial split metadata to obtain split IDs.
+        let split_metas: Vec<SplitMetadata> = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits_metadata()
+            .await
+            .unwrap();
+        assert_eq!(split_metas.len(), 4);
+
+        // Soft-delete doc_id=0 from the first split.
+        // Each split contains exactly one document, so doc_id=0 is the only document.
+        let soft_deleted_split_id = split_metas[0].split_id.clone();
+        metastore
+            .soft_delete_documents(quickwit_proto::metastore::SoftDeleteDocumentsRequest {
+                index_uid: Some(index_uid.clone()),
+                split_doc_ids: vec![quickwit_proto::metastore::SplitDocIds {
+                    split_id: soft_deleted_split_id,
+                    doc_ids: vec![0],
+                }],
+            })
+            .await?;
+
+        // Reload split metadata so that soft_deleted_doc_ids is populated.
+        let split_metas: Vec<SplitMetadata> = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits_metadata()
+            .await
+            .unwrap();
+        assert_eq!(
+            split_metas
+                .iter()
+                .map(|s| s.soft_deleted_doc_ids.len())
+                .sum::<usize>(),
+            1,
+            "exactly one doc should be soft-deleted across all splits"
+        );
+
+        let merge_scratch_directory = TempDirectory::for_test();
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
+        let mut tantivy_dirs: Vec<Box<dyn Directory>> = Vec::new();
+        for split_meta in &split_metas {
+            let split_filename = split_file(split_meta.split_id());
+            let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
+            test_sandbox
+                .storage()
+                .copy_to_file(Path::new(&split_filename), &dest_filepath)
+                .await?;
+            tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap())
+        }
+        let merge_operation = MergeOperation::new_merge_operation(split_metas);
+        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
+        let merge_scratch = MergeScratch {
+            merge_task,
+            tantivy_dirs,
+            merge_scratch_directory,
+            downloaded_splits_directory,
+        };
+        let pipeline_id = MergePipelineId {
+            node_id: test_sandbox.node_id(),
+            index_uid: index_uid.clone(),
+            source_id: test_sandbox.source_id(),
+        };
+        let (merge_packager_mailbox, merge_packager_inbox) =
+            test_sandbox.universe().create_test_mailbox();
+        let merge_executor = MergeExecutor::new(
+            pipeline_id,
+            test_sandbox.metastore(),
+            test_sandbox.doc_mapper(),
+            IoControls::default(),
+            merge_packager_mailbox,
+        );
+        let (merge_executor_mailbox, merge_executor_handle) = test_sandbox
+            .universe()
+            .spawn_builder()
+            .spawn(merge_executor);
+        merge_executor_mailbox.send_message(merge_scratch).await?;
+        merge_executor_handle.process_pending_and_observe().await;
+
+        let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
+        assert_eq!(packager_msgs.len(), 1);
+        let split_attrs_after_merge = &packager_msgs[0].splits[0].split_attrs;
+        // One document was soft-deleted, so only 3 docs should remain.
+        assert_eq!(split_attrs_after_merge.num_docs, 3);
+        assert_eq!(split_attrs_after_merge.uncompressed_docs_size_in_bytes, 102);
+        assert_eq!(split_attrs_after_merge.num_merge_ops, 1);
+
+        let reader = packager_msgs[0].splits[0]
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
+        let searcher = reader.searcher();
+        assert_eq!(searcher.segment_readers().len(), 1);
+        // The merged segment must contain exactly 3 live documents.
+        let num_live_docs: u32 = searcher
+            .segment_readers()
+            .iter()
+            .map(|r| r.num_docs())
+            .sum();
+        assert_eq!(num_live_docs, 3);
+
+        test_sandbox.assert_quit().await;
+        Ok(())
+    }
+
+    /// Verifies that when a soft-delete lands on an input split while the
+    /// merge is running, the merge still succeeds.
+    #[tokio::test]
+    async fn test_merge_executor_soft_delete_race_condition() -> anyhow::Result<()> {
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: datetime
+                input_formats:
+                - unix_timestamp
+                fast: true
+            timestamp_field: ts
+        "#;
+        let test_sandbox = TestSandbox::create(
+            "test-index-soft-delete-race",
+            doc_mapping_yaml,
+            "",
+            &["body"],
+        )
+        .await?;
+        for split_id in 0..4 {
+            let single_doc = std::iter::once(
+                serde_json::json!({"body": format!("split{split_id}"), "ts": 1631072713u64 + split_id}),
+            );
+            test_sandbox.add_documents(single_doc).await?;
+        }
+        let metastore = test_sandbox.metastore();
+        let index_uid = test_sandbox.index_uid();
+
+        // Read split metadata *before* the soft-delete — this is the stale snapshot that the
+        // merge task will carry, simulating a race where the delete arrives after the merge
+        // executor already read the metadata.
+        let stale_split_metas: Vec<SplitMetadata> = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits_metadata()
+            .await
+            .unwrap();
+        assert_eq!(stale_split_metas.len(), 4);
+
+        // Soft-delete doc_id=0 from the first split *after* the stale metadata was read.
+        // This simulates a concurrent user action that arrives while the merge is running.
+        let racing_split_id = stale_split_metas[0].split_id.clone();
+        metastore
+            .soft_delete_documents(quickwit_proto::metastore::SoftDeleteDocumentsRequest {
+                index_uid: Some(index_uid.clone()),
+                split_doc_ids: vec![quickwit_proto::metastore::SplitDocIds {
+                    split_id: racing_split_id.clone(),
+                    doc_ids: vec![0],
+                }],
+            })
+            .await?;
+
+        // Build the merge scratch using the stale metadata (no soft-deletes recorded).
+        let merge_scratch_directory = TempDirectory::for_test();
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
+        let mut tantivy_dirs: Vec<Box<dyn Directory>> = Vec::new();
+        for split_meta in &stale_split_metas {
+            let split_filename = split_file(split_meta.split_id());
+            let dest_filepath = downloaded_splits_directory.path().join(&split_filename);
+            test_sandbox
+                .storage()
+                .copy_to_file(Path::new(&split_filename), &dest_filepath)
+                .await?;
+            tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap());
+        }
+        let merge_operation = MergeOperation::new_merge_operation(stale_split_metas);
+        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
+        let merge_scratch = MergeScratch {
+            merge_task,
+            tantivy_dirs,
+            merge_scratch_directory,
+            downloaded_splits_directory,
+        };
+        let pipeline_id = MergePipelineId {
+            node_id: test_sandbox.node_id(),
+            index_uid: index_uid.clone(),
+            source_id: test_sandbox.source_id(),
+        };
+        let (merge_packager_mailbox, merge_packager_inbox) =
+            test_sandbox.universe().create_test_mailbox();
+        let merge_executor = MergeExecutor::new(
+            pipeline_id,
+            test_sandbox.metastore(),
+            test_sandbox.doc_mapper(),
+            IoControls::default(),
+            merge_packager_mailbox,
+        );
+        let (merge_executor_mailbox, merge_executor_handle) = test_sandbox
+            .universe()
+            .spawn_builder()
+            .spawn(merge_executor);
+        merge_executor_mailbox.send_message(merge_scratch).await?;
+        merge_executor_handle.process_pending_and_observe().await;
+
+        // The merge must succeed despite the race condition.
+        let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
+        assert_eq!(
+            packager_msgs.len(),
+            1,
+            "merge must produce exactly one split batch"
+        );
+
+        let split_attrs = &packager_msgs[0].splits[0].split_attrs;
+        // The stale metadata had no soft-deletes, so all 4 docs are present in the merged
+        // segment. The racing soft-delete was missed.
+        assert_eq!(split_attrs.num_docs, 4);
+        assert_eq!(split_attrs.num_merge_ops, 1);
+
+        // The snapshot carried in the batch reflects the stale state (no soft-deletes).
+        let replaced_splits = &packager_msgs[0].splits[0].split_attrs.replaced_splits;
+        assert_eq!(
+            replaced_splits.len(),
+            4,
+            "all 4 input splits must appear in the snapshot"
+        );
+        let racing_split_snapshot = replaced_splits
+            .iter()
+            .find(|replaced_split| replaced_split.split_id == racing_split_id)
+            .expect("racing split must be present in the snapshot");
+        assert!(
+            racing_split_snapshot.soft_deleted_doc_ids.is_empty(),
+            "racing split had no soft-deletes at merge start (stale read)"
+        );
+
+        let reader = packager_msgs[0].splits[0]
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
+        let searcher = reader.searcher();
+        assert_eq!(searcher.segment_readers().len(), 1);
+        let num_live_docs: u32 = searcher
+            .segment_readers()
+            .iter()
+            .map(|r| r.num_docs())
+            .sum();
+        // All 4 docs are physically present; the racing soft-delete was not applied.
+        assert_eq!(num_live_docs, 4);
+
         test_sandbox.assert_quit().await;
         Ok(())
     }
@@ -949,5 +1308,205 @@ mod tests {
             Vec::new(),
         )
         .await
+    }
+
+    #[tokio::test]
+    async fn test_delete_and_merge_with_soft_deleted_docs() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: datetime
+                input_formats:
+                - unix_timestamp
+                fast: true
+            timestamp_field: ts
+        "#;
+        let test_sandbox = TestSandbox::create(
+            "test-delete-and-merge-with-soft-delete",
+            doc_mapping_yaml,
+            "",
+            &["body"],
+        )
+        .await?;
+
+        // Three docs are ingested into a single split.
+        //   doc_id=0  body="soft_delete"   → removed by soft-delete
+        //   doc_id=1  body="query_delete"  → removed by the delete query
+        //   doc_id=2  body="keep"          → must survive both conditions
+        test_sandbox
+            .add_documents(vec![
+                serde_json::json!({"body": "soft_delete",  "ts": 1624928200}),
+                serde_json::json!({"body": "query_delete", "ts": 1624928201}),
+                serde_json::json!({"body": "keep",         "ts": 1624928202}),
+            ])
+            .await?;
+
+        let metastore = test_sandbox.metastore();
+        let index_uid = test_sandbox.index_uid();
+
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        assert_eq!(splits.len(), 1);
+        let original_split_id = splits[0].split_metadata.split_id.clone();
+
+        // Soft-delete doc_id=0 (the "soft_delete" document).
+        metastore
+            .soft_delete_documents(quickwit_proto::metastore::SoftDeleteDocumentsRequest {
+                index_uid: Some(index_uid.clone()),
+                split_doc_ids: vec![quickwit_proto::metastore::SplitDocIds {
+                    split_id: original_split_id.clone(),
+                    doc_ids: vec![0],
+                }],
+            })
+            .await?;
+
+        // Register a delete task targeting the "query_delete" document.
+        metastore
+            .create_delete_task(DeleteQuery {
+                index_uid: Some(index_uid.clone()),
+                start_timestamp: None,
+                end_timestamp: None,
+                query_ast: quickwit_query::query_ast::qast_json_helper(
+                    "body:query_delete",
+                    &["body"],
+                ),
+            })
+            .await?;
+
+        // Reload split metadata so that soft_deleted_doc_ids is populated.
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        assert_eq!(splits.len(), 1);
+        assert_eq!(
+            splits[0].split_metadata.soft_deleted_doc_ids.len(),
+            1,
+            "doc_id=0 must be recorded as soft-deleted before staging"
+        );
+
+        // Stage a replacement split with num_merge_ops=1. By cloning the freshly-read
+        // metadata the soft_deleted_doc_ids field is carried over into the merge task,
+        // which is exactly what process_delete_and_merge relies on.
+        let mut new_split_metadata = splits[0].split_metadata.clone();
+        new_split_metadata.split_id = new_split_id();
+        new_split_metadata.num_merge_ops = 1;
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &new_split_metadata)
+                .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            staged_split_ids: vec![new_split_metadata.split_id.to_string()],
+            replaced_split_ids: vec![original_split_id.clone()],
+            index_checkpoint_delta_json_opt: None,
+            publish_token_opt: None,
+        };
+        metastore
+            .publish_splits(publish_splits_request)
+            .await
+            .unwrap();
+
+        // Copy the original split bundle to the new split filename so the executor can open it.
+        let merge_scratch_directory = TempDirectory::for_test();
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
+        let split_filename = split_file(&original_split_id);
+        let new_split_filename = split_file(new_split_metadata.split_id());
+        let dest_filepath = downloaded_splits_directory.path().join(&new_split_filename);
+        test_sandbox
+            .storage()
+            .copy_to_file(Path::new(&split_filename), &dest_filepath)
+            .await?;
+        let tantivy_dir = get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap();
+        let merge_operation = MergeOperation::new_delete_and_merge_operation(new_split_metadata);
+        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
+        let merge_scratch = MergeScratch {
+            merge_task,
+            tantivy_dirs: vec![tantivy_dir],
+            merge_scratch_directory,
+            downloaded_splits_directory,
+        };
+        let pipeline_id = MergePipelineId {
+            node_id: test_sandbox.node_id(),
+            index_uid: test_sandbox.index_uid(),
+            source_id: test_sandbox.source_id(),
+        };
+        let universe = Universe::with_accelerated_time();
+        let (merge_packager_mailbox, merge_packager_inbox) = universe.create_test_mailbox();
+        let merge_executor = MergeExecutor::new(
+            pipeline_id,
+            metastore,
+            test_sandbox.doc_mapper(),
+            IoControls::default(),
+            merge_packager_mailbox,
+        );
+        let (merge_executor_mailbox, merge_executor_handle) =
+            universe.spawn_builder().spawn(merge_executor);
+        merge_executor_mailbox.send_message(merge_scratch).await?;
+        merge_executor_handle.process_pending_and_observe().await;
+
+        let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
+        assert_eq!(packager_msgs.len(), 1);
+        let split = &packager_msgs[0].splits[0];
+
+        // 3 docs − 1 soft-deleted − 1 query-deleted = 1 surviving document.
+        assert_eq!(split.split_attrs.num_docs, 1);
+        assert_eq!(split.split_attrs.delete_opstamp, 1);
+        // Delete operations must not increment num_merge_ops.
+        assert_eq!(split.split_attrs.num_merge_ops, 1);
+
+        let reader = split
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
+        let searcher = reader.searcher();
+        assert_eq!(searcher.segment_readers().len(), 1);
+
+        let num_live_docs: u32 = searcher
+            .segment_readers()
+            .iter()
+            .map(|r| r.num_docs())
+            .sum();
+        assert_eq!(
+            num_live_docs, 1,
+            "exactly one document must remain after all deletions"
+        );
+
+        // The surviving document must be the "keep" one.
+        let documents_left: Vec<JsonValue> = searcher
+            .search(
+                &tantivy::query::AllQuery,
+                &tantivy::collector::TopDocs::with_limit(10).order_by_score(),
+            )?
+            .into_iter()
+            .map(|(_, doc_address)| {
+                let doc: TantivyDocument = searcher.doc(doc_address).unwrap();
+                let doc_json = doc.to_json(searcher.schema());
+                serde_json::from_str(&doc_json).unwrap()
+            })
+            .collect();
+        let expected_doc = serde_json::json!({"body": ["keep"], "ts": ["2021-06-29T00:56:42Z"]});
+        assert_eq!(
+            documents_left,
+            vec![expected_doc],
+            "only the 'keep' document must survive both soft-delete and query-delete"
+        );
+
+        test_sandbox.assert_quit().await;
+        universe.assert_quit().await;
+        Ok(())
     }
 }

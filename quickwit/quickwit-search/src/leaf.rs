@@ -52,6 +52,7 @@ use crate::metrics::{SplitSearchOutcomeCounters, queue_label};
 use crate::root::is_metadata_count_request_with_ast;
 use crate::search_permit_provider::{SearchPermit, compute_initial_memory_allocation};
 use crate::service::{SearcherContext, deserialize_doc_mapper};
+use crate::soft_delete_query::SoftDeleteQuery;
 use crate::{QuickwitAggregations, SearchError};
 
 async fn get_split_footer_from_cache_or_fetch(
@@ -475,7 +476,10 @@ async fn leaf_search_single_split(
     //
     if is_metadata_count_request_with_ast(&query_ast, &search_request) {
         leaf_search_state_guard.set_state(SplitSearchState::PrunedBeforeWarmup);
-        return Ok(Some(get_leaf_resp_from_count(split.num_docs)));
+        let effective_num_docs = split
+            .num_docs
+            .saturating_sub(split.soft_deleted_doc_ids.len() as u64);
+        return Ok(Some(get_leaf_resp_from_count(effective_num_docs)));
     }
 
     let split_id = split.split_id.to_string();
@@ -526,6 +530,14 @@ async fn leaf_search_single_split(
         false,
         predicate_cache,
     )?;
+    let query: Box<dyn tantivy::query::Query> = if split.soft_deleted_doc_ids.is_empty() {
+        query
+    } else {
+        Box::new(SoftDeleteQuery::new(
+            query,
+            split.soft_deleted_doc_ids.clone(),
+        ))
+    };
 
     let collector_warmup_info = collector.warmup_info();
     warmup_info.merge(collector_warmup_info);
@@ -576,7 +588,10 @@ async fn leaf_search_single_split(
                 collector.update_search_param(&simplified_search_request);
                 let mut leaf_search_response: LeafSearchResponse =
                     if is_metadata_count_request_with_ast(&query_ast, &simplified_search_request) {
-                        get_leaf_resp_from_count(searcher.num_docs())
+                        let num_docs = searcher
+                            .num_docs()
+                            .saturating_sub(split_clone.soft_deleted_doc_ids.len() as u64);
+                        get_leaf_resp_from_count(num_docs)
                     } else if collector.is_count_only() {
                         let count = query.count(&searcher)? as u64;
                         get_leaf_resp_from_count(count)

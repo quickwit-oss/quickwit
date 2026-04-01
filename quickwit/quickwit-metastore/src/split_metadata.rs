@@ -135,6 +135,9 @@ pub struct SplitMetadata {
     /// Doc mapping UID used when creating this split. This split may only be merged with other
     /// splits using the same doc mapping UID.
     pub doc_mapping_uid: DocMappingUid,
+
+    /// Set of tantivy doc_ids that have been soft-deleted from this split.
+    pub soft_deleted_doc_ids: BTreeSet<u32>,
 }
 
 impl fmt::Debug for SplitMetadata {
@@ -180,6 +183,9 @@ impl fmt::Debug for SplitMetadata {
         debug_struct.field("footer_offsets", &self.footer_offsets);
         debug_struct.field("delete_opstamp", &self.delete_opstamp);
         debug_struct.field("num_merge_ops", &self.num_merge_ops);
+        if !self.soft_deleted_doc_ids.is_empty() {
+            debug_struct.field("soft_deleted_doc_ids", &self.soft_deleted_doc_ids);
+        }
         debug_struct.finish()
     }
 }
@@ -286,6 +292,7 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
             doc_mapping_uid: DocMappingUid::default(),
+            soft_deleted_doc_ids: BTreeSet::new(),
         }
     }
 
@@ -427,6 +434,7 @@ mod tests {
             delete_opstamp: 0,
             num_merge_ops: 0,
             doc_mapping_uid: DocMappingUid::default(),
+            soft_deleted_doc_ids: BTreeSet::new(),
         };
 
         let expected_output =

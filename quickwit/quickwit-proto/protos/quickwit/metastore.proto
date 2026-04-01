@@ -125,6 +125,9 @@ service MetastoreService {
   // Deletes splits.
   rpc DeleteSplits(DeleteSplitsRequest) returns (EmptyResponse);
 
+  // Soft-deletes individual documents within published splits.
+  rpc SoftDeleteDocuments(SoftDeleteDocumentsRequest) returns (SoftDeleteDocumentsResponse);
+
   // Adds a source.
   rpc AddSource(AddSourceRequest) returns (EmptyResponse);
 
@@ -346,6 +349,20 @@ message MarkSplitsForDeletionRequest {
 message DeleteSplitsRequest {
   quickwit.common.IndexUid index_uid = 2;
   repeated string split_ids = 3;
+}
+
+message SplitDocIds {
+  string split_id = 1;
+  repeated uint32 doc_ids = 2;
+}
+
+message SoftDeleteDocumentsRequest {
+  quickwit.common.IndexUid index_uid = 1;
+  repeated SplitDocIds split_doc_ids = 2;
+}
+
+message SoftDeleteDocumentsResponse {
+  uint64 num_soft_deleted_doc_ids = 1;
 }
 
 message AddSourceRequest {

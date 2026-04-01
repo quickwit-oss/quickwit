@@ -136,6 +136,7 @@ generate_getters! {
     ToggleSourceRequest,
     UpdateIndexRequest,
     UpdateSourceRequest,
+    SoftDeleteDocumentsRequest,
     UpdateSplitsDeleteOpstampRequest
 }
 

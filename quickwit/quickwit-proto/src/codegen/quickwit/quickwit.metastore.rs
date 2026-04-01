@@ -210,6 +210,28 @@ pub struct DeleteSplitsRequest {
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SplitDocIds {
+    #[prost(string, tag = "1")]
+    pub split_id: ::prost::alloc::string::String,
+    #[prost(uint32, repeated, tag = "2")]
+    pub doc_ids: ::prost::alloc::vec::Vec<u32>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SoftDeleteDocumentsRequest {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(message, repeated, tag = "2")]
+    pub split_doc_ids: ::prost::alloc::vec::Vec<SplitDocIds>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SoftDeleteDocumentsResponse {
+    #[prost(uint64, tag = "1")]
+    pub num_soft_deleted_doc_ids: u64,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AddSourceRequest {
     #[prost(message, optional, tag = "1")]
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
@@ -693,6 +715,11 @@ impl RpcName for DeleteSplitsRequest {
         "delete_splits"
     }
 }
+impl RpcName for SoftDeleteDocumentsRequest {
+    fn rpc_name() -> &'static str {
+        "soft_delete_documents"
+    }
+}
 impl RpcName for AddSourceRequest {
     fn rpc_name() -> &'static str {
         "add_source"
@@ -867,6 +894,11 @@ pub trait MetastoreService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: DeleteSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
+    ///Soft-deletes individual documents within published splits.
+    async fn soft_delete_documents(
+        &self,
+        request: SoftDeleteDocumentsRequest,
+    ) -> crate::metastore::MetastoreResult<SoftDeleteDocumentsResponse>;
     ///Adds a source.
     async fn add_source(
         &self,
@@ -1167,6 +1199,12 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.0.delete_splits(request).await
     }
+    async fn soft_delete_documents(
+        &self,
+        request: SoftDeleteDocumentsRequest,
+    ) -> crate::metastore::MetastoreResult<SoftDeleteDocumentsResponse> {
+        self.inner.0.soft_delete_documents(request).await
+    }
     async fn add_source(
         &self,
         request: AddSourceRequest,
@@ -1382,6 +1420,12 @@ pub mod mock_metastore_service {
             request: super::DeleteSplitsRequest,
         ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
             self.inner.lock().await.delete_splits(request).await
+        }
+        async fn soft_delete_documents(
+            &self,
+            request: super::SoftDeleteDocumentsRequest,
+        ) -> crate::metastore::MetastoreResult<super::SoftDeleteDocumentsResponse> {
+            self.inner.lock().await.soft_delete_documents(request).await
         }
         async fn add_source(
             &self,
@@ -1711,6 +1755,22 @@ impl tower::Service<DeleteSplitsRequest> for InnerMetastoreServiceClient {
     fn call(&mut self, request: DeleteSplitsRequest) -> Self::Future {
         let svc = self.clone();
         let fut = async move { svc.0.delete_splits(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<SoftDeleteDocumentsRequest> for InnerMetastoreServiceClient {
+    type Response = SoftDeleteDocumentsResponse;
+    type Error = crate::metastore::MetastoreError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: SoftDeleteDocumentsRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.soft_delete_documents(request).await };
         Box::pin(fut)
     }
 }
@@ -2115,6 +2175,11 @@ struct MetastoreServiceTowerServiceStack {
         EmptyResponse,
         crate::metastore::MetastoreError,
     >,
+    soft_delete_documents_svc: quickwit_common::tower::BoxService<
+        SoftDeleteDocumentsRequest,
+        SoftDeleteDocumentsResponse,
+        crate::metastore::MetastoreError,
+    >,
     add_source_svc: quickwit_common::tower::BoxService<
         AddSourceRequest,
         EmptyResponse,
@@ -2294,6 +2359,12 @@ impl MetastoreService for MetastoreServiceTowerServiceStack {
         request: DeleteSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.delete_splits_svc.clone().ready().await?.call(request).await
+    }
+    async fn soft_delete_documents(
+        &self,
+        request: SoftDeleteDocumentsRequest,
+    ) -> crate::metastore::MetastoreResult<SoftDeleteDocumentsResponse> {
+        self.soft_delete_documents_svc.clone().ready().await?.call(request).await
     }
     async fn add_source(
         &self,
@@ -2548,6 +2619,16 @@ type DeleteSplitsLayer = quickwit_common::tower::BoxLayer<
     EmptyResponse,
     crate::metastore::MetastoreError,
 >;
+type SoftDeleteDocumentsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        SoftDeleteDocumentsRequest,
+        SoftDeleteDocumentsResponse,
+        crate::metastore::MetastoreError,
+    >,
+    SoftDeleteDocumentsRequest,
+    SoftDeleteDocumentsResponse,
+    crate::metastore::MetastoreError,
+>;
 type AddSourceLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         AddSourceRequest,
@@ -2772,6 +2853,7 @@ pub struct MetastoreServiceTowerLayerStack {
     publish_splits_layers: Vec<PublishSplitsLayer>,
     mark_splits_for_deletion_layers: Vec<MarkSplitsForDeletionLayer>,
     delete_splits_layers: Vec<DeleteSplitsLayer>,
+    soft_delete_documents_layers: Vec<SoftDeleteDocumentsLayer>,
     add_source_layers: Vec<AddSourceLayer>,
     update_source_layers: Vec<UpdateSourceLayer>,
     toggle_source_layers: Vec<ToggleSourceLayer>,
@@ -3101,6 +3183,33 @@ impl MetastoreServiceTowerLayerStack {
                 crate::metastore::MetastoreError,
             >,
         >>::Service as tower::Service<DeleteSplitsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SoftDeleteDocumentsRequest,
+                    SoftDeleteDocumentsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SoftDeleteDocumentsRequest,
+                SoftDeleteDocumentsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service: tower::Service<
+                SoftDeleteDocumentsRequest,
+                Response = SoftDeleteDocumentsResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                SoftDeleteDocumentsRequest,
+                SoftDeleteDocumentsResponse,
+                crate::metastore::MetastoreError,
+            >,
+        >>::Service as tower::Service<
+            SoftDeleteDocumentsRequest,
+        >>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
                     AddSourceRequest,
@@ -3665,6 +3774,8 @@ impl MetastoreServiceTowerLayerStack {
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.delete_splits_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.soft_delete_documents_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.add_source_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.update_source_layers
@@ -3941,6 +4052,28 @@ impl MetastoreServiceTowerLayerStack {
         <L::Service as tower::Service<DeleteSplitsRequest>>::Future: Send + 'static,
     {
         self.delete_splits_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_soft_delete_documents_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    SoftDeleteDocumentsRequest,
+                    SoftDeleteDocumentsResponse,
+                    crate::metastore::MetastoreError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                SoftDeleteDocumentsRequest,
+                Response = SoftDeleteDocumentsResponse,
+                Error = crate::metastore::MetastoreError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            SoftDeleteDocumentsRequest,
+        >>::Future: Send + 'static,
+    {
+        self.soft_delete_documents_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stack_add_source_layer<L>(mut self, layer: L) -> Self
@@ -4522,6 +4655,14 @@ impl MetastoreServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let soft_delete_documents_svc = self
+            .soft_delete_documents_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let add_source_svc = self
             .add_source_layers
             .into_iter()
@@ -4704,6 +4845,7 @@ impl MetastoreServiceTowerLayerStack {
             publish_splits_svc,
             mark_splits_for_deletion_svc,
             delete_splits_svc,
+            soft_delete_documents_svc,
             add_source_svc,
             update_source_svc,
             toggle_source_svc,
@@ -4878,6 +5020,15 @@ where
             Response = EmptyResponse,
             Error = crate::metastore::MetastoreError,
             Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
+        >
+        + tower::Service<
+            SoftDeleteDocumentsRequest,
+            Response = SoftDeleteDocumentsResponse,
+            Error = crate::metastore::MetastoreError,
+            Future = BoxFuture<
+                SoftDeleteDocumentsResponse,
+                crate::metastore::MetastoreError,
+            >,
         >
         + tower::Service<
             AddSourceRequest,
@@ -5094,6 +5245,12 @@ where
         &self,
         request: DeleteSplitsRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
+        self.clone().call(request).await
+    }
+    async fn soft_delete_documents(
+        &self,
+        request: SoftDeleteDocumentsRequest,
+    ) -> crate::metastore::MetastoreResult<SoftDeleteDocumentsResponse> {
         self.clone().call(request).await
     }
     async fn add_source(
@@ -5443,6 +5600,20 @@ where
             .map_err(|status| crate::error::grpc_status_to_service_error(
                 status,
                 DeleteSplitsRequest::rpc_name(),
+            ))
+    }
+    async fn soft_delete_documents(
+        &self,
+        request: SoftDeleteDocumentsRequest,
+    ) -> crate::metastore::MetastoreResult<SoftDeleteDocumentsResponse> {
+        self.inner
+            .clone()
+            .soft_delete_documents(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                SoftDeleteDocumentsRequest::rpc_name(),
             ))
     }
     async fn add_source(
@@ -5905,6 +6076,17 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .0
             .delete_splits(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn soft_delete_documents(
+        &self,
+        request: tonic::Request<SoftDeleteDocumentsRequest>,
+    ) -> Result<tonic::Response<SoftDeleteDocumentsResponse>, tonic::Status> {
+        self.inner
+            .0
+            .soft_delete_documents(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -6619,6 +6801,36 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Soft-deletes individual documents within published splits.
+        pub async fn soft_delete_documents(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SoftDeleteDocumentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SoftDeleteDocumentsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/SoftDeleteDocuments",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "SoftDeleteDocuments",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Adds a source.
         pub async fn add_source(
             &mut self,
@@ -7325,6 +7537,14 @@ pub mod metastore_service_grpc_server {
             &self,
             request: tonic::Request<super::DeleteSplitsRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
+        /// Soft-deletes individual documents within published splits.
+        async fn soft_delete_documents(
+            &self,
+            request: tonic::Request<super::SoftDeleteDocumentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SoftDeleteDocumentsResponse>,
+            tonic::Status,
+        >;
         /// Adds a source.
         async fn add_source(
             &self,
@@ -8161,6 +8381,55 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = DeleteSplitsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/SoftDeleteDocuments" => {
+                    #[allow(non_camel_case_types)]
+                    struct SoftDeleteDocumentsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: MetastoreServiceGrpc,
+                    > tonic::server::UnaryService<super::SoftDeleteDocumentsRequest>
+                    for SoftDeleteDocumentsSvc<T> {
+                        type Response = super::SoftDeleteDocumentsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SoftDeleteDocumentsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as MetastoreServiceGrpc>::soft_delete_documents(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SoftDeleteDocumentsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

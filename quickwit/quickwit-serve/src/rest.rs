@@ -53,6 +53,7 @@ use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::search_api::{
     search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
 };
+use crate::soft_delete_api::soft_delete_api_handlers;
 use crate::template_api::index_template_api_handlers;
 use crate::ui_handler::ui_handler;
 use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
@@ -336,6 +337,11 @@ fn api_v1_routes(
         ))
         .boxed()
         .or(delete_task_api_handlers(
+            quickwit_services.metastore_client.clone(),
+        ))
+        .boxed()
+        .or(soft_delete_api_handlers(
+            quickwit_services.search_service.clone(),
             quickwit_services.metastore_client.clone(),
         ))
         .boxed()

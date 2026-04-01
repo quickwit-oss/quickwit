@@ -710,7 +710,8 @@ pub fn get_count_from_metadata(split_metadatas: &[SplitMetadata]) -> Vec<LeafSea
     split_metadatas
         .iter()
         .map(|metadata| LeafSearchResponse {
-            num_hits: metadata.num_docs as u64,
+            num_hits: (metadata.num_docs as u64)
+                .saturating_sub(metadata.soft_deleted_doc_ids.len() as u64),
             partial_hits: Vec::new(),
             failed_splits: Vec::new(),
             num_attempted_splits: 1,

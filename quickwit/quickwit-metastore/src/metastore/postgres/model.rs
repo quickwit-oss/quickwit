@@ -90,6 +90,7 @@ pub enum Splits {
     IndexUid,
     NodeId,
     DeleteOpstamp,
+    SoftDeletedDocIds,
 }
 
 pub(super) struct ToTimestampFunc;

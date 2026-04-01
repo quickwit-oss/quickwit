@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::{self, Write};
 use std::str::FromStr;
 use std::time::Duration;
@@ -43,8 +43,9 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SplitStats, StageSplitsRequest,
-    ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, SoftDeleteDocumentsRequest,
+    SoftDeleteDocumentsResponse, SplitStats, StageSplitsRequest, ToggleSourceRequest,
+    UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
@@ -72,13 +73,14 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    IndexesMetadataResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
-    UpdateSourceRequestExt, use_shard_api,
+    IndexesMetadataResponseExt, MAX_SOFT_DELETED_DOCS_PER_SPLIT, PublishSplitsRequestExt,
+    STREAM_SPLITS_CHUNK_SIZE, UpdateSourceRequestExt, use_shard_api,
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
-    MetastoreServiceExt, Split, SplitState, StageSplitsRequestExt, UpdateIndexRequestExt,
+    MetastoreServiceExt, Split, SplitMetadata, SplitState, StageSplitsRequestExt,
+    UpdateIndexRequestExt,
 };
 
 /// PostgreSQL metastore implementation.
@@ -1166,6 +1168,124 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     #[instrument(skip(self))]
+    async fn soft_delete_documents(
+        &self,
+        request: SoftDeleteDocumentsRequest,
+    ) -> MetastoreResult<SoftDeleteDocumentsResponse> {
+        let index_uid: IndexUid = request.index_uid().clone();
+        let split_doc_ids = request.split_doc_ids;
+
+        if split_doc_ids.is_empty() {
+            return Ok(SoftDeleteDocumentsResponse {
+                num_soft_deleted_doc_ids: 0,
+            });
+        }
+
+        // Fetches current metadata for all requested splits in a single round-trip, locking
+        // the rows for the duration of the transaction.
+        const FETCH_SPLITS_METADATA_QUERY: &str = r#"
+            SELECT split_id, split_metadata_json
+            FROM splits
+            WHERE
+                index_uid = $1
+                AND split_id = ANY($2)
+                AND split_state = 'Published'
+            FOR UPDATE
+        "#;
+
+        // Updates all modified splits in a single round-trip via UNNEST.
+        const UPDATE_SPLITS_METADATA_QUERY: &str = r#"
+            UPDATE splits
+            SET
+                split_metadata_json = updates.split_metadata_json,
+                update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            FROM UNNEST($1::TEXT[], $2::TEXT[]) AS updates(split_id, split_metadata_json)
+            WHERE
+                splits.index_uid = $3
+                AND splits.split_id = updates.split_id
+                AND splits.split_state = 'Published'
+        "#;
+
+        // Build a lookup map: split_id → new doc IDs to add.
+        let mut new_ids_by_split: HashMap<&str, BTreeSet<u32>> = HashMap::new();
+        for split in &split_doc_ids {
+            let entry = new_ids_by_split.entry(split.split_id.as_str()).or_default();
+            entry.extend(split.doc_ids.iter().copied());
+        }
+
+        let requested_split_ids: Vec<&str> =
+            split_doc_ids.iter().map(|s| s.split_id.as_str()).collect();
+
+        run_with_tx!(self.connection_pool, tx, "soft delete documents", {
+            // Phase 1: fetch and lock all relevant splits, merge new doc IDs, validate limits.
+            // Any error here causes the transaction to roll back, so no split is modified.
+            let rows: Vec<(String, String)> = sqlx::query_as(FETCH_SPLITS_METADATA_QUERY)
+                .bind(&index_uid)
+                .bind(&requested_split_ids)
+                .fetch_all(tx.as_mut())
+                .await
+                .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
+
+            let mut updated_split_ids: Vec<String> = Vec::with_capacity(rows.len());
+            let mut updated_metadata_jsons: Vec<String> = Vec::with_capacity(rows.len());
+            let mut total_soft_deleted: u64 = 0;
+
+            for (split_id, split_metadata_json) in rows {
+                let new_ids = new_ids_by_split
+                    .get(split_id.as_str())
+                    .cloned()
+                    .unwrap_or_default();
+
+                let mut split_metadata = serde_json::from_str::<SplitMetadata>(
+                    &split_metadata_json,
+                )
+                .map_err(|error| MetastoreError::JsonDeserializeError {
+                    struct_name: "SplitMetadata".to_string(),
+                    message: error.to_string(),
+                })?;
+
+                let old_count = split_metadata.soft_deleted_doc_ids.len();
+                split_metadata.soft_deleted_doc_ids.extend(new_ids);
+                let new_count = split_metadata.soft_deleted_doc_ids.len();
+                if old_count == new_count {
+                    continue;
+                }
+
+                if new_count > MAX_SOFT_DELETED_DOCS_PER_SPLIT {
+                    return Err(MetastoreError::FailedPrecondition {
+                        entity: EntityKind::Split {
+                            split_id: split_id.clone(),
+                        },
+                        message: format!(
+                            "split `{split_id}` would exceed the maximum number of soft-deleted \
+                             documents ({MAX_SOFT_DELETED_DOCS_PER_SPLIT}): would be {new_count}",
+                        ),
+                    });
+                }
+
+                updated_metadata_jsons.push(serde_utils::to_json_str(&split_metadata)?);
+                updated_split_ids.push(split_id);
+                total_soft_deleted += (new_count - old_count) as u64;
+            }
+
+            // Phase 2: all validations passed — apply all updates in a single query.
+            if !updated_split_ids.is_empty() {
+                sqlx::query(UPDATE_SPLITS_METADATA_QUERY)
+                    .bind(&updated_split_ids)
+                    .bind(&updated_metadata_jsons)
+                    .bind(&index_uid)
+                    .execute(tx.as_mut())
+                    .await
+                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
+            }
+
+            Ok(SoftDeleteDocumentsResponse {
+                num_soft_deleted_doc_ids: total_soft_deleted,
+            })
+        })
+    }
+
+    #[instrument(skip(self))]
     async fn add_source(&self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
         let source_config = request.deserialize_source_config()?;
         let index_uid: IndexUid = request.index_uid().clone();
@@ -2240,6 +2360,18 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             r#"SELECT * FROM "splits" WHERE "time_range_end" <= 42"#
+        );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_all_indexes()
+            .with_split_ids(vec!["split-1".to_string(), "split-2".to_string()]);
+        append_query_filters_and_order_by(sql, &query);
+
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            r#"SELECT * FROM "splits" WHERE "split_id" IN ('split-1', 'split-2')"#
         );
     }
 

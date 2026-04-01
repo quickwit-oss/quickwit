@@ -49,6 +49,10 @@ use crate::{Split, SplitMetadata, SplitState};
 /// Splits batch size returned by the stream splits API
 pub(crate) const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
 
+/// Maximum number of soft-deleted document IDs allowed per split.
+/// Attempts to soft-delete documents that would push the total above this limit will fail.
+pub(crate) const MAX_SOFT_DELETED_DOCS_PER_SPLIT: usize = 10_000;
+
 /// An extended trait for [`MetastoreService`].
 #[async_trait]
 pub trait MetastoreServiceExt: MetastoreService {
@@ -640,6 +644,10 @@ pub struct ListSplitsQuery {
     /// A specific node ID to filter by.
     pub node_id: Option<NodeId>,
 
+    /// A non-empty list of split IDs to fetch, or
+    /// None to ignore this filter.
+    pub split_ids: Option<Vec<SplitId>>,
+
     /// The maximum number of splits to retrieve.
     pub limit: Option<usize>,
 
@@ -739,6 +747,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            split_ids: None,
         }
     }
 
@@ -765,6 +774,7 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            split_ids: None,
         })
     }
 
@@ -787,12 +797,19 @@ impl ListSplitsQuery {
             mature: Bound::Unbounded,
             sort_by: SortBy::None,
             after_split: None,
+            split_ids: None,
         }
     }
 
     /// Selects splits produced by the specified node.
     pub fn with_node_id(mut self, node_id: NodeId) -> Self {
         self.node_id = Some(node_id);
+        self
+    }
+
+    /// Selects only splits with the specified IDs.
+    pub fn with_split_ids(mut self, split_ids: Vec<SplitId>) -> Self {
+        self.split_ids = Some(split_ids);
         self
     }
 

@@ -526,7 +526,6 @@ impl SegmentCollector for QuickwitSegmentCollector {
 
     #[inline]
     fn collect_block(&mut self, filtered_docs: &[DocId]) {
-        // Update results
         self.num_hits += filtered_docs.len() as u64;
 
         if let Some(segment_top_k_collector) = self.segment_top_k_collector.as_mut() {

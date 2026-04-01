@@ -327,6 +327,9 @@ pub struct SplitIdAndFooterOffsets {
     /// The number of docs in the split
     #[prost(uint64, tag = "6")]
     pub num_docs: u64,
+    /// Tantivy doc IDs that have been soft-deleted from this split
+    #[prost(uint32, repeated, tag = "7")]
+    pub soft_deleted_doc_ids: ::prost::alloc::vec::Vec<u32>,
 }
 /// Hits returned by a FetchDocRequest.
 ///

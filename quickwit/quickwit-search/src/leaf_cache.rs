@@ -85,6 +85,9 @@ struct CacheKey {
     /// The effective time range of the request, that is, the intersection of the timerange
     /// requested, and the timerange covered by the split.
     merged_time_range: HalfOpenRange,
+    /// The number of soft deleted documents in the split.
+    /// This assumes that the list of deleted docs is append only for a split.
+    soft_deleted_docs_len: usize,
 }
 
 impl CacheKey {
@@ -106,6 +109,7 @@ impl CacheKey {
             split_id: split_info.split_id,
             request: search_request,
             merged_time_range,
+            soft_deleted_docs_len: split_info.soft_deleted_doc_ids.len(),
         }
     }
 }
@@ -253,6 +257,7 @@ mod tests {
             timestamp_start: None,
             timestamp_end: None,
             num_docs: 0,
+            soft_deleted_doc_ids: Vec::new(),
         };
 
         let split_2 = SplitIdAndFooterOffsets {
@@ -262,6 +267,7 @@ mod tests {
             timestamp_start: None,
             timestamp_end: None,
             num_docs: 0,
+            soft_deleted_doc_ids: Vec::new(),
         };
 
         let query_1 = SearchRequest {
@@ -319,6 +325,7 @@ mod tests {
             timestamp_start: Some(100),
             timestamp_end: Some(199),
             num_docs: 0,
+            soft_deleted_doc_ids: Vec::new(),
         };
         let split_2 = SplitIdAndFooterOffsets {
             split_id: "split_2".to_string(),
@@ -327,6 +334,7 @@ mod tests {
             timestamp_start: Some(150),
             timestamp_end: Some(249),
             num_docs: 0,
+            soft_deleted_doc_ids: Vec::new(),
         };
         let split_3 = SplitIdAndFooterOffsets {
             split_id: "split_3".to_string(),
@@ -335,6 +343,7 @@ mod tests {
             timestamp_start: Some(150),
             timestamp_end: Some(249),
             num_docs: 0,
+            soft_deleted_doc_ids: Vec::new(),
         };
 
         let query_1 = SearchRequest {
