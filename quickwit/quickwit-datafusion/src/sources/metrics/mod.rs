@@ -88,8 +88,8 @@ fn minimal_base_schema() -> SchemaRef {
 
 #[async_trait]
 impl QuickwitDataSource for MetricsDataSource {
-    fn file_type(&self) -> &str {
-        METRICS_FILE_TYPE
+    fn file_type(&self) -> Option<&str> {
+        Some(METRICS_FILE_TYPE)
     }
 
     fn create_table_provider_factory(&self) -> Arc<dyn TableProviderFactory> {

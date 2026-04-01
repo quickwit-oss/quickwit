@@ -95,23 +95,28 @@ impl DataFusionSessionBuilder {
                 .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
         }
 
+        // Let each source configure the builder before it is built.
+        // This is where sources register codecs, UDFs, opener factories, etc.
+        for source in &self.sources {
+            builder = source.configure_session_state_builder(builder);
+        }
+
         let mut state = builder.build();
 
-        // Register each source's TableProviderFactory under both the literal
-        // and uppercased file_type() string.
+        // Register each source's TableProviderFactory for `STORED AS <file_type>` DDL.
+        // Only done for sources that opt into DDL support via file_type() = Some(_).
         for source in &self.sources {
-            let ft_lower = source.file_type().to_string();
-            let ft_upper = source.file_type().to_uppercase();
+            let Some(ft) = source.file_type() else {
+                continue;
+            };
             let factory: Arc<dyn datafusion::catalog::TableProviderFactory> =
                 source.create_table_provider_factory();
-            // Both keys point to independent factory instances (factories are
-            // cheap to construct and are not cloneable in general).
             state
                 .table_factories_mut()
-                .insert(ft_lower, Arc::clone(&factory));
+                .insert(ft.to_string(), Arc::clone(&factory));
             state
                 .table_factories_mut()
-                .insert(ft_upper, source.create_table_provider_factory());
+                .insert(ft.to_uppercase(), source.create_table_provider_factory());
         }
 
         let ctx = SessionContext::new_with_state(state);

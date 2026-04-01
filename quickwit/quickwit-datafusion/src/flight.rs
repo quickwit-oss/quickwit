@@ -60,9 +60,15 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
         &self,
         ctx: WorkerQueryContext,
     ) -> Result<SessionState, DataFusionError> {
-        let state = ctx.builder.build();
+        // Phase 1: let each source configure the builder before build().
+        // Codecs, UDFs, and opener factories must be registered here.
+        let mut builder = ctx.builder;
+        for source in &self.sources {
+            builder = source.configure_session_state_builder(builder);
+        }
+        let state = builder.build();
 
-        // Register the schema provider so plan fragments can resolve table refs.
+        // Phase 2: register catalog so plan fragments can resolve table refs.
         let schema_provider =
             Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
         let catalog = Arc::new(MemoryCatalogProvider::new());
@@ -73,11 +79,11 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
             .catalog_list()
             .register_catalog("quickwit".to_string(), catalog);
 
-        // Let each source register its runtime state (object stores, etc.)
+        // Phase 3: post-build runtime registration (e.g., object stores).
         for source in &self.sources {
             if let Err(err) = source.register_for_worker(&state).await {
                 debug!(
-                    file_type = source.file_type(),
+                    file_type = ?source.file_type(),
                     error = %err,
                     "data source register_for_worker failed (non-fatal)"
                 );
