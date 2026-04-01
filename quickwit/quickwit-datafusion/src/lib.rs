@@ -33,14 +33,14 @@
 //! Pomsky adds its own data sources and wraps `DataFusionSessionBuilder` in
 //! the `CloudPremService.SubstraitSearch` handler — no Pomsky code needed here.
 
-pub mod catalog;
+pub(crate) mod catalog;
 pub mod data_source;
 pub mod flight;
-pub mod resolver;
+pub(crate) mod resolver;
 pub mod session;
 pub mod sources;
-pub mod storage;
-pub mod task_estimator;
+pub(crate) mod storage;
+pub(crate) mod task_estimator;
 
 // Re-export the top-level worker builder for use in grpc.rs.
 // Callers get a gRPC service via `worker.into_worker_server()`.

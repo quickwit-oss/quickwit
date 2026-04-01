@@ -18,10 +18,10 @@
 //! Data sources are registered via `with_source()` and provide their own
 //! `TableProviderFactory` and default table resolution.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
-use datafusion::error::Result as DFResult;
 use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_distributed::{DistributedExt, DistributedPhysicalOptimizerRule};
@@ -42,6 +42,16 @@ use crate::task_estimator::QuickwitTaskEstimator;
 pub struct DataFusionSessionBuilder {
     sources: Vec<Arc<dyn QuickwitDataSource>>,
     searcher_pool: Option<SearcherPool>,
+    use_tls: bool,
+}
+
+impl std::fmt::Debug for DataFusionSessionBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DataFusionSessionBuilder")
+            .field("num_sources", &self.sources.len())
+            .field("has_searcher_pool", &self.searcher_pool.is_some())
+            .finish()
+    }
 }
 
 impl DataFusionSessionBuilder {
@@ -49,7 +59,13 @@ impl DataFusionSessionBuilder {
         Self {
             sources: Vec::new(),
             searcher_pool: None,
+            use_tls: false,
         }
+    }
+
+    pub fn with_tls(mut self, use_tls: bool) -> Self {
+        self.use_tls = use_tls;
+        self
     }
 
     pub fn with_source(mut self, source: Arc<dyn QuickwitDataSource>) -> Self {
@@ -69,6 +85,34 @@ impl DataFusionSessionBuilder {
         &self.sources
     }
 
+    /// Validate that no two sources register conflicting UDF or UDAF names.
+    ///
+    /// Returns an error if two sources contribute a scalar UDF or aggregate
+    /// UDAF with the same name.  Call this before `build_session()` to surface
+    /// conflicts early rather than getting an opaque DataFusion error at query time.
+    pub fn check_invariants(&self) -> datafusion::error::Result<()> {
+        let mut seen_udfs: HashSet<String> = HashSet::new();
+        let mut seen_udafs: HashSet<String> = HashSet::new();
+        for source in &self.sources {
+            let contribs = source.contributions();
+            for name in contribs.udf_names() {
+                if !seen_udfs.insert(name.clone()) {
+                    return Err(datafusion::error::DataFusionError::Configuration(format!(
+                        "two data sources both register a scalar UDF named '{name}'"
+                    )));
+                }
+            }
+            for name in contribs.udaf_names() {
+                if !seen_udafs.insert(name.clone()) {
+                    return Err(datafusion::error::DataFusionError::Configuration(format!(
+                        "two data sources both register an aggregate UDAF named '{name}'"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Build a configured `SessionContext` ready for multi-statement SQL execution.
     ///
     /// Sets up:
@@ -76,7 +120,7 @@ impl DataFusionSessionBuilder {
     /// - One `TableProviderFactory` per registered source (both lowercase and
     ///   uppercase keys, since DataFusion uppercases the `STORED AS` token)
     /// - A `QuickwitSchemaProvider` in the `quickwit.public` catalog
-    pub fn build_session(&self) -> DFResult<SessionContext> {
+    pub fn build_session(&self) -> SessionContext {
         let mut config = SessionConfig::new().with_target_partitions(1);
         config.options_mut().catalog.default_catalog = "quickwit".to_string();
         config.options_mut().catalog.default_schema = "public".to_string();
@@ -89,44 +133,40 @@ impl DataFusionSessionBuilder {
             .with_default_features();
 
         if let Some(ref pool) = self.searcher_pool {
+            let worker_resolver =
+                QuickwitWorkerResolver::new(pool.clone()).with_tls(self.use_tls);
             builder = builder
-                .with_distributed_worker_resolver(QuickwitWorkerResolver::new(pool.clone()))
+                .with_distributed_worker_resolver(worker_resolver)
                 .with_distributed_task_estimator(QuickwitTaskEstimator)
                 .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
         }
 
-        // Collect contributions from all sources (rules, codecs, UDFs).
+        // Collect contributions from all sources (rules, codecs, UDFs, UDAFs,
+        // extension planners) and apply them all into the builder before build().
         let mut combined = crate::data_source::DataSourceContributions::default();
         for source in &self.sources {
             combined.merge(source.contributions());
         }
-        let udfs = combined.take_udfs();
         builder = combined.apply_to_builder(builder);
 
         let mut state = builder.build();
 
-        // Register each source's TableProviderFactory for `STORED AS <file_type>` DDL.
-        // Only done for sources that opt into DDL support via file_type() = Some(_).
+        // Register each source's TableProviderFactory for `STORED AS <token>` DDL.
+        // Using ddl_registration() guarantees the same factory instance handles
+        // both the lowercase and uppercase keys — no mismatch possible.
         for source in &self.sources {
-            let Some(ft) = source.file_type() else {
+            let Some((ft, factory)) = source.ddl_registration() else {
                 continue;
             };
-            let factory: Arc<dyn datafusion::catalog::TableProviderFactory> =
-                source.create_table_provider_factory();
             state
                 .table_factories_mut()
-                .insert(ft.to_string(), Arc::clone(&factory));
+                .insert(ft.clone(), Arc::clone(&factory));
             state
                 .table_factories_mut()
-                .insert(ft.to_uppercase(), source.create_table_provider_factory());
+                .insert(ft.to_uppercase(), Arc::clone(&factory));
         }
 
         let ctx = SessionContext::new_with_state(state);
-
-        // Register UDFs post-build (SessionContext::register_udf is the idiomatic path).
-        for udf in udfs {
-            ctx.register_udf((*udf).clone());
-        }
 
         let schema_provider = Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
         let catalog = Arc::new(MemoryCatalogProvider::new());
@@ -135,6 +175,6 @@ impl DataFusionSessionBuilder {
             .expect("register quickwit schema");
         ctx.register_catalog("quickwit", catalog);
 
-        Ok(ctx)
+        ctx
     }
 }

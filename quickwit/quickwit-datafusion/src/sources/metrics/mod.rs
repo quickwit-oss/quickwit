@@ -21,11 +21,11 @@
 //! All metrics-specific code lives in this module; none leaks into the generic
 //! session / catalog / worker layer.
 
-pub mod factory;
-pub mod index_resolver;
-pub mod metastore_provider;
-pub mod predicate;
-pub mod table_provider;
+pub(crate) mod factory;
+pub(crate) mod index_resolver;
+pub(crate) mod metastore_provider;
+pub(crate) mod predicate;
+pub(crate) mod table_provider;
 
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
@@ -38,11 +38,11 @@ use datafusion::catalog::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;
 use datafusion::execution::SessionState;
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_storage::StorageResolver;
 use tracing::debug;
 
-use crate::data_source::QuickwitDataSource;
+use crate::data_source::{DataSourceContributions, QuickwitDataSource};
 use self::factory::{MetricsTableProviderFactory, METRICS_FILE_TYPE};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
 use self::table_provider::MetricsTableProvider;
@@ -88,14 +88,15 @@ fn minimal_base_schema() -> SchemaRef {
 
 #[async_trait]
 impl QuickwitDataSource for MetricsDataSource {
-    fn file_type(&self) -> Option<&str> {
-        Some(METRICS_FILE_TYPE)
+    fn contributions(&self) -> DataSourceContributions {
+        DataSourceContributions::default()
     }
 
-    fn create_table_provider_factory(&self) -> Arc<dyn TableProviderFactory> {
-        Arc::new(MetricsTableProviderFactory::new(
+    fn ddl_registration(&self) -> Option<(String, Arc<dyn TableProviderFactory>)> {
+        let factory: Arc<dyn TableProviderFactory> = Arc::new(MetricsTableProviderFactory::new(
             Arc::clone(&self.index_resolver),
-        ))
+        ));
+        Some((METRICS_FILE_TYPE.to_string(), factory))
     }
 
     async fn create_default_table_provider(
@@ -112,15 +113,43 @@ impl QuickwitDataSource for MetricsDataSource {
                 );
                 Ok(Some(Arc::new(provider)))
             }
-            // Index not found in this source — let the next source try
-            Err(_) => Ok(None),
+            Err(err) => {
+                // Only swallow "index not found" — propagate everything else so the
+                // caller gets an actionable error (e.g. metastore unavailable).
+                let is_not_found = match &err {
+                    datafusion::error::DataFusionError::External(boxed) => boxed
+                        .downcast_ref::<MetastoreError>()
+                        .map(|me| matches!(me, MetastoreError::NotFound(_)))
+                        .unwrap_or(false),
+                    _ => false,
+                };
+                if is_not_found {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
+            }
         }
     }
 
     async fn register_for_worker(&self, state: &SessionState) -> DFResult<()> {
         let index_names = self.index_resolver.list_index_names().await?;
-        for index_name in &index_names {
-            match self.index_resolver.resolve(index_name).await {
+
+        // Resolve all indexes concurrently — issuing N sequential `index_metadata`
+        // RPCs would cost O(N × rtt) wall-clock time; concurrent resolution keeps
+        // startup latency near O(rtt) regardless of index count.
+        // The object-store cache in MetastoreIndexResolver ensures storage-resolver
+        // RPCs are skipped on subsequent registrations.
+        let resolver = &self.index_resolver;
+        let results = futures::future::join_all(
+            index_names
+                .iter()
+                .map(|name| resolver.resolve(name.as_str())),
+        )
+        .await;
+
+        for (index_name, result) in index_names.iter().zip(results) {
+            match result {
                 Ok((_, object_store, object_store_url)) => {
                     state
                         .runtime_env()

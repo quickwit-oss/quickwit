@@ -99,6 +99,13 @@ pub fn make_batch(
 }
 
 /// Build a RecordBatch with multiple OSS-style tag columns.
+///
+/// Mirrors the production `build_record_batch` behavior: a tag column is only
+/// included in the schema when its value is `Some(_)`.  Passing `None` for a
+/// tag omits the column entirely — `None` does NOT produce an all-null column.
+///
+/// This matches what `metrics_ingest_api::build_record_batch` produces, ensuring
+/// tests exercise the same dynamic schema that real ingestion emits.
 pub fn make_batch_with_tags(
     metric_name: &str,
     timestamps: &[u64],
@@ -112,30 +119,34 @@ pub fn make_batch_with_tags(
     let n = timestamps.len();
     assert_eq!(n, values.len());
 
-    let schema = Arc::new(ArrowSchema::new(vec![
+    let mut fields = vec![
         Field::new("metric_name", dict_type(), false),
         Field::new("metric_type", DataType::UInt8, false),
         Field::new("timestamp_secs", DataType::UInt64, false),
         Field::new("value", DataType::Float64, false),
-        Field::new("service", dict_type(), true),
-        Field::new("env", dict_type(), true),
-        Field::new("datacenter", dict_type(), true),
-        Field::new("region", dict_type(), true),
-        Field::new("host", dict_type(), true),
-    ]));
-
-    let cols: Vec<ArrayRef> = vec![
+    ];
+    let mut cols: Vec<ArrayRef> = vec![
         make_dict(n, metric_name),
         Arc::new(UInt8Array::from(vec![0u8; n])),
         Arc::new(UInt64Array::from(timestamps.to_vec())),
         Arc::new(Float64Array::from(values.to_vec())),
-        make_nullable_dict(n, service),
-        make_nullable_dict(n, env),
-        make_nullable_dict(n, datacenter),
-        make_nullable_dict(n, region),
-        make_nullable_dict(n, host),
     ];
 
+    // Only emit a column when the value is Some — matching production behavior.
+    for (name, val) in [
+        ("service", service),
+        ("env", env),
+        ("datacenter", datacenter),
+        ("region", region),
+        ("host", host),
+    ] {
+        if let Some(v) = val {
+            fields.push(Field::new(name, dict_type(), true));
+            cols.push(make_nullable_dict(n, Some(v)));
+        }
+    }
+
+    let schema = Arc::new(ArrowSchema::new(fields));
     RecordBatch::try_new(schema, cols).unwrap()
 }
 
@@ -279,7 +290,7 @@ impl MetricsTestbed {
         ));
         let source = crate::sources::metrics::MetricsDataSource::with_resolver(resolver);
     let builder = crate::session::DataFusionSessionBuilder::new().with_source(Arc::new(source) as Arc<dyn crate::data_source::QuickwitDataSource>);
-        builder.build_session().unwrap()
+        builder.build_session()
     }
 }
 

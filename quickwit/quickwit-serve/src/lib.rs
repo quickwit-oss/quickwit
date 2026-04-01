@@ -700,7 +700,8 @@ pub async fn serve_quickwit(
         );
         let builder = quickwit_datafusion::DataFusionSessionBuilder::new()
             .with_source(metrics_source)
-            .with_searcher_pool(searcher_pool);
+            .with_searcher_pool(searcher_pool)
+            .with_tls(node_config.grpc_config.tls.is_some());
         Some(Arc::new(builder))
     } else {
         None

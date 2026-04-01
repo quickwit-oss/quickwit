@@ -57,6 +57,10 @@ impl std::fmt::Debug for QuickwitSchemaProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("QuickwitSchemaProvider")
             .field("num_sources", &self.sources.len())
+            .field(
+                "registered_tables",
+                &self.registered_tables.lock().map(|m| m.len()).unwrap_or(0),
+            )
             .finish()
     }
 }
@@ -67,30 +71,40 @@ impl SchemaProvider for QuickwitSchemaProvider {
         self
     }
 
+    /// Lists all index names across all sources.
+    ///
+    /// `table_names()` is a sync DataFusion API, but enumerating sources is
+    /// async. This uses `block_in_place`, which requires a multi-threaded
+    /// Tokio runtime. Only called for `SHOW TABLES` / `information_schema`;
+    /// not on the query hot path.
     fn table_names(&self) -> Vec<String> {
-        // table_names() is sync; listing indexes is async.
-        // Use block_in_place — only called for SHOW TABLES / information_schema.
-        let sources = self.sources.clone();
+        let sources = &self.sources;
         tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async move {
+            tokio::runtime::Handle::current().block_on(async {
                 let mut names = Vec::new();
-                for source in &sources {
+                for source in sources {
                     if let Ok(mut source_names) = source.list_index_names().await {
                         names.append(&mut source_names);
                     }
                 }
+                // Deduplicate in case multiple sources claim the same name.
+                names.dedup();
                 names
             })
         })
     }
 
     async fn table(&self, name: &str) -> DFResult<Option<Arc<dyn TableProvider>>> {
-        // 1. Explicitly registered tables take precedence (DDL path)
+        // Resolution order:
+        // 1. Explicitly registered tables (from CREATE OR REPLACE EXTERNAL TABLE DDL)
+        // 2. Each source's create_default_table_provider — first non-None wins.
+        //    We do not call table_names() to pre-validate; sources return None for
+        //    unknown names, and the schema provider returns None to DataFusion, which
+        //    then emits a "table not found" planning error. This avoids any N+1 listing.
         if let Some(provider) = self.registered_tables.lock().unwrap().get(name).cloned() {
             return Ok(Some(provider));
         }
 
-        // 2. Ask each source — first one that claims the index wins
         for source in &self.sources {
             if let Some(provider) = source.create_default_table_provider(name).await? {
                 return Ok(Some(provider));
@@ -100,11 +114,14 @@ impl SchemaProvider for QuickwitSchemaProvider {
         Ok(None)
     }
 
+    /// Returns `true` if the table is present in the in-memory DDL cache.
+    ///
+    /// DataFusion's contract: returning `false` does not prevent `table()` from
+    /// returning `Some`; `true` is merely a hint. The planner always calls
+    /// `table()` regardless. Checking only `registered_tables` keeps this
+    /// method allocation-free and off the async hot path.
     fn table_exist(&self, name: &str) -> bool {
-        if self.registered_tables.lock().unwrap().contains_key(name) {
-            return true;
-        }
-        self.table_names().contains(&name.to_string())
+        self.registered_tables.lock().unwrap().contains_key(name)
     }
 
     fn register_table(

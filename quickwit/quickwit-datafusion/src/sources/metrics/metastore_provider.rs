@@ -21,7 +21,7 @@ use datafusion::error::Result as DFResult;
 use quickwit_metastore::{
     ListMetricsSplitsQuery, ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt,
 };
-use quickwit_parquet_engine::split::{MetricsSplitMetadata, MetricsSplitState};
+use quickwit_parquet_engine::split::MetricsSplitMetadata;
 use quickwit_proto::metastore::{
     ListMetricsSplitsRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -82,9 +82,11 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
             .deserialize_splits()
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
+        // The metastore guarantees only Published splits are returned because
+        // `to_metastore_query` sets `split_states = vec![Published]`. No
+        // client-side re-filter is needed here.
         let splits: Vec<MetricsSplitMetadata> = records
             .into_iter()
-            .filter(|record| record.state == MetricsSplitState::Published)
             .map(|record| record.metadata)
             .collect();
 
@@ -100,10 +102,19 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
 /// Note: The OSS parquet column names are bare (service, env, etc.) but the
 /// metastore `ListMetricsSplitsQuery` still uses the `tag_service`, `tag_env`
 /// field names — this is just the metastore's internal naming convention.
+///
+/// # Tag field pushdown limitation
+///
+/// `ListMetricsSplitsQuery` accepts at most one value per tag field
+/// (`Option<String>`). When a DataFusion `IN (...)` predicate produces
+/// multiple candidate values for a tag column, the metastore cannot express
+/// the full filter, so **no metastore-level pruning is applied for that
+/// dimension** — the value is left as `None`. The parquet-level filter
+/// (applied after the split is opened) will still enforce the predicate
+/// correctly. Only single-value equalities (`WHERE service = 'web'`) or
+/// single-element IN lists are pushed down to the metastore.
 fn to_metastore_query(index_uid: &IndexUid, query: &MetricsSplitQuery) -> ListMetricsSplitsQuery {
     let mut metastore_query = ListMetricsSplitsQuery::for_index(index_uid.clone());
-
-    metastore_query.split_states = vec![MetricsSplitState::Published.as_str().to_string()];
 
     if let Some(ref names) = query.metric_names {
         metastore_query.metric_names = names.clone();
@@ -117,23 +128,28 @@ fn to_metastore_query(index_uid: &IndexUid, query: &MetricsSplitQuery) -> ListMe
         metastore_query.time_range_end = Some(end as i64);
     }
 
-    if let Some(ref services) = query.tag_service {
-        metastore_query.tag_service = services.first().cloned();
-    }
-    if let Some(ref envs) = query.tag_env {
-        metastore_query.tag_env = envs.first().cloned();
-    }
-    if let Some(ref dcs) = query.tag_datacenter {
-        metastore_query.tag_datacenter = dcs.first().cloned();
-    }
-    if let Some(ref regions) = query.tag_region {
-        metastore_query.tag_region = regions.first().cloned();
-    }
-    if let Some(ref hosts) = query.tag_host {
-        metastore_query.tag_host = hosts.first().cloned();
-    }
+    // Push down a tag filter to the metastore only when there is exactly one
+    // candidate value. Multi-value IN lists cannot be expressed as a single
+    // `Option<String>` on `ListMetricsSplitsQuery`; passing only the first
+    // value would silently skip splits that match the other values, producing
+    // incorrect (incomplete) results. For multi-value lists we pass `None`
+    // (no metastore pruning) and rely on the parquet-level filter instead.
+    metastore_query.tag_service = single_value(query.tag_service.as_deref());
+    metastore_query.tag_env = single_value(query.tag_env.as_deref());
+    metastore_query.tag_datacenter = single_value(query.tag_datacenter.as_deref());
+    metastore_query.tag_region = single_value(query.tag_region.as_deref());
+    metastore_query.tag_host = single_value(query.tag_host.as_deref());
 
     metastore_query
+}
+
+/// Returns the single element of `values` as `Some(value)`, or `None` if
+/// `values` is absent, empty, or contains more than one element.
+fn single_value(values: Option<&[String]>) -> Option<String> {
+    match values {
+        Some([single]) => Some(single.clone()),
+        _ => None,
+    }
 }
 
 pub fn new_metastore_split_provider(

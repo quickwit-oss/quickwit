@@ -410,4 +410,107 @@ mod tests {
         assert!(query.tag_service.is_none());
         assert!(remaining.is_empty());
     }
+
+    // ── Extraction → pruning pipeline (Fix #22) ───────────────────────
+
+    /// Verifies that `extract_split_filters` prunes at the SPLIT level, not just
+    /// at the row level. This test would fail if metric_name equality extraction
+    /// were removed — `count_matching` would return 2 instead of 1.
+    #[test]
+    fn test_metric_name_pruning_prunes_splits_not_just_rows() {
+        use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
+
+        use crate::sources::metrics::test_utils::TestSplitProvider;
+
+        let cpu_split = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("cpu"))
+            .index_uid("idx:0000")
+            .time_range(TimeRange::new(100, 300))
+            .num_rows(2)
+            .size_bytes(1024)
+            .add_metric_name("cpu.usage")
+            .build();
+        let mem_split = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("mem"))
+            .index_uid("idx:0000")
+            .time_range(TimeRange::new(100, 300))
+            .num_rows(2)
+            .size_bytes(1024)
+            .add_metric_name("memory.used")
+            .build();
+
+        let provider = TestSplitProvider::new(vec![cpu_split, mem_split]);
+
+        let filters = vec![col("metric_name").eq(lit("cpu.usage"))];
+        let (query, remaining) = extract_split_filters(&filters);
+        assert!(remaining.is_empty(), "metric_name = 'cpu.usage' must be fully extracted");
+
+        let matching = provider.count_matching(&query);
+        assert_eq!(
+            matching, 1,
+            "predicate extractor must prune to 1 split for metric_name = 'cpu.usage', got \
+             {matching}"
+        );
+    }
+
+    // ── TestSplitProvider multi-value IN list (Fix #23) ───────────────
+
+    /// Verifies that `TestSplitProvider` correctly handles multiple tag values in a
+    /// query — returning splits matching ANY of the values, not just the first.
+    ///
+    /// The `MetastoreSplitProvider` is limited by the metastore API (first() value
+    /// only), but `TestSplitProvider` uses `any()` and must correctly include all
+    /// matching splits. This test would fail if `any()` were changed to `first()`.
+    #[test]
+    fn test_split_provider_multi_value_in_list_returns_all_matching_splits() {
+        use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
+
+        use crate::sources::metrics::test_utils::TestSplitProvider;
+
+        let web_split = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("web"))
+            .index_uid("idx:0000")
+            .time_range(TimeRange::new(100, 300))
+            .num_rows(2)
+            .size_bytes(1024)
+            .add_metric_name("cpu.usage")
+            .add_low_cardinality_tag("service", "web")
+            .build();
+        let api_split = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("api"))
+            .index_uid("idx:0000")
+            .time_range(TimeRange::new(100, 300))
+            .num_rows(2)
+            .size_bytes(1024)
+            .add_metric_name("cpu.usage")
+            .add_low_cardinality_tag("service", "api")
+            .build();
+        let db_split = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("db"))
+            .index_uid("idx:0000")
+            .time_range(TimeRange::new(100, 300))
+            .num_rows(2)
+            .size_bytes(1024)
+            .add_metric_name("cpu.usage")
+            .add_low_cardinality_tag("service", "db")
+            .build();
+
+        let provider = TestSplitProvider::new(vec![web_split, api_split, db_split]);
+
+        // A filter for service IN ('web', 'api') must match web and api but NOT db.
+        let filters = vec![col("service").in_list(vec![lit("web"), lit("api")], false)];
+        let (query, remaining) = extract_split_filters(&filters);
+        assert!(remaining.is_empty(), "service IN list must be fully extracted");
+        assert_eq!(
+            query.tag_service,
+            Some(vec!["web".to_string(), "api".to_string()])
+        );
+
+        let matching = provider.count_matching(&query);
+        assert_eq!(
+            matching, 2,
+            "TestSplitProvider must return both web and api splits for IN ('web','api'), got \
+             {matching}"
+        );
+    }
 }

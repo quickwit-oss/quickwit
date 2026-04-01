@@ -35,7 +35,7 @@
 //! For each session (coordinator or worker):
 //!
 //! 1. **`contributions()`** — called once. Returns optimizer rules, codecs, UDFs,
-//!    and object stores to register on the `RuntimeEnv`.  Applied before
+//!    extension planners, and UDAFs to register.  Applied before
 //!    `SessionStateBuilder::build()`.
 //!
 //! 2. `SessionStateBuilder::build()` — called by the framework.
@@ -60,9 +60,10 @@ use async_trait::async_trait;
 use datafusion::catalog::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;
-use datafusion::execution::{SessionState, SessionStateBuilder};
-use datafusion::logical_expr::ScalarUDF;
+use datafusion::execution::SessionStateBuilder;
+use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
+use datafusion::physical_planner::{DefaultPhysicalPlanner, ExtensionPlanner, PhysicalPlanner};
 
 /// Additive contributions from a [`QuickwitDataSource`] to the DataFusion session.
 ///
@@ -92,20 +93,36 @@ pub struct DataSourceContributions {
     ///
     /// Logs adds tantivy-specific pushdown rules here.
     /// Metrics adds nothing — DataFusion's built-in parquet pushdown is sufficient.
-    pub physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>>,
+    physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>>,
 
     /// Scalar UDFs contributed by this source.
     ///
     /// Logs adds `full_text_udf()` here.
     /// Metrics adds nothing.
-    pub udfs: Vec<Arc<ScalarUDF>>,
+    udfs: Vec<Arc<ScalarUDF>>,
+
+    /// Aggregate UDFs (UDAFs) contributed by this source.
+    ///
+    /// Logs adds histogram UDAFs here.
+    /// Metrics adds nothing.
+    udafs: Vec<Arc<AggregateUDF>>,
+
+    /// Extension planners contributed by this source.
+    ///
+    /// Logs adds the `TantivyExec` extension planner here so that the worker
+    /// can execute plan fragments containing `TantivyExec` nodes.
+    /// Metrics adds nothing.
+    extension_planners: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
 
     /// Callbacks that apply codec / builder extensions that cannot be expressed
     /// as plain values (e.g. `with_distributed_user_codec(TantivyCodec)`).
     ///
     /// Applied to the `SessionStateBuilder` after rules and UDFs are merged.
     /// Using callbacks avoids a direct dependency on `datafusion-proto` types.
-    codec_appliers: Vec<Arc<dyn Fn(SessionStateBuilder) -> SessionStateBuilder + Send + Sync>>,
+    ///
+    /// These are `FnOnce` because `SessionStateBuilder` is consumed and returned;
+    /// each applier can only run once.
+    codec_appliers: Vec<Box<dyn FnOnce(SessionStateBuilder) -> SessionStateBuilder + Send + Sync>>,
 }
 
 impl Default for DataSourceContributions {
@@ -113,54 +130,170 @@ impl Default for DataSourceContributions {
         Self {
             physical_optimizer_rules: Vec::new(),
             udfs: Vec::new(),
+            udafs: Vec::new(),
+            extension_planners: Vec::new(),
             codec_appliers: Vec::new(),
         }
     }
 }
 
 impl DataSourceContributions {
+    /// Add a physical optimizer rule.
+    pub fn with_physical_optimizer_rule(
+        mut self,
+        rule: Arc<dyn PhysicalOptimizerRule + Send + Sync>,
+    ) -> Self {
+        self.physical_optimizer_rules.push(rule);
+        self
+    }
+
+    /// Add a scalar UDF.
+    pub fn with_udf(mut self, udf: Arc<ScalarUDF>) -> Self {
+        self.udfs.push(udf);
+        self
+    }
+
+    /// Add multiple scalar UDFs at once.
+    pub fn with_udf_batch(mut self, udfs: impl IntoIterator<Item = Arc<ScalarUDF>>) -> Self {
+        self.udfs.extend(udfs);
+        self
+    }
+
+    /// Add an aggregate UDF (UDAF).
+    pub fn with_udaf(mut self, udaf: Arc<AggregateUDF>) -> Self {
+        self.udafs.push(udaf);
+        self
+    }
+
+    /// Add multiple aggregate UDFs (UDAFs) at once.
+    pub fn with_udaf_batch(mut self, udafs: impl IntoIterator<Item = Arc<AggregateUDF>>) -> Self {
+        self.udafs.extend(udafs);
+        self
+    }
+
+    /// Add an extension planner.
+    ///
+    /// Extension planners are needed when the logical plan contains
+    /// `LogicalPlan::Extension` nodes (e.g. `TantivyExec`).  Both the
+    /// coordinator and workers must install the planner so that extension nodes
+    /// can be translated to physical plans at execution time.
+    pub fn with_extension_planner(
+        mut self,
+        planner: Arc<dyn ExtensionPlanner + Send + Sync>,
+    ) -> Self {
+        self.extension_planners.push(planner);
+        self
+    }
+
     /// Add a codec / builder-extension callback.
     ///
     /// Logs uses this to call `.with_distributed_user_codec(TantivyCodec)`.
     pub fn with_codec_applier(
         mut self,
-        f: impl Fn(SessionStateBuilder) -> SessionStateBuilder + Send + Sync + 'static,
+        f: impl FnOnce(SessionStateBuilder) -> SessionStateBuilder + Send + Sync + 'static,
     ) -> Self {
-        self.codec_appliers.push(Arc::new(f));
+        self.codec_appliers.push(Box::new(f));
         self
+    }
+
+    /// Returns the names of all registered scalar UDFs.
+    ///
+    /// Used by `DataFusionSessionBuilder::check_invariants()` to detect
+    /// conflicting UDF registrations across sources.
+    pub(crate) fn udaf_names(&self) -> Vec<String> {
+        self.udafs.iter().map(|udaf| udaf.name().to_string()).collect()
+    }
+
+    pub(crate) fn udf_names(&self) -> Vec<String> {
+        self.udfs.iter().map(|udf| udf.name().to_string()).collect()
     }
 
     /// Apply all contributions to a `SessionStateBuilder`.
     ///
     /// Called by `DataFusionSessionBuilder` and `QuickwitWorkerSessionBuilder`
     /// after merging contributions from all sources.
+    ///
+    /// Injects in order:
+    /// 1. Physical optimizer rules
+    /// 2. Extension planners (via a `ContributionQueryPlanner` wrapper if non-empty)
+    /// 3. Scalar UDFs (into the builder's scalar function map)
+    /// 4. Aggregate UDFs (into the builder's aggregate function map)
+    /// 5. Codec appliers (consumed in order)
     pub fn apply_to_builder(self, mut builder: SessionStateBuilder) -> SessionStateBuilder {
         for rule in self.physical_optimizer_rules {
             builder = builder.with_physical_optimizer_rule(rule);
         }
-        // UDFs are added via the scalar_functions map on the builder
-        // Currently DataFusion's SessionStateBuilder doesn't expose a direct
-        // `with_scalar_udf` batch method; callers can add UDFs after build
-        // via `ctx.register_udf()`.  We store them for that purpose.
-        // Codec appliers (e.g. with_distributed_user_codec) run last.
+
+        if !self.extension_planners.is_empty() {
+            let planner = ContributionQueryPlanner {
+                extension_planners: self.extension_planners,
+            };
+            builder = builder.with_query_planner(Arc::new(planner));
+        }
+
+        if !self.udfs.is_empty() {
+            builder
+                .scalar_functions()
+                .get_or_insert_default()
+                .extend(self.udfs);
+        }
+
+        if !self.udafs.is_empty() {
+            builder
+                .aggregate_functions()
+                .get_or_insert_default()
+                .extend(self.udafs);
+        }
+
         for applier in self.codec_appliers {
             builder = applier(builder);
         }
-        builder
-    }
 
-    /// Drain the accumulated UDFs (to be registered on `SessionContext` post-build).
-    pub fn take_udfs(&mut self) -> Vec<Arc<ScalarUDF>> {
-        std::mem::take(&mut self.udfs)
+        builder
     }
 
     /// Merge another set of contributions into this one (additive, no dedup).
     ///
     /// Used by `DataFusionSessionBuilder` to accumulate across all sources.
     pub fn merge(&mut self, other: DataSourceContributions) {
-        self.physical_optimizer_rules.extend(other.physical_optimizer_rules);
+        self.physical_optimizer_rules
+            .extend(other.physical_optimizer_rules);
         self.udfs.extend(other.udfs);
+        self.udafs.extend(other.udafs);
+        self.extension_planners.extend(other.extension_planners);
         self.codec_appliers.extend(other.codec_appliers);
+    }
+}
+
+/// A `QueryPlanner` that delegates extension node planning to a set of
+/// `ExtensionPlanner` implementations contributed by data sources.
+///
+/// Installed by `DataSourceContributions::apply_to_builder` when at least one
+/// source contributes an extension planner.  Uses
+/// `DefaultPhysicalPlanner::with_extension_planners` to handle the extension
+/// nodes, falling back to DataFusion's default planner for all other nodes.
+struct ContributionQueryPlanner {
+    extension_planners: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
+}
+
+impl std::fmt::Debug for ContributionQueryPlanner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ContributionQueryPlanner")
+            .field("num_extension_planners", &self.extension_planners.len())
+            .finish()
+    }
+}
+
+#[async_trait]
+impl datafusion::execution::context::QueryPlanner for ContributionQueryPlanner {
+    async fn create_physical_plan(
+        &self,
+        logical_plan: &datafusion::logical_expr::LogicalPlan,
+        session_state: &datafusion::execution::SessionState,
+    ) -> DFResult<Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
+        DefaultPhysicalPlanner::with_extension_planners(self.extension_planners.clone())
+            .create_physical_plan(logical_plan, session_state)
+            .await
     }
 }
 
@@ -185,30 +318,25 @@ pub trait QuickwitDataSource: Send + Sync + Debug {
 
     // ── DDL support (optional) ───────────────────────────────────────
 
-    /// The string used in `STORED AS <file_type>` DDL.
+    /// Return the DDL file-type token and its `TableProviderFactory` together,
+    /// or `None` if this source does not support DDL.
     ///
-    /// Return `Some("metrics")` to enable
-    /// `CREATE [OR REPLACE] EXTERNAL TABLE … STORED AS metrics`.
+    /// When `Some((token, factory))` is returned:
+    /// - `token` is the string used in `STORED AS <token>` DDL (e.g. `"metrics"`).
+    /// - `factory` handles `CREATE [OR REPLACE] EXTERNAL TABLE … STORED AS <token>`.
+    ///
+    /// The session registers the factory under both the literal token and its
+    /// uppercase equivalent because DataFusion uppercases the `STORED AS` token.
+    ///
+    /// Returning both pieces from a single method prevents the mismatch bug where
+    /// `file_type()` and `create_table_provider_factory()` could disagree or
+    /// create two different factory instances.
+    ///
     /// Return `None` (the default) if this source resolves tables purely through
     /// the schema provider — for example, the logs data source looks up the index
     /// schema from the metastore at query time and needs no DDL.
-    ///
-    /// The session registers the factory under both the literal and its uppercase
-    /// equivalent because DataFusion uppercases the `STORED AS` token.
-    fn file_type(&self) -> Option<&str> {
+    fn ddl_registration(&self) -> Option<(String, Arc<dyn TableProviderFactory>)> {
         None
-    }
-
-    /// Creates the `TableProviderFactory` that handles DDL.
-    ///
-    /// Only called when [`file_type`] returns `Some(_)`.
-    /// The default panics — override when `file_type()` is `Some`.
-    fn create_table_provider_factory(&self) -> Arc<dyn TableProviderFactory> {
-        panic!(
-            "QuickwitDataSource::create_table_provider_factory() called but \
-             file_type() returned None for {:?}",
-            self
-        )
     }
 
     // ── Default table resolution (schema-provider path) ─────────────
@@ -237,7 +365,7 @@ pub trait QuickwitDataSource: Send + Sync + Debug {
     /// the session builder (analogous to `BlobStoreConnector::init(env)`).
     ///
     /// Default: no-op.
-    async fn register_for_worker(&self, _state: &SessionState) -> DFResult<()> {
+    async fn register_for_worker(&self, _state: &datafusion::execution::SessionState) -> DFResult<()> {
         Ok(())
     }
 
@@ -249,5 +377,14 @@ pub trait QuickwitDataSource: Send + Sync + Debug {
     /// `information_schema`.  Sources that cannot enumerate cheaply may
     /// return an empty `Vec` (the logs data source does this — it would need
     /// to list potentially thousands of indexes).
+    ///
+    /// # Threading note
+    ///
+    /// This method may be called from within a `tokio::task::block_in_place`
+    /// context on the DataFusion query thread.  Implementations that call
+    /// blocking I/O must ensure they are not already inside a `block_in_place`
+    /// context (tokio panics on nested `block_in_place`).  If in doubt, use
+    /// `tokio::task::spawn_blocking` or check
+    /// `tokio::runtime::Handle::try_current()` before blocking.
     async fn list_index_names(&self) -> DFResult<Vec<String>>;
 }

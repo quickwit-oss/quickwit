@@ -13,8 +13,16 @@
 // limitations under the License.
 
 //! Index resolution for the metrics data source.
+//!
+//! `MetastoreIndexResolver` caches the `(object_store, object_store_url)` pair
+//! per index for [`OBJECT_STORE_CACHE_TTL`] to amortise
+//! `MetricsDataSource::register_for_worker` costs.  The metastore
+//! `index_metadata` RPC (for fresh `index_uid`) is not cached because it is a
+//! cheap primary-key lookup and the UID can change on re-creation.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
@@ -31,7 +39,28 @@ use super::metastore_provider::MetastoreSplitProvider;
 use super::table_provider::MetricsSplitProvider;
 use crate::storage::QuickwitObjectStore;
 
+/// How long a cached object store entry stays valid.
+const OBJECT_STORE_CACHE_TTL: Duration = Duration::from_secs(30);
+
+struct CachedObjectStore {
+    object_store: Arc<dyn ObjectStore>,
+    object_store_url: ObjectStoreUrl,
+    inserted_at: Instant,
+}
+
+impl CachedObjectStore {
+    fn is_fresh(&self) -> bool {
+        self.inserted_at.elapsed() < OBJECT_STORE_CACHE_TTL
+    }
+}
+
 /// Resolves per-index resources needed to scan a metrics index.
+///
+/// # Notes on `list_index_names`
+/// Currently returns ALL index IDs regardless of type because
+/// `ListIndexesMetadataRequest` has no type filter.  Non-metrics indexes are
+/// silently skipped in `create_default_table_provider` (no metrics splits);
+/// the only effect is that `SHOW TABLES` may include extra names.
 #[async_trait]
 pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
     async fn resolve(
@@ -42,7 +71,9 @@ pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
     async fn list_index_names(&self) -> DFResult<Vec<String>>;
 }
 
-/// Single-store resolver for tests.
+// ── Test helper ──────────────────────────────────────────────────────
+
+/// Single-store resolver — returns the same resources for every index name.
 #[derive(Debug)]
 pub struct SimpleIndexResolver {
     split_provider: Arc<dyn MetricsSplitProvider>,
@@ -89,16 +120,76 @@ impl MetricsIndexResolver for SimpleIndexResolver {
     }
 }
 
-/// Production resolver backed by the Quickwit metastore.
+// ── Production implementation ─────────────────────────────────────────
+
+/// Production `MetricsIndexResolver` backed by the Quickwit metastore.
+///
+/// For each `resolve()` call:
+/// 1. Fetches `IndexMetadata` (cheap primary-key RPC) for a fresh `index_uid`.
+/// 2. Resolves the storage URI → `Arc<dyn ObjectStore>`, caching the result
+///    for [`OBJECT_STORE_CACHE_TTL`] to skip repeated storage-resolver RPCs.
 #[derive(Clone)]
 pub struct MetastoreIndexResolver {
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
+    object_store_cache: Arc<Mutex<HashMap<String, CachedObjectStore>>>,
 }
 
 impl MetastoreIndexResolver {
     pub fn new(metastore: MetastoreServiceClient, storage_resolver: StorageResolver) -> Self {
-        Self { metastore, storage_resolver }
+        Self {
+            metastore,
+            storage_resolver,
+            object_store_cache: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    async fn resolve_object_store(
+        &self,
+        index_name: &str,
+        index_uri: &quickwit_common::uri::Uri,
+    ) -> DFResult<(Arc<dyn ObjectStore>, ObjectStoreUrl)> {
+        // Fast path: return from cache without any await.
+        {
+            let cache = self.object_store_cache.lock().expect("cache poisoned");
+            if let Some(entry) = cache.get(index_name) {
+                if entry.is_fresh() {
+                    debug!(index_name, "object store cache hit");
+                    return Ok((Arc::clone(&entry.object_store), entry.object_store_url.clone()));
+                }
+            }
+        }
+
+        debug!(index_name, "object store cache miss, resolving storage");
+
+        let storage = self
+            .storage_resolver
+            .resolve(index_uri)
+            .await
+            .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
+
+        let object_store_url =
+            ObjectStoreUrl::parse(format!("quickwit://{index_name}/")).map_err(|err| {
+                datafusion::error::DataFusionError::Internal(format!(
+                    "failed to build object store url: {err}"
+                ))
+            })?;
+
+        let object_store: Arc<dyn ObjectStore> = Arc::new(QuickwitObjectStore::new(storage));
+
+        self.object_store_cache
+            .lock()
+            .expect("cache poisoned")
+            .insert(
+                index_name.to_string(),
+                CachedObjectStore {
+                    object_store: Arc::clone(&object_store),
+                    object_store_url: object_store_url.clone(),
+                    inserted_at: Instant::now(),
+                },
+            );
+
+        Ok((object_store, object_store_url))
     }
 }
 
@@ -132,20 +223,9 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
 
         debug!(%index_uid, %index_uri, "resolved index metadata");
 
-        let storage = self
-            .storage_resolver
-            .resolve(index_uri)
-            .await
-            .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
+        let (object_store, object_store_url) =
+            self.resolve_object_store(index_name, index_uri).await?;
 
-        let object_store_url =
-            ObjectStoreUrl::parse(format!("quickwit://{index_name}/")).map_err(|err| {
-                datafusion::error::DataFusionError::Internal(format!(
-                    "failed to parse object store url: {err}"
-                ))
-            })?;
-
-        let object_store: Arc<dyn ObjectStore> = Arc::new(QuickwitObjectStore::new(storage));
         let split_provider: Arc<dyn MetricsSplitProvider> =
             Arc::new(MetastoreSplitProvider::new(self.metastore.clone(), index_uid));
 
@@ -165,6 +245,9 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
             .await
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
-        Ok(indexes.into_iter().map(|idx| idx.index_config.index_id).collect())
+        Ok(indexes
+            .into_iter()
+            .map(|idx| idx.index_config.index_id)
+            .collect())
     }
 }

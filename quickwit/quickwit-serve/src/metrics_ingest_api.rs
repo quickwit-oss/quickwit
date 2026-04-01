@@ -89,6 +89,8 @@ pub enum MetricsIngestError {
     Storage(String),
     #[error("metastore error: {0}")]
     Metastore(String),
+    #[error("internal error: {0}")]
+    Internal(String),
 }
 
 impl warp::reject::Reject for MetricsIngestError {}
@@ -176,10 +178,10 @@ async fn ingest_metrics(
         .map_err(|err| MetricsIngestError::Storage(err.to_string()))?;
 
     // Build RecordBatch with the OSS dynamic schema
-    let batch = build_record_batch(&data_points);
+    let batch = build_record_batch(&data_points)
+        .map_err(|err| MetricsIngestError::Storage(err.to_string()))?;
 
-    let schema = ParquetSchema::from_arrow_schema(batch.schema());
-    let writer = ParquetWriter::new(schema, ParquetWriterConfig::default());
+    let writer = ParquetWriter::new(ParquetSchema::new(), ParquetWriterConfig::default());
     let parquet_bytes = writer
         .write_to_bytes(&batch)
         .map_err(|err| MetricsIngestError::Storage(err.to_string()))?;
@@ -198,8 +200,9 @@ async fn ingest_metrics(
         .await
         .map_err(|err| MetricsIngestError::Storage(err.to_string()))?;
 
-    let metadata =
+    let mut metadata =
         build_split_metadata(&data_points, &split_id, &index_uid.to_string(), size_bytes);
+    metadata.finalize_tag_cardinality();
 
     let stage_request =
         StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[metadata])
@@ -234,8 +237,9 @@ async fn ingest_metrics(
 ///
 /// Only columns that have at least one non-null value are included beyond
 /// the 4 required fields. All tag columns use bare names (no `tag_` prefix).
-fn build_record_batch(data_points: &[MetricDataPoint]) -> RecordBatch {
-    let n = data_points.len();
+fn build_record_batch(
+    data_points: &[MetricDataPoint],
+) -> Result<RecordBatch, MetricsIngestError> {
     let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
 
     let metric_names: Vec<&str> = data_points.iter().map(|d| d.metric_name.as_str()).collect();
@@ -253,41 +257,48 @@ fn build_record_batch(data_points: &[MetricDataPoint]) -> RecordBatch {
         Field::new("value", DataType::Float64, false),
     ];
     let mut cols: Vec<ArrayRef> = vec![
-        make_dict_from_strs(&metric_names),
+        make_dict_from_strs(&metric_names)?,
         Arc::new(UInt8Array::from(metric_types)),
         Arc::new(UInt64Array::from(timestamps)),
         Arc::new(Float64Array::from(values)),
     ];
 
     // Add optional tag columns only if any value is present
-    let service_vals: Vec<Option<&str>> = data_points.iter().map(|d| d.service.as_deref()).collect();
+    let service_vals: Vec<Option<&str>> =
+        data_points.iter().map(|d| d.service.as_deref()).collect();
     if service_vals.iter().any(|v| v.is_some()) {
         fields.push(Field::new("service", dict_type.clone(), true));
-        cols.push(make_nullable_dict_from_opts(&service_vals));
+        cols.push(make_nullable_dict_from_opts(&service_vals)?);
     }
     let env_vals: Vec<Option<&str>> = data_points.iter().map(|d| d.env.as_deref()).collect();
     if env_vals.iter().any(|v| v.is_some()) {
         fields.push(Field::new("env", dict_type.clone(), true));
-        cols.push(make_nullable_dict_from_opts(&env_vals));
+        cols.push(make_nullable_dict_from_opts(&env_vals)?);
     }
-    let dc_vals: Vec<Option<&str>> = data_points.iter().map(|d| d.datacenter.as_deref()).collect();
+    let dc_vals: Vec<Option<&str>> =
+        data_points.iter().map(|d| d.datacenter.as_deref()).collect();
     if dc_vals.iter().any(|v| v.is_some()) {
         fields.push(Field::new("datacenter", dict_type.clone(), true));
-        cols.push(make_nullable_dict_from_opts(&dc_vals));
+        cols.push(make_nullable_dict_from_opts(&dc_vals)?);
     }
-    let region_vals: Vec<Option<&str>> = data_points.iter().map(|d| d.region.as_deref()).collect();
+    let region_vals: Vec<Option<&str>> =
+        data_points.iter().map(|d| d.region.as_deref()).collect();
     if region_vals.iter().any(|v| v.is_some()) {
         fields.push(Field::new("region", dict_type.clone(), true));
-        cols.push(make_nullable_dict_from_opts(&region_vals));
+        cols.push(make_nullable_dict_from_opts(&region_vals)?);
     }
     let host_vals: Vec<Option<&str>> = data_points.iter().map(|d| d.host.as_deref()).collect();
     if host_vals.iter().any(|v| v.is_some()) {
         fields.push(Field::new("host", dict_type.clone(), true));
-        cols.push(make_nullable_dict_from_opts(&host_vals));
+        cols.push(make_nullable_dict_from_opts(&host_vals)?);
     }
 
     let schema = Arc::new(ArrowSchema::new(fields));
-    RecordBatch::try_new(schema, cols).unwrap()
+    // SAFETY: fields and cols are built in lockstep above; a mismatch is a
+    // programming error, not a runtime data error.
+    let batch = RecordBatch::try_new(schema, cols)
+        .expect("BUG: column count must match schema");
+    Ok(batch)
 }
 
 fn build_split_metadata(
@@ -296,21 +307,14 @@ fn build_split_metadata(
     index_uid: &str,
     size_bytes: u64,
 ) -> MetricsSplitMetadata {
-    let min_ts = data_points
-        .iter()
-        .map(|d| d.timestamp_secs)
-        .min()
-        .unwrap_or(0);
-    let max_ts = data_points
-        .iter()
-        .map(|d| d.timestamp_secs)
-        .max()
-        .unwrap_or(0);
-
-    let metric_names: HashSet<String> = data_points
-        .iter()
-        .map(|d| d.metric_name.clone())
-        .collect();
+    let (min_ts, max_ts, metric_names) = data_points.iter().fold(
+        (u64::MAX, 0u64, HashSet::new()),
+        |(min, max, mut names), d| {
+            names.insert(d.metric_name.clone());
+            (min.min(d.timestamp_secs), max.max(d.timestamp_secs), names)
+        },
+    );
+    let min_ts = if min_ts == u64::MAX { 0 } else { min_ts };
 
     let mut builder = MetricsSplitMetadata::builder()
         .split_id(SplitId::new(split_id))
@@ -347,8 +351,7 @@ fn build_split_metadata(
 
 // ── Arrow helpers ───────────────────────────────────────────────────
 
-fn make_dict_from_strs(values: &[&str]) -> ArrayRef {
-    let n = values.len();
+fn make_dict_from_strs(values: &[&str]) -> Result<ArrayRef, MetricsIngestError> {
     let unique: Vec<&str> = {
         let mut seen = HashSet::new();
         values
@@ -364,13 +367,15 @@ fn make_dict_from_strs(values: &[&str]) -> ArrayRef {
         .collect();
     let keys: Vec<i32> = values.iter().map(|v| val_to_idx[v]).collect();
     let dict_values = StringArray::from(unique);
-    Arc::new(
+    let array =
         DictionaryArray::<Int32Type>::try_new(Int32Array::from(keys), Arc::new(dict_values))
-            .unwrap(),
-    )
+            .map_err(|err| MetricsIngestError::Internal(err.to_string()))?;
+    Ok(Arc::new(array))
 }
 
-fn make_nullable_dict_from_opts(values: &[Option<&str>]) -> ArrayRef {
+fn make_nullable_dict_from_opts(
+    values: &[Option<&str>],
+) -> Result<ArrayRef, MetricsIngestError> {
     let unique: Vec<&str> = {
         let mut seen = HashSet::new();
         values
@@ -386,8 +391,8 @@ fn make_nullable_dict_from_opts(values: &[Option<&str>]) -> ArrayRef {
         .collect();
     let keys: Vec<Option<i32>> = values.iter().map(|v| v.map(|s| val_to_idx[s])).collect();
     let dict_values = StringArray::from(unique);
-    Arc::new(
+    let array =
         DictionaryArray::<Int32Type>::try_new(Int32Array::from(keys), Arc::new(dict_values))
-            .unwrap(),
-    )
+            .map_err(|err| MetricsIngestError::Internal(err.to_string()))?;
+    Ok(Arc::new(array))
 }

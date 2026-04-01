@@ -30,11 +30,20 @@ use url::Url;
 #[derive(Clone)]
 pub struct QuickwitWorkerResolver {
     searcher_pool: SearcherPool,
+    use_tls: bool,
 }
 
 impl QuickwitWorkerResolver {
     pub fn new(searcher_pool: SearcherPool) -> Self {
-        Self { searcher_pool }
+        Self {
+            searcher_pool,
+            use_tls: false,
+        }
+    }
+
+    pub fn with_tls(mut self, use_tls: bool) -> Self {
+        self.use_tls = use_tls;
+        self
     }
 }
 
@@ -46,10 +55,11 @@ impl WorkerResolver for QuickwitWorkerResolver {
                 "no searcher nodes available in the cluster".to_string(),
             ));
         }
+        let scheme = if self.use_tls { "https" } else { "http" };
         addrs
             .into_iter()
             .map(|addr| {
-                Url::parse(&format!("http://{addr}"))
+                Url::parse(&format!("{scheme}://{addr}"))
                     .map_err(|e| DataFusionError::Internal(format!("bad worker url: {e}")))
             })
             .collect()

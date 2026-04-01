@@ -39,10 +39,14 @@ use crate::data_source::QuickwitDataSource;
 /// data sources.
 ///
 /// On each new worker request:
-/// 1. Registers the `QuickwitSchemaProvider` (needed to resolve table references
-///    in deserialized plan fragments)
-/// 2. Calls `register_for_worker()` on every source so that object stores and
-///    other runtime state are in place before plan execution begins
+/// 1. Merges contributions (optimizer rules, extension planners, UDFs, UDAFs,
+///    codecs) from every source into the session state builder — including the
+///    extension planners needed to execute serialized plan fragments that contain
+///    extension nodes (e.g. `TantivyExec`).
+/// 2. Registers the `QuickwitSchemaProvider` (needed to resolve table references
+///    in deserialized plan fragments).
+/// 3. Calls `register_for_worker()` on every source so that object stores and
+///    other runtime state are in place before plan execution begins.
 #[derive(Clone)]
 pub struct QuickwitWorkerSessionBuilder {
     sources: Vec<Arc<dyn QuickwitDataSource>>,
@@ -60,18 +64,19 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
         &self,
         ctx: WorkerQueryContext,
     ) -> Result<SessionState, DataFusionError> {
-        // Phase 1: collect additive contributions from all sources, apply before build().
+        // Phase 1: collect additive contributions from all sources and apply
+        // them all — including extension planners and UDFs — before build().
+        // Workers need extension planners so that serialized plan fragments
+        // containing extension nodes (e.g. TantivyExec) can be executed.
         let mut combined = crate::data_source::DataSourceContributions::default();
         for source in &self.sources {
             combined.merge(source.contributions());
         }
-        let _udfs = combined.take_udfs(); // workers don't need UDFs registered (no SQL parsing)
         let builder = combined.apply_to_builder(ctx.builder);
         let state = builder.build();
 
         // Phase 2: register catalog so plan fragments can resolve table refs.
-        let schema_provider =
-            Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
+        let schema_provider = Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
         let catalog = Arc::new(MemoryCatalogProvider::new());
         catalog
             .register_schema("public", schema_provider)
@@ -84,7 +89,6 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
         for source in &self.sources {
             if let Err(err) = source.register_for_worker(&state).await {
                 debug!(
-                    file_type = ?source.file_type(),
                     error = %err,
                     "data source register_for_worker failed (non-fatal)"
                 );
@@ -98,7 +102,7 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
 /// Build a `Worker` configured for the given data sources.
 ///
 /// Called by `quickwit-serve/src/grpc.rs`. Callers obtain the gRPC service
-/// via `worker.into_worker_server()` and add it to the tonic server.
+/// via `worker.into_worker_server()` and add it to the tonic service router.
 pub fn build_quickwit_worker(sources: &[Arc<dyn QuickwitDataSource>]) -> Worker {
     let session_builder = QuickwitWorkerSessionBuilder::new(sources.to_vec());
     Worker::from_session_builder(session_builder)

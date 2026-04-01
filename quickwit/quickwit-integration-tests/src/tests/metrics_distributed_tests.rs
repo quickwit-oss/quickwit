@@ -144,7 +144,7 @@ async fn publish_split(
 }
 
 async fn run_sql(builder: &DataFusionSessionBuilder, sql: &str) -> Vec<RecordBatch> {
-    let ctx = builder.build_session().unwrap();
+    let ctx = builder.build_session();
     let fragments: Vec<&str> = sql.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
     for fragment in &fragments[..fragments.len().saturating_sub(1)] {
         ctx.sql(fragment).await.unwrap().collect().await.unwrap();
@@ -211,26 +211,34 @@ async fn test_distributed_tasks_not_shuffles() {
         "{ddl}; SELECT SUM(value) as total, COUNT(*) as cnt FROM \"dist-test\""
     );
 
-    // ── Verify plan shape ─────────────────────────────────────────────
-    let ctx = builder.build_session().unwrap();
+    // ── Verify plan shape AND execute in the same session ────────────
+    let ctx = builder.build_session();
     let fragments: Vec<&str> = agg_sql.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
     ctx.sql(fragments[0]).await.unwrap().collect().await.unwrap(); // DDL
     let df = ctx.sql(fragments[1]).await.unwrap();
-    let plan = df.create_physical_plan().await.unwrap();
+    // Inspect the physical plan before collecting so plan and execution are the same session.
+    let plan = df.clone().create_physical_plan().await.unwrap();
     let plan_str = format!("{}", datafusion::physical_plan::displayable(plan.as_ref()).indent(true));
     println!("=== Physical plan ===\n{plan_str}");
 
     assert!(
-        plan_str.contains("DistributedExec") || plan_str.contains("PartitionIsolatorExec"),
-        "expected distributed plan nodes:\n{plan_str}"
+        plan_str.contains("DistributedExec") && plan_str.contains("PartitionIsolatorExec"),
+        "expected both DistributedExec and PartitionIsolatorExec in distributed plan:\n{plan_str}"
     );
     assert!(
         !plan_str.contains("NetworkShuffleExec"),
         "expected no shuffle (parquet scans are split-local):\n{plan_str}"
     );
+    // With 4 splits across 2 workers there should be at least 1 PartitionIsolatorExec
+    // (one per split partition assigned to a worker).
+    let isolator_count = plan_str.matches("PartitionIsolatorExec").count();
+    assert!(
+        isolator_count >= 1,
+        "expected at least 1 PartitionIsolatorExec, got {isolator_count}:\n{plan_str}"
+    );
 
-    // ── Verify correctness ────────────────────────────────────────────
-    let batches = run_sql(&builder, &agg_sql).await;
+    // Execute in the SAME context that built the plan — guarantees plan and result agree.
+    let batches = df.collect().await.unwrap();
     assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 1);
     let total = batches[0].column_by_name("total").unwrap()
         .as_any().downcast_ref::<Float64Array>().unwrap().value(0);

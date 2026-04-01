@@ -121,6 +121,11 @@ impl TableProvider for MetricsTableProvider {
         debug!(num_splits = splits.len(), "found matching splits");
 
         // Register our object store with the runtime so ParquetSource can use it
+        // Register on every scan to handle sessions where register_for_worker
+        // was not called (single-node non-distributed mode). The call is idempotent
+        // but acquires a write-lock on RuntimeEnv's object-store map; for the
+        // distributed path register_for_worker pre-registers stores so this is a
+        // no-op. A future improvement: skip if already registered.
         state
             .runtime_env()
             .register_object_store(self.object_store_url.as_ref(), Arc::clone(&self.object_store));
