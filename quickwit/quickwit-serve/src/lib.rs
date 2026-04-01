@@ -30,6 +30,8 @@ mod jaeger_api;
 mod load_shield;
 mod metrics;
 mod metrics_api;
+mod metrics_ingest_api;
+mod metrics_sql_api;
 mod node_info_handler;
 mod openapi;
 mod otlp_api;
@@ -205,6 +207,12 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
 
     pub env_filter_reload_fn: EnvFilterReloadFn,
+
+    /// DataFusion session builder for metrics SQL queries (present if searcher role is active).
+    pub metrics_session_builder: Option<Arc<quickwit_datafusion::session::MetricsSessionBuilder>>,
+
+    /// Storage resolver used for metrics ingest and DataFusion index resolution.
+    pub storage_resolver: StorageResolver,
 
     /// The control plane listens to various events.
     /// We must maintain a reference to the subscription handles to continue receiving
@@ -666,7 +674,7 @@ pub async fn serve_quickwit(
         ))
     };
 
-    let (search_job_placer, search_service) = setup_searcher(
+    let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
         cluster.change_stream(),
         // search remains available without a control plane because not all
@@ -677,6 +685,24 @@ pub async fn serve_quickwit(
     )
     .await
     .context("failed to start searcher service")?;
+
+    // Build DataFusion metrics session builder if this node is a searcher.
+    let metrics_session_builder = if node_config
+        .is_service_enabled(QuickwitService::Searcher)
+    {
+        let index_resolver = Arc::new(
+            quickwit_datafusion::metastore_resolver::MetastoreIndexResolver::new(
+                metastore_through_control_plane.clone(),
+                storage_resolver.clone(),
+            ),
+        );
+        let builder =
+            quickwit_datafusion::session::MetricsSessionBuilder::new(index_resolver)
+                .with_searcher_pool(searcher_pool);
+        Some(Arc::new(builder))
+    } else {
+        None
+    };
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
     // throughput. Ingesters (routers) do so to update their shard table.
@@ -770,6 +796,8 @@ pub async fn serve_quickwit(
         otlp_traces_service_opt,
         search_service,
         env_filter_reload_fn,
+        metrics_session_builder,
+        storage_resolver: storage_resolver.clone(),
     });
     // Setup and start gRPC server.
     let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
@@ -1113,7 +1141,7 @@ async fn setup_searcher(
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     searcher_context: Arc<SearcherContext>,
-) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>)> {
+) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>, SearcherPool)> {
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
 
@@ -1170,7 +1198,7 @@ async fn setup_searcher(
         })
     });
     searcher_pool.listen_for_changes(searcher_change_stream);
-    Ok((search_job_placer, search_service))
+    Ok((search_job_placer, search_service, searcher_pool))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1652,7 +1680,7 @@ mod tests {
         let metastore = metastore_for_test();
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();
-        let (search_job_placer, _searcher_service) = setup_searcher(
+        let (search_job_placer, _searcher_service, _searcher_pool) = setup_searcher(
             &node_config,
             change_stream,
             metastore,

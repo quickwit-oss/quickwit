@@ -346,6 +346,15 @@ fn api_v1_routes(
         .or(index_template_api_handlers(
             quickwit_services.metastore_client.clone(),
         ))
+        .boxed()
+        .or(crate::metrics_ingest_api::metrics_ingest_handler(
+            quickwit_services.metastore_client.clone(),
+            quickwit_services.storage_resolver.clone(),
+        ))
+        .boxed()
+        .or(crate::metrics_sql_api::metrics_sql_handler(
+            quickwit_services.metrics_session_builder.clone(),
+        ))
         .boxed(),
     )
 }

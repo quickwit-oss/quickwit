@@ -15,6 +15,7 @@
 mod basic_tests;
 mod ingest_v1_tests;
 mod ingest_v2_tests;
+mod metrics_datafusion_tests;
 mod no_cp_tests;
 mod otlp_tests;
 #[cfg(feature = "sqs-localstack-tests")]
