@@ -22,10 +22,10 @@ use quickwit_proto::metastore::{
     DeleteIndexRequest, DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest,
     MetastoreServiceClient, MetastoreServiceGrpcClientAdapter,
 };
-
-use crate::metastore::{ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt};
 use quickwit_proto::tonic::transport::Channel;
 use quickwit_proto::types::IndexUid;
+
+use crate::metastore::{ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt};
 
 pub(crate) mod delete_task;
 pub(crate) mod get_identity;
@@ -157,48 +157,41 @@ async fn cleanup_index(metastore: &mut dyn MetastoreServiceExt, index_uid: Index
             .unwrap();
     }
     // Also clean up any metrics splits (they have a separate FK constraint).
-    let metrics_query =
-        crate::metastore::ListMetricsSplitsQuery::for_index(index_uid.clone()).with_split_states(
-            vec![
-                "Staged".to_string(),
-                "Published".to_string(),
-                "MarkedForDeletion".to_string(),
-            ],
-        );
+    let metrics_query = crate::metastore::ListMetricsSplitsQuery::for_index(index_uid.clone())
+        .with_split_states(vec![
+            "Staged".to_string(),
+            "Published".to_string(),
+            "MarkedForDeletion".to_string(),
+        ]);
     if let Ok(list_request) = quickwit_proto::metastore::ListMetricsSplitsRequest::try_from_query(
         index_uid.clone(),
         &metrics_query,
-    ) {
-        if let Ok(response) = metastore.list_metrics_splits(list_request).await {
-            if let Ok(splits) = response.deserialize_splits() {
-                if !splits.is_empty() {
-                    let split_ids: Vec<String> = splits
-                        .iter()
-                        .map(|s| s.metadata.split_id.as_str().to_string())
-                        .collect();
+    ) && let Ok(response) = metastore.list_metrics_splits(list_request).await
+        && let Ok(splits) = response.deserialize_splits()
+        && !splits.is_empty()
+    {
+        let split_ids: Vec<String> = splits
+            .iter()
+            .map(|s| s.metadata.split_id.as_str().to_string())
+            .collect();
 
-                    // Mark for deletion first.
-                    let _ = metastore
-                        .mark_metrics_splits_for_deletion(
-                            quickwit_proto::metastore::MarkMetricsSplitsForDeletionRequest {
-                                index_uid: Some(index_uid.clone()),
-                                split_ids: split_ids.clone(),
-                            },
-                        )
-                        .await;
+        // Mark for deletion first.
+        let _ = metastore
+            .mark_metrics_splits_for_deletion(
+                quickwit_proto::metastore::MarkMetricsSplitsForDeletionRequest {
+                    index_uid: Some(index_uid.clone()),
+                    split_ids: split_ids.clone(),
+                },
+            )
+            .await;
 
-                    // Delete.
-                    let _ = metastore
-                        .delete_metrics_splits(
-                            quickwit_proto::metastore::DeleteMetricsSplitsRequest {
-                                index_uid: Some(index_uid.clone()),
-                                split_ids,
-                            },
-                        )
-                        .await;
-                }
-            }
-        }
+        // Delete.
+        let _ = metastore
+            .delete_metrics_splits(quickwit_proto::metastore::DeleteMetricsSplitsRequest {
+                index_uid: Some(index_uid.clone()),
+                split_ids,
+            })
+            .await;
     }
 
     // Delete index.

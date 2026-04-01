@@ -2341,7 +2341,6 @@ impl MetastoreService for PostgresqlMetastore {
             .into_iter()
             .filter_map(|row| {
                 use quickwit_parquet_engine::split::{MetricsSplitState, PgMetricsSplit};
-
                 use sqlx::Row as _;
 
                 let pg_split = PgMetricsSplit {

@@ -14,9 +14,7 @@
 
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::IndexConfig;
-use quickwit_parquet_engine::split::{
-    MetricsSplitMetadata, MetricsSplitState, SplitId, TimeRange, TAG_ENV, TAG_HOST, TAG_SERVICE,
-};
+use quickwit_parquet_engine::split::{MetricsSplitMetadata, MetricsSplitState, SplitId, TimeRange};
 use quickwit_proto::metastore::{
     CreateIndexRequest, DeleteMetricsSplitsRequest, EntityKind, ListMetricsSplitsRequest,
     MarkMetricsSplitsForDeletionRequest, MetastoreError, PublishMetricsSplitsRequest,
@@ -32,14 +30,10 @@ use crate::{
 };
 
 /// Helper to create a test index and return the actual IndexUid assigned by the metastore.
-async fn create_test_index(
-    metastore: &mut dyn MetastoreServiceExt,
-    index_id: &str,
-) -> IndexUid {
+async fn create_test_index(metastore: &mut dyn MetastoreServiceExt, index_id: &str) -> IndexUid {
     let index_uri = format!("ram:///indexes/{index_id}");
     let index_config = IndexConfig::for_test(index_id, &index_uri);
-    let create_index_request =
-        CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+    let create_index_request = CreateIndexRequest::try_from_index_config(&index_config).unwrap();
     metastore
         .create_index(create_index_request)
         .await
@@ -92,18 +86,15 @@ pub async fn test_metastore_stage_metrics_splits<
     let split_1 = build_test_split(&split_id_1, &index_uid, TimeRange::new(1000, 2000));
     let split_2 = build_test_split(&split_id_2, &index_uid, TimeRange::new(2000, 3000));
 
-    let request = StageMetricsSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        &[split_1, split_2],
-    )
-    .unwrap();
+    let request =
+        StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[split_1, split_2])
+            .unwrap();
     metastore.stage_metrics_splits(request).await.unwrap();
 
     // Verify both splits are listed in Staged state.
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Staged".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     assert_eq!(splits.len(), 2);
@@ -135,11 +126,9 @@ pub async fn test_metastore_stage_metrics_splits_upsert<
         .parquet_file(format!("{split_id}.parquet"))
         .build();
 
-    let request = StageMetricsSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        &[split_v1],
-    )
-    .unwrap();
+    let request =
+        StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[split_v1])
+            .unwrap();
     metastore.stage_metrics_splits(request).await.unwrap();
 
     // Stage the same split_id again with 200 rows (upsert).
@@ -153,18 +142,15 @@ pub async fn test_metastore_stage_metrics_splits_upsert<
         .parquet_file(format!("{split_id}.parquet"))
         .build();
 
-    let request = StageMetricsSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        &[split_v2],
-    )
-    .unwrap();
+    let request =
+        StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[split_v2])
+            .unwrap();
     metastore.stage_metrics_splits(request).await.unwrap();
 
     // Verify only one split exists and it has the updated num_rows.
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Staged".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     assert_eq!(splits.len(), 1);
@@ -186,11 +172,9 @@ pub async fn test_metastore_list_metrics_splits_by_state<
     let split_id_2 = format!("{index_id}--split-2");
     let split_1 = build_test_split(&split_id_1, &index_uid, TimeRange::new(1000, 2000));
     let split_2 = build_test_split(&split_id_2, &index_uid, TimeRange::new(2000, 3000));
-    let request = StageMetricsSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        &[split_1, split_2],
-    )
-    .unwrap();
+    let request =
+        StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[split_1, split_2])
+            .unwrap();
     metastore.stage_metrics_splits(request).await.unwrap();
 
     // Publish split_1 only.
@@ -278,8 +262,7 @@ pub async fn test_metastore_list_metrics_splits_by_time_range<
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Staged".to_string()])
         .with_time_range(1500, 3500);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     // Should match splits whose time range overlaps [1500, 3500].
@@ -341,8 +324,7 @@ pub async fn test_metastore_list_metrics_splits_by_metric_name<
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Staged".to_string()])
         .with_metric_names(vec!["cpu.usage".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     assert_eq!(splits.len(), 2);
@@ -408,8 +390,7 @@ pub async fn test_metastore_list_metrics_splits_by_compaction_scope<
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Staged".to_string()])
         .with_compaction_scope(1700000000, "metric_name|host|timestamp/V2");
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     // Only split_1 matches both window_start and sort_fields.
@@ -435,11 +416,9 @@ pub async fn test_metastore_publish_metrics_splits<
     let split_2 = build_test_split(&split_id_2, &index_uid, TimeRange::new(2000, 3000));
 
     // Stage both.
-    let request = StageMetricsSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        &[split_1, split_2],
-    )
-    .unwrap();
+    let request =
+        StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[split_1, split_2])
+            .unwrap();
     metastore.stage_metrics_splits(request).await.unwrap();
 
     // Publish both.
@@ -456,8 +435,7 @@ pub async fn test_metastore_publish_metrics_splits<
     // Verify they are now Published.
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Published".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     assert_eq!(splits.len(), 2);
@@ -469,8 +447,7 @@ pub async fn test_metastore_publish_metrics_splits<
     // Verify no Staged splits remain.
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Staged".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     assert_eq!(splits.len(), 0);
@@ -516,11 +493,9 @@ pub async fn test_metastore_mark_metrics_splits_for_deletion<
     let split_2 = build_test_split(&split_id_2, &index_uid, TimeRange::new(2000, 3000));
 
     // Stage and publish.
-    let request = StageMetricsSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        &[split_1, split_2],
-    )
-    .unwrap();
+    let request =
+        StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[split_1, split_2])
+            .unwrap();
     metastore.stage_metrics_splits(request).await.unwrap();
 
     let publish_request = PublishMetricsSplitsRequest {
@@ -546,8 +521,7 @@ pub async fn test_metastore_mark_metrics_splits_for_deletion<
     // Verify split_1 is MarkedForDeletion.
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["MarkedForDeletion".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     assert_eq!(splits.len(), 1);
@@ -556,8 +530,7 @@ pub async fn test_metastore_mark_metrics_splits_for_deletion<
     // Verify split_2 is still Published.
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec!["Published".to_string()]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     assert_eq!(splits.len(), 1);
@@ -577,11 +550,8 @@ pub async fn test_metastore_delete_metrics_splits<
     let split_1 = build_test_split(&split_id_1, &index_uid, TimeRange::new(1000, 2000));
 
     // Stage, publish, mark for deletion.
-    let request = StageMetricsSplitsRequest::try_from_splits_metadata(
-        index_uid.clone(),
-        &[split_1],
-    )
-    .unwrap();
+    let request =
+        StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[split_1]).unwrap();
     metastore.stage_metrics_splits(request).await.unwrap();
 
     let publish_request = PublishMetricsSplitsRequest {
@@ -619,8 +589,7 @@ pub async fn test_metastore_delete_metrics_splits<
         "Published".to_string(),
         "MarkedForDeletion".to_string(),
     ]);
-    let list_request =
-        ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
+    let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let response = metastore.list_metrics_splits(list_request).await.unwrap();
     let splits = response.deserialize_splits().unwrap();
     assert_eq!(splits.len(), 0);
