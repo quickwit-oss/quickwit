@@ -33,7 +33,7 @@ use datafusion::prelude::SessionContext;
 use datafusion_sql::parser::DFParserBuilder;
 use quickwit_datafusion::DataFusionSessionBuilder;
 use serde::Deserialize;
-use tracing::debug;
+use tracing::{debug, info};
 use warp::Filter;
 use warp::http::Response;
 
@@ -121,8 +121,9 @@ async fn build_sql_response(
 
     debug!(sql_len = sql.len(), explain = params.explain, "executing metrics SQL");
 
+    let start = std::time::Instant::now();
+
     if params.explain {
-        // Execute DDL statements, then return the physical plan of the last query.
         match get_physical_plan_text(&ctx, &sql).await {
             Ok(plan_text) => encode_plan_as_ipc(&plan_text),
             Err(e) => error_response(
@@ -132,21 +133,39 @@ async fn build_sql_response(
         }
     } else {
         match execute_sql_statements(&ctx, &sql).await {
-            Ok(batches) => match encode_arrow_ipc(&batches) {
-                Ok(bytes) => Response::builder()
-                    .status(hyper::StatusCode::OK)
-                    .header("content-type", "application/vnd.apache.arrow.stream")
-                    .body(bytes::Bytes::from(bytes))
-                    .unwrap(),
-                Err(e) => error_response(
+            Ok(batches) => {
+                let num_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+                let elapsed = start.elapsed();
+                info!(
+                    sql_len = sql.len(),
+                    num_rows,
+                    elapsed_ms = elapsed.as_millis(),
+                    "metrics SQL query completed"
+                );
+                match encode_arrow_ipc(&batches) {
+                    Ok(bytes) => Response::builder()
+                        .status(hyper::StatusCode::OK)
+                        .header("content-type", "application/vnd.apache.arrow.stream")
+                        .body(bytes::Bytes::from(bytes))
+                        .unwrap(),
+                    Err(e) => error_response(
+                        hyper::StatusCode::INTERNAL_SERVER_ERROR,
+                        &MetricsSqlError::Ipc(e.to_string()).to_string(),
+                    ),
+                }
+            }
+            Err(e) => {
+                info!(
+                    sql_len = sql.len(),
+                    elapsed_ms = start.elapsed().as_millis(),
+                    error = %e,
+                    "metrics SQL query failed"
+                );
+                error_response(
                     hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                    &MetricsSqlError::Ipc(e.to_string()).to_string(),
-                ),
-            },
-            Err(e) => error_response(
-                hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                &MetricsSqlError::Sql(e.to_string()).to_string(),
-            ),
+                    &MetricsSqlError::Sql(e.to_string()).to_string(),
+                )
+            }
         }
     }
 }

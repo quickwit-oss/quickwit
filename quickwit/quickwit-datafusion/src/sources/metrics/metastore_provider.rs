@@ -26,7 +26,7 @@ use quickwit_proto::metastore::{
     ListMetricsSplitsRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::IndexUid;
-use tracing::debug;
+use tracing::{debug, instrument};
 
 use super::predicate::MetricsSplitQuery;
 use super::table_provider::MetricsSplitProvider;
@@ -49,6 +49,16 @@ impl MetastoreSplitProvider {
 
 #[async_trait]
 impl MetricsSplitProvider for MetastoreSplitProvider {
+    #[instrument(
+        skip(self, query),
+        fields(
+            index_uid = %self.index_uid,
+            metric_names = ?query.metric_names,
+            time_range_start = ?query.time_range_start,
+            time_range_end = ?query.time_range_end,
+            num_splits,
+        )
+    )]
     async fn list_splits(
         &self,
         query: &MetricsSplitQuery,
@@ -60,12 +70,6 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
                 .map_err(|err| {
                     datafusion::error::DataFusionError::External(Box::new(err))
                 })?;
-
-        debug!(
-            index_uid = %self.index_uid,
-            metric_names = ?query.metric_names,
-            "listing metrics splits from metastore"
-        );
 
         let response = self
             .metastore
@@ -84,6 +88,7 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
             .map(|record| record.metadata)
             .collect();
 
+        tracing::Span::current().record("num_splits", splits.len());
         debug!(num_splits = splits.len(), "metastore returned splits");
 
         Ok(splits)
