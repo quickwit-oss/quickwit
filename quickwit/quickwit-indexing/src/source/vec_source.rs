@@ -25,7 +25,7 @@ use serde_json::Value as JsonValue;
 use tracing::info;
 
 use super::BatchBuilder;
-use crate::actors::DocProcessor;
+use crate::actors::Processor;
 use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 pub struct VecSource {
@@ -81,11 +81,11 @@ fn position_from_offset(offset: usize) -> Position {
 }
 
 #[async_trait]
-impl Source for VecSource {
+impl<P: Processor> Source<P> for VecSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        batch_sink: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Vec);
 
@@ -138,6 +138,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
     use crate::source::tests::SourceRuntimeBuilder;
@@ -145,7 +146,8 @@ mod tests {
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let docs = std::iter::repeat_with(|| Bytes::from_static(b"{}"))
             .take(100)
             .collect();
@@ -167,7 +169,7 @@ mod tests {
         let vec_source = VecSourceFactory::typed_create_source(source_runtime, params).await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
-            doc_processor_mailbox,
+            processor_mailbox: doc_processor_mailbox,
         };
         assert_eq!(
             vec_source_actor.name(),
@@ -195,7 +197,8 @@ mod tests {
     #[tokio::test]
     async fn test_vec_source_from_checkpoint() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let docs = (0..10).map(|i| Bytes::from(format!("{i}"))).collect();
         let params = VecSourceParams {
             docs,
@@ -218,7 +221,7 @@ mod tests {
         let vec_source = VecSourceFactory::typed_create_source(source_runtime, params).await?;
         let vec_source_actor = SourceActor {
             source: Box::new(vec_source),
-            doc_processor_mailbox,
+            processor_mailbox: doc_processor_mailbox,
         };
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_builder().spawn(vec_source_actor);

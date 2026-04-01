@@ -23,6 +23,7 @@ pub struct OtlpServiceMetrics {
     pub request_duration_seconds: HistogramVec<5>,
     pub ingested_log_records_total: IntCounterVec<4>,
     pub ingested_spans_total: IntCounterVec<4>,
+    pub ingested_data_points_total: IntCounterVec<4>,
     pub ingested_bytes_total: IntCounterVec<4>,
 }
 
@@ -61,6 +62,13 @@ impl Default for OtlpServiceMetrics {
             ingested_spans_total: new_counter_vec(
                 "ingested_spans_total",
                 "Number of spans ingested",
+                "otlp",
+                &[],
+                ["service", "index", "transport", "format"],
+            ),
+            ingested_data_points_total: new_counter_vec(
+                "ingested_data_points_total",
+                "Number of metric data points ingested",
                 "otlp",
                 &[],
                 ["service", "index", "transport", "format"],

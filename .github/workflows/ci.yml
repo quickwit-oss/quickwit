@@ -227,7 +227,9 @@ jobs:
           git config --global --add url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "[email protected]:DataDog/event-percolation"
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: sudo apt update && sudo apt-get -y install protobuf-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install protobuf-compiler libcurl4-openssl-dev
       - name: Setup nightly Rust Toolchain (for rustfmt)
         if: steps.modified.outputs.rust_src == 'true'
         uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9 # master

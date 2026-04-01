@@ -22,7 +22,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{DocMapping, SearchSettings, build_doc_mapper};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::ingest::{
-    DocBatchV2, IngestV2Error, IngestV2Result, ParseFailure, ParseFailureReason,
+    DocBatchV2, DocFormat, IngestV2Error, IngestV2Result, ParseFailure, ParseFailureReason,
 };
 use quickwit_proto::types::{DocMappingUid, DocUid};
 use serde_json_borrow::Value as JsonValue;
@@ -144,10 +144,19 @@ fn is_document_validation_enabled() -> bool {
 
 /// Parses the JSON documents contained in the batch and applies the doc mapper. Returns the
 /// original batch and a list of parse failures.
+///
+/// Note: Validation is skipped for Arrow IPC format batches since they have their own schema
+/// and are processed by specialized pipelines (e.g., ParquetDocProcessor).
 pub(super) async fn validate_doc_batch(
     doc_batch: DocBatchV2,
     doc_mapper: Arc<DocMapper>,
 ) -> IngestV2Result<(DocBatchV2, Vec<ParseFailure>)> {
+    // Skip validation for Arrow IPC format - it has its own schema and is processed
+    // by specialized pipelines (e.g., metrics pipeline)
+    if doc_batch.doc_format() == DocFormat::ArrowIpc {
+        return Ok((doc_batch, Vec::new()));
+    }
+
     if is_document_validation_enabled() {
         run_cpu_intensive(move || validate_doc_batch_impl(doc_batch, &doc_mapper))
             .await

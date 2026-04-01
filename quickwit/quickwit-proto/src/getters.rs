@@ -137,7 +137,14 @@ generate_getters! {
     ToggleSourceRequest,
     UpdateIndexRequest,
     UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest
+    UpdateSplitsDeleteOpstampRequest,
+
+    // Metrics Split API
+    StageMetricsSplitsRequest,
+    PublishMetricsSplitsRequest,
+    ListMetricsSplitsRequest,
+    MarkMetricsSplitsForDeletionRequest,
+    DeleteMetricsSplitsRequest
 }
 
 // [`PipelineUid`] getters
