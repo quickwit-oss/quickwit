@@ -1,0 +1,24 @@
+# Index config for the default `datadog-metrics` index.
+version: 0.9
+
+index_id: datadog-metrics
+
+ingest_settings:
+  validate_docs: false
+
+indexing_settings:
+  commit_timeout_secs: 30
+
+retention:
+  period: 30 days
+  schedule: hourly
+
+# The metrics index will not use doc_mapping. However, we need to specify timestamp_secs
+# in order to GC files for the datadog-metrics index.
+doc_mapping:
+  mode: dynamic
+  field_mappings:
+    - name: timestamp_secs
+      type: datetime
+      fast: true
+  timestamp_field: timestamp_secs

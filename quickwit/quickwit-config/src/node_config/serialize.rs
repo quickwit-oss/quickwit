@@ -1410,7 +1410,8 @@ mod tests {
                         dd_api_key: None,
                     },
                     enable_reverse_connection: false,
-                    create_datadog_index: false,
+                    create_datadog_logs_index: false,
+                    create_datadog_metrics_index: false,
                 },
                 ..NodeConfigBuilder::default()
                     .build_and_validate(&HashMap::new())

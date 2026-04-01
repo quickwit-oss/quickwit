@@ -220,9 +220,12 @@ macro_rules! assert_eventually {
 /// Returns whether the given index ID corresponds to a metrics index.
 ///
 /// Metrics indexes use the Parquet/DataFusion pipeline instead of the Tantivy pipeline.
-/// An index is considered a metrics index if it starts with "otel-metrics" or "metrics-".
+/// An index is considered a metrics index if it starts with "otel-metrics", "metrics-", or
+/// "datadog-metrics".
 pub fn is_metrics_index(index_id: &str) -> bool {
-    index_id.starts_with("otel-metrics") || index_id.starts_with("metrics-")
+    index_id.starts_with("otel-metrics")
+        || index_id.starts_with("metrics-")
+        || index_id.starts_with("datadog-metrics")
 }
 
 #[macro_export]
@@ -436,6 +439,9 @@ mod tests {
         assert!(is_metrics_index("metrics-default"));
         assert!(is_metrics_index("metrics-"));
         assert!(is_metrics_index("metrics-my-app"));
+
+        // BYOC metrics index
+        assert!(is_metrics_index("datadog-metrics"));
 
         // Non-metrics indexes
         assert!(!is_metrics_index("otel-logs-v0_7"));

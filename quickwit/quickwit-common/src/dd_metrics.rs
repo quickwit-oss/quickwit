@@ -108,6 +108,8 @@ pub struct DDIngestMetrics {
     pub ingest_requests_total: DDCounters,
     pub ingest_request_duration_seconds: DDHistograms,
     pub ingest_unrouted_docs_total: Counter,
+    pub metrics_ingest_requests_total: DDCounters,
+    pub metrics_ingest_request_duration_seconds: DDHistograms,
 }
 
 impl Default for DDIngestMetrics {
@@ -124,6 +126,16 @@ impl Default for DDIngestMetrics {
                 DD_STATUS_CODES,
             ),
             ingest_unrouted_docs_total: counter!("ingest_unrouted_docs.count"),
+            metrics_ingest_requests_total: DDCounters::new(
+                "metrics_ingest_requests_total.count",
+                "status_code",
+                DD_STATUS_CODES,
+            ),
+            metrics_ingest_request_duration_seconds: DDHistograms::new(
+                "metrics_ingest_request.duration_seconds",
+                "status_code",
+                DD_STATUS_CODES,
+            ),
         }
     }
 }

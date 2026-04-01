@@ -888,8 +888,13 @@ pub struct CloudPremConfig {
     pub datadog_config: WebsocketConfig,
     #[serde(default = "CloudPremConfig::default_enable_reverse_connection")]
     pub enable_reverse_connection: bool,
-    #[serde(default = "CloudPremConfig::default_create_datadog_index")]
-    pub create_datadog_index: bool,
+    #[serde(
+        default = "CloudPremConfig::default_create_datadog_logs_index",
+        alias = "create_datadog_index"
+    )]
+    pub create_datadog_logs_index: bool,
+    #[serde(default = "CloudPremConfig::default_create_datadog_metrics_index")]
+    pub create_datadog_metrics_index: bool,
 }
 
 impl CloudPremConfig {
@@ -916,7 +921,18 @@ impl CloudPremConfig {
         }
     }
 
-    fn default_create_datadog_index() -> bool {
+    fn default_create_datadog_logs_index() -> bool {
+        #[cfg(any(test, feature = "testsuite"))]
+        {
+            false
+        }
+        #[cfg(not(any(test, feature = "testsuite")))]
+        {
+            true
+        }
+    }
+
+    fn default_create_datadog_metrics_index() -> bool {
         #[cfg(any(test, feature = "testsuite"))]
         {
             false
@@ -935,7 +951,8 @@ impl Default for CloudPremConfig {
             grpc_config: GrpcConfig::default(),
             datadog_config: WebsocketConfig::default(),
             enable_reverse_connection: Self::default_enable_reverse_connection(),
-            create_datadog_index: Self::default_create_datadog_index(),
+            create_datadog_logs_index: Self::default_create_datadog_logs_index(),
+            create_datadog_metrics_index: Self::default_create_datadog_metrics_index(),
         }
     }
 }

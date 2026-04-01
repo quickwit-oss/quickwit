@@ -1538,23 +1538,39 @@ async fn create_managed_indexes(
             Err(error) => bail!("failed to create {index_name} index: {error}"),
         };
     }
-    create_or_update_datadog_index(node_config, &mut index_manager).await?;
+    if node_config.cloudprem_config.create_datadog_logs_index {
+        create_or_update_managed_index(
+            include_bytes!("../../../config/cloudprem/datadog.yaml"),
+            "Datadog",
+            &node_config.default_index_root_uri,
+            &mut index_manager,
+        )
+        .await?;
+    }
+    if node_config.cloudprem_config.create_datadog_metrics_index {
+        create_or_update_managed_index(
+            include_bytes!("../../../config/cloudprem/datadog-metrics.yaml"),
+            "Datadog metrics",
+            &node_config.default_index_root_uri,
+            &mut index_manager,
+        )
+        .await?;
+    }
     Ok(())
 }
 
-/// Creates the Datadog index if it doesn't exist, or updates its retention policy if necessary.
-async fn create_or_update_datadog_index(
-    node_config: &NodeConfig,
+/// Creates a managed index from the given config bytes if it doesn't exist, or updates it if
+/// necessary.
+async fn create_or_update_managed_index(
+    index_config_bytes: &[u8],
+    index_label: &str,
+    default_index_root_uri: &Uri,
     index_manager: &mut IndexManager,
 ) -> anyhow::Result<()> {
-    if !node_config.cloudprem_config.create_datadog_index {
-        return Ok(());
-    }
-    let desired_index_config_bytes = include_bytes!("../../../config/cloudprem/datadog.yaml");
     let mut desired_index_config = quickwit_config::load_index_config_from_user_config(
         quickwit_config::ConfigFormat::Yaml,
-        desired_index_config_bytes,
-        &node_config.default_index_root_uri,
+        index_config_bytes,
+        default_index_root_uri,
     )?;
     let index_id = desired_index_config.index_id.clone();
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
@@ -1567,7 +1583,7 @@ async fn create_or_update_datadog_index(
         None => {
             patch_index_config(&mut desired_index_config);
 
-            info!("creating Datadog index");
+            info!("creating {index_label} index");
             index_manager
                 .create_index(desired_index_config, false)
                 .await?;
@@ -1586,7 +1602,7 @@ async fn create_or_update_datadog_index(
     if !mutation_occurred {
         return Ok(());
     }
-    info!("updating Datadog index");
+    info!("updating {index_label} index");
     index_manager
         .update_index(
             current_index_metadata.index_uid,
