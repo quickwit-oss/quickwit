@@ -36,8 +36,8 @@ use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion::logical_expr::CreateExternalTable;
 
-use crate::catalog::MetricsIndexResolver;
-use crate::table_provider::MetricsTableProvider;
+use super::index_resolver::MetricsIndexResolver;
+use super::table_provider::MetricsTableProvider;
 
 /// The file type string used in `STORED AS metrics`.
 pub const METRICS_FILE_TYPE: &str = "metrics";

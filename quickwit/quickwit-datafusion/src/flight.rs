@@ -12,80 +12,75 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Arrow Flight service for distributed metrics query execution.
+//! Worker service for distributed DataFusion query execution.
+//!
+//! `QuickwitWorkerSessionBuilder` is the generic worker session setup:
+//! it iterates over all registered `QuickwitDataSource` implementations
+//! and calls `register_for_worker()` on each, so a single worker can
+//! execute plan fragments for any registered data source.
+//!
+//! `build_quickwit_worker(sources)` is the top-level entry point called
+//! by `quickwit-serve/src/grpc.rs`, which then calls `worker.into_worker_server()`
+//! to obtain a tonic service that can be added to the gRPC server.
 
 use std::sync::Arc;
 
-use arrow_flight::flight_service_server::FlightServiceServer;
 use async_trait::async_trait;
 use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
 use datafusion::error::DataFusionError;
 use datafusion::execution::SessionState;
-use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion_distributed::{Worker, WorkerQueryContext, WorkerSessionBuilder};
 use tracing::debug;
 
-use crate::catalog::{MetricsIndexResolver, MetricsSchemaProvider};
+use crate::catalog::QuickwitSchemaProvider;
+use crate::data_source::QuickwitDataSource;
 
-/// `WorkerSessionBuilder` that registers the metrics catalog on each
-/// worker session so that plan fragments referencing metrics tables
-/// can resolve them.
+/// `WorkerSessionBuilder` that prepares each worker session for all registered
+/// data sources.
+///
+/// On each new worker request:
+/// 1. Registers the `QuickwitSchemaProvider` (needed to resolve table references
+///    in deserialized plan fragments)
+/// 2. Calls `register_for_worker()` on every source so that object stores and
+///    other runtime state are in place before plan execution begins
 #[derive(Clone)]
-pub struct MetricsWorkerSessionBuilder {
-    index_resolver: Arc<dyn MetricsIndexResolver>,
+pub struct QuickwitWorkerSessionBuilder {
+    sources: Vec<Arc<dyn QuickwitDataSource>>,
 }
 
-impl MetricsWorkerSessionBuilder {
-    pub fn new(index_resolver: Arc<dyn MetricsIndexResolver>) -> Self {
-        Self { index_resolver }
+impl QuickwitWorkerSessionBuilder {
+    pub fn new(sources: Vec<Arc<dyn QuickwitDataSource>>) -> Self {
+        Self { sources }
     }
 }
 
 #[async_trait]
-impl WorkerSessionBuilder for MetricsWorkerSessionBuilder {
+impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
     async fn build_session_state(
         &self,
         ctx: WorkerQueryContext,
     ) -> Result<SessionState, DataFusionError> {
         let state = ctx.builder.build();
 
-        let schema_provider = Arc::new(MetricsSchemaProvider::new(
-            Arc::clone(&self.index_resolver),
-        ));
+        // Register the schema provider so plan fragments can resolve table refs.
+        let schema_provider =
+            Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
         let catalog = Arc::new(MemoryCatalogProvider::new());
         catalog
             .register_schema("public", schema_provider)
-            .expect("register metrics schema on worker");
+            .expect("register quickwit schema on worker");
         state
             .catalog_list()
             .register_catalog("quickwit".to_string(), catalog);
 
-        let index_names: Vec<String> = ctx
-            .headers
-            .get("x-metrics-indexes")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.split(',').map(|s| s.trim().to_string()).collect())
-            .unwrap_or_default();
-
-        for index_name in &index_names {
-            if let Ok((_, object_store, object_store_url)) =
-                self.index_resolver.resolve(index_name).await
-            {
-                state
-                    .runtime_env()
-                    .register_object_store(object_store_url.as_ref(), object_store);
-                debug!(index_name, "registered object store on worker");
-            }
-        }
-
-        if index_names.is_empty() {
-            if let Ok((_, object_store, object_store_url)) =
-                self.index_resolver.resolve("metrics").await
-            {
-                state
-                    .runtime_env()
-                    .register_object_store(object_store_url.as_ref(), object_store);
-                debug!("registered default 'metrics' object store on worker");
+        // Let each source register its runtime state (object stores, etc.)
+        for source in &self.sources {
+            if let Err(err) = source.register_for_worker(&state).await {
+                debug!(
+                    file_type = source.file_type(),
+                    error = %err,
+                    "data source register_for_worker failed (non-fatal)"
+                );
             }
         }
 
@@ -93,13 +88,11 @@ impl WorkerSessionBuilder for MetricsWorkerSessionBuilder {
     }
 }
 
-/// Build an Arrow Flight `Worker` configured for metrics queries.
-pub fn build_metrics_worker(index_resolver: Arc<dyn MetricsIndexResolver>) -> Worker {
-    let session_builder = MetricsWorkerSessionBuilder::new(index_resolver);
+/// Build a `Worker` configured for the given data sources.
+///
+/// Called by `quickwit-serve/src/grpc.rs`. Callers obtain the gRPC service
+/// via `worker.into_worker_server()` and add it to the tonic server.
+pub fn build_quickwit_worker(sources: &[Arc<dyn QuickwitDataSource>]) -> Worker {
+    let session_builder = QuickwitWorkerSessionBuilder::new(sources.to_vec());
     Worker::from_session_builder(session_builder)
-}
-
-/// Build the Arrow Flight service for metrics queries.
-pub fn build_flight_service(worker: Worker) -> FlightServiceServer<Worker> {
-    FlightServiceServer::new(worker)
 }

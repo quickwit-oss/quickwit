@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Task estimator for distributed execution of metrics parquet queries.
+//! Generic task estimator for distributed execution of parquet-backed queries.
+//!
+//! Uses the number of file groups in a `DataSourceExec` (one per split) to
+//! determine how many distributed tasks to create.  No data-source-specific code.
 
 use std::sync::Arc;
 
@@ -23,12 +26,12 @@ use datafusion_datasource::file_scan_config::FileScanConfig;
 use datafusion_datasource_parquet::source::ParquetSource;
 use datafusion_distributed::{PartitionIsolatorExec, TaskEstimation, TaskEstimator};
 
-/// Task estimator that uses parquet file group count (= number of splits)
-/// to determine how many tasks to create for distributed execution.
+/// Estimates the desired task count for distributed execution by counting
+/// the number of parquet file groups (= number of splits) in the plan.
 #[derive(Debug)]
-pub struct MetricsTaskEstimator;
+pub struct QuickwitTaskEstimator;
 
-impl TaskEstimator for MetricsTaskEstimator {
+impl TaskEstimator for QuickwitTaskEstimator {
     fn task_estimation(
         &self,
         plan: &Arc<dyn ExecutionPlan>,
@@ -36,12 +39,10 @@ impl TaskEstimator for MetricsTaskEstimator {
     ) -> Option<TaskEstimation> {
         let dse: &DataSourceExec = plan.as_any().downcast_ref()?;
         let (file_config, _parquet_source) = dse.downcast_to_file_source::<ParquetSource>()?;
-
         let num_file_groups = file_config.file_groups.len();
         if num_file_groups == 0 {
             return Some(TaskEstimation::maximum(1));
         }
-
         Some(TaskEstimation::desired(num_file_groups))
     }
 
@@ -53,11 +54,9 @@ impl TaskEstimator for MetricsTaskEstimator {
     ) -> Option<Arc<dyn ExecutionPlan>> {
         let dse: &DataSourceExec = plan.as_any().downcast_ref()?;
         let (_file_config, _parquet_source) = dse.downcast_to_file_source::<ParquetSource>()?;
-
         if task_count <= 1 {
             return Some(Arc::clone(plan));
         }
-
         Some(Arc::new(PartitionIsolatorExec::new(
             Arc::clone(plan),
             task_count,

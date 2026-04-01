@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Production `MetricsIndexResolver` backed by the Quickwit metastore.
+//! Index resolution for the metrics data source.
 
 use std::sync::Arc;
 
@@ -27,12 +27,69 @@ use quickwit_proto::metastore::{
 use quickwit_storage::StorageResolver;
 use tracing::debug;
 
-use crate::catalog::MetricsIndexResolver;
-use crate::metastore_provider::MetastoreSplitProvider;
+use super::metastore_provider::MetastoreSplitProvider;
+use super::table_provider::MetricsSplitProvider;
 use crate::storage::QuickwitObjectStore;
-use crate::table_provider::MetricsSplitProvider;
 
-/// Resolves index names via the metastore and storage resolver.
+/// Resolves per-index resources needed to scan a metrics index.
+#[async_trait]
+pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
+    async fn resolve(
+        &self,
+        index_name: &str,
+    ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Arc<dyn ObjectStore>, ObjectStoreUrl)>;
+
+    async fn list_index_names(&self) -> DFResult<Vec<String>>;
+}
+
+/// Single-store resolver for tests.
+#[derive(Debug)]
+pub struct SimpleIndexResolver {
+    split_provider: Arc<dyn MetricsSplitProvider>,
+    object_store: Arc<dyn ObjectStore>,
+    object_store_url: ObjectStoreUrl,
+    index_names: Vec<String>,
+}
+
+impl SimpleIndexResolver {
+    pub fn new(
+        split_provider: Arc<dyn MetricsSplitProvider>,
+        object_store: Arc<dyn ObjectStore>,
+        object_store_url: ObjectStoreUrl,
+    ) -> Self {
+        Self {
+            split_provider,
+            object_store,
+            object_store_url,
+            index_names: vec!["metrics".to_string()],
+        }
+    }
+
+    pub fn with_index_names(mut self, names: Vec<String>) -> Self {
+        self.index_names = names;
+        self
+    }
+}
+
+#[async_trait]
+impl MetricsIndexResolver for SimpleIndexResolver {
+    async fn resolve(
+        &self,
+        _index_name: &str,
+    ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Arc<dyn ObjectStore>, ObjectStoreUrl)> {
+        Ok((
+            Arc::clone(&self.split_provider),
+            Arc::clone(&self.object_store),
+            self.object_store_url.clone(),
+        ))
+    }
+
+    async fn list_index_names(&self) -> DFResult<Vec<String>> {
+        Ok(self.index_names.clone())
+    }
+}
+
+/// Production resolver backed by the Quickwit metastore.
 #[derive(Clone)]
 pub struct MetastoreIndexResolver {
     metastore: MetastoreServiceClient,
@@ -40,14 +97,8 @@ pub struct MetastoreIndexResolver {
 }
 
 impl MetastoreIndexResolver {
-    pub fn new(
-        metastore: MetastoreServiceClient,
-        storage_resolver: StorageResolver,
-    ) -> Self {
-        Self {
-            metastore,
-            storage_resolver,
-        }
+    pub fn new(metastore: MetastoreServiceClient, storage_resolver: StorageResolver) -> Self {
+        Self { metastore, storage_resolver }
     }
 }
 
@@ -65,17 +116,16 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
     ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Arc<dyn ObjectStore>, ObjectStoreUrl)> {
         debug!(index_name, "resolving metrics index");
 
-        let request = IndexMetadataRequest::for_index_id(index_name.to_string());
         let response = self
             .metastore
             .clone()
-            .index_metadata(request)
+            .index_metadata(IndexMetadataRequest::for_index_id(index_name.to_string()))
             .await
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
-        let index_metadata = response.deserialize_index_metadata().map_err(|err| {
-            datafusion::error::DataFusionError::External(Box::new(err))
-        })?;
+        let index_metadata = response
+            .deserialize_index_metadata()
+            .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
         let index_uid = index_metadata.index_uid.clone();
         let index_uri = &index_metadata.index_config.index_uri;
@@ -103,11 +153,10 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
     }
 
     async fn list_index_names(&self) -> DFResult<Vec<String>> {
-        let request = ListIndexesMetadataRequest::all();
         let response = self
             .metastore
             .clone()
-            .list_indexes_metadata(request)
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
@@ -116,9 +165,6 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
             .await
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
-        Ok(indexes
-            .into_iter()
-            .map(|idx| idx.index_config.index_id)
-            .collect())
+        Ok(indexes.into_iter().map(|idx| idx.index_config.index_id).collect())
     }
 }

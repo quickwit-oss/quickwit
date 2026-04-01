@@ -34,7 +34,6 @@ quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
 
 arrow = { workspace = true }
-arrow-flight = "57"
 datafusion = "52"
 datafusion-datasource = "52"
 datafusion-sql = "52"

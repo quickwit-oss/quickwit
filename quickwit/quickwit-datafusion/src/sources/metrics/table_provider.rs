@@ -37,7 +37,7 @@ use object_store::ObjectStore;
 use quickwit_parquet_engine::split::MetricsSplitMetadata;
 use tracing::debug;
 
-use crate::predicate;
+use super::predicate;
 
 /// Provides split metadata for a metrics index.
 #[async_trait]

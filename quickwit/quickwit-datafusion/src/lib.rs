@@ -12,26 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! DataFusion-based query execution for Quickwit parquet metrics.
+//! DataFusion-based query execution for Quickwit.
 //!
-//! Uses DF's standard `ParquetSource` for reading — no custom physical nodes.
-//! The only custom parts are:
-//! - `MetricsTableProvider`: queries metastore for split discovery + pruning
-//! - `MetricsSchemaProvider`: lazy catalog resolution
-//! - `MetricsSplitProvider`: trait abstracting metastore split queries
-//! - `MetricsWorkerResolver`: worker discovery via SearcherPool
+//! ## Architecture
+//!
+//! The crate is split into two layers:
+//!
+//! **Generic execution layer** (no data-source-specific code):
+//! - [`data_source`] — `QuickwitDataSource` trait (the extension point)
+//! - [`session`] — `DataFusionSessionBuilder`: builds sessions from a list of sources
+//! - [`catalog`] — `QuickwitSchemaProvider`: routes `table(name)` to the right source
+//! - [`flight`] — `QuickwitWorkerSessionBuilder` + `build_quickwit_worker()`
+//! - [`resolver`] — `QuickwitWorkerResolver`: `SearcherPool` → Flight URLs
+//! - [`task_estimator`] — `QuickwitTaskEstimator`: split-count based task sizing
+//! - [`storage`] — `QuickwitObjectStore`: `Storage` → DataFusion `ObjectStore` bridge
+//!
+//! **Data source implementations** (`sources/`):
+//! - [`sources::metrics`] — `MetricsDataSource` for OSS parquet metrics
+//!
+//! Pomsky adds its own data sources and wraps `DataFusionSessionBuilder` in
+//! the `CloudPremService.SubstraitSearch` handler — no Pomsky code needed here.
 
 pub mod catalog;
+pub mod data_source;
 pub mod flight;
-pub mod metastore_provider;
-pub mod metastore_resolver;
-pub mod predicate;
 pub mod resolver;
 pub mod session;
+pub mod sources;
 pub mod storage;
-pub mod table_factory;
-pub mod table_provider;
 pub mod task_estimator;
+
+// Re-export the top-level worker builder for use in grpc.rs.
+// Callers get a gRPC service via `worker.into_worker_server()`.
+pub use flight::build_quickwit_worker;
+pub use session::DataFusionSessionBuilder;
 
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;

@@ -14,6 +14,7 @@ license.workspace = true
 anyhow = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true }
+datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed" }
 base64 = { workspace = true }
 bytes = { workspace = true }
 hyper = { workspace = true }

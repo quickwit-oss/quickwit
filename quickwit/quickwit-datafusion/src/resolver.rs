@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Worker resolver backed by Quickwit's `SearcherPool`.
+//! Generic worker resolver — maps `SearcherPool` → Flight URLs.
+//!
+//! No data-source-specific code here.
 
 use std::net::SocketAddr;
 
@@ -22,18 +24,21 @@ use quickwit_search::SearcherPool;
 use url::Url;
 
 /// Resolves worker Flight URLs from the cluster's searcher pool.
+///
+/// Every searcher node runs both the Quickwit gRPC `SearchService` and the
+/// Arrow Flight service on the same port.
 #[derive(Clone)]
-pub struct MetricsWorkerResolver {
+pub struct QuickwitWorkerResolver {
     searcher_pool: SearcherPool,
 }
 
-impl MetricsWorkerResolver {
+impl QuickwitWorkerResolver {
     pub fn new(searcher_pool: SearcherPool) -> Self {
         Self { searcher_pool }
     }
 }
 
-impl WorkerResolver for MetricsWorkerResolver {
+impl WorkerResolver for QuickwitWorkerResolver {
     fn get_urls(&self) -> Result<Vec<Url>, DataFusionError> {
         let addrs: Vec<SocketAddr> = self.searcher_pool.keys();
         if addrs.is_empty() {

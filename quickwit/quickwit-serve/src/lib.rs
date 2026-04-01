@@ -208,8 +208,9 @@ struct QuickwitServices {
 
     pub env_filter_reload_fn: EnvFilterReloadFn,
 
-    /// DataFusion session builder for metrics SQL queries (present if searcher role is active).
-    pub metrics_session_builder: Option<Arc<quickwit_datafusion::session::MetricsSessionBuilder>>,
+    /// Generic DataFusion session builder (present if searcher role is active).
+    /// Data sources registered at startup; Pomsky wraps this in SubstraitSearch.
+    pub datafusion_session_builder: Option<Arc<quickwit_datafusion::DataFusionSessionBuilder>>,
 
     /// Storage resolver used for metrics ingest and DataFusion index resolution.
     pub storage_resolver: StorageResolver,
@@ -686,19 +687,21 @@ pub async fn serve_quickwit(
     .await
     .context("failed to start searcher service")?;
 
-    // Build DataFusion metrics session builder if this node is a searcher.
-    let metrics_session_builder = if node_config
+    // Build the generic DataFusion session builder if this node is a searcher.
+    // Data sources are registered here; Pomsky wraps build_session() in its
+    // CloudPrem SubstraitSearch handler — no Pomsky-specific code needed here.
+    let datafusion_session_builder = if node_config
         .is_service_enabled(QuickwitService::Searcher)
     {
-        let index_resolver = Arc::new(
-            quickwit_datafusion::metastore_resolver::MetastoreIndexResolver::new(
+        let metrics_source = Arc::new(
+            quickwit_datafusion::sources::metrics::MetricsDataSource::new(
                 metastore_through_control_plane.clone(),
                 storage_resolver.clone(),
             ),
         );
-        let builder =
-            quickwit_datafusion::session::MetricsSessionBuilder::new(index_resolver)
-                .with_searcher_pool(searcher_pool);
+        let builder = quickwit_datafusion::DataFusionSessionBuilder::new()
+            .with_source(metrics_source)
+            .with_searcher_pool(searcher_pool);
         Some(Arc::new(builder))
     } else {
         None
@@ -796,7 +799,7 @@ pub async fn serve_quickwit(
         otlp_traces_service_opt,
         search_service,
         env_filter_reload_fn,
-        metrics_session_builder,
+        datafusion_session_builder,
         storage_resolver: storage_resolver.clone(),
     });
     // Setup and start gRPC server.

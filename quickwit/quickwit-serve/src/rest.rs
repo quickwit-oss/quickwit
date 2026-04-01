@@ -353,7 +353,7 @@ fn api_v1_routes(
         ))
         .boxed()
         .or(crate::metrics_sql_api::metrics_sql_handler(
-            quickwit_services.metrics_session_builder.clone(),
+            quickwit_services.datafusion_session_builder.clone(),
         ))
         .boxed(),
     )

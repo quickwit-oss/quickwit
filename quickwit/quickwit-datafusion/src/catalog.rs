@@ -12,182 +12,92 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Catalog and schema providers for metrics indexes.
+//! Generic DataFusion catalog / schema provider.
 //!
-//! `MetricsSchemaProvider` resolves index names to `MetricsTableProvider`
-//! instances. The schema is declared by the caller via CREATE EXTERNAL TABLE
-//! DDL; when no DDL is present, a minimal base schema (4 required fields) is
-//! used.
+//! `QuickwitSchemaProvider` routes table resolution to whichever registered
+//! `QuickwitDataSource` claims to own the index.  It knows nothing about
+//! metrics, logs, or traces — those concerns live in each data source.
 
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
 use async_trait::async_trait;
 use datafusion::catalog::SchemaProvider;
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;
-use datafusion::execution::object_store::ObjectStoreUrl;
-use object_store::ObjectStore;
 
-use crate::table_provider::{MetricsSplitProvider, MetricsTableProvider};
+use crate::data_source::QuickwitDataSource;
 
-/// Resolves per-index resources at query time.
+/// DataFusion `SchemaProvider` that delegates table resolution to the
+/// registered `QuickwitDataSource` implementations.
 ///
-/// Production uses `MetastoreIndexResolver` (queries metastore for index
-/// metadata, resolves storage URI). Tests use `SimpleIndexResolver` (wraps
-/// a single split provider + store for all names).
-#[async_trait]
-pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
-    /// Given an index name, return its split provider, object store, and
-    /// the ObjectStoreUrl to register with the DataFusion runtime.
-    async fn resolve(
-        &self,
-        index_name: &str,
-    ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Arc<dyn ObjectStore>, ObjectStoreUrl)>;
-
-    /// List all available metrics index names.
-    async fn list_index_names(&self) -> DFResult<Vec<String>>;
-}
-
-/// Simple resolver that returns the same split provider + store for every index.
+/// Resolution order for `table(name)`:
+/// 1. Explicitly registered tables (from `CREATE EXTERNAL TABLE` DDL)
+/// 2. Each source's `create_default_table_provider`, first non-None wins
 ///
-/// Useful for tests and single-index setups where there is only one backing store.
-#[derive(Debug)]
-pub struct SimpleIndexResolver {
-    split_provider: Arc<dyn MetricsSplitProvider>,
-    object_store: Arc<dyn ObjectStore>,
-    object_store_url: ObjectStoreUrl,
-    index_names: Vec<String>,
-}
-
-impl SimpleIndexResolver {
-    pub fn new(
-        split_provider: Arc<dyn MetricsSplitProvider>,
-        object_store: Arc<dyn ObjectStore>,
-        object_store_url: ObjectStoreUrl,
-    ) -> Self {
-        Self {
-            split_provider,
-            object_store,
-            object_store_url,
-            index_names: vec!["metrics".to_string()],
-        }
-    }
-
-    pub fn with_index_names(mut self, names: Vec<String>) -> Self {
-        self.index_names = names;
-        self
-    }
-}
-
-#[async_trait]
-impl MetricsIndexResolver for SimpleIndexResolver {
-    async fn resolve(
-        &self,
-        _index_name: &str,
-    ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Arc<dyn ObjectStore>, ObjectStoreUrl)> {
-        Ok((
-            Arc::clone(&self.split_provider),
-            Arc::clone(&self.object_store),
-            self.object_store_url.clone(),
-        ))
-    }
-
-    async fn list_index_names(&self) -> DFResult<Vec<String>> {
-        Ok(self.index_names.clone())
-    }
-}
-
-/// Returns a minimal base Arrow schema with the 4 guaranteed columns.
-///
-/// Used when no DDL schema is available. The 4 guaranteed columns are always
-/// present in every OSS metrics parquet file.
-pub fn minimal_base_schema() -> SchemaRef {
-    let dict = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
-    Arc::new(ArrowSchema::new(vec![
-        Field::new("metric_name", dict, false),
-        Field::new("metric_type", DataType::UInt8, false),
-        Field::new("timestamp_secs", DataType::UInt64, false),
-        Field::new("value", DataType::Float64, false),
-    ]))
-}
-
-/// Schema provider that resolves index names to metrics table providers.
-///
-/// Uses a `MetricsIndexResolver` to get per-index resources at query time,
-/// so a single catalog can serve queries across multiple indexes.
-///
-/// Explicitly registered tables (via `CREATE EXTERNAL TABLE`) are stored in
-/// memory and take precedence over lazily-resolved metastore tables.
-pub struct MetricsSchemaProvider {
-    index_resolver: Arc<dyn MetricsIndexResolver>,
-    /// Default arrow schema used when no DDL schema is provided.
-    arrow_schema: SchemaRef,
+/// `register_table` / `deregister_table` are implemented so that
+/// `CREATE OR REPLACE EXTERNAL TABLE` works correctly.
+pub struct QuickwitSchemaProvider {
+    sources: Vec<Arc<dyn QuickwitDataSource>>,
     /// Tables explicitly registered via DDL (CREATE OR REPLACE EXTERNAL TABLE).
     registered_tables: Mutex<HashMap<String, Arc<dyn TableProvider>>>,
 }
 
-impl MetricsSchemaProvider {
-    pub fn new(index_resolver: Arc<dyn MetricsIndexResolver>) -> Self {
+impl QuickwitSchemaProvider {
+    pub fn new(sources: Vec<Arc<dyn QuickwitDataSource>>) -> Self {
         Self {
-            index_resolver,
-            arrow_schema: minimal_base_schema(),
+            sources,
             registered_tables: Mutex::new(HashMap::new()),
         }
     }
 }
 
-impl std::fmt::Debug for MetricsSchemaProvider {
+impl std::fmt::Debug for QuickwitSchemaProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MetricsSchemaProvider")
-            .field("num_fields", &self.arrow_schema.fields().len())
+        f.debug_struct("QuickwitSchemaProvider")
+            .field("num_sources", &self.sources.len())
             .finish()
     }
 }
 
 #[async_trait]
-impl SchemaProvider for MetricsSchemaProvider {
+impl SchemaProvider for QuickwitSchemaProvider {
     fn as_any(&self) -> &dyn Any {
         self
     }
 
     fn table_names(&self) -> Vec<String> {
-        // table_names() is sync but listing indexes is async.
-        // Use block_on since this is only called for SHOW TABLES / metadata queries.
-        let resolver = Arc::clone(&self.index_resolver);
-        std::thread::scope(|_| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current()
-                    .block_on(resolver.list_index_names())
-                    .unwrap_or_default()
+        // table_names() is sync; listing indexes is async.
+        // Use block_in_place — only called for SHOW TABLES / information_schema.
+        let sources = self.sources.clone();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let mut names = Vec::new();
+                for source in &sources {
+                    if let Ok(mut source_names) = source.list_index_names().await {
+                        names.append(&mut source_names);
+                    }
+                }
+                names
             })
         })
     }
 
-    async fn table(
-        &self,
-        name: &str,
-    ) -> datafusion::error::Result<Option<Arc<dyn TableProvider>>> {
-        // First check explicitly registered tables (from DDL)
+    async fn table(&self, name: &str) -> DFResult<Option<Arc<dyn TableProvider>>> {
+        // 1. Explicitly registered tables take precedence (DDL path)
         if let Some(provider) = self.registered_tables.lock().unwrap().get(name).cloned() {
             return Ok(Some(provider));
         }
 
-        // Fall back to lazily resolving from the metastore
-        let (split_provider, object_store, object_store_url) =
-            match self.index_resolver.resolve(name).await {
-                Ok(result) => result,
-                Err(_) => return Ok(None),
-            };
-        let provider = MetricsTableProvider::new(
-            Arc::clone(&self.arrow_schema),
-            split_provider,
-            object_store,
-            object_store_url,
-        );
-        Ok(Some(Arc::new(provider)))
+        // 2. Ask each source — first one that claims the index wins
+        for source in &self.sources {
+            if let Some(provider) = source.create_default_table_provider(name).await? {
+                return Ok(Some(provider));
+            }
+        }
+
+        Ok(None)
     }
 
     fn table_exist(&self, name: &str) -> bool {
@@ -201,17 +111,12 @@ impl SchemaProvider for MetricsSchemaProvider {
         &self,
         name: String,
         table: Arc<dyn TableProvider>,
-    ) -> datafusion::error::Result<Option<Arc<dyn TableProvider>>> {
-        let mut tables = self.registered_tables.lock().unwrap();
-        let old = tables.insert(name, table);
+    ) -> DFResult<Option<Arc<dyn TableProvider>>> {
+        let old = self.registered_tables.lock().unwrap().insert(name, table);
         Ok(old)
     }
 
-    fn deregister_table(
-        &self,
-        name: &str,
-    ) -> datafusion::error::Result<Option<Arc<dyn TableProvider>>> {
-        let mut tables = self.registered_tables.lock().unwrap();
-        Ok(tables.remove(name))
+    fn deregister_table(&self, name: &str) -> DFResult<Option<Arc<dyn TableProvider>>> {
+        Ok(self.registered_tables.lock().unwrap().remove(name))
     }
 }

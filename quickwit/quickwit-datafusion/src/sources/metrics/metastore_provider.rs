@@ -28,8 +28,8 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::IndexUid;
 use tracing::debug;
 
-use crate::predicate::MetricsSplitQuery;
-use crate::table_provider::MetricsSplitProvider;
+use super::predicate::MetricsSplitQuery;
+use super::table_provider::MetricsSplitProvider;
 
 /// `MetricsSplitProvider` backed by the Quickwit metastore RPC.
 #[derive(Debug, Clone)]

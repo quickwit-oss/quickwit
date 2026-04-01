@@ -12,7 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Session builder for DataFusion metrics query execution.
+//! Generic DataFusion session builder.
+//!
+//! `DataFusionSessionBuilder` knows nothing about metrics, logs, or traces.
+//! Data sources are registered via `with_source()` and provide their own
+//! `TableProviderFactory` and default table resolution.
 
 use std::sync::Arc;
 
@@ -23,22 +27,34 @@ use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_distributed::{DistributedExt, DistributedPhysicalOptimizerRule};
 use quickwit_search::SearcherPool;
 
-use crate::catalog::{MetricsIndexResolver, MetricsSchemaProvider};
-use crate::resolver::MetricsWorkerResolver;
-use crate::task_estimator::MetricsTaskEstimator;
+use crate::catalog::QuickwitSchemaProvider;
+use crate::data_source::QuickwitDataSource;
+use crate::resolver::QuickwitWorkerResolver;
+use crate::task_estimator::QuickwitTaskEstimator;
 
-/// Everything needed to build a DataFusion session for metrics queries.
-pub struct MetricsSessionBuilder {
-    index_resolver: Arc<dyn MetricsIndexResolver>,
+/// Builds a `SessionContext` for DataFusion queries over Quickwit data.
+///
+/// Data sources (metrics, logs, traces, …) are registered with `with_source()`.
+/// The session is fully generic — no source-specific code lives here.
+///
+/// In Pomsky, the `CloudPremServiceImpl.substrait_search()` handler calls
+/// `build_session()` and delegates execution to the OSS `execute_sql_statements()`.
+pub struct DataFusionSessionBuilder {
+    sources: Vec<Arc<dyn QuickwitDataSource>>,
     searcher_pool: Option<SearcherPool>,
 }
 
-impl MetricsSessionBuilder {
-    pub fn new(index_resolver: Arc<dyn MetricsIndexResolver>) -> Self {
+impl DataFusionSessionBuilder {
+    pub fn new() -> Self {
         Self {
-            index_resolver,
+            sources: Vec::new(),
             searcher_pool: None,
         }
+    }
+
+    pub fn with_source(mut self, source: Arc<dyn QuickwitDataSource>) -> Self {
+        self.sources.push(source);
+        self
     }
 
     pub fn with_searcher_pool(mut self, pool: SearcherPool) -> Self {
@@ -46,16 +62,26 @@ impl MetricsSessionBuilder {
         self
     }
 
-    pub fn index_resolver(&self) -> &Arc<dyn MetricsIndexResolver> {
-        &self.index_resolver
+    /// Returns a slice of all registered data sources.
+    ///
+    /// Used by the Flight worker builder to call `register_for_worker()` on each.
+    pub fn sources(&self) -> &[Arc<dyn QuickwitDataSource>] {
+        &self.sources
     }
 
-    /// Build a `SessionContext` configured for metrics queries.
+    /// Build a configured `SessionContext` ready for multi-statement SQL execution.
+    ///
+    /// Sets up:
+    /// - Distributed execution if a searcher pool is present
+    /// - One `TableProviderFactory` per registered source (both lowercase and
+    ///   uppercase keys, since DataFusion uppercases the `STORED AS` token)
+    /// - A `QuickwitSchemaProvider` in the `quickwit.public` catalog
     pub fn build_session(&self) -> DFResult<SessionContext> {
         let mut config = SessionConfig::new().with_target_partitions(1);
         config.options_mut().catalog.default_catalog = "quickwit".to_string();
         config.options_mut().catalog.default_schema = "public".to_string();
         config.options_mut().catalog.information_schema = true;
+        // We register our own catalog; skip the default "datafusion" one.
         config.options_mut().catalog.create_default_catalog_and_schema = false;
 
         let mut builder = SessionStateBuilder::new()
@@ -63,39 +89,38 @@ impl MetricsSessionBuilder {
             .with_default_features();
 
         if let Some(ref pool) = self.searcher_pool {
-            let worker_resolver = MetricsWorkerResolver::new(pool.clone());
             builder = builder
-                .with_distributed_worker_resolver(worker_resolver)
-                .with_distributed_task_estimator(MetricsTaskEstimator)
+                .with_distributed_worker_resolver(QuickwitWorkerResolver::new(pool.clone()))
+                .with_distributed_task_estimator(QuickwitTaskEstimator)
                 .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
         }
 
         let mut state = builder.build();
 
-        // DataFusion uppercases the file type string, so register both to be safe
-        let make_factory = || -> Arc<dyn datafusion::catalog::TableProviderFactory> {
-            Arc::new(crate::table_factory::MetricsTableProviderFactory::new(
-                Arc::clone(&self.index_resolver),
-            ))
-        };
-        state.table_factories_mut().insert(
-            crate::table_factory::METRICS_FILE_TYPE.to_string(),
-            make_factory(),
-        );
-        state.table_factories_mut().insert(
-            crate::table_factory::METRICS_FILE_TYPE.to_uppercase(),
-            make_factory(),
-        );
+        // Register each source's TableProviderFactory under both the literal
+        // and uppercased file_type() string.
+        for source in &self.sources {
+            let ft_lower = source.file_type().to_string();
+            let ft_upper = source.file_type().to_uppercase();
+            let factory: Arc<dyn datafusion::catalog::TableProviderFactory> =
+                source.create_table_provider_factory();
+            // Both keys point to independent factory instances (factories are
+            // cheap to construct and are not cloneable in general).
+            state
+                .table_factories_mut()
+                .insert(ft_lower, Arc::clone(&factory));
+            state
+                .table_factories_mut()
+                .insert(ft_upper, source.create_table_provider_factory());
+        }
 
         let ctx = SessionContext::new_with_state(state);
 
-        let schema_provider = Arc::new(MetricsSchemaProvider::new(
-            Arc::clone(&self.index_resolver),
-        ));
+        let schema_provider = Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
         let catalog = Arc::new(MemoryCatalogProvider::new());
         catalog
             .register_schema("public", schema_provider)
-            .expect("register metrics schema");
+            .expect("register quickwit schema");
         ctx.register_catalog("quickwit", catalog);
 
         Ok(ctx)

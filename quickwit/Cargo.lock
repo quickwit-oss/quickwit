@@ -8192,7 +8192,6 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "arrow",
- "arrow-flight",
  "async-trait",
  "bytes",
  "chrono",
@@ -8807,6 +8806,7 @@ dependencies = [
  "bytes",
  "bytesize",
  "datafusion",
+ "datafusion-distributed",
  "datafusion-sql",
  "elasticsearch-dsl",
  "flate2",

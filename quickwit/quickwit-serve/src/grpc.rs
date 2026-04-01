@@ -233,6 +233,18 @@ pub(crate) async fn start_grpc_server(
     file_descriptor_sets.push(REFLECTION_FILE_DESCRIPTOR_SET);
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
+    // Mount the DataFusion distributed worker gRPC service.
+    // Active on any node that runs the Searcher role so df-distributed coordinators
+    // can dispatch plan fragments to workers via the WorkerService protocol.
+    let datafusion_worker_service =
+        if let Some(ref session_builder) = services.datafusion_session_builder {
+            enabled_grpc_services.insert("datafusion-worker");
+            let worker = quickwit_datafusion::build_quickwit_worker(session_builder.sources());
+            Some(worker.into_worker_server())
+        } else {
+            None
+        };
+
     let server_router = server
         .add_service(cluster_grpc_service)
         .add_service(developer_grpc_service)
@@ -248,7 +260,8 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(otlp_log_grpc_service)
         .add_optional_service(otlp_trace_grpc_service)
-        .add_optional_service(search_grpc_service);
+        .add_optional_service(search_grpc_service)
+        .add_optional_service(datafusion_worker_service);
 
     let grpc_listen_addr = tcp_listener.local_addr()?;
     info!(
