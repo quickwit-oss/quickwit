@@ -2218,7 +2218,13 @@ impl MetastoreService for PostgresqlMetastore {
                 num_rows,
                 size_bytes,
                 split_metadata_json,
-                EXTRACT(EPOCH FROM update_timestamp)::bigint as update_timestamp
+                EXTRACT(EPOCH FROM update_timestamp)::bigint as update_timestamp,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes
             FROM metrics_splits
             WHERE index_uid = $1
         "#,
@@ -2288,27 +2294,7 @@ impl MetastoreService for PostgresqlMetastore {
         }
 
         // Execute query with bindings
-        let mut query_builder = sqlx::query_as::<
-            _,
-            (
-                String,              // split_id
-                String,              // split_state
-                String,              // index_uid
-                i64,                 // time_range_start
-                i64,                 // time_range_end
-                Vec<String>,         // metric_names
-                Option<Vec<String>>, // tag_service
-                Option<Vec<String>>, // tag_env
-                Option<Vec<String>>, // tag_datacenter
-                Option<Vec<String>>, // tag_region
-                Option<Vec<String>>, // tag_host
-                Vec<String>,         // high_cardinality_tag_keys
-                i64,                 // num_rows
-                i64,                 // size_bytes
-                String,              // split_metadata_json
-                i64,                 // update_timestamp
-            ),
-        >(&sql);
+        let mut query_builder = sqlx::query(&sql);
 
         query_builder = query_builder.bind(query.index_uid.to_string());
 
@@ -2360,32 +2346,31 @@ impl MetastoreService for PostgresqlMetastore {
             .filter_map(|row| {
                 use quickwit_parquet_engine::split::{MetricsSplitState, PgMetricsSplit};
 
+                use sqlx::Row as _;
+
                 let pg_split = PgMetricsSplit {
-                    split_id: row.0,
-                    split_state: row.1,
-                    index_uid: row.2,
-                    time_range_start: row.3,
-                    time_range_end: row.4,
-                    metric_names: row.5,
-                    tag_service: row.6,
-                    tag_env: row.7,
-                    tag_datacenter: row.8,
-                    tag_region: row.9,
-                    tag_host: row.10,
-                    high_cardinality_tag_keys: row.11,
-                    num_rows: row.12,
-                    size_bytes: row.13,
-                    split_metadata_json: row.14,
-                    update_timestamp: row.15,
-                    // Compaction fields are read from the JSON blob via
-                    // to_metadata() — the SQL columns are only used for
-                    // filtering and SS-5 consistency checks.
-                    window_start: None,
-                    window_duration_secs: None,
-                    sort_fields: String::new(),
-                    num_merge_ops: 0,
-                    row_keys: None,
-                    zonemap_regexes: serde_json::json!({}),
+                    split_id: row.get("split_id"),
+                    split_state: row.get("split_state"),
+                    index_uid: row.get("index_uid"),
+                    time_range_start: row.get("time_range_start"),
+                    time_range_end: row.get("time_range_end"),
+                    metric_names: row.get("metric_names"),
+                    tag_service: row.get("tag_service"),
+                    tag_env: row.get("tag_env"),
+                    tag_datacenter: row.get("tag_datacenter"),
+                    tag_region: row.get("tag_region"),
+                    tag_host: row.get("tag_host"),
+                    high_cardinality_tag_keys: row.get("high_cardinality_tag_keys"),
+                    num_rows: row.get("num_rows"),
+                    size_bytes: row.get("size_bytes"),
+                    split_metadata_json: row.get("split_metadata_json"),
+                    update_timestamp: row.get("update_timestamp"),
+                    window_start: row.get("window_start"),
+                    window_duration_secs: row.get("window_duration_secs"),
+                    sort_fields: row.get("sort_fields"),
+                    num_merge_ops: row.get("num_merge_ops"),
+                    row_keys: row.get("row_keys"),
+                    zonemap_regexes: row.get("zonemap_regexes"),
                 };
 
                 let state = pg_split.split_state().unwrap_or(MetricsSplitState::Staged);
