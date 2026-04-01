@@ -225,13 +225,12 @@ where
     }
 }
 
-/// Outputs JSON with `timestamp`, `level`, `service`, and `message` fields.
-/// The `service` is extracted from the tracing target (crate name).
+/// Outputs JSON with `timestamp`, `level`, `service`, `source`, and `message` fields.
 /// The `message` is formatted using the regular text formatter (level, target, spans, fields).
 ///
 /// Example output:
 /// ```json
-/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"quickwit_search","message":"INFO quickwit_search: hello"}
+/// {"timestamp":"2025-03-23T14:30:45Z","level":"INFO","service":"byoc","source":"byoc","message":"INFO quickwit_search: hello"}
 /// ```
 struct DdgFormat {
     text_format: Format<Full, ()>,
@@ -271,15 +270,11 @@ where
 
         let level = event.metadata().level().as_str();
 
-        // Extract crate name from the target (e.g. "quickwit_cli::logger" -> "quickwit_cli")
-        let target = event.metadata().target();
-        let service = target.split("::").next().unwrap_or(target);
-
         // Write JSON with properly escaped message
         let escaped_message = serde_json::to_string(message).map_err(|_| fmt::Error)?;
         writeln!(
             writer,
-            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"{service}","message":{escaped_message}}}"#
+            r#"{{"timestamp":"{timestamp}","level":"{level}","service":"byoc","source":"byoc","message":{escaped_message}}}"#
         )
     }
 }
@@ -487,10 +482,11 @@ mod tests {
     fn test_ddg_format_has_expected_fields() {
         let json = capture_ddg_log(|| tracing::info!("hello"));
         let obj = json.as_object().unwrap();
-        assert_eq!(obj.len(), 4, "{obj:?}");
+        assert_eq!(obj.len(), 5, "{obj:?}");
         assert!(obj.contains_key("timestamp"));
         assert!(obj.contains_key("level"));
         assert!(obj.contains_key("service"));
+        assert!(obj.contains_key("source"));
         assert!(obj.contains_key("message"));
     }
 
@@ -498,7 +494,8 @@ mod tests {
     fn test_ddg_format_basic_message() {
         let json = capture_ddg_log(|| tracing::info!("hello world"));
         assert_eq!(json["level"], "INFO");
-        assert_eq!(json["service"], "quickwit_cli");
+        assert_eq!(json["service"], "byoc");
+        assert_eq!(json["source"], "byoc");
         assert_eq!(
             json["message"].as_str().unwrap(),
             format!("INFO {TARGET}: hello world")
