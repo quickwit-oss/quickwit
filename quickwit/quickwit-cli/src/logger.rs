@@ -161,7 +161,7 @@ pub fn setup_logging_and_tracing(
     ))
 }
 
-#[cfg(not(any(test, feature = "testsuite")))]
+#[cfg(not(test))]
 pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
     // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
     // deprecated and can be removed after 2026-04-01.
@@ -206,12 +206,12 @@ pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
 ///
 /// Must be called after [`setup_dogstatsd_exporter`] so the `metrics` crate
 /// has a registered recorder.
-#[cfg(not(any(test, feature = "testsuite")))]
+#[cfg(not(test))]
 pub fn setup_invariant_recorder() {
     quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
 }
 
-#[cfg(not(any(test, feature = "testsuite")))]
+#[cfg(not(test))]
 fn invariant_recorder(id: quickwit_dst::invariants::InvariantId, passed: bool) {
     let name = id.as_str();
     metrics::counter!("pomsky.invariant.checked", "invariant" => name).increment(1);
