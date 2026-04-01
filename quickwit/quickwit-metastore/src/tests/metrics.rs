@@ -495,13 +495,8 @@ pub async fn test_metastore_publish_metrics_splits_nonexistent<
         .publish_metrics_splits(publish_request)
         .await
         .unwrap_err();
-    // File-backed: NotFound. Postgres: FailedPrecondition (count mismatch).
     assert!(
-        matches!(
-            error,
-            MetastoreError::NotFound(EntityKind::Splits { .. })
-                | MetastoreError::FailedPrecondition { .. }
-        ),
+        matches!(error, MetastoreError::NotFound(EntityKind::Splits { .. })),
         "expected NotFound(Splits), got: {error:?}"
     );
 
@@ -640,20 +635,15 @@ pub async fn test_metastore_delete_metrics_splits_nonexistent<
     let index_id = append_random_suffix("test-delete-metrics-nonexistent");
     let index_uid = create_test_index(&mut metastore, &index_id).await;
 
-    // Delete a split_id that doesn't exist.
-    // File-backed: succeeds silently (idempotent).
-    // Postgres: may return FailedPrecondition ("not marked for deletion").
-    // Both behaviors are acceptable.
+    // Delete a split_id that doesn't exist — should succeed (idempotent).
     let delete_request = DeleteMetricsSplitsRequest {
         index_uid: Some(index_uid.clone()),
         split_ids: vec!["nonexistent-split".to_string()],
     };
-    let result = metastore.delete_metrics_splits(delete_request).await;
-    match &result {
-        Ok(_) => {} // file-backed: idempotent success
-        Err(MetastoreError::FailedPrecondition { .. }) => {} // postgres: not marked
-        Err(other) => panic!("unexpected error: {other:?}"),
-    }
+    metastore
+        .delete_metrics_splits(delete_request)
+        .await
+        .unwrap();
 
     cleanup_index(&mut metastore, index_uid).await;
 }

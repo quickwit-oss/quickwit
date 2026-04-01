@@ -2151,17 +2151,13 @@ impl MetastoreService for PostgresqlMetastore {
                     .await
                     .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
-            // Verify all staged splits were published
+            // Verify all staged splits were published.
+            // If some splits are missing, it means they don't exist (NotFound),
+            // not that they're in the wrong state (FailedPrecondition).
             if published_count as usize != staged_split_ids.len() {
-                let entity = EntityKind::Splits {
+                return Err(MetastoreError::NotFound(EntityKind::Splits {
                     split_ids: staged_split_ids.clone(),
-                };
-                let message = format!(
-                    "expected to publish {} splits, but only {} were in Staged state",
-                    staged_split_ids.len(),
-                    published_count
-                );
-                return Err(MetastoreError::FailedPrecondition { entity, message });
+                }));
             }
 
             // Verify all replaced splits were marked for deletion.
@@ -2461,7 +2457,9 @@ impl MetastoreService for PostgresqlMetastore {
             .await
             .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid().index_id, sqlx_error))?;
 
-        // Check if any splits could not be deleted
+        // Log if some splits were not deleted (either non-existent or not
+        // in MarkedForDeletion state). Delete is idempotent — we don't error
+        // for missing splits.
         if deleted_split_ids.len() != request.split_ids.len() {
             let not_deleted: Vec<String> = request
                 .split_ids
@@ -2474,13 +2472,8 @@ impl MetastoreService for PostgresqlMetastore {
                 warn!(
                     index_uid = %request.index_uid(),
                     not_deleted = ?not_deleted,
-                    "some metrics splits were not in MarkedForDeletion state"
+                    "some metrics splits were not deleted (non-existent or not marked for deletion)"
                 );
-                let entity = EntityKind::Splits {
-                    split_ids: not_deleted,
-                };
-                let message = "splits are not marked for deletion".to_string();
-                return Err(MetastoreError::FailedPrecondition { entity, message });
             }
         }
 
