@@ -95,11 +95,13 @@ impl DataFusionSessionBuilder {
                 .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
         }
 
-        // Let each source configure the builder before it is built.
-        // This is where sources register codecs, UDFs, opener factories, etc.
+        // Collect contributions from all sources (rules, codecs, UDFs).
+        let mut combined = crate::data_source::DataSourceContributions::default();
         for source in &self.sources {
-            builder = source.configure_session_state_builder(builder);
+            combined.merge(source.contributions());
         }
+        let udfs = combined.take_udfs();
+        builder = combined.apply_to_builder(builder);
 
         let mut state = builder.build();
 
@@ -120,6 +122,11 @@ impl DataFusionSessionBuilder {
         }
 
         let ctx = SessionContext::new_with_state(state);
+
+        // Register UDFs post-build (SessionContext::register_udf is the idiomatic path).
+        for udf in udfs {
+            ctx.register_udf((*udf).clone());
+        }
 
         let schema_provider = Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
         let catalog = Arc::new(MemoryCatalogProvider::new());

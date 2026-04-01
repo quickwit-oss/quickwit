@@ -60,12 +60,13 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
         &self,
         ctx: WorkerQueryContext,
     ) -> Result<SessionState, DataFusionError> {
-        // Phase 1: let each source configure the builder before build().
-        // Codecs, UDFs, and opener factories must be registered here.
-        let mut builder = ctx.builder;
+        // Phase 1: collect additive contributions from all sources, apply before build().
+        let mut combined = crate::data_source::DataSourceContributions::default();
         for source in &self.sources {
-            builder = source.configure_session_state_builder(builder);
+            combined.merge(source.contributions());
         }
+        let _udfs = combined.take_udfs(); // workers don't need UDFs registered (no SQL parsing)
+        let builder = combined.apply_to_builder(ctx.builder);
         let state = builder.build();
 
         // Phase 2: register catalog so plan fragments can resolve table refs.
