@@ -66,7 +66,7 @@ pub enum UploaderType {
 /// [`SplitsUpdateMailbox`] wraps either a [`Mailbox<Sequencer<P>>`] or [`Mailbox<P>`].
 ///
 /// It makes it possible to send a splits update either to the [`Sequencer`] or directly
-/// to the publisher actor `P`. It is used in combination with [`SplitsUpdateSender`] that
+/// to the publisher actor `P`. It is used in combination with `SplitsUpdateSender` that
 /// will do the send.
 ///
 /// This is useful as we have different requirements between the indexing pipeline and

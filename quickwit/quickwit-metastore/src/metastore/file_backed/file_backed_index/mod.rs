@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! [`FileBackedIndex`] module. It is public so that the crate `quickwit-backward-compat` can
-//! import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to import
+//! `FileBackedIndex` module. It is public so that the crate `quickwit-backward-compat` can
+//! import `FileBackedIndex` and run backward-compatibility tests. You should not have to import
 //! anything from here directly.
 
 mod serialize;
