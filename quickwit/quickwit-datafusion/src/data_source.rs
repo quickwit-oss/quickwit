@@ -303,6 +303,26 @@ impl datafusion::execution::context::QueryPlanner for ContributionQueryPlanner {
 /// should be queryable via DataFusion SQL.
 #[async_trait]
 pub trait QuickwitDataSource: Send + Sync + Debug {
+    // ── Startup hook ─────────────────────────────────────────────────
+
+    /// Called once when the source is registered via
+    /// `DataFusionSessionBuilder::with_source()`.
+    ///
+    /// Receives the shared `RuntimeEnv` that all sessions built by this builder
+    /// will use.  Sources that know their object-store URLs at construction time
+    /// should register them here — analogous to `BlobStoreConnector::init` in
+    /// `dd-datafusion`, which calls `env.register_object_store(url, store)` once
+    /// at service startup so that every query can reach the store without any
+    /// per-session registration.
+    ///
+    /// Sources whose URLs are only discoverable at query time (e.g. metrics,
+    /// where indexes are listed from the metastore) should leave this as a no-op
+    /// and perform lazy registration in `MetricsTableProvider::scan()`, which
+    /// writes into the same shared `RuntimeEnv`.
+    ///
+    /// Default: no-op.
+    fn init(&self, _env: &datafusion::execution::runtime_env::RuntimeEnv) {}
+
     // ── Additive session contributions ──────────────────────────────
 
     /// Return this source's additive contributions to every session.

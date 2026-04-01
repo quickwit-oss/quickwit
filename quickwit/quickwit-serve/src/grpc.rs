@@ -239,7 +239,10 @@ pub(crate) async fn start_grpc_server(
     let datafusion_worker_service =
         if let Some(ref session_builder) = services.datafusion_session_builder {
             enabled_grpc_services.insert("datafusion-worker");
-            let worker = quickwit_datafusion::build_quickwit_worker(session_builder.sources());
+            let worker = quickwit_datafusion::build_quickwit_worker(
+                session_builder.sources(),
+                Arc::clone(session_builder.runtime()),
+            );
             Some(worker.into_worker_server())
         } else {
             None

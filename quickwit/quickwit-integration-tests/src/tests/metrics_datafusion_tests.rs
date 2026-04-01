@@ -507,3 +507,155 @@ async fn test_in_list_tag_filter_returns_all_matching_rows() {
         .sum();
     assert_eq!(total_data_rows, 4, "web (2) + api (2) = 4 rows; db must be excluded");
 }
+
+/// Demonstrates the `sum:metric{filter} by {groups}.rollup(agg, interval)` pattern
+/// over wide-format parquet data — no context/points JOIN needed.
+///
+/// In Datadog's internal model a query like:
+///   `avg:cpu.usage{env:prod} by {service}.rollup(max, 30)`
+/// is compiled to SQL over two tables joined on `bhandle` (a tag hash).
+///
+/// With our wide-format parquet model every data point carries its own tags
+/// as columns, so the same query is a single two-level aggregation:
+///
+///   1. Inner GROUP BY (service, host, time_bin) → MAX(value) per series per bin
+///   2. Outer GROUP BY (service, time_bin)       → AVG(max) across hosts per bin
+///
+/// Three prod series, one staging series (must be filtered out):
+///   web / host=web-01: values 1,2,3,4,5,6 at t=0,15,30,45,60,75
+///   web / host=web-02: values 10,20,30,40,50,60 at t=0,15,30,45,60,75
+///   api / host=api-01: values 100,200,300,400,500,600 at t=0,15,30,45,60,75
+///   web / host=web-01 / env=staging (should be excluded by env filter)
+///
+/// Expected results (30-second bins, epoch origin):
+///   bin t=0:  web → avg(max(1,2),  max(10,20))  = avg(2,  20)  = 11.0
+///             api → avg(max(100,200))             = 200.0
+///   bin t=30: web → avg(max(3,4),  max(30,40))  = avg(4,  40)  = 22.0
+///             api → avg(max(300,400))             = 400.0
+///   bin t=60: web → avg(max(5,6),  max(50,60))  = avg(6,  60)  = 33.0
+///             api → avg(max(500,600))             = 600.0
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_rollup_nested_aggregation() {
+    use quickwit_datafusion::test_utils::make_batch_with_tags;
+
+    let (sandbox, data_dir) = start_sandbox().await;
+    let metastore = metastore_client(&sandbox);
+    let builder = session_builder(&sandbox, metastore.clone());
+
+    let index_uid = create_metrics_index(&metastore, "rollup-test", data_dir.path()).await;
+
+    // Timestamps span 3 full 30-second bins (0–29, 30–59, 60–89).
+    let ts: &[u64] = &[0, 15, 30, 45, 60, 75];
+
+    publish_split(&metastore, &index_uid, data_dir.path(), "web-01-prod",
+        &make_batch_with_tags("cpu.usage", ts, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            Some("web"), Some("prod"), None, None, Some("web-01"))).await;
+
+    publish_split(&metastore, &index_uid, data_dir.path(), "web-02-prod",
+        &make_batch_with_tags("cpu.usage", ts, &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            Some("web"), Some("prod"), None, None, Some("web-02"))).await;
+
+    publish_split(&metastore, &index_uid, data_dir.path(), "api-01-prod",
+        &make_batch_with_tags("cpu.usage", ts, &[100.0, 200.0, 300.0, 400.0, 500.0, 600.0],
+            Some("api"), Some("prod"), None, None, Some("api-01"))).await;
+
+    // Staging split — env filter must exclude all rows from this split.
+    publish_split(&metastore, &index_uid, data_dir.path(), "web-01-staging",
+        &make_batch_with_tags("cpu.usage", &[0, 30, 60], &[999.0, 999.0, 999.0],
+            Some("web"), Some("staging"), None, None, Some("web-01"))).await;
+
+    // The query mirrors the Datadog rollup pattern without a context/points join:
+    //   avg:cpu.usage{env:prod} by {service}.rollup(max, 30)
+    //
+    // Step 1 (inner): MAX per series (service + host) per 30-second bin.
+    // Step 2 (outer): AVG of those per-series maxes, grouped by service.
+    //
+    // to_timestamp_seconds() converts the stored epoch-seconds UInt64 to a
+    // Timestamp so that date_bin() can bucket it into 30-second intervals.
+    let sql = r#"
+        CREATE OR REPLACE EXTERNAL TABLE "rollup-test" (
+            metric_name    VARCHAR NOT NULL,
+            metric_type    TINYINT,
+            timestamp_secs BIGINT  NOT NULL,
+            value          DOUBLE  NOT NULL,
+            service        VARCHAR,
+            env            VARCHAR,
+            host           VARCHAR
+        ) STORED AS metrics LOCATION 'rollup-test';
+        WITH bin_max AS (
+            SELECT
+                service,
+                host,
+                date_bin(
+                    INTERVAL '30 seconds',
+                    to_timestamp_seconds(timestamp_secs)
+                ) AS time_bin,
+                MAX(value) AS max_bin_val
+            FROM "rollup-test"
+            WHERE metric_name = 'cpu.usage'
+              AND env = 'prod'
+            GROUP BY service, host, time_bin
+        )
+        SELECT
+            service,
+            time_bin,
+            AVG(max_bin_val) AS avg_val
+        FROM bin_max
+        GROUP BY service, time_bin
+        ORDER BY time_bin, service
+    "#;
+
+    let batches = run_sql(&builder, sql).await;
+
+    // 3 bins × 2 services (web, api) = 6 result rows.
+    assert_eq!(total_rows(&batches), 6,
+        "expected 6 rows (3 bins × 2 services); staging rows must be excluded");
+
+    // Collect (service, avg_val) pairs in ORDER BY time_bin, service order.
+    // After GROUP BY, DataFusion casts dict-encoded strings to plain Utf8.
+    let results: Vec<(String, f64)> = batches.iter().flat_map(|batch| {
+        let svc_raw = batch.column_by_name("service").unwrap();
+        let avg_col = batch.column_by_name("avg_val").unwrap()
+            .as_any().downcast_ref::<Float64Array>().unwrap();
+        (0..batch.num_rows()).map(|i| {
+            // After GROUP BY, DataFusion 52 may return Utf8View, Utf8, or Dict.
+            let svc = if let Some(sa) = svc_raw.as_any()
+                    .downcast_ref::<arrow::array::StringViewArray>() {
+                sa.value(i).to_string()
+            } else if let Some(sa) = svc_raw.as_any()
+                    .downcast_ref::<arrow::array::StringArray>() {
+                sa.value(i).to_string()
+            } else {
+                let dict = svc_raw.as_any()
+                    .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
+                    .unwrap_or_else(|| panic!("service column: unexpected type {:?}", svc_raw.data_type()));
+                let keys = dict.keys().as_any().downcast_ref::<arrow::array::Int32Array>().unwrap();
+                let vals = dict.values().as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+                vals.value(keys.value(i) as usize).to_string()
+            };
+            let avg = avg_col.value(i);
+            (svc, avg)
+        }).collect::<Vec<_>>()
+    }).collect();
+
+    // Expected: [(api,200), (web,11), (api,400), (web,22), (api,600), (web,33)]
+    let expected = [
+        ("api",  200.0_f64),
+        ("web",   11.0),
+        ("api",  400.0),
+        ("web",   22.0),
+        ("api",  600.0),
+        ("web",   33.0),
+    ];
+
+    assert_eq!(results.len(), expected.len());
+    for (i, ((got_svc, got_avg), (exp_svc, exp_avg))) in
+        results.iter().zip(expected.iter()).enumerate()
+    {
+        assert_eq!(got_svc.as_str(), *exp_svc, "row {i}: wrong service");
+        assert!(
+            (got_avg - exp_avg).abs() < 0.01,
+            "row {i} ({exp_svc}): expected avg={exp_avg:.2}, got {got_avg:.2}"
+        );
+    }
+}

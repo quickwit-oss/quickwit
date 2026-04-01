@@ -14,14 +14,18 @@
 
 //! Worker service for distributed DataFusion query execution.
 //!
-//! `QuickwitWorkerSessionBuilder` is the generic worker session setup:
-//! it iterates over all registered `QuickwitDataSource` implementations
-//! and calls `register_for_worker()` on each, so a single worker can
-//! execute plan fragments for any registered data source.
+//! `QuickwitWorkerSessionBuilder` prepares each worker session:
+//! 1. Applies source contributions (optimizer rules, extension planners, UDFs,
+//!    UDAFs, codecs) before `build()`.
+//! 2. Injects the shared `RuntimeEnv` from the coordinator's
+//!    `DataFusionSessionBuilder` so that object stores registered at startup
+//!    are visible on workers without any per-session re-registration.
+//! 3. Registers the `QuickwitSchemaProvider` so table references in
+//!    deserialized plan fragments resolve correctly.
+//! 4. Calls `register_for_worker()` for any post-build runtime state.
 //!
-//! `build_quickwit_worker(sources)` is the top-level entry point called
-//! by `quickwit-serve/src/grpc.rs`, which then calls `worker.into_worker_server()`
-//! to obtain a tonic service that can be added to the gRPC server.
+//! `build_quickwit_worker(sources, runtime)` is the top-level entry point called
+//! by `quickwit-serve/src/grpc.rs`.
 
 use std::sync::Arc;
 
@@ -29,32 +33,27 @@ use async_trait::async_trait;
 use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
 use datafusion::error::DataFusionError;
 use datafusion::execution::SessionState;
+use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion_distributed::{Worker, WorkerQueryContext, WorkerSessionBuilder};
 use tracing::debug;
 
 use crate::catalog::QuickwitSchemaProvider;
 use crate::data_source::QuickwitDataSource;
 
-/// `WorkerSessionBuilder` that prepares each worker session for all registered
-/// data sources.
-///
-/// On each new worker request:
-/// 1. Merges contributions (optimizer rules, extension planners, UDFs, UDAFs,
-///    codecs) from every source into the session state builder — including the
-///    extension planners needed to execute serialized plan fragments that contain
-///    extension nodes (e.g. `TantivyExec`).
-/// 2. Registers the `QuickwitSchemaProvider` (needed to resolve table references
-///    in deserialized plan fragments).
-/// 3. Calls `register_for_worker()` on every source so that object stores and
-///    other runtime state are in place before plan execution begins.
+/// `WorkerSessionBuilder` that shares the coordinator's `RuntimeEnv` and
+/// applies all source contributions on every new worker session.
 #[derive(Clone)]
 pub struct QuickwitWorkerSessionBuilder {
     sources: Vec<Arc<dyn QuickwitDataSource>>,
+    /// Shared with the coordinator's `DataFusionSessionBuilder`.
+    /// Object stores registered at startup (via `init`) or lazily (via `scan`)
+    /// are immediately visible to workers without any re-registration.
+    runtime: Arc<RuntimeEnv>,
 }
 
 impl QuickwitWorkerSessionBuilder {
-    pub fn new(sources: Vec<Arc<dyn QuickwitDataSource>>) -> Self {
-        Self { sources }
+    pub fn new(sources: Vec<Arc<dyn QuickwitDataSource>>, runtime: Arc<RuntimeEnv>) -> Self {
+        Self { sources, runtime }
     }
 }
 
@@ -64,18 +63,17 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
         &self,
         ctx: WorkerQueryContext,
     ) -> Result<SessionState, DataFusionError> {
-        // Phase 1: collect additive contributions from all sources and apply
-        // them all — including extension planners and UDFs — before build().
-        // Workers need extension planners so that serialized plan fragments
-        // containing extension nodes (e.g. TantivyExec) can be executed.
+        // Phase 1: contributions (rules, planners, UDFs, UDAFs, codecs) + shared env.
         let mut combined = crate::data_source::DataSourceContributions::default();
         for source in &self.sources {
             combined.merge(source.contributions());
         }
-        let builder = combined.apply_to_builder(ctx.builder);
-        let state = builder.build();
+        let state = combined
+            .apply_to_builder(ctx.builder)
+            .with_runtime_env(Arc::clone(&self.runtime))
+            .build();
 
-        // Phase 2: register catalog so plan fragments can resolve table refs.
+        // Phase 2: catalog for table-reference resolution in plan fragments.
         let schema_provider = Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
         let catalog = Arc::new(MemoryCatalogProvider::new());
         catalog
@@ -85,7 +83,8 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
             .catalog_list()
             .register_catalog("quickwit".to_string(), catalog);
 
-        // Phase 3: post-build runtime registration (e.g., object stores).
+        // Phase 3: post-build runtime registration (rare — most stores are already
+        // in the shared RuntimeEnv from startup or lazy scan registration).
         for source in &self.sources {
             if let Err(err) = source.register_for_worker(&state).await {
                 debug!(
@@ -99,11 +98,15 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
     }
 }
 
-/// Build a `Worker` configured for the given data sources.
+/// Build a `Worker` that shares the coordinator's `RuntimeEnv`.
 ///
-/// Called by `quickwit-serve/src/grpc.rs`. Callers obtain the gRPC service
-/// via `worker.into_worker_server()` and add it to the tonic service router.
-pub fn build_quickwit_worker(sources: &[Arc<dyn QuickwitDataSource>]) -> Worker {
-    let session_builder = QuickwitWorkerSessionBuilder::new(sources.to_vec());
+/// Pass `session_builder.runtime()` from the coordinator's
+/// `DataFusionSessionBuilder` so that object stores registered at service
+/// startup are available to workers without re-registration.
+pub fn build_quickwit_worker(
+    sources: &[Arc<dyn QuickwitDataSource>],
+    runtime: Arc<RuntimeEnv>,
+) -> Worker {
+    let session_builder = QuickwitWorkerSessionBuilder::new(sources.to_vec(), runtime);
     Worker::from_session_builder(session_builder)
 }

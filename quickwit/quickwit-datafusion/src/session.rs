@@ -14,14 +14,27 @@
 
 //! Generic DataFusion session builder.
 //!
-//! `DataFusionSessionBuilder` knows nothing about metrics, logs, or traces.
-//! Data sources are registered via `with_source()` and provide their own
-//! `TableProviderFactory` and default table resolution.
+//! ## Runtime environment lifecycle
+//!
+//! `DataFusionSessionBuilder` creates a single `Arc<RuntimeEnv>` at construction
+//! time and shares it across every session it builds.  This mirrors the pattern in
+//! `dd-datafusion`'s `DDDataFusionRuntime`, where a shared `RuntimeEnv` lets
+//! object stores registered at service-startup time be visible to all queries
+//! without any per-query re-registration.
+//!
+//! When `with_source(source)` is called, `source.init(&self.runtime)` fires
+//! immediately so that sources with known object-store URLs (e.g. a blob-store
+//! connector) can register them once at startup.  Sources whose URLs are only
+//! discoverable at query time (e.g. metrics, where indexes are listed from the
+//! metastore) do lazy registration from `scan()` — which is safe because `scan()`
+//! writes into the same shared `RuntimeEnv`, so the first scan for an index pays
+//! the registration cost and every subsequent scan across any session is a no-op.
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
+use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_distributed::{DistributedExt, DistributedPhysicalOptimizerRule};
@@ -32,17 +45,18 @@ use crate::data_source::QuickwitDataSource;
 use crate::resolver::QuickwitWorkerResolver;
 use crate::task_estimator::QuickwitTaskEstimator;
 
-/// Builds a `SessionContext` for DataFusion queries over Quickwit data.
+/// Builds `SessionContext`s for DataFusion queries over Quickwit data.
 ///
-/// Data sources (metrics, logs, traces, …) are registered with `with_source()`.
-/// The session is fully generic — no source-specific code lives here.
-///
-/// In Pomsky, the `CloudPremServiceImpl.substrait_search()` handler calls
-/// `build_session()` and delegates execution to the OSS `execute_sql_statements()`.
+/// Holds a single `Arc<RuntimeEnv>` shared across all sessions it creates.
 pub struct DataFusionSessionBuilder {
     sources: Vec<Arc<dyn QuickwitDataSource>>,
     searcher_pool: Option<SearcherPool>,
     use_tls: bool,
+    /// Shared runtime environment — one instance for the lifetime of this builder.
+    /// All sessions produced by `build_session()` use this env, so object stores
+    /// registered by `source.init()` or lazily by `MetricsTableProvider::scan()`
+    /// are immediately visible to every concurrent and subsequent session.
+    runtime: Arc<RuntimeEnv>,
 }
 
 impl std::fmt::Debug for DataFusionSessionBuilder {
@@ -60,6 +74,7 @@ impl DataFusionSessionBuilder {
             sources: Vec::new(),
             searcher_pool: None,
             use_tls: false,
+            runtime: Arc::new(RuntimeEnv::default()),
         }
     }
 
@@ -68,7 +83,13 @@ impl DataFusionSessionBuilder {
         self
     }
 
+    /// Register a data source and call its `init` hook immediately.
+    ///
+    /// `init` receives the shared `RuntimeEnv` so sources that know their
+    /// object-store URLs at construction time (e.g. a blob-store connector with
+    /// a fixed bucket URI) can register them once here rather than on every scan.
     pub fn with_source(mut self, source: Arc<dyn QuickwitDataSource>) -> Self {
+        source.init(&self.runtime);
         self.sources.push(source);
         self
     }
@@ -78,18 +99,20 @@ impl DataFusionSessionBuilder {
         self
     }
 
-    /// Returns a slice of all registered data sources.
+    /// Returns the shared `RuntimeEnv`.
     ///
-    /// Used by the Flight worker builder to call `register_for_worker()` on each.
+    /// Pass this to `build_quickwit_worker` so workers share the same object-store
+    /// registry as the coordinator.
+    pub fn runtime(&self) -> &Arc<RuntimeEnv> {
+        &self.runtime
+    }
+
+    /// Returns a slice of all registered data sources.
     pub fn sources(&self) -> &[Arc<dyn QuickwitDataSource>] {
         &self.sources
     }
 
     /// Validate that no two sources register conflicting UDF or UDAF names.
-    ///
-    /// Returns an error if two sources contribute a scalar UDF or aggregate
-    /// UDAF with the same name.  Call this before `build_session()` to surface
-    /// conflicts early rather than getting an opaque DataFusion error at query time.
     pub fn check_invariants(&self) -> datafusion::error::Result<()> {
         let mut seen_udfs: HashSet<String> = HashSet::new();
         let mut seen_udafs: HashSet<String> = HashSet::new();
@@ -113,24 +136,20 @@ impl DataFusionSessionBuilder {
         Ok(())
     }
 
-    /// Build a configured `SessionContext` ready for multi-statement SQL execution.
-    ///
-    /// Sets up:
-    /// - Distributed execution if a searcher pool is present
-    /// - One `TableProviderFactory` per registered source (both lowercase and
-    ///   uppercase keys, since DataFusion uppercases the `STORED AS` token)
-    /// - A `QuickwitSchemaProvider` in the `quickwit.public` catalog
+    /// Build a `SessionContext` backed by the shared `RuntimeEnv`.
     pub fn build_session(&self) -> SessionContext {
         let mut config = SessionConfig::new().with_target_partitions(1);
         config.options_mut().catalog.default_catalog = "quickwit".to_string();
         config.options_mut().catalog.default_schema = "public".to_string();
         config.options_mut().catalog.information_schema = true;
-        // We register our own catalog; skip the default "datafusion" one.
         config.options_mut().catalog.create_default_catalog_and_schema = false;
 
         let mut builder = SessionStateBuilder::new()
             .with_config(config)
-            .with_default_features();
+            .with_default_features()
+            // All sessions share the same RuntimeEnv so object stores registered
+            // at startup (via init) or lazily (via scan) are globally visible.
+            .with_runtime_env(Arc::clone(&self.runtime));
 
         if let Some(ref pool) = self.searcher_pool {
             let worker_resolver =
@@ -141,8 +160,6 @@ impl DataFusionSessionBuilder {
                 .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
         }
 
-        // Collect contributions from all sources (rules, codecs, UDFs, UDAFs,
-        // extension planners) and apply them all into the builder before build().
         let mut combined = crate::data_source::DataSourceContributions::default();
         for source in &self.sources {
             combined.merge(source.contributions());
@@ -151,9 +168,6 @@ impl DataFusionSessionBuilder {
 
         let mut state = builder.build();
 
-        // Register each source's TableProviderFactory for `STORED AS <token>` DDL.
-        // Using ddl_registration() guarantees the same factory instance handles
-        // both the lowercase and uppercase keys — no mismatch possible.
         for source in &self.sources {
             let Some((ft, factory)) = source.ddl_registration() else {
                 continue;
