@@ -29,6 +29,7 @@ pub(crate) mod delete_task;
 pub(crate) mod get_identity;
 pub(crate) mod index;
 pub(crate) mod list_splits;
+pub(crate) mod metrics;
 pub(crate) mod shard;
 pub(crate) mod source;
 pub(crate) mod split;
@@ -574,6 +575,91 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_get_identity() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::get_identity::test_metastore_get_identity::<$metastore_type>().await;
+            }
+
+            // Metrics Split API tests
+            //
+            //  - stage_metrics_splits
+            //  - publish_metrics_splits
+            //  - list_metrics_splits
+            //  - mark_metrics_splits_for_deletion
+            //  - delete_metrics_splits
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_stage_metrics_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_stage_metrics_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_stage_metrics_splits_upsert() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_stage_metrics_splits_upsert::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_state() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_state::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_time_range() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_time_range::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_metric_name() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_metric_name::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_compaction_scope() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_compaction_scope::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_publish_metrics_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_publish_metrics_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_publish_metrics_splits_nonexistent() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_publish_metrics_splits_nonexistent::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_mark_metrics_splits_for_deletion() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_mark_metrics_splits_for_deletion::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_delete_metrics_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_delete_metrics_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_delete_metrics_splits_nonexistent() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_delete_metrics_splits_nonexistent::<$metastore_type>().await;
             }
         }
     };
