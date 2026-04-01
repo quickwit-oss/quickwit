@@ -1309,4 +1309,204 @@ mod tests {
         )
         .await
     }
+
+    #[tokio::test]
+    async fn test_delete_and_merge_with_soft_deleted_docs() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: body
+                type: text
+              - name: ts
+                type: datetime
+                input_formats:
+                - unix_timestamp
+                fast: true
+            timestamp_field: ts
+        "#;
+        let test_sandbox = TestSandbox::create(
+            "test-delete-and-merge-with-soft-delete",
+            doc_mapping_yaml,
+            "",
+            &["body"],
+        )
+        .await?;
+
+        // Three docs are ingested into a single split.
+        //   doc_id=0  body="soft_delete"   → removed by soft-delete
+        //   doc_id=1  body="query_delete"  → removed by the delete query
+        //   doc_id=2  body="keep"          → must survive both conditions
+        test_sandbox
+            .add_documents(vec![
+                serde_json::json!({"body": "soft_delete",  "ts": 1624928200}),
+                serde_json::json!({"body": "query_delete", "ts": 1624928201}),
+                serde_json::json!({"body": "keep",         "ts": 1624928202}),
+            ])
+            .await?;
+
+        let metastore = test_sandbox.metastore();
+        let index_uid = test_sandbox.index_uid();
+
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        assert_eq!(splits.len(), 1);
+        let original_split_id = splits[0].split_metadata.split_id.clone();
+
+        // Soft-delete doc_id=0 (the "soft_delete" document).
+        metastore
+            .soft_delete_documents(quickwit_proto::metastore::SoftDeleteDocumentsRequest {
+                index_uid: Some(index_uid.clone()),
+                split_doc_ids: vec![quickwit_proto::metastore::SplitDocIds {
+                    split_id: original_split_id.clone(),
+                    doc_ids: vec![0],
+                }],
+            })
+            .await?;
+
+        // Register a delete task targeting the "query_delete" document.
+        metastore
+            .create_delete_task(DeleteQuery {
+                index_uid: Some(index_uid.clone()),
+                start_timestamp: None,
+                end_timestamp: None,
+                query_ast: quickwit_query::query_ast::qast_json_helper(
+                    "body:query_delete",
+                    &["body"],
+                ),
+            })
+            .await?;
+
+        // Reload split metadata so that soft_deleted_doc_ids is populated.
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        assert_eq!(splits.len(), 1);
+        assert_eq!(
+            splits[0].split_metadata.soft_deleted_doc_ids.len(),
+            1,
+            "doc_id=0 must be recorded as soft-deleted before staging"
+        );
+
+        // Stage a replacement split with num_merge_ops=1. By cloning the freshly-read
+        // metadata the soft_deleted_doc_ids field is carried over into the merge task,
+        // which is exactly what process_delete_and_merge relies on.
+        let mut new_split_metadata = splits[0].split_metadata.clone();
+        new_split_metadata.split_id = new_split_id();
+        new_split_metadata.num_merge_ops = 1;
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), &new_split_metadata)
+                .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            staged_split_ids: vec![new_split_metadata.split_id.to_string()],
+            replaced_split_ids: vec![original_split_id.clone()],
+            index_checkpoint_delta_json_opt: None,
+            publish_token_opt: None,
+        };
+        metastore
+            .publish_splits(publish_splits_request)
+            .await
+            .unwrap();
+
+        // Copy the original split bundle to the new split filename so the executor can open it.
+        let merge_scratch_directory = TempDirectory::for_test();
+        let downloaded_splits_directory =
+            merge_scratch_directory.named_temp_child("downloaded-splits-")?;
+        let split_filename = split_file(&original_split_id);
+        let new_split_filename = split_file(new_split_metadata.split_id());
+        let dest_filepath = downloaded_splits_directory.path().join(&new_split_filename);
+        test_sandbox
+            .storage()
+            .copy_to_file(Path::new(&split_filename), &dest_filepath)
+            .await?;
+        let tantivy_dir = get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap();
+        let merge_operation = MergeOperation::new_delete_and_merge_operation(new_split_metadata);
+        let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
+        let merge_scratch = MergeScratch {
+            merge_task,
+            tantivy_dirs: vec![tantivy_dir],
+            merge_scratch_directory,
+            downloaded_splits_directory,
+        };
+        let pipeline_id = MergePipelineId {
+            node_id: test_sandbox.node_id(),
+            index_uid: test_sandbox.index_uid(),
+            source_id: test_sandbox.source_id(),
+        };
+        let universe = Universe::with_accelerated_time();
+        let (merge_packager_mailbox, merge_packager_inbox) = universe.create_test_mailbox();
+        let merge_executor = MergeExecutor::new(
+            pipeline_id,
+            metastore,
+            test_sandbox.doc_mapper(),
+            IoControls::default(),
+            merge_packager_mailbox,
+        );
+        let (merge_executor_mailbox, merge_executor_handle) =
+            universe.spawn_builder().spawn(merge_executor);
+        merge_executor_mailbox.send_message(merge_scratch).await?;
+        merge_executor_handle.process_pending_and_observe().await;
+
+        let packager_msgs: Vec<IndexedSplitBatch> = merge_packager_inbox.drain_for_test_typed();
+        assert_eq!(packager_msgs.len(), 1);
+        let split = &packager_msgs[0].splits[0];
+
+        // 3 docs − 1 soft-deleted − 1 query-deleted = 1 surviving document.
+        assert_eq!(split.split_attrs.num_docs, 1);
+        assert_eq!(split.split_attrs.delete_opstamp, 1);
+        // Delete operations must not increment num_merge_ops.
+        assert_eq!(split.split_attrs.num_merge_ops, 1);
+
+        let reader = split
+            .index
+            .reader_builder()
+            .reload_policy(ReloadPolicy::Manual)
+            .try_into()?;
+        let searcher = reader.searcher();
+        assert_eq!(searcher.segment_readers().len(), 1);
+
+        let num_live_docs: u32 = searcher
+            .segment_readers()
+            .iter()
+            .map(|r| r.num_docs())
+            .sum();
+        assert_eq!(
+            num_live_docs, 1,
+            "exactly one document must remain after all deletions"
+        );
+
+        // The surviving document must be the "keep" one.
+        let documents_left: Vec<JsonValue> = searcher
+            .search(
+                &tantivy::query::AllQuery,
+                &tantivy::collector::TopDocs::with_limit(10).order_by_score(),
+            )?
+            .into_iter()
+            .map(|(_, doc_address)| {
+                let doc: TantivyDocument = searcher.doc(doc_address).unwrap();
+                let doc_json = doc.to_json(searcher.schema());
+                serde_json::from_str(&doc_json).unwrap()
+            })
+            .collect();
+        let expected_doc = serde_json::json!({"body": ["keep"], "ts": ["2021-06-29T00:56:42Z"]});
+        assert_eq!(
+            documents_left,
+            vec![expected_doc],
+            "only the 'keep' document must survive both soft-delete and query-delete"
+        );
+
+        test_sandbox.assert_quit().await;
+        universe.assert_quit().await;
+        Ok(())
+    }
 }
