@@ -296,7 +296,7 @@ pub fn merge_split_attrs(
     } else {
         0
     };
-    let soft_deleted_snapshot = splits
+    let replaced_splits = splits
         .iter()
         .map(|split| ReplacedSplit {
             split_id: split.split_id.clone(),
@@ -331,8 +331,7 @@ pub fn merge_split_attrs(
         uncompressed_docs_size_in_bytes,
         delete_opstamp,
         num_merge_ops: max_merge_ops(splits) + 1,
-        // Snapshot of the deleted docs before merge
-        replaced_splits: soft_deleted_snapshot,
+        replaced_splits,
     })
 }
 
@@ -925,10 +924,8 @@ mod tests {
         Ok(())
     }
 
-    /// Verifies that when a soft-delete lands on an input split *while* the merge is running
-    /// (i.e. the merge task carries stale metadata with no soft-deletes, but the metastore
-    /// has been updated before the merge completes), the merge still succeeds and emits an
-    /// error rather than failing.
+    /// Verifies that when a soft-delete lands on an input split while the
+    /// merge is running, the merge still succeeds.
     #[tokio::test]
     async fn test_merge_executor_soft_delete_race_condition() -> anyhow::Result<()> {
         let doc_mapping_yaml = r#"

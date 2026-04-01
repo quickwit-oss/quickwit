@@ -283,13 +283,12 @@ async fn warn_if_soft_deletes_changed_during_merge(
             .copied()
             .collect();
         if !missed.is_empty() {
+            // TODO: this means that the merge didn't include some committed
+            // soft deletes. Those are lost.
             error!(
                 split_id = %fresh_split.split_id,
                 num_missed_soft_deletes = missed.len(),
-                "soft-delete race condition detected: {} doc(s) were soft-deleted on split \
-                 `{}` while the merge was running",
-                missed.len(),
-                fresh_split.split_id,
+                "soft-delete race condition detected",
             );
         }
     }

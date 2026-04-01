@@ -28,6 +28,8 @@ use crate::merge_policy::MergePolicy;
 #[derive(PartialEq, Eq, Debug, Default, Clone)]
 pub struct ReplacedSplit {
     pub split_id: SplitId,
+    /// Snapshot of the split's soft-deletes. These will be consolidated into
+    /// the split during the merge.
     pub soft_deleted_doc_ids: BTreeSet<u32>,
 }
 
@@ -81,6 +83,14 @@ impl fmt::Debug for SplitAttrs {
         f.debug_struct("SplitAttrs")
             .field("split_id", &self.split_id)
             .field("partition_id", &self.partition_id)
+            .field(
+                "replaced_split_ids",
+                &self
+                    .replaced_splits
+                    .iter()
+                    .map(|s| &s.split_id)
+                    .collect::<Vec<_>>(),
+            )
             .field("time_range", &self.time_range)
             .field(
                 "uncompressed_docs_size_in_bytes",
