@@ -131,6 +131,22 @@ async fn publish_split(
         .num_rows(batch.num_rows() as u64).size_bytes(size_bytes);
     for name in &metric_names { builder = builder.add_metric_name(name.clone()); }
 
+    // Extract tag values for metastore split-level pruning
+    for tag_col in &["service", "env", "datacenter", "region", "host"] {
+        if let Ok(col_idx) = batch_schema.index_of(tag_col) {
+            let col = batch.column(col_idx);
+            if let Some(dict) = col.as_any().downcast_ref::<arrow::array::DictionaryArray<Int32Type>>() {
+                let keys = dict.keys().as_any().downcast_ref::<arrow::array::Int32Array>().unwrap();
+                let vals = dict.values().as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+                let values: std::collections::HashSet<String> = (0..batch.num_rows())
+                    .filter(|i| !keys.is_null(*i))
+                    .map(|i| vals.value(keys.value(i) as usize).to_string())
+                    .collect();
+                for v in values { builder = builder.add_low_cardinality_tag(tag_col.to_string(), v); }
+            }
+        }
+    }
+
     metastore.clone().stage_metrics_splits(
         StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[builder.build()]).unwrap()
     ).await.unwrap();

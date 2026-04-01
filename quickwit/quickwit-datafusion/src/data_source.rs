@@ -54,6 +54,7 @@
 //! it can share a `datafusion-distributed` pin with the metrics source.
 
 use std::fmt::Debug;
+use arrow::datatypes::SchemaRef;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -357,6 +358,47 @@ pub trait QuickwitDataSource: Send + Sync + Debug {
     /// schema from the metastore at query time and needs no DDL.
     fn ddl_registration(&self) -> Option<(String, Arc<dyn TableProviderFactory>)> {
         None
+    }
+
+    // ── Substrait consumer hook ──────────────────────────────────────
+
+    /// Try to handle a Substrait `ReadRel` for this source.
+    ///
+    /// Called by `QuickwitSubstraitConsumer::consume_read` for each registered
+    /// source before falling back to the standard catalog-lookup path.
+    ///
+    /// ## OSS path — standard Substrait (`NamedTable`)
+    ///
+    /// Producers that target Quickwit send a standard `ReadRel` with
+    /// `read_type = NamedTable { names: ["<index_name>"] }`.  The `base_schema`
+    /// field of the `ReadRel` carries the Arrow schema the producer wants back
+    /// (already converted from Substrait types to Arrow by the caller).
+    ///
+    /// `MetricsDataSource` implements this path: it resolves the index from the
+    /// metastore and returns a `MetricsTableProvider` using the declared schema.
+    ///
+    /// ## Extension path — custom protos (Pomsky / dd-datafusion)
+    ///
+    /// Producers that carry DD-internal proto payloads (e.g.
+    /// `ExtensionTable<MetricRead>`) implement a custom `QuickwitDataSource` in
+    /// Pomsky that decodes its own proto and returns the appropriate provider.
+    /// No custom protos are needed in OSS.
+    ///
+    /// ## Return value
+    ///
+    /// - `Ok(Some((table_name, provider)))` — this source claims the rel.
+    ///   `table_name` is the effective table identifier used for the scan.
+    ///   The caller converts any `ExtensionTable` rel to a `NamedTable` rel
+    ///   with this name so that `from_read_rel` can apply filters/projections.
+    /// - `Ok(None)` — this source does not claim the rel; try the next source.
+    ///
+    /// Default: `Ok(None)` — does not participate in Substrait consumption.
+    async fn try_consume_read_rel(
+        &self,
+        _rel: &datafusion_substrait::substrait::proto::ReadRel,
+        _schema_hint: Option<arrow::datatypes::SchemaRef>,
+    ) -> DFResult<Option<(String, Arc<dyn TableProvider>)>> {
+        Ok(None)
     }
 
     // ── Default table resolution (schema-provider path) ─────────────

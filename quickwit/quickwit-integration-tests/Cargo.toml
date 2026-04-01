@@ -24,6 +24,8 @@ arrow = { workspace = true }
 aws-sdk-sqs = { workspace = true }
 bytesize = { workspace = true }
 datafusion = "52"
+datafusion-substrait = "52"
+prost = { workspace = true }
 futures-util = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }

@@ -136,6 +136,32 @@ async fn publish_split(
         builder = builder.add_metric_name(name.clone());
     }
 
+    // Extract tag values from the batch and index them in split metadata.
+    // This mirrors what metrics_ingest_api::build_split_metadata does.
+    // Without this, metastore tag filters (pushed down from SQL/Substrait
+    // WHERE clauses) will not match these splits.
+    for tag_col in &["service", "env", "datacenter", "region", "host"] {
+        if let Ok(col_idx) = batch_schema.index_of(tag_col) {
+            let col = batch.column(col_idx);
+            // Extract unique non-null values from dict or string column
+            let values: std::collections::HashSet<String> = if let Some(dict) = col.as_any()
+                .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
+            {
+                let keys = dict.keys().as_any().downcast_ref::<arrow::array::Int32Array>().unwrap();
+                let vals = dict.values().as_any().downcast_ref::<arrow::array::StringArray>().unwrap();
+                (0..batch.num_rows())
+                    .filter(|i| !keys.is_null(*i))
+                    .map(|i| vals.value(keys.value(i) as usize).to_string())
+                    .collect()
+            } else {
+                std::collections::HashSet::new()
+            };
+            for v in values {
+                builder = builder.add_low_cardinality_tag(tag_col.to_string(), v);
+            }
+        }
+    }
+
     metastore.clone()
         .stage_metrics_splits(
             StageMetricsSplitsRequest::try_from_splits_metadata(index_uid.clone(), &[builder.build()]).unwrap()
@@ -658,4 +684,285 @@ async fn test_rollup_nested_aggregation() {
             "row {i} ({exp_svc}): expected avg={exp_avg:.2}, got {got_avg:.2}"
         );
     }
+}
+
+/// Demonstrates the Substrait query path using standard `NamedTable` read
+/// relations — no custom protos, no type URLs.
+///
+/// A producer (Pomsky, df-executor, or any Substrait client) builds a plan
+/// using vanilla Substrait, naming the index in `NamedTable.names`.  The
+/// `QuickwitSubstraitConsumer` resolves the index from the metastore, uses the
+/// `ReadRel.base_schema` for schema injection, and executes the plan exactly
+/// as it would for the SQL DDL path.
+///
+/// This test mirrors the rollup test above but drives it via
+/// `DataFusionSessionBuilder::execute_substrait` instead of SQL.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_substrait_named_table_query() {
+    use datafusion_substrait::logical_plan::producer::to_substrait_plan;
+    use prost::Message;
+
+    let (sandbox, data_dir) = start_sandbox().await;
+    let metastore = metastore_client(&sandbox);
+    let builder = session_builder(&sandbox, metastore.clone());
+
+    let index_uid = create_metrics_index(&metastore, "substrait-test", data_dir.path()).await;
+    publish_split(&metastore, &index_uid, data_dir.path(), "s1",
+        &make_batch("cpu.usage", &[100, 200, 300], &[1.0, 2.0, 3.0], Some("web"))).await;
+    publish_split(&metastore, &index_uid, data_dir.path(), "s2",
+        &make_batch("memory.used", &[100, 200, 300], &[10.0, 20.0, 30.0], Some("api"))).await;
+
+    // Build the Substrait plan from SQL via DataFusion's producer.
+    // The plan tree will have a NamedTable ReadRel for "substrait-test".
+    let ctx = builder.build_session();
+
+    // Register a minimal table so the SQL planner can build the plan
+    // (the actual schema will come from base_schema when the substrait consumer
+    // resolves it at execution time).
+    ctx.sql(r#"CREATE OR REPLACE EXTERNAL TABLE "substrait-test" (
+        metric_name VARCHAR NOT NULL, metric_type TINYINT,
+        timestamp_secs BIGINT NOT NULL, value DOUBLE NOT NULL, service VARCHAR
+    ) STORED AS metrics LOCATION 'substrait-test'"#)
+        .await.unwrap().collect().await.unwrap();
+
+    let df = ctx.sql(
+        r#"SELECT metric_name, SUM(value) as total
+           FROM "substrait-test"
+           GROUP BY metric_name
+           ORDER BY metric_name"#
+    ).await.unwrap();
+
+    let plan = df.into_optimized_plan().unwrap();
+    let substrait_plan = to_substrait_plan(&plan, &ctx.state()).unwrap();
+    let plan_bytes = substrait_plan.encode_to_vec();
+
+    // Execute via the Substrait path — DataFusionSessionBuilder decodes the plan,
+    // QuickwitSubstraitConsumer routes the NamedTable ReadRel to MetricsDataSource,
+    // and the query executes against the real parquet files.
+    let batches = builder.execute_substrait(&plan_bytes).await.unwrap();
+
+    let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(total_rows, 2, "expected 2 metric names (cpu.usage, memory.used)");
+
+    // Verify SUM values: cpu.usage = 1+2+3 = 6, memory.used = 10+20+30 = 60
+    let metric_col = batches[0].column_by_name("metric_name").unwrap();
+    let total_col = batches[0].column_by_name("total").unwrap()
+        .as_any().downcast_ref::<Float64Array>().unwrap();
+
+    // metric_name may come back as StringViewArray or StringArray after aggregation
+    let names: Vec<String> = (0..batches[0].num_rows()).map(|i| {
+        if let Some(sv) = metric_col.as_any().downcast_ref::<arrow::array::StringViewArray>() {
+            sv.value(i).to_string()
+        } else {
+            metric_col.as_any().downcast_ref::<arrow::array::StringArray>()
+                .unwrap().value(i).to_string()
+        }
+    }).collect();
+
+    assert_eq!(names, vec!["cpu.usage", "memory.used"]);
+    assert!((total_col.value(0) - 6.0).abs() < 0.01,
+        "cpu.usage SUM expected 6.0, got {}", total_col.value(0));
+    assert!((total_col.value(1) - 60.0).abs() < 0.01,
+        "memory.used SUM expected 60.0, got {}", total_col.value(1));
+}
+
+/// Executes the user-provided Substrait rollup plan directly against real
+/// parquet data in a sandbox cluster.
+///
+/// The plan is loaded from `rollup_substrait.json` (committed alongside this
+/// file) and targets index `"otel-metrics-v0_9"`.  It expresses:
+///
+///   avg:cpu.usage{env:prod} by {service}.rollup(max, 30s)
+///
+/// Plan tree (from the JSON):
+///   Sort(time_bin ASC, service ASC)
+///     Aggregate → AVG(max_bin_val)          [outer: avg across series]
+///       Aggregate → MAX(value)              [inner: max per series per bin]
+///         Project → date_bin(30s, to_timestamp_seconds(timestamp_secs))
+///           Filter(metric_name='cpu.usage' AND env='prod')
+///             ReadRel("otel-metrics-v0_9")  ← resolved by QuickwitSubstraitConsumer
+///
+/// Data (same as test_rollup_nested_aggregation):
+///   web/web-01/prod  : t=0,15,30,45,60,75  values=1,2,3,4,5,6
+///   web/web-02/prod  : t=0,15,30,45,60,75  values=10,20,30,40,50,60
+///   api/api-01/prod  : t=0,15,30,45,60,75  values=100,200,300,400,500,600
+///   web/web-01/staging (filtered out by env='prod')
+///
+/// Expected results (30s bins, ORDER BY time_bin ASC, service ASC):
+///   (api, bin=0s,   200.0)   ← avg(max(100,200))
+///   (web, bin=0s,    11.0)   ← avg(max(1,2)=2, max(10,20)=20)
+///   (api, bin=30s,  400.0)
+///   (web, bin=30s,   22.0)
+///   (api, bin=60s,  600.0)
+///   (web, bin=60s,   33.0)
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_rollup_substrait_from_file() {
+    use datafusion_substrait::substrait::proto::Plan;
+    use prost::Message;
+    use quickwit_datafusion::test_utils::make_batch_with_tags;
+
+    let (sandbox, data_dir) = start_sandbox().await;
+    let metastore = metastore_client(&sandbox);
+    let builder = session_builder(&sandbox, metastore.clone());
+
+    // Create index named exactly as the Substrait plan references it.
+    let index_uid = create_metrics_index(&metastore, "otel-metrics-v0_9", data_dir.path()).await;
+
+    let ts: &[u64] = &[0, 15, 30, 45, 60, 75];
+    publish_split(&metastore, &index_uid, data_dir.path(), "web-01-prod",
+        &make_batch_with_tags("cpu.usage", ts, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            Some("web"), Some("prod"), None, None, Some("web-01"))).await;
+    publish_split(&metastore, &index_uid, data_dir.path(), "web-02-prod",
+        &make_batch_with_tags("cpu.usage", ts, &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            Some("web"), Some("prod"), None, None, Some("web-02"))).await;
+    publish_split(&metastore, &index_uid, data_dir.path(), "api-01-prod",
+        &make_batch_with_tags("cpu.usage", ts, &[100.0, 200.0, 300.0, 400.0, 500.0, 600.0],
+            Some("api"), Some("prod"), None, None, Some("api-01"))).await;
+    publish_split(&metastore, &index_uid, data_dir.path(), "web-01-staging",
+        &make_batch_with_tags("cpu.usage", &[0, 30, 60], &[999.0, 999.0, 999.0],
+            Some("web"), Some("staging"), None, None, Some("web-01"))).await;
+
+
+
+    // Load the Substrait plan JSON from the file next to this test.
+    let plan_json = include_str!("rollup_substrait.json");
+    let substrait_plan: Plan = serde_json::from_str(plan_json)
+        .expect("rollup_substrait.json must be valid Substrait JSON");
+    let mut plan_bytes = Vec::new();
+    substrait_plan.encode(&mut plan_bytes).expect("Substrait plan encode failed");
+
+    // Execute via the Substrait path — no SQL, no DDL, just the plan.
+    let batches = builder
+        .execute_substrait(&plan_bytes)
+        .await
+        .expect("Substrait rollup query failed");
+
+    // Print the plan and results so you can see what ran.
+    println!("\n=== Substrait rollup results ({} batches, {} rows total) ===",
+        batches.len(),
+        batches.iter().map(|b| b.num_rows()).sum::<usize>());
+    for batch in &batches {
+        println!("{}", arrow::util::pretty::pretty_format_batches(&[batch.clone()]).unwrap());
+    }
+
+    // 3 bins × 2 services (api, web) = 6 rows.
+    let total: usize = batches.iter().map(|b| b.num_rows()).sum();
+    assert_eq!(total, 6, "expected 6 rows (3 bins × 2 services)");
+
+    // Expected order: (api,bin0,200), (web,bin0,11), (api,bin30,400),
+    //                 (web,bin30,22), (api,bin60,600), (web,bin60,33)
+    // The inner GROUP BY groups by (service, time_bin) — no host column.
+    // So MAX is taken across ALL series for a given (service, time_bin):
+    //   web/bin=0s: MAX(web-01:1,2, web-02:10,20) = 20 → AVG(20) = 20
+    //   api/bin=0s: MAX(api-01:100,200)            = 200 → AVG(200) = 200
+    let expected_values = [200.0f64, 20.0, 400.0, 40.0, 600.0, 60.0];
+    let all_values: Vec<f64> = batches.iter().flat_map(|b| {
+        b.column_by_name("value").unwrap()
+            .as_any().downcast_ref::<Float64Array>().unwrap()
+            .iter().flatten()
+            .collect::<Vec<_>>()
+    }).collect();
+
+    for (i, (got, exp)) in all_values.iter().zip(expected_values.iter()).enumerate() {
+        assert!(
+            (got - exp).abs() < 0.01,
+            "row {i}: expected {exp:.1}, got {got:.1}"
+        );
+    }
+
+    println!("✓ Substrait rollup plan executed correctly");
+}
+
+/// Verifies that a query works correctly when the DDL schema declares only a
+/// SUBSET of the columns present in the parquet files.
+///
+/// This is the typical BYOC case: a coordinator generates a Substrait plan
+/// that only references the columns it needs for the query (`metric_name`,
+/// `timestamp_secs`, `value`, `service`).  The parquet files contain many
+/// more tag columns (`env`, `host`, `datacenter`, `region`) that the query
+/// doesn't reference.
+///
+/// DataFusion uses `PhysicalExprAdapterFactory` to project only the declared
+/// columns from each parquet file.  Undeclared columns are simply not read —
+/// no NULLs, no errors, just not present in the output.
+///
+/// Data layout:
+///   Split with wide schema: service='web', env='prod', host='web-01',
+///                           datacenter='us-east', region='us-east-1'
+///
+/// DDL declares only: metric_name, timestamp_secs, value, service
+///
+/// Query: SELECT service, SUM(value) FROM index WHERE metric_name='cpu.usage'
+///
+/// Expected: correct SUM using only the declared columns.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_query_with_partial_schema_declaration() {
+    use quickwit_datafusion::test_utils::make_batch_with_tags;
+
+    let (sandbox, data_dir) = start_sandbox().await;
+    let metastore = metastore_client(&sandbox);
+    let builder = session_builder(&sandbox, metastore.clone());
+
+    let index_uid = create_metrics_index(&metastore, "partial-schema", data_dir.path()).await;
+
+    // Write a wide split with ALL tag columns populated.
+    publish_split(
+        &metastore, &index_uid, data_dir.path(), "wide",
+        &make_batch_with_tags(
+            "cpu.usage",
+            &[100, 200, 300],
+            &[1.0, 2.0, 3.0],
+            Some("web"),         // service
+            Some("prod"),        // env
+            Some("us-east"),     // datacenter
+            Some("us-east-1"),   // region
+            Some("web-01"),      // host
+        ),
+    ).await;
+
+    // DDL declares only 4 columns — service, env, and host are intentionally
+    // omitted from the columns the query will project.
+    // (We include service and env because the WHERE/GROUP BY uses them,
+    //  but NOT host, datacenter, region — the coordinator doesn't need them.)
+    let sql = r#"
+        CREATE OR REPLACE EXTERNAL TABLE "partial-schema" (
+            metric_name    VARCHAR NOT NULL,
+            metric_type    TINYINT,
+            timestamp_secs BIGINT  NOT NULL,
+            value          DOUBLE  NOT NULL,
+            service        VARCHAR,
+            env            VARCHAR
+        ) STORED AS metrics LOCATION 'partial-schema';
+        SELECT service, SUM(value) AS total
+        FROM "partial-schema"
+        WHERE metric_name = 'cpu.usage' AND env = 'prod'
+        GROUP BY service
+    "#;
+
+    let batches = run_sql(&builder, sql).await;
+
+    assert_eq!(total_rows(&batches), 1, "expected 1 row (service=web)");
+
+    let total = batches[0]
+        .column_by_name("total")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .unwrap()
+        .value(0);
+    assert!(
+        (total - 6.0).abs() < 0.01,
+        "expected SUM(1+2+3)=6.0, got {total:.2} — undeclared columns (host, datacenter, region) \
+         must not affect projection or aggregation"
+    );
+
+    // Verify the schema of the result contains only the declared columns
+    // (the undeclared ones — host, datacenter, region — are absent, not NULL).
+    let schema = batches[0].schema();
+    assert!(schema.index_of("host").is_err(),
+        "host was not declared in DDL — it must not appear in the result schema");
+    assert!(schema.index_of("datacenter").is_err(),
+        "datacenter was not declared in DDL — it must not appear in the result schema");
+    assert!(schema.index_of("region").is_err(),
+        "region was not declared in DDL — it must not appear in the result schema");
 }

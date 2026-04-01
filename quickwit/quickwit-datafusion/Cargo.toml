@@ -35,6 +35,7 @@ quickwit-storage = { workspace = true }
 
 arrow = { workspace = true }
 datafusion = "52"
+datafusion-substrait = "52"
 datafusion-datasource = "52"
 datafusion-sql = "52"
 datafusion-physical-plan = "52"

@@ -40,6 +40,7 @@ pub(crate) mod resolver;
 pub mod session;
 pub mod sources;
 pub(crate) mod storage;
+pub mod substrait;
 pub(crate) mod task_estimator;
 
 // Re-export the top-level worker builder for use in grpc.rs.

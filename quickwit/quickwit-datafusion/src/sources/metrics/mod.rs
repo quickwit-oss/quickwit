@@ -92,6 +92,61 @@ impl QuickwitDataSource for MetricsDataSource {
         DataSourceContributions::default()
     }
 
+    /// Handle `ReadRel` nodes in incoming Substrait plans.
+    ///
+    /// ## OSS path — `NamedTable`
+    ///
+    /// When the read type is `NamedTable { names: [index_name] }` and the index
+    /// exists in the metastore, returns a `MetricsTableProvider` using the
+    /// schema from `schema_hint` (derived from `ReadRel.base_schema` by the
+    /// caller).  Returning `None` for an unknown index lets the standard catalog
+    /// path take over.
+    ///
+    /// ## Extension path — custom protos (Pomsky)
+    ///
+    /// Pomsky registers its own `QuickwitDataSource` that handles
+    /// `ExtensionTable<MetricRead>`.  This default implementation only handles
+    /// `NamedTable` — `ExtensionTable` always returns `Ok(None)` here.
+    async fn try_consume_read_rel(
+        &self,
+        rel: &datafusion_substrait::substrait::proto::ReadRel,
+        schema_hint: Option<arrow::datatypes::SchemaRef>,
+    ) -> DFResult<Option<(String, Arc<dyn TableProvider>)>> {
+        use datafusion_substrait::substrait::proto::read_rel::ReadType;
+
+        // Only handle NamedTable reads.  ExtensionTable (Pomsky) returns None.
+        let Some(ReadType::NamedTable(nt)) = &rel.read_type else {
+            return Ok(None);
+        };
+        let index_name = nt.names.last().map(String::as_str).unwrap_or("");
+
+        // Use the producer-declared schema if available; fall back to minimal base schema.
+        let schema = schema_hint.unwrap_or_else(minimal_base_schema);
+
+        match self.index_resolver.resolve(index_name).await {
+            Ok((split_provider, object_store, object_store_url)) => {
+                let provider = MetricsTableProvider::new(
+                    schema,
+                    split_provider,
+                    object_store,
+                    object_store_url,
+                );
+                Ok(Some((index_name.to_string(), Arc::new(provider))))
+            }
+            Err(err) => {
+                // Not-found means this source doesn't own the index; let others try.
+                let is_not_found = match &err {
+                    datafusion::error::DataFusionError::External(boxed) => boxed
+                        .downcast_ref::<MetastoreError>()
+                        .map(|me| matches!(me, MetastoreError::NotFound(_)))
+                        .unwrap_or(false),
+                    _ => false,
+                };
+                if is_not_found { Ok(None) } else { Err(err) }
+            }
+        }
+    }
+
     fn ddl_registration(&self) -> Option<(String, Arc<dyn TableProviderFactory>)> {
         let factory: Arc<dyn TableProviderFactory> = Arc::new(MetricsTableProviderFactory::new(
             Arc::clone(&self.index_resolver),

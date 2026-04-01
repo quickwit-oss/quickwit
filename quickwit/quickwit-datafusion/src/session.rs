@@ -136,6 +136,28 @@ impl DataFusionSessionBuilder {
         Ok(())
     }
 
+    /// Execute a Substrait plan (protobuf bytes) and return the results.
+    ///
+    /// Builds a session from the shared `RuntimeEnv`, decodes the plan using
+    /// [`QuickwitSubstraitConsumer`][crate::substrait::QuickwitSubstraitConsumer],
+    /// and executes it.  Each registered source's `try_consume_read_rel` hook
+    /// is called for `ReadRel` nodes — see
+    /// [`QuickwitDataSource::try_consume_read_rel`][crate::data_source::QuickwitDataSource::try_consume_read_rel]
+    /// for the OSS vs extension-proto design.
+    pub async fn execute_substrait(
+        &self,
+        plan_bytes: &[u8],
+    ) -> datafusion::error::Result<Vec<arrow::array::RecordBatch>> {
+        use prost::Message;
+        use datafusion_substrait::substrait::proto::Plan;
+
+        let plan = Plan::decode(plan_bytes)
+            .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
+
+        let ctx = self.build_session();
+        crate::substrait::execute_substrait_plan(&plan, &ctx, &self.sources).await
+    }
+
     /// Build a `SessionContext` backed by the shared `RuntimeEnv`.
     pub fn build_session(&self) -> SessionContext {
         let mut config = SessionConfig::new().with_target_partitions(1);
