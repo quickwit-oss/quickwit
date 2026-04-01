@@ -23,6 +23,7 @@ anyhow = { workspace = true }
 arrow = { workspace = true }
 aws-sdk-sqs = { workspace = true }
 bytesize = { workspace = true }
+datafusion = "52"
 futures-util = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true }
@@ -42,6 +43,7 @@ quickwit-cli = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-datafusion = { workspace = true, features = ["testsuite"] }
+quickwit-search = { workspace = true }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }

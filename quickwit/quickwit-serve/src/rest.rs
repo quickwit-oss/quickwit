@@ -351,10 +351,6 @@ fn api_v1_routes(
             quickwit_services.metastore_client.clone(),
             quickwit_services.storage_resolver.clone(),
         ))
-        .boxed()
-        .or(crate::metrics_sql_api::metrics_sql_handler(
-            quickwit_services.datafusion_session_builder.clone(),
-        ))
         .boxed(),
     )
 }

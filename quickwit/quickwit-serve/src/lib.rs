@@ -31,7 +31,6 @@ mod load_shield;
 mod metrics;
 mod metrics_api;
 mod metrics_ingest_api;
-mod metrics_sql_api;
 mod node_info_handler;
 mod openapi;
 mod otlp_api;

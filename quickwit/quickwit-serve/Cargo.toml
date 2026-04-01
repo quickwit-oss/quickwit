@@ -81,8 +81,6 @@ quickwit-search = { workspace = true }
 quickwit-lambda-client = { workspace = true, optional = true }
 quickwit-storage = { workspace = true }
 quickwit-telemetry = { workspace = true }
-datafusion = "52"
-datafusion-sql = "52"
 
 [build-dependencies]
 time = { workspace = true }
