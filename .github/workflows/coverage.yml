@@ -117,6 +117,7 @@ jobs:
           sudo apt update
           sudo apt install libsasl2-dev
           sudo apt install libsasl2-2
+          sudo apt install libcurl4-openssl-dev
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v.6.2.0
         with:
