@@ -27,6 +27,8 @@ build_image:
     - arch:arm64
   rules:
     - changes:
+        - .cargo/config.toml
+        - .dockerignore
         - .gitlab-ci.yml
         - Dockerfile
         - quickwit/**/*

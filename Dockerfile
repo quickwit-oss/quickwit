@@ -46,12 +46,22 @@ RUN apt-get -y update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY quickwit /quickwit
+COPY .cargo/config.toml /quickwit/.cargo/config.toml
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
+
 COPY config/cloudprem/datadog.yaml /config/cloudprem/datadog.yaml
 COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 COPY --from=cloudprem-ui-loader /quickwit/cloudprem-ui/cloudprem_ui_build /quickwit/cloudprem-ui/cloudprem_ui_build
 
 WORKDIR /quickwit
+
+# Use internal Datadog cargo registry for event-percolation instead of GitHub git,
+# because CI_JOB_TOKEN lacks access to the GitLab mirror.
+RUN cat >> Cargo.toml <<'EOF'
+
+[patch."ssh://git@github.com/DataDog/event-percolation.git"]
+event-percolation = { version = "0.5.2", registry = "datadog" }
+EOF
 
 RUN rustup toolchain install
 
