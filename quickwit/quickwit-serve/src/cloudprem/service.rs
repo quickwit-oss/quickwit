@@ -19,7 +19,7 @@ use quickwit_proto::cloudprem::index::{
     IndexConfig as IndexConfigProto, IndexMetadata as IndexMetadataProto,
     RetentionPolicy as RetentionPolicyProto,
 };
-use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
+use quickwit_proto::cloudprem::metrics::{Label, MetricFamily, metric};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
     CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse, Event,
@@ -831,7 +831,19 @@ async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
         .err()
         .cloned()
         .unwrap_or(http::StatusCode::OK);
-    let metric_families = metric_families_res.unwrap_or_default();
+    let mut metric_families = metric_families_res.unwrap_or_default();
+    for metric_family in &mut metric_families {
+        metric_family.metrics.retain(|metric| {
+            let has_pipeline_uid = metric.labels.iter().any(|l| l.name == "pipeline_uid");
+            if !has_pipeline_uid {
+                return true;
+            }
+            match metric.metric_value {
+                Some(metric::MetricValue::Counter(v)) => v != 0,
+                _ => true,
+            }
+        });
+    }
     NodeMetrics {
         node_id: node_id.to_string(),
         status_code: status_code.as_u16() as u32,
