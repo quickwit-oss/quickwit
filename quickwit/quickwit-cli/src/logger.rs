@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::str::FromStr;
 use std::sync::Arc;
 use std::{env, fmt};
 
@@ -19,12 +20,14 @@ use anyhow::Context;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{KeyValue, global};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{Protocol as OtlpWireProtocol, WithExportConfig};
+use opentelemetry_otlp::{
+    LogExporter, Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig,
+};
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
-use quickwit_common::{get_bool_from_env, get_from_env_opt};
+use quickwit_common::{get_bool_from_env, get_from_env, get_from_env_opt};
 use quickwit_serve::{BuildInfo, EnvFilterReloadFn};
 use time::format_description::BorrowedFormatItem;
 use tracing::{Event, Level, Subscriber};
@@ -48,44 +51,57 @@ enum OtlpProtocol {
     HttpJson,
 }
 
-fn parse_otlp_protocol(protocol_str: &str) -> anyhow::Result<OtlpProtocol> {
-    const OTLP_PROTOCOL_GRPC: &str = "grpc";
-    const OTLP_PROTOCOL_HTTP_PROTOBUF: &str = "http/protobuf";
-    const OTLP_PROTOCOL_HTTP_JSON: &str = "http/json";
-
-    match protocol_str {
-        OTLP_PROTOCOL_GRPC => Ok(OtlpProtocol::Grpc),
-        OTLP_PROTOCOL_HTTP_PROTOBUF => Ok(OtlpProtocol::HttpProtobuf),
-        OTLP_PROTOCOL_HTTP_JSON => Ok(OtlpProtocol::HttpJson),
-        other => anyhow::bail!(
-            "unsupported OTLP protocol `{other}`, supported values are `{OTLP_PROTOCOL_GRPC}`, \
-             `{OTLP_PROTOCOL_HTTP_PROTOBUF}` and `{OTLP_PROTOCOL_HTTP_JSON}`"
-        ),
-    }
-}
-
-/// Resolves the OTLP protocol from candidates in priority order, defaulting to gRPC.
-fn resolve_otlp_protocol(candidates: &[Option<&str>]) -> anyhow::Result<OtlpProtocol> {
-    match candidates.iter().flatten().next() {
-        Some(protocol_str) => parse_otlp_protocol(protocol_str),
-        None => Ok(OtlpProtocol::Grpc),
-    }
-}
-
-macro_rules! build_otlp_exporter {
-    ($builder:expr, $protocol:expr) => {
-        match $protocol {
-            OtlpProtocol::Grpc => $builder.with_tonic().build(),
-            OtlpProtocol::HttpProtobuf => $builder
+impl OtlpProtocol {
+    fn log_exporter(&self) -> anyhow::Result<LogExporter> {
+        match self {
+            OtlpProtocol::Grpc => LogExporter::builder().with_tonic().build(),
+            OtlpProtocol::HttpProtobuf => LogExporter::builder()
                 .with_http()
                 .with_protocol(OtlpWireProtocol::HttpBinary)
                 .build(),
-            OtlpProtocol::HttpJson => $builder
+            OtlpProtocol::HttpJson => LogExporter::builder()
                 .with_http()
                 .with_protocol(OtlpWireProtocol::HttpJson)
                 .build(),
         }
-    };
+        .context("failed to initialize OTLP logs exporter")
+    }
+
+    fn span_exporter(&self) -> anyhow::Result<SpanExporter> {
+        match self {
+            OtlpProtocol::Grpc => SpanExporter::builder().with_tonic().build(),
+            OtlpProtocol::HttpProtobuf => SpanExporter::builder()
+                .with_http()
+                .with_protocol(OtlpWireProtocol::HttpBinary)
+                .build(),
+            OtlpProtocol::HttpJson => SpanExporter::builder()
+                .with_http()
+                .with_protocol(OtlpWireProtocol::HttpJson)
+                .build(),
+        }
+        .context("failed to initialize OTLP traces exporter")
+    }
+}
+
+impl FromStr for OtlpProtocol {
+    type Err = anyhow::Error;
+
+    fn from_str(protocol_str: &str) -> anyhow::Result<Self> {
+        const OTLP_PROTOCOL_GRPC: &str = "grpc";
+        const OTLP_PROTOCOL_HTTP_PROTOBUF: &str = "http/protobuf";
+        const OTLP_PROTOCOL_HTTP_JSON: &str = "http/json";
+
+        match protocol_str {
+            OTLP_PROTOCOL_GRPC => Ok(OtlpProtocol::Grpc),
+            OTLP_PROTOCOL_HTTP_PROTOBUF => Ok(OtlpProtocol::HttpProtobuf),
+            OTLP_PROTOCOL_HTTP_JSON => Ok(OtlpProtocol::HttpJson),
+            other => anyhow::bail!(
+                "unsupported OTLP protocol `{other}`, supported values are \
+                 `{OTLP_PROTOCOL_GRPC}`, `{OTLP_PROTOCOL_HTTP_PROTOBUF}` and \
+                 `{OTLP_PROTOCOL_HTTP_JSON}`"
+            ),
+        }
+    }
 }
 
 #[cfg(feature = "tokio-console")]
@@ -147,16 +163,19 @@ pub fn setup_logging_and_tracing(
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     let provider_opt = if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
-        let global_protocol = env::var("OTEL_EXPORTER_OTLP_PROTOCOL").ok();
-        let traces_protocol = resolve_otlp_protocol(&[
-            env::var("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL")
-                .ok()
-                .as_deref(),
-            global_protocol.as_deref(),
-        ])?;
-        let span_exporter =
-            build_otlp_exporter!(opentelemetry_otlp::SpanExporter::builder(), traces_protocol)
-                .context("failed to initialize OTLP traces exporter")?;
+        let global_protocol_str =
+            get_from_env("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc".to_string(), false);
+        let global_protocol = OtlpProtocol::from_str(&global_protocol_str)?;
+
+        let traces_protocol_opt =
+            get_from_env_opt::<String>("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", false);
+        let traces_protocol = traces_protocol_opt
+            .as_deref()
+            .map(OtlpProtocol::from_str)
+            .transpose()?
+            .unwrap_or(global_protocol);
+
+        let span_exporter = traces_protocol.span_exporter()?;
         let span_processor = trace::BatchSpanProcessor::builder(span_exporter)
             .with_batch_config(
                 BatchConfigBuilder::default()
@@ -172,17 +191,17 @@ pub fn setup_logging_and_tracing(
             .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
             .build();
 
-        let logs_protocol = resolve_otlp_protocol(&[
-            env::var("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL").ok().as_deref(),
-            global_protocol.as_deref(),
-        ])?;
-        let logs_exporter =
-            build_otlp_exporter!(opentelemetry_otlp::LogExporter::builder(), logs_protocol)
-                .context("failed to initialize OTLP logs exporter")?;
-
+        let logs_protocol_opt =
+            get_from_env_opt::<String>("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", false);
+        let logs_protocol = logs_protocol_opt
+            .as_deref()
+            .map(OtlpProtocol::from_str)
+            .transpose()?
+            .unwrap_or(global_protocol);
+        let log_exporter = logs_protocol.log_exporter()?;
         let logger_provider = SdkLoggerProvider::builder()
             .with_resource(resource.clone())
-            .with_batch_exporter(logs_exporter)
+            .with_batch_exporter(log_exporter)
             .build();
 
         let tracing_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
@@ -489,39 +508,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_resolve_otlp_protocol_defaults_to_grpc() {
-        let protocol = resolve_otlp_protocol(&[None, None]).unwrap();
-        assert_eq!(protocol, OtlpProtocol::Grpc);
-    }
-
-    #[test]
-    fn test_resolve_otlp_protocol_first_candidate_takes_priority() {
-        let protocol = resolve_otlp_protocol(&[Some("http/protobuf"), Some("grpc")]).unwrap();
-        assert_eq!(protocol, OtlpProtocol::HttpProtobuf);
-    }
-
-    #[test]
-    fn test_resolve_otlp_protocol_falls_back_to_later_candidate() {
-        let protocol = resolve_otlp_protocol(&[None, Some("http/protobuf")]).unwrap();
-        assert_eq!(protocol, OtlpProtocol::HttpProtobuf);
-    }
-
-    #[test]
-    fn test_resolve_otlp_protocol_grpc_explicit() {
-        let protocol = resolve_otlp_protocol(&[Some("grpc")]).unwrap();
-        assert_eq!(protocol, OtlpProtocol::Grpc);
-    }
-
-    #[test]
-    fn test_resolve_otlp_protocol_http_json_explicit() {
-        let protocol = resolve_otlp_protocol(&[Some("http/json")]).unwrap();
-        assert_eq!(protocol, OtlpProtocol::HttpJson);
-    }
-
-    #[test]
-    fn test_resolve_otlp_protocol_rejects_unsupported_value() {
-        let result = resolve_otlp_protocol(&[Some("http/xml")]);
-        assert!(result.is_err());
+    fn test_otlp_protocol_from_str() {
+        assert_eq!(OtlpProtocol::from_str("grpc").unwrap(), OtlpProtocol::Grpc);
+        assert_eq!(
+            OtlpProtocol::from_str("http/protobuf").unwrap(),
+            OtlpProtocol::HttpProtobuf
+        );
+        assert_eq!(
+            OtlpProtocol::from_str("http/json").unwrap(),
+            OtlpProtocol::HttpJson
+        );
+        assert!(OtlpProtocol::from_str("http/xml").is_err());
     }
 
     /// A shared buffer writer for capturing log output in tests.
