@@ -234,9 +234,10 @@ pub async fn execute_substrait_plan(
     let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, sources);
     let logical_plan = from_substrait_plan_with_consumer(&consumer, plan).await?;
 
-    // Full plan dump for debugging
-    println!("=== Substrait → DataFusion logical plan ===\n{}\n===", logical_plan.display_indent());
-    println!("=== Schema: {:?}", logical_plan.schema());
+    tracing::debug!(
+        plan = %logical_plan.display_indent(),
+        "substrait plan converted to DataFusion logical plan"
+    );
 
     let df = ctx.execute_logical_plan(logical_plan).await?;
     let batches = df.collect().await?;

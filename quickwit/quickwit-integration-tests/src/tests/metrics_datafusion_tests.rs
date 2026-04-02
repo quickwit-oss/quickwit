@@ -181,7 +181,7 @@ async fn run_sql(
     builder: &DataFusionSessionBuilder,
     sql: &str,
 ) -> Vec<RecordBatch> {
-    let ctx = builder.build_session();
+    let ctx = builder.build_session().unwrap();
     // Split on ';' — DFParser consumes trailing ';' which breaks multi-stmt parse
     let fragments: Vec<&str> = sql.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
     for fragment in &fragments[..fragments.len().saturating_sub(1)] {
@@ -714,7 +714,7 @@ async fn test_substrait_named_table_query() {
 
     // Build the Substrait plan from SQL via DataFusion's producer.
     // The plan tree will have a NamedTable ReadRel for "substrait-test".
-    let ctx = builder.build_session();
+    let ctx = builder.build_session().unwrap();
 
     // Register a minimal table so the SQL planner can build the plan
     // (the actual schema will come from base_schema when the substrait consumer

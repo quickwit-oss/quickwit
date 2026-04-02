@@ -22,19 +22,39 @@
 //! object stores registered at service-startup time be visible to all queries
 //! without any per-query re-registration.
 //!
-//! When `with_source(source)` is called, `source.init(&self.runtime)` fires
-//! immediately so that sources with known object-store URLs (e.g. a blob-store
-//! connector) can register them once at startup.  Sources whose URLs are only
-//! discoverable at query time (e.g. metrics, where indexes are listed from the
-//! metastore) do lazy registration from `scan()` — which is safe because `scan()`
-//! writes into the same shared `RuntimeEnv`, so the first scan for an index pays
-//! the registration cost and every subsequent scan across any session is a no-op.
+//! ## Memory limits
+//!
+//! By default the shared `RuntimeEnv` uses DataFusion's `UnboundedMemoryPool`,
+//! which imposes no cap on query memory.  For production deployments use
+//! `with_memory_limit(bytes)` to install a `GreedyMemoryPool` that will error
+//! queries exceeding the limit before they OOM the process.  This mirrors
+//! `DDDataFusionRuntime::DDDataFusionRuntimeConfig::greedy_memory_pool_size`.
+//!
+//! ## Result materialization
+//!
+//! `execute_substrait` collects all result batches into memory before returning.
+//! For large rollup queries this is unsuitable for production use — a streaming
+//! variant returning `SendableRecordBatchStream` is the correct interface for
+//! a real `DataFusionService` gRPC handler.  That handler is intentionally
+//! deferred: Pomsky owns the `CloudPremService.SubstraitSearch` path; the OSS
+//! `DataFusionService.ExecuteSubstrait` gRPC endpoint is a follow-up.
+//!
+//! ## Worker TLS
+//!
+//! `with_tls(true)` makes `QuickwitWorkerResolver` emit `https://` URLs.
+//! However `datafusion-distributed`'s `DefaultChannelResolver` uses plain
+//! `tonic::transport::Channel::from_shared(url)` — no certificate configuration.
+//! In TLS clusters the worker connections will fail at the TLS handshake unless
+//! a custom `ChannelResolver` that loads the right certs is registered via
+//! `builder.set_distributed_channel_resolver(...)`.  This is currently unresolved.
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
-use datafusion::execution::runtime_env::RuntimeEnv;
+use datafusion::error::Result as DFResult;
+use datafusion::execution::memory_pool::GreedyMemoryPool;
+use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
 use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_distributed::{DistributedExt, DistributedPhysicalOptimizerRule};
@@ -78,6 +98,25 @@ impl DataFusionSessionBuilder {
         }
     }
 
+    /// Set a hard memory limit (bytes) for all queries built by this session builder.
+    ///
+    /// Installs a `GreedyMemoryPool` on the shared `RuntimeEnv`.  DataFusion will
+    /// return an error from any query that attempts to allocate beyond this limit,
+    /// preventing unbounded memory growth on large rollup queries.
+    ///
+    /// Without this, `RuntimeEnv::default()` uses `UnboundedMemoryPool` and
+    /// large aggregations will OOM the process before DataFusion can intervene.
+    ///
+    /// Must be called before `with_source()` — sources call `init(&self.runtime)`
+    /// on registration and expect the pool to be in place.
+    pub fn with_memory_limit(mut self, bytes: usize) -> DFResult<Self> {
+        let runtime = RuntimeEnvBuilder::new()
+            .with_memory_pool(Arc::new(GreedyMemoryPool::new(bytes)))
+            .build_arc()?;
+        self.runtime = runtime;
+        Ok(self)
+    }
+
     pub fn with_tls(mut self, use_tls: bool) -> Self {
         self.use_tls = use_tls;
         self
@@ -113,7 +152,10 @@ impl DataFusionSessionBuilder {
     }
 
     /// Validate that no two sources register conflicting UDF or UDAF names.
-    pub fn check_invariants(&self) -> datafusion::error::Result<()> {
+    ///
+    /// Called automatically by `build_session()`.  You can also call it after
+    /// `with_source()` to catch conflicts at registration time.
+    pub fn check_invariants(&self) -> DFResult<()> {
         let mut seen_udfs: HashSet<String> = HashSet::new();
         let mut seen_udafs: HashSet<String> = HashSet::new();
         for source in &self.sources {
@@ -138,32 +180,41 @@ impl DataFusionSessionBuilder {
 
     /// Execute a Substrait plan (protobuf bytes) and return the results.
     ///
-    /// Builds a session from the shared `RuntimeEnv`, decodes the plan using
-    /// [`QuickwitSubstraitConsumer`][crate::substrait::QuickwitSubstraitConsumer],
-    /// and executes it.  Each registered source's `try_consume_read_rel` hook
-    /// is called for `ReadRel` nodes — see
-    /// [`QuickwitDataSource::try_consume_read_rel`][crate::data_source::QuickwitDataSource::try_consume_read_rel]
-    /// for the OSS vs extension-proto design.
+    /// # Memory and streaming caveat
+    ///
+    /// This method collects all result batches into memory before returning.
+    /// For large rollup queries covering many splits this is unsuitable for
+    /// production use.  The correct production interface is a streaming handler
+    /// (returning `SendableRecordBatchStream`) wired into a `DataFusionService`
+    /// gRPC endpoint.  That endpoint is deferred; Pomsky wraps this via
+    /// `CloudPremService.SubstraitSearch`.  Use `with_memory_limit()` to bound
+    /// memory usage until streaming is in place.
     pub async fn execute_substrait(
         &self,
         plan_bytes: &[u8],
-    ) -> datafusion::error::Result<Vec<arrow::array::RecordBatch>> {
+    ) -> DFResult<Vec<arrow::array::RecordBatch>> {
         use prost::Message;
         use datafusion_substrait::substrait::proto::Plan;
 
         let plan = Plan::decode(plan_bytes)
             .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
 
-        let ctx = self.build_session();
+        let ctx = self.build_session()?;
         crate::substrait::execute_substrait_plan(&plan, &ctx, &self.sources).await
     }
 
     /// Build a `SessionContext` backed by the shared `RuntimeEnv`.
-    pub fn build_session(&self) -> SessionContext {
+    ///
+    /// Calls `check_invariants()` first — returns an error if two registered
+    /// sources contribute conflicting UDF or UDAF names.
+    pub fn build_session(&self) -> DFResult<SessionContext> {
+        self.check_invariants()?;
+
         let mut config = SessionConfig::new().with_target_partitions(1);
         config.options_mut().catalog.default_catalog = "quickwit".to_string();
         config.options_mut().catalog.default_schema = "public".to_string();
         config.options_mut().catalog.information_schema = true;
+        // We register our own catalog; skip the default "datafusion" one.
         config.options_mut().catalog.create_default_catalog_and_schema = false;
 
         let mut builder = SessionStateBuilder::new()
@@ -211,6 +262,6 @@ impl DataFusionSessionBuilder {
             .expect("register quickwit schema");
         ctx.register_catalog("quickwit", catalog);
 
-        ctx
+        Ok(ctx)
     }
 }

@@ -160,7 +160,7 @@ async fn publish_split(
 }
 
 async fn run_sql(builder: &DataFusionSessionBuilder, sql: &str) -> Vec<RecordBatch> {
-    let ctx = builder.build_session();
+    let ctx = builder.build_session().unwrap();
     let fragments: Vec<&str> = sql.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
     for fragment in &fragments[..fragments.len().saturating_sub(1)] {
         ctx.sql(fragment).await.unwrap().collect().await.unwrap();
@@ -228,7 +228,7 @@ async fn test_distributed_tasks_not_shuffles() {
     );
 
     // ── Verify plan shape AND execute in the same session ────────────
-    let ctx = builder.build_session();
+    let ctx = builder.build_session().unwrap();
     let fragments: Vec<&str> = agg_sql.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
     ctx.sql(fragments[0]).await.unwrap().collect().await.unwrap(); // DDL
     let df = ctx.sql(fragments[1]).await.unwrap();

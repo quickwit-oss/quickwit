@@ -290,7 +290,7 @@ impl MetricsTestbed {
         ));
         let source = crate::sources::metrics::MetricsDataSource::with_resolver(resolver);
     let builder = crate::session::DataFusionSessionBuilder::new().with_source(Arc::new(source) as Arc<dyn crate::data_source::QuickwitDataSource>);
-        builder.build_session()
+        builder.build_session().unwrap()
     }
 }
 
