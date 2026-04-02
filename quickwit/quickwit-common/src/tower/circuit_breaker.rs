@@ -18,8 +18,8 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use crate::metrics::IntCounter;
 use pin_project::pin_project;
-use prometheus::IntCounter;
 use tokio::time::Instant;
 use tower::{Layer, Service};
 
@@ -49,7 +49,7 @@ pub struct CircuitBreakerLayer<Evaluator> {
     time_window: Duration,
     timeout: Duration,
     evaluator: Evaluator,
-    circuit_break_total: prometheus::IntCounter,
+    circuit_break_total: IntCounter,
 }
 
 pub trait CircuitBreakerEvaluator: Clone {
@@ -61,7 +61,7 @@ pub trait CircuitBreakerEvaluator: Clone {
         self,
         max_num_errors_per_secs: u32,
         timeout: Duration,
-        circuit_break_total: prometheus::IntCounter,
+        circuit_break_total: IntCounter,
     ) -> CircuitBreakerLayer<Self> {
         CircuitBreakerLayer {
             max_error_count_per_time_window: max_num_errors_per_secs,
@@ -301,8 +301,12 @@ mod tests {
 
         const TIMEOUT: Duration = Duration::from_millis(500);
 
-        let int_counter: prometheus::IntCounter =
-            IntCounter::new("circuit_break_total_test", "test circuit breaker counter").unwrap();
+        let int_counter = crate::metrics::new_counter(
+            "circuit_break_total_test",
+            "test circuit breaker counter",
+            "test",
+            &[],
+        );
         let mut service = ServiceBuilder::new()
             .layer(TestCircuitBreakerEvaluator.make_layer(10, TIMEOUT, int_counter))
             .service_fn(|_| async {

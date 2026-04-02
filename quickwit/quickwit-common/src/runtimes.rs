@@ -16,8 +16,8 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use crate::metrics::{Gauge, IntCounter, IntGauge};
 use once_cell::sync::OnceCell;
-use prometheus::{Gauge, IntCounter, IntGauge};
 use tokio::runtime::Runtime;
 use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 

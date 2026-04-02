@@ -16,9 +16,9 @@ use std::any::TypeId;
 use std::fmt;
 use std::pin::Pin;
 
+use crate::metrics::IntGauge;
 use bytesize::ByteSize;
 use futures::{Stream, StreamExt, TryStreamExt, stream};
-use prometheus::IntGauge;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
 use tracing::warn;

@@ -28,13 +28,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
+use crate::metrics::IntCounter;
 pub use async_speed_limit::Limiter;
 use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
 use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use pin_project::pin_project;
-use prometheus::IntCounter;
 use tokio::io::AsyncWrite;
 
 use crate::metrics::{IntCounterVec, new_counter_vec};
@@ -99,7 +99,7 @@ pub struct IoControls {
 impl Default for IoControls {
     fn default() -> Self {
         let default_bytes_counter =
-            IntCounter::new("default_write_num_bytes", "Default write counter.").unwrap();
+            IntCounter::new("default_write_num_bytes", "Default write counter.","", &[]);
         IoControls {
             throughput_limiter_opt: None,
             progress: Progress::default(),

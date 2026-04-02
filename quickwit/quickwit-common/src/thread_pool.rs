@@ -15,9 +15,9 @@
 use std::fmt;
 use std::sync::Arc;
 
+use crate::metrics::IntGauge;
 use futures::{Future, TryFutureExt};
 use once_cell::sync::Lazy;
-use prometheus::IntGauge;
 use tokio::sync::oneshot;
 use tracing::error;
 
