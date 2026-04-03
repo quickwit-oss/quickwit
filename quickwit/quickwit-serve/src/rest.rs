@@ -202,11 +202,14 @@ pub(crate) async fn start_rest_server(
     );
 
     // Combine all the routes together.
-    let rest_routes = api_v1_root_route
-        .or(datadog_api_handlers(
-            quickwit_services.ingest_router_service.clone(),
-            index_router,
-        ))
+    // datadog_api_handlers must come before api_v1_root_route so that
+    // /api/v1/datadog-metrics/ingest is matched by the BYOC metrics handler
+    // rather than the generic /{index_id}/ingest handler.
+    let rest_routes = datadog_api_handlers(
+        quickwit_services.ingest_router_service.clone(),
+        index_router,
+    )
+        .or(api_v1_root_route)
         .or(cloudprem_ui_api_handlers(
             quickwit_services.search_service.clone(),
         ))

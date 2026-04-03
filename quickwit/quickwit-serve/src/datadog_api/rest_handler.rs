@@ -439,7 +439,7 @@ async fn byoc_ingest_metrics(
         let mut doc_uid_generator = DocUidGenerator::default();
         let mut doc_uids = Vec::with_capacity(data_points.len());
 
-        for dp in &data_points {
+        for dp in data_points {
             arrow_builder.append(dp);
             doc_uids.push(doc_uid_generator.next_doc_uid());
         }
@@ -565,19 +565,40 @@ fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, Dat
     })
 }
 
-/// Parse a Vector JSON array payload into metric data points.
-///
-/// Vector sends a JSON array of flat metric objects: `[{"name": ..., "counter": {...}}, ...]`.
+/// Parse a Vector metrics payload into metric data points.
 fn try_parse_vector_metrics(body: &Body) -> Result<Vec<MetricDataPoint>, DatadogApiError> {
-    let messages: Vec<VectorMetricMsg> =
-        serde_json::from_slice(&body.content).map_err(DatadogApiError::InvalidPayload)?;
-
-    let mut data_points = Vec::with_capacity(messages.len());
-    for msg in messages {
-        data_points.push(vector_msg_to_data_point(msg)?);
+    // Try JSON array
+    if let Ok(messages) = serde_json::from_slice::<Vec<VectorMetricMsg>>(&body.content) {
+        let mut data_points = Vec::with_capacity(messages.len());
+        for msg in messages {
+            data_points.push(vector_msg_to_data_point(msg)?);
+        }
+        return Ok(data_points);
     }
 
-    Ok(data_points)
+    // Try newline-delimited JSON
+    {
+        let content = std::str::from_utf8(&body.content).unwrap_or("");
+        let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
+        if lines.len() > 1 {
+            let mut data_points = Vec::with_capacity(lines.len());
+            for line in &lines {
+                let msg: VectorMetricMsg = serde_json::from_str(line)
+                    .map_err(DatadogApiError::InvalidPayload)?;
+                data_points.push(vector_msg_to_data_point(msg)?);
+            }
+            return Ok(data_points);
+        }
+    }
+
+    // Try single JSON object
+    if let Ok(msg) = serde_json::from_slice::<VectorMetricMsg>(&body.content) {
+        return Ok(vec![vector_msg_to_data_point(msg)?]);
+    }
+
+    Err(DatadogApiError::BadRequest(
+        "failed to parse metrics payload as JSON array, NDJSON, or single object".to_string(),
+    ))
 }
 
 #[cfg(test)]
