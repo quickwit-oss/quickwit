@@ -13,13 +13,14 @@
 // limitations under the License.
 
 use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::Instant;
 
-use opentelemetry::KeyValue;
 use opentelemetry::metrics::Meter;
-use prometheus::{HistogramOpts, Opts, TextEncoder};
+use opentelemetry::KeyValue;
 pub use prometheus::{exponential_buckets, linear_buckets};
+use prometheus::{HistogramOpts, Opts, TextEncoder};
 
 static OTEL_METER: OnceLock<Meter> = OnceLock::new();
 const METRICS_NAMESPACE: &str = "quickwit";
@@ -67,6 +68,22 @@ fn owned_const_labels(const_labels: &[(&str, &str)]) -> HashMap<String, String> 
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()
+}
+
+fn build_label_attributes<const N: usize>(
+    base_attributes: &[KeyValue],
+    label_names: &[String],
+    label_values: [&str; N],
+) -> (Vec<String>, Vec<KeyValue>) {
+    let key = label_values
+        .iter()
+        .map(|label_value| label_value.to_string())
+        .collect();
+    let mut attributes = base_attributes.to_vec();
+    for (label_name, label_value) in label_names.iter().zip(label_values.iter()) {
+        attributes.push(KeyValue::new(label_name.clone(), label_value.to_string()));
+    }
+    (key, attributes)
 }
 
 // ---------------------------------------------------------------------------
@@ -127,11 +144,7 @@ impl<T> OtelMetric<T> {
         Self { state, attributes }
     }
 
-    fn with_attributes<const N: usize>(
-        &self,
-        names: &[String],
-        values: [&str; N],
-    ) -> Self {
+    fn with_attributes<const N: usize>(&self, names: &[String], values: [&str; N]) -> Self {
         if self.state.is_none() {
             return Self::default();
         }
@@ -174,21 +187,152 @@ impl OtelMetric<opentelemetry::metrics::Counter<u64>> {
     }
 }
 
-impl OtelMetric<opentelemetry::metrics::Gauge<i64>> {
-    fn record(&self, value: i64) {
-        self.with_instrument(|gauge, attributes| gauge.record(value, attributes));
-    }
-}
-
-impl OtelMetric<opentelemetry::metrics::Gauge<f64>> {
-    fn record(&self, value: f64) {
-        self.with_instrument(|gauge, attributes| gauge.record(value, attributes));
-    }
-}
-
 impl OtelMetric<opentelemetry::metrics::Histogram<f64>> {
     fn record(&self, value: f64) {
         self.with_instrument(|histogram, attributes| histogram.record(value, attributes));
+    }
+}
+
+struct ObservableI64GaugeEntry {
+    value: AtomicI64,
+    attributes: Vec<KeyValue>,
+}
+
+impl ObservableI64GaugeEntry {
+    fn new(attributes: Vec<KeyValue>) -> Self {
+        Self {
+            value: AtomicI64::new(0),
+            attributes,
+        }
+    }
+}
+
+struct ObservableI64GaugeState {
+    name: String,
+    description: String,
+    entries: Arc<Mutex<HashMap<Vec<String>, Arc<ObservableI64GaugeEntry>>>>,
+    bound: OnceLock<()>,
+}
+
+impl ObservableI64GaugeState {
+    fn new(name: String, description: String) -> Self {
+        Self {
+            name,
+            description,
+            entries: Arc::new(Mutex::new(HashMap::new())),
+            bound: OnceLock::new(),
+        }
+    }
+
+    fn get_or_create_entry(
+        &self,
+        key: Vec<String>,
+        attributes: Vec<KeyValue>,
+    ) -> Arc<ObservableI64GaugeEntry> {
+        let mut entries = self
+            .entries
+            .lock()
+            .expect("OTel i64 gauge entries mutex should not be poisoned");
+        entries
+            .entry(key)
+            .or_insert_with(|| Arc::new(ObservableI64GaugeEntry::new(attributes)))
+            .clone()
+    }
+}
+
+impl DeferredOtelInstrument for ObservableI64GaugeState {
+    fn bind(&self, meter: &Meter) {
+        self.bound.get_or_init(|| {
+            let entries = Arc::clone(&self.entries);
+            let _ = meter
+                .i64_observable_gauge(self.name.clone())
+                .with_description(self.description.clone())
+                .with_callback(move |observer| {
+                    let entries: Vec<_> = entries
+                        .lock()
+                        .expect("OTel i64 gauge entries mutex should not be poisoned")
+                        .values()
+                        .cloned()
+                        .collect();
+                    for entry in entries {
+                        observer.observe(entry.value.load(Ordering::Relaxed), &entry.attributes);
+                    }
+                })
+                .build();
+        });
+    }
+}
+
+struct ObservableF64GaugeEntry {
+    value_bits: AtomicU64,
+    attributes: Vec<KeyValue>,
+}
+
+impl ObservableF64GaugeEntry {
+    fn new(attributes: Vec<KeyValue>) -> Self {
+        Self {
+            value_bits: AtomicU64::new(0.0f64.to_bits()),
+            attributes,
+        }
+    }
+}
+
+struct ObservableF64GaugeState {
+    name: String,
+    description: String,
+    entries: Arc<Mutex<HashMap<Vec<String>, Arc<ObservableF64GaugeEntry>>>>,
+    bound: OnceLock<()>,
+}
+
+impl ObservableF64GaugeState {
+    fn new(name: String, description: String) -> Self {
+        Self {
+            name,
+            description,
+            entries: Arc::new(Mutex::new(HashMap::new())),
+            bound: OnceLock::new(),
+        }
+    }
+
+    fn get_or_create_entry(
+        &self,
+        key: Vec<String>,
+        attributes: Vec<KeyValue>,
+    ) -> Arc<ObservableF64GaugeEntry> {
+        let mut entries = self
+            .entries
+            .lock()
+            .expect("OTel f64 gauge entries mutex should not be poisoned");
+        entries
+            .entry(key)
+            .or_insert_with(|| Arc::new(ObservableF64GaugeEntry::new(attributes)))
+            .clone()
+    }
+}
+
+impl DeferredOtelInstrument for ObservableF64GaugeState {
+    fn bind(&self, meter: &Meter) {
+        self.bound.get_or_init(|| {
+            let entries = Arc::clone(&self.entries);
+            let _ = meter
+                .f64_observable_gauge(self.name.clone())
+                .with_description(self.description.clone())
+                .with_callback(move |observer| {
+                    let entries: Vec<_> = entries
+                        .lock()
+                        .expect("OTel f64 gauge entries mutex should not be poisoned")
+                        .values()
+                        .cloned()
+                        .collect();
+                    for entry in entries {
+                        observer.observe(
+                            f64::from_bits(entry.value_bits.load(Ordering::Relaxed)),
+                            &entry.attributes,
+                        );
+                    }
+                })
+                .build();
+        });
     }
 }
 
@@ -297,33 +441,33 @@ impl<const N: usize> IntCounterVec<N> {
 #[derive(Clone)]
 pub struct IntGauge {
     prometheus: prometheus::IntGauge,
-    otel: OtelMetric<opentelemetry::metrics::Gauge<i64>>,
+    otel: Arc<ObservableI64GaugeEntry>,
 }
 
 impl IntGauge {
     pub fn set(&self, v: i64) {
         self.prometheus.set(v);
-        self.otel.record(v);
+        self.otel.value.store(v, Ordering::Relaxed);
     }
 
     pub fn inc(&self) {
         self.prometheus.inc();
-        self.otel.record(self.prometheus.get());
+        self.otel.value.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn dec(&self) {
         self.prometheus.dec();
-        self.otel.record(self.prometheus.get());
+        self.otel.value.fetch_sub(1, Ordering::Relaxed);
     }
 
     pub fn add(&self, delta: i64) {
         self.prometheus.add(delta);
-        self.otel.record(self.prometheus.get());
+        self.otel.value.fetch_add(delta, Ordering::Relaxed);
     }
 
     pub fn sub(&self, delta: i64) {
         self.prometheus.sub(delta);
-        self.otel.record(self.prometheus.get());
+        self.otel.value.fetch_sub(delta, Ordering::Relaxed);
     }
 
     pub fn get(&self) -> i64 {
@@ -334,15 +478,18 @@ impl IntGauge {
 #[derive(Clone)]
 pub struct IntGaugeVec<const N: usize> {
     prometheus: prometheus::IntGaugeVec,
-    otel: OtelMetric<opentelemetry::metrics::Gauge<i64>>,
+    otel_state: Arc<ObservableI64GaugeState>,
+    const_attributes: Vec<KeyValue>,
     label_names: Vec<String>,
 }
 
 impl<const N: usize> IntGaugeVec<N> {
     pub fn with_label_values(&self, label_values: [&str; N]) -> IntGauge {
+        let (key, attributes) =
+            build_label_attributes(&self.const_attributes, &self.label_names, label_values);
         IntGauge {
             prometheus: self.prometheus.with_label_values(&label_values),
-            otel: self.otel.with_attributes(&self.label_names, label_values),
+            otel: self.otel_state.get_or_create_entry(key, attributes),
         }
     }
 }
@@ -350,13 +497,13 @@ impl<const N: usize> IntGaugeVec<N> {
 #[derive(Clone)]
 pub struct Gauge {
     prometheus: prometheus::Gauge,
-    otel: OtelMetric<opentelemetry::metrics::Gauge<f64>>,
+    otel: Arc<ObservableF64GaugeEntry>,
 }
 
 impl Gauge {
     pub fn set(&self, v: f64) {
         self.prometheus.set(v);
-        self.otel.record(v);
+        self.otel.value_bits.store(v.to_bits(), Ordering::Relaxed);
     }
 
     pub fn get(&self) -> f64 {
@@ -450,15 +597,19 @@ where
     let state = Arc::new(OtelState::new(move |meter| {
         build_instrument(meter, &name, &description)
     }));
+    bind_or_defer_otel_instrument(state.clone());
+    state
+}
+
+fn bind_or_defer_otel_instrument(instrument: DeferredOtelBinding) {
     if let Some(meter) = otel_meter() {
-        state.bind_if_needed(meter);
+        instrument.bind(meter);
     } else {
         let mut pending_instruments = OTEL_PENDING_INSTRUMENTS
             .lock()
             .expect("OTel pending instruments mutex should not be poisoned");
-        pending_instruments.push(state.clone());
+        pending_instruments.push(instrument);
     }
-    state
 }
 
 fn new_counter_otel_state(
@@ -478,26 +629,26 @@ fn new_int_gauge_otel_state(
     name: &str,
     subsystem: &str,
     help: &str,
-) -> Arc<OtelState<opentelemetry::metrics::Gauge<i64>>> {
-    new_otel_state(name, subsystem, help, |meter, name, description| {
-        meter
-            .i64_gauge(name.to_string())
-            .with_description(description.to_string())
-            .build()
-    })
+) -> Arc<ObservableI64GaugeState> {
+    let state = Arc::new(ObservableI64GaugeState::new(
+        otel_metric_name(name, subsystem),
+        help.to_string(),
+    ));
+    bind_or_defer_otel_instrument(state.clone());
+    state
 }
 
 fn new_float_gauge_otel_state(
     name: &str,
     subsystem: &str,
     help: &str,
-) -> Arc<OtelState<opentelemetry::metrics::Gauge<f64>>> {
-    new_otel_state(name, subsystem, help, |meter, name, description| {
-        meter
-            .f64_gauge(name.to_string())
-            .with_description(description.to_string())
-            .build()
-    })
+) -> Arc<ObservableF64GaugeState> {
+    let state = Arc::new(ObservableF64GaugeState::new(
+        otel_metric_name(name, subsystem),
+        help.to_string(),
+    ));
+    bind_or_defer_otel_instrument(state.clone());
+    state
 }
 
 fn new_histogram_otel_state(
@@ -568,19 +719,18 @@ pub fn new_gauge(
     subsystem: &str,
     const_labels: &[(&str, &str)],
 ) -> IntGauge {
+    let const_attributes = build_const_attributes(const_labels);
     let gauge_opts = Opts::new(name, help)
         .namespace(METRICS_NAMESPACE)
         .subsystem(subsystem)
         .const_labels(owned_const_labels(const_labels));
     let prom = prometheus::IntGauge::with_opts(gauge_opts).expect("failed to create gauge");
     prometheus::register(Box::new(prom.clone())).expect("failed to register gauge");
+    let otel_state = new_int_gauge_otel_state(name, subsystem, help);
 
     IntGauge {
         prometheus: prom,
-        otel: OtelMetric::new(
-            Some(new_int_gauge_otel_state(name, subsystem, help)),
-            build_const_attributes(const_labels),
-        ),
+        otel: otel_state.get_or_create_entry(Vec::new(), const_attributes),
     }
 }
 
@@ -591,6 +741,7 @@ pub fn new_gauge_vec<const N: usize>(
     const_labels: &[(&str, &str)],
     label_names: [&str; N],
 ) -> IntGaugeVec<N> {
+    let const_attributes = build_const_attributes(const_labels);
     let gauge_opts = Opts::new(name, help)
         .namespace(METRICS_NAMESPACE)
         .subsystem(subsystem)
@@ -601,10 +752,8 @@ pub fn new_gauge_vec<const N: usize>(
 
     IntGaugeVec {
         prometheus: prom,
-        otel: OtelMetric::new(
-            Some(new_int_gauge_otel_state(name, subsystem, help)),
-            build_const_attributes(const_labels),
-        ),
+        otel_state: new_int_gauge_otel_state(name, subsystem, help),
+        const_attributes,
         label_names: label_names.iter().map(|s| s.to_string()).collect(),
     }
 }
@@ -615,19 +764,18 @@ pub fn new_float_gauge(
     subsystem: &str,
     const_labels: &[(&str, &str)],
 ) -> Gauge {
+    let const_attributes = build_const_attributes(const_labels);
     let gauge_opts = Opts::new(name, help)
         .namespace(METRICS_NAMESPACE)
         .subsystem(subsystem)
         .const_labels(owned_const_labels(const_labels));
     let prom = prometheus::Gauge::with_opts(gauge_opts).expect("failed to create float gauge");
     prometheus::register(Box::new(prom.clone())).expect("failed to register float gauge");
+    let otel_state = new_float_gauge_otel_state(name, subsystem, help);
 
     Gauge {
         prometheus: prom,
-        otel: OtelMetric::new(
-            Some(new_float_gauge_otel_state(name, subsystem, help)),
-            build_const_attributes(const_labels),
-        ),
+        otel: otel_state.get_or_create_entry(Vec::new(), const_attributes),
     }
 }
 
@@ -1220,8 +1368,7 @@ mod tests {
     #[serial]
     fn test_histogram_timer_drop_observes() {
         let (exporter, provider) = ensure_test_otel_provider();
-        let histogram =
-            new_histogram("test_hist_timer_drop", "test", "test", vec![1.0, 5.0, 10.0]);
+        let histogram = new_histogram("test_hist_timer_drop", "test", "test", vec![1.0, 5.0, 10.0]);
         {
             let _timer = histogram.start_timer();
         }
@@ -1238,8 +1385,7 @@ mod tests {
     #[serial]
     fn test_histogram_timer_observe_duration() {
         let (exporter, provider) = ensure_test_otel_provider();
-        let histogram =
-            new_histogram("test_hist_timer_obs", "test", "test", vec![1.0, 5.0, 10.0]);
+        let histogram = new_histogram("test_hist_timer_obs", "test", "test", vec![1.0, 5.0, 10.0]);
         let timer = histogram.start_timer();
         timer.observe_duration();
 
@@ -1260,25 +1406,20 @@ mod tests {
         post_counter.inc_by(3);
         assert_eq!(post_counter.get(), 3);
 
-        flush_and_read_metric(
-            exporter,
-            provider,
-            "quickwit_test_test_cvec",
-            |data| {
-                let AggregatedMetrics::U64(MetricData::Sum(sum_data)) = data else {
-                    panic!("expected u64 sum metric");
-                };
-                let post_value = sum_data
-                    .data_points()
-                    .find(|dp| {
-                        dp.attributes()
-                            .any(|kv| kv.key.as_str() == "method" && kv.value.as_str() == "POST")
-                    })
-                    .expect("should contain POST data point")
-                    .value();
-                assert_eq!(post_value, 3);
-            },
-        );
+        flush_and_read_metric(exporter, provider, "quickwit_test_test_cvec", |data| {
+            let AggregatedMetrics::U64(MetricData::Sum(sum_data)) = data else {
+                panic!("expected u64 sum metric");
+            };
+            let post_value = sum_data
+                .data_points()
+                .find(|dp| {
+                    dp.attributes()
+                        .any(|kv| kv.key.as_str() == "method" && kv.value.as_str() == "POST")
+                })
+                .expect("should contain POST data point")
+                .value();
+            assert_eq!(post_value, 3);
+        });
     }
 
     #[test]
@@ -1290,26 +1431,20 @@ mod tests {
         indexing.set(10);
         assert_eq!(indexing.get(), 10);
 
-        flush_and_read_metric(
-            exporter,
-            provider,
-            "quickwit_test_test_gvec",
-            |data| {
-                let AggregatedMetrics::I64(MetricData::Gauge(gauge_data)) = data else {
-                    panic!("expected i64 gauge metric");
-                };
-                let indexing_value = gauge_data
-                    .data_points()
-                    .find(|dp| {
-                        dp.attributes().any(|kv| {
-                            kv.key.as_str() == "pool" && kv.value.as_str() == "indexing"
-                        })
-                    })
-                    .expect("should contain pool=indexing data point")
-                    .value();
-                assert_eq!(indexing_value, 10);
-            },
-        );
+        flush_and_read_metric(exporter, provider, "quickwit_test_test_gvec", |data| {
+            let AggregatedMetrics::I64(MetricData::Gauge(gauge_data)) = data else {
+                panic!("expected i64 gauge metric");
+            };
+            let indexing_value = gauge_data
+                .data_points()
+                .find(|dp| {
+                    dp.attributes()
+                        .any(|kv| kv.key.as_str() == "pool" && kv.value.as_str() == "indexing")
+                })
+                .expect("should contain pool=indexing data point")
+                .value();
+            assert_eq!(indexing_value, 10);
+        });
     }
 
     #[test]
@@ -1338,7 +1473,6 @@ mod tests {
         }
         assert_eq!(gauge.get(), 0);
     }
-
 
     #[test]
     fn test_metrics_text_payload_contains_registered_metrics() {
