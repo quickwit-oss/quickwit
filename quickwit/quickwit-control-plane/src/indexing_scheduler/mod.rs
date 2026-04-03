@@ -18,12 +18,11 @@ mod scheduling;
 use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
 use quickwit_common::is_metrics_index;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::{FileSourceParams, SourceParams, indexing_pipeline_params_fingerprint};
@@ -122,8 +121,7 @@ impl fmt::Debug for IndexingScheduler {
 }
 
 fn enable_variable_shard_load() -> bool {
-    static IS_SHARD_LOAD_CP_ENABLED: OnceCell<bool> = OnceCell::new();
-    *IS_SHARD_LOAD_CP_ENABLED.get_or_init(|| {
+    static IS_SHARD_LOAD_CP_ENABLED: LazyLock<bool> = LazyLock::new(|| {
         if let Some(enable_flag) =
             quickwit_common::get_bool_from_env_opt("QW_ENABLE_VARIABLE_SHARD_LOAD")
         {
@@ -148,7 +146,8 @@ fn enable_variable_shard_load() -> bool {
             DEFAULT_ENABLE_VARIABLE_SHARD_LOAD
         );
         DEFAULT_ENABLE_VARIABLE_SHARD_LOAD
-    })
+    });
+    *IS_SHARD_LOAD_CP_ENABLED
 }
 
 /// Computes the CPU load associated to a single shard of a given index.
@@ -183,15 +182,15 @@ fn compute_load_per_shard(shard_entries: &[&ShardEntry]) -> NonZeroU32 {
 }
 
 fn get_default_load_per_shard() -> NonZeroU32 {
-    static DEFAULT_LOAD_PER_SHARD: OnceLock<NonZeroU32> = OnceLock::new();
-    *DEFAULT_LOAD_PER_SHARD.get_or_init(|| {
+    static DEFAULT_LOAD_PER_SHARD: LazyLock<NonZeroU32> = LazyLock::new(|| {
         let default_load_per_shard = quickwit_common::get_from_env(
             "QW_DEFAULT_LOAD_PER_SHARD",
             PIPELINE_FULL_CAPACITY.cpu_millis() / 4,
             false,
         );
         NonZeroU32::new(default_load_per_shard).unwrap()
-    })
+    });
+    *DEFAULT_LOAD_PER_SHARD
 }
 
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {

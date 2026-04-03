@@ -87,7 +87,7 @@ When the client is unlikely to match on an error, you can rely on the crate leve
 ### Design Patterns
 - **Trait-based services**: `SearchService`, `MetastoreService`, etc. — enables mocking and multiple implementations
 - **Feature gates**: Cloud backends (`azure`, `gcs`), message sources (`kafka`, `kinesis`, `pulsar`, `sqs`, `gcp-pubsub`), `postgres` metastore, `multilang` tokenizers
-- **Metrics**: `once_cell::sync::Lazy` statics with `quickwit_common::metrics::*` factories
+- **Metrics**: `std::sync::LazyLock` statics with `quickwit_common::metrics::*` factories
 
 ### Key Dependencies
 - **Tantivy**: Search engine library (custom fork)

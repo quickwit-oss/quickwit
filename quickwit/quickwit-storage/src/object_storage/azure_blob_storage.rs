@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::{fmt, io};
 
 use async_trait::async_trait;
@@ -30,7 +30,6 @@ use bytes::Bytes;
 use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
-use once_cell::sync::OnceCell;
 use quickwit_common::retry::{RetryParams, Retryable, retry};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
@@ -545,14 +544,12 @@ async fn extract_range_data_and_hash(
 
 pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     // Ex: azure://container/prefix.
-    static URI_PTN: OnceCell<Regex> = OnceCell::new();
+    static URI_PTN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"azure(\+[^:]+)?://(?P<container>[^/]+)(/(?P<prefix>.+))?")
+            .expect("The regular expression should compile.")
+    });
 
-    let captures = URI_PTN
-        .get_or_init(|| {
-            Regex::new(r"azure(\+[^:]+)?://(?P<container>[^/]+)(/(?P<prefix>.+))?")
-                .expect("The regular expression should compile.")
-        })
-        .captures(uri.as_str())?;
+    let captures = URI_PTN.captures(uri.as_str())?;
 
     let container = captures.name("container")?.as_str().to_string();
     let prefix = captures

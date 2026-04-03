@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -61,8 +61,7 @@ use crate::{
 
 /// Maximum accepted scroll TTL.
 fn max_scroll_ttl() -> Duration {
-    static MAX_SCROLL_TTL_LOCK: OnceLock<Duration> = OnceLock::new();
-    *MAX_SCROLL_TTL_LOCK.get_or_init(|| {
+    static MAX_SCROLL_TTL_LOCK: LazyLock<Duration> = LazyLock::new(|| {
         let split_deletion_grace_period = shared_consts::split_deletion_grace_period();
         assert!(
             split_deletion_grace_period >= shared_consts::MINIMUM_DELETION_GRACE_PERIOD,
@@ -71,7 +70,8 @@ fn max_scroll_ttl() -> Duration {
         );
         // We remove an extra margin of 2minutes from the split deletion grace period.
         split_deletion_grace_period - Duration::from_secs(60 * 2)
-    })
+    });
+    *MAX_SCROLL_TTL_LOCK
 }
 
 const SORT_DOC_FIELD_NAMES: &[&str] = &["_shard_doc", "_doc"];

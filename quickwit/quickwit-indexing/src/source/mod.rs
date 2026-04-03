@@ -73,6 +73,7 @@ mod void_source;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -85,7 +86,6 @@ pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
-use once_cell::sync::{Lazy, OnceCell};
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
@@ -140,7 +140,7 @@ pub type ParquetSourceLoader = SourceLoader<ParquetDocProcessor>;
 /// 5MB seems like a good one size fits all value.
 const BATCH_NUM_BYTES_LIMIT: u64 = ByteSize::mib(5).as_u64();
 
-static EMIT_BATCHES_TIMEOUT: Lazy<Duration> = Lazy::new(|| {
+static EMIT_BATCHES_TIMEOUT: LazyLock<Duration> = LazyLock::new(|| {
     if cfg!(any(test, feature = "testsuite")) {
         let timeout = Duration::from_millis(100);
         assert!(timeout < *quickwit_actors::HEARTBEAT);
@@ -412,8 +412,7 @@ impl<P: Processor> Handler<AssignShards> for SourceActor<P> {
 
 // TODO: Use `SourceType` instead of `&str``.
 pub fn quickwit_supported_sources() -> &'static SourceLoader {
-    static SOURCE_LOADER: OnceCell<SourceLoader> = OnceCell::new();
-    SOURCE_LOADER.get_or_init(|| {
+    static SOURCE_LOADER: LazyLock<SourceLoader> = LazyLock::new(|| {
         let mut source_factory = SourceLoader::default();
         source_factory.add_source(SourceType::File, FileSourceFactory);
         #[cfg(feature = "gcp-pubsub")]
@@ -430,7 +429,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source(SourceType::Vec, VecSourceFactory);
         source_factory.add_source(SourceType::Void, VoidSourceFactory);
         source_factory
-    })
+    });
+    &SOURCE_LOADER
 }
 
 /// Returns the source loader for parquet pipelines (ParquetDocProcessor).
@@ -438,8 +438,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
 /// Metrics pipelines currently only support IngestV2 sources, which is the
 /// production source type for metrics ingestion.
 pub fn quickwit_supported_parquet_sources() -> &'static ParquetSourceLoader {
-    static PARQUET_SOURCE_LOADER: OnceCell<ParquetSourceLoader> = OnceCell::new();
-    PARQUET_SOURCE_LOADER.get_or_init(|| {
+    static PARQUET_SOURCE_LOADER: LazyLock<ParquetSourceLoader> = LazyLock::new(|| {
         let mut source_factory = ParquetSourceLoader::default();
         // Only IngestV2 is currently used for metrics ingestion
         source_factory.add_source(SourceType::IngestV2, IngestSourceFactory);
@@ -448,7 +447,8 @@ pub fn quickwit_supported_parquet_sources() -> &'static ParquetSourceLoader {
         source_factory.add_source(SourceType::Vec, VecSourceFactory);
         source_factory.add_source(SourceType::Void, VoidSourceFactory);
         source_factory
-    })
+    });
+    &PARQUET_SOURCE_LOADER
 }
 
 pub async fn check_source_connectivity(

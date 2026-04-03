@@ -18,7 +18,6 @@ futures = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
-once_cell = { workspace = true }
 ouroboros = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }

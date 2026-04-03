@@ -13,10 +13,10 @@
 // limitations under the License.
 
 use std::net::SocketAddr;
+use std::sync::LazyLock;
 
 use bytesize::ByteSize;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use quickwit_common::tower::{ClientGrpcConfig, GrpcMetricsLayer, make_channel};
 use quickwit_proto::cluster::cluster_service_grpc_server::ClusterServiceGrpcServer;
 use quickwit_proto::cluster::{
@@ -30,10 +30,10 @@ use crate::Cluster;
 
 const MAX_MESSAGE_SIZE: ByteSize = ByteSize::mib(64);
 
-static CLUSTER_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("cluster", "client"));
-static CLUSTER_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("cluster", "server"));
+static CLUSTER_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("cluster", "client"));
+static CLUSTER_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("cluster", "server"));
 
 pub(crate) async fn cluster_grpc_client(
     socket_addr: SocketAddr,
