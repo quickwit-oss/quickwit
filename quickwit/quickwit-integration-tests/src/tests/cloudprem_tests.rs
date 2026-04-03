@@ -978,8 +978,6 @@ async fn test_get_indexes() {
 #[tokio::test]
 async fn test_extra_fts_indexing_and_search() {
     // Test that extra_fts fields are populated by PomChi and searchable.
-    // The datadog tokenizer splits on whitespace (not dots), so error messages
-    // use space-separated words for testable FTS.
     let mut docs: Vec<Value> = serde_json::from_value(serde_json::json!([
         {
             "message": "{\"error\":{\"message\":\"connection refused by remote host\",\"stack\":\"RuntimeError at handle_request line 42\"},\"title\":\"payment service crash\"}",
