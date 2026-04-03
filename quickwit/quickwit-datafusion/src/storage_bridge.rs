@@ -12,7 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Bridge between Quickwit's `Storage` trait and DataFusion's `ObjectStore`.
+//! Adapter from `quickwit_storage::Storage` to `object_store::ObjectStore`.
+//!
+//! ## Why this adapter exists
+//!
+//! `quickwit_storage::Storage` and `object_store::ObjectStore` are both
+//! object-storage interfaces but have incompatible method signatures, error
+//! types, and path representations.  DataFusion's `ParquetSource` requires
+//! `ObjectStore`; Quickwit's split pipeline produces `Arc<dyn Storage>`.
+//!
+//! The long-term fix is for `quickwit-storage` types to implement `ObjectStore`
+//! directly.  Until then, `QuickwitObjectStore` is the bridge.
+//!
+//! ## What is and is not implemented
+//!
+//! Only read operations (`get_opts`, `get_range`, `head`) are implemented.
+//! All write and list operations return `NotSupported` — DataFusion only
+//! reads parquet files through this store.
 
 use std::sync::Arc;
 

@@ -12,20 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Worker service for distributed DataFusion query execution.
+//! Distributed DataFusion worker session setup.
+//!
+//! This module is named `worker` because the distributed protocol uses a
+//! custom `WorkerService` gRPC (from datafusion-distributed PR #375), not
+//! Arrow Flight.  The name `flight` would be misleading.
 //!
 //! `QuickwitWorkerSessionBuilder` prepares each worker session:
 //! 1. Applies source contributions (optimizer rules, extension planners, UDFs,
-//!    UDAFs, codecs) before `build()`.
+//!    UDAFs, codecs) before `SessionStateBuilder::build()`.
 //! 2. Injects the shared `RuntimeEnv` from the coordinator's
 //!    `DataFusionSessionBuilder` so that object stores registered at startup
 //!    are visible on workers without any per-session re-registration.
 //! 3. Registers the `QuickwitSchemaProvider` so table references in
 //!    deserialized plan fragments resolve correctly.
 //! 4. Calls `register_for_worker()` for any post-build runtime state.
-//!
-//! `build_quickwit_worker(sources, runtime)` is the top-level entry point called
-//! by `quickwit-serve/src/grpc.rs`.
 
 use std::sync::Arc;
 
@@ -74,11 +75,17 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
             .build();
 
         // Phase 2: catalog for table-reference resolution in plan fragments.
+        // `register_schema` only fails if "public" is already registered, which
+        // cannot happen here since the catalog is freshly created above.
         let schema_provider = Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
         let catalog = Arc::new(MemoryCatalogProvider::new());
         catalog
             .register_schema("public", schema_provider)
-            .expect("register quickwit schema on worker");
+            .map_err(|e| {
+                DataFusionError::Internal(format!(
+                    "failed to register 'public' schema on worker: {e}"
+                ))
+            })?;
         state
             .catalog_list()
             .register_catalog("quickwit".to_string(), catalog);

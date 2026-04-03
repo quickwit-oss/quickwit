@@ -294,11 +294,8 @@ fn build_record_batch(
     }
 
     let schema = Arc::new(ArrowSchema::new(fields));
-    // SAFETY: fields and cols are built in lockstep above; a mismatch is a
-    // programming error, not a runtime data error.
-    let batch = RecordBatch::try_new(schema, cols)
-        .expect("BUG: column count must match schema");
-    Ok(batch)
+    RecordBatch::try_new(schema, cols)
+        .map_err(|e| MetricsIngestError::Internal(format!("column/schema mismatch: {e}")))
 }
 
 fn build_split_metadata(

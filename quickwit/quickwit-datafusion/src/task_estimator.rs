@@ -22,7 +22,6 @@ use std::sync::Arc;
 use datafusion::config::ConfigOptions;
 use datafusion::datasource::source::DataSourceExec;
 use datafusion::physical_plan::ExecutionPlan;
-use datafusion_datasource::file_scan_config::FileScanConfig;
 use datafusion_datasource_parquet::source::ParquetSource;
 use datafusion_distributed::{PartitionIsolatorExec, TaskEstimation, TaskEstimator};
 

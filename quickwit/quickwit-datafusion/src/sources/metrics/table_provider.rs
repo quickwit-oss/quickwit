@@ -156,7 +156,7 @@ impl TableProvider for MetricsTableProvider {
         }
 
         if let Some(proj) = projection {
-            builder = builder.with_projection(Some(proj.clone()));
+            builder = builder.with_projection_indices(Some(proj.clone()))?;
         }
 
         if let Some(lim) = limit {

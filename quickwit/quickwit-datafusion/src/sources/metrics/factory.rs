@@ -33,7 +33,6 @@ use async_trait::async_trait;
 use datafusion::catalog::Session;
 use datafusion::catalog::TableProviderFactory;
 use datafusion::error::{DataFusionError, Result as DFResult};
-use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion::logical_expr::CreateExternalTable;
 
 use super::index_resolver::MetricsIndexResolver;

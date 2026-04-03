@@ -54,7 +54,6 @@
 //! it can share a `datafusion-distributed` pin with the metrics source.
 
 use std::fmt::Debug;
-use arrow::datatypes::SchemaRef;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -264,6 +263,55 @@ impl DataSourceContributions {
         self.extension_planners.extend(other.extension_planners);
         self.codec_appliers.extend(other.codec_appliers);
     }
+
+    /// Drain the static (cacheable) fields into the provided output buffers,
+    /// leaving `codec_appliers` intact.
+    ///
+    /// Used by `CachedSessionTemplate` to pre-compute contributions that are
+    /// stable across sessions — everything except codec appliers, which are
+    /// `FnOnce` and must be re-collected per session.
+    pub(crate) fn drain_static_into(
+        &mut self,
+        rules: &mut Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>>,
+        udfs: &mut Vec<Arc<ScalarUDF>>,
+        udafs: &mut Vec<Arc<AggregateUDF>>,
+        planners: &mut Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
+    ) {
+        rules.extend(self.physical_optimizer_rules.drain(..));
+        udfs.extend(self.udfs.drain(..));
+        udafs.extend(self.udafs.drain(..));
+        planners.extend(self.extension_planners.drain(..));
+    }
+
+    /// Discard all static fields and return a contributions value that contains
+    /// only the codec appliers.
+    ///
+    /// Used by `DataFusionSessionBuilder::build_session()` to apply per-session
+    /// codec registration while reusing cached static contributions.
+    pub(crate) fn into_codec_appliers_only(self) -> Self {
+        Self {
+            physical_optimizer_rules: Vec::new(),
+            udfs: Vec::new(),
+            udafs: Vec::new(),
+            extension_planners: Vec::new(),
+            codec_appliers: self.codec_appliers,
+        }
+    }
+
+    /// Apply only the codec appliers to a `SessionStateBuilder`.
+    ///
+    /// Used alongside `into_codec_appliers_only()` to apply the `FnOnce` codec
+    /// callbacks per session without re-registering rules/UDFs that are already
+    /// injected from the cached template.
+    pub(crate) fn apply_codec_appliers(
+        self,
+        mut builder: SessionStateBuilder,
+    ) -> SessionStateBuilder {
+        for applier in self.codec_appliers {
+            builder = applier(builder);
+        }
+        builder
+    }
 }
 
 /// A `QueryPlanner` that delegates extension node planning to a set of
@@ -273,8 +321,16 @@ impl DataSourceContributions {
 /// source contributes an extension planner.  Uses
 /// `DefaultPhysicalPlanner::with_extension_planners` to handle the extension
 /// nodes, falling back to DataFusion's default planner for all other nodes.
-struct ContributionQueryPlanner {
+pub(crate) struct ContributionQueryPlanner {
     extension_planners: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
+}
+
+impl ContributionQueryPlanner {
+    pub(crate) fn new(
+        extension_planners: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
+    ) -> Self {
+        Self { extension_planners }
+    }
 }
 
 impl std::fmt::Debug for ContributionQueryPlanner {

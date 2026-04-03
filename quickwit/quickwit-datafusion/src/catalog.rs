@@ -101,7 +101,15 @@ impl SchemaProvider for QuickwitSchemaProvider {
         //    We do not call table_names() to pre-validate; sources return None for
         //    unknown names, and the schema provider returns None to DataFusion, which
         //    then emits a "table not found" planning error. This avoids any N+1 listing.
-        if let Some(provider) = self.registered_tables.lock().unwrap().get(name).cloned() {
+        if let Some(provider) = self
+            .registered_tables
+            .lock()
+            .map_err(|_| datafusion::error::DataFusionError::Internal(
+                "catalog mutex poisoned".to_string(),
+            ))?
+            .get(name)
+            .cloned()
+        {
             return Ok(Some(provider));
         }
 
@@ -121,7 +129,10 @@ impl SchemaProvider for QuickwitSchemaProvider {
     /// `table()` regardless. Checking only `registered_tables` keeps this
     /// method allocation-free and off the async hot path.
     fn table_exist(&self, name: &str) -> bool {
-        self.registered_tables.lock().unwrap().contains_key(name)
+        self.registered_tables
+            .lock()
+            .map(|m| m.contains_key(name))
+            .unwrap_or(false)
     }
 
     fn register_table(
@@ -129,11 +140,24 @@ impl SchemaProvider for QuickwitSchemaProvider {
         name: String,
         table: Arc<dyn TableProvider>,
     ) -> DFResult<Option<Arc<dyn TableProvider>>> {
-        let old = self.registered_tables.lock().unwrap().insert(name, table);
+        let old = self
+            .registered_tables
+            .lock()
+            .map_err(|_| datafusion::error::DataFusionError::Internal(
+                "catalog mutex poisoned".to_string(),
+            ))?
+            .insert(name, table);
         Ok(old)
     }
 
     fn deregister_table(&self, name: &str) -> DFResult<Option<Arc<dyn TableProvider>>> {
-        Ok(self.registered_tables.lock().unwrap().remove(name))
+        let removed = self
+            .registered_tables
+            .lock()
+            .map_err(|_| datafusion::error::DataFusionError::Internal(
+                "catalog mutex poisoned".to_string(),
+            ))?
+            .remove(name);
+        Ok(removed)
     }
 }

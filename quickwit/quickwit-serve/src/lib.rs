@@ -16,6 +16,7 @@
 
 mod build_info;
 mod cluster_api;
+mod datafusion_api;
 mod decompression;
 mod delete_task_api;
 mod developer_api;
@@ -698,10 +699,11 @@ pub async fn serve_quickwit(
                 storage_resolver.clone(),
             ),
         );
+        let resolver = quickwit_datafusion::QuickwitWorkerResolver::new(searcher_pool)
+            .with_tls(node_config.grpc_config.tls.is_some());
         let builder = quickwit_datafusion::DataFusionSessionBuilder::new()
             .with_source(metrics_source)
-            .with_searcher_pool(searcher_pool)
-            .with_tls(node_config.grpc_config.tls.is_some());
+            .with_worker_resolver(resolver);
         Some(Arc::new(builder))
     } else {
         None

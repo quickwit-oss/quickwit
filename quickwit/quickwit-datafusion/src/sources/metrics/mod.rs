@@ -118,7 +118,13 @@ impl QuickwitDataSource for MetricsDataSource {
         let Some(ReadType::NamedTable(nt)) = &rel.read_type else {
             return Ok(None);
         };
-        let index_name = nt.names.last().map(String::as_str).unwrap_or("");
+        // `NamedTable::names` is a path like ["catalog", "schema", "table"];
+        // the last element is the effective table name.  An empty list is a
+        // malformed plan — skip rather than silently resolving to index "".
+        let Some(index_name) = nt.names.last() else {
+            return Ok(None);
+        };
+        let index_name = index_name.as_str();
 
         // Use the producer-declared schema if available; fall back to minimal base schema.
         let schema = schema_hint.unwrap_or_else(minimal_base_schema);

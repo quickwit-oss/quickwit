@@ -26,27 +26,22 @@
 //!
 //! By default the shared `RuntimeEnv` uses DataFusion's `UnboundedMemoryPool`,
 //! which imposes no cap on query memory.  For production deployments use
-//! `with_memory_limit(bytes)` to install a `GreedyMemoryPool` that will error
-//! queries exceeding the limit before they OOM the process.  This mirrors
-//! `DDDataFusionRuntime::DDDataFusionRuntimeConfig::greedy_memory_pool_size`.
+//! `with_memory_limit(bytes)` to install a `GreedyMemoryPool`.
+//!
+//! ## Worker URL resolution
+//!
+//! The default path uses `with_searcher_pool(pool)` which wraps the pool in a
+//! `QuickwitWorkerResolver`.  For deployments that don't use `SearcherPool` for
+//! service discovery (e.g., Pomsky with DD-internal DNS, Consul, or a Chitchat
+//! variant), use `with_worker_resolver(resolver)` to supply any type that
+//! implements `datafusion_distributed::WorkerResolver`.
 //!
 //! ## Result materialization
 //!
 //! `execute_substrait` collects all result batches into memory before returning.
-//! For large rollup queries this is unsuitable for production use — a streaming
-//! variant returning `SendableRecordBatchStream` is the correct interface for
-//! a real `DataFusionService` gRPC handler.  That handler is intentionally
-//! deferred: Pomsky owns the `CloudPremService.SubstraitSearch` path; the OSS
-//! `DataFusionService.ExecuteSubstrait` gRPC endpoint is a follow-up.
-//!
-//! ## Worker TLS
-//!
-//! `with_tls(true)` makes `QuickwitWorkerResolver` emit `https://` URLs.
-//! However `datafusion-distributed`'s `DefaultChannelResolver` uses plain
-//! `tonic::transport::Channel::from_shared(url)` — no certificate configuration.
-//! In TLS clusters the worker connections will fail at the TLS handshake unless
-//! a custom `ChannelResolver` that loads the right certs is registered via
-//! `builder.set_distributed_channel_resolver(...)`.  This is currently unresolved.
+//! For large rollup queries this is unsuitable for production use.  A streaming
+//! variant is deferred; Pomsky wraps this via `CloudPremService.SubstraitSearch`.
+//! Use `with_memory_limit()` to bound memory usage until streaming is in place.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -56,8 +51,13 @@ use datafusion::error::Result as DFResult;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
 use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
 use datafusion::execution::SessionStateBuilder;
+use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
+use datafusion::physical_optimizer::PhysicalOptimizerRule;
+use datafusion::physical_planner::ExtensionPlanner;
 use datafusion::prelude::{SessionConfig, SessionContext};
-use datafusion_distributed::{DistributedExt, DistributedPhysicalOptimizerRule};
+use datafusion_distributed::{
+    DistributedExt, DistributedPhysicalOptimizerRule, WorkerResolver,
+};
 use quickwit_search::SearcherPool;
 
 use crate::catalog::QuickwitSchemaProvider;
@@ -65,26 +65,75 @@ use crate::data_source::QuickwitDataSource;
 use crate::resolver::QuickwitWorkerResolver;
 use crate::task_estimator::QuickwitTaskEstimator;
 
+/// Pre-computed per-source contributions that can be reused across sessions.
+///
+/// Rebuilt whenever `with_source()` is called.  Codec appliers are excluded
+/// because they are `FnOnce` — they are re-collected per session by calling
+/// `source.contributions()` on each source (which is cheap: `TantivyCodec` is
+/// a unit struct and the collect path allocates trivially).
+///
+/// This mirrors `DDDataFusionQueryPlanner` in `dd-datafusion`, which is built
+/// once during `init()` and shared across all `SessionState` creations.
+struct CachedSessionTemplate {
+    physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>>,
+    udfs: Vec<Arc<ScalarUDF>>,
+    udafs: Vec<Arc<AggregateUDF>>,
+    extension_planners: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
+}
+
+impl CachedSessionTemplate {
+    fn build(sources: &[Arc<dyn QuickwitDataSource>]) -> Self {
+        let mut combined = crate::data_source::DataSourceContributions::default();
+        for source in sources {
+            combined.merge(source.contributions());
+        }
+
+        let mut rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>> = Vec::new();
+        let mut udfs: Vec<Arc<ScalarUDF>> = Vec::new();
+        let mut udafs: Vec<Arc<AggregateUDF>> = Vec::new();
+        let mut planners: Vec<Arc<dyn ExtensionPlanner + Send + Sync>> = Vec::new();
+        combined.drain_static_into(&mut rules, &mut udfs, &mut udafs, &mut planners);
+
+        Self {
+            physical_optimizer_rules: rules,
+            udfs,
+            udafs,
+            extension_planners: planners,
+        }
+    }
+}
+
 /// Builds `SessionContext`s for DataFusion queries over Quickwit data.
 ///
 /// Holds a single `Arc<RuntimeEnv>` shared across all sessions it creates.
 pub struct DataFusionSessionBuilder {
     sources: Vec<Arc<dyn QuickwitDataSource>>,
-    searcher_pool: Option<SearcherPool>,
-    use_tls: bool,
+    /// Pluggable worker URL resolver.  `None` = single-node execution.
+    /// Set via `with_searcher_pool` (default impl) or `with_worker_resolver`
+    /// (custom impl for Pomsky / other service discovery).
+    worker_resolver: Option<Arc<dyn WorkerResolver + Send + Sync>>,
     /// Shared runtime environment — one instance for the lifetime of this builder.
-    /// All sessions produced by `build_session()` use this env, so object stores
-    /// registered by `source.init()` or lazily by `MetricsTableProvider::scan()`
-    /// are immediately visible to every concurrent and subsequent session.
     runtime: Arc<RuntimeEnv>,
+    /// Pre-computed static contributions from all registered sources.
+    ///
+    /// Rebuilt on every `with_source()` call so `build_session()` doesn't have
+    /// to re-invoke `source.contributions()` on each query.  Codec appliers are
+    /// excluded because they are `FnOnce`; those are re-collected cheaply per session.
+    cached_template: CachedSessionTemplate,
 }
 
 impl std::fmt::Debug for DataFusionSessionBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DataFusionSessionBuilder")
             .field("num_sources", &self.sources.len())
-            .field("has_searcher_pool", &self.searcher_pool.is_some())
+            .field("distributed", &self.worker_resolver.is_some())
             .finish()
+    }
+}
+
+impl Default for DataFusionSessionBuilder {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -92,9 +141,9 @@ impl DataFusionSessionBuilder {
     pub fn new() -> Self {
         Self {
             sources: Vec::new(),
-            searcher_pool: None,
-            use_tls: false,
+            worker_resolver: None,
             runtime: Arc::new(RuntimeEnv::default()),
+            cached_template: CachedSessionTemplate::build(&[]),
         }
     }
 
@@ -103,9 +152,6 @@ impl DataFusionSessionBuilder {
     /// Installs a `GreedyMemoryPool` on the shared `RuntimeEnv`.  DataFusion will
     /// return an error from any query that attempts to allocate beyond this limit,
     /// preventing unbounded memory growth on large rollup queries.
-    ///
-    /// Without this, `RuntimeEnv::default()` uses `UnboundedMemoryPool` and
-    /// large aggregations will OOM the process before DataFusion can intervene.
     ///
     /// Must be called before `with_source()` — sources call `init(&self.runtime)`
     /// on registration and expect the pool to be in place.
@@ -117,31 +163,52 @@ impl DataFusionSessionBuilder {
         Ok(self)
     }
 
-    pub fn with_tls(mut self, use_tls: bool) -> Self {
-        self.use_tls = use_tls;
-        self
-    }
-
     /// Register a data source and call its `init` hook immediately.
     ///
     /// `init` receives the shared `RuntimeEnv` so sources that know their
-    /// object-store URLs at construction time (e.g. a blob-store connector with
-    /// a fixed bucket URI) can register them once here rather than on every scan.
+    /// object-store URLs at construction time can register them once here.
+    ///
+    /// Rebuilds the `CachedSessionTemplate` so that the next `build_session()`
+    /// call picks up the new source's static contributions without re-invoking
+    /// `contributions()` on every query.
     pub fn with_source(mut self, source: Arc<dyn QuickwitDataSource>) -> Self {
         source.init(&self.runtime);
         self.sources.push(source);
+        self.cached_template = CachedSessionTemplate::build(&self.sources);
         self
     }
 
-    pub fn with_searcher_pool(mut self, pool: SearcherPool) -> Self {
-        self.searcher_pool = Some(pool);
+    /// Enable distributed execution using the default `SearcherPool`-backed
+    /// resolver.
+    ///
+    /// Worker URLs are derived from the pool's socket-address keys using plain
+    /// `http://` (or `https://` if you have separately configured TLS on the
+    /// `QuickwitWorkerResolver`).  For non-`SearcherPool` deployments, use
+    /// `with_worker_resolver` instead.
+    pub fn with_searcher_pool(self, pool: SearcherPool) -> Self {
+        self.with_worker_resolver(QuickwitWorkerResolver::new(pool))
+    }
+
+    /// Enable distributed execution with a custom worker URL resolver.
+    ///
+    /// Use this when `SearcherPool` is not the right abstraction — for example:
+    /// - Pomsky uses DD-internal service discovery or Chitchat topology variants.
+    /// - Tests use a fixed list of mock worker addresses.
+    /// - TLS deployments need `QuickwitWorkerResolver::new(pool).with_tls(true)`.
+    ///
+    /// Any type implementing `datafusion_distributed::WorkerResolver` is accepted.
+    pub fn with_worker_resolver(
+        mut self,
+        resolver: impl WorkerResolver + Send + Sync + 'static,
+    ) -> Self {
+        self.worker_resolver = Some(Arc::new(resolver));
         self
     }
 
     /// Returns the shared `RuntimeEnv`.
     ///
-    /// Pass this to `build_quickwit_worker` so workers share the same object-store
-    /// registry as the coordinator.
+    /// Pass this to `build_quickwit_worker` so workers share the same
+    /// object-store registry as the coordinator.
     pub fn runtime(&self) -> &Arc<RuntimeEnv> {
         &self.runtime
     }
@@ -153,8 +220,17 @@ impl DataFusionSessionBuilder {
 
     /// Validate that no two sources register conflicting UDF or UDAF names.
     ///
-    /// Called automatically by `build_session()`.  You can also call it after
-    /// `with_source()` to catch conflicts at registration time.
+    /// This is a development-time sanity check — call it once at service startup
+    /// after all sources are registered, not on every query.  It is not called
+    /// automatically by `build_session()`.
+    ///
+    /// ```ignore
+    /// let builder = DataFusionSessionBuilder::new()
+    ///     .with_source(source_a)
+    ///     .with_source(source_b);
+    /// builder.check_invariants()?;  // fail fast at startup
+    /// // ... serve queries
+    /// ```
     pub fn check_invariants(&self) -> DFResult<()> {
         let mut seen_udfs: HashSet<String> = HashSet::new();
         let mut seen_udafs: HashSet<String> = HashSet::new();
@@ -180,21 +256,15 @@ impl DataFusionSessionBuilder {
 
     /// Execute a Substrait plan (protobuf bytes) and return the results.
     ///
-    /// # Memory and streaming caveat
-    ///
-    /// This method collects all result batches into memory before returning.
-    /// For large rollup queries covering many splits this is unsuitable for
-    /// production use.  The correct production interface is a streaming handler
-    /// (returning `SendableRecordBatchStream`) wired into a `DataFusionService`
-    /// gRPC endpoint.  That endpoint is deferred; Pomsky wraps this via
-    /// `CloudPremService.SubstraitSearch`.  Use `with_memory_limit()` to bound
-    /// memory usage until streaming is in place.
+    /// Builds a fresh session, converts the plan via `QuickwitSubstraitConsumer`,
+    /// and collects all results into memory.  See the module-level doc on
+    /// materialization limits.
     pub async fn execute_substrait(
         &self,
         plan_bytes: &[u8],
     ) -> DFResult<Vec<arrow::array::RecordBatch>> {
-        use prost::Message;
         use datafusion_substrait::substrait::proto::Plan;
+        use prost::Message;
 
         let plan = Plan::decode(plan_bytes)
             .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
@@ -205,11 +275,9 @@ impl DataFusionSessionBuilder {
 
     /// Build a `SessionContext` backed by the shared `RuntimeEnv`.
     ///
-    /// Calls `check_invariants()` first — returns an error if two registered
-    /// sources contribute conflicting UDF or UDAF names.
+    /// Does NOT call `check_invariants()` — callers should invoke that once at
+    /// startup, not on every query.
     pub fn build_session(&self) -> DFResult<SessionContext> {
-        self.check_invariants()?;
-
         let mut config = SessionConfig::new().with_target_partitions(1);
         config.options_mut().catalog.default_catalog = "quickwit".to_string();
         config.options_mut().catalog.default_schema = "public".to_string();
@@ -224,20 +292,45 @@ impl DataFusionSessionBuilder {
             // at startup (via init) or lazily (via scan) are globally visible.
             .with_runtime_env(Arc::clone(&self.runtime));
 
-        if let Some(ref pool) = self.searcher_pool {
-            let worker_resolver =
-                QuickwitWorkerResolver::new(pool.clone()).with_tls(self.use_tls);
+        if let Some(resolver) = &self.worker_resolver {
+            // Clone the Arc so ownership passes into the distributed extension.
+            // `Arc<dyn WorkerResolver>` implements `WorkerResolver` via deref,
+            // so the forwarding wrapper is not needed.
             builder = builder
-                .with_distributed_worker_resolver(worker_resolver)
+                .with_distributed_worker_resolver(ArcWorkerResolver(Arc::clone(resolver)))
                 .with_distributed_task_estimator(QuickwitTaskEstimator)
                 .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
         }
 
-        let mut combined = crate::data_source::DataSourceContributions::default();
-        for source in &self.sources {
-            combined.merge(source.contributions());
+        // Apply static contributions from the pre-computed template (optimizer rules,
+        // UDFs, UDAFs, extension planners) without re-calling source.contributions().
+        let tmpl = &self.cached_template;
+        for rule in &tmpl.physical_optimizer_rules {
+            builder = builder.with_physical_optimizer_rule(Arc::clone(rule));
         }
-        builder = combined.apply_to_builder(builder);
+        if !tmpl.extension_planners.is_empty() {
+            let planner = crate::data_source::ContributionQueryPlanner::new(
+                tmpl.extension_planners.clone(),
+            );
+            builder = builder.with_query_planner(Arc::new(planner));
+        }
+        if !tmpl.udfs.is_empty() {
+            builder
+                .scalar_functions()
+                .get_or_insert_default()
+                .extend(tmpl.udfs.clone());
+        }
+        if !tmpl.udafs.is_empty() {
+            builder
+                .aggregate_functions()
+                .get_or_insert_default()
+                .extend(tmpl.udafs.clone());
+        }
+        // Codec appliers are FnOnce — re-collect per session (cheap: unit structs).
+        for source in &self.sources {
+            let codec_only = source.contributions().into_codec_appliers_only();
+            builder = codec_only.apply_codec_appliers(builder);
+        }
 
         let mut state = builder.build();
 
@@ -259,9 +352,27 @@ impl DataFusionSessionBuilder {
         let catalog = Arc::new(MemoryCatalogProvider::new());
         catalog
             .register_schema("public", schema_provider)
-            .expect("register quickwit schema");
+            .map_err(|e| {
+                datafusion::error::DataFusionError::Internal(format!(
+                    "failed to register 'public' schema: {e}"
+                ))
+            })?;
         ctx.register_catalog("quickwit", catalog);
 
         Ok(ctx)
+    }
+}
+
+/// Newtype wrapper so `Arc<dyn WorkerResolver>` can be passed to
+/// `with_distributed_worker_resolver`, which requires an owned `impl WorkerResolver`.
+///
+/// `Arc<dyn WorkerResolver + Send + Sync>` cannot be passed directly because
+/// the trait bound requires `Sized`.  This wrapper is `'static` and satisfies
+/// the `WorkerResolver + Send + Sync + 'static` bound.
+struct ArcWorkerResolver(Arc<dyn WorkerResolver + Send + Sync>);
+
+impl WorkerResolver for ArcWorkerResolver {
+    fn get_urls(&self) -> Result<Vec<url::Url>, datafusion::error::DataFusionError> {
+        self.0.get_urls()
     }
 }

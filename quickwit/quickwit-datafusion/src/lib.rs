@@ -22,31 +22,38 @@
 //! - [`data_source`] — `QuickwitDataSource` trait (the extension point)
 //! - [`session`] — `DataFusionSessionBuilder`: builds sessions from a list of sources
 //! - [`catalog`] — `QuickwitSchemaProvider`: routes `table(name)` to the right source
-//! - [`flight`] — `QuickwitWorkerSessionBuilder` + `build_quickwit_worker()`
-//! - [`resolver`] — `QuickwitWorkerResolver`: `SearcherPool` → Flight URLs
+//! - [`worker`] — `QuickwitWorkerSessionBuilder` + `build_quickwit_worker()`
+//! - [`resolver`] — `QuickwitWorkerResolver`: default `SearcherPool`-backed worker URL resolver
 //! - [`task_estimator`] — `QuickwitTaskEstimator`: split-count based task sizing
-//! - [`storage`] — `QuickwitObjectStore`: `Storage` → DataFusion `ObjectStore` bridge
+//! - [`storage_bridge`] — `QuickwitObjectStore`: `quickwit_storage::Storage` → `object_store::ObjectStore` adapter
+//! - [`substrait`] — `QuickwitSubstraitConsumer`: routes Substrait `ReadRel` to data sources
 //!
 //! **Data source implementations** (`sources/`):
 //! - [`sources::metrics`] — `MetricsDataSource` for OSS parquet metrics
 //!
-//! Pomsky adds its own data sources and wraps `DataFusionSessionBuilder` in
-//! the `CloudPremService.SubstraitSearch` handler — no Pomsky code needed here.
+//! ## Worker URL resolution
+//!
+//! The default worker resolver (`QuickwitWorkerResolver`) maps `SearcherPool`
+//! socket addresses to `http[s]://` URLs.  Pomsky or other deployments with
+//! different service discovery (e.g., Consul, DD-internal DNS) can supply their
+//! own resolver via `DataFusionSessionBuilder::with_worker_resolver()`.
 
 pub(crate) mod catalog;
 pub mod data_source;
-pub mod flight;
 pub(crate) mod resolver;
+pub mod service;
 pub mod session;
 pub mod sources;
-pub(crate) mod storage;
-pub mod substrait;
+pub(crate) mod storage_bridge;
+pub(crate) mod substrait;
 pub(crate) mod task_estimator;
+pub(crate) mod worker;
 
-// Re-export the top-level worker builder for use in grpc.rs.
-// Callers get a gRPC service via `worker.into_worker_server()`.
-pub use flight::build_quickwit_worker;
+// Re-export the top-level types for use in quickwit-serve and Pomsky.
+pub use resolver::QuickwitWorkerResolver;
+pub use service::DataFusionService;
 pub use session::DataFusionSessionBuilder;
+pub use worker::build_quickwit_worker;
 
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;

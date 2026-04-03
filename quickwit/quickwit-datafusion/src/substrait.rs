@@ -57,11 +57,11 @@ use async_trait::async_trait;
 use datafusion::catalog::TableProvider;
 use datafusion::common::TableReference;
 use datafusion::error::{DataFusionError, Result as DFResult};
-use datafusion::execution::{FunctionRegistry, SessionState};
+use datafusion::execution::{FunctionRegistry, SendableRecordBatchStream, SessionState};
 use datafusion::logical_expr::LogicalPlan;
 use datafusion_substrait::extensions::Extensions;
 use datafusion_substrait::logical_plan::consumer::{
-    DefaultSubstraitConsumer, SubstraitConsumer, from_read_rel, from_substrait_named_struct,
+    SubstraitConsumer, from_read_rel, from_substrait_named_struct,
     from_substrait_plan_with_consumer,
 };
 use datafusion_substrait::substrait::proto::{
@@ -243,4 +243,36 @@ pub async fn execute_substrait_plan(
     let batches = df.collect().await?;
     tracing::debug!(num_batches = batches.len(), "substrait plan executed");
     Ok(batches)
+}
+
+/// Convert a Substrait plan to a streaming `RecordBatch` iterator.
+///
+/// Unlike [`execute_substrait_plan`], this function does **not** collect all
+/// results into memory — it returns a [`SendableRecordBatchStream`] that the
+/// caller can poll lazily.  This is the preferred path for gRPC streaming
+/// responses and Arrow Flight handlers.
+///
+/// Takes the full `SessionContext` for the same reasons as
+/// `execute_substrait_plan` — catalog registrations live on the context, not
+/// the state snapshot.
+pub async fn execute_substrait_plan_streaming(
+    plan: &Plan,
+    ctx: &datafusion::prelude::SessionContext,
+    sources: &[Arc<dyn QuickwitDataSource>],
+) -> DFResult<SendableRecordBatchStream> {
+    let state = ctx.state();
+    let extensions = Extensions::try_from(&plan.extensions)
+        .map_err(|e| DataFusionError::External(Box::new(e)))?;
+
+    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, sources);
+    let logical_plan = from_substrait_plan_with_consumer(&consumer, plan).await?;
+
+    tracing::debug!(
+        plan = %logical_plan.display_indent(),
+        "substrait plan converted to DataFusion logical plan for streaming execution"
+    );
+
+    let df = ctx.execute_logical_plan(logical_plan).await?;
+    let stream = df.execute_stream().await?;
+    Ok(stream)
 }

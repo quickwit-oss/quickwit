@@ -37,7 +37,7 @@ use tracing::debug;
 
 use super::metastore_provider::MetastoreSplitProvider;
 use super::table_provider::MetricsSplitProvider;
-use crate::storage::QuickwitObjectStore;
+use crate::storage_bridge::QuickwitObjectStore;
 
 /// How long a cached object store entry stays valid.
 const OBJECT_STORE_CACHE_TTL: Duration = Duration::from_secs(30);
@@ -151,7 +151,12 @@ impl MetastoreIndexResolver {
     ) -> DFResult<(Arc<dyn ObjectStore>, ObjectStoreUrl)> {
         // Fast path: return from cache without any await.
         {
-            let cache = self.object_store_cache.lock().expect("cache poisoned");
+            let cache = self
+                .object_store_cache
+                .lock()
+                .map_err(|_| datafusion::error::DataFusionError::Internal(
+                    "object store cache mutex poisoned".to_string(),
+                ))?;
             if let Some(entry) = cache.get(index_name) {
                 if entry.is_fresh() {
                     debug!(index_name, "object store cache hit");
@@ -179,7 +184,9 @@ impl MetastoreIndexResolver {
 
         self.object_store_cache
             .lock()
-            .expect("cache poisoned")
+            .map_err(|_| datafusion::error::DataFusionError::Internal(
+                "object store cache mutex poisoned".to_string(),
+            ))?
             .insert(
                 index_name.to_string(),
                 CachedObjectStore {
