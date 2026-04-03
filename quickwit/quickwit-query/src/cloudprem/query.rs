@@ -633,6 +633,7 @@ fn expand_virtual_fields(field_name: String) -> Vec<String> {
         // FTS: message + extra_fts sub-fields. Must use explicit sub-field paths
         // because extra_fts is a JSON field and searching the parent name alone
         // uses an empty json_path which doesn't match sub-field terms.
+        // Keep in sync with default_search_fields in config/cloudprem/datadog.yaml
         vec![
             QW_MESSAGE_FIELD.to_string(),
             QW_EXTRA_FTS_ERROR_MESSAGE.to_string(),

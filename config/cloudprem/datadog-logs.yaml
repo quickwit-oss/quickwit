@@ -14,6 +14,7 @@ retention:
   schedule: hourly
 
 search_settings:
+  # Keep in sync with expand_virtual_fields() in quickwit-query/src/cloudprem/query.rs
   default_search_fields:
     - message
     - extra_fts.error_message
