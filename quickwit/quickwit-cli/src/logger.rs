@@ -17,13 +17,15 @@ use std::sync::Arc;
 use std::{env, fmt};
 
 use anyhow::Context;
+use opentelemetry::metrics::MeterProvider;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{KeyValue, global};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::{
-    LogExporter, Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig,
+    LogExporter, MetricExporter, Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig,
 };
 use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_sdk::metrics::{SdkMeterProvider, Temporality};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
@@ -81,6 +83,26 @@ impl OtlpProtocol {
         }
         .context("failed to initialize OTLP traces exporter")
     }
+
+    fn metric_exporter(&self, temporality: Temporality) -> anyhow::Result<MetricExporter> {
+        match self {
+            OtlpProtocol::Grpc => MetricExporter::builder()
+                .with_tonic()
+                .with_temporality(temporality)
+                .build(),
+            OtlpProtocol::HttpProtobuf => MetricExporter::builder()
+                .with_http()
+                .with_temporality(temporality)
+                .with_protocol(OtlpWireProtocol::HttpBinary)
+                .build(),
+            OtlpProtocol::HttpJson => MetricExporter::builder()
+                .with_http()
+                .with_temporality(temporality)
+                .with_protocol(OtlpWireProtocol::HttpJson)
+                .build(),
+        }
+        .context("failed to initialize OTLP metrics exporter")
+    }
 }
 
 impl FromStr for OtlpProtocol {
@@ -104,11 +126,60 @@ impl FromStr for OtlpProtocol {
     }
 }
 
+struct OtlpMetricsTemporality(Temporality);
+
+impl FromStr for OtlpMetricsTemporality {
+    type Err = anyhow::Error;
+
+    fn from_str(temporality_str: &str) -> anyhow::Result<Self> {
+        const TEMPORALITY_DELTA: &str = "delta";
+        const TEMPORALITY_LOWMEMORY: &str = "lowmemory";
+        const TEMPORALITY_CUMULATIVE: &str = "cumulative";
+
+        match temporality_str {
+            TEMPORALITY_DELTA => Ok(OtlpMetricsTemporality(Temporality::Delta)),
+            TEMPORALITY_LOWMEMORY => Ok(OtlpMetricsTemporality(Temporality::LowMemory)),
+            TEMPORALITY_CUMULATIVE => Ok(OtlpMetricsTemporality(Temporality::Cumulative)),
+            other => anyhow::bail!(
+                "unsupported OTLP metrics temporality `{other}`, supported values are \
+                 `{TEMPORALITY_DELTA}`, `{TEMPORALITY_LOWMEMORY}` and `{TEMPORALITY_CUMULATIVE}`"
+            ),
+        }
+    }
+}
+
+impl From<OtlpMetricsTemporality> for Temporality {
+    fn from(t: OtlpMetricsTemporality) -> Self {
+        t.0
+    }
+}
+
+pub struct TelemetryProviders {
+    tracer_provider: SdkTracerProvider,
+    logger_provider: SdkLoggerProvider,
+    meter_provider: SdkMeterProvider,
+}
+
+impl TelemetryProviders {
+    pub fn shutdown(self) -> anyhow::Result<()> {
+        self.tracer_provider
+            .shutdown()
+            .context("failed to shutdown OpenTelemetry tracer provider")?;
+        self.logger_provider
+            .shutdown()
+            .context("failed to shutdown OpenTelemetry logger provider")?;
+        self.meter_provider
+            .shutdown()
+            .context("failed to shutdown OpenTelemetry meter provider")?;
+        Ok(())
+    }
+}
+
 #[cfg(feature = "tokio-console")]
 use crate::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY;
 
 /// Load the default logging filter from the environment. The filter can later
-/// be updated using the result callback of [setup_logging_and_tracing].
+/// be updated using the result callback of [init_telemetry_providers].
 fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
@@ -119,14 +190,11 @@ fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
 
 type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscriber::Registry>;
 
-pub fn setup_logging_and_tracing(
+pub fn init_telemetry_providers(
     level: Level,
     ansi_colors: bool,
     build_info: &BuildInfo,
-) -> anyhow::Result<(
-    EnvFilterReloadFn,
-    Option<(SdkTracerProvider, SdkLoggerProvider)>,
-)> {
+) -> anyhow::Result<(EnvFilterReloadFn, Option<TelemetryProviders>)> {
     #[cfg(feature = "tokio-console")]
     {
         if get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
@@ -204,12 +272,37 @@ pub fn setup_logging_and_tracing(
             .with_batch_exporter(log_exporter)
             .build();
 
-        let tracing_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        let metrics_protocol_opt =
+            get_from_env_opt::<String>("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", false);
+        let metrics_protocol = metrics_protocol_opt
+            .as_deref()
+            .map(OtlpProtocol::from_str)
+            .transpose()?
+            .unwrap_or(global_protocol);
+        let temporality_opt =
+            get_from_env_opt::<String>("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", false);
+        let temporality = temporality_opt
+            .as_deref()
+            .map(OtlpMetricsTemporality::from_str)
+            .transpose()?
+            .map(Temporality::from)
+            .unwrap_or(Temporality::Cumulative);
+        let metric_exporter = metrics_protocol.metric_exporter(temporality)?;
+
+        let meter_provider = SdkMeterProvider::builder()
+            .with_resource(resource.clone())
+            .with_periodic_exporter(metric_exporter)
+            .build();
+
+        let meter = meter_provider.meter("quickwit");
+        quickwit_common::metrics::install_otel_meter(meter);
+
+        let tracer_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
             .with_span_processor(span_processor)
             .with_resource(resource)
             .build();
 
-        let tracer = tracing_provider.tracer("quickwit");
+        let tracer = tracer_provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
         // Bridge between tracing logs and otel tracing events
@@ -220,7 +313,11 @@ pub fn setup_logging_and_tracing(
             .with(logs_otel_layer)
             .try_init()
             .context("failed to register tracing subscriber")?;
-        Some((tracing_provider, logger_provider))
+        Some(TelemetryProviders {
+            tracer_provider,
+            logger_provider,
+            meter_provider,
+        })
     } else {
         registry
             .try_init()

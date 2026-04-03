@@ -17,11 +17,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use once_cell::sync::OnceCell;
-use prometheus::{Gauge, IntCounter, IntGauge};
 use tokio::runtime::Runtime;
 use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 
-use crate::metrics::{new_counter, new_float_gauge, new_gauge};
+use crate::metrics::{Gauge, IntCounter, IntGauge, new_counter, new_float_gauge, new_gauge};
 
 static RUNTIMES: OnceCell<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceCell::new();
 

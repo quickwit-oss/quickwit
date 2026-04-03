@@ -18,12 +18,11 @@ use std::pin::Pin;
 
 use bytesize::ByteSize;
 use futures::{Stream, StreamExt, TryStreamExt, stream};
-use prometheus::IntGauge;
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
 use tracing::warn;
 
-use crate::metrics::GaugeGuard;
+use crate::metrics::{GaugeGuard, IntGauge};
 use crate::tower::RpcName;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;

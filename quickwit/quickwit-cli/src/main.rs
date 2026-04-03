@@ -22,7 +22,7 @@ use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
-use quickwit_cli::logger::setup_logging_and_tracing;
+use quickwit_cli::logger::init_telemetry_providers;
 use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
@@ -98,8 +98,8 @@ async fn main_impl() -> anyhow::Result<()> {
     start_jemalloc_metrics_loop();
 
     let build_info = BuildInfo::get();
-    let (env_filter_reload_fn, tracer_provider_opt) =
-        setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
+    let (env_filter_reload_fn, telemetry_providers) =
+        init_telemetry_providers(command.default_log_level(), ansi_colors, build_info)?;
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");
@@ -113,13 +113,8 @@ async fn main_impl() -> anyhow::Result<()> {
         0
     };
 
-    if let Some((trace_provider, logs_provider)) = tracer_provider_opt {
-        trace_provider
-            .shutdown()
-            .context("failed to shutdown OpenTelemetry tracer provider")?;
-        logs_provider
-            .shutdown()
-            .context("failed to shutdown OpenTelemetry logs provider")?;
+    if let Some(providers) = telemetry_providers {
+        providers.shutdown()?;
     }
 
     std::process::exit(return_code)
