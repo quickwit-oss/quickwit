@@ -460,17 +460,21 @@ fn parse_metric(
                 }
             }
         }
-        Some(metric::Data::Histogram(_)) => {
+        Some(metric::Data::Histogram(h)) => {
             warn!("histogram metrics not supported, skipping");
+            *num_rejected += h.data_points.len() as u64;
         }
-        Some(metric::Data::ExponentialHistogram(_)) => {
+        Some(metric::Data::ExponentialHistogram(h)) => {
             warn!("exponential histogram metrics not supported, skipping");
+            *num_rejected += h.data_points.len() as u64;
         }
-        Some(metric::Data::Summary(_)) => {
+        Some(metric::Data::Summary(s)) => {
             warn!("summary metrics not supported, skipping");
+            *num_rejected += s.data_points.len() as u64;
         }
         None => {
             warn!("metric has no data, skipping");
+            *num_rejected += 1;
         }
     }
 }
