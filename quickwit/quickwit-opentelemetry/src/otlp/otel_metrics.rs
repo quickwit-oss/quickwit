@@ -209,7 +209,15 @@ impl OtlpGrpcMetricsService {
             Status::internal("failed to parse metric records")
         })??;
 
-        if num_data_points > 0 && num_data_points == num_parse_errors {
+        if num_data_points == 0 {
+            // Empty request — nothing to ingest, return success.
+            return Ok(ExportMetricsServiceResponse {
+                partial_success: None,
+            });
+        }
+
+        if num_data_points == num_parse_errors {
+            // All data points were rejected.
             return Err(tonic::Status::internal(error_message));
         }
 
