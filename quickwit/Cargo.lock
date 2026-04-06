@@ -6542,7 +6542,7 @@ dependencies = [
 [[package]]
 name = "pomchi"
 version = "0.1.0"
-source = "git+ssh://git@github.com/DataDog/PomChi.git?rev=bcb13f6#bcb13f6c8aabdd072f2288c593818e3b12c36ef9"
+source = "git+ssh://git@github.com/DataDog/PomChi.git?rev=3a07006#3a07006ce574bbb288173b214a1760a708e382d4"
 dependencies = [
  "event-percolation",
  "fnv",

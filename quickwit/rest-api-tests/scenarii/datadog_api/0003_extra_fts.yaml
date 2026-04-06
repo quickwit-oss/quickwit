@@ -1,7 +1,7 @@
 # Tests for extra_fts: FTS queries should find text inside
 # custom.error.message, custom.error.stack, and custom.title
-# via the extra_fts concatenate field (combines extra_fts_error_message,
-# extra_fts_error_stack, extra_fts_title) indexed with the datadog tokenizer.
+# via the extra_fts text field (PomChi concatenates these values
+# at ingest time) indexed with the datadog tokenizer.
 
 # Step 1: Verify document was ingested
 endpoint: api/v1/datadog/search
@@ -10,21 +10,21 @@ params:
 expected:
   num_hits: 1
 ---
-# Step 2: FTS for a word in extra_fts_error_message
+# Step 2: FTS for a word from error.message
 endpoint: api/v1/datadog/search
 params:
   query: "refused"
 expected:
   num_hits: 1
 ---
-# Step 3: FTS for a word in extra_fts_title
+# Step 3: FTS for a word from title
 endpoint: api/v1/datadog/search
 params:
   query: "crash"
 expected:
   num_hits: 1
 ---
-# Step 4: FTS for a word in extra_fts_error_stack
+# Step 4: FTS for a word from error.stack
 endpoint: api/v1/datadog/search
 params:
   query: "RuntimeError"

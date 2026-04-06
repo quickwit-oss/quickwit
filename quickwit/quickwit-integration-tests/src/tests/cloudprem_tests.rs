@@ -991,28 +991,25 @@ async fn test_extra_fts_indexing_and_search() {
     ]))
     .unwrap();
 
-    // Verify PomChi produces flat extra_fts fields
+    // Verify PomChi produces a single extra_fts string
     let msg: DatadogLogMsg = serde_json::from_value(docs[0].clone()).unwrap();
     let processed = pomchi::ProcessedLog::from_datadog_log_msg(msg);
-    let serialized = serde_json::to_value(&processed).unwrap();
-    assert_eq!(
-        serialized["extra_fts_error_message"],
-        "connection refused by remote host"
-    );
-    assert_eq!(serialized["extra_fts_title"], "payment service crash");
+    let fts = processed.extra_fts.as_deref().expect("extra_fts should be populated");
+    assert!(fts.contains("connection refused by remote host"));
+    assert!(fts.contains("payment service crash"));
 
     let sandbox = setup_env(&mut docs).await;
 
     // Verify the document was indexed
     sandbox.assert_hit_count("datadog", "source:java", 1).await;
 
-    // FTS for a word in extra_fts_error_message (via extra_fts concatenate field)
+    // FTS for a word in extra_fts (from error.message)
     sandbox.assert_hit_count("datadog", "refused", 1).await;
 
-    // FTS for a word in extra_fts_title
+    // FTS for a word in extra_fts (from title)
     sandbox.assert_hit_count("datadog", "crash", 1).await;
 
-    // FTS for a word in extra_fts_error_stack
+    // FTS for a word in extra_fts (from error.stack)
     sandbox.assert_hit_count("datadog", "RuntimeError", 1).await;
 
     // Negative: word not in any field

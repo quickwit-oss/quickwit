@@ -623,8 +623,8 @@ fn wildcard_pattern_to_string(pattern: &WildcardPattern) -> String {
 /// - because duplicating the indexing of `message` took a significant amount of space.
 fn expand_virtual_fields(field_name: String) -> Vec<String> {
     if field_name == EVP_DEFAULT_FIELD {
-        // FTS: message + extra_fts (a concatenate field combining
-        // extra_fts_error_message, extra_fts_error_stack, extra_fts_title).
+        // FTS: message + extra_fts (a single text field where PomChi
+        // concatenates custom.error.message, custom.error.stack, custom.title).
         // Keep in sync with default_search_fields in config/cloudprem/datadog.yaml
         vec![QW_MESSAGE_FIELD.to_string(), QW_EXTRA_FTS.to_string()]
     } else if field_name == EVP_WES_FIELD {
