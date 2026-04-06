@@ -1183,9 +1183,7 @@ mod tests {
                         KeyValue {
                             key: "metric_name".to_string(),
                             value: Some(AnyValue {
-                                value: Some(any_value::Value::StringValue(
-                                    "injected".to_string(),
-                                )),
+                                value: Some(any_value::Value::StringValue("injected".to_string())),
                             }),
                         },
                     ],

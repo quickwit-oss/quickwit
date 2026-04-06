@@ -78,7 +78,8 @@ impl ParquetBatchAccumulator {
     /// and returns the combined batch. Returns None if the threshold has not been reached.
     pub fn add_batch(&mut self, batch: RecordBatch) -> Result<Option<RecordBatch>, IndexingError> {
         // Skip 0-row batches (e.g. checkpoint-only forwarding from doc processor). We ultimately
-        // need to forward a None batch to the packager to skip the write, and just forward the checkpoint.
+        // need to forward a None batch to the packager to skip the write, and just forward the
+        // checkpoint.
         if batch.num_rows() == 0 {
             return Ok(None);
         }
