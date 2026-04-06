@@ -139,6 +139,12 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
     Duration::from_secs(10)
 };
 
+const COMPACTION_SERVICE_DISCOVERY_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(100)
+} else {
+    Duration::from_secs(300)
+};
+
 const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
 const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
@@ -290,7 +296,7 @@ async fn start_compaction_service_if_needed(
     }
     let balance_channel = balance_channel_for_service(cluster, QuickwitService::Janitor).await;
     let found = balance_channel
-        .wait_for(Duration::from_secs(300), |connections| {
+        .wait_for(COMPACTION_SERVICE_DISCOVERY_TIMEOUT, |connections| {
             !connections.is_empty()
         })
         .await;
@@ -1904,6 +1910,23 @@ mod tests {
             .ping(quickwit_proto::compaction::PingRequest {})
             .await;
         assert!(response.is_ok());
+
+        unsafe { std::env::remove_var(ENABLE_COMPACTION_SERVICE_ENV_KEY) };
+    }
+
+    #[tokio::test]
+    async fn test_compaction_service_returns_none_when_no_janitor() {
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false)
+            .await
+            .unwrap();
+
+        unsafe { std::env::set_var(ENABLE_COMPACTION_SERVICE_ENV_KEY, "true") };
+
+        let mut node_config = NodeConfig::for_test();
+        node_config.enabled_services = HashSet::from([QuickwitService::Indexer]);
+        let result = start_compaction_service_if_needed(&node_config, &cluster).await;
+        assert!(result.is_none());
 
         unsafe { std::env::remove_var(ENABLE_COMPACTION_SERVICE_ENV_KEY) };
     }
