@@ -470,7 +470,8 @@ impl MetricsSplitMetadataBuilder {
         quickwit_dst::check_invariant!(
             quickwit_dst::invariants::InvariantId::TW2,
             self.window_duration_secs == 0 || 3600 % self.window_duration_secs == 0,
-            ": window_duration_secs={} does not divide 3600", self.window_duration_secs
+            ": window_duration_secs={} does not divide 3600",
+            self.window_duration_secs
         );
 
         // TW-1 (ADR-003, partial): window_start and window_duration_secs are paired.
@@ -479,9 +480,10 @@ impl MetricsSplitMetadataBuilder {
             quickwit_dst::invariants::InvariantId::TW1,
             (self.window_start.is_none() && self.window_duration_secs == 0)
                 || (self.window_start.is_some() && self.window_duration_secs > 0),
-            ": window_start and window_duration_secs must be set together \
-             (window_start={:?}, window_duration_secs={})",
-            self.window_start, self.window_duration_secs
+            ": window_start and window_duration_secs must be set together (window_start={:?}, \
+             window_duration_secs={})",
+            self.window_start,
+            self.window_duration_secs
         );
 
         // Fuse the two builder fields into a single Range.

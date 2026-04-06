@@ -288,7 +288,8 @@ impl ParquetWriter {
                     quickwit_dst::check_invariant!(
                         quickwit_dst::invariants::InvariantId::SS1,
                         verify_indices.value(i) as usize == i,
-                        ": row {} is out of sort order after sort_batch()", i
+                        ": row {} is out of sort order after sort_batch()",
+                        i
                     );
                 }
             }

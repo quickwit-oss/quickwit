@@ -102,14 +102,18 @@ pub struct CompactionState {
 /// Actions.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CompactionAction {
-    AdvanceTime { new_time: i64 },
+    AdvanceTime {
+        new_time: i64,
+    },
     IngestPoint {
         timestamp: i64,
         sort_key: i64,
         scope: Scope,
         columns: BTreeSet<ColumnName>,
     },
-    FlushSplit { key: BufferKey },
+    FlushSplit {
+        key: BufferKey,
+    },
     CompactWindow {
         scope: Scope,
         window_start: i64,
@@ -323,11 +327,7 @@ impl Model for CompactionModel {
         }
     }
 
-    fn next_state(
-        &self,
-        state: &Self::State,
-        action: Self::Action,
-    ) -> Option<Self::State> {
+    fn next_state(&self, state: &Self::State, action: Self::Action) -> Option<Self::State> {
         let mut next = state.clone();
 
         match action {
@@ -352,10 +352,7 @@ impl Model for CompactionModel {
                 };
                 let ws = window_start(timestamp, self.window_duration);
                 let key = (scope, ws);
-                next.ingest_buffer
-                    .entry(key)
-                    .or_default()
-                    .push(row.clone());
+                next.ingest_buffer.entry(key).or_default().push(row.clone());
                 next.next_point_id += 1;
                 next.points_ingested += 1;
                 next.row_history.insert(pid, row);
@@ -366,8 +363,10 @@ impl Model for CompactionModel {
                     return None;
                 }
                 let sorted_rows = insertion_sort(&rows);
-                let all_cols: BTreeSet<ColumnName> =
-                    rows.iter().flat_map(|r| r.columns.iter().copied()).collect();
+                let all_cols: BTreeSet<ColumnName> = rows
+                    .iter()
+                    .flat_map(|r| r.columns.iter().copied())
+                    .collect();
                 let new_split = CompactionSplit {
                     id: next.next_split_id,
                     scope: key.0,
@@ -460,117 +459,147 @@ impl Model for CompactionModel {
             // TW-1: Every split belongs to exactly one time window.
             // All rows have the same window_start as the split metadata.
             // Mirrors TimeWindowedCompaction.tla lines 274-277
-            Property::always("TW-1: one window per split", |model: &CompactionModel, state: &CompactionState| {
-                let wd = model.window_duration;
-                state.object_storage.iter().all(|split| {
-                    split
-                        .rows
-                        .iter()
-                        .all(|row| window_start(row.timestamp, wd) == split.window_start)
-                })
-            }),
+            Property::always(
+                "TW-1: one window per split",
+                |model: &CompactionModel, state: &CompactionState| {
+                    let wd = model.window_duration;
+                    state.object_storage.iter().all(|split| {
+                        split
+                            .rows
+                            .iter()
+                            .all(|row| window_start(row.timestamp, wd) == split.window_start)
+                    })
+                },
+            ),
             // TW-2: window_duration evenly divides one hour.
             // Mirrors TimeWindowedCompaction.tla lines 283-284
-            Property::always("TW-2: duration divides hour", |model: &CompactionModel, _state: &CompactionState| {
-                model.hour_seconds % model.window_duration == 0
-            }),
+            Property::always(
+                "TW-2: duration divides hour",
+                |model: &CompactionModel, _state: &CompactionState| {
+                    model.hour_seconds % model.window_duration == 0
+                },
+            ),
             // TW-3: No cross-window merges.
             // Mirrors TimeWindowedCompaction.tla lines 295-305
-            Property::always("TW-3: no cross-window merge", |_model: &CompactionModel, state: &CompactionState| {
-                state.compaction_log.iter().all(|entry| {
-                    // All input window_starts are identical.
-                    let ws_values: BTreeSet<i64> =
-                        entry.input_window_starts.values().copied().collect();
-                    if ws_values.len() > 1 {
-                        return false;
-                    }
-                    // Output split (if in storage) matches.
-                    for s in &state.object_storage {
-                        if s.id == entry.output_split_id {
-                            for &input_ws in entry.input_window_starts.values() {
-                                if s.window_start != input_ws {
+            Property::always(
+                "TW-3: no cross-window merge",
+                |_model: &CompactionModel, state: &CompactionState| {
+                    state.compaction_log.iter().all(|entry| {
+                        // All input window_starts are identical.
+                        let ws_values: BTreeSet<i64> =
+                            entry.input_window_starts.values().copied().collect();
+                        if ws_values.len() > 1 {
+                            return false;
+                        }
+                        // Output split (if in storage) matches.
+                        for s in &state.object_storage {
+                            if s.id == entry.output_split_id {
+                                for &input_ws in entry.input_window_starts.values() {
+                                    if s.window_start != input_ws {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        true
+                    })
+                },
+            ),
+            // CS-1: Only splits sharing scope may be merged.
+            // Mirrors TimeWindowedCompaction.tla lines 311-314
+            Property::always(
+                "CS-1: scope compatibility",
+                |_model: &CompactionModel, state: &CompactionState| {
+                    state.compaction_log.iter().all(|entry| {
+                        let scopes: BTreeSet<Scope> =
+                            entry.input_scopes.values().copied().collect();
+                        scopes.len() <= 1
+                    })
+                },
+            ),
+            // CS-2: Same window_start within scope.
+            // Mirrors TimeWindowedCompaction.tla lines 320-323
+            Property::always(
+                "CS-2: same window_start",
+                |_model: &CompactionModel, state: &CompactionState| {
+                    state.compaction_log.iter().all(|entry| {
+                        let ws_values: BTreeSet<i64> =
+                            entry.input_window_starts.values().copied().collect();
+                        ws_values.len() <= 1
+                    })
+                },
+            ),
+            // CS-3: Splits before compaction_start_time never compacted.
+            // Mirrors TimeWindowedCompaction.tla lines 329-332
+            Property::always(
+                "CS-3: compaction start time",
+                |model: &CompactionModel, state: &CompactionState| {
+                    let cst = model.compaction_start_time;
+                    state
+                        .compaction_log
+                        .iter()
+                        .all(|entry| entry.input_window_starts.values().all(|&ws| ws >= cst))
+                },
+            ),
+            // MC-1: Row multiset preserved (no add/remove/duplicate).
+            // Mirrors TimeWindowedCompaction.tla lines 339-344
+            Property::always(
+                "MC-1: row set preserved",
+                |_model: &CompactionModel, state: &CompactionState| {
+                    state
+                        .compaction_log
+                        .iter()
+                        .all(|entry| entry.input_point_ids == entry.output_point_ids)
+                },
+            ),
+            // MC-2: Row contents unchanged through compaction.
+            // Mirrors TimeWindowedCompaction.tla lines 351-360
+            Property::always(
+                "MC-2: row contents preserved",
+                |_model: &CompactionModel, state: &CompactionState| {
+                    for split in &state.object_storage {
+                        for row in &split.rows {
+                            if let Some(original) = state.row_history.get(&row.point_id) {
+                                if row.timestamp != original.timestamp
+                                    || row.sort_key != original.sort_key
+                                    || row.columns != original.columns
+                                    || row.values != original.values
+                                {
                                     return false;
                                 }
+                            } else {
+                                return false;
                             }
                         }
                     }
                     true
-                })
-            }),
-            // CS-1: Only splits sharing scope may be merged.
-            // Mirrors TimeWindowedCompaction.tla lines 311-314
-            Property::always("CS-1: scope compatibility", |_model: &CompactionModel, state: &CompactionState| {
-                state.compaction_log.iter().all(|entry| {
-                    let scopes: BTreeSet<Scope> =
-                        entry.input_scopes.values().copied().collect();
-                    scopes.len() <= 1
-                })
-            }),
-            // CS-2: Same window_start within scope.
-            // Mirrors TimeWindowedCompaction.tla lines 320-323
-            Property::always("CS-2: same window_start", |_model: &CompactionModel, state: &CompactionState| {
-                state.compaction_log.iter().all(|entry| {
-                    let ws_values: BTreeSet<i64> =
-                        entry.input_window_starts.values().copied().collect();
-                    ws_values.len() <= 1
-                })
-            }),
-            // CS-3: Splits before compaction_start_time never compacted.
-            // Mirrors TimeWindowedCompaction.tla lines 329-332
-            Property::always("CS-3: compaction start time", |model: &CompactionModel, state: &CompactionState| {
-                let cst = model.compaction_start_time;
-                state.compaction_log.iter().all(|entry| {
-                    entry
-                        .input_window_starts
-                        .values()
-                        .all(|&ws| ws >= cst)
-                })
-            }),
-            // MC-1: Row multiset preserved (no add/remove/duplicate).
-            // Mirrors TimeWindowedCompaction.tla lines 339-344
-            Property::always("MC-1: row set preserved", |_model: &CompactionModel, state: &CompactionState| {
-                state.compaction_log.iter().all(|entry| {
-                    entry.input_point_ids == entry.output_point_ids
-                })
-            }),
-            // MC-2: Row contents unchanged through compaction.
-            // Mirrors TimeWindowedCompaction.tla lines 351-360
-            Property::always("MC-2: row contents preserved", |_model: &CompactionModel, state: &CompactionState| {
-                for split in &state.object_storage {
-                    for row in &split.rows {
-                        if let Some(original) = state.row_history.get(&row.point_id) {
-                            if row.timestamp != original.timestamp
-                                || row.sort_key != original.sort_key
-                                || row.columns != original.columns
-                                || row.values != original.values
-                            {
-                                return false;
-                            }
-                        } else {
-                            return false;
-                        }
-                    }
-                }
-                true
-            }),
+                },
+            ),
             // MC-3: Output is sorted.
             // Mirrors TimeWindowedCompaction.tla lines 366-368
-            Property::always("MC-3: sort order preserved", |_model: &CompactionModel, state: &CompactionState| {
-                state.object_storage.iter().all(|split| {
-                    if split.sorted {
-                        is_sorted_by_key(&split.rows)
-                    } else {
-                        true
-                    }
-                })
-            }),
+            Property::always(
+                "MC-3: sort order preserved",
+                |_model: &CompactionModel, state: &CompactionState| {
+                    state.object_storage.iter().all(|split| {
+                        if split.sorted {
+                            is_sorted_by_key(&split.rows)
+                        } else {
+                            true
+                        }
+                    })
+                },
+            ),
             // MC-4: Column set is the union of inputs.
             // Mirrors TimeWindowedCompaction.tla lines 376-378
-            Property::always("MC-4: column union", |_model: &CompactionModel, state: &CompactionState| {
-                state.compaction_log.iter().all(|entry| {
-                    entry.output_columns == entry.input_column_union
-                })
-            }),
+            Property::always(
+                "MC-4: column union",
+                |_model: &CompactionModel, state: &CompactionState| {
+                    state
+                        .compaction_log
+                        .iter()
+                        .all(|entry| entry.output_columns == entry.input_column_union)
+                },
+            ),
         ]
     }
 }
@@ -582,11 +611,7 @@ mod tests {
     #[test]
     fn check_compaction_small() {
         let model = CompactionModel::small();
-        model
-            .checker()
-            .spawn_bfs()
-            .join()
-            .assert_properties();
+        model.checker().spawn_bfs().join().assert_properties();
     }
 
     #[test]

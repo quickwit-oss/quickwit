@@ -162,20 +162,29 @@ mod tests {
     #[test]
     fn descriptions_non_empty() {
         let all = [
-            InvariantId::SS1, InvariantId::SS2, InvariantId::SS3,
-            InvariantId::SS4, InvariantId::SS5,
-            InvariantId::TW1, InvariantId::TW2, InvariantId::TW3,
-            InvariantId::CS1, InvariantId::CS2, InvariantId::CS3,
-            InvariantId::MC1, InvariantId::MC2, InvariantId::MC3, InvariantId::MC4,
-            InvariantId::DM1, InvariantId::DM2, InvariantId::DM3,
-            InvariantId::DM4, InvariantId::DM5,
+            InvariantId::SS1,
+            InvariantId::SS2,
+            InvariantId::SS3,
+            InvariantId::SS4,
+            InvariantId::SS5,
+            InvariantId::TW1,
+            InvariantId::TW2,
+            InvariantId::TW3,
+            InvariantId::CS1,
+            InvariantId::CS2,
+            InvariantId::CS3,
+            InvariantId::MC1,
+            InvariantId::MC2,
+            InvariantId::MC3,
+            InvariantId::MC4,
+            InvariantId::DM1,
+            InvariantId::DM2,
+            InvariantId::DM3,
+            InvariantId::DM4,
+            InvariantId::DM5,
         ];
         for id in all {
-            assert!(
-                !id.description().is_empty(),
-                "{} has empty description",
-                id
-            );
+            assert!(!id.description().is_empty(), "{} has empty description", id);
         }
     }
 }

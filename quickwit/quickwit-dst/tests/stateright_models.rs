@@ -26,10 +26,9 @@
 
 #![cfg(feature = "model-checking")]
 
-use quickwit_dst::models::{
-    parquet_data_model::DataModelModel, sort_schema::SortSchemaModel,
-    time_windowed_compaction::CompactionModel,
-};
+use quickwit_dst::models::parquet_data_model::DataModelModel;
+use quickwit_dst::models::sort_schema::SortSchemaModel;
+use quickwit_dst::models::time_windowed_compaction::CompactionModel;
 use stateright::{Checker, Model};
 
 /// SS-1..SS-5: Sort schema invariants (ADR-002).

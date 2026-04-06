@@ -18,8 +18,7 @@
 //!
 //! # Invariants
 //! - DM-1: Each row is exactly one data point (all required fields populated)
-//! - DM-2: No last-write-wins; duplicate (metric, tags, ts) from separate
-//!   ingests both survive
+//! - DM-2: No last-write-wins; duplicate (metric, tags, ts) from separate ingests both survive
 //! - DM-3: No interpolation; storage contains only ingested points
 //! - DM-4: timeseries_id is deterministic for a given tag set
 //! - DM-5: timeseries_id persists through compaction without recomputation
@@ -99,11 +98,17 @@ impl DataModelState {
     }
 
     fn all_stored_rows(&self) -> BTreeSet<DataPoint> {
-        self.splits.iter().flat_map(|s| s.rows.iter().cloned()).collect()
+        self.splits
+            .iter()
+            .flat_map(|s| s.rows.iter().cloned())
+            .collect()
     }
 
     fn all_pending_rows(&self) -> BTreeSet<DataPoint> {
-        self.pending.iter().flat_map(|(_, set)| set.iter().cloned()).collect()
+        self.pending
+            .iter()
+            .flat_map(|(_, set)| set.iter().cloned())
+            .collect()
     }
 }
 
@@ -218,11 +223,7 @@ impl Model for DataModelModel {
         }
     }
 
-    fn next_state(
-        &self,
-        state: &Self::State,
-        action: Self::Action,
-    ) -> Option<Self::State> {
+    fn next_state(&self, state: &Self::State, action: Self::Action) -> Option<Self::State> {
         let mut next = state.clone();
 
         match action {
@@ -269,8 +270,10 @@ impl Model for DataModelModel {
                     return None;
                 }
 
-                let merged_rows: BTreeSet<DataPoint> =
-                    selected.iter().flat_map(|s| s.rows.iter().cloned()).collect();
+                let merged_rows: BTreeSet<DataPoint> = selected
+                    .iter()
+                    .flat_map(|s| s.rows.iter().cloned())
+                    .collect();
                 let new_split = DataModelSplit {
                     split_id: next.next_split_id,
                     rows: merged_rows,
@@ -358,8 +361,7 @@ impl Model for DataModelModel {
                 |_model: &DataModelModel, state: &DataModelState| {
                     let stored = state.all_stored_rows();
                     let pending = state.all_pending_rows();
-                    let all: BTreeSet<&DataPoint> =
-                        stored.iter().chain(pending.iter()).collect();
+                    let all: BTreeSet<&DataPoint> = stored.iter().chain(pending.iter()).collect();
                     for r1 in &all {
                         for r2 in &all {
                             if r1.tags == r2.tags && r1.timeseries_id != r2.timeseries_id {
@@ -395,11 +397,7 @@ mod tests {
     #[test]
     fn check_data_model_small() {
         let model = DataModelModel::small();
-        model
-            .checker()
-            .spawn_bfs()
-            .join()
-            .assert_properties();
+        model.checker().spawn_bfs().join().assert_properties();
     }
 
     #[test]

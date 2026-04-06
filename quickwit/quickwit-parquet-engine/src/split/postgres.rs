@@ -165,7 +165,8 @@ impl PgMetricsSplit {
             quickwit_dst::invariants::InvariantId::SS5,
             metadata.sort_fields == self.sort_fields,
             ": sort_fields mismatch between JSON ('{}') and SQL column ('{}')",
-            metadata.sort_fields, self.sort_fields
+            metadata.sort_fields,
+            self.sort_fields
         );
 
         // SS-5 continued: window_start must match between JSON and SQL column.
@@ -173,7 +174,8 @@ impl PgMetricsSplit {
             quickwit_dst::invariants::InvariantId::SS5,
             metadata.window_start() == self.window_start,
             ": window_start mismatch between JSON ({:?}) and SQL column ({:?})",
-            metadata.window_start(), self.window_start
+            metadata.window_start(),
+            self.window_start
         );
 
         // SS-4 (SortSchema.tla): sort_fields is immutable after write.

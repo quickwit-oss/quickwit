@@ -80,16 +80,19 @@ pub fn window_start(
     use quickwit_dst::check_invariant;
     use quickwit_dst::invariants::InvariantId;
 
-    check_invariant!(InvariantId::TW2, duration_secs > 0, ": duration_secs must be positive");
+    check_invariant!(
+        InvariantId::TW2,
+        duration_secs > 0,
+        ": duration_secs must be positive"
+    );
     check_invariant!(
         InvariantId::TW2,
         3600 % duration_secs == 0,
-        ": duration_secs={} does not divide 3600", duration_secs
+        ": duration_secs={} does not divide 3600",
+        duration_secs
     );
-    let start_secs = quickwit_dst::invariants::window::window_start_secs(
-        timestamp_secs,
-        duration_secs,
-    );
+    let start_secs =
+        quickwit_dst::invariants::window::window_start_secs(timestamp_secs, duration_secs);
     DateTime::from_timestamp(start_secs, 0).ok_or(SortFieldsError::WindowStartOutOfRange {
         timestamp_secs: start_secs,
     })

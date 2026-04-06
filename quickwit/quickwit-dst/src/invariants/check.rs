@@ -16,11 +16,11 @@
 //!
 //! The condition is **always evaluated** (debug and release). Results are:
 //!
-//! - **Debug builds (Layer 3 — Prevention):** panics on violation via
-//!   `debug_assert!`, catching bugs during development and testing.
-//! - **All builds (Layer 4 — Production):** forwards the result to the
-//!   registered [`InvariantRecorder`](super::recorder::InvariantRecorder)
-//!   for Datadog metrics emission. No-op if no recorder is set.
+//! - **Debug builds (Layer 3 — Prevention):** panics on violation via `debug_assert!`, catching
+//!   bugs during development and testing.
+//! - **All builds (Layer 4 — Production):** forwards the result to the registered
+//!   [`InvariantRecorder`](super::recorder::InvariantRecorder) for Datadog metrics emission. No-op
+//!   if no recorder is set.
 
 /// Check an invariant condition in all build profiles.
 ///

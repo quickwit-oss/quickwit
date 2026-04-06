@@ -115,9 +115,7 @@ pub enum SortSchemaAction {
         rows: Vec<Row>,
     },
     /// Change the metastore schema to a new value.
-    ChangeSchema {
-        new_schema: Vec<SortColumn>,
-    },
+    ChangeSchema { new_schema: Vec<SortColumn> },
     /// Compact two splits (identified by index in the splits vec).
     CompactSplits {
         s1_idx: usize,
@@ -292,12 +290,7 @@ fn all_column_subsets() -> Vec<Vec<Column>> {
 
 /// Check if merged_rows is a valid permutation of the union of s1 and s2 rows,
 /// accounting for column extension (missing columns become NULL).
-fn is_valid_merge(
-    merged_rows: &[Row],
-    s1: &Split,
-    s2: &Split,
-    merged_columns: &[Column],
-) -> bool {
+fn is_valid_merge(merged_rows: &[Row], s1: &Split, s2: &Split, merged_columns: &[Column]) -> bool {
     let total_rows = s1.rows.len() + s2.rows.len();
     if merged_rows.len() != total_rows {
         return false;
@@ -313,8 +306,16 @@ fn is_valid_merge(
         Row { cells }
     };
 
-    let s1_extended: Vec<Row> = s1.rows.iter().map(|r| extend_row(r, merged_columns)).collect();
-    let s2_extended: Vec<Row> = s2.rows.iter().map(|r| extend_row(r, merged_columns)).collect();
+    let s1_extended: Vec<Row> = s1
+        .rows
+        .iter()
+        .map(|r| extend_row(r, merged_columns))
+        .collect();
+    let s2_extended: Vec<Row> = s2
+        .rows
+        .iter()
+        .map(|r| extend_row(r, merged_columns))
+        .collect();
 
     // Check that merged_rows is a permutation of s1_extended ++ s2_extended.
     let mut all_input: Vec<Row> = s1_extended;
@@ -414,11 +415,7 @@ impl Model for SortSchemaModel {
         }
     }
 
-    fn next_state(
-        &self,
-        state: &Self::State,
-        action: Self::Action,
-    ) -> Option<Self::State> {
+    fn next_state(&self, state: &Self::State, action: Self::Action) -> Option<Self::State> {
         let mut next = state.clone();
 
         match action {
@@ -519,11 +516,10 @@ impl Model for SortSchemaModel {
                                 let v_next = row_next.get_value(sc.column);
 
                                 // Check only when earlier columns are equal.
-                                let earlier_equal =
-                                    s.sort_schema[..k].iter().all(|prev_sc| {
-                                        row_curr.get_value(prev_sc.column)
-                                            == row_next.get_value(prev_sc.column)
-                                    });
+                                let earlier_equal = s.sort_schema[..k].iter().all(|prev_sc| {
+                                    row_curr.get_value(prev_sc.column)
+                                        == row_next.get_value(prev_sc.column)
+                                });
 
                                 if earlier_equal {
                                     // Ascending: null must not appear before non-null.
@@ -604,11 +600,7 @@ mod tests {
     #[test]
     fn check_sort_schema_small() {
         let model = SortSchemaModel::small();
-        model
-            .checker()
-            .spawn_bfs()
-            .join()
-            .assert_properties();
+        model.checker().spawn_bfs().join().assert_properties();
     }
 
     #[test]
