@@ -7596,6 +7596,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-ingest",
  "quickwit-metastore",
+ "quickwit-parquet-engine",
  "quickwit-proto",
  "serde",
  "serde_json",

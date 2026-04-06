@@ -19,6 +19,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
 use quickwit_ingest::CommitType;
+use quickwit_parquet_engine::schema::REQUIRED_FIELDS;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::metrics::v1::metrics_service_server::MetricsService;
@@ -514,15 +515,21 @@ fn create_number_data_point(
     };
 
     // Start with resource-level attributes as the base tags.
+    // Skip keys that collide with fixed column names to avoid duplicate columns.
+    let reserved = REQUIRED_FIELDS;
     let mut tags = HashMap::with_capacity(resource_attributes.len() + dp.attributes.len() + 3);
     for (key, json_val) in resource_attributes {
-        tags.insert(key.clone(), json_value_to_string(json_val.clone()));
+        if !reserved.contains(&key.as_str()) {
+            tags.insert(key.clone(), json_value_to_string(json_val.clone()));
+        }
     }
 
     // Data-point attributes override resource attributes.
     let attributes = extract_attributes(dp.attributes.clone());
     for (key, json_val) in attributes {
-        tags.insert(key, json_value_to_string(json_val));
+        if !reserved.contains(&key.as_str()) {
+            tags.insert(key, json_value_to_string(json_val));
+        }
     }
 
     // Add metric_unit and start_timestamp_secs using or_insert_with so a
@@ -1149,6 +1156,94 @@ mod tests {
         assert_eq!(
             dp.tags.get("host").map(|s| s.as_str()),
             Some("resource-host")
+        );
+    }
+
+    #[test]
+    fn test_reserved_keys_stripped_from_tags() {
+        use quickwit_proto::opentelemetry::proto::common::v1::{AnyValue, KeyValue, any_value};
+        use quickwit_proto::opentelemetry::proto::metrics::v1::{
+            Gauge, ResourceMetrics, ScopeMetrics, number_data_point,
+        };
+        use quickwit_proto::opentelemetry::proto::resource::v1::Resource;
+
+        let request = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: Some(Resource {
+                    attributes: vec![
+                        KeyValue {
+                            key: "service.name".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue(
+                                    "my-service".to_string(),
+                                )),
+                            }),
+                        },
+                        // Reserved key at resource level — should be dropped
+                        KeyValue {
+                            key: "metric_name".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue(
+                                    "injected".to_string(),
+                                )),
+                            }),
+                        },
+                    ],
+                    dropped_attributes_count: 0,
+                }),
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics: vec![Metric {
+                        name: "cpu.usage".to_string(),
+                        description: String::new(),
+                        unit: String::new(),
+                        data: Some(metric::Data::Gauge(Gauge {
+                            data_points: vec![NumberDataPoint {
+                                attributes: vec![
+                                    // Reserved key at data-point level — should be dropped
+                                    KeyValue {
+                                        key: "timestamp_secs".to_string(),
+                                        value: Some(AnyValue {
+                                            value: Some(any_value::Value::StringValue(
+                                                "999".to_string(),
+                                            )),
+                                        }),
+                                    },
+                                    // Non-reserved key — should be kept
+                                    KeyValue {
+                                        key: "env".to_string(),
+                                        value: Some(AnyValue {
+                                            value: Some(any_value::Value::StringValue(
+                                                "prod".to_string(),
+                                            )),
+                                        }),
+                                    },
+                                ],
+                                start_time_unix_nano: 0,
+                                time_unix_nano: 1_000_000_000,
+                                exemplars: Vec::new(),
+                                flags: 0,
+                                value: Some(number_data_point::Value::AsDouble(42.0)),
+                            }],
+                        })),
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        };
+
+        let data_points = parse_otlp_metrics(request).data_points;
+        assert_eq!(data_points.len(), 1);
+        let dp = &data_points[0];
+        // Reserved keys should not appear in tags
+        assert!(!dp.tags.contains_key("metric_name"));
+        assert!(!dp.tags.contains_key("timestamp_secs"));
+        // Non-reserved keys should be present
+        assert_eq!(dp.tags.get("env").map(|s| s.as_str()), Some("prod"));
+        assert_eq!(
+            dp.tags.get("service").map(|s| s.as_str()),
+            Some("my-service")
         );
     }
 }
