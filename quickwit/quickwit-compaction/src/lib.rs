@@ -15,4 +15,3 @@
 #![deny(clippy::disallowed_methods)]
 
 pub mod planner;
-pub mod worker;

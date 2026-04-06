@@ -72,10 +72,10 @@ use quickwit_common::tower::{
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
+use quickwit_compaction::planner::StubCompactionService;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
-use quickwit_compaction::planner::StubCompactionService;
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
@@ -288,8 +288,7 @@ async fn start_compaction_service_if_needed(
         info!("compaction service enabled on this node");
         return Some(CompactionServiceClient::new(StubCompactionService));
     }
-    let balance_channel =
-        balance_channel_for_service(cluster, QuickwitService::Janitor).await;
+    let balance_channel = balance_channel_for_service(cluster, QuickwitService::Janitor).await;
     let found = balance_channel
         .wait_for(Duration::from_secs(300), |connections| {
             !connections.is_empty()
@@ -297,8 +296,8 @@ async fn start_compaction_service_if_needed(
         .await;
     if !found {
         error!(
-            "compaction service is enabled but no janitor node was found in the cluster, \
-             falling back to local merge pipelines"
+            "compaction service is enabled but no janitor node was found in the cluster, falling \
+             back to local merge pipelines"
         );
         return None;
     }
@@ -314,9 +313,9 @@ fn spawn_merge_scheduler_service(
     universe: &Universe,
     node_config: &NodeConfig,
 ) -> Mailbox<MergeSchedulerService> {
-    let (mailbox, _) = universe.spawn_builder().spawn(
-        MergeSchedulerService::new(node_config.indexer_config.merge_concurrency.get()),
-    );
+    let (mailbox, _) = universe.spawn_builder().spawn(MergeSchedulerService::new(
+        node_config.indexer_config.merge_concurrency.get(),
+    ));
     mailbox
 }
 
@@ -1537,9 +1536,9 @@ mod tests {
     use quickwit_cluster::{ChannelTransport, ClusterNode, create_cluster_for_test};
     use quickwit_common::uri::Uri;
     use quickwit_common::{ServiceStream, assert_eventually};
-    use quickwit_proto::compaction::CompactionService;
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
+    use quickwit_proto::compaction::CompactionService;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
     use quickwit_search::Job;

@@ -1746,8 +1746,7 @@ mod tests {
             init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
                 .await
                 .unwrap();
-        let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> =
-            universe.get_or_spawn_one();
+        let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
             NodeId::from("test-node"),
             data_dir_path,

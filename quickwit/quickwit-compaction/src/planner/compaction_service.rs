@@ -13,9 +13,7 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use quickwit_proto::compaction::{
-    CompactionResult, CompactionService, PingRequest, PingResponse,
-};
+use quickwit_proto::compaction::{CompactionResult, CompactionService, PingRequest, PingResponse};
 
 #[derive(Debug, Clone)]
 pub struct StubCompactionService;

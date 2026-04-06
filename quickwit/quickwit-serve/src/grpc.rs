@@ -148,8 +148,7 @@ pub(crate) async fn start_grpc_server(
     {
         if let Some(compaction_service) = &services.compaction_service_client_opt {
             enabled_grpc_services.insert("compaction");
-            file_descriptor_sets
-                .push(quickwit_proto::compaction::COMPACTION_FILE_DESCRIPTOR_SET);
+            file_descriptor_sets.push(quickwit_proto::compaction::COMPACTION_FILE_DESCRIPTOR_SET);
             Some(compaction_service.as_grpc_service(grpc_config.max_message_size))
         } else {
             None
