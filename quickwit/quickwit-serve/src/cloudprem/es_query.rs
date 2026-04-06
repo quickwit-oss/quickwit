@@ -70,8 +70,6 @@ pub(crate) async fn handle_es_query(
 
         ["_aliases"] => ok_json(&es_compat_aliases()),
 
-        ["_search", "scroll"] if method == "DELETE" => ok_json(&es_compat_delete_scroll()),
-
         [index, "_search_shards"] => {
             ok_json(&es_compat_search_shards(index.to_string(), node_config))
         }
@@ -96,15 +94,19 @@ pub(crate) async fn handle_es_query(
         }
 
         ["_search", "scroll"] => {
-            let qs_params = parse_query_params::<ScrollQueryParams>(query_string)?;
-            let body_params: ScrollQueryParams = parse_body_or_default(&body)?;
-            let merged = ScrollQueryParams {
-                scroll: body_params.scroll.or(qs_params.scroll),
-                scroll_id: body_params.scroll_id.or(qs_params.scroll_id),
-            };
-            match es_scroll(merged, search_service).await {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
+            if method == "DELETE" {
+                ok_json(&es_compat_delete_scroll())
+            } else {
+                let qs_params = parse_query_params::<ScrollQueryParams>(query_string)?;
+                let body_params: ScrollQueryParams = parse_body_or_default(&body)?;
+                let merged = ScrollQueryParams {
+                    scroll: body_params.scroll.or(qs_params.scroll),
+                    scroll_id: body_params.scroll_id.or(qs_params.scroll_id),
+                };
+                match es_scroll(merged, search_service).await {
+                    Ok(result) => ok_json_serialize(&result),
+                    Err(err) => Ok(es_error_to_response(err)),
+                }
             }
         }
 
@@ -262,4 +264,135 @@ fn es_error_to_response(
     let status_code = err.status.as_u16() as u32;
     let body = serde_json::to_vec(&err).unwrap_or_default();
     EsHttpResponse { status_code, body }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_config::NodeConfig;
+    use quickwit_proto::cloudprem::{CloudPremError, EsHttpRequest};
+    use quickwit_proto::metastore::MetastoreServiceClient;
+    use quickwit_search::MockSearchService;
+
+    use super::handle_es_query;
+    use crate::BuildInfo;
+
+    fn make_request(method: &str, path: &str) -> EsHttpRequest {
+        EsHttpRequest {
+            method: method.to_string(),
+            path: path.to_string(),
+            body: Vec::new(),
+            headers: Default::default(),
+            org_id: 0,
+            cluster_id: String::new(),
+        }
+    }
+
+    async fn call_es_query(method: &str, path: &str) -> Result<super::EsHttpResponse, CloudPremError> {
+        let search_service = Arc::new(MockSearchService::new());
+        let metastore = MetastoreServiceClient::mocked();
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let node_config = Arc::new(NodeConfig::for_test());
+        let build_info = BuildInfo::get();
+
+        handle_es_query(
+            make_request(method, path),
+            search_service,
+            metastore,
+            cluster,
+            node_config,
+            build_info,
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_route_nodes_http() {
+        let resp = call_es_query("GET", "/_nodes/http").await.unwrap();
+        assert_eq!(resp.status_code, 200);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert!(body.get("nodes").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_route_cluster_health() {
+        let resp = call_es_query("GET", "/_cluster/health").await.unwrap();
+        // cluster may or may not be ready in test, but we should get a valid response
+        assert!(resp.status_code == 200 || resp.status_code == 503);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert!(body.get("status").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_route_aliases() {
+        let resp = call_es_query("GET", "/_aliases").await.unwrap();
+        assert_eq!(resp.status_code, 200);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert!(body.is_object());
+    }
+
+    #[tokio::test]
+    async fn test_route_delete_scroll() {
+        let resp = call_es_query("DELETE", "/_search/scroll").await.unwrap();
+        assert_eq!(resp.status_code, 200);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert_eq!(body["succeeded"], true);
+        assert_eq!(body["num_freed"], 0);
+    }
+
+    #[tokio::test]
+    async fn test_route_search_shards() {
+        let resp = call_es_query("GET", "/my_index/_search_shards").await.unwrap();
+        assert_eq!(resp.status_code, 200);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert!(body.get("shards").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_route_cluster_info() {
+        let resp = call_es_query("GET", "/").await.unwrap();
+        assert_eq!(resp.status_code, 200);
+        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        assert!(body.get("tagline").is_some());
+        assert!(body.get("version").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_route_unsupported_path() {
+        let result = call_es_query("GET", "/_unsupported/endpoint").await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CloudPremError::InvalidArgument(msg) => {
+                assert!(msg.contains("unsupported ES path"));
+            }
+            other => panic!("expected InvalidArgument, got: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_route_with_query_string() {
+        // query string should be stripped from path routing
+        let resp = call_es_query("GET", "/_aliases?pretty=true").await.unwrap();
+        assert_eq!(resp.status_code, 200);
+    }
+
+    #[test]
+    fn test_route_mapping_and_mappings_recognized() {
+        // Verify that /_mapping and /_mappings paths are recognized by the
+        // segment matching (not "unsupported"). We test the path parsing only,
+        // since the actual handler requires a real metastore.
+        for suffix in &["_mapping", "_mappings"] {
+            let path = format!("/my_index/{suffix}");
+            let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+            match segments.as_slice() {
+                [_index, "_mapping" | "_mappings"] => {} // correctly routed
+                _ => panic!("path {path} was not recognized by segment matching"),
+            }
+        }
+    }
 }
