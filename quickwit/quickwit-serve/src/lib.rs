@@ -77,7 +77,7 @@ use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
-use quickwit_indexing::actors::IndexingService;
+use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
@@ -540,6 +540,9 @@ pub async fn serve_quickwit(
         .context("failed to start ingest v1 service")?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+        let (merge_scheduler_mailbox, _) = universe.spawn_builder().spawn(
+            MergeSchedulerService::new(node_config.indexer_config.merge_concurrency.get()),
+        );
         let indexing_service = start_indexing_service(
             &universe,
             &node_config,
@@ -549,6 +552,7 @@ pub async fn serve_quickwit(
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
+            Some(merge_scheduler_mailbox),
         )
         .await
         .context("failed to start indexing service")?;

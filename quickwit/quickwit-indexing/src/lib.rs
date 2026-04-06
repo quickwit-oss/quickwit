@@ -69,13 +69,10 @@ pub async fn start_indexing_service(
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
+    merge_scheduler_mailbox: Option<Mailbox<MergeSchedulerService>>,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
     let ingest_api_service_mailbox = universe.get_one::<IngestApiService>();
-    let (merge_scheduler_mailbox, _) = universe.spawn_builder().spawn(MergeSchedulerService::new(
-        config.indexer_config.merge_concurrency.get(),
-    ));
-    // Spawn indexing service.
     let indexing_service = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.to_path_buf(),
