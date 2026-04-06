@@ -19,7 +19,7 @@
 //! The schema is discovered at `finish()` time by scanning all accumulated
 //! data points for the union of tag keys.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -106,17 +106,42 @@ impl ArrowMetricsBatchBuilder {
             .map(|_| StringDictionaryBuilder::new())
             .collect();
 
-        for dp in &self.data_points {
+        // Map tag key -> builder index for O(1) lookup.
+        let tag_key_to_idx: HashMap<&str, usize> = sorted_tag_keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| (*k, i))
+            .collect();
+
+        // Track how many rows each tag builder has been filled to.
+        // This lets us bulk-append nulls for rows where a tag was absent.
+        let mut builder_rows = vec![0usize; sorted_tag_keys.len()];
+
+        for (row_idx, dp) in self.data_points.iter().enumerate() {
             metric_name_builder.append_value(&dp.metric_name);
             metric_type_builder.append_value(dp.metric_type as u8);
             timestamp_secs_builder.append_value(dp.timestamp_secs);
             value_builder.append_value(dp.value);
 
-            for (tag_idx, tag_key) in sorted_tag_keys.iter().enumerate() {
-                match dp.tags.get(*tag_key) {
-                    Some(tag_val) => tag_builders[tag_idx].append_value(tag_val),
-                    None => tag_builders[tag_idx].append_null(),
+            // Only touch builders for tags this data point has.
+            for (tag_key, tag_val) in &dp.tags {
+                if let Some(&idx) = tag_key_to_idx.get(tag_key.as_str()) {
+                    // Bulk append nulls if we need to.
+                    let nulls = row_idx - builder_rows[idx];
+                    if nulls > 0 {
+                        tag_builders[idx].append_nulls(nulls);
+                    }
+                    tag_builders[idx].append_value(tag_val);
+                    builder_rows[idx] = row_idx + 1;
                 }
+            }
+        }
+
+        // Pad remaining nulls at the end of each tag column.
+        for (idx, builder) in tag_builders.iter_mut().enumerate() {
+            let nulls = num_rows - builder_rows[idx];
+            if nulls > 0 {
+                builder.append_nulls(nulls);
             }
         }
 
@@ -499,6 +524,78 @@ mod tests {
                 "region",
             ]
         );
+    }
+
+    #[test]
+    fn test_sparse_tags_null_placement() {
+        use arrow::array::{Array, DictionaryArray};
+        use arrow::datatypes::Int32Type;
+
+        let mut builder = ArrowMetricsBatchBuilder::with_capacity(3);
+
+        // Row 0: only tag "a"
+        let mut tags0 = HashMap::new();
+        tags0.insert("a".to_string(), "a0".to_string());
+        builder.append(MetricDataPoint {
+            metric_name: "m".to_string(),
+            metric_type: MetricType::Gauge,
+            timestamp_secs: 1000,
+            value: 1.0,
+            tags: tags0,
+        });
+
+        // Row 1: only tag "b"
+        let mut tags1 = HashMap::new();
+        tags1.insert("b".to_string(), "b1".to_string());
+        builder.append(MetricDataPoint {
+            metric_name: "m".to_string(),
+            metric_type: MetricType::Gauge,
+            timestamp_secs: 1001,
+            value: 2.0,
+            tags: tags1,
+        });
+
+        // Row 2: both tags "a" and "b"
+        let mut tags2 = HashMap::new();
+        tags2.insert("a".to_string(), "a2".to_string());
+        tags2.insert("b".to_string(), "b2".to_string());
+        builder.append(MetricDataPoint {
+            metric_name: "m".to_string(),
+            metric_type: MetricType::Gauge,
+            timestamp_secs: 1002,
+            value: 3.0,
+            tags: tags2,
+        });
+
+        let batch = builder.finish();
+        assert_eq!(batch.num_rows(), 3);
+        // 4 fixed + 2 tags (a, b)
+        assert_eq!(batch.num_columns(), 6);
+
+        let schema = batch.schema();
+        let a_idx = schema.index_of("a").unwrap();
+        let b_idx = schema.index_of("b").unwrap();
+
+        let a_col = batch
+            .column(a_idx)
+            .as_any()
+            .downcast_ref::<DictionaryArray<Int32Type>>()
+            .unwrap();
+        let b_col = batch
+            .column(b_idx)
+            .as_any()
+            .downcast_ref::<DictionaryArray<Int32Type>>()
+            .unwrap();
+
+        // Column "a": value at row 0, null at row 1, value at row 2
+        assert!(!a_col.is_null(0));
+        assert!(a_col.is_null(1));
+        assert!(!a_col.is_null(2));
+
+        // Column "b": null at row 0, value at row 1, value at row 2
+        assert!(b_col.is_null(0));
+        assert!(!b_col.is_null(1));
+        assert!(!b_col.is_null(2));
     }
 
     #[test]

@@ -202,8 +202,6 @@ impl ParquetWriterConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use arrow::datatypes::Field;
 
     use super::*;
