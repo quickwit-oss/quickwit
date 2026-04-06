@@ -104,7 +104,7 @@ pub struct IndexingService {
     cluster: Cluster,
     metastore: MetastoreServiceClient,
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
-    merge_scheduler_service: Option<Mailbox<MergeSchedulerService>>,
+    merge_scheduler_service_opt: Option<Mailbox<MergeSchedulerService>>,
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
     indexing_pipelines: HashMap<PipelineUid, PipelineHandle>,
@@ -138,7 +138,7 @@ impl IndexingService {
         cluster: Cluster,
         metastore: MetastoreServiceClient,
         ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
-        merge_scheduler_service: Option<Mailbox<MergeSchedulerService>>,
+        merge_scheduler_service_opt: Option<Mailbox<MergeSchedulerService>>,
         ingester_pool: IngesterPool,
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
@@ -167,7 +167,7 @@ impl IndexingService {
             cluster,
             metastore,
             ingest_api_service_opt,
-            merge_scheduler_service,
+            merge_scheduler_service_opt,
             ingester_pool,
             storage_resolver,
             local_split_store: Arc::new(local_split_store),
@@ -298,7 +298,7 @@ impl IndexingService {
             .map_err(|error| IndexingError::Internal(error.to_string()))?;
 
         let merge_planner_mailbox = if let Some(merge_scheduler) =
-            self.merge_scheduler_service.clone()
+            self.merge_scheduler_service_opt.clone()
         {
             let merge_pipeline_id = indexing_pipeline_id.merge_pipeline_id();
             let merge_pipeline_params = MergePipelineParams {
@@ -321,7 +321,7 @@ impl IndexingService {
         // The concurrent uploads budget is split in 2: 1/2 for the indexing pipeline, 1/2 for the
         // merge pipeline. When there is no local merge pipeline, the indexing pipeline gets the
         // full budget.
-        let max_concurrent_split_uploads_index = if self.merge_scheduler_service.is_some() {
+        let max_concurrent_split_uploads_index = if self.merge_scheduler_service_opt.is_some() {
             (self.max_concurrent_split_uploads / 2).max(1)
         } else {
             self.max_concurrent_split_uploads
@@ -438,7 +438,7 @@ impl IndexingService {
         indexing_pipeline_ids: &[IndexingPipelineId],
         ctx: &ActorContext<Self>,
     ) -> MetastoreResult<HashMap<MergePipelineId, Vec<SplitMetadata>>> {
-        if self.merge_scheduler_service.is_none() {
+        if self.merge_scheduler_service_opt.is_none() {
             return Ok(Default::default());
         }
         let mut index_uids = Vec::new();
