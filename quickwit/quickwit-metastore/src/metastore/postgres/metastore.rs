@@ -1805,8 +1805,7 @@ impl MetastoreService for PostgresqlMetastore {
         let mut size_bytes_list = Vec::with_capacity(splits_metadata.len());
         let mut split_metadata_jsons = Vec::with_capacity(splits_metadata.len());
         let mut window_starts: Vec<Option<i64>> = Vec::with_capacity(splits_metadata.len());
-        let mut window_duration_secs_list: Vec<i32> =
-            Vec::with_capacity(splits_metadata.len());
+        let mut window_duration_secs_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
         let mut sort_fields_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
         let mut num_merge_ops_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
         let mut row_keys_list: Vec<Option<Vec<u8>>> = Vec::with_capacity(splits_metadata.len());
@@ -2517,8 +2516,7 @@ impl MetastoreService for PostgresqlMetastore {
         }
         match &query.mature {
             Bound::Included(evaluation_datetime) | Bound::Excluded(evaluation_datetime) => {
-                query_builder =
-                    query_builder.bind(evaluation_datetime.unix_timestamp() as f64);
+                query_builder = query_builder.bind(evaluation_datetime.unix_timestamp() as f64);
             }
             Bound::Unbounded => {}
         }
