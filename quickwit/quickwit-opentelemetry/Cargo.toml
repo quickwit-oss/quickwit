@@ -15,7 +15,6 @@ anyhow = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true }
 once_cell = { workspace = true }
-parquet = { workspace = true }
 prost = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -28,6 +27,7 @@ tracing = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-ingest = { workspace = true }
+quickwit-parquet-engine = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]

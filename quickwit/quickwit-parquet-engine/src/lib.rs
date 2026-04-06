@@ -26,3 +26,6 @@ pub mod metrics;
 pub mod schema;
 pub mod split;
 pub mod storage;
+
+#[cfg(any(test, feature = "testsuite"))]
+pub mod test_helpers;

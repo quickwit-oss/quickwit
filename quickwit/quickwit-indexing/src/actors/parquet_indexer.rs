@@ -424,6 +424,10 @@ impl Handler<ProcessedParquetBatch> for ParquetIndexer {
                         anyhow::anyhow!("failed to send to packager: {}", e).into(),
                     )
                 })?;
+
+            // Reset so the next batch schedules a fresh timeout.
+            self.workbench_id = Ulid::new();
+            self.commit_timeout_scheduled = false;
         }
 
         Ok(())
@@ -491,15 +495,21 @@ impl Handler<CommitTimeout> for ParquetIndexer {
         );
 
         // Flush the accumulator
-        if let Some(combined) = self.flush_accumulator()? {
+        let flushed_batch = self.flush_accumulator()?;
+        if let Some(ref combined) = flushed_batch {
             self.counters.record_flush();
             info!(
                 num_rows = combined.num_rows(),
-                "Flushed batch on commit timeout"
+                "flushed batch on commit timeout"
             );
+        }
 
+        // Forward if we have data or a pending checkpoint delta.
+        let should_send = flushed_batch.is_some() || !self.checkpoint_delta.is_empty();
+
+        if should_send {
             let batch_for_packager = ParquetBatchForPackager {
-                batch: Some(combined),
+                batch: flushed_batch,
                 index_uid: self.index_uid.clone(),
                 checkpoint_delta: self.make_index_checkpoint_delta(),
                 publish_lock: self.publish_lock.clone(),
@@ -518,6 +528,10 @@ impl Handler<CommitTimeout> for ParquetIndexer {
                         .into(),
                     )
                 })?;
+
+            // Reset so the next batch schedules a fresh timeout.
+            self.workbench_id = Ulid::new();
+            self.commit_timeout_scheduled = false;
         }
 
         Ok(())
@@ -530,16 +544,10 @@ mod tests {
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
-    use arrow::array::{
-        ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array, UInt64Array,
-    };
-    use arrow::datatypes::Int32Type;
-    use arrow::record_batch::RecordBatch;
-    use parquet::variant::{VariantArrayBuilder, VariantBuilderExt};
     use quickwit_actors::{ActorHandle, Universe};
     use quickwit_common::test_utils::wait_until_predicate;
-    use quickwit_parquet_engine::schema::ParquetSchema;
     use quickwit_parquet_engine::storage::{ParquetSplitWriter, ParquetWriterConfig};
+    use quickwit_parquet_engine::test_helpers::create_test_batch;
     use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
     use quickwit_storage::RamStorage;
 
@@ -598,9 +606,8 @@ mod tests {
         temp_dir: &std::path::Path,
         uploader_mailbox: Mailbox<ParquetUploader>,
     ) -> (Mailbox<ParquetPackager>, ActorHandle<ParquetPackager>) {
-        let schema = ParquetSchema::new();
         let writer_config = ParquetWriterConfig::default();
-        let split_writer = ParquetSplitWriter::new(schema, writer_config, temp_dir);
+        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir);
 
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)
@@ -622,97 +629,6 @@ mod tests {
         )
         .await
         .map_err(|_| anyhow::anyhow!("Timeout waiting for {} staged splits", expected_splits))
-    }
-
-    /// Create dictionary array for string fields with Int32 keys.
-    fn create_dict_array(values: &[&str]) -> ArrayRef {
-        let keys: Vec<i32> = (0..values.len()).map(|i| i as i32).collect();
-        let string_array = StringArray::from(values.to_vec());
-        Arc::new(
-            DictionaryArray::<Int32Type>::try_new(Int32Array::from(keys), Arc::new(string_array))
-                .unwrap(),
-        )
-    }
-
-    /// Create nullable dictionary array for optional string fields.
-    fn create_nullable_dict_array(values: &[Option<&str>]) -> ArrayRef {
-        let keys: Vec<Option<i32>> = values
-            .iter()
-            .enumerate()
-            .map(|(i, v)| v.map(|_| i as i32))
-            .collect();
-        let string_values: Vec<&str> = values.iter().filter_map(|v| *v).collect();
-        let string_array = StringArray::from(string_values);
-        Arc::new(
-            DictionaryArray::<Int32Type>::try_new(Int32Array::from(keys), Arc::new(string_array))
-                .unwrap(),
-        )
-    }
-
-    /// Create a VARIANT array for testing with specified number of rows.
-    fn create_variant_array(num_rows: usize, fields: Option<&[(&str, &str)]>) -> ArrayRef {
-        let mut builder = VariantArrayBuilder::new(num_rows);
-        for _ in 0..num_rows {
-            match fields {
-                Some(kv_pairs) => {
-                    let mut obj = builder.new_object();
-                    for &(key, value) in kv_pairs {
-                        obj = obj.with_field(key, value);
-                    }
-                    obj.finish();
-                }
-                None => {
-                    builder.append_null();
-                }
-            }
-        }
-        ArrayRef::from(builder.build())
-    }
-
-    /// Create a test batch matching the metrics schema.
-    fn create_test_batch(num_rows: usize) -> RecordBatch {
-        let schema = ParquetSchema::new();
-
-        let metric_names: Vec<&str> = vec!["cpu.usage"; num_rows];
-        let metric_name: ArrayRef = create_dict_array(&metric_names);
-        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; num_rows]));
-        let metric_unit: ArrayRef = Arc::new(StringArray::from(vec![Some("bytes"); num_rows]));
-        let timestamps: Vec<u64> = (0..num_rows).map(|i| 100 + i as u64).collect();
-        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
-        let start_timestamp_secs: ArrayRef =
-            Arc::new(UInt64Array::from(vec![None::<u64>; num_rows]));
-        let values: Vec<f64> = (0..num_rows).map(|i| 42.0 + i as f64).collect();
-        let value: ArrayRef = Arc::new(Float64Array::from(values));
-        let tag_service: ArrayRef = create_nullable_dict_array(&vec![Some("web"); num_rows]);
-        let tag_env: ArrayRef = create_nullable_dict_array(&vec![Some("prod"); num_rows]);
-        let tag_datacenter: ArrayRef =
-            create_nullable_dict_array(&vec![Some("us-east-1"); num_rows]);
-        let tag_region: ArrayRef = create_nullable_dict_array(&vec![None; num_rows]);
-        let tag_host: ArrayRef = create_nullable_dict_array(&vec![Some("host-001"); num_rows]);
-        let attributes: ArrayRef = create_variant_array(num_rows, None);
-        let service_name: ArrayRef = create_dict_array(&vec!["my-service"; num_rows]);
-        let resource_attributes: ArrayRef = create_variant_array(num_rows, None);
-
-        RecordBatch::try_new(
-            schema.arrow_schema().clone(),
-            vec![
-                metric_name,
-                metric_type,
-                metric_unit,
-                timestamp_secs,
-                start_timestamp_secs,
-                value,
-                tag_service,
-                tag_env,
-                tag_datacenter,
-                tag_region,
-                tag_host,
-                attributes,
-                service_name,
-                resource_attributes,
-            ],
-        )
-        .unwrap()
     }
 
     #[tokio::test]

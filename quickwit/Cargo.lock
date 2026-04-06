@@ -7608,12 +7608,12 @@ dependencies = [
  "arrow",
  "async-trait",
  "once_cell",
- "parquet",
  "prost 0.14.3",
  "quickwit-common",
  "quickwit-config",
  "quickwit-ingest",
  "quickwit-metastore",
+ "quickwit-parquet-engine",
  "quickwit-proto",
  "serde",
  "serde_json",
@@ -7628,6 +7628,7 @@ dependencies = [
 name = "quickwit-parquet-engine"
 version = "0.8.0"
 dependencies = [
+ "anyhow",
  "arrow",
  "parquet",
  "proptest",

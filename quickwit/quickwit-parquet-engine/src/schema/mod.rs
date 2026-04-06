@@ -20,5 +20,5 @@
 mod fields;
 mod parquet;
 
-pub use fields::ParquetField;
+pub use fields::{REQUIRED_FIELDS, SORT_ORDER, required_field_type, validate_required_fields};
 pub use parquet::ParquetSchema;
