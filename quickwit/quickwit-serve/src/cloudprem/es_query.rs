@@ -290,7 +290,10 @@ mod tests {
         }
     }
 
-    async fn call_es_query(method: &str, path: &str) -> Result<super::EsHttpResponse, CloudPremError> {
+    async fn call_es_query(
+        method: &str,
+        path: &str,
+    ) -> Result<super::EsHttpResponse, CloudPremError> {
         let search_service = Arc::new(MockSearchService::new());
         let metastore = MetastoreServiceClient::mocked();
         let transport = ChannelTransport::default();
@@ -347,7 +350,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_route_search_shards() {
-        let resp = call_es_query("GET", "/my_index/_search_shards").await.unwrap();
+        let resp = call_es_query("GET", "/my_index/_search_shards")
+            .await
+            .unwrap();
         assert_eq!(resp.status_code, 200);
         let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
         assert!(body.get("shards").is_some());
