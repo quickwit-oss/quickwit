@@ -2,6 +2,7 @@
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ExecuteSubstraitRequest {
     /// Substrait plan encoded as protobuf bytes (prost::Message::encode).
+    /// Used by Pomsky and other production callers that already hold an encoded plan.
     #[prost(bytes = "vec", tag = "1")]
     pub substrait_plan_bytes: ::prost::alloc::vec::Vec<u8>,
     /// Optional per-request session overrides (e.g. target_partitions).
@@ -10,6 +11,15 @@ pub struct ExecuteSubstraitRequest {
         ::prost::alloc::string::String,
         ::prost::alloc::string::String,
     >,
+    /// Substrait plan as proto3 JSON (the format written by DataFusion's
+    /// to_substrait_plan + serde_json::to_string, or the rollup_substrait.json
+    /// format used in integration tests).
+    ///
+    /// Convenience field for dev tooling and grpcurl: pass the JSON string
+    /// directly without encoding to binary protobuf first.
+    /// Exactly one of substrait_plan_bytes or substrait_plan_json must be set.
+    #[prost(string, tag = "3")]
+    pub substrait_plan_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExecuteSubstraitResponse {

@@ -25,6 +25,7 @@ use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::jaeger::storage::v2::trace_reader_server::TraceReaderServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
+use quickwit_proto::opentelemetry::proto::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::datafusion::data_fusion_service_server::DataFusionServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
@@ -160,6 +161,18 @@ pub(crate) async fn start_grpc_server(
         None
     };
     // Mount gRPC OpenTelemetry OTLP services if present.
+    let otlp_metrics_grpc_service =
+        if let Some(otlp_metrics_service) = services.otlp_metrics_service_opt.clone() {
+            enabled_grpc_services.insert("otlp-metrics");
+            let metrics_service = MetricsServiceServer::new(otlp_metrics_service)
+                .accept_compressed(CompressionEncoding::Gzip)
+                .accept_compressed(CompressionEncoding::Zstd)
+                .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
+                .max_encoding_message_size(grpc_config.max_message_size.0 as usize);
+            Some(metrics_service)
+        } else {
+            None
+        };
     let otlp_trace_grpc_service =
         if let Some(otlp_traces_service) = services.otlp_traces_service_opt.clone() {
             enabled_grpc_services.insert("otlp-traces");
@@ -228,6 +241,11 @@ pub(crate) async fn start_grpc_server(
         DeveloperServiceClient::new(developer_service)
             .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
     };
+    // DataFusion service descriptor must be pushed before build_reflection_service.
+    if services.datafusion_session_builder.is_some() {
+        file_descriptor_sets.push(quickwit_proto::datafusion::DATAFUSION_FILE_DESCRIPTOR_SET);
+    }
+
     enabled_grpc_services.insert("health");
     file_descriptor_sets.push(HEALTH_FILE_DESCRIPTOR_SET);
 
@@ -236,8 +254,6 @@ pub(crate) async fn start_grpc_server(
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
 
     // Mount the DataFusion distributed worker gRPC service.
-    // Active on any node that runs the Searcher role so df-distributed coordinators
-    // can dispatch plan fragments to workers via the WorkerService protocol.
     let datafusion_worker_service =
         if let Some(ref session_builder) = services.datafusion_session_builder {
             enabled_grpc_services.insert("datafusion-worker");
@@ -251,14 +267,10 @@ pub(crate) async fn start_grpc_server(
         };
 
     // Mount DataFusionService for OSS query execution (Substrait + SQL streaming).
-    // Active on Searcher nodes where a session builder is configured.
-    // Pomsky wraps DataFusionService directly rather than going through this gRPC
-    // layer, but OSS clients and integration tests use this endpoint.
     let datafusion_grpc_service = if let Some(ref session_builder) =
         services.datafusion_session_builder
     {
         enabled_grpc_services.insert("datafusion");
-        file_descriptor_sets.push(quickwit_proto::datafusion::DATAFUSION_FILE_DESCRIPTOR_SET);
 
         let service =
             quickwit_datafusion::DataFusionService::new(Arc::clone(session_builder));
@@ -285,6 +297,7 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(jaeger_v2_grpc_service)
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(otlp_log_grpc_service)
+        .add_optional_service(otlp_metrics_grpc_service)
         .add_optional_service(otlp_trace_grpc_service)
         .add_optional_service(search_grpc_service)
         .add_optional_service(datafusion_grpc_service)

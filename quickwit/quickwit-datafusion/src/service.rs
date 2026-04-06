@@ -87,8 +87,38 @@ impl DataFusionService {
         let plan = Plan::decode(plan_bytes)
             .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
 
+        self.execute_substrait_plan(&plan).await
+    }
+
+    /// Execute a Substrait plan from its proto3 JSON representation.
+    ///
+    /// Accepts the JSON format produced by DataFusion's `to_substrait_plan`
+    /// + `serde_json::to_string`, or the `rollup_substrait.json` format used
+    /// in integration tests and dev tooling.
+    ///
+    /// This is the dev/tooling path — grpcurl and Python scripts can pass the
+    /// plan as a JSON string without pre-encoding to binary protobuf.
+    pub async fn execute_substrait_json(
+        &self,
+        plan_json: &str,
+    ) -> DFResult<SendableRecordBatchStream> {
+        use datafusion_substrait::substrait::proto::Plan;
+
+        let plan: Plan = serde_json::from_str(plan_json).map_err(|e| {
+            datafusion::error::DataFusionError::Plan(format!(
+                "invalid Substrait plan JSON: {e}"
+            ))
+        })?;
+
+        self.execute_substrait_plan(&plan).await
+    }
+
+    async fn execute_substrait_plan(
+        &self,
+        plan: &datafusion_substrait::substrait::proto::Plan,
+    ) -> DFResult<SendableRecordBatchStream> {
         let ctx = self.builder.build_session()?;
-        crate::substrait::execute_substrait_plan_streaming(&plan, &ctx, self.builder.sources()).await
+        crate::substrait::execute_substrait_plan_streaming(plan, &ctx, self.builder.sources()).await
     }
 
     /// Execute one or more semicolon-separated SQL statements.

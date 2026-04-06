@@ -102,10 +102,24 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         let req = request.into_inner();
         let service = Arc::clone(&self.service);
 
-        let mut stream = service
-            .execute_substrait(&req.substrait_plan_bytes)
-            .await
-            .map_err(df_error_to_status)?;
+        // Route to the appropriate DataFusionService method:
+        // - substrait_plan_bytes: production path (Pomsky, pre-encoded protobuf)
+        // - substrait_plan_json:  dev/tooling path (grpcurl, rollup JSON files)
+        let mut stream = if !req.substrait_plan_bytes.is_empty() {
+            service
+                .execute_substrait(&req.substrait_plan_bytes)
+                .await
+                .map_err(df_error_to_status)?
+        } else if !req.substrait_plan_json.is_empty() {
+            service
+                .execute_substrait_json(&req.substrait_plan_json)
+                .await
+                .map_err(df_error_to_status)?
+        } else {
+            return Err(tonic::Status::invalid_argument(
+                "either substrait_plan_bytes or substrait_plan_json must be set",
+            ));
+        };
 
         let (tx, rx) = tokio::sync::mpsc::channel(32);
         tokio::spawn(async move {

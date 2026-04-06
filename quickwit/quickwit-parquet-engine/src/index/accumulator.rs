@@ -77,6 +77,13 @@ impl ParquetBatchAccumulator {
     /// If thresholds are exceeded after adding the batch, concatenates all pending batches
     /// and returns the combined batch. Returns None if the threshold has not been reached.
     pub fn add_batch(&mut self, batch: RecordBatch) -> Result<Option<RecordBatch>, IndexingError> {
+        // Skip batches that carry no data — 0 rows cannot contribute to a split,
+        // and 0 columns leave union_fields empty which causes concat_batches to
+        // fail with "must either specify a row count or at least one column".
+        if batch.num_rows() == 0 || batch.num_columns() == 0 {
+            return Ok(None);
+        }
+
         let start = Instant::now();
         let batch_rows = batch.num_rows();
         let batch_bytes = estimate_batch_bytes(&batch);
@@ -145,6 +152,15 @@ impl ParquetBatchAccumulator {
     /// Internal flush implementation.
     fn flush_internal(&mut self) -> Result<Option<RecordBatch>, IndexingError> {
         if self.pending_batches.is_empty() {
+            return Ok(None);
+        }
+        // Degenerate case: all accumulated batches had 0 columns (e.g. the upstream
+        // processor emitted schema-less checkpoints).  Arrow's concat_batches cannot
+        // produce a 0-column RecordBatch without an explicit row count — discard.
+        if self.union_fields.is_empty() {
+            self.pending_batches.clear();
+            self.pending_rows = 0;
+            self.pending_bytes = 0;
             return Ok(None);
         }
 
