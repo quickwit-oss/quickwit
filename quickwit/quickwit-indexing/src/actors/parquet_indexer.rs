@@ -501,8 +501,7 @@ impl Handler<CommitTimeout> for ParquetIndexer {
         }
 
         // Forward if we have data or a pending checkpoint delta.
-        let should_send =
-            flushed_batch.is_some() || !self.checkpoint_delta.is_empty();
+        let should_send = flushed_batch.is_some() || !self.checkpoint_delta.is_empty();
 
         if should_send {
             let batch_for_packager = ParquetBatchForPackager {
