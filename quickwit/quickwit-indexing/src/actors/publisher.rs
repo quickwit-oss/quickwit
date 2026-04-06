@@ -213,7 +213,7 @@ impl Handler<SplitsUpdate> for Publisher<DocProcessor> {
             // When merging is handled locally, notify the merge planner about new
             // splits. The mailbox is None when an external merge service is active,
             // or when the planner has already shut down (e.g. source reached its end).
-            if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
+            if let Some(merge_planner_mailbox) = &self.merge_planner_mailbox_opt {
                 match ctx
                     .send_message(merge_planner_mailbox, NewSplits { new_splits })
                     .await
