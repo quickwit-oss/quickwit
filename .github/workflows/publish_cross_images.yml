@@ -13,6 +13,8 @@ permissions:
 
 jobs:
   build-cross-images:
+    # Centreon: skip if DOCKERHUB_USERNAME is not configured in this fork
+    if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
     name: Publish cross images
     runs-on: ubuntu-latest
     environment:

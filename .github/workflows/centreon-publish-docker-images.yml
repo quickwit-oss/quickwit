@@ -1,29 +1,35 @@
-name: Build and publish Docker images
+name: Centreon - Publish Docker Images to Harbor
+
+# This workflow is Centreon-specific and separate from the upstream publish_docker_images.yml.
+# It publishes multi-arch images (amd64 + arm64) to Centreon's internal Harbor registry.
+#
+# Tagging strategy:
+#   - push on main        → :qual
+#   - git tag centreon-v* → :<tag>  (e.g. centreon-v1.2.3)
+#   - pull_request        → :<sanitized-branch-name>
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
-      - release-0.9
     paths:
       - "quickwit/**"
+      - ".github/workflows/centreon-publish-docker-images.yml"
     tags:
-      - airmail
-      - happy-plazza
-      - qw*
-      - v*
+      - "centreon-v*"
+  pull_request:
+    paths:
+      - "quickwit/**"
+      - ".github/workflows/centreon-publish-docker-images.yml"
 
 permissions:
   contents: read
 
 env:
-  REGISTRY_IMAGE: quickwit/quickwit
+  REGISTRY_IMAGE: ${{ vars.DOCKER_INTERNAL_REGISTRY_URL }}/pulse/quickwit
 
 jobs:
   docker:
-    # Centreon: skip if DOCKERHUB_USERNAME is not configured in this fork
-    if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
     strategy:
       matrix:
         include:
@@ -37,8 +43,6 @@ jobs:
     permissions:
       contents: read
       actions: write
-    environment:
-      name: production
     steps:
       - name: Cleanup Disk Space
         run: |
@@ -53,40 +57,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
-      - name: Login to Docker Hub
+      - name: Login to Harbor
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+          registry: ${{ vars.DOCKER_INTERNAL_REGISTRY_URL }}
+          username: ${{ secrets.HARBOR_CENTREON_PUSH_USERNAME }}
+          password: ${{ secrets.HARBOR_CENTREON_PUSH_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - name: Docker meta
-        id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
-        with:
-          images: |
-            ${{ env.REGISTRY_IMAGE }}
-          labels: |
-            org.opencontainers.image.title=Quickwit
-            maintainer=Quickwit, Inc. <hello@quickwit.io>
-            org.opencontainers.image.vendor=Quickwit, Inc.
-            org.opencontainers.image.licenses=Apache-2.0
-
-      - name: Retrieve commit date, hash, and tags
+      - name: Retrieve commit metadata
         run: |
           echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
           echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
           echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" && "${GITHUB_REF#refs/tags/}" == *"jemprof"* ]]; then
-            echo "CARGO_FEATURES=release-jemalloc-profiled" >> $GITHUB_ENV
-          else
-            echo "CARGO_FEATURES=release-feature-set" >> $GITHUB_ENV
-          fi
+          echo "CARGO_FEATURES=release-feature-set" >> $GITHUB_ENV
 
       - name: Build and push image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
@@ -99,14 +85,15 @@ jobs:
             QW_COMMIT_HASH=${{ env.QW_COMMIT_HASH }}
             QW_COMMIT_TAGS=${{ env.QW_COMMIT_TAGS }}
             CARGO_FEATURES=${{ env.CARGO_FEATURES }}
-          labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
+          digest="$DIGEST"
           touch "/tmp/digests/${digest#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
 
       - name: Upload digest
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -117,14 +104,11 @@ jobs:
           retention-days: 1
 
   merge:
-    # Centreon: skip if DOCKERHUB_USERNAME is not configured in this fork
-    if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
     runs-on: ubuntu-latest
     needs: [docker]
     permissions:
       contents: read
       actions: read
-    environment: production
     steps:
       - name: Download digests
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
@@ -132,6 +116,11 @@ jobs:
           pattern: digest-*
           path: /tmp/digests
           merge-multiple: true
+
+      - name: Sanitize branch name for PR tagging
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "BRANCH_TAG=${GITHUB_HEAD_REF//\//-}" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -144,23 +133,29 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=edge,branch=main
-            type=edge,branch=main,suffix=-slim-bookworm
-            type=semver,pattern={{version}}
-            type=semver,pattern={{version}},value=latest
-            type=semver,pattern={{version}},suffix=-slim-bookworm
-            type=ref,event=tag
-            type=raw,value=v0.9.0-rc,enable=${{ github.ref == 'refs/heads/release-0.9' }}
-      - name: Login to Docker Hub
+            type=raw,value=qual,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag,enable=${{ startsWith(github.ref, 'refs/tags/centreon-v') }}
+            type=raw,value=${{ env.BRANCH_TAG }},enable=${{ github.event_name == 'pull_request' }}
+          labels: |
+            org.opencontainers.image.title=Quickwit
+            org.opencontainers.image.vendor=Centreon
+            maintainer=Centreon <dev@centreon.com>
+
+      - name: Login to Harbor
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+          registry: ${{ vars.DOCKER_INTERNAL_REGISTRY_URL }}
+          username: ${{ secrets.HARBOR_CENTREON_PUSH_USERNAME }}
+          password: ${{ secrets.HARBOR_CENTREON_PUSH_TOKEN }}
+
       - name: Create manifest list and push tags
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
+            $(printf "$REGISTRY_IMAGE@sha256:%s " *)
+
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY_IMAGE }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect "$REGISTRY_IMAGE:$META_VERSION"
+        env:
+          META_VERSION: ${{ steps.meta.outputs.version }}
