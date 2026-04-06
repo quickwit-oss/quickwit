@@ -10,6 +10,7 @@ members = [
   "quickwit-common",
   "quickwit-config",
   "quickwit-control-plane",
+  "quickwit-datafusion",
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
@@ -50,6 +51,7 @@ default-members = [
   "quickwit-common",
   "quickwit-config",
   "quickwit-control-plane",
+  "quickwit-datafusion",
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
@@ -349,6 +351,7 @@ quickwit-codegen-example = { path = "quickwit-codegen/example" }
 quickwit-common = { path = "quickwit-common" }
 quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
+quickwit-datafusion = { path = "quickwit-datafusion" }
 quickwit-datetime = { path = "quickwit-datetime" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }

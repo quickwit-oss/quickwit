@@ -12,14 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod basic_tests;
-mod ingest_v1_tests;
-mod ingest_v2_tests;
-mod metrics_datafusion_tests;
-mod metrics_distributed_tests;
-mod no_cp_tests;
-mod otlp_tests;
-#[cfg(feature = "sqs-localstack-tests")]
-mod sqs_tests;
-mod tls_tests;
-mod update_tests;
+include!("../codegen/quickwit/quickwit.datafusion.rs");
+
+pub const DATAFUSION_FILE_DESCRIPTOR_SET: &[u8] =
+    include_bytes!("../codegen/quickwit/datafusion_descriptor.bin");
