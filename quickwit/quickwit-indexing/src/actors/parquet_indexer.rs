@@ -424,6 +424,10 @@ impl Handler<ProcessedParquetBatch> for ParquetIndexer {
                         anyhow::anyhow!("failed to send to packager: {}", e).into(),
                     )
                 })?;
+
+            // Reset so the next batch schedules a fresh timeout.
+            self.workbench_id = Ulid::new();
+            self.commit_timeout_scheduled = false;
         }
 
         Ok(())
@@ -524,6 +528,10 @@ impl Handler<CommitTimeout> for ParquetIndexer {
                         .into(),
                     )
                 })?;
+
+            // Reset so the next batch schedules a fresh timeout.
+            self.workbench_id = Ulid::new();
+            self.commit_timeout_scheduled = false;
         }
 
         Ok(())
