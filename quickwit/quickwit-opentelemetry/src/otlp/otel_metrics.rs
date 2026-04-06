@@ -900,9 +900,9 @@ mod tests {
             Some("unknown_service")
         );
         // No metric_unit tag when unit is empty
-        assert!(dp.tags.get("metric_unit").is_none());
+        assert!(!dp.tags.contains_key("metric_unit"));
         // No start_timestamp_secs tag when start time is 0
-        assert!(dp.tags.get("start_timestamp_secs").is_none());
+        assert!(!dp.tags.contains_key("start_timestamp_secs"));
         // Only "service" should be in tags (no attributes, no unit, no start time)
         assert_eq!(dp.tags.len(), 1);
     }
@@ -1010,9 +1010,7 @@ mod tests {
                         KeyValue {
                             key: "region".to_string(),
                             value: Some(AnyValue {
-                                value: Some(any_value::Value::StringValue(
-                                    "us-east-1".to_string(),
-                                )),
+                                value: Some(any_value::Value::StringValue("us-east-1".to_string())),
                             }),
                         },
                     ],
