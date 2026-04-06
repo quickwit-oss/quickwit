@@ -99,7 +99,7 @@ pub struct InsertableMetricsSplit {
     pub size_bytes: i64,
     pub split_metadata_json: String,
     pub window_start: Option<i64>,
-    pub window_duration_secs: Option<i32>,
+    pub window_duration_secs: i32,
     pub sort_fields: String,
     pub num_merge_ops: i32,
     pub row_keys: Option<Vec<u8>>,
@@ -131,10 +131,7 @@ impl InsertableMetricsSplit {
             size_bytes: metadata.size_bytes as i64,
             split_metadata_json,
             window_start: metadata.window_start(),
-            window_duration_secs: {
-                let dur = metadata.window_duration_secs();
-                if dur > 0 { Some(dur as i32) } else { None }
-            },
+            window_duration_secs: metadata.window_duration_secs() as i32,
             sort_fields: metadata.sort_fields.clone(),
             num_merge_ops: metadata.num_merge_ops as i32,
             row_keys: metadata.row_keys_proto.clone(),
@@ -276,7 +273,7 @@ mod tests {
                 .expect("conversion should succeed");
 
         assert_eq!(insertable.window_start, Some(1700000000));
-        assert_eq!(insertable.window_duration_secs, Some(3600));
+        assert_eq!(insertable.window_duration_secs, 3600);
         assert_eq!(insertable.sort_fields, "metric_name|host|timestamp/V2");
         assert_eq!(insertable.num_merge_ops, 2);
         assert_eq!(insertable.row_keys, Some(vec![0x08, 0x01]));
@@ -300,9 +297,9 @@ mod tests {
                 .expect("conversion should succeed");
 
         assert!(insertable.window_start.is_none());
-        assert!(
-            insertable.window_duration_secs.is_none(),
-            "pre-Phase-31 splits should have NULL window_duration_secs"
+        assert_eq!(
+            insertable.window_duration_secs, 0,
+            "pre-Phase-31 splits should have 0 window_duration_secs"
         );
         assert_eq!(insertable.sort_fields, "");
         assert_eq!(insertable.num_merge_ops, 0);
@@ -344,7 +341,7 @@ mod tests {
             split_metadata_json: insertable.split_metadata_json,
             update_timestamp: 1704067200,
             window_start: insertable.window_start,
-            window_duration_secs: insertable.window_duration_secs,
+            window_duration_secs: Some(insertable.window_duration_secs),
             sort_fields: insertable.sort_fields,
             num_merge_ops: insertable.num_merge_ops,
             row_keys: insertable.row_keys,

@@ -38,7 +38,7 @@ pub(crate) mod split;
 pub(crate) mod template;
 
 use crate::metastore::MetastoreServiceStreamSplitsExt;
-use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split};
+use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split, SplitState};
 
 const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
@@ -158,10 +158,10 @@ async fn cleanup_index(metastore: &mut dyn MetastoreServiceExt, index_uid: Index
     }
     // Also clean up any metrics splits (they have a separate FK constraint).
     let metrics_query = crate::metastore::ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec![
-            "Staged".to_string(),
-            "Published".to_string(),
-            "MarkedForDeletion".to_string(),
+        .with_split_states([
+            SplitState::Staged,
+            SplitState::Published,
+            SplitState::MarkedForDeletion,
         ]);
     if let Ok(list_request) = quickwit_proto::metastore::ListMetricsSplitsRequest::try_from_query(
         index_uid.clone(),

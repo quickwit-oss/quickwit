@@ -261,7 +261,8 @@ async fn test_file_backed_metastore_metrics_operations() {
     use quickwit_config::IndexConfig;
     use quickwit_metastore::{
         CreateIndexRequestExt, FileBackedMetastore, ListMetricsSplitsQuery,
-        ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt, StageMetricsSplitsRequestExt,
+        ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt, SplitState,
+        StageMetricsSplitsRequestExt,
     };
     use quickwit_parquet_engine::split::{MetricsSplitMetadata, MetricsSplitRecord, TimeRange};
     use quickwit_proto::metastore::{
@@ -306,7 +307,7 @@ async fn test_file_backed_metastore_metrics_operations() {
 
     // Verify staged
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Staged".to_string()]);
+        .with_split_states([SplitState::Staged]);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let staged: Vec<MetricsSplitRecord> = list_response.deserialize_splits().unwrap();
@@ -327,7 +328,7 @@ async fn test_file_backed_metastore_metrics_operations() {
 
     // Verify published
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Published".to_string()]);
+        .with_split_states([SplitState::Published]);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let published: Vec<MetricsSplitRecord> = list_response.deserialize_splits().unwrap();
@@ -336,16 +337,18 @@ async fn test_file_backed_metastore_metrics_operations() {
 
     // Time range filtering
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Published".to_string()])
-        .with_time_range(1000, 1100);
+        .with_split_states([SplitState::Published])
+        .with_time_range_start_gte(1000)
+        .with_time_range_end_lte(1100);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let in_range: Vec<MetricsSplitRecord> = list_response.deserialize_splits().unwrap();
     assert_eq!(in_range.len(), 1);
 
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Published".to_string()])
-        .with_time_range(5000, 5100);
+        .with_split_states([SplitState::Published])
+        .with_time_range_start_gte(5000)
+        .with_time_range_end_lte(5100);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let out_of_range: Vec<MetricsSplitRecord> = list_response.deserialize_splits().unwrap();
@@ -353,7 +356,7 @@ async fn test_file_backed_metastore_metrics_operations() {
 
     // Metric name filtering
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Published".to_string()])
+        .with_split_states([SplitState::Published])
         .with_metric_names(vec!["cpu.usage".to_string()]);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();

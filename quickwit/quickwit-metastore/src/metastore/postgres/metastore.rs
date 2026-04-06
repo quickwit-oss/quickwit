@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Write};
+use std::ops::Bound;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -1804,7 +1805,7 @@ impl MetastoreService for PostgresqlMetastore {
         let mut size_bytes_list = Vec::with_capacity(splits_metadata.len());
         let mut split_metadata_jsons = Vec::with_capacity(splits_metadata.len());
         let mut window_starts: Vec<Option<i64>> = Vec::with_capacity(splits_metadata.len());
-        let mut window_duration_secs_list: Vec<Option<i32>> =
+        let mut window_duration_secs_list: Vec<i32> =
             Vec::with_capacity(splits_metadata.len());
         let mut sort_fields_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
         let mut num_merge_ops_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
@@ -2234,14 +2235,39 @@ impl MetastoreService for PostgresqlMetastore {
             param_idx += 1;
         }
 
-        // Add time range filter
-        if query.time_range_start.is_some() {
-            sql.push_str(&format!(" AND time_range_end >= ${}", param_idx));
-            param_idx += 1;
+        // Time range filter.
+        // When sort_fields is set this is a compaction query and time_range
+        // refers to the compaction window columns; otherwise it refers to the
+        // data time_range_start/time_range_end columns.
+        let is_compaction_query = query.sort_fields.is_some();
+        let (range_col_start, range_col_end) = if is_compaction_query {
+            ("window_start", "window_start + window_duration_secs")
+        } else {
+            ("time_range_start", "time_range_end")
+        };
+        // overlap: split_end > query_start AND split_start < query_end
+        // (using >= / <= for Included bounds, > / < for Excluded)
+        match &query.time_range.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND {} >= ${}", range_col_end, param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND {} > ${}", range_col_end, param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
         }
-        if query.time_range_end.is_some() {
-            sql.push_str(&format!(" AND time_range_start <= ${}", param_idx));
-            param_idx += 1;
+        match &query.time_range.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND {} <= ${}", range_col_start, param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND {} < ${}", range_col_start, param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
         }
 
         // Add metric names filter (ANY overlap)
@@ -2272,14 +2298,129 @@ impl MetastoreService for PostgresqlMetastore {
             param_idx += 1;
         }
 
-        // Compaction scope filters
-        if query.window_start.is_some() {
-            sql.push_str(&format!(" AND window_start = ${}", param_idx));
-            param_idx += 1;
-        }
         if query.sort_fields.is_some() {
             sql.push_str(&format!(" AND sort_fields = ${}", param_idx));
             param_idx += 1;
+        }
+
+        if query.node_id.is_some() {
+            sql.push_str(&format!(" AND node_id = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        // delete_opstamp range filter
+        match &query.delete_opstamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND delete_opstamp >= ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND delete_opstamp > ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.delete_opstamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND delete_opstamp <= ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND delete_opstamp < ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // update_timestamp range filter
+        match &query.update_timestamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint >= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint > ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint <= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint < ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // create_timestamp range filter
+        match &query.create_timestamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint >= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint > ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint <= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint < ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // maturity filter
+        match &query.mature {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND maturity_timestamp <= TO_TIMESTAMP(${})",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND maturity_timestamp > TO_TIMESTAMP(${})",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
         }
 
         sql.push_str(" ORDER BY time_range_start ASC");
@@ -2295,13 +2436,24 @@ impl MetastoreService for PostgresqlMetastore {
         query_builder = query_builder.bind(query.index_uid.to_string());
 
         if !query.split_states.is_empty() {
-            query_builder = query_builder.bind(&query.split_states);
+            let state_strings: Vec<String> = query
+                .split_states
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect();
+            query_builder = query_builder.bind(state_strings);
         }
-        if let Some(start) = query.time_range_start {
-            query_builder = query_builder.bind(start);
+        match &query.time_range.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
         }
-        if let Some(end) = query.time_range_end {
-            query_builder = query_builder.bind(end);
+        match &query.time_range.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
         }
         if !query.metric_names.is_empty() {
             query_builder = query_builder.bind(&query.metric_names);
@@ -2321,11 +2473,54 @@ impl MetastoreService for PostgresqlMetastore {
         if let Some(ref host) = query.tag_host {
             query_builder = query_builder.bind(host);
         }
-        if let Some(ws) = query.window_start {
-            query_builder = query_builder.bind(ws);
+        if let Some(ref sort_fields) = query.sort_fields {
+            query_builder = query_builder.bind(sort_fields);
         }
-        if let Some(ref sf) = query.sort_fields {
-            query_builder = query_builder.bind(sf);
+        if let Some(ref node_id) = query.node_id {
+            query_builder = query_builder.bind(node_id.as_str());
+        }
+        match &query.delete_opstamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v as i64);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.delete_opstamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v as i64);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.mature {
+            Bound::Included(evaluation_datetime) | Bound::Excluded(evaluation_datetime) => {
+                query_builder =
+                    query_builder.bind(evaluation_datetime.unix_timestamp() as f64);
+            }
+            Bound::Unbounded => {}
         }
         if let Some(limit) = query.limit {
             query_builder = query_builder.bind(limit as i64);
