@@ -176,8 +176,9 @@ pub struct MetricsSplitMetadata {
     pub num_merge_ops: u32,
 
     /// RowKeys (sort-key min/max boundaries) as serialized proto bytes
-    /// ([`sortschema::RowKeys`](../../quickwit-proto/protos/event_store_sortschema/event_store_sortschema.proto)).
-    /// None for pre-Phase-31 splits or splits without sort schema.
+    /// ([`sortschema::RowKeys`](../../quickwit-proto/protos/event_store_sortschema/
+    /// event_store_sortschema.proto)). None for pre-Phase-31 splits or splits without sort
+    /// schema.
     pub row_keys_proto: Option<Vec<u8>>,
 
     /// Per-column zonemap regex strings, keyed by column name.
