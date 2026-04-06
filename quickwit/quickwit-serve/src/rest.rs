@@ -843,6 +843,7 @@ mod tests {
             _report_splits_subscription_handle_opt: None,
             _local_shards_update_listener_handle_opt: None,
             cluster,
+            compaction_service_client_opt: None,
             control_plane_server_opt: None,
             control_plane_client,
             indexing_service_opt: None,
