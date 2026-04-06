@@ -100,7 +100,6 @@ doc_mapping:
       tokenizer: datadog
       record: position
       fieldnorms: false
-      indexed: true
       stored: false
 
     # other text like core attributes
