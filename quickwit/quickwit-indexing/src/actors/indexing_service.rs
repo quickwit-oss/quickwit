@@ -297,7 +297,7 @@ impl IndexingService {
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
             .map_err(|error| IndexingError::Internal(error.to_string()))?;
 
-        let merge_planner_mailbox = if let Some(merge_scheduler) =
+        let merge_planner_mailbox_opt = if let Some(merge_scheduler_service) =
             self.merge_scheduler_service_opt.clone()
         {
             let merge_pipeline_id = indexing_pipeline_id.merge_pipeline_id();
@@ -307,7 +307,7 @@ impl IndexingService {
                 indexing_directory: indexing_directory.clone(),
                 metastore: self.metastore.clone(),
                 split_store: split_store.clone(),
-                merge_scheduler_service: merge_scheduler,
+                merge_scheduler_service,
                 merge_policy: merge_policy.clone(),
                 retention_policy: retention_policy.clone(),
                 merge_io_throughput_limiter_opt: self.merge_io_throughput_limiter_opt.clone(),
@@ -364,7 +364,7 @@ impl IndexingService {
             merge_policy,
             retention_policy,
             max_concurrent_split_uploads_merge,
-            merge_planner_mailbox,
+            merge_planner_mailbox_opt,
 
             // Source-related parameters
             source_config,

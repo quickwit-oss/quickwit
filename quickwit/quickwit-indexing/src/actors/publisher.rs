@@ -21,7 +21,7 @@ use quickwit_proto::metastore::{
     MetastoreService, MetastoreServiceClient, PublishMetricsSplitsRequest, PublishSplitsRequest,
 };
 use serde::Serialize;
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 
 use crate::actors::{DocProcessor, MergePlanner, ParquetDocProcessor, Processor};
 use crate::models::{NewSplits, ParquetSplitsUpdate, SplitsUpdate};
@@ -214,9 +214,15 @@ impl Handler<SplitsUpdate> for Publisher<DocProcessor> {
             // splits. The mailbox is None when an external merge service is active,
             // or when the planner has already shut down (e.g. source reached its end).
             if let Some(merge_planner_mailbox) = self.merge_planner_mailbox_opt.as_ref() {
-                let _ = ctx
+                match ctx
                     .send_message(merge_planner_mailbox, NewSplits { new_splits })
-                    .await;
+                    .await
+                {
+                    Ok(_) => {}
+                    Err(error) => {
+                        error!(error=?error, "failed to send new splits to merge planner");
+                    }
+                }
             }
 
             if replaced_split_ids.is_empty() {
