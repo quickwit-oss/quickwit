@@ -108,17 +108,17 @@
           },
           "disableTextWrap": false,
           "editorMode": "builder",
-          "expr": "quickwit_search_leaf_searches_splits_total{instance=~\"$instance\"}",
+          "expr": "quickwit_search_split_search_outcome{instance=~\"$instance\"}",
           "fullMetaSearch": false,
           "includeNullMetadata": true,
           "instant": false,
-          "legendFormat": "{{instance}}",
+          "legendFormat": "{{instance}} {{category}}",
           "range": true,
           "refId": "A",
           "useBackend": false
         }
       ],
-      "title": "Leaf search splits",
+      "title": "Split search outcome",
       "type": "timeseries"
     },
     {
@@ -857,7 +857,7 @@
           "type": "prometheus",
           "uid": "${datasource}"
         },
-        "definition": "label_values(quickwit_search_leaf_searches_splits_total,instance)",
+        "definition": "label_values(quickwit_search_split_search_outcome,instance)",
         "hide": 0,
         "includeAll": true,
         "label": "Instance",
@@ -865,7 +865,7 @@
         "name": "instance",
         "options": [],
         "query": {
-          "query": "label_values(quickwit_search_leaf_searches_splits_total,instance)",
+          "query": "label_values(quickwit_search_split_search_outcome,instance)",
           "refId": "StandardVariableQuery"
         },
         "refresh": 1,
