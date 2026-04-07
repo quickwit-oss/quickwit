@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(schema.column.len(), 8);
         // Proto names are bare (suffixes stripped by parser).
         assert_eq!(schema.column[0].name, "metric_name");
-        assert_eq!(schema.column[1].name, "tag_service");
+        assert_eq!(schema.column[1].name, "service");
         assert_eq!(schema.column[6].name, "timeseries_id");
         assert_eq!(schema.column[7].name, "timestamp_secs");
     }
