@@ -214,7 +214,6 @@ impl SubstraitConsumer for WithCustomProvider<'_> {
 /// This is the entry point for external coordinators that send Substrait plans
 /// to Quickwit.  It is called by
 /// [`DataFusionSessionBuilder::execute_substrait`].
-/// Convert a Substrait plan to batches.
 ///
 /// Takes the full `SessionContext` (not just state) so that catalog
 /// registrations made by `build_session()` — including the `quickwit.public`

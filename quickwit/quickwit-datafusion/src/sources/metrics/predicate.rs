@@ -24,16 +24,17 @@ use datafusion::logical_expr::{BinaryExpr, Expr, Operator};
 use datafusion::scalar::ScalarValue;
 
 /// Extracted filters for querying the metrics_splits table.
+///
+/// Split-level filters for metastore pruning.
+///
+/// Only metric name and time range are used — the only fields the metastore
+/// reliably populates today. Tag-based pruning will be added when the
+/// zonemap/bloom-filter mechanism lands.
 #[derive(Debug, Default, Clone)]
 pub struct MetricsSplitQuery {
     pub metric_names: Option<Vec<String>>,
     pub time_range_start: Option<u64>,
     pub time_range_end: Option<u64>,
-    pub tag_service: Option<Vec<String>>,
-    pub tag_env: Option<Vec<String>>,
-    pub tag_datacenter: Option<Vec<String>>,
-    pub tag_region: Option<Vec<String>>,
-    pub tag_host: Option<Vec<String>>,
 }
 
 /// Analyzes pushed-down filter expressions and extracts split-level filters.
@@ -99,9 +100,17 @@ fn try_extract_in_list(expr: &Expr, list: &[Expr], query: &mut MetricsSplitQuery
 }
 
 fn try_extract_ts_gte(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bool {
+    // column >= literal
     if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right)) {
         if c == "timestamp_secs" {
-            q.time_range_start = Some(v);
+            q.time_range_start = Some(q.time_range_start.map_or(v, |prev| prev.max(v)));
+            return true;
+        }
+    }
+    // literal >= column  →  column <= literal  →  time_range_end
+    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right)) {
+        if c == "timestamp_secs" {
+            q.time_range_end = Some(q.time_range_end.map_or(v + 1, |prev| prev.min(v + 1)));
             return true;
         }
     }
@@ -109,9 +118,17 @@ fn try_extract_ts_gte(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> b
 }
 
 fn try_extract_ts_gt(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bool {
+    // column > literal
     if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right)) {
         if c == "timestamp_secs" {
-            q.time_range_start = Some(v + 1);
+            q.time_range_start = Some(q.time_range_start.map_or(v + 1, |prev| prev.max(v + 1)));
+            return true;
+        }
+    }
+    // literal > column  →  column < literal  →  time_range_end
+    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right)) {
+        if c == "timestamp_secs" {
+            q.time_range_end = Some(q.time_range_end.map_or(v, |prev| prev.min(v)));
             return true;
         }
     }
@@ -119,9 +136,17 @@ fn try_extract_ts_gt(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bo
 }
 
 fn try_extract_ts_lt(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bool {
+    // column < literal
     if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right)) {
         if c == "timestamp_secs" {
-            q.time_range_end = Some(v);
+            q.time_range_end = Some(q.time_range_end.map_or(v, |prev| prev.min(v)));
+            return true;
+        }
+    }
+    // literal < column  →  column > literal  →  time_range_start
+    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right)) {
+        if c == "timestamp_secs" {
+            q.time_range_start = Some(q.time_range_start.map_or(v + 1, |prev| prev.max(v + 1)));
             return true;
         }
     }
@@ -129,9 +154,17 @@ fn try_extract_ts_lt(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bo
 }
 
 fn try_extract_ts_lte(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bool {
+    // column <= literal
     if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right)) {
         if c == "timestamp_secs" {
-            q.time_range_end = Some(v + 1);
+            q.time_range_end = Some(q.time_range_end.map_or(v + 1, |prev| prev.min(v + 1)));
+            return true;
+        }
+    }
+    // literal <= column  →  column >= literal  →  time_range_start
+    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right)) {
+        if c == "timestamp_secs" {
+            q.time_range_start = Some(q.time_range_start.map_or(v, |prev| prev.max(v)));
             return true;
         }
     }
@@ -145,32 +178,11 @@ fn set_tag_values(col: &str, values: Vec<String>, q: &mut MetricsSplitQuery) -> 
             q.metric_names = Some(values);
             true
         }
-        // OSS column names: bare names without `tag_` prefix
-        "service" => {
-            q.tag_service = Some(values);
-            true
-        }
-        "env" => {
-            q.tag_env = Some(values);
-            true
-        }
-        "datacenter" => {
-            q.tag_datacenter = Some(values);
-            true
-        }
-        "region" => {
-            q.tag_region = Some(values);
-            true
-        }
-        "host" => {
-            q.tag_host = Some(values);
-            true
-        }
         _ => false,
     }
 }
 
-fn column_name(expr: &Expr) -> Option<String> {
+pub(crate) fn column_name(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Column(col) => Some(col.name().to_string()),
         // DataFusion inserts CASTs when comparing UInt64 columns with Int64 literals.
@@ -185,6 +197,7 @@ fn scalar_utf8(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Literal(ScalarValue::Utf8(Some(s)), _) => Some(s.clone()),
         Expr::Literal(ScalarValue::LargeUtf8(Some(s)), _) => Some(s.clone()),
+        Expr::Literal(ScalarValue::Utf8View(Some(s)), _) => Some(s.clone()),
         // DF auto-casts string literals to Dict(Int32, Utf8) to match dict-encoded columns
         Expr::Literal(ScalarValue::Dictionary(_, inner), _) => scalar_utf8_from_scalar(inner),
         _ => None,
@@ -195,6 +208,7 @@ fn scalar_utf8_from_scalar(value: &ScalarValue) -> Option<String> {
     match value {
         ScalarValue::Utf8(Some(s)) => Some(s.clone()),
         ScalarValue::LargeUtf8(Some(s)) => Some(s.clone()),
+        ScalarValue::Utf8View(Some(s)) => Some(s.clone()),
         _ => None,
     }
 }
@@ -239,8 +253,8 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_tag_filters() {
-        // OSS uses bare column names (no tag_ prefix)
+    fn test_tag_filters_stay_as_remaining() {
+        // Tag filters are not pushed to the metastore; they remain for parquet-level filtering.
         let filters = vec![
             col("metric_name").eq(lit("cpu.usage")),
             col("service").eq(lit("web")),
@@ -248,9 +262,7 @@ mod tests {
         ];
         let (query, remaining) = extract_split_filters(&filters);
         assert_eq!(query.metric_names, Some(vec!["cpu.usage".to_string()]));
-        assert_eq!(query.tag_service, Some(vec!["web".to_string()]));
-        assert_eq!(query.tag_env, Some(vec!["prod".to_string()]));
-        assert!(remaining.is_empty());
+        assert_eq!(remaining.len(), 2);
     }
 
     #[test]
@@ -347,8 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_tag_filters_pushdown() {
-        // OSS uses bare column names
+    fn test_tag_filters_all_stay_as_remaining() {
         let filters = vec![
             col("service").eq(lit("web")),
             col("env").eq(lit("prod")),
@@ -357,12 +368,8 @@ mod tests {
             col("host").eq(lit("host-01")),
         ];
         let (query, remaining) = extract_split_filters(&filters);
-        assert_eq!(query.tag_service, Some(vec!["web".to_string()]));
-        assert_eq!(query.tag_env, Some(vec!["prod".to_string()]));
-        assert_eq!(query.tag_datacenter, Some(vec!["dc1".to_string()]));
-        assert_eq!(query.tag_region, Some(vec!["us-east-1".to_string()]));
-        assert_eq!(query.tag_host, Some(vec!["host-01".to_string()]));
-        assert!(remaining.is_empty());
+        assert!(query.metric_names.is_none());
+        assert_eq!(remaining.len(), 5);
     }
 
     #[test]
@@ -378,8 +385,7 @@ mod tests {
         assert_eq!(query.metric_names, Some(vec!["cpu.usage".to_string()]));
         assert_eq!(query.time_range_start, Some(1000));
         assert_eq!(query.time_range_end, Some(2000));
-        assert_eq!(query.tag_env, Some(vec!["prod".to_string()]));
-        assert_eq!(remaining.len(), 1, "value > 0.5 should remain");
+        assert_eq!(remaining.len(), 2, "env and value > 0.5 should remain");
     }
 
     #[test]
@@ -391,14 +397,11 @@ mod tests {
     }
 
     #[test]
-    fn test_tag_in_list_pushdown() {
+    fn test_tag_in_list_stays_as_remaining() {
         let filters = vec![col("service").in_list(vec![lit("web"), lit("api")], false)];
         let (query, remaining) = extract_split_filters(&filters);
-        assert_eq!(
-            query.tag_service,
-            Some(vec!["web".to_string(), "api".to_string()])
-        );
-        assert!(remaining.is_empty());
+        assert!(query.metric_names.is_none());
+        assert_eq!(remaining.len(), 1);
     }
 
     #[test]
@@ -407,7 +410,6 @@ mod tests {
         assert!(query.metric_names.is_none());
         assert!(query.time_range_start.is_none());
         assert!(query.time_range_end.is_none());
-        assert!(query.tag_service.is_none());
         assert!(remaining.is_empty());
     }
 
@@ -455,62 +457,45 @@ mod tests {
 
     // ── TestSplitProvider multi-value IN list (Fix #23) ───────────────
 
-    /// Verifies that `TestSplitProvider` correctly handles multiple tag values in a
-    /// query — returning splits matching ANY of the values, not just the first.
-    ///
-    /// The `MetastoreSplitProvider` is limited by the metastore API (first() value
-    /// only), but `TestSplitProvider` uses `any()` and must correctly include all
-    /// matching splits. This test would fail if `any()` were changed to `first()`.
     #[test]
-    fn test_split_provider_multi_value_in_list_returns_all_matching_splits() {
+    fn test_metric_name_in_list_prunes_splits() {
         use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
 
         use crate::sources::metrics::test_utils::TestSplitProvider;
 
-        let web_split = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("web"))
+        let cpu_split = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("cpu"))
             .index_uid("idx:0000")
             .time_range(TimeRange::new(100, 300))
             .num_rows(2)
             .size_bytes(1024)
             .add_metric_name("cpu.usage")
-            .add_low_cardinality_tag("service", "web")
             .build();
-        let api_split = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("api"))
+        let mem_split = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("mem"))
             .index_uid("idx:0000")
             .time_range(TimeRange::new(100, 300))
             .num_rows(2)
             .size_bytes(1024)
-            .add_metric_name("cpu.usage")
-            .add_low_cardinality_tag("service", "api")
+            .add_metric_name("memory.used")
             .build();
-        let db_split = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("db"))
+        let disk_split = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("disk"))
             .index_uid("idx:0000")
             .time_range(TimeRange::new(100, 300))
             .num_rows(2)
             .size_bytes(1024)
-            .add_metric_name("cpu.usage")
-            .add_low_cardinality_tag("service", "db")
+            .add_metric_name("disk.io")
             .build();
 
-        let provider = TestSplitProvider::new(vec![web_split, api_split, db_split]);
+        let provider = TestSplitProvider::new(vec![cpu_split, mem_split, disk_split]);
 
-        // A filter for service IN ('web', 'api') must match web and api but NOT db.
-        let filters = vec![col("service").in_list(vec![lit("web"), lit("api")], false)];
+        let filters = vec![col("metric_name").in_list(
+            vec![lit("cpu.usage"), lit("memory.used")],
+            false,
+        )];
         let (query, remaining) = extract_split_filters(&filters);
-        assert!(remaining.is_empty(), "service IN list must be fully extracted");
-        assert_eq!(
-            query.tag_service,
-            Some(vec!["web".to_string(), "api".to_string()])
-        );
-
-        let matching = provider.count_matching(&query);
-        assert_eq!(
-            matching, 2,
-            "TestSplitProvider must return both web and api splits for IN ('web','api'), got \
-             {matching}"
-        );
+        assert!(remaining.is_empty());
+        assert_eq!(provider.count_matching(&query), 2);
     }
 }

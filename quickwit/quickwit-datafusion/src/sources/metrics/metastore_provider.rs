@@ -98,20 +98,9 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
 
 /// Convert a DataFusion `MetricsSplitQuery` to a metastore `ListMetricsSplitsQuery`.
 ///
-/// Note: The OSS parquet column names are bare (service, env, etc.) but the
-/// metastore `ListMetricsSplitsQuery` still uses the `tag_service`, `tag_env`
-/// field names — this is just the metastore's internal naming convention.
-///
-/// # Tag field pushdown limitation
-///
-/// `ListMetricsSplitsQuery` accepts at most one value per tag field
-/// (`Option<String>`). When a DataFusion `IN (...)` predicate produces
-/// multiple candidate values for a tag column, the metastore cannot express
-/// the full filter, so **no metastore-level pruning is applied for that
-/// dimension** — the value is left as `None`. The parquet-level filter
-/// (applied after the split is opened) will still enforce the predicate
-/// correctly. Only single-value equalities (`WHERE service = 'web'`) or
-/// single-element IN lists are pushed down to the metastore.
+/// Only metric name and time range are forwarded — the only dimensions the
+/// metastore reliably populates today. Tag-based pruning will be wired once
+/// the zonemap/bloom-filter mechanism is in place.
 fn to_metastore_query(index_uid: &IndexUid, query: &MetricsSplitQuery) -> ListMetricsSplitsQuery {
     let mut metastore_query = ListMetricsSplitsQuery::for_index(index_uid.clone());
 
@@ -127,27 +116,8 @@ fn to_metastore_query(index_uid: &IndexUid, query: &MetricsSplitQuery) -> ListMe
         metastore_query.time_range_end = Some(end as i64);
     }
 
-    // Push down a tag filter to the metastore only when there is exactly one
-    // candidate value. Multi-value IN lists cannot be expressed as a single
-    // `Option<String>` on `ListMetricsSplitsQuery`; passing only the first
-    // value would silently skip splits that match the other values, producing
-    // incorrect (incomplete) results. For multi-value lists we pass `None`
-    // (no metastore pruning) and rely on the parquet-level filter instead.
-    metastore_query.tag_service = single_value(query.tag_service.as_deref());
-    metastore_query.tag_env = single_value(query.tag_env.as_deref());
-    metastore_query.tag_datacenter = single_value(query.tag_datacenter.as_deref());
-    metastore_query.tag_region = single_value(query.tag_region.as_deref());
-    metastore_query.tag_host = single_value(query.tag_host.as_deref());
 
     metastore_query
 }
 
-/// Returns the single element of `values` as `Some(value)`, or `None` if
-/// `values` is absent, empty, or contains more than one element.
-fn single_value(values: Option<&[String]>) -> Option<String> {
-    match values {
-        Some([single]) => Some(single.clone()),
-        _ => None,
-    }
-}
 

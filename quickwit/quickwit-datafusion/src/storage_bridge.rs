@@ -37,8 +37,8 @@ use bytes::Bytes;
 use futures::stream::BoxStream;
 use object_store::path::Path as ObjectPath;
 use object_store::{
-    GetOptions, GetResult, GetResultPayload, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
-    PutMultipartOptions, PutOptions, PutPayload, PutResult, Result as ObjectStoreResult,
+    GetOptions, GetRange, GetResult, GetResultPayload, ListResult, MultipartUpload, ObjectMeta,
+    ObjectStore, PutMultipartOptions, PutOptions, PutPayload, PutResult, Result as ObjectStoreResult,
 };
 use quickwit_storage::Storage;
 
@@ -63,11 +63,11 @@ impl std::fmt::Display for QuickwitObjectStore {
     }
 }
 
-fn to_object_store_error(err: quickwit_storage::StorageError) -> object_store::Error {
+fn to_object_store_error(err: quickwit_storage::StorageError, path: &str) -> object_store::Error {
     use quickwit_storage::StorageErrorKind;
     match err.kind() {
         StorageErrorKind::NotFound => object_store::Error::NotFound {
-            path: String::new(),
+            path: path.to_string(),
             source: Box::new(err),
         },
         _ => object_store::Error::Generic {
@@ -86,16 +86,73 @@ impl ObjectStore for QuickwitObjectStore {
     async fn get_opts(
         &self,
         location: &ObjectPath,
-        _options: GetOptions,
+        options: GetOptions,
     ) -> ObjectStoreResult<GetResult> {
         let path = object_path_to_std(location);
-        let data = self
-            .storage
-            .get_all(&path)
-            .await
-            .map_err(to_object_store_error)?;
-        let bytes = Bytes::from(data.as_ref().to_vec());
-        let size = bytes.len() as u64;
+        let location_str = location.as_ref();
+        let map_err = |err| to_object_store_error(err, location_str);
+
+        let (bytes, byte_range) = match options.range {
+            Some(GetRange::Bounded(r)) => {
+                let usize_range = r.start as usize..r.end as usize;
+                let data = self
+                    .storage
+                    .get_slice(&path, usize_range)
+                    .await
+                    .map_err(map_err)?;
+                let b = Bytes::copy_from_slice(data.as_ref());
+                let len = b.len() as u64;
+                // The storage may return fewer bytes than requested if the range
+                // extends past the end of the file, so derive the actual end from
+                // the number of bytes returned.
+                (b, r.start..r.start + len)
+            }
+            Some(GetRange::Suffix(n)) => {
+                let file_size = self
+                    .storage
+                    .file_num_bytes(&path)
+                    .await
+                    .map_err(map_err)?;
+                let start = file_size.saturating_sub(n);
+                let usize_range = start as usize..file_size as usize;
+                let data = self
+                    .storage
+                    .get_slice(&path, usize_range)
+                    .await
+                    .map_err(map_err)?;
+                let b = Bytes::copy_from_slice(data.as_ref());
+                let len = b.len() as u64;
+                (b, start..start + len)
+            }
+            Some(GetRange::Offset(start)) => {
+                let file_size = self
+                    .storage
+                    .file_num_bytes(&path)
+                    .await
+                    .map_err(map_err)?;
+                let usize_range = start as usize..file_size as usize;
+                let data = self
+                    .storage
+                    .get_slice(&path, usize_range)
+                    .await
+                    .map_err(map_err)?;
+                let b = Bytes::copy_from_slice(data.as_ref());
+                let len = b.len() as u64;
+                (b, start..start + len)
+            }
+            None => {
+                let data = self
+                    .storage
+                    .get_all(&path)
+                    .await
+                    .map_err(map_err)?;
+                let b = Bytes::copy_from_slice(data.as_ref());
+                let len = b.len() as u64;
+                (b, 0..len)
+            }
+        };
+
+        let size = byte_range.end;
         let meta = ObjectMeta {
             location: location.clone(),
             last_modified: chrono::Utc::now(),
@@ -108,7 +165,7 @@ impl ObjectStore for QuickwitObjectStore {
                 Ok(bytes)
             }))),
             meta,
-            range: 0..size,
+            range: byte_range,
             attributes: Default::default(),
         })
     }
@@ -124,8 +181,8 @@ impl ObjectStore for QuickwitObjectStore {
             .storage
             .get_slice(&path, usize_range)
             .await
-            .map_err(to_object_store_error)?;
-        Ok(Bytes::from(data.as_ref().to_vec()))
+            .map_err(|err| to_object_store_error(err, location.as_ref()))?;
+        Ok(Bytes::copy_from_slice(data.as_ref()))
     }
 
     async fn head(&self, location: &ObjectPath) -> ObjectStoreResult<ObjectMeta> {
@@ -134,7 +191,7 @@ impl ObjectStore for QuickwitObjectStore {
             .storage
             .file_num_bytes(&path)
             .await
-            .map_err(to_object_store_error)?;
+            .map_err(|err| to_object_store_error(err, location.as_ref()))?;
         Ok(ObjectMeta {
             location: location.clone(),
             last_modified: chrono::Utc::now(),

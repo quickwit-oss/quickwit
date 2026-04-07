@@ -28,18 +28,18 @@
 //! - Everything else → `Internal`
 
 use std::io::Cursor;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use arrow::array::RecordBatch;
 use arrow::ipc::writer::StreamWriter;
-use futures::StreamExt;
-use quickwit_datafusion::DataFusionService;
+use futures::{Stream, StreamExt};
+use quickwit_datafusion::{DataFusionService, SendableRecordBatchStream};
 use quickwit_proto::datafusion::{
     ExecuteSqlRequest, ExecuteSqlResponse, ExecuteSubstraitRequest, ExecuteSubstraitResponse,
     data_fusion_service_server,
 };
 use quickwit_proto::tonic;
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::warn;
 
 /// Converts a DataFusion error (represented as any `std::error::Error`) to an
@@ -57,6 +57,26 @@ fn df_error_to_status(err: impl std::fmt::Display) -> tonic::Status {
     } else {
         tonic::Status::internal(msg)
     }
+}
+
+/// Map a `SendableRecordBatchStream` into a pinned `Stream` of gRPC responses.
+///
+/// Each batch is encoded as Arrow IPC bytes via [`batch_to_ipc_bytes`] and
+/// wrapped with `wrap`.  Errors from the upstream stream are propagated as
+/// `tonic::Status::internal`.  No background task is spawned — the stream is
+/// driven directly by tonic, so client disconnection cancels the future naturally
+/// and panics in encoding are surfaced immediately to the caller.
+fn map_batch_stream<R>(
+    stream: SendableRecordBatchStream,
+    wrap: impl Fn(Vec<u8>) -> R + Send + 'static,
+) -> Pin<Box<dyn Stream<Item = Result<R, tonic::Status>> + Send>>
+where
+    R: Send + 'static,
+{
+    Box::pin(stream.map(move |result| match result {
+        Ok(batch) => batch_to_ipc_bytes(&batch).map(&wrap),
+        Err(err) => Err(tonic::Status::internal(format!("stream error: {err}"))),
+    }))
 }
 
 /// Serialize a single `RecordBatch` to Arrow IPC stream format bytes.
@@ -92,8 +112,10 @@ impl DataFusionServiceGrpcImpl {
 
 #[async_trait::async_trait]
 impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl {
-    type ExecuteSubstraitStream = ReceiverStream<Result<ExecuteSubstraitResponse, tonic::Status>>;
-    type ExecuteSqlStream = ReceiverStream<Result<ExecuteSqlResponse, tonic::Status>>;
+    type ExecuteSubstraitStream =
+        Pin<Box<dyn Stream<Item = Result<ExecuteSubstraitResponse, tonic::Status>> + Send>>;
+    type ExecuteSqlStream =
+        Pin<Box<dyn Stream<Item = Result<ExecuteSqlResponse, tonic::Status>> + Send>>;
 
     async fn execute_substrait(
         &self,
@@ -105,7 +127,7 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         // Route to the appropriate DataFusionService method:
         // - substrait_plan_bytes: production path (pre-encoded protobuf, for callers that already hold an encoded plan)
         // - substrait_plan_json:  dev/tooling path (grpcurl, rollup JSON files)
-        let mut stream = if !req.substrait_plan_bytes.is_empty() {
+        let stream = if !req.substrait_plan_bytes.is_empty() {
             service
                 .execute_substrait(&req.substrait_plan_bytes)
                 .await
@@ -121,22 +143,10 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
             ));
         };
 
-        let (tx, rx) = tokio::sync::mpsc::channel(32);
-        tokio::spawn(async move {
-            while let Some(result) = stream.next().await {
-                let item = match result {
-                    Ok(batch) => batch_to_ipc_bytes(&batch)
-                        .map(|ipc_bytes| ExecuteSubstraitResponse { arrow_ipc_bytes: ipc_bytes }),
-                    Err(err) => Err(tonic::Status::internal(format!("stream error: {err}"))),
-                };
-                if tx.send(item).await.is_err() {
-                    // receiver dropped — client disconnected
-                    break;
-                }
-            }
+        let response_stream = map_batch_stream(stream, |ipc_bytes| ExecuteSubstraitResponse {
+            arrow_ipc_bytes: ipc_bytes,
         });
-
-        Ok(tonic::Response::new(ReceiverStream::new(rx)))
+        Ok(tonic::Response::new(response_stream))
     }
 
     async fn execute_sql(
@@ -146,7 +156,7 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         let req = request.into_inner();
         let service = Arc::clone(&self.service);
 
-        let mut stream = service
+        let stream = service
             .execute_sql(&req.sql)
             .await
             .map_err(|err| {
@@ -154,21 +164,8 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
                 df_error_to_status(err)
             })?;
 
-        let (tx, rx) = tokio::sync::mpsc::channel(32);
-        tokio::spawn(async move {
-            while let Some(result) = stream.next().await {
-                let item = match result {
-                    Ok(batch) => batch_to_ipc_bytes(&batch)
-                        .map(|ipc_bytes| ExecuteSqlResponse { arrow_ipc_bytes: ipc_bytes }),
-                    Err(err) => Err(tonic::Status::internal(format!("stream error: {err}"))),
-                };
-                if tx.send(item).await.is_err() {
-                    // receiver dropped — client disconnected
-                    break;
-                }
-            }
-        });
-
-        Ok(tonic::Response::new(ReceiverStream::new(rx)))
+        let response_stream =
+            map_batch_stream(stream, |ipc_bytes| ExecuteSqlResponse { arrow_ipc_bytes: ipc_bytes });
+        Ok(tonic::Response::new(response_stream))
     }
 }

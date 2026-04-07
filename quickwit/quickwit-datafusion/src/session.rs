@@ -36,12 +36,11 @@
 //! variant), use `with_worker_resolver(resolver)` to supply any type that
 //! implements `datafusion_distributed::WorkerResolver`.
 //!
-//! ## Result materialization
+//! ## Result streaming
 //!
-//! `execute_substrait` collects all result batches into memory before returning.
-//! For large rollup queries this is unsuitable for production use.  A streaming
-//! variant is deferred; A downstream caller can wrap this via its own gRPC handler.
-//! Use `with_memory_limit()` to bound memory usage until streaming is in place.
+//! `execute_substrait` returns a `SendableRecordBatchStream` backed by the
+//! DataFusion streaming executor — no intermediate materialisation occurs.
+//! Use `with_memory_limit()` to bound query memory for large rollup queries.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -193,15 +192,15 @@ impl DataFusionSessionBuilder {
         Ok(())
     }
 
-    /// Execute a Substrait plan (protobuf bytes) and return the results.
+    /// Execute a Substrait plan (protobuf bytes) and return a streaming result.
     ///
     /// Builds a fresh session, converts the plan via `QuickwitSubstraitConsumer`,
-    /// and collects all results into memory.  See the module-level doc on
-    /// materialization limits.
+    /// and returns a `SendableRecordBatchStream` that the caller can consume
+    /// incrementally — no intermediate materialization occurs here.
     pub async fn execute_substrait(
         &self,
         plan_bytes: &[u8],
-    ) -> DFResult<Vec<arrow::array::RecordBatch>> {
+    ) -> DFResult<datafusion::physical_plan::SendableRecordBatchStream> {
         use datafusion_substrait::substrait::proto::Plan;
         use prost::Message;
 
@@ -209,7 +208,7 @@ impl DataFusionSessionBuilder {
             .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
 
         let ctx = self.build_session()?;
-        crate::substrait::execute_substrait_plan(&plan, &ctx, &self.sources).await
+        crate::substrait::execute_substrait_plan_streaming(&plan, &ctx, &self.sources).await
     }
 
     /// Build a `SessionContext` backed by the shared `RuntimeEnv`.
@@ -217,7 +216,7 @@ impl DataFusionSessionBuilder {
     /// Does NOT call `check_invariants()` — callers should invoke that once at
     /// startup, not on every query.
     pub fn build_session(&self) -> DFResult<SessionContext> {
-        let mut config = SessionConfig::new().with_target_partitions(1);
+        let mut config = SessionConfig::new();
         config.options_mut().catalog.default_catalog = "quickwit".to_string();
         config.options_mut().catalog.default_schema = "public".to_string();
         config.options_mut().catalog.information_schema = true;
@@ -231,22 +230,26 @@ impl DataFusionSessionBuilder {
             // at startup (via init) or lazily (via scan) are globally visible.
             .with_runtime_env(Arc::clone(&self.runtime));
 
-        if let Some(resolver) = &self.worker_resolver {
-            // Clone the Arc so ownership passes into the distributed extension.
-            // `Arc<dyn WorkerResolver>` implements `WorkerResolver` via deref,
-            // so the forwarding wrapper is not needed.
-            builder = builder
-                .with_distributed_worker_resolver(ArcWorkerResolver(Arc::clone(resolver)))
-                .with_distributed_task_estimator(QuickwitTaskEstimator)
-                .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
-        }
-
-        // Accumulate contributions from all sources and apply them at once.
+        // Accumulate contributions from all sources and apply them first, so that
+        // source-specific physical optimizer rules (e.g. tantivy pushdown) run
+        // before the distributed rule inspects the fully-optimized plan.
         let mut combined = crate::data_source::DataSourceContributions::default();
         for source in &self.sources {
             combined.merge(source.contributions());
         }
         builder = combined.apply_to_builder(builder);
+
+        if let Some(resolver) = &self.worker_resolver {
+            // Clone the Arc so ownership passes into the distributed extension.
+            // `Arc<dyn WorkerResolver>` implements `WorkerResolver` via deref,
+            // so the forwarding wrapper is not needed.
+            // DistributedPhysicalOptimizerRule is added LAST so it sees the
+            // fully source-optimized plan.
+            builder = builder
+                .with_distributed_worker_resolver(ArcWorkerResolver(Arc::clone(resolver)))
+                .with_distributed_task_estimator(QuickwitTaskEstimator)
+                .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
+        }
 
         let mut state = builder.build();
 

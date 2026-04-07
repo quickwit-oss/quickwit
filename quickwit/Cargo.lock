@@ -2984,6 +2984,42 @@ dependencies = [
 [[package]]
 name = "datafusion-distributed"
 version = "0.1.0"
+source = "git+https://github.com/datafusion-contrib/datafusion-distributed?rev=0f2c8be3e148b0bd5c7f17b23f2df8bb1201d5fb#0f2c8be3e148b0bd5c7f17b23f2df8bb1201d5fb"
+dependencies = [
+ "arrow-flight",
+ "arrow-ipc",
+ "arrow-select",
+ "async-trait",
+ "bincode",
+ "bytes",
+ "chrono",
+ "crossbeam-queue",
+ "dashmap 6.1.0",
+ "datafusion",
+ "datafusion-proto",
+ "delegate",
+ "futures",
+ "http 1.4.0",
+ "itertools 0.14.0",
+ "moka",
+ "object_store",
+ "pin-project",
+ "prost 0.14.3",
+ "rand 0.9.2",
+ "sketches-ddsketch 0.3.1",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tonic 0.14.5",
+ "tonic-prost",
+ "tower 0.5.3",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "datafusion-distributed"
+version = "0.1.0"
 source = "git+https://github.com/datafusion-contrib/datafusion-distributed#0f2c8be3e148b0bd5c7f17b23f2df8bb1201d5fb"
 dependencies = [
  "arrow-flight",
@@ -8285,7 +8321,7 @@ dependencies = [
  "datafusion",
  "datafusion-datasource",
  "datafusion-datasource-parquet",
- "datafusion-distributed",
+ "datafusion-distributed 0.1.0 (git+https://github.com/datafusion-contrib/datafusion-distributed?rev=0f2c8be3e148b0bd5c7f17b23f2df8bb1201d5fb)",
  "datafusion-physical-plan",
  "datafusion-sql",
  "datafusion-substrait",
@@ -8897,7 +8933,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "bytesize",
- "datafusion-distributed",
+ "datafusion-distributed 0.1.0 (git+https://github.com/datafusion-contrib/datafusion-distributed)",
  "elasticsearch-dsl",
  "flate2",
  "futures",

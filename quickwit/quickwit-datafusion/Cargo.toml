@@ -40,7 +40,7 @@ datafusion-datasource = "52"
 datafusion-sql = "52"
 datafusion-physical-plan = "52"
 datafusion-datasource-parquet = "52"
-datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed" }
+datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed", rev = "0f2c8be3e148b0bd5c7f17b23f2df8bb1201d5fb" }
 object_store = "0.12"
 
 [dev-dependencies]
