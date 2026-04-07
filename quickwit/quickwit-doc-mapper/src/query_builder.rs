@@ -394,11 +394,24 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_regex(&mut self, regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
-        let (field, path, regex) = match regex_query.to_field_and_regex(self.schema) {
+        let (field, path, regex, tokenizer_name) = match regex_query.to_field_and_regex(self.schema)
+        {
             Ok(res) => res,
             /* the query will be nullified when casting to a tantivy ast */
             Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
             Err(e) => return Err(e),
+        };
+        // The warmup regex must match what build_tantivy_ast_impl produces.
+        // If the field's tokenizer lowercases indexed terms, the search will
+        // use (?i) to match case-insensitively, so the warmup must too.
+        let does_lowercasing = match tokenizer_name.as_deref() {
+            Some(name) => self.tokenizer_manager.tokenizer_does_lowercasing(name),
+            None => false,
+        };
+        let regex = if !regex.starts_with("(?i)") && does_lowercasing {
+            format!("(?i){regex}")
+        } else {
+            regex
         };
         self.add_automaton(field, Automaton::Regex(path, regex));
         Ok(())

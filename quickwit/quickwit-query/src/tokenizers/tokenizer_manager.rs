@@ -91,6 +91,16 @@ impl TokenizerManager {
         self.get_tokenizer(analyzer)
     }
 
+    /// Returns true if the given tokenizer lowercases its output.
+    pub fn tokenizer_does_lowercasing(&self, tokenizer_name: &str) -> bool {
+        self.is_lowercaser
+            .read()
+            .unwrap()
+            .get(tokenizer_name)
+            .copied()
+            .unwrap_or(false)
+    }
+
     /// Get the inner TokenizerManager
     pub fn tantivy_manager(&self) -> &TantivyTokenizerManager {
         &self.inner
