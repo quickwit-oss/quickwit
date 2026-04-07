@@ -86,13 +86,13 @@ jobs:
           rustdocflags = ["--cfg", "tokio_unstable"]
           EOF
 
-      - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
+      - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a
         id: octo-sts-pomchi
         with:
           scope: DataDog/PomChi
           policy: access
 
-      - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
+      - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a
         id: octo-sts-event-percolation
         with:
           scope: DataDog/event-percolation
