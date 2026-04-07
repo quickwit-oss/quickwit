@@ -26,7 +26,7 @@ use quickwit_actors::{
 use quickwit_common::metrics::OwnedGaugeGuard;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
-use quickwit_common::{KillSwitch, is_metrics_index};
+use quickwit_common::{KillSwitch, is_parquet_pipeline_index, is_sketches_index};
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
@@ -409,9 +409,12 @@ impl IndexingPipeline {
 
         let index_id = &self.params.pipeline_id.index_uid.index_id;
 
-        // Route metrics indexes to the Parquet/DataFusion pipeline
-        if is_metrics_index(index_id) {
-            return self.spawn_parquet_pipeline(ctx).await;
+        // Route metrics and sketches indexes to the Parquet/DataFusion pipeline
+        if is_parquet_pipeline_index(index_id) {
+            let use_sketch_processors = is_sketches_index(index_id);
+            return self
+                .spawn_parquet_pipeline(ctx, use_sketch_processors)
+                .await;
         }
 
         let source_id = &self.params.pipeline_id.source_id;
@@ -585,16 +588,21 @@ impl IndexingPipeline {
             index=%self.params.pipeline_id.index_uid.index_id,
             r#gen=self.generation()
         ))]
-    async fn spawn_parquet_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
+    async fn spawn_parquet_pipeline(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        use_sketch_processors: bool,
+    ) -> anyhow::Result<()> {
         let index_id = &self.params.pipeline_id.index_uid.index_id;
         let source_id = &self.params.pipeline_id.source_id;
 
         info!(
             index_id,
             source_id,
+            use_sketch_processors,
             pipeline_uid=%self.params.pipeline_id.pipeline_uid,
             root_dir=%self.params.indexing_directory.path().display(),
-            "spawning parquet indexing pipeline for metrics",
+            "spawning parquet indexing pipeline",
         );
 
         let (source_mailbox, source_inbox) = ctx
@@ -638,11 +646,23 @@ impl IndexingPipeline {
 
         // ParquetPackager
         let writer_config = quickwit_parquet_engine::storage::ParquetWriterConfig::default();
-        let split_writer = quickwit_parquet_engine::storage::ParquetSplitWriter::new(
+        let split_kind = if use_sketch_processors {
+            quickwit_parquet_engine::split::ParquetSplitKind::Sketches
+        } else {
+            quickwit_parquet_engine::split::ParquetSplitKind::Metrics
+        };
+        let sort_order = if use_sketch_processors {
+            quickwit_parquet_engine::schema::SKETCH_SORT_ORDER
+        } else {
+            quickwit_parquet_engine::schema::SORT_ORDER
+        };
+        let split_writer_kind = quickwit_parquet_engine::storage::ParquetSplitWriter::new(
+            split_kind,
             writer_config,
+            sort_order,
             self.params.indexing_directory.path(),
         );
-        let parquet_packager = ParquetPackager::new(split_writer, parquet_uploader_mailbox);
+        let parquet_packager = ParquetPackager::new(split_writer_kind, parquet_uploader_mailbox);
         let (parquet_packager_mailbox, parquet_packager_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -664,7 +684,17 @@ impl IndexingPipeline {
             .spawn(parquet_indexer);
 
         // ParquetDocProcessor
+        let processor = if use_sketch_processors {
+            crate::actors::parquet_doc_processor::IngestProcessor::Sketches(
+                quickwit_parquet_engine::ingest::SketchParquetIngestProcessor::new(),
+            )
+        } else {
+            crate::actors::parquet_doc_processor::IngestProcessor::Metrics(
+                quickwit_parquet_engine::ingest::ParquetIngestProcessor,
+            )
+        };
         let parquet_doc_processor = ParquetDocProcessor::new(
+            processor,
             index_id.to_string(),
             source_id.to_string(),
             parquet_indexer_mailbox,

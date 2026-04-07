@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Metrics split metadata definitions.
+//! Unified parquet split metadata definitions for both metrics and sketch splits.
 
 use std::collections::{HashMap, HashSet};
 use std::time::SystemTime;
@@ -26,20 +26,66 @@ pub const TAG_DATACENTER: &str = "datacenter";
 pub const TAG_REGION: &str = "region";
 pub const TAG_HOST: &str = "host";
 
-/// Unique identifier for a metrics split.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SplitId(String);
+/// Distinguishes between metrics and sketch parquet splits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ParquetSplitKind {
+    Metrics,
+    Sketches,
+}
 
-impl SplitId {
-    /// Create a new SplitId from a string.
+impl ParquetSplitKind {
+    /// Returns the prefix used when generating split IDs.
+    pub fn split_id_prefix(&self) -> &'static str {
+        match self {
+            Self::Metrics => "metrics_",
+            Self::Sketches => "sketches_",
+        }
+    }
+
+    /// Returns the Postgres table name for this split kind.
+    pub fn table_name(&self) -> &'static str {
+        match self {
+            Self::Metrics => "metrics_splits",
+            Self::Sketches => "sketch_splits",
+        }
+    }
+
+    /// Returns a human-readable label for logging and metrics.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Metrics => "metrics",
+            Self::Sketches => "sketch",
+        }
+    }
+}
+
+impl std::fmt::Display for ParquetSplitKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+/// Default kind used by serde for backwards-compatible deserialization.
+fn default_metrics_kind() -> ParquetSplitKind {
+    ParquetSplitKind::Metrics
+}
+
+/// Unique identifier for a parquet split (metrics or sketch).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ParquetSplitId(String);
+
+impl ParquetSplitId {
+    /// Create a new ParquetSplitId from a string.
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
     }
 
-    /// Generates a new unique SplitId using a ULID (timestamp + randomness).
-    pub fn generate() -> Self {
+    /// Generates a new unique split ID using a ULID (timestamp + randomness),
+    /// prefixed according to the split kind.
+    pub fn generate(kind: ParquetSplitKind) -> Self {
         Self(format!(
-            "metrics_{}",
+            "{}{}",
+            kind.split_id_prefix(),
             ulid::Ulid::new().to_string().to_lowercase()
         ))
     }
@@ -50,13 +96,13 @@ impl SplitId {
     }
 }
 
-impl std::fmt::Display for SplitId {
+impl std::fmt::Display for ParquetSplitId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-/// Time range covered by a metrics split.
+/// Time range covered by a split.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeRange {
     /// Start timestamp in seconds (inclusive).
@@ -91,39 +137,15 @@ impl TimeRange {
     }
 }
 
-/// State of a metrics split in the metastore.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MetricsSplitState {
-    /// Split is staged (being written, not yet queryable).
-    Staged,
-    /// Split is published (queryable).
-    Published,
-    /// Split is marked for deletion.
-    MarkedForDeletion,
-}
-
-impl MetricsSplitState {
-    /// Returns a string representation for database storage.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            MetricsSplitState::Staged => "Staged",
-            MetricsSplitState::Published => "Published",
-            MetricsSplitState::MarkedForDeletion => "MarkedForDeletion",
-        }
-    }
-}
-
-impl std::fmt::Display for MetricsSplitState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-/// Metadata for a metrics split.
+/// Unified metadata for a parquet split (metrics or sketch).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetricsSplitMetadata {
+pub struct ParquetSplitMetadata {
+    /// What kind of split this is (metrics or sketches).
+    #[serde(default = "default_metrics_kind")]
+    pub kind: ParquetSplitKind,
+
     /// Unique split identifier.
-    pub split_id: SplitId,
+    pub split_id: ParquetSplitId,
 
     /// Index unique identifier for Postgres foreign key relationship.
     pub index_uid: String,
@@ -155,11 +177,21 @@ pub struct MetricsSplitMetadata {
     pub created_at: SystemTime,
 }
 
-impl MetricsSplitMetadata {
+impl ParquetSplitMetadata {
     /// Returns the parquet filename for this split, relative to the storage root.
     /// Always `{split_id}.parquet`.
     pub fn parquet_filename(&self) -> String {
         format!("{}.parquet", self.split_id)
+    }
+
+    /// Returns the split ID as a string.
+    pub fn split_id_str(&self) -> &str {
+        self.split_id.as_str()
+    }
+
+    /// Returns the size in bytes.
+    pub fn size_bytes(&self) -> u64 {
+        self.size_bytes
     }
 
     /// Cardinality threshold for routing tags to Postgres vs Parquet.
@@ -167,9 +199,9 @@ impl MetricsSplitMetadata {
     /// Tags with >= CARDINALITY_THRESHOLD unique values use Parquet bloom filters.
     pub const CARDINALITY_THRESHOLD: usize = 1000;
 
-    /// Create a new MetricsSplitMetadata builder.
-    pub fn builder() -> MetricsSplitMetadataBuilder {
-        MetricsSplitMetadataBuilder::default()
+    /// Create a new ParquetSplitMetadata builder.
+    pub fn builder() -> ParquetSplitMetadataBuilder {
+        ParquetSplitMetadataBuilder::default()
     }
 
     /// Check if a tag key exceeds the cardinality threshold.
@@ -210,10 +242,11 @@ impl MetricsSplitMetadata {
     }
 }
 
-/// Builder for MetricsSplitMetadata.
+/// Builder for ParquetSplitMetadata.
 #[derive(Default)]
-pub struct MetricsSplitMetadataBuilder {
-    split_id: Option<SplitId>,
+pub struct ParquetSplitMetadataBuilder {
+    kind: Option<ParquetSplitKind>,
+    split_id: Option<ParquetSplitId>,
     index_uid: Option<String>,
     time_range: Option<TimeRange>,
     num_rows: u64,
@@ -223,8 +256,13 @@ pub struct MetricsSplitMetadataBuilder {
     high_cardinality_tag_keys: HashSet<String>,
 }
 
-impl MetricsSplitMetadataBuilder {
-    pub fn split_id(mut self, id: SplitId) -> Self {
+impl ParquetSplitMetadataBuilder {
+    pub fn kind(mut self, kind: ParquetSplitKind) -> Self {
+        self.kind = Some(kind);
+        self
+    }
+
+    pub fn split_id(mut self, id: ParquetSplitId) -> Self {
         self.split_id = Some(id);
         self
     }
@@ -284,9 +322,13 @@ impl MetricsSplitMetadataBuilder {
         self
     }
 
-    pub fn build(self) -> MetricsSplitMetadata {
-        MetricsSplitMetadata {
-            split_id: self.split_id.unwrap_or_else(SplitId::generate),
+    pub fn build(self) -> ParquetSplitMetadata {
+        let kind = self.kind.unwrap_or(ParquetSplitKind::Metrics);
+        ParquetSplitMetadata {
+            kind,
+            split_id: self
+                .split_id
+                .unwrap_or_else(|| ParquetSplitId::generate(kind)),
             index_uid: self.index_uid.expect("index_uid is required"),
             time_range: self.time_range.expect("time_range is required"),
             num_rows: self.num_rows,
@@ -302,15 +344,30 @@ impl MetricsSplitMetadataBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::split::SplitState;
 
     #[test]
     fn test_split_id_generation() {
-        let id1 = SplitId::generate();
+        let id1 = ParquetSplitId::generate(ParquetSplitKind::Metrics);
         // Sleep 1ms to ensure different timestamp
         std::thread::sleep(std::time::Duration::from_millis(1));
-        let id2 = SplitId::generate();
+        let id2 = ParquetSplitId::generate(ParquetSplitKind::Metrics);
         assert_ne!(id1.as_str(), id2.as_str());
         assert!(id1.as_str().starts_with("metrics_"));
+    }
+
+    #[test]
+    fn test_sketch_split_id_generation() {
+        let id = ParquetSplitId::generate(ParquetSplitKind::Sketches);
+        assert!(id.as_str().starts_with("sketches_"));
+    }
+
+    #[test]
+    fn test_sketch_split_id_uniqueness() {
+        let id1 = ParquetSplitId::generate(ParquetSplitKind::Sketches);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let id2 = ParquetSplitId::generate(ParquetSplitKind::Sketches);
+        assert_ne!(id1.as_str(), id2.as_str());
     }
 
     #[test]
@@ -327,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_metadata_builder_with_tags() {
-        let metadata = MetricsSplitMetadata::builder()
+        let metadata = ParquetSplitMetadata::builder()
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .add_metric_name("cpu.usage")
@@ -337,6 +394,7 @@ mod tests {
             .add_high_cardinality_tag_key(TAG_HOST)
             .build();
 
+        assert_eq!(metadata.kind, ParquetSplitKind::Metrics);
         assert_eq!(metadata.index_uid, "test-index:00000000000000000000000000");
         assert!(metadata.metric_names.contains("cpu.usage"));
         assert_eq!(metadata.get_tag_values(TAG_SERVICE).unwrap().len(), 2);
@@ -352,8 +410,60 @@ mod tests {
     }
 
     #[test]
+    fn test_sketch_metadata_builder() {
+        let metadata = ParquetSplitMetadata::builder()
+            .kind(ParquetSplitKind::Sketches)
+            .index_uid("sketch-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .add_metric_name("req.latency")
+            .add_low_cardinality_tag(TAG_SERVICE, "api")
+            .build();
+
+        assert_eq!(metadata.kind, ParquetSplitKind::Sketches);
+        assert!(metadata.split_id.as_str().starts_with("sketches_"));
+        assert!(metadata.metric_names.contains("req.latency"));
+        assert_eq!(metadata.time_range.start_secs, 1000);
+    }
+
+    #[test]
+    fn test_sketch_metadata_serialization_roundtrip() {
+        let metadata = ParquetSplitMetadata::builder()
+            .kind(ParquetSplitKind::Sketches)
+            .index_uid("test:00000000000000000000000000")
+            .time_range(TimeRange::new(100, 200))
+            .num_rows(500)
+            .size_bytes(1024)
+            .add_metric_name("latency")
+            .build();
+
+        let json = serde_json::to_string(&metadata).unwrap();
+        let recovered: ParquetSplitMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(recovered.split_id.as_str(), metadata.split_id.as_str());
+        assert_eq!(recovered.num_rows, 500);
+        assert_eq!(recovered.kind, ParquetSplitKind::Sketches);
+    }
+
+    #[test]
+    fn test_backwards_compatible_deserialization() {
+        // Simulate JSON without the "kind" field (old format)
+        let json = r#"{
+            "split_id": "metrics_test123",
+            "index_uid": "test:00000000000000000000000000",
+            "time_range": {"start_secs": 100, "end_secs": 200},
+            "num_rows": 42,
+            "size_bytes": 1024,
+            "metric_names": [],
+            "low_cardinality_tags": {},
+            "high_cardinality_tag_keys": [],
+            "created_at": {"secs_since_epoch": 0, "nanos_since_epoch": 0}
+        }"#;
+        let recovered: ParquetSplitMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(recovered.kind, ParquetSplitKind::Metrics);
+    }
+
+    #[test]
     fn test_cardinality_promotion() {
-        let mut metadata = MetricsSplitMetadata::builder()
+        let mut metadata = ParquetSplitMetadata::builder()
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .build();
@@ -378,7 +488,7 @@ mod tests {
 
     #[test]
     fn test_service_names_convenience() {
-        let metadata = MetricsSplitMetadata::builder()
+        let metadata = ParquetSplitMetadata::builder()
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .add_low_cardinality_tag(TAG_SERVICE, "web")
@@ -392,13 +502,20 @@ mod tests {
     }
 
     #[test]
-    fn test_metrics_split_state() {
-        assert_eq!(MetricsSplitState::Staged.as_str(), "Staged");
-        assert_eq!(MetricsSplitState::Published.as_str(), "Published");
-        assert_eq!(
-            MetricsSplitState::MarkedForDeletion.as_str(),
-            "MarkedForDeletion"
-        );
-        assert_eq!(format!("{}", MetricsSplitState::Published), "Published");
+    fn test_split_state() {
+        assert_eq!(SplitState::Staged.as_str(), "Staged");
+        assert_eq!(SplitState::Published.as_str(), "Published");
+        assert_eq!(SplitState::MarkedForDeletion.as_str(), "MarkedForDeletion");
+        assert_eq!(format!("{}", SplitState::Published), "Published");
+    }
+
+    #[test]
+    fn test_split_kind_properties() {
+        assert_eq!(ParquetSplitKind::Metrics.split_id_prefix(), "metrics_");
+        assert_eq!(ParquetSplitKind::Sketches.split_id_prefix(), "sketches_");
+        assert_eq!(ParquetSplitKind::Metrics.table_name(), "metrics_splits");
+        assert_eq!(ParquetSplitKind::Sketches.table_name(), "sketch_splits");
+        assert_eq!(ParquetSplitKind::Metrics.label(), "metrics");
+        assert_eq!(ParquetSplitKind::Sketches.label(), "sketch");
     }
 }

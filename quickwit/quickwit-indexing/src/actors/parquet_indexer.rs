@@ -27,7 +27,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_parquet_engine::index::{ParquetBatchAccumulator, ParquetIndexingConfig};
-use quickwit_parquet_engine::split::ParquetSplit;
+use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId};
 use serde::Serialize;
 use tokio::runtime::Handle;
@@ -86,7 +86,7 @@ pub struct ParquetSplitBatch {
     /// Index unique identifier for the splits in this batch.
     pub index_uid: IndexUid,
     /// The splits produced.
-    pub splits: Vec<ParquetSplit>,
+    pub splits: Vec<ParquetSplitMetadata>,
     /// Directory containing the Parquet files referenced by splits.
     /// The uploader uses this to locate and upload the actual file content.
     pub output_dir: PathBuf,
@@ -607,8 +607,12 @@ mod tests {
         uploader_mailbox: Mailbox<ParquetUploader>,
     ) -> (Mailbox<ParquetPackager>, ActorHandle<ParquetPackager>) {
         let writer_config = ParquetWriterConfig::default();
-        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir);
-
+        let split_writer = ParquetSplitWriter::new(
+            quickwit_parquet_engine::split::ParquetSplitKind::Metrics,
+            writer_config,
+            quickwit_parquet_engine::schema::SORT_ORDER,
+            temp_dir,
+        );
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)
     }

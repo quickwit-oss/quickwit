@@ -18,7 +18,8 @@ use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::metastore::{
-    MetastoreService, MetastoreServiceClient, PublishMetricsSplitsRequest, PublishSplitsRequest,
+    MetastoreService, MetastoreServiceClient, PublishMetricsSplitsRequest,
+    PublishSketchSplitsRequest, PublishSplitsRequest,
 };
 use serde::Serialize;
 use tracing::{info, instrument};
@@ -256,19 +257,39 @@ impl Handler<ParquetSplitsUpdate> for Publisher<ParquetDocProcessor> {
         let index_checkpoint_delta_json_opt = serialize_checkpoint_delta(&checkpoint_delta_opt)?;
         let split_ids: Vec<String> = new_splits
             .iter()
-            .map(|split| split.split_id.as_str().to_string())
+            .map(|split| split.split_id_str().to_string())
             .collect();
+
+        // Determine whether these are metrics or sketch splits for publishing.
+        let is_sketch = new_splits
+            .first()
+            .map(|s| s.kind == quickwit_parquet_engine::split::ParquetSplitKind::Sketches)
+            .unwrap_or(false);
+
         if let Some(_guard) = publish_lock.acquire().await {
-            let publish_request = PublishMetricsSplitsRequest {
-                index_uid: Some(index_uid.clone()),
-                staged_split_ids: split_ids.clone(),
-                replaced_split_ids: replaced_split_ids.clone(),
-                index_checkpoint_delta_json_opt,
-                publish_token_opt: publish_token_opt.clone(),
-            };
-            ctx.protect_future(self.metastore.publish_metrics_splits(publish_request))
-                .await
-                .context("failed to publish metrics splits")?;
+            if is_sketch {
+                let publish_request = PublishSketchSplitsRequest {
+                    index_uid: Some(index_uid.clone()),
+                    staged_split_ids: split_ids.clone(),
+                    replaced_split_ids: replaced_split_ids.clone(),
+                    index_checkpoint_delta_json_opt,
+                    publish_token_opt: publish_token_opt.clone(),
+                };
+                ctx.protect_future(self.metastore.publish_sketch_splits(publish_request))
+                    .await
+                    .context("failed to publish sketch splits")?;
+            } else {
+                let publish_request = PublishMetricsSplitsRequest {
+                    index_uid: Some(index_uid.clone()),
+                    staged_split_ids: split_ids.clone(),
+                    replaced_split_ids: replaced_split_ids.clone(),
+                    index_checkpoint_delta_json_opt,
+                    publish_token_opt: publish_token_opt.clone(),
+                };
+                ctx.protect_future(self.metastore.publish_metrics_splits(publish_request))
+                    .await
+                    .context("failed to publish metrics splits")?;
+            }
         } else {
             info!(
                 split_ids=?split_ids,
@@ -560,7 +581,7 @@ mod tests {
 mod parquet_publisher_tests {
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-    use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
+    use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
     use quickwit_proto::metastore::{EmptyResponse, MetastoreServiceClient, MockMetastoreService};
     use quickwit_proto::types::IndexUid;
     use tracing::Span;
@@ -568,10 +589,10 @@ mod parquet_publisher_tests {
     use super::*;
     use crate::models::PublishLock;
 
-    fn create_test_metrics_split_metadata(index_uid: &str, split_id: &str) -> MetricsSplitMetadata {
-        MetricsSplitMetadata::builder()
+    fn create_test_metrics_split_metadata(index_uid: &str, split_id: &str) -> ParquetSplitMetadata {
+        ParquetSplitMetadata::builder()
             .index_uid(index_uid)
-            .split_id(SplitId::new(split_id))
+            .split_id(ParquetSplitId::new(split_id))
             .time_range(TimeRange::new(1000, 2000))
             .num_rows(100)
             .size_bytes(1024)
