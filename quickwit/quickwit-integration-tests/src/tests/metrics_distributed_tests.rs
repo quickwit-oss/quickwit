@@ -35,7 +35,6 @@ use quickwit_datafusion::DataFusionSessionBuilder;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::{make_batch, make_batch_with_tags};
 use quickwit_metastore::StageMetricsSplitsRequestExt;
-use quickwit_parquet_engine::schema::ParquetSchema;
 use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
 use quickwit_parquet_engine::storage::{ParquetWriter, ParquetWriterConfig};
 use quickwit_proto::metastore::{
@@ -103,8 +102,7 @@ async fn publish_split(
     split_name: &str,
     batch: &RecordBatch,
 ) {
-    let schema = ParquetSchema::from_arrow_schema(batch.schema());
-    let parquet_bytes = ParquetWriter::new(schema, ParquetWriterConfig::default())
+    let parquet_bytes = ParquetWriter::new(ParquetWriterConfig::default())
         .write_to_bytes(batch).unwrap();
     let size_bytes = parquet_bytes.len() as u64;
     std::fs::write(data_dir.join(format!("{split_name}.parquet")), &parquet_bytes).unwrap();
