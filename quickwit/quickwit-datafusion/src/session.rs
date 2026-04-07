@@ -35,6 +35,13 @@
 //! service discovery (e.g., a downstream caller using custom service discovery, Consul, or a Chitchat
 //! variant), use `with_worker_resolver(resolver)` to supply any type that
 //! implements `datafusion_distributed::WorkerResolver`.
+//!
+//! ## Result materialization
+//!
+//! `execute_substrait` collects all result batches into memory before returning.
+//! For large rollup queries this is unsuitable for production use.  A streaming
+//! variant is deferred; A downstream caller can wrap this via its own gRPC handler.
+//! Use `with_memory_limit()` to bound memory usage until streaming is in place.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -184,6 +191,25 @@ impl DataFusionSessionBuilder {
             }
         }
         Ok(())
+    }
+
+    /// Execute a Substrait plan (protobuf bytes) and return the results.
+    ///
+    /// Builds a fresh session, converts the plan via `QuickwitSubstraitConsumer`,
+    /// and collects all results into memory.  See the module-level doc on
+    /// materialization limits.
+    pub async fn execute_substrait(
+        &self,
+        plan_bytes: &[u8],
+    ) -> DFResult<Vec<arrow::array::RecordBatch>> {
+        use datafusion_substrait::substrait::proto::Plan;
+        use prost::Message;
+
+        let plan = Plan::decode(plan_bytes)
+            .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
+
+        let ctx = self.build_session()?;
+        crate::substrait::execute_substrait_plan(&plan, &ctx, &self.sources).await
     }
 
     /// Build a `SessionContext` backed by the shared `RuntimeEnv`.
