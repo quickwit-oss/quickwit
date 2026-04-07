@@ -19,6 +19,7 @@ pub mod service;
 pub mod session;
 pub mod sources;
 pub(crate) mod storage_bridge;
+pub(crate) mod substrait;
 pub(crate) mod task_estimator;
 pub(crate) mod worker;
 

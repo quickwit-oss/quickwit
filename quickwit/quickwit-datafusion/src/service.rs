@@ -15,15 +15,15 @@
 //! Pure-Rust DataFusion query execution service.
 //!
 //! [`DataFusionService`] is the core query execution entry point: it holds an
-//! `Arc<DataFusionSessionBuilder>` and exposes `execute_sql` methods that return
-//! streaming `RecordBatch` iterators.
+//! `Arc<DataFusionSessionBuilder>` and exposes `execute_substrait` and
+//! `execute_sql` methods that return streaming `RecordBatch` iterators.
 //!
 //! ## No tonic / gRPC coupling
 //!
 //! This struct has zero gRPC dependencies.  The OSS gRPC handler in
 //! `quickwit-serve/src/datafusion_api/grpc_handler.rs` wraps it and encodes
 //! each batch as Arrow IPC.  A downstream caller can do the same from its own
-//! handler, calling `execute_sql` and streaming the resulting
+//! handler, calling `execute_substrait(&[u8])` and streaming the resulting
 //! batches in its own proto response format.
 //!
 //! ## Usage
@@ -35,7 +35,7 @@
 //! let builder = Arc::new(DataFusionSessionBuilder::new().with_source(my_source));
 //! let service = DataFusionService::new(Arc::clone(&builder));
 //!
-//! let mut stream = service.execute_sql("SELECT * FROM my_table").await?;
+//! let mut stream = service.execute_substrait(&plan_bytes).await?;
 //! while let Some(batch) = stream.next().await {
 //!     // handle batch
 //! }
@@ -69,6 +69,56 @@ impl DataFusionService {
     /// Create a new service wrapping the given session builder.
     pub fn new(builder: Arc<DataFusionSessionBuilder>) -> Self {
         Self { builder }
+    }
+
+    /// Execute a Substrait plan encoded as protobuf bytes.
+    ///
+    /// Builds a fresh session via the underlying `DataFusionSessionBuilder`,
+    /// decodes the plan, and returns a streaming `RecordBatch` iterator.
+    /// The caller decides whether to collect, send via gRPC, or pipe to Arrow
+    /// Flight — no materialization happens inside this method.
+    pub async fn execute_substrait(
+        &self,
+        plan_bytes: &[u8],
+    ) -> DFResult<SendableRecordBatchStream> {
+        use datafusion_substrait::substrait::proto::Plan;
+        use prost::Message;
+
+        let plan = Plan::decode(plan_bytes)
+            .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
+
+        self.execute_substrait_plan(&plan).await
+    }
+
+    /// Execute a Substrait plan from its proto3 JSON representation.
+    ///
+    /// Accepts the JSON format produced by DataFusion's `to_substrait_plan`
+    /// + `serde_json::to_string`, or the `rollup_substrait.json` format used
+    /// in integration tests and dev tooling.
+    ///
+    /// This is the dev/tooling path — grpcurl and Python scripts can pass the
+    /// plan as a JSON string without pre-encoding to binary protobuf.
+    pub async fn execute_substrait_json(
+        &self,
+        plan_json: &str,
+    ) -> DFResult<SendableRecordBatchStream> {
+        use datafusion_substrait::substrait::proto::Plan;
+
+        let plan: Plan = serde_json::from_str(plan_json).map_err(|e| {
+            datafusion::error::DataFusionError::Plan(format!(
+                "invalid Substrait plan JSON: {e}"
+            ))
+        })?;
+
+        self.execute_substrait_plan(&plan).await
+    }
+
+    async fn execute_substrait_plan(
+        &self,
+        plan: &datafusion_substrait::substrait::proto::Plan,
+    ) -> DFResult<SendableRecordBatchStream> {
+        let ctx = self.builder.build_session()?;
+        crate::substrait::execute_substrait_plan_streaming(plan, &ctx, self.builder.sources()).await
     }
 
     /// Execute one or more semicolon-separated SQL statements.
