@@ -23,6 +23,7 @@ pub(crate) mod substrait;
 pub(crate) mod task_estimator;
 pub(crate) mod worker;
 
+pub use datafusion::execution::SendableRecordBatchStream;
 pub use resolver::QuickwitWorkerResolver;
 pub use service::DataFusionService;
 pub use session::DataFusionSessionBuilder;

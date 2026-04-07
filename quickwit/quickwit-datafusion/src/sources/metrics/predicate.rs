@@ -170,7 +170,7 @@ fn set_tag_values(col: &str, values: Vec<String>, q: &mut MetricsSplitQuery) -> 
     }
 }
 
-fn column_name(expr: &Expr) -> Option<String> {
+pub(crate) fn column_name(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Column(col) => Some(col.name().to_string()),
         // DataFusion inserts CASTs when comparing UInt64 columns with Int64 literals.

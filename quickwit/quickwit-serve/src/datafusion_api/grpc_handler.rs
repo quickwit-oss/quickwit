@@ -33,7 +33,7 @@ use std::sync::Arc;
 use arrow::array::RecordBatch;
 use arrow::ipc::writer::StreamWriter;
 use futures::StreamExt;
-use quickwit_datafusion::DataFusionService;
+use quickwit_datafusion::{DataFusionService, SendableRecordBatchStream};
 use quickwit_proto::datafusion::{
     ExecuteSqlRequest, ExecuteSqlResponse, ExecuteSubstraitRequest, ExecuteSubstraitResponse,
     data_fusion_service_server,
@@ -57,6 +57,35 @@ fn df_error_to_status(err: impl std::fmt::Display) -> tonic::Status {
     } else {
         tonic::Status::internal(msg)
     }
+}
+
+/// Drain `stream` into a `ReceiverStream`, wrapping each batch with `wrap`.
+///
+/// Spawns a background task that reads batches from `stream`, encodes each
+/// as Arrow IPC bytes via [`batch_to_ipc_bytes`], and sends the wrapped
+/// response into the returned channel.  The task stops silently if the
+/// receiver is dropped (client disconnected).
+fn stream_to_receiver<R>(
+    mut stream: SendableRecordBatchStream,
+    wrap: impl Fn(Vec<u8>) -> R + Send + 'static,
+) -> ReceiverStream<Result<R, tonic::Status>>
+where
+    R: Send + 'static,
+{
+    let (tx, rx) = tokio::sync::mpsc::channel(32);
+    tokio::spawn(async move {
+        while let Some(result) = stream.next().await {
+            let item = match result {
+                Ok(batch) => batch_to_ipc_bytes(&batch).map(&wrap),
+                Err(err) => Err(tonic::Status::internal(format!("stream error: {err}"))),
+            };
+            if tx.send(item).await.is_err() {
+                // receiver dropped — client disconnected
+                break;
+            }
+        }
+    });
+    ReceiverStream::new(rx)
 }
 
 /// Serialize a single `RecordBatch` to Arrow IPC stream format bytes.
@@ -105,7 +134,7 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         // Route to the appropriate DataFusionService method:
         // - substrait_plan_bytes: production path (pre-encoded protobuf, for callers that already hold an encoded plan)
         // - substrait_plan_json:  dev/tooling path (grpcurl, rollup JSON files)
-        let mut stream = if !req.substrait_plan_bytes.is_empty() {
+        let stream = if !req.substrait_plan_bytes.is_empty() {
             service
                 .execute_substrait(&req.substrait_plan_bytes)
                 .await
@@ -121,22 +150,10 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
             ));
         };
 
-        let (tx, rx) = tokio::sync::mpsc::channel(32);
-        tokio::spawn(async move {
-            while let Some(result) = stream.next().await {
-                let item = match result {
-                    Ok(batch) => batch_to_ipc_bytes(&batch)
-                        .map(|ipc_bytes| ExecuteSubstraitResponse { arrow_ipc_bytes: ipc_bytes }),
-                    Err(err) => Err(tonic::Status::internal(format!("stream error: {err}"))),
-                };
-                if tx.send(item).await.is_err() {
-                    // receiver dropped — client disconnected
-                    break;
-                }
-            }
+        let receiver_stream = stream_to_receiver(stream, |ipc_bytes| ExecuteSubstraitResponse {
+            arrow_ipc_bytes: ipc_bytes,
         });
-
-        Ok(tonic::Response::new(ReceiverStream::new(rx)))
+        Ok(tonic::Response::new(receiver_stream))
     }
 
     async fn execute_sql(
@@ -146,7 +163,7 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         let req = request.into_inner();
         let service = Arc::clone(&self.service);
 
-        let mut stream = service
+        let stream = service
             .execute_sql(&req.sql)
             .await
             .map_err(|err| {
@@ -154,21 +171,8 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
                 df_error_to_status(err)
             })?;
 
-        let (tx, rx) = tokio::sync::mpsc::channel(32);
-        tokio::spawn(async move {
-            while let Some(result) = stream.next().await {
-                let item = match result {
-                    Ok(batch) => batch_to_ipc_bytes(&batch)
-                        .map(|ipc_bytes| ExecuteSqlResponse { arrow_ipc_bytes: ipc_bytes }),
-                    Err(err) => Err(tonic::Status::internal(format!("stream error: {err}"))),
-                };
-                if tx.send(item).await.is_err() {
-                    // receiver dropped — client disconnected
-                    break;
-                }
-            }
-        });
-
-        Ok(tonic::Response::new(ReceiverStream::new(rx)))
+        let receiver_stream =
+            stream_to_receiver(stream, |ipc_bytes| ExecuteSqlResponse { arrow_ipc_bytes: ipc_bytes });
+        Ok(tonic::Response::new(receiver_stream))
     }
 }

@@ -21,6 +21,7 @@ use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
+use arrow::compute::SortOptions;
 use arrow::datatypes::SchemaRef;
 use async_trait::async_trait;
 use datafusion::catalog::Session;
@@ -33,7 +34,10 @@ use datafusion::physical_plan::ExecutionPlan;
 use datafusion_datasource::PartitionedFile;
 use datafusion_datasource::file_scan_config::FileScanConfigBuilder;
 use datafusion_datasource_parquet::source::ParquetSource;
+use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
+use datafusion_physical_plan::expressions::Column;
 use object_store::ObjectStore;
+use quickwit_parquet_engine::schema::SORT_ORDER;
 use quickwit_parquet_engine::split::MetricsSplitMetadata;
 use tracing::debug;
 
@@ -163,6 +167,27 @@ impl TableProvider for MetricsTableProvider {
             builder = builder.with_limit(Some(lim));
         }
 
+        // Declare the full parquet sort order to DataFusion so it can skip
+        // redundant sort operators. Matches the writer's SORT_ORDER exactly:
+        // [metric_name, service, env, datacenter, region, host, timestamp_secs].
+        // Columns absent from the projected schema are skipped; nulls_first=false
+        // matches the writer's SortOptions.
+        let sort_options = SortOptions { descending: false, nulls_first: false };
+        let sort_exprs: Vec<PhysicalSortExpr> = SORT_ORDER
+            .iter()
+            .filter_map(|col_name| {
+                self.schema.index_of(col_name).ok().map(|idx| {
+                    PhysicalSortExpr::new(
+                        Arc::new(Column::new(col_name, idx)),
+                        sort_options,
+                    )
+                })
+            })
+            .collect();
+        if let Some(ordering) = LexOrdering::new(sort_exprs) {
+            builder = builder.with_output_ordering(vec![ordering]);
+        }
+
         let file_scan_config = builder.build();
         Ok(DataSourceExec::from_data_source(file_scan_config))
     }
@@ -202,8 +227,5 @@ fn classify_filter(expr: &Expr) -> TableProviderFilterPushDown {
 }
 
 fn column_name_from_expr(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Column(col) => Some(col.name().to_string()),
-        _ => None,
-    }
+    predicate::column_name(expr)
 }

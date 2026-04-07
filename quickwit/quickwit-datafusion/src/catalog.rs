@@ -88,7 +88,10 @@ impl SchemaProvider for QuickwitSchemaProvider {
                         names.append(&mut source_names);
                     }
                 }
-                // Deduplicate in case multiple sources claim the same name.
+                // Sort then deduplicate in case multiple sources claim the same name.
+                // `dedup()` only removes consecutive duplicates, so sorting first
+                // is required to remove all duplicates.
+                names.sort();
                 names.dedup();
                 names
             })
