@@ -40,18 +40,32 @@ use datafusion::error::Result as DFResult;
 use datafusion::execution::SessionState;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_storage::StorageResolver;
-use tracing::debug;
 
 use crate::data_source::{DataSourceContributions, QuickwitDataSource};
 use self::factory::{MetricsTableProviderFactory, METRICS_FILE_TYPE};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
 use self::table_provider::MetricsTableProvider;
 
+/// Returns `true` when `err` wraps a [`MetastoreError::NotFound`].
+///
+/// Used to distinguish "this data source does not own that index" (caller
+/// should try the next source) from a genuine metastore failure that should
+/// be surfaced to the user.
+fn is_index_not_found(err: &datafusion::error::DataFusionError) -> bool {
+    match err {
+        datafusion::error::DataFusionError::External(boxed) => boxed
+            .downcast_ref::<MetastoreError>()
+            .map(|me| matches!(me, MetastoreError::NotFound(_)))
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
 /// `QuickwitDataSource` implementation for OSS parquet metrics.
 ///
 /// Backed by the Quickwit metastore for split discovery and `StorageResolver`
-/// for object-store access.  Registers object stores on Flight workers via
-/// `register_for_worker()`.
+/// for object-store access.  Object stores are registered lazily inside
+/// `MetricsTableProvider::scan()` on each use.
 #[derive(Debug)]
 pub struct MetricsDataSource {
     index_resolver: Arc<dyn MetricsIndexResolver>,
@@ -141,14 +155,7 @@ impl QuickwitDataSource for MetricsDataSource {
             }
             Err(err) => {
                 // Not-found means this source doesn't own the index; let others try.
-                let is_not_found = match &err {
-                    datafusion::error::DataFusionError::External(boxed) => boxed
-                        .downcast_ref::<MetastoreError>()
-                        .map(|me| matches!(me, MetastoreError::NotFound(_)))
-                        .unwrap_or(false),
-                    _ => false,
-                };
-                if is_not_found { Ok(None) } else { Err(err) }
+                if is_index_not_found(&err) { Ok(None) } else { Err(err) }
             }
         }
     }
@@ -177,55 +184,15 @@ impl QuickwitDataSource for MetricsDataSource {
             Err(err) => {
                 // Only swallow "index not found" — propagate everything else so the
                 // caller gets an actionable error (e.g. metastore unavailable).
-                let is_not_found = match &err {
-                    datafusion::error::DataFusionError::External(boxed) => boxed
-                        .downcast_ref::<MetastoreError>()
-                        .map(|me| matches!(me, MetastoreError::NotFound(_)))
-                        .unwrap_or(false),
-                    _ => false,
-                };
-                if is_not_found {
-                    Ok(None)
-                } else {
-                    Err(err)
-                }
+                if is_index_not_found(&err) { Ok(None) } else { Err(err) }
             }
         }
     }
 
-    async fn register_for_worker(&self, state: &SessionState) -> DFResult<()> {
-        let index_names = self.index_resolver.list_index_names().await?;
-
-        // Resolve all indexes concurrently — issuing N sequential `index_metadata`
-        // RPCs would cost O(N × rtt) wall-clock time; concurrent resolution keeps
-        // startup latency near O(rtt) regardless of index count.
-        // The object-store cache in MetastoreIndexResolver ensures storage-resolver
-        // RPCs are skipped on subsequent registrations.
-        let resolver = &self.index_resolver;
-        let results = futures::future::join_all(
-            index_names
-                .iter()
-                .map(|name| resolver.resolve(name.as_str())),
-        )
-        .await;
-
-        for (index_name, result) in index_names.iter().zip(results) {
-            match result {
-                Ok((_, object_store, object_store_url)) => {
-                    state
-                        .runtime_env()
-                        .register_object_store(object_store_url.as_ref(), object_store);
-                    debug!(index_name, "registered object store for metrics worker");
-                }
-                Err(err) => {
-                    debug!(
-                        index_name,
-                        error = %err,
-                        "skipping metrics index in worker registration (non-fatal)"
-                    );
-                }
-            }
-        }
+    async fn register_for_worker(&self, _state: &SessionState) -> DFResult<()> {
+        // No-op: object stores are registered lazily and idempotently inside
+        // `MetricsTableProvider::scan()`, so eager pre-registration on every
+        // worker task startup is unnecessary.
         Ok(())
     }
 

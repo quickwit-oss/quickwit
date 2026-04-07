@@ -51,9 +51,11 @@ impl WorkerResolver for QuickwitWorkerResolver {
     fn get_urls(&self) -> Result<Vec<Url>, DataFusionError> {
         let addrs: Vec<SocketAddr> = self.searcher_pool.keys();
         if addrs.is_empty() {
-            return Err(DataFusionError::Execution(
-                "no searcher nodes available in the cluster".to_string(),
-            ));
+            // Empty pool means no searcher workers are registered (e.g. single-node
+            // local execution).  Return an empty list so the distributed optimizer
+            // sees zero workers and falls back to local execution rather than
+            // treating it as a hard error.
+            return Ok(vec![]);
         }
         let scheme = if self.use_tls { "https" } else { "http" };
         addrs

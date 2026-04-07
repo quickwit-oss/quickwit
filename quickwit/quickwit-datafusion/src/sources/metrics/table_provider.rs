@@ -21,6 +21,7 @@ use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
+use arrow::compute::SortOptions;
 use arrow::datatypes::SchemaRef;
 use async_trait::async_trait;
 use datafusion::catalog::Session;
@@ -33,7 +34,10 @@ use datafusion::physical_plan::ExecutionPlan;
 use datafusion_datasource::PartitionedFile;
 use datafusion_datasource::file_scan_config::FileScanConfigBuilder;
 use datafusion_datasource_parquet::source::ParquetSource;
+use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
+use datafusion_physical_plan::expressions::Column;
 use object_store::ObjectStore;
+use quickwit_parquet_engine::schema::SORT_ORDER;
 use quickwit_parquet_engine::split::MetricsSplitMetadata;
 use tracing::debug;
 
@@ -120,15 +124,15 @@ impl TableProvider for MetricsTableProvider {
 
         debug!(num_splits = splits.len(), "found matching splits");
 
-        // Register our object store with the runtime so ParquetSource can use it
-        // Register on every scan to handle sessions where register_for_worker
-        // was not called (single-node non-distributed mode). The call is idempotent
-        // but acquires a write-lock on RuntimeEnv's object-store map; for the
-        // distributed path register_for_worker pre-registers stores so this is a
-        // no-op. A future improvement: skip if already registered.
-        state
-            .runtime_env()
-            .register_object_store(self.object_store_url.as_ref(), Arc::clone(&self.object_store));
+        // Register our object store with the runtime so ParquetSource can use it.
+        // Check under a read-lock first to avoid acquiring the write-lock on every
+        // scan in the common case where the store is already registered
+        // (distributed path pre-registers via register_for_worker).
+        if state.runtime_env().object_store(&self.object_store_url).is_err() {
+            state
+                .runtime_env()
+                .register_object_store(self.object_store_url.as_ref(), Arc::clone(&self.object_store));
+        }
 
         // Build file groups — one PartitionedFile per split
         let file_groups: Vec<PartitionedFile> = splits
@@ -163,6 +167,27 @@ impl TableProvider for MetricsTableProvider {
             builder = builder.with_limit(Some(lim));
         }
 
+        // Declare the full parquet sort order to DataFusion so it can skip
+        // redundant sort operators. Matches the writer's SORT_ORDER exactly:
+        // [metric_name, service, env, datacenter, region, host, timestamp_secs].
+        // Columns absent from the projected schema are skipped; nulls_first=false
+        // matches the writer's SortOptions.
+        let sort_options = SortOptions { descending: false, nulls_first: false };
+        let sort_exprs: Vec<PhysicalSortExpr> = SORT_ORDER
+            .iter()
+            .filter_map(|col_name| {
+                self.schema.index_of(col_name).ok().map(|idx| {
+                    PhysicalSortExpr::new(
+                        Arc::new(Column::new(col_name, idx)),
+                        sort_options,
+                    )
+                })
+            })
+            .collect();
+        if let Some(ordering) = LexOrdering::new(sort_exprs) {
+            builder = builder.with_output_ordering(vec![ordering]);
+        }
+
         let file_scan_config = builder.build();
         Ok(DataSourceExec::from_data_source(file_scan_config))
     }
@@ -176,10 +201,7 @@ fn classify_filter(expr: &Expr) -> TableProviderFilterPushDown {
             {
                 // OSS uses bare column names (no tag_ prefix)
                 match col_name.as_str() {
-                    "metric_name" | "timestamp_secs" | "service" | "env"
-                    | "datacenter" | "region" | "host" => {
-                        TableProviderFilterPushDown::Inexact
-                    }
+                    "metric_name" | "timestamp_secs" => TableProviderFilterPushDown::Inexact,
                     _ => TableProviderFilterPushDown::Unsupported,
                 }
             } else {
@@ -189,8 +211,7 @@ fn classify_filter(expr: &Expr) -> TableProviderFilterPushDown {
         Expr::InList(in_list) => {
             if let Some(col_name) = column_name_from_expr(&in_list.expr) {
                 match col_name.as_str() {
-                    "metric_name" | "service" | "env" | "datacenter"
-                    | "region" | "host" => TableProviderFilterPushDown::Inexact,
+                    "metric_name" => TableProviderFilterPushDown::Inexact,
                     _ => TableProviderFilterPushDown::Unsupported,
                 }
             } else {
@@ -202,8 +223,5 @@ fn classify_filter(expr: &Expr) -> TableProviderFilterPushDown {
 }
 
 fn column_name_from_expr(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Column(col) => Some(col.name().to_string()),
-        _ => None,
-    }
+    predicate::column_name(expr)
 }

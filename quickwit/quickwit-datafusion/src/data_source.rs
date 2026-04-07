@@ -121,35 +121,9 @@ impl Default for DataSourceContributions {
 }
 
 impl DataSourceContributions {
-    /// Add a physical optimizer rule.
-    pub fn with_physical_optimizer_rule(
-        mut self,
-        rule: Arc<dyn PhysicalOptimizerRule + Send + Sync>,
-    ) -> Self {
-        self.physical_optimizer_rules.push(rule);
-        self
-    }
-
     /// Add a scalar UDF.
     pub fn with_udf(mut self, udf: Arc<ScalarUDF>) -> Self {
         self.udfs.push(udf);
-        self
-    }
-
-    /// Add multiple scalar UDFs at once.
-    pub fn with_udf_batch(mut self, udfs: impl IntoIterator<Item = Arc<ScalarUDF>>) -> Self {
-        self.udfs.extend(udfs);
-        self
-    }
-
-    /// Add a codec / builder-extension callback.
-    ///
-    /// Logs uses this to call `.with_distributed_user_codec(TantivyCodec)`.
-    pub fn with_codec_applier(
-        mut self,
-        f: impl FnOnce(SessionStateBuilder) -> SessionStateBuilder + Send + Sync + 'static,
-    ) -> Self {
-        self.codec_appliers.push(Box::new(f));
         self
     }
 

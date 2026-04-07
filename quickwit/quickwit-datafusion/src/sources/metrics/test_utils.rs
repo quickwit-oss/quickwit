@@ -62,16 +62,6 @@ pub fn oss_schema_with_service() -> SchemaRef {
     ]))
 }
 
-/// Build the OSS minimal base schema (4 required fields only).
-pub fn oss_base_schema() -> SchemaRef {
-    Arc::new(ArrowSchema::new(vec![
-        Field::new("metric_name", dict_type(), false),
-        Field::new("metric_type", DataType::UInt8, false),
-        Field::new("timestamp_secs", DataType::UInt64, false),
-        Field::new("value", DataType::Float64, false),
-    ]))
-}
-
 // ── Batch builders ──────────────────────────────────────────────────
 
 /// Build a RecordBatch with the OSS dynamic schema (4 required + service).
@@ -206,23 +196,6 @@ impl MetricsSplitProvider for TestSplitProvider {
         if let Some(end) = query.time_range_end {
             result.retain(|s| s.time_range.start_secs < end);
         }
-        macro_rules! filter_tag {
-            ($field:ident, $key:expr) => {
-                if let Some(ref vals) = query.$field {
-                    result.retain(|s| {
-                        s.get_tag_values($key)
-                            .map(|v| vals.iter().any(|x| v.contains(x)))
-                            .unwrap_or(true)
-                    });
-                }
-            };
-        }
-        // OSS tag key names (no tag_ prefix)
-        filter_tag!(tag_service, "service");
-        filter_tag!(tag_env, "env");
-        filter_tag!(tag_datacenter, "datacenter");
-        filter_tag!(tag_region, "region");
-        filter_tag!(tag_host, "host");
 
         Ok(result)
     }

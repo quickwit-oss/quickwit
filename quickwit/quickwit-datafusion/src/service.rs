@@ -77,10 +77,12 @@ impl DataFusionService {
     /// decodes the plan, and returns a streaming `RecordBatch` iterator.
     /// The caller decides whether to collect, send via gRPC, or pipe to Arrow
     /// Flight — no materialization happens inside this method.
+    #[tracing::instrument(skip(self, plan_bytes), fields(plan_bytes_len = plan_bytes.len()))]
     pub async fn execute_substrait(
         &self,
         plan_bytes: &[u8],
     ) -> DFResult<SendableRecordBatchStream> {
+        tracing::info!(plan_bytes_len = plan_bytes.len(), "executing substrait plan");
         use datafusion_substrait::substrait::proto::Plan;
         use prost::Message;
 
@@ -128,7 +130,9 @@ impl DataFusionService {
     ///
     /// Returns an error if `sql` is empty after splitting, or if any statement
     /// fails to parse or execute.
+    #[tracing::instrument(skip(self, sql), fields(sql_len = sql.len()))]
     pub async fn execute_sql(&self, sql: &str) -> DFResult<SendableRecordBatchStream> {
+        tracing::info!(sql_len = sql.len(), "executing SQL query");
         let ctx = self.builder.build_session()?;
 
         // Split on `;` and discard empty fragments (trailing `;` etc.).
