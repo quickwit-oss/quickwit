@@ -12,20 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub(crate) mod catalog;
-pub mod data_source;
-pub(crate) mod resolver;
-pub mod service;
-pub mod session;
-pub mod sources;
-pub(crate) mod storage_bridge;
-pub(crate) mod task_estimator;
-pub(crate) mod worker;
-
-pub use resolver::QuickwitWorkerResolver;
-pub use service::DataFusionService;
-pub use session::DataFusionSessionBuilder;
-pub use worker::build_quickwit_worker;
-
-#[cfg(any(test, feature = "testsuite"))]
-pub mod test_utils;
+//! Re-exports metrics test utilities from `sources::metrics::test_utils`.
+//!
+//! Integration tests use `quickwit_datafusion::test_utils::make_batch` etc.
+pub use crate::sources::metrics::test_utils::*;
