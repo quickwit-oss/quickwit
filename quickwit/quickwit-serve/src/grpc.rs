@@ -25,7 +25,9 @@ use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::jaeger::storage::v2::trace_reader_server::TraceReaderServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
+use quickwit_proto::opentelemetry::proto::collector::metrics::v1::metrics_service_server::MetricsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
+use quickwit_proto::datafusion::data_fusion_service_server::DataFusionServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
 use quickwit_proto::tonic::transport::server::TcpIncoming;
@@ -37,6 +39,7 @@ use tonic_reflection::pb::v1::FILE_DESCRIPTOR_SET as REFLECTION_FILE_DESCRIPTOR_
 use tonic_reflection::server::v1::{ServerReflection, ServerReflectionServer};
 use tracing::*;
 
+use crate::datafusion_api::DataFusionServiceGrpcImpl;
 use crate::developer_api::DeveloperApiServer;
 use crate::search_api::GrpcSearchAdapter;
 use crate::{INDEXING_GRPC_SERVER_METRICS_LAYER, QuickwitServices};
@@ -158,6 +161,18 @@ pub(crate) async fn start_grpc_server(
         None
     };
     // Mount gRPC OpenTelemetry OTLP services if present.
+    let otlp_metrics_grpc_service =
+        if let Some(otlp_metrics_service) = services.otlp_metrics_service_opt.clone() {
+            enabled_grpc_services.insert("otlp-metrics");
+            let metrics_service = MetricsServiceServer::new(otlp_metrics_service)
+                .accept_compressed(CompressionEncoding::Gzip)
+                .accept_compressed(CompressionEncoding::Zstd)
+                .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
+                .max_encoding_message_size(grpc_config.max_message_size.0 as usize);
+            Some(metrics_service)
+        } else {
+            None
+        };
     let otlp_trace_grpc_service =
         if let Some(otlp_traces_service) = services.otlp_traces_service_opt.clone() {
             enabled_grpc_services.insert("otlp-traces");
@@ -226,12 +241,47 @@ pub(crate) async fn start_grpc_server(
         DeveloperServiceClient::new(developer_service)
             .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
     };
+    // DataFusion service descriptor must be pushed before build_reflection_service.
+    if services.datafusion_session_builder.is_some() {
+        file_descriptor_sets.push(quickwit_proto::datafusion::DATAFUSION_FILE_DESCRIPTOR_SET);
+    }
+
     enabled_grpc_services.insert("health");
     file_descriptor_sets.push(HEALTH_FILE_DESCRIPTOR_SET);
 
     enabled_grpc_services.insert("reflection");
     file_descriptor_sets.push(REFLECTION_FILE_DESCRIPTOR_SET);
     let reflection_service = build_reflection_service(&file_descriptor_sets)?;
+
+    // Mount the DataFusion distributed worker gRPC service.
+    let datafusion_worker_service =
+        if let Some(ref session_builder) = services.datafusion_session_builder {
+            enabled_grpc_services.insert("datafusion-worker");
+            let worker = quickwit_datafusion::build_quickwit_worker(
+                session_builder.sources(),
+                Arc::clone(session_builder.runtime()),
+            );
+            Some(worker.into_worker_server())
+        } else {
+            None
+        };
+
+    // Mount DataFusionService for OSS query execution (Substrait + SQL streaming).
+    let datafusion_grpc_service = if let Some(ref session_builder) =
+        services.datafusion_session_builder
+    {
+        enabled_grpc_services.insert("datafusion");
+
+        let service =
+            quickwit_datafusion::DataFusionService::new(Arc::clone(session_builder));
+        Some(
+            DataFusionServiceServer::new(DataFusionServiceGrpcImpl::new(service))
+                .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
+                .max_encoding_message_size(grpc_config.max_message_size.0 as usize),
+        )
+    } else {
+        None
+    };
 
     let server_router = server
         .add_service(cluster_grpc_service)
@@ -247,8 +297,11 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(jaeger_v2_grpc_service)
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(otlp_log_grpc_service)
+        .add_optional_service(otlp_metrics_grpc_service)
         .add_optional_service(otlp_trace_grpc_service)
-        .add_optional_service(search_grpc_service);
+        .add_optional_service(search_grpc_service)
+        .add_optional_service(datafusion_grpc_service)
+        .add_optional_service(datafusion_worker_service);
 
     let grpc_listen_addr = tcp_listener.local_addr()?;
     info!(

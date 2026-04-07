@@ -206,6 +206,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[std::path::PathBuf::from("protos")],
         )?;
 
+    // DataFusion service (Substrait + SQL streaming execution).
+    let mut prost_config = prost_build::Config::default();
+    prost_config.file_descriptor_set_path("src/codegen/quickwit/datafusion_descriptor.bin");
+
+    tonic_prost_build::configure()
+        .out_dir("src/codegen/quickwit")
+        .compile_with_config(
+            prost_config,
+            &[std::path::PathBuf::from("protos/quickwit/datafusion.proto")],
+            &[std::path::PathBuf::from("protos")],
+        )?;
+
     // Jaeger proto
     let protos = find_protos("protos/third-party/jaeger");
 

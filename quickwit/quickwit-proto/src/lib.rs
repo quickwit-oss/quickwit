@@ -31,6 +31,7 @@ pub mod cluster;
 pub mod control_plane;
 pub use bytes;
 pub use tonic;
+pub mod datafusion;
 pub mod developer;
 pub mod error;
 mod getters;
