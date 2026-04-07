@@ -8,7 +8,6 @@ use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_common::ServiceStream;
-use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{NodeConfig, RetentionPolicy, SourceConfig, validate_identifier};
 use quickwit_metastore::{
@@ -75,7 +74,6 @@ pub struct CloudPremServiceImpl {
     search_service: Arc<dyn SearchService>,
     metastore_client: MetastoreServiceClient,
     cluster: Cluster,
-    default_index_root_uri: Uri,
     node_config: Arc<NodeConfig>,
 }
 
@@ -90,14 +88,12 @@ impl CloudPremServiceImpl {
         search_service: Arc<dyn SearchService>,
         metastore_client: MetastoreServiceClient,
         cluster: Cluster,
-        default_index_root_uri: Uri,
         node_config: Arc<NodeConfig>,
     ) -> Self {
         CloudPremServiceImpl {
             search_service,
             metastore_client,
             cluster,
-            default_index_root_uri,
             node_config,
         }
     }
@@ -506,8 +502,8 @@ impl CloudPremService for CloudPremServiceImpl {
             .map_err(|e| CloudPremError::InvalidArgument(e.to_string()))?;
 
         // Build index_uri from default root
-        let index_uri = self
-            .default_index_root_uri
+        let default_index_root_uri = &self.node_config.default_index_root_uri;
+        let index_uri = default_index_root_uri
             .join(&request.index_id)
             .map_err(|e| CloudPremError::Internal(e.to_string()))?;
 
@@ -516,7 +512,7 @@ impl CloudPremService for CloudPremServiceImpl {
         let mut index_config = quickwit_config::load_index_config_from_user_config(
             quickwit_config::ConfigFormat::Yaml,
             default_config_bytes,
-            &self.default_index_root_uri,
+            default_index_root_uri,
         )
         .map_err(|e| CloudPremError::Internal(e.to_string()))?;
 
@@ -772,14 +768,13 @@ impl CloudPremService for CloudPremServiceImpl {
     }
 
     async fn es_query(&self, request: EsHttpRequest) -> CloudPremResult<EsHttpResponse> {
-        info!(method=%request.method, path=%request.path, "received EsQuery request");
+        info!(%request.method, %request.path, "received EsQuery request");
         super::es_query::handle_es_query(
             request,
             self.search_service.clone(),
             self.metastore_client.clone(),
             self.cluster.clone(),
             self.node_config.clone(),
-            crate::BuildInfo::get(),
         )
         .await
     }

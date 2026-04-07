@@ -795,8 +795,8 @@ pub struct EsHttpRequest {
     pub method: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub path: ::prost::alloc::string::String,
-    #[prost(bytes = "vec", tag = "3")]
-    pub body: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "bytes", tag = "3")]
+    pub body: ::prost::bytes::Bytes,
     #[prost(map = "string, string", tag = "4")]
     pub headers: ::std::collections::HashMap<
         ::prost::alloc::string::String,
@@ -811,8 +811,8 @@ pub struct EsHttpRequest {
 pub struct EsHttpResponse {
     #[prost(uint32, tag = "1")]
     pub status_code: u32,
-    #[prost(bytes = "vec", tag = "2")]
-    pub body: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "bytes", tag = "2")]
+    pub body: ::prost::bytes::Bytes,
 }
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]

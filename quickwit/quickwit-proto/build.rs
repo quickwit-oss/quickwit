@@ -186,6 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cloudprem_prost_config = prost_build::Config::default();
     cloudprem_prost_config.file_descriptor_set_path("src/codegen/cloudprem/descriptor.bin");
+    cloudprem_prost_config.bytes(["EsHttpRequest.body", "EsHttpResponse.body"]);
     cloudprem_prost_config.type_attribute(
         "NodeDiagnostics",
         "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",

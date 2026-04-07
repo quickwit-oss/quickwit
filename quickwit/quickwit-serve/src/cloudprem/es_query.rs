@@ -17,7 +17,6 @@
 
 use std::sync::Arc;
 
-use bytes::Bytes;
 use quickwit_cluster::Cluster;
 use quickwit_config::NodeConfig;
 use quickwit_proto::cloudprem::{CloudPremError, CloudPremResult, EsHttpRequest, EsHttpResponse};
@@ -39,6 +38,17 @@ use crate::elasticsearch_api::rest_handler::{
     es_compat_nodes_info, es_compat_resolve_index, es_compat_search_shards, es_scroll,
 };
 
+/// Dispatches an async ES handler call, converting `Ok` to a JSON response
+/// and `Err(ElasticsearchError)` to an ES-compatible error response.
+macro_rules! dispatch_es {
+    ($handler:expr) => {
+        match $handler.await {
+            Ok(result) => ok_json_serialize(&result),
+            Err(err) => Ok(es_error_to_response(err)),
+        }
+    };
+}
+
 /// Routes an `EsHttpRequest` to the appropriate ES-compatible handler and
 /// returns the handler's output wrapped in an `EsHttpResponse`.
 pub(crate) async fn handle_es_query(
@@ -47,8 +57,8 @@ pub(crate) async fn handle_es_query(
     metastore: MetastoreServiceClient,
     cluster: Cluster,
     node_config: Arc<NodeConfig>,
-    build_info: &'static BuildInfo,
 ) -> CloudPremResult<EsHttpResponse> {
+    let build_info = BuildInfo::get();
     // Split path from query string at the first `?`.
     let (path, query_string) = match request.path.split_once('?') {
         Some((p, q)) => (p, q),
@@ -56,7 +66,7 @@ pub(crate) async fn handle_es_query(
     };
 
     let method = request.method.to_uppercase();
-    let body = Bytes::from(request.body);
+    let body = request.body;
 
     let segments: Vec<&str> = path.trim_start_matches('/').split('/').collect();
     match segments.as_slice() {
@@ -79,18 +89,16 @@ pub(crate) async fn handle_es_query(
         // --- Handlers that call existing async functions ---
         ["_cat", "indices"] => {
             let params = parse_query_params::<CatIndexQueryParams>(query_string)?;
-            match es_compat_cat_indices(params, metastore).await {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            dispatch_es!(es_compat_cat_indices(params, metastore))
         }
 
         ["_cat", "indices", index] => {
             let params = parse_query_params::<CatIndexQueryParams>(query_string)?;
-            match es_compat_index_cat_indices(vec![index.to_string()], params, metastore).await {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            dispatch_es!(es_compat_index_cat_indices(
+                vec![index.to_string()],
+                params,
+                metastore
+            ))
         }
 
         ["_search", "scroll"] => {
@@ -103,105 +111,78 @@ pub(crate) async fn handle_es_query(
                     scroll: body_params.scroll.or(qs_params.scroll),
                     scroll_id: body_params.scroll_id.or(qs_params.scroll_id),
                 };
-                match es_scroll(merged, search_service).await {
-                    Ok(result) => ok_json_serialize(&result),
-                    Err(err) => Ok(es_error_to_response(err)),
-                }
+                dispatch_es!(es_scroll(merged, search_service))
             }
         }
 
         ["_resolve", "index", index] => {
-            match es_compat_resolve_index(vec![index.to_string()], metastore).await {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            dispatch_es!(es_compat_resolve_index(vec![index.to_string()], metastore))
         }
 
-        ["_stats"] => match es_compat_index_stats(vec!["*".to_string()], metastore).await {
-            Ok(result) => ok_json_serialize(&result),
-            Err(err) => Ok(es_error_to_response(err)),
-        },
+        ["_stats"] => {
+            dispatch_es!(es_compat_index_stats(vec!["*".to_string()], metastore))
+        }
 
         ["_msearch"] => {
             let params = parse_query_params::<MultiSearchQueryParams>(query_string)?;
-            match es_compat_index_multi_search(body, params, search_service).await {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            dispatch_es!(es_compat_index_multi_search(body, params, search_service))
         }
 
         ["_field_caps"] => {
             let params = parse_query_params::<FieldCapabilityQueryParams>(query_string)?;
             let field_body: FieldCapabilityRequestBody = parse_body_or_default(&body)?;
-            match es_compat_index_field_capabilities(
+            dispatch_es!(es_compat_index_field_capabilities(
                 vec!["*".to_string()],
                 params,
                 field_body,
                 search_service,
-            )
-            .await
-            {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            ))
         }
 
         // --- Index-scoped endpoints ---
         [index, "_mapping" | "_mappings"] => {
-            match es_compat_index_mapping(index.to_string(), metastore, search_service).await {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            dispatch_es!(es_compat_index_mapping(
+                index.to_string(),
+                metastore,
+                search_service
+            ))
         }
 
         [index, "_search"] => {
             let params = parse_query_params::<SearchQueryParams>(query_string)?;
             let search_body: SearchBody = parse_body_or_default(&body)?;
-            match es_compat_index_search(
+            dispatch_es!(es_compat_index_search(
                 vec![index.to_string()],
                 params,
                 search_body,
                 search_service,
-            )
-            .await
-            {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            ))
         }
 
         [index, "_count"] => {
             let params = parse_query_params::<SearchQueryParamsCount>(query_string)?;
             let count_body: SearchBody = parse_body_or_default(&body)?;
-            match es_compat_index_count(vec![index.to_string()], params, count_body, search_service)
-                .await
-            {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            dispatch_es!(es_compat_index_count(
+                vec![index.to_string()],
+                params,
+                count_body,
+                search_service
+            ))
         }
 
         [index, "_field_caps"] => {
             let params = parse_query_params::<FieldCapabilityQueryParams>(query_string)?;
             let field_body: FieldCapabilityRequestBody = parse_body_or_default(&body)?;
-            match es_compat_index_field_capabilities(
+            dispatch_es!(es_compat_index_field_capabilities(
                 vec![index.to_string()],
                 params,
                 field_body,
                 search_service,
-            )
-            .await
-            {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            ))
         }
 
         [index, "_stats"] => {
-            match es_compat_index_stats(vec![index.to_string()], metastore).await {
-                Ok(result) => ok_json_serialize(&result),
-                Err(err) => Ok(es_error_to_response(err)),
-            }
+            dispatch_es!(es_compat_index_stats(vec![index.to_string()], metastore))
         }
 
         _ => {
@@ -244,14 +225,17 @@ fn ok_json_serialize<T: serde::Serialize>(value: &T) -> CloudPremResult<EsHttpRe
         .map_err(|e| CloudPremError::Internal(format!("serialization error: {e}")))?;
     Ok(EsHttpResponse {
         status_code: 200,
-        body,
+        body: body.into(),
     })
 }
 
 fn json_response(status_code: u32, value: &serde_json::Value) -> CloudPremResult<EsHttpResponse> {
     let body = serde_json::to_vec(value)
         .map_err(|e| CloudPremError::Internal(format!("serialization error: {e}")))?;
-    Ok(EsHttpResponse { status_code, body })
+    Ok(EsHttpResponse {
+        status_code,
+        body: body.into(),
+    })
 }
 
 /// Converts an ElasticsearchError into an EsHttpResponse preserving the
@@ -263,7 +247,10 @@ fn es_error_to_response(
 ) -> EsHttpResponse {
     let status_code = err.status.as_u16() as u32;
     let body = serde_json::to_vec(&err).unwrap_or_default();
-    EsHttpResponse { status_code, body }
+    EsHttpResponse {
+        status_code,
+        body: body.into(),
+    }
 }
 
 #[cfg(test)]
@@ -277,13 +264,12 @@ mod tests {
     use quickwit_search::MockSearchService;
 
     use super::handle_es_query;
-    use crate::BuildInfo;
 
     fn make_request(method: &str, path: &str) -> EsHttpRequest {
         EsHttpRequest {
             method: method.to_string(),
             path: path.to_string(),
-            body: Vec::new(),
+            body: bytes::Bytes::new(),
             headers: Default::default(),
             org_id: 0,
             cluster_id: String::new(),
@@ -301,7 +287,6 @@ mod tests {
             .await
             .unwrap();
         let node_config = Arc::new(NodeConfig::for_test());
-        let build_info = BuildInfo::get();
 
         handle_es_query(
             make_request(method, path),
@@ -309,7 +294,6 @@ mod tests {
             metastore,
             cluster,
             node_config,
-            build_info,
         )
         .await
     }
