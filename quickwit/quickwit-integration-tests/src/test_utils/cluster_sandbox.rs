@@ -342,6 +342,11 @@ impl ClusterSandbox {
             .connect_lazy()
     }
 
+    /// Returns the storage resolver used by this sandbox.
+    pub fn storage_resolver(&self) -> &quickwit_storage::StorageResolver {
+        &self.storage_resolver
+    }
+
     /// Returns a client to one of the nodes that runs the specified service
     pub fn rest_client(&self, service: QuickwitService) -> QuickwitClient {
         let node_config = self.find_node_for_service(service);
