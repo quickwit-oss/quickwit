@@ -12,20 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use quickwit_config::StorageResolver;
 use quickwit_metastore::{
-    IndexMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
-    MetastoreServiceStreamSplitsExt, Split, SplitState,
+    IndexMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, StageSplitsRequestExt,
+    MetastoreServiceStreamSplitsExt, Split, SplitState, SplitMetadata, SplitMaturity,
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
-    MetastoreService, MetastoreServiceClient,
+    MetastoreService, MetastoreServiceClient, StageSplitsRequest,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
+use quickwit_storage::OwnedBytes;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use tracing::info;
 use warp::{Filter, Rejection};
 
-use super::rest_handler::json_body;
+use crate::rest::json_body;
 use crate::format::extract_format_from_qs;
 use crate::rest_api_response::into_rest_api_response;
 use crate::simple_list::{from_simple_list, to_simple_list};
@@ -155,6 +158,12 @@ pub struct SplitsForDeletion {
     pub split_ids: Vec<String>,
 }
 
+#[derive(Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AddSplitRequest {
+    pub split_uri: String,
+}
+
 #[utoipa::path(
     put,
     tag = "Splits",
@@ -191,6 +200,135 @@ pub async fn mark_splits_for_deletion(
         .mark_splits_for_deletion(mark_splits_for_deletion_request)
         .await?;
     Ok(())
+}
+
+#[utoipa::path(
+    post,
+    tag = "Splits",
+    path = "/indexes/{index_id}/splits",
+    request_body = AddSplitRequest,
+    responses(
+        (status = 200, description = "Successfully added split to index.")
+    ),
+    params(
+        ("index_id" = String, Path, description = "The index ID to add the split to."),
+    )
+)]
+/// Adds a split to an index.
+pub async fn add_split(
+    index_id: IndexId,
+    add_split_request: AddSplitRequest,
+    metastore: MetastoreServiceClient,
+) -> MetastoreResult<()> {
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+    let index_metadata = metastore
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?;
+    let index_uid = index_metadata.index_uid;
+    
+    info!(index_id = %index_id, split_uri = %add_split_request.split_uri, "add-split");
+    
+    // Parse the split URI to get storage and path
+    let split_uri = &add_split_request.split_uri;
+    let split_path = std::path::Path::new(split_uri);
+    
+    // Extract split ID from the URI (assuming it's the filename without extension)
+    let split_filename = split_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| quickwit_proto::metastore::MetastoreError::Internal {
+            message: format!("Invalid split URI: unable to extract split ID from {}", split_uri),
+        })?;
+    let split_id = quickwit_proto::types::SplitId::from(split_filename);
+    
+    // Resolve the storage for the index
+    let storage_resolver = StorageResolver::from_config(&index_metadata.storage_config);
+    let storage = storage_resolver
+        .resolve(&index_metadata.index_uri)
+        .await
+        .map_err(|e| quickwit_proto::metastore::MetastoreError::Internal {
+            message: format!("Failed to resolve storage for index {}: {}", index_id, e),
+        })?;
+    
+    // Read the split file
+    let split_data = storage
+        .get_all(split_path)
+        .await
+        .map_err(|e| quickwit_proto::metastore::MetastoreError::Internal {
+            message: format!("Failed to read split file {}: {}", split_uri, e),
+        })?;
+    
+    // Extract split metadata from the split file
+    let split_metadata = extract_split_metadata_from_file(split_data, &split_id, &index_uid)
+        .await
+        .map_err(|e| quickwit_proto::metastore::MetastoreError::Internal {
+            message: format!("Failed to extract split metadata from {}: {}", split_uri, e),
+        })?;
+    
+    // Create and send StageSplitsRequest
+    let stage_splits_request = quickwit_metastore::StageSplitsRequestExt::try_from_split_metadata(
+        &index_uid,
+        &split_metadata,
+    )
+    .map_err(|e| quickwit_proto::metastore::MetastoreError::Internal {
+        message: format!("Failed to create stage splits request: {}", e),
+    })?;
+    
+    metastore
+        .stage_splits(stage_splits_request)
+        .await?;
+    
+    info!(index_id = %index_id, split_id = %split_id, "successfully added split to index");
+    
+    Ok(())
+}
+
+/// Extracts split metadata from a split file.
+async fn extract_split_metadata_from_file(
+    split_data: OwnedBytes,
+    split_id: &quickwit_proto::types::SplitId,
+    index_uid: &quickwit_proto::types::IndexUid,
+) -> anyhow::Result<quickwit_metastore::SplitMetadata> {
+    // For now, create minimal metadata from the split information
+    // This is a simplified approach - we'll create basic metadata
+    let file_size = split_data.len() as u64;
+    let create_timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    
+    let split_metadata = quickwit_metastore::SplitMetadata {
+        split_id: split_id.clone(),
+        index_uid: index_uid.clone(),
+        partition_id: 0, // Default partition
+        source_id: "manual-add".to_string(),
+        node_id: "manual-add".to_string(),
+        num_docs: 0, // Unknown - will be updated if possible
+        uncompressed_docs_size_in_bytes: 0, // Unknown
+        time_range: None,
+        create_timestamp,
+        footer_offsets: 0..file_size,
+        tags: std::collections::BTreeSet::new(),
+        delete_opstamp: 0,
+        num_merge_ops: 0,
+        maturity: quickwit_metastore::SplitMaturity::Stable,
+    };
+    
+    Ok(split_metadata)
+}
+
+pub fn add_split_handler(
+    metastore: MetastoreServiceClient,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("indexes" / String / "splits")
+        .and(warp::post())
+        .and(json_body())
+        .and(with_arg(metastore))
+        .then(add_split)
+        .and(extract_format_from_qs())
+        .map(into_rest_api_response)
+        .boxed()
 }
 
 pub fn mark_splits_for_deletion_handler(
