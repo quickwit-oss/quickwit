@@ -172,7 +172,7 @@ openssl-probe = "0.1"
 opentelemetry = "0.31"
 opentelemetry-appender-tracing = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
 ouroboros = "0.18"
 parquet = { version = "57", default-features = false, features = ["arrow", "zstd", "snap", "variant_experimental"] }
 percent-encoding = "2.3"

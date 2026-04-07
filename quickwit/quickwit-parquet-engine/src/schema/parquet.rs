@@ -14,13 +14,7 @@
 
 //! Parquet schema construction for metrics.
 
-use std::sync::Arc;
-
-use arrow::datatypes::{Schema as ArrowSchema, SchemaRef};
-use parquet::arrow::ArrowSchemaConverter;
-use parquet::schema::types::SchemaDescriptor;
-
-use super::fields::ParquetField;
+use arrow::datatypes::SchemaRef;
 
 /// Parquet schema for storage.
 #[derive(Debug, Clone)]
@@ -29,25 +23,16 @@ pub struct ParquetSchema {
 }
 
 impl ParquetSchema {
-    /// Create a new ParquetSchema.
-    pub fn new() -> Self {
-        let fields: Vec<_> = ParquetField::all()
-            .iter()
-            .map(|f| f.to_arrow_field())
-            .collect();
-
-        let arrow_schema = Arc::new(ArrowSchema::new(fields));
-        Self { arrow_schema }
+    /// Create a ParquetSchema from an Arrow schema.
+    pub fn from_arrow_schema(schema: SchemaRef) -> Self {
+        Self {
+            arrow_schema: schema,
+        }
     }
 
     /// Get the Arrow schema.
     pub fn arrow_schema(&self) -> &SchemaRef {
         &self.arrow_schema
-    }
-
-    /// Convert to Parquet schema descriptor.
-    pub fn parquet_schema(&self) -> Result<SchemaDescriptor, parquet::errors::ParquetError> {
-        ArrowSchemaConverter::new().convert(&self.arrow_schema)
     }
 
     /// Get field by name.
@@ -61,33 +46,42 @@ impl ParquetSchema {
     }
 }
 
-impl Default for ParquetSchema {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
+
     use super::*;
+
+    fn create_test_schema() -> SchemaRef {
+        Arc::new(ArrowSchema::new(vec![
+            Field::new(
+                "metric_name",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                false,
+            ),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new(
+                "service",
+                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+                true,
+            ),
+        ]))
+    }
 
     #[test]
     fn test_schema_creation() {
-        let schema = ParquetSchema::new();
-        assert_eq!(schema.num_fields(), 14);
+        let schema = ParquetSchema::from_arrow_schema(create_test_schema());
+        assert_eq!(schema.num_fields(), 5);
     }
 
     #[test]
     fn test_field_lookup() {
-        let schema = ParquetSchema::new();
+        let schema = ParquetSchema::from_arrow_schema(create_test_schema());
         let field = schema.field("metric_name").unwrap();
         assert!(!field.is_nullable());
-    }
-
-    #[test]
-    fn test_parquet_conversion() {
-        let schema = ParquetSchema::new();
-        let parquet_schema = schema.parquet_schema();
-        assert!(parquet_schema.is_ok());
     }
 }
