@@ -24,6 +24,14 @@ use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst};
 use crate::query_ast::TantivyQueryAst;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
+/// Result of resolving a `RegexQuery` against a schema.
+pub struct ResolvedRegex {
+    pub field: Field,
+    pub json_path: Option<Vec<u8>>,
+    pub regex: String,
+    pub tokenizer_name: Option<String>,
+}
+
 /// A Regex query
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
 pub struct RegexQuery {
@@ -48,11 +56,11 @@ impl RegexQuery {
 }
 
 impl RegexQuery {
-    /// Returns (field, optional json_path prefix, regex pattern, optional tokenizer name).
+    /// Resolves this regex query against the given schema.
     pub fn to_field_and_regex(
         &self,
         schema: &TantivySchema,
-    ) -> Result<(Field, Option<Vec<u8>>, String, Option<String>), InvalidQuery> {
+    ) -> Result<ResolvedRegex, InvalidQuery> {
         let Some((field, field_entry, json_path)) = find_field_or_hit_dynamic(&self.field, schema)
         else {
             return Err(InvalidQuery::FieldDoesNotExist {
@@ -71,7 +79,12 @@ impl RegexQuery {
                 })?;
                 let tokenizer_name = text_field_indexing.tokenizer().to_string();
 
-                Ok((field, None, self.regex.to_string(), Some(tokenizer_name)))
+                Ok(ResolvedRegex {
+                    field,
+                    json_path: None,
+                    regex: self.regex.to_string(),
+                    tokenizer_name: Some(tokenizer_name),
+                })
             }
             FieldType::JsonObject(json_options) => {
                 let text_field_indexing =
@@ -94,12 +107,12 @@ impl RegexQuery {
                 // We skip the 1st byte which is a marker to tell this is json. This isn't present
                 // in the dictionary
                 let byte_path_prefix = value.as_serialized()[1..].to_owned();
-                Ok((
+                Ok(ResolvedRegex {
                     field,
-                    Some(byte_path_prefix),
-                    self.regex.to_string(),
-                    Some(tokenizer_name),
-                ))
+                    json_path: Some(byte_path_prefix),
+                    regex: self.regex.to_string(),
+                    tokenizer_name: Some(tokenizer_name),
+                })
             }
             _ => Err(InvalidQuery::SchemaError(
                 "trying to run a regex query on a non-text field".to_string(),
@@ -113,30 +126,30 @@ impl BuildTantivyAst for RegexQuery {
         &self,
         context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (field, path, regex, tokenizer_name) = self.to_field_and_regex(context.schema)?;
+        let resolved = self.to_field_and_regex(context.schema)?;
 
-        // If the field's tokenizer lowercases indexed terms (e.g. "datadog",
-        // "raw_lowercase", "default") and the regex doesn't already contain a
+        // If the field's tokenizer lowercases indexed terms (e.g. "default",
+        // "raw_lowercase", "lowercase") and the regex doesn't already contain a
         // (?i) flag, automatically make the match case-insensitive. Without
         // this, an upstream regex like `.*ECONNREFUSED.*` would never match
         // because the inverted index only contains lowercase tokens.
-        let does_lowercasing = match tokenizer_name.as_deref() {
+        let does_lowercasing = match resolved.tokenizer_name.as_deref() {
             Some(name) => context.tokenizer_manager.tokenizer_does_lowercasing(name),
             None => false,
         };
-        let regex = if !regex.starts_with("(?i)") && does_lowercasing {
-            format!("(?i){regex}")
+        let regex = if !resolved.regex.starts_with("(?i)") && does_lowercasing {
+            format!("(?i){}", resolved.regex)
         } else {
-            regex
+            resolved.regex
         };
 
         let regex = tantivy_fst::Regex::new(&regex).context("failed to parse regex")?;
         let regex_automaton_with_path = JsonPathPrefix {
-            prefix: path.unwrap_or_default(),
+            prefix: resolved.json_path.unwrap_or_default(),
             automaton: regex.into(),
         };
         let regex_query_with_path = AutomatonQuery {
-            field,
+            field: resolved.field,
             automaton: Arc::new(regex_automaton_with_path),
         };
         Ok(regex_query_with_path.into())
@@ -289,10 +302,10 @@ mod tests {
             field: "field".to_string(),
             regex: "abc.*xyz".to_string(),
         };
-        let (field, path, regex, _tokenizer) = query.to_field_and_regex(&schema).unwrap();
-        assert_eq!(field, schema.get_field("field").unwrap());
-        assert!(path.is_none());
-        assert_eq!(regex, query.regex);
+        let resolved = query.to_field_and_regex(&schema).unwrap();
+        assert_eq!(resolved.field, schema.get_field("field").unwrap());
+        assert!(resolved.json_path.is_none());
+        assert_eq!(resolved.regex, query.regex);
     }
 
     #[test]
@@ -305,21 +318,20 @@ mod tests {
             field: "field.sub.field".to_string(),
             regex: "abc.*xyz".to_string(),
         };
-        let (field, path, regex, _tokenizer) = query.to_field_and_regex(&schema).unwrap();
-        assert_eq!(field, schema.get_field("field").unwrap());
-        assert_eq!(path.unwrap(), b"sub\x01field\0s");
-        assert_eq!(regex, query.regex);
+        let resolved = query.to_field_and_regex(&schema).unwrap();
+        assert_eq!(resolved.field, schema.get_field("field").unwrap());
+        assert_eq!(resolved.json_path.unwrap(), b"sub\x01field\0s");
+        assert_eq!(resolved.regex, query.regex);
 
         // i believe this is how concatenated field behave
         let query_empty_path = RegexQuery {
             field: "field".to_string(),
             regex: "abc.*xyz".to_string(),
         };
-        let (field, path, regex, _tokenizer) =
-            query_empty_path.to_field_and_regex(&schema).unwrap();
-        assert_eq!(field, schema.get_field("field").unwrap());
-        assert_eq!(path.unwrap(), b"\0s");
-        assert_eq!(regex, query_empty_path.regex);
+        let resolved = query_empty_path.to_field_and_regex(&schema).unwrap();
+        assert_eq!(resolved.field, schema.get_field("field").unwrap());
+        assert_eq!(resolved.json_path.unwrap(), b"\0s");
+        assert_eq!(resolved.regex, query_empty_path.regex);
     }
 
     #[test]
@@ -343,9 +355,9 @@ mod tests {
             field: "field".to_string(),
             regex: "abc.*xyz".to_string(),
         };
-        let (_field, _path, _regex, tokenizer_name) = query.to_field_and_regex(&schema).unwrap();
+        let resolved = query.to_field_and_regex(&schema).unwrap();
         // TEXT uses the "default" tokenizer
-        assert_eq!(tokenizer_name.as_deref(), Some("default"));
+        assert_eq!(resolved.tokenizer_name.as_deref(), Some("default"));
     }
 
     #[test]
@@ -409,10 +421,10 @@ mod tests {
             field: "raw_field".to_string(),
             regex: "abc.*xyz".to_string(),
         };
-        let (_field, _path, regex, tokenizer_name) = query.to_field_and_regex(&schema).unwrap();
-        assert_eq!(tokenizer_name.as_deref(), Some("raw"));
+        let resolved = query.to_field_and_regex(&schema).unwrap();
+        assert_eq!(resolved.tokenizer_name.as_deref(), Some("raw"));
         // The regex should NOT have (?i) since raw doesn't lowercase
-        assert_eq!(regex, "abc.*xyz");
+        assert_eq!(resolved.regex, "abc.*xyz");
     }
 
     #[test]
@@ -425,10 +437,10 @@ mod tests {
             field: "field.key".to_string(),
             regex: "abc".to_string(),
         };
-        let (_field, path, _regex, tokenizer_name) = query.to_field_and_regex(&schema).unwrap();
-        assert!(path.is_some());
+        let resolved = query.to_field_and_regex(&schema).unwrap();
+        assert!(resolved.json_path.is_some());
         // JSON field with TEXT also uses "default" tokenizer
-        assert_eq!(tokenizer_name.as_deref(), Some("default"));
+        assert_eq!(resolved.tokenizer_name.as_deref(), Some("default"));
     }
 
     #[test]
