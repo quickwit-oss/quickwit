@@ -51,6 +51,9 @@ service CloudPremService {
   // Returns diagnostics of every node in the cluster.
   rpc GetClusterDiagnostics(GetClusterDiagnosticsRequest) returns (GetClusterDiagnosticsResponse);
 
+  // Elasticsearch HTTP passthrough for Trino ES connector.
+  rpc EsQuery(EsHttpRequest) returns (EsHttpResponse);
+
   // Response are sent to the bridge by the front, which initialised the connection
   rpc InvertedRequestStream(stream AnyResponse) returns (stream AnyRequest);
 }
@@ -78,6 +81,7 @@ message AnyRequest {
         quickwit.search.ListFieldsRequest root_list_fields = 26;
         GetIndexRoutingTableRequest get_index_routing_table = 27;
         SetIndexRoutingTableRequest set_index_routing_table = 28;
+        EsHttpRequest es_query = 30;
         GetClusterDiagnosticsRequest get_cluster_diagnostics = 31;
 
         CancelRequest cancel = 99;
@@ -113,6 +117,7 @@ message AnyResponse {
         quickwit.search.ListFieldsResponse root_list_fields = 26;
         GetIndexRoutingTableResponse get_index_routing_table = 27;
         SetIndexRoutingTableResponse set_index_routing_table = 28;
+        EsHttpResponse es_query = 30;
         GetClusterDiagnosticsResponse get_cluster_diagnostics = 31;
 
     }
@@ -545,4 +550,18 @@ message FirstLastEntry {
 
   // This field contains an encoded FirstLastValues message.
   bytes encoded_values = 6;
+}
+
+message EsHttpRequest {
+    string method = 1;
+    string path = 2;
+    bytes body = 3;
+    map<string, string> headers = 4;
+    int64 org_id = 998;
+    string cluster_id = 999;
+}
+
+message EsHttpResponse {
+    uint32 status_code = 1;
+    bytes body = 2;
 }

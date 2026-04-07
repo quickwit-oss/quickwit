@@ -203,6 +203,9 @@ async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest
         Request::GetClusterDiagnostics(req) => {
             Response::GetClusterDiagnostics(handle_err!(server.get_cluster_diagnostics(req).await))
         }
+        Request::EsQuery(es_query) => {
+            Response::EsQuery(handle_err!(server.es_query(es_query).await))
+        }
 
         _ => return unimplemented("Unimplemented request"),
     };

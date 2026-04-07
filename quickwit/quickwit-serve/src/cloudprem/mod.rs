@@ -1,4 +1,5 @@
 mod auth;
+mod es_query;
 mod metrics;
 mod server;
 mod service;
