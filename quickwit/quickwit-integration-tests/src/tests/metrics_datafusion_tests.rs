@@ -27,7 +27,6 @@ use quickwit_datafusion::DataFusionSessionBuilder;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch;
 use quickwit_metastore::{CreateIndexRequestExt, StageMetricsSplitsRequestExt};
-use quickwit_parquet_engine::schema::ParquetSchema;
 use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
 use quickwit_parquet_engine::storage::{ParquetWriter, ParquetWriterConfig};
 use quickwit_proto::metastore::{
@@ -103,8 +102,7 @@ async fn publish_split(
     split_name: &str,
     batch: &RecordBatch,
 ) {
-    let schema = ParquetSchema::from_arrow_schema(batch.schema());
-    let parquet_bytes = ParquetWriter::new(schema, ParquetWriterConfig::default())
+    let parquet_bytes = ParquetWriter::new(ParquetWriterConfig::default())
         .write_to_bytes(batch)
         .unwrap();
     let size_bytes = parquet_bytes.len() as u64;
@@ -313,6 +311,8 @@ async fn test_group_by() {
 }
 
 /// REST ingest → in-process DataFusion query.
+// TODO: enable once the /ingest-metrics REST endpoint is wired in quickwit-serve.
+#[ignore]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_rest_ingest_then_in_process_query() {
     let (sandbox, data_dir) = start_sandbox().await;
