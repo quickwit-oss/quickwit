@@ -310,54 +310,6 @@ async fn test_group_by() {
     assert_eq!(total_rows(&run_sql(&builder, sql).await), 2);
 }
 
-/// REST ingest → in-process DataFusion query.
-// TODO: enable once the /ingest-metrics REST endpoint is wired in quickwit-serve.
-#[ignore]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn test_rest_ingest_then_in_process_query() {
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-
-    // Create the index so the ingest endpoint can find it
-    create_metrics_index(&metastore, "metrics-e2e", data_dir.path()).await;
-
-    let rest_addr = sandbox
-        .node_configs
-        .iter()
-        .find(|(_, s)| s.contains(&QuickwitService::Indexer))
-        .unwrap()
-        .0
-        .rest_config
-        .listen_addr;
-
-    let metrics_json = serde_json::json!([
-        {"metric_name": "cpu.usage", "timestamp_secs": 1700000100, "value": 0.85, "service": "web"},
-        {"metric_name": "cpu.usage", "timestamp_secs": 1700000200, "value": 0.92, "service": "web"},
-        {"metric_name": "memory.used", "timestamp_secs": 1700000100, "value": 1024.0, "service": "db"},
-        {"metric_name": "cpu.usage", "timestamp_secs": 1700000300, "value": 0.45, "service": "api"}
-    ]);
-
-    let resp = reqwest::Client::new()
-        .post(format!("http://{rest_addr}/api/v1/metrics-e2e/ingest-metrics"))
-        .json(&metrics_json)
-        .send()
-        .await
-        .unwrap();
-    assert!(resp.status().is_success(), "ingest failed: {}", resp.text().await.unwrap());
-
-    let builder = session_builder(&sandbox, metastore);
-    let sql = r#"
-        CREATE OR REPLACE EXTERNAL TABLE "metrics-e2e" (
-          metric_name VARCHAR NOT NULL, metric_type TINYINT,
-          timestamp_secs BIGINT NOT NULL, value DOUBLE NOT NULL,
-          service VARCHAR, env VARCHAR
-        ) STORED AS metrics LOCATION 'metrics-e2e';
-        SELECT COUNT(*) as cnt FROM "metrics-e2e""#;
-    let batches = run_sql(&builder, sql).await;
-    let cnt = batches[0].column(0).as_any()
-        .downcast_ref::<arrow::array::Int64Array>().unwrap().value(0);
-    assert_eq!(cnt, 4);
-}
 
 /// Verifies that CAST-unwrapping in `predicate.rs` causes fewer splits to be scanned
 /// when a time filter is applied through the full SQL pipeline.
