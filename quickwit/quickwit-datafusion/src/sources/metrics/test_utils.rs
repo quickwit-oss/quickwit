@@ -35,7 +35,6 @@ use datafusion::prelude::SessionContext;
 use object_store::memory::InMemory;
 use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, PutPayload};
-use quickwit_parquet_engine::schema::ParquetSchema;
 use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
 use quickwit_parquet_engine::storage::{ParquetWriter, ParquetWriterConfig};
 
@@ -325,10 +324,8 @@ async fn write_split(
     batch: &RecordBatch,
     split_id: &str,
 ) -> MetricsSplitMetadata {
-    // Use schema from the batch itself (dynamic schema)
-    let schema = ParquetSchema::from_arrow_schema(batch.schema());
     let config = ParquetWriterConfig::default();
-    let writer = ParquetWriter::new(schema, config);
+    let writer = ParquetWriter::new(config);
 
     let parquet_bytes = writer.write_to_bytes(batch).unwrap();
     let size_bytes = parquet_bytes.len() as u64;
