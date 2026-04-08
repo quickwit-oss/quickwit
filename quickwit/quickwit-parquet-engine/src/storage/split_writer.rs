@@ -100,7 +100,7 @@ impl ParquetSplitWriter {
 
         // Compute window_start from the earliest timestamp in the batch.
         let window_duration = self.table_config.window_duration_secs;
-        let window_start_secs = if window_duration > 0 && time_range.start_secs > 0 {
+        let window_start_secs = if window_duration > 0 {
             match window_start(time_range.start_secs as i64, window_duration as i64) {
                 Ok(dt) => Some(dt.timestamp()),
                 Err(e) => {
