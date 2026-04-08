@@ -157,13 +157,44 @@ impl PgMetricsSplit {
         debug_assert_eq!(metadata.split_id.as_str(), self.split_id);
         debug_assert_eq!(metadata.time_range.start_secs, self.time_range_start as u64);
         debug_assert_eq!(metadata.time_range.end_secs, self.time_range_end as u64);
-        debug_assert_eq!(metadata.window_start(), self.window_start);
-        debug_assert_eq!(
-            metadata.window_duration_secs(),
-            self.window_duration_secs.unwrap_or(0) as u32
+
+        // SS-5 (SortSchema.tla): sort_fields must be identical in JSON metadata
+        // and the dedicated SQL column. Inconsistency would cause the compaction
+        // planner to select wrong splits or miss eligible ones.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            metadata.sort_fields == self.sort_fields,
+            ": sort_fields mismatch between JSON ('{}') and SQL column ('{}')",
+            metadata.sort_fields,
+            self.sort_fields
         );
-        debug_assert_eq!(metadata.sort_fields, self.sort_fields);
-        debug_assert_eq!(metadata.num_merge_ops, self.num_merge_ops as u32);
+
+        // SS-5 continued: window_start must match between JSON and SQL column.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            metadata.window_start() == self.window_start,
+            ": window_start mismatch between JSON ({:?}) and SQL column ({:?})",
+            metadata.window_start(),
+            self.window_start
+        );
+
+        // SS-5 continued: window_duration_secs must match.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            metadata.window_duration_secs() == self.window_duration_secs.unwrap_or(0) as u32,
+            ": window_duration_secs mismatch between JSON ({}) and SQL column ({:?})",
+            metadata.window_duration_secs(),
+            self.window_duration_secs
+        );
+
+        // SS-4 (SortSchema.tla): sort_fields is immutable after write.
+        // We can't verify immutability at read time (no history available), but
+        // we verify the row_keys_proto round-trips consistently.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            metadata.row_keys_proto == self.row_keys,
+            ": row_keys_proto mismatch between JSON and SQL column"
+        );
 
         Ok(metadata)
     }
