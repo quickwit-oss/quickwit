@@ -33,7 +33,7 @@ use tracing::{debug, instrument};
 use super::config::ParquetWriterConfig;
 use crate::schema::validate_required_fields;
 use crate::sort_fields::parse_sort_fields;
-use crate::split::MetricsSplitMetadata;
+use crate::split::ParquetSplitMetadata;
 use crate::table_config::TableConfig;
 
 /// Parquet key_value_metadata keys for compaction metadata.
@@ -50,7 +50,7 @@ pub(crate) const PARQUET_META_ROW_KEYS_JSON: &str = "qh.row_keys_json";
 ///
 /// Only populated fields are included -- pre-Phase-31 splits produce an empty vec.
 pub(crate) fn build_compaction_key_value_metadata(
-    metadata: &MetricsSplitMetadata,
+    metadata: &ParquetSplitMetadata,
 ) -> Vec<KeyValue> {
     // TW-2: window_duration must divide 3600.
     debug_assert!(
@@ -107,8 +107,8 @@ pub(crate) fn build_compaction_key_value_metadata(
     kvs
 }
 
-/// SS-5: Verify that the kv_metadata entries match the source MetricsSplitMetadata.
-fn verify_ss5_kv_consistency(metadata: &MetricsSplitMetadata, kvs: &[KeyValue]) {
+/// SS-5: Verify that the kv_metadata entries match the source ParquetSplitMetadata.
+fn verify_ss5_kv_consistency(metadata: &ParquetSplitMetadata, kvs: &[KeyValue]) {
     let find_kv = |key: &str| -> Option<&str> {
         kvs.iter()
             .find(|kv| kv.key == key)
@@ -119,7 +119,7 @@ fn verify_ss5_kv_consistency(metadata: &MetricsSplitMetadata, kvs: &[KeyValue]) 
         debug_assert_eq!(
             find_kv(PARQUET_META_SORT_FIELDS),
             Some(metadata.sort_fields.as_str()),
-            "SS-5 violated: sort_fields in kv_metadata does not match MetricsSplitMetadata"
+            "SS-5 violated: sort_fields in kv_metadata does not match ParquetSplitMetadata"
         );
     }
 
@@ -127,7 +127,7 @@ fn verify_ss5_kv_consistency(metadata: &MetricsSplitMetadata, kvs: &[KeyValue]) 
         debug_assert_eq!(
             find_kv(PARQUET_META_WINDOW_START),
             Some(ws.to_string()).as_deref(),
-            "SS-5 violated: window_start in kv_metadata does not match MetricsSplitMetadata"
+            "SS-5 violated: window_start in kv_metadata does not match ParquetSplitMetadata"
         );
     }
 }
@@ -300,7 +300,7 @@ impl ParquetWriter {
     fn prepare_write(
         &self,
         batch: &RecordBatch,
-        split_metadata: Option<&MetricsSplitMetadata>,
+        split_metadata: Option<&ParquetSplitMetadata>,
     ) -> Result<(RecordBatch, WriterProperties), ParquetWriteError> {
         validate_required_fields(&batch.schema())
             .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?;
@@ -326,7 +326,7 @@ impl ParquetWriter {
     pub fn write_to_bytes(
         &self,
         batch: &RecordBatch,
-        split_metadata: Option<&MetricsSplitMetadata>,
+        split_metadata: Option<&ParquetSplitMetadata>,
     ) -> Result<Vec<u8>, ParquetWriteError> {
         let (sorted_batch, props) = self.prepare_write(batch, split_metadata)?;
 
@@ -347,7 +347,7 @@ impl ParquetWriter {
         &self,
         batch: &RecordBatch,
         path: &Path,
-        split_metadata: Option<&MetricsSplitMetadata>,
+        split_metadata: Option<&ParquetSplitMetadata>,
     ) -> Result<u64, ParquetWriteError> {
         let (sorted_batch, props) = self.prepare_write(batch, split_metadata)?;
 
@@ -617,15 +617,15 @@ mod tests {
 
         use parquet::file::reader::{FileReader, SerializedFileReader};
 
-        use crate::split::{SplitId, TimeRange};
+        use crate::split::{ParquetSplitId, TimeRange};
 
         let config = ParquetWriterConfig::default();
         let writer = ParquetWriter::new(config, &TableConfig::default());
 
         let batch = create_test_batch();
 
-        let metadata = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("e2e-test"))
+        let metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("e2e-test"))
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .window_start_secs(1700000000)
@@ -704,7 +704,7 @@ mod tests {
 
     /// META-07 compliance: Prove the Parquet file is truly self-describing by
     /// writing compaction metadata, reading it back from a cold file (no in-memory
-    /// state), and reconstructing the MetricsSplitMetadata compaction fields from
+    /// state), and reconstructing the ParquetSplitMetadata compaction fields from
     /// ONLY the Parquet key_value_metadata.
     #[test]
     fn test_meta07_self_describing_parquet_roundtrip() {
@@ -712,7 +712,7 @@ mod tests {
 
         use parquet::file::reader::{FileReader, SerializedFileReader};
 
-        use crate::split::{SplitId, TimeRange};
+        use crate::split::{ParquetSplitId, TimeRange};
 
         let sort_schema_str = "metric_name|host|env|timestamp/V2";
         let window_start_secs: i64 = 1700006400;
@@ -720,8 +720,8 @@ mod tests {
         let merge_ops: u32 = 7;
         let row_keys_bytes: Vec<u8> = vec![0x0A, 0x03, 0x63, 0x70, 0x75];
 
-        let original = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("self-describing-test"))
+        let original = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("self-describing-test"))
             .index_uid("metrics-prod:00000000000000000000000000")
             .time_range(TimeRange::new(1700006400, 1700007300))
             .window_start_secs(window_start_secs)
@@ -787,10 +787,10 @@ mod tests {
 
     #[test]
     fn test_build_compaction_kv_metadata_fully_populated() {
-        use crate::split::{SplitId, TimeRange};
+        use crate::split::{ParquetSplitId, TimeRange};
 
-        let metadata = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("kv-test"))
+        let metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("kv-test"))
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .window_start_secs(1700000000)
@@ -829,10 +829,10 @@ mod tests {
 
     #[test]
     fn test_build_compaction_kv_metadata_default_pre_phase31() {
-        use crate::split::{SplitId, TimeRange};
+        use crate::split::{ParquetSplitId, TimeRange};
 
-        let metadata = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("old-split"))
+        let metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("old-split"))
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .build();
@@ -848,7 +848,7 @@ mod tests {
 
     #[test]
     fn test_row_keys_base64_roundtrip() {
-        use crate::split::{SplitId, TimeRange};
+        use crate::split::{ParquetSplitId, TimeRange};
 
         let row_keys = quickwit_proto::sortschema::RowKeys {
             min_row_values: Some(quickwit_proto::sortschema::ColumnValues {
@@ -871,8 +871,8 @@ mod tests {
 
         let proto_bytes = prost::Message::encode_to_vec(&row_keys);
 
-        let metadata = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("roundtrip-test"))
+        let metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("roundtrip-test"))
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .sort_fields("metric_name|timestamp/V2")
