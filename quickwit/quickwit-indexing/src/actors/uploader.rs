@@ -78,8 +78,7 @@ pub enum UploaderType {
 ///    publishing order does not matter. In this case, we can just send the update directly to the
 ///    publisher.
 ///
-/// The default type parameter `P = Publisher` preserves backward compatibility with the
-/// standard logs pipeline. For the metrics pipeline, use `SplitsUpdateMailbox<ParquetPublisher>`.
+/// The default type parameter `P = Publisher` is used by both the logs and metrics pipelines.
 pub enum SplitsUpdateMailbox<P: Actor = Publisher> {
     Sequencer(Mailbox<Sequencer<P>>),
     Publisher(Mailbox<P>),

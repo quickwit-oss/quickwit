@@ -29,10 +29,8 @@ use serde::Serialize;
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument};
 
-use super::ParquetIndexer;
-use crate::models::{
-    NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock, RawDocBatch,
-};
+use super::{ParquetIndexer, ProcessedParquetBatch};
+use crate::models::{NewPublishLock, NewPublishToken, PublishLock, RawDocBatch};
 
 /// Arrow IPC stream continuation marker (4 bytes of 0xFF).
 const ARROW_IPC_CONTINUATION_MARKER: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];
@@ -525,10 +523,8 @@ mod tests {
         use quickwit_proto::metastore::MockMetastoreService;
         use quickwit_storage::RamStorage;
 
-        use super::super::{
-            ParquetIndexer, ParquetPackager, ParquetPublisher, ParquetUploader, SplitsUpdateMailbox,
-        };
-        use crate::actors::UploaderType;
+        use crate::actors::metrics_pipeline::{ParquetIndexer, ParquetPackager, ParquetUploader};
+        use crate::actors::{Publisher, SplitsUpdateMailbox, UploaderType};
 
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
@@ -536,8 +532,7 @@ mod tests {
         // Create ParquetUploader
         let mock_metastore = MockMetastoreService::new();
         let ram_storage = StdArc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),

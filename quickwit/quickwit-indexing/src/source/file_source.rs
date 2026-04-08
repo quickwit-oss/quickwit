@@ -16,7 +16,7 @@ use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::ActorExitStatus;
 use quickwit_config::FileSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -25,8 +25,7 @@ use quickwit_proto::types::SourceId;
 use super::doc_file_reader::ObjectUriBatchReader;
 #[cfg(feature = "queue-sources")]
 use super::queue_sources::coordinator::QueueCoordinator;
-use crate::actors::Processor;
-use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
+use crate::source::{ProcessorMailbox, Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 enum FileSourceState {
     #[cfg(feature = "queue-sources")]
@@ -51,12 +50,12 @@ impl fmt::Debug for FileSource {
 }
 
 #[async_trait]
-impl<P: Processor> Source<P> for FileSource {
+impl Source for FileSource {
     #[allow(unused_variables)]
     async fn initialize(
         &mut self,
-        processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        processor_mailbox: &ProcessorMailbox,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
@@ -70,8 +69,8 @@ impl<P: Processor> Source<P> for FileSource {
     #[allow(unused_variables)]
     async fn emit_batches(
         &mut self,
-        processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        processor_mailbox: &ProcessorMailbox,
+        ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
@@ -89,10 +88,10 @@ impl<P: Processor> Source<P> for FileSource {
                 *num_bytes_processed += batch_builder.num_bytes;
                 *num_lines_processed += batch_builder.docs.len() as u64;
                 processor_mailbox
-                    .send_message(batch_builder.build())
+                    .send_raw_doc_batch(batch_builder.build(), ctx)
                     .await?;
                 if batch_reader.is_eof() {
-                    ctx.send_exit_with_success(processor_mailbox).await?;
+                    processor_mailbox.send_exit_with_success(ctx).await?;
                     return Err(ActorExitStatus::Success);
                 }
             }
@@ -108,7 +107,7 @@ impl<P: Processor> Source<P> for FileSource {
     async fn suggest_truncate(
         &mut self,
         checkpoint: SourceCheckpoint,
-        ctx: &SourceContext<P>,
+        ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
@@ -215,7 +214,7 @@ mod tests {
         DUMMY_DOC, generate_dummy_doc_file, generate_index_doc_file,
     };
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{BATCH_NUM_BYTES_LIMIT, SourceActor};
+    use crate::source::{BATCH_NUM_BYTES_LIMIT, ProcessorMailbox, SourceActor};
 
     #[tokio::test]
     async fn test_file_source() {
@@ -246,7 +245,7 @@ mod tests {
             .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
-            processor_mailbox: doc_processor_mailbox,
+            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
@@ -299,7 +298,7 @@ mod tests {
             .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
-            processor_mailbox: doc_processor_mailbox,
+            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
@@ -376,7 +375,7 @@ mod tests {
             .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
-            processor_mailbox: doc_processor_mailbox,
+            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
         };
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
@@ -412,13 +411,13 @@ mod localstack_tests {
     use super::*;
     use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
-    use crate::source::SourceActor;
     use crate::source::doc_file_reader::file_test_helpers::generate_dummy_doc_file;
     use crate::source::queue_sources::sqs_queue::test_helpers::{
         create_queue, get_localstack_sqs_client, send_message,
     };
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
+    use crate::source::{ProcessorMailbox, SourceActor};
 
     #[tokio::test]
     async fn test_file_source_sqs_notifications() {
@@ -459,7 +458,7 @@ mod localstack_tests {
         {
             let actor = SourceActor {
                 source: Box::new(sqs_source),
-                processor_mailbox: doc_processor_mailbox.clone(),
+                processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox.clone()),
             };
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
 
