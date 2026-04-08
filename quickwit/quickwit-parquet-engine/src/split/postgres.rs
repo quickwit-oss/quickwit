@@ -181,8 +181,7 @@ impl PgMetricsSplit {
         // SS-5 continued: window_duration_secs must match.
         quickwit_dst::check_invariant!(
             quickwit_dst::invariants::InvariantId::SS5,
-            metadata.window_duration_secs()
-                == self.window_duration_secs.unwrap_or(0) as u32,
+            metadata.window_duration_secs() == self.window_duration_secs.unwrap_or(0) as u32,
             ": window_duration_secs mismatch between JSON ({}) and SQL column ({:?})",
             metadata.window_duration_secs(),
             self.window_duration_secs
