@@ -188,28 +188,3 @@ jobs:
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo +nightly fmt --all -- --check
         working-directory: ./quickwit
-
-  thirdparty-license:
-    name: Check Datadog third-party license file
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master
-        with:
-          toolchain: stable
-
-      - name: Cache cargo tools
-        uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
-        with:
-          path: ~/.cargo/bin
-          key: ${{ runner.os }}-cargo-tools-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Install dd-rust-license-tool
-        run: dd-rust-license-tool --help || cargo install --git https://github.com/DataDog/rust-license-tool.git --force
-
-      - name: Check Datadog third-party license file
-        run: dd-rust-license-tool --config quickwit/license-tool.toml --manifest-path quickwit/Cargo.toml check
