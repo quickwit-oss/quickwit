@@ -12,14 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod basic_tests;
-mod ingest_v1_tests;
-mod ingest_v2_tests;
-mod metrics_datafusion_tests;
-mod metrics_distributed_tests;
-mod no_cp_tests;
-mod otlp_tests;
-#[cfg(feature = "sqs-localstack-tests")]
-mod sqs_tests;
-mod tls_tests;
-mod update_tests;
+//! Re-exports metrics test utilities from `sources::metrics::test_utils`.
+//!
+//! Integration tests use `quickwit_datafusion::test_utils::make_batch` etc.
+pub use crate::sources::metrics::test_utils::*;

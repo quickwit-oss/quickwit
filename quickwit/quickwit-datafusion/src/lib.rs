@@ -12,14 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod basic_tests;
-mod ingest_v1_tests;
-mod ingest_v2_tests;
-mod metrics_datafusion_tests;
-mod metrics_distributed_tests;
-mod no_cp_tests;
-mod otlp_tests;
-#[cfg(feature = "sqs-localstack-tests")]
-mod sqs_tests;
-mod tls_tests;
-mod update_tests;
+pub(crate) mod catalog;
+pub mod data_source;
+pub(crate) mod resolver;
+pub mod service;
+pub mod session;
+pub mod sources;
+pub(crate) mod storage_bridge;
+pub(crate) mod substrait;
+pub(crate) mod task_estimator;
+pub(crate) mod worker;
+
+pub use datafusion::execution::SendableRecordBatchStream;
+pub use resolver::QuickwitWorkerResolver;
+pub use service::DataFusionService;
+pub use session::DataFusionSessionBuilder;
+pub use worker::build_quickwit_worker;
+
+#[cfg(any(test, feature = "testsuite"))]
+pub mod test_utils;
