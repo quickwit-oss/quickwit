@@ -25,17 +25,20 @@ use quickwit_proto::metastore::{
 use quickwit_proto::tonic::transport::Channel;
 use quickwit_proto::types::IndexUid;
 
+use crate::metastore::{ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt};
+
 pub(crate) mod delete_task;
 pub(crate) mod get_identity;
 pub(crate) mod index;
 pub(crate) mod list_splits;
+pub(crate) mod metrics;
 pub(crate) mod shard;
 pub(crate) mod source;
 pub(crate) mod split;
 pub(crate) mod template;
 
 use crate::metastore::MetastoreServiceStreamSplitsExt;
-use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split};
+use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split, SplitState};
 
 const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
@@ -153,6 +156,44 @@ async fn cleanup_index(metastore: &mut dyn MetastoreServiceExt, index_uid: Index
             .await
             .unwrap();
     }
+    // Also clean up any metrics splits (they have a separate FK constraint).
+    let metrics_query = crate::metastore::ListMetricsSplitsQuery::for_index(index_uid.clone())
+        .with_split_states([
+            SplitState::Staged,
+            SplitState::Published,
+            SplitState::MarkedForDeletion,
+        ]);
+    if let Ok(list_request) = quickwit_proto::metastore::ListMetricsSplitsRequest::try_from_query(
+        index_uid.clone(),
+        &metrics_query,
+    ) && let Ok(response) = metastore.list_metrics_splits(list_request).await
+        && let Ok(splits) = response.deserialize_splits()
+        && !splits.is_empty()
+    {
+        let split_ids: Vec<String> = splits
+            .iter()
+            .map(|s| s.metadata.split_id.as_str().to_string())
+            .collect();
+
+        // Mark for deletion first.
+        let _ = metastore
+            .mark_metrics_splits_for_deletion(
+                quickwit_proto::metastore::MarkMetricsSplitsForDeletionRequest {
+                    index_uid: Some(index_uid.clone()),
+                    split_ids: split_ids.clone(),
+                },
+            )
+            .await;
+
+        // Delete.
+        let _ = metastore
+            .delete_metrics_splits(quickwit_proto::metastore::DeleteMetricsSplitsRequest {
+                index_uid: Some(index_uid.clone()),
+                split_ids,
+            })
+            .await;
+    }
+
     // Delete index.
     metastore
         .delete_index(DeleteIndexRequest {
@@ -574,6 +615,91 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_get_identity() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::get_identity::test_metastore_get_identity::<$metastore_type>().await;
+            }
+
+            // Metrics Split API tests
+            //
+            //  - stage_metrics_splits
+            //  - publish_metrics_splits
+            //  - list_metrics_splits
+            //  - mark_metrics_splits_for_deletion
+            //  - delete_metrics_splits
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_stage_metrics_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_stage_metrics_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_stage_metrics_splits_upsert() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_stage_metrics_splits_upsert::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_state() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_state::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_time_range() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_time_range::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_metric_name() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_metric_name::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_list_metrics_splits_by_compaction_scope() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_list_metrics_splits_by_compaction_scope::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_publish_metrics_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_publish_metrics_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_publish_metrics_splits_nonexistent() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_publish_metrics_splits_nonexistent::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_mark_metrics_splits_for_deletion() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_mark_metrics_splits_for_deletion::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_delete_metrics_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_delete_metrics_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            #[serial_test::file_serial]
+            async fn test_metastore_delete_metrics_splits_nonexistent() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::metrics::test_metastore_delete_metrics_splits_nonexistent::<$metastore_type>().await;
             }
         }
     };

@@ -56,6 +56,20 @@ pub(crate) struct StoredMetricsSplit {
     pub state: MetricsSplitState,
     /// Update timestamp (Unix epoch seconds).
     pub update_timestamp: i64,
+    /// Create timestamp (Unix epoch seconds).
+    #[serde(default)]
+    pub create_timestamp: i64,
+    /// Node that produced this split.
+    #[serde(default)]
+    pub node_id: String,
+    /// Delete opstamp.
+    #[serde(default)]
+    pub delete_opstamp: u64,
+    /// Maturity timestamp (Unix epoch seconds). Splits with
+    /// maturity_timestamp <= now are considered mature.
+    /// Defaults to 0 (epoch), meaning mature immediately.
+    #[serde(default)]
+    pub maturity_timestamp: i64,
 }
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
@@ -759,6 +773,10 @@ impl FileBackedIndex {
                 metadata,
                 state: MetricsSplitState::Staged,
                 update_timestamp: now,
+                create_timestamp: now,
+                node_id: String::new(),
+                delete_opstamp: 0,
+                maturity_timestamp: 0,
             };
             self.metrics_splits.insert(split_id, stored);
         }
@@ -907,21 +925,37 @@ fn metrics_split_matches_query(split: &StoredMetricsSplit, query: &ListMetricsSp
     // Filter by state
     if !query.split_states.is_empty() {
         let state_str = split.state.as_str();
-        if !query.split_states.iter().any(|s| s == state_str) {
+        if !query.split_states.iter().any(|s| s.as_str() == state_str) {
             return false;
         }
     }
 
-    // Filter by time range
-    if let Some(start) = query.time_range_start
-        && (split.metadata.time_range.end_secs as i64) < start
-    {
-        return false;
-    }
-    if let Some(end) = query.time_range_end
-        && (split.metadata.time_range.start_secs as i64) > end
-    {
-        return false;
+    // Filter by time range.
+    // When sort_fields is set this is a compaction query and time_range
+    // refers to the compaction window; otherwise it refers to the data
+    // time range. Both use intersection semantics via FilterRange.
+    if !query.time_range.is_unbounded() {
+        if query.sort_fields.is_some() {
+            // Compaction path: intersect against the split's window.
+            let split_start = split.metadata.window_start();
+            let split_duration = split.metadata.window_duration_secs() as i64;
+            match split_start {
+                Some(split_start) if split_duration > 0 => {
+                    let split_end = split_start + split_duration - 1;
+                    if !query.time_range.overlaps_with(split_start..=split_end) {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        } else {
+            // Read path: intersect against the split's data time range.
+            let data_range = split.metadata.time_range.start_secs as i64
+                ..=split.metadata.time_range.end_secs as i64;
+            if !query.time_range.overlaps_with(data_range) {
+                return false;
+            }
+        }
     }
 
     // Filter by metric names
@@ -977,6 +1011,44 @@ fn metrics_split_matches_query(split: &StoredMetricsSplit, query: &ListMetricsSp
         } else {
             return false;
         }
+    }
+
+    if let Some(ref sort_fields) = query.sort_fields
+        && split.metadata.sort_fields != *sort_fields
+    {
+        return false;
+    }
+
+    if let Some(node_id) = &query.node_id
+        && split.node_id != *node_id
+    {
+        return false;
+    }
+
+    if !query.delete_opstamp.contains(&split.delete_opstamp) {
+        return false;
+    }
+
+    if !query.update_timestamp.contains(&split.update_timestamp) {
+        return false;
+    }
+
+    if !query.create_timestamp.contains(&split.create_timestamp) {
+        return false;
+    }
+
+    match &query.mature {
+        Bound::Included(evaluation_datetime) => {
+            if split.maturity_timestamp > evaluation_datetime.unix_timestamp() {
+                return false;
+            }
+        }
+        Bound::Excluded(evaluation_datetime) => {
+            if split.maturity_timestamp <= evaluation_datetime.unix_timestamp() {
+                return false;
+            }
+        }
+        Bound::Unbounded => {}
     }
 
     true

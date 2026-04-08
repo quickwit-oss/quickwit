@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Write};
+use std::ops::Bound;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -1803,6 +1804,12 @@ impl MetastoreService for PostgresqlMetastore {
         let mut num_rows_list = Vec::with_capacity(splits_metadata.len());
         let mut size_bytes_list = Vec::with_capacity(splits_metadata.len());
         let mut split_metadata_jsons = Vec::with_capacity(splits_metadata.len());
+        let mut window_starts: Vec<Option<i64>> = Vec::with_capacity(splits_metadata.len());
+        let mut window_duration_secs_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
+        let mut sort_fields_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
+        let mut num_merge_ops_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
+        let mut row_keys_list: Vec<Option<Vec<u8>>> = Vec::with_capacity(splits_metadata.len());
+        let mut zonemap_regexes_json_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
 
         for metadata in &splits_metadata {
             let insertable =
@@ -1837,6 +1844,12 @@ impl MetastoreService for PostgresqlMetastore {
             num_rows_list.push(insertable.num_rows);
             size_bytes_list.push(insertable.size_bytes);
             split_metadata_jsons.push(insertable.split_metadata_json);
+            window_starts.push(insertable.window_start);
+            window_duration_secs_list.push(insertable.window_duration_secs);
+            sort_fields_list.push(insertable.sort_fields);
+            num_merge_ops_list.push(insertable.num_merge_ops);
+            row_keys_list.push(insertable.row_keys);
+            zonemap_regexes_json_list.push(insertable.zonemap_regexes.to_string());
         }
 
         info!(
@@ -1863,6 +1876,12 @@ impl MetastoreService for PostgresqlMetastore {
                 num_rows,
                 size_bytes,
                 split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes,
                 create_timestamp,
                 update_timestamp
             )
@@ -1887,6 +1906,12 @@ impl MetastoreService for PostgresqlMetastore {
                 num_rows,
                 size_bytes,
                 split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes_json::jsonb,
                 (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
                 (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
             FROM UNNEST(
@@ -1904,7 +1929,13 @@ impl MetastoreService for PostgresqlMetastore {
                 $12::text[],
                 $13::bigint[],
                 $14::bigint[],
-                $15::text[]
+                $15::text[],
+                $16::bigint[],
+                $17::int[],
+                $18::text[],
+                $19::int[],
+                $20::bytea[],
+                $21::text[]
             ) AS staged(
                 split_id,
                 split_state,
@@ -1920,7 +1951,13 @@ impl MetastoreService for PostgresqlMetastore {
                 high_cardinality_tag_keys_json,
                 num_rows,
                 size_bytes,
-                split_metadata_json
+                split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes_json
             )
             ON CONFLICT (split_id) DO UPDATE
                 SET
@@ -1937,6 +1974,12 @@ impl MetastoreService for PostgresqlMetastore {
                     num_rows = EXCLUDED.num_rows,
                     size_bytes = EXCLUDED.size_bytes,
                     split_metadata_json = EXCLUDED.split_metadata_json,
+                    window_start = EXCLUDED.window_start,
+                    window_duration_secs = EXCLUDED.window_duration_secs,
+                    sort_fields = EXCLUDED.sort_fields,
+                    num_merge_ops = EXCLUDED.num_merge_ops,
+                    row_keys = EXCLUDED.row_keys,
+                    zonemap_regexes = EXCLUDED.zonemap_regexes,
                     update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
                 WHERE metrics_splits.split_state = 'Staged'
             RETURNING split_id
@@ -1962,6 +2005,12 @@ impl MetastoreService for PostgresqlMetastore {
                     .bind(&num_rows_list)
                     .bind(&size_bytes_list)
                     .bind(&split_metadata_jsons)
+                    .bind(&window_starts)
+                    .bind(&window_duration_secs_list)
+                    .bind(&sort_fields_list)
+                    .bind(&num_merge_ops_list)
+                    .bind(&row_keys_list)
+                    .bind(&zonemap_regexes_json_list)
                     .fetch_all(tx.as_mut())
                     .await
                     .map_err(|sqlx_error| convert_sqlx_err(&index_id_for_err, sqlx_error))
@@ -2102,26 +2151,22 @@ impl MetastoreService for PostgresqlMetastore {
                     .await
                     .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
-            // Verify all staged splits were published
+            // Verify all staged splits were published.
+            // If some splits are missing, it means they don't exist (NotFound),
+            // not that they're in the wrong state (FailedPrecondition).
             if published_count as usize != staged_split_ids.len() {
-                let entity = EntityKind::Splits {
+                return Err(MetastoreError::NotFound(EntityKind::Splits {
                     split_ids: staged_split_ids.clone(),
-                };
-                let message = format!(
-                    "expected to publish {} splits, but only {} were in Staged state",
-                    staged_split_ids.len(),
-                    published_count
-                );
-                return Err(MetastoreError::FailedPrecondition { entity, message });
+                }));
             }
 
-            // Verify all replaced splits were marked for deletion
+            // Verify all replaced splits were marked for deletion.
             if marked_count as usize != replaced_split_ids.len() {
                 let entity = EntityKind::Splits {
                     split_ids: replaced_split_ids.clone(),
                 };
                 let message = format!(
-                    "expected to mark {} splits for deletion, but only {} were in Published state",
+                    "expected to replace {} splits, but only {} were in Published state",
                     replaced_split_ids.len(),
                     marked_count
                 );
@@ -2169,7 +2214,13 @@ impl MetastoreService for PostgresqlMetastore {
                 num_rows,
                 size_bytes,
                 split_metadata_json,
-                EXTRACT(EPOCH FROM update_timestamp)::bigint as update_timestamp
+                EXTRACT(EPOCH FROM update_timestamp)::bigint as update_timestamp,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes
             FROM metrics_splits
             WHERE index_uid = $1
         "#,
@@ -2183,14 +2234,39 @@ impl MetastoreService for PostgresqlMetastore {
             param_idx += 1;
         }
 
-        // Add time range filter
-        if query.time_range_start.is_some() {
-            sql.push_str(&format!(" AND time_range_end >= ${}", param_idx));
-            param_idx += 1;
+        // Time range filter.
+        // When sort_fields is set this is a compaction query and time_range
+        // refers to the compaction window columns; otherwise it refers to the
+        // data time_range_start/time_range_end columns.
+        let is_compaction_query = query.sort_fields.is_some();
+        let (range_col_start, range_col_end) = if is_compaction_query {
+            ("window_start", "window_start + window_duration_secs")
+        } else {
+            ("time_range_start", "time_range_end")
+        };
+        // overlap: split_end > query_start AND split_start < query_end
+        // (using >= / <= for Included bounds, > / < for Excluded)
+        match &query.time_range.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND {} >= ${}", range_col_end, param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND {} > ${}", range_col_end, param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
         }
-        if query.time_range_end.is_some() {
-            sql.push_str(&format!(" AND time_range_start <= ${}", param_idx));
-            param_idx += 1;
+        match &query.time_range.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND {} <= ${}", range_col_start, param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND {} < ${}", range_col_start, param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
         }
 
         // Add metric names filter (ANY overlap)
@@ -2221,6 +2297,131 @@ impl MetastoreService for PostgresqlMetastore {
             param_idx += 1;
         }
 
+        if query.sort_fields.is_some() {
+            sql.push_str(&format!(" AND sort_fields = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        if query.node_id.is_some() {
+            sql.push_str(&format!(" AND node_id = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        // delete_opstamp range filter
+        match &query.delete_opstamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND delete_opstamp >= ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND delete_opstamp > ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.delete_opstamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND delete_opstamp <= ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND delete_opstamp < ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // update_timestamp range filter
+        match &query.update_timestamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint >= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint > ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint <= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint < ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // create_timestamp range filter
+        match &query.create_timestamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint >= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint > ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint <= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint < ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // maturity filter
+        match &query.mature {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND maturity_timestamp <= TO_TIMESTAMP(${})",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND maturity_timestamp > TO_TIMESTAMP(${})",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
         sql.push_str(" ORDER BY time_range_start ASC");
 
         // Add limit
@@ -2229,38 +2430,29 @@ impl MetastoreService for PostgresqlMetastore {
         }
 
         // Execute query with bindings
-        let mut query_builder = sqlx::query_as::<
-            _,
-            (
-                String,              // split_id
-                String,              // split_state
-                String,              // index_uid
-                i64,                 // time_range_start
-                i64,                 // time_range_end
-                Vec<String>,         // metric_names
-                Option<Vec<String>>, // tag_service
-                Option<Vec<String>>, // tag_env
-                Option<Vec<String>>, // tag_datacenter
-                Option<Vec<String>>, // tag_region
-                Option<Vec<String>>, // tag_host
-                Vec<String>,         // high_cardinality_tag_keys
-                i64,                 // num_rows
-                i64,                 // size_bytes
-                String,              // split_metadata_json
-                i64,                 // update_timestamp
-            ),
-        >(&sql);
+        let mut query_builder = sqlx::query(&sql);
 
         query_builder = query_builder.bind(query.index_uid.to_string());
 
         if !query.split_states.is_empty() {
-            query_builder = query_builder.bind(&query.split_states);
+            let state_strings: Vec<String> = query
+                .split_states
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect();
+            query_builder = query_builder.bind(state_strings);
         }
-        if let Some(start) = query.time_range_start {
-            query_builder = query_builder.bind(start);
+        match &query.time_range.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
         }
-        if let Some(end) = query.time_range_end {
-            query_builder = query_builder.bind(end);
+        match &query.time_range.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
         }
         if !query.metric_names.is_empty() {
             query_builder = query_builder.bind(&query.metric_names);
@@ -2280,6 +2472,54 @@ impl MetastoreService for PostgresqlMetastore {
         if let Some(ref host) = query.tag_host {
             query_builder = query_builder.bind(host);
         }
+        if let Some(ref sort_fields) = query.sort_fields {
+            query_builder = query_builder.bind(sort_fields);
+        }
+        if let Some(ref node_id) = query.node_id {
+            query_builder = query_builder.bind(node_id.as_str());
+        }
+        match &query.delete_opstamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v as i64);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.delete_opstamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v as i64);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.mature {
+            Bound::Included(evaluation_datetime) | Bound::Excluded(evaluation_datetime) => {
+                query_builder = query_builder.bind(evaluation_datetime.unix_timestamp() as f64);
+            }
+            Bound::Unbounded => {}
+        }
         if let Some(limit) = query.limit {
             query_builder = query_builder.bind(limit as i64);
         }
@@ -2294,30 +2534,31 @@ impl MetastoreService for PostgresqlMetastore {
             .into_iter()
             .filter_map(|row| {
                 use quickwit_parquet_engine::split::{MetricsSplitState, PgMetricsSplit};
+                use sqlx::Row as _;
 
                 let pg_split = PgMetricsSplit {
-                    split_id: row.0,
-                    split_state: row.1,
-                    index_uid: row.2,
-                    time_range_start: row.3,
-                    time_range_end: row.4,
-                    metric_names: row.5,
-                    tag_service: row.6,
-                    tag_env: row.7,
-                    tag_datacenter: row.8,
-                    tag_region: row.9,
-                    tag_host: row.10,
-                    high_cardinality_tag_keys: row.11,
-                    num_rows: row.12,
-                    size_bytes: row.13,
-                    split_metadata_json: row.14,
-                    update_timestamp: row.15,
-                    window_start: None,
-                    window_duration_secs: 0,
-                    sort_fields: String::new(),
-                    num_merge_ops: 0,
-                    row_keys: None,
-                    zonemap_regexes: String::new(),
+                    split_id: row.get("split_id"),
+                    split_state: row.get("split_state"),
+                    index_uid: row.get("index_uid"),
+                    time_range_start: row.get("time_range_start"),
+                    time_range_end: row.get("time_range_end"),
+                    metric_names: row.get("metric_names"),
+                    tag_service: row.get("tag_service"),
+                    tag_env: row.get("tag_env"),
+                    tag_datacenter: row.get("tag_datacenter"),
+                    tag_region: row.get("tag_region"),
+                    tag_host: row.get("tag_host"),
+                    high_cardinality_tag_keys: row.get("high_cardinality_tag_keys"),
+                    num_rows: row.get("num_rows"),
+                    size_bytes: row.get("size_bytes"),
+                    split_metadata_json: row.get("split_metadata_json"),
+                    update_timestamp: row.get("update_timestamp"),
+                    window_start: row.get("window_start"),
+                    window_duration_secs: row.get("window_duration_secs"),
+                    sort_fields: row.get("sort_fields"),
+                    num_merge_ops: row.get("num_merge_ops"),
+                    row_keys: row.get("row_keys"),
+                    zonemap_regexes: row.get("zonemap_regexes"),
                 };
 
                 let state = pg_split.split_state().unwrap_or(MetricsSplitState::Staged);
@@ -2325,7 +2566,7 @@ impl MetastoreService for PostgresqlMetastore {
 
                 Some(MetricsSplitRecord {
                     state,
-                    update_timestamp: row.15,
+                    update_timestamp: pg_split.update_timestamp,
                     metadata,
                 })
             })
@@ -2408,7 +2649,9 @@ impl MetastoreService for PostgresqlMetastore {
             .await
             .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid().index_id, sqlx_error))?;
 
-        // Check if any splits could not be deleted
+        // Log if some splits were not deleted (either non-existent or not
+        // in MarkedForDeletion state). Delete is idempotent — we don't error
+        // for missing splits.
         if deleted_split_ids.len() != request.split_ids.len() {
             let not_deleted: Vec<String> = request
                 .split_ids
@@ -2421,13 +2664,8 @@ impl MetastoreService for PostgresqlMetastore {
                 warn!(
                     index_uid = %request.index_uid(),
                     not_deleted = ?not_deleted,
-                    "some metrics splits were not in MarkedForDeletion state"
+                    "some metrics splits were not deleted (non-existent or not marked for deletion)"
                 );
-                let entity = EntityKind::Splits {
-                    split_ids: not_deleted,
-                };
-                let message = "splits are not marked for deletion".to_string();
-                return Err(MetastoreError::FailedPrecondition { entity, message });
             }
         }
 

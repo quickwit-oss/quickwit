@@ -17,6 +17,7 @@
 use std::sync::OnceLock;
 
 use crate::storage::ParquetWriterConfig;
+use crate::table_config::TableConfig;
 
 /// Default maximum rows to accumulate before flushing to split.
 const DEFAULT_MAX_ROWS: usize = 1_000_000;
@@ -58,6 +59,8 @@ pub struct ParquetIndexingConfig {
     pub max_bytes: usize,
     /// Parquet writer configuration for split creation.
     pub writer_config: ParquetWriterConfig,
+    /// Table-level configuration (sort fields, window duration, product type).
+    pub table_config: TableConfig,
 }
 
 impl Default for ParquetIndexingConfig {
@@ -66,6 +69,7 @@ impl Default for ParquetIndexingConfig {
             max_rows: get_max_rows_from_env(),
             max_bytes: get_max_bytes_from_env(),
             writer_config: ParquetWriterConfig::default(),
+            table_config: TableConfig::default(),
         }
     }
 }
