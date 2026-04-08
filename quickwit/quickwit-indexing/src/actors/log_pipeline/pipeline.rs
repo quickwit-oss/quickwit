@@ -37,10 +37,8 @@ use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
-use super::MergePlanner;
+use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
 use crate::SplitsUpdateMailbox;
-use crate::actors::doc_processor::DocProcessor;
-use crate::actors::index_serializer::IndexSerializer;
 use crate::actors::pipeline_shared::{
     SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop,
     wait_duration_before_retry,
@@ -48,7 +46,7 @@ use crate::actors::pipeline_shared::{
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
-use crate::actors::{Indexer, Packager, Publisher, Uploader};
+use crate::actors::{Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
 use crate::source::{
@@ -592,7 +590,7 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
-    use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
+    use crate::actors::log_pipeline::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::default_merge_policy;
 
     #[test]
@@ -602,7 +600,7 @@ mod tests {
         assert_eq!(wait_duration_before_retry(2), Duration::from_secs(4));
         assert_eq!(wait_duration_before_retry(3), Duration::from_secs(8));
         assert_eq!(wait_duration_before_retry(9), Duration::from_secs(512));
-        assert_eq!(wait_duration_before_retry(10), MAX_RETRY_DELAY);
+        assert_eq!(wait_duration_before_retry(10), Duration::from_secs(600));
     }
 
     async fn test_indexing_pipeline_num_fails_before_success(

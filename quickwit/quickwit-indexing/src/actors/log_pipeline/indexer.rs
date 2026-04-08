@@ -49,8 +49,8 @@ use tokio::sync::Semaphore;
 use tracing::{Span, info, info_span, warn};
 use ulid::Ulid;
 
-use crate::actors::IndexSerializer;
-use crate::actors::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
+use super::IndexSerializer;
+use super::cooperative_indexing::{CooperativeIndexingCycle, CooperativeIndexingPeriod};
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
     NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock,
@@ -716,7 +716,7 @@ mod tests {
     use tantivy::{DateTime, doc};
 
     use super::*;
-    use crate::actors::indexer::{IndexerCounters, record_timestamp};
+    use super::{IndexerCounters, record_timestamp};
 
     #[test]
     fn test_record_timestamp() {

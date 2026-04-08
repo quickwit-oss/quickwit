@@ -59,9 +59,10 @@ use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
-use super::merge_pipeline::{MergePipeline, MergePipelineParams};
+use super::log_pipeline::{
+    FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
+};
 use super::{MergePlanner, MergeSchedulerService};
-use crate::actors::merge_pipeline::FinishPendingMergesAndShutdownPipeline;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
@@ -1028,7 +1029,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::actors::merge_pipeline::SUPERVISE_LOOP_INTERVAL;
+    use crate::actors::log_pipeline::merge_pipeline::SUPERVISE_LOOP_INTERVAL;
 
     async fn spawn_indexing_service_for_test(
         data_dir_path: &Path,

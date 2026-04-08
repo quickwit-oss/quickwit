@@ -12,42 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod cooperative_indexing;
-mod doc_processor;
-mod index_serializer;
-mod indexer;
-mod indexing_pipeline;
 mod indexing_service;
-mod merge_executor;
-mod merge_pipeline;
-mod merge_planner;
-mod merge_scheduler_service;
-mod merge_split_downloader;
+pub(crate) mod log_pipeline;
 pub(crate) mod metrics_pipeline;
-mod packager;
 pub(crate) mod pipeline_shared;
 mod publisher;
 mod sequencer;
 mod uploader;
-#[cfg(feature = "vrl")]
-mod vrl_processing;
 
-pub use doc_processor::{DocProcessor, DocProcessorCounters};
-pub use index_serializer::IndexSerializer;
-pub use indexer::{Indexer, IndexerCounters};
-pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
 pub use indexing_service::{INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters};
-pub use merge_executor::{MergeExecutor, combine_partition_ids, merge_split_attrs};
-pub use merge_pipeline::{FinishPendingMergesAndShutdownPipeline, MergePipeline};
-pub(crate) use merge_planner::{MergePlanner, RunFinalizeMergePolicyAndQuit};
-pub use merge_scheduler_service::{MergePermit, MergeSchedulerService, schedule_merge};
-pub use merge_split_downloader::MergeSplitDownloader;
+pub use log_pipeline::{
+    DocProcessor, DocProcessorCounters, FinishPendingMergesAndShutdownPipeline, IndexSerializer,
+    Indexer, IndexerCounters, IndexingPipeline, IndexingPipelineParams, MergeExecutor,
+    MergePipeline, MergeSchedulerService, MergeSplitDownloader, Packager, combine_partition_ids,
+    merge_split_attrs, schedule_merge,
+};
+pub(crate) use log_pipeline::{MergePlanner, RunFinalizeMergePolicyAndQuit};
+pub use log_pipeline::{MergePermit};
 pub use metrics_pipeline::{
     MetricsPipeline, ParquetDocProcessor, ParquetDocProcessorCounters, ParquetDocProcessorError,
     ParquetIndexer, ParquetIndexerCounters, ParquetPackager, ParquetSplitBatch, ParquetUploader,
     is_arrow_ipc,
 };
-pub use packager::Packager;
 pub use publisher::{Publisher, PublisherCounters, PublisherType};
 pub use quickwit_proto::indexing::IndexingError;
 pub use sequencer::Sequencer;

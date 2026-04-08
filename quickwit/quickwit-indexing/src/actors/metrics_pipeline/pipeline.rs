@@ -38,7 +38,7 @@ use quickwit_storage::Storage;
 use tracing::{debug, error, info, instrument};
 
 use super::{ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader};
-use crate::actors::indexing_pipeline::IndexingPipelineParams;
+use crate::actors::log_pipeline::IndexingPipelineParams;
 use crate::actors::pipeline_shared::{
     SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop,
     wait_duration_before_retry,
