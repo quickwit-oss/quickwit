@@ -22,8 +22,8 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
-    Observation,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, Healthz,
+    Mailbox, Observation, Supervisable,
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
@@ -59,10 +59,12 @@ use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
+use quickwit_common::is_metrics_index;
+
 use super::log_pipeline::{
     FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
 };
-use super::{MergePlanner, MergeSchedulerService};
+use super::{MergePlanner, MergeSchedulerService, MetricsPipeline};
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
@@ -86,10 +88,90 @@ struct MergePipelineHandle {
     handle: ActorHandle<MergePipeline>,
 }
 
-struct PipelineHandle {
-    mailbox: Mailbox<IndexingPipeline>,
-    handle: ActorHandle<IndexingPipeline>,
+pub struct PipelineHandle {
+    inner: PipelineHandleInner,
     indexing_pipeline_id: IndexingPipelineId,
+}
+
+enum PipelineHandleInner {
+    Log {
+        mailbox: Mailbox<IndexingPipeline>,
+        handle: ActorHandle<IndexingPipeline>,
+    },
+    Metrics {
+        mailbox: Mailbox<MetricsPipeline>,
+        handle: ActorHandle<MetricsPipeline>,
+    },
+}
+
+impl PipelineHandle {
+    fn state(&self) -> ActorState {
+        match &self.inner {
+            PipelineHandleInner::Log { handle, .. } => handle.state(),
+            PipelineHandleInner::Metrics { handle, .. } => handle.state(),
+        }
+    }
+
+    fn last_observation(&self) -> IndexingStatistics {
+        match &self.inner {
+            PipelineHandleInner::Log { handle, .. } => handle.last_observation().clone(),
+            PipelineHandleInner::Metrics { handle, .. } => handle.last_observation().clone(),
+        }
+    }
+
+    async fn send_assign_shards(
+        &self,
+        message: AssignShards,
+    ) -> Result<(), quickwit_actors::SendError> {
+        match &self.inner {
+            PipelineHandleInner::Log { mailbox, .. } => {
+                mailbox.send_message(message).await?;
+            }
+            PipelineHandleInner::Metrics { mailbox, .. } => {
+                mailbox.send_message(message).await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn join(self) -> (ActorExitStatus, IndexingStatistics) {
+        match self.inner {
+            PipelineHandleInner::Log { handle, .. } => handle.join().await,
+            PipelineHandleInner::Metrics { handle, .. } => handle.join().await,
+        }
+    }
+
+    async fn observe(&self) -> Observation<IndexingStatistics> {
+        match &self.inner {
+            PipelineHandleInner::Log { handle, .. } => handle.observe().await,
+            PipelineHandleInner::Metrics { handle, .. } => handle.observe().await,
+        }
+    }
+
+    pub(crate) async fn quit(self) -> (ActorExitStatus, IndexingStatistics) {
+        match self.inner {
+            PipelineHandleInner::Log { handle, .. } => handle.quit().await,
+            PipelineHandleInner::Metrics { handle, .. } => handle.quit().await,
+        }
+    }
+
+    fn check_health(&self, check_for_progress: bool) -> quickwit_actors::Health {
+        match &self.inner {
+            PipelineHandleInner::Log { handle, .. } => handle.check_health(check_for_progress),
+            PipelineHandleInner::Metrics { handle, .. } => handle.check_health(check_for_progress),
+        }
+    }
+
+    async fn kill(self) {
+        match self.inner {
+            PipelineHandleInner::Log { handle, .. } => {
+                let _ = handle.kill().await;
+            }
+            PipelineHandleInner::Metrics { handle, .. } => {
+                let _ = handle.kill().await;
+            }
+        }
+    }
 }
 
 /// The indexing service is (single) actor service running on indexer and in charge
@@ -185,7 +267,7 @@ impl IndexingService {
     async fn detach_indexing_pipeline(
         &mut self,
         pipeline_uid: &PipelineUid,
-    ) -> Result<ActorHandle<IndexingPipeline>, IndexingError> {
+    ) -> Result<PipelineHandle, IndexingError> {
         let pipeline_handle = self
             .indexing_pipelines
             .remove(pipeline_uid)
@@ -194,7 +276,7 @@ impl IndexingService {
                 IndexingError::Internal(message)
             })?;
         self.counters.num_running_pipelines -= 1;
-        Ok(pipeline_handle.handle)
+        Ok(pipeline_handle)
     }
 
     async fn detach_merge_pipeline(
@@ -216,14 +298,13 @@ impl IndexingService {
         &mut self,
         pipeline_uid: &PipelineUid,
     ) -> Result<Observation<IndexingStatistics>, IndexingError> {
-        let pipeline_handle = &self
+        let pipeline_handle = self
             .indexing_pipelines
             .get(pipeline_uid)
             .ok_or_else(|| {
                 let message = format!("could not find indexing pipeline `{pipeline_uid}`");
                 IndexingError::Internal(message)
-            })?
-            .handle;
+            })?;
         let observation = pipeline_handle.observe().await;
         Ok(observation)
     }
@@ -271,6 +352,57 @@ impl IndexingService {
             let message = format!("pipeline `{indexing_pipeline_id}` already exists");
             return Err(IndexingError::Internal(message));
         }
+
+        let params_fingerprint =
+            indexing_pipeline_params_fingerprint(&index_config, &source_config);
+        if let Some(expected_params_fingerprint) = expected_params_fingerprint {
+            if params_fingerprint != expected_params_fingerprint {
+                info!(
+                    index_id = indexing_pipeline_id.index_uid.index_id,
+                    source_id = indexing_pipeline_id.source_id,
+                    expected = expected_params_fingerprint,
+                    actual = params_fingerprint,
+                    "pipeline fingerprint mismatch, postponing pipeline creation"
+                );
+                return Ok(());
+            }
+        }
+
+        let pipeline_handle = if is_metrics_index(&indexing_pipeline_id.index_uid.index_id) {
+            self.spawn_metrics_pipeline(
+                ctx,
+                indexing_pipeline_id.clone(),
+                index_config,
+                source_config,
+                params_fingerprint,
+            )
+            .await?
+        } else {
+            self.spawn_log_pipeline(
+                ctx,
+                indexing_pipeline_id.clone(),
+                index_config,
+                source_config,
+                immature_splits_opt,
+                params_fingerprint,
+            )
+            .await?
+        };
+        self.indexing_pipelines
+            .insert(indexing_pipeline_id.pipeline_uid, pipeline_handle);
+        self.counters.num_running_pipelines += 1;
+        Ok(())
+    }
+
+    async fn spawn_log_pipeline(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        indexing_pipeline_id: IndexingPipelineId,
+        index_config: IndexConfig,
+        source_config: SourceConfig,
+        immature_splits_opt: Option<Vec<SplitMetadata>>,
+        params_fingerprint: u64,
+    ) -> Result<PipelineHandle, IndexingError> {
         let pipeline_uid_str = indexing_pipeline_id.pipeline_uid.to_string();
         let indexing_directory = temp_dir::Builder::default()
             .join(&indexing_pipeline_id.index_uid.index_id)
@@ -320,63 +452,104 @@ impl IndexingService {
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
 
-        let params_fingerprint =
-            indexing_pipeline_params_fingerprint(&index_config, &source_config);
-        if let Some(expected_params_fingerprint) = expected_params_fingerprint {
-            // If the fingerprint of the config freshly fetched from the
-            // metastore is different from that received from the control plane,
-            // it means that the config changed again since the last indexing
-            // plan was built. In this case, postpone the pipeline creation.
-            if params_fingerprint != expected_params_fingerprint {
-                info!(
-                    index_id = indexing_pipeline_id.index_uid.index_id,
-                    source_id = indexing_pipeline_id.source_id,
-                    expected = expected_params_fingerprint,
-                    actual = params_fingerprint,
-                    "pipeline fingerprint mismatch, postponing pipeline creation"
-                );
-                return Ok(());
-            }
-        }
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
             storage,
-
-            // Indexing-related parameters
             doc_mapper,
             indexing_directory,
             indexing_settings: index_config.indexing_settings.clone(),
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
-
-            // Merge-related parameters
             merge_policy,
             retention_policy,
             max_concurrent_split_uploads_merge,
             merge_planner_mailbox,
-
-            // Source-related parameters
             source_config,
             ingester_pool: self.ingester_pool.clone(),
             queues_dir_path: self.queue_dir_path.clone(),
             source_storage_resolver: self.storage_resolver.clone(),
             params_fingerprint,
-
             event_broker: self.event_broker.clone(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
-        let pipeline_handle = PipelineHandle {
-            mailbox: pipeline_mailbox,
-            handle: pipeline_handle,
-            indexing_pipeline_id: indexing_pipeline_id.clone(),
+        let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
+        Ok(PipelineHandle {
+            inner: PipelineHandleInner::Log { mailbox, handle },
+            indexing_pipeline_id,
+        })
+    }
+
+    async fn spawn_metrics_pipeline(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        indexing_pipeline_id: IndexingPipelineId,
+        index_config: IndexConfig,
+        source_config: SourceConfig,
+        params_fingerprint: u64,
+    ) -> Result<PipelineHandle, IndexingError> {
+        let pipeline_uid_str = indexing_pipeline_id.pipeline_uid.to_string();
+        let indexing_directory = temp_dir::Builder::default()
+            .join(&indexing_pipeline_id.index_uid.index_id)
+            .join(&indexing_pipeline_id.index_uid.incarnation_id.to_string())
+            .join(&indexing_pipeline_id.source_id)
+            .join(&pipeline_uid_str)
+            .tempdir_in(&self.indexing_root_directory)
+            .map_err(|error| {
+                let message = format!("failed to create indexing directory: {error}");
+                IndexingError::Internal(message)
+            })?;
+        let storage = self
+            .storage_resolver
+            .resolve(&index_config.index_uri)
+            .await
+            .map_err(|error| {
+                let message = format!("failed to spawn metrics pipeline: {error}");
+                IndexingError::Internal(message)
+            })?;
+
+        // Metrics pipelines reuse IndexingPipelineParams but don't need
+        // merge-related or doc-mapper fields. We fill them with defaults /
+        // dummies so the struct can be constructed. The MetricsPipeline actor
+        // ignores these fields.
+        let merge_policy =
+            crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
+        let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
+            .map_err(|error| IndexingError::Internal(error.to_string()))?;
+        let split_store = IndexingSplitStore::new(storage.clone(), self.local_split_store.clone());
+
+        // No merge pipeline is created for metrics indexes.
+        // We create a dummy merge planner mailbox that will never receive messages.
+        let (merge_planner_mailbox, _) = ctx.spawn_ctx().create_mailbox("MergePlanner", quickwit_actors::QueueCapacity::Bounded(0));
+
+        let pipeline_params = IndexingPipelineParams {
+            pipeline_id: indexing_pipeline_id.clone(),
+            metastore: self.metastore.clone(),
+            storage,
+            doc_mapper,
+            indexing_directory,
+            indexing_settings: index_config.indexing_settings.clone(),
+            split_store,
+            max_concurrent_split_uploads_index: self.max_concurrent_split_uploads,
+            cooperative_indexing_permits: None,
+            merge_policy,
+            retention_policy: None,
+            max_concurrent_split_uploads_merge: 0,
+            merge_planner_mailbox,
+            source_config,
+            ingester_pool: self.ingester_pool.clone(),
+            queues_dir_path: self.queue_dir_path.clone(),
+            source_storage_resolver: self.storage_resolver.clone(),
+            params_fingerprint,
+            event_broker: self.event_broker.clone(),
         };
-        self.indexing_pipelines
-            .insert(indexing_pipeline_id.pipeline_uid, pipeline_handle);
-        self.counters.num_running_pipelines += 1;
-        Ok(())
+        let pipeline = MetricsPipeline::new(pipeline_params);
+        let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
+        Ok(PipelineHandle {
+            inner: PipelineHandleInner::Metrics { mailbox, handle },
+            indexing_pipeline_id,
+        })
     }
 
     async fn index_metadata(
@@ -486,7 +659,7 @@ impl IndexingService {
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
         self.indexing_pipelines
             .retain(|pipeline_uid, pipeline_handle| {
-                match pipeline_handle.handle.state() {
+                match pipeline_handle.state() {
                     ActorState::Paused | ActorState::Running => true,
                     ActorState::Success => {
                         info!(
@@ -558,7 +731,7 @@ impl IndexingService {
             .indexing_pipelines
             .values()
             .filter_map(|pipeline_handle| {
-                let indexing_statistics = pipeline_handle.handle.last_observation();
+                let indexing_statistics = pipeline_handle.last_observation();
                 let pipeline_metrics = indexing_statistics.pipeline_metrics_opt?;
                 Some((&pipeline_handle.indexing_pipeline_id, pipeline_metrics))
             })
@@ -615,7 +788,7 @@ impl IndexingService {
             };
             let message = AssignShards(assignment);
 
-            if let Err(error) = pipeline_handle.mailbox.send_message(message).await {
+            if let Err(error) = pipeline_handle.send_assign_shards(message).await {
                 error!(%error, "failed to assign shards to indexing pipeline");
             }
         }
@@ -793,7 +966,7 @@ impl IndexingService {
             .indexing_pipelines
             .values()
             .map(|pipeline_handle| {
-                let assignment = pipeline_handle.handle.last_observation();
+                let assignment = pipeline_handle.last_observation();
                 let shard_ids: Vec<ShardId> = assignment.shard_ids.iter().cloned().collect();
                 IndexingTask {
                     index_uid: Some(pipeline_handle.indexing_pipeline_id.index_uid.clone()),
@@ -889,7 +1062,7 @@ impl Handler<ObservePipeline> for IndexingService {
 
 #[async_trait]
 impl Handler<DetachIndexingPipeline> for IndexingService {
-    type Reply = Result<ActorHandle<IndexingPipeline>, IndexingError>;
+    type Reply = Result<PipelineHandle, IndexingError>;
 
     async fn handle(
         &mut self,
@@ -1640,7 +1813,6 @@ mod tests {
                 .indexing_pipelines
                 .get(&message.0.pipeline_uid)
                 .unwrap()
-                .handle
                 .check_health(true))
         }
     }
