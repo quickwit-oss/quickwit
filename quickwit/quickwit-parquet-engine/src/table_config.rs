@@ -47,7 +47,9 @@ impl ProductType {
     /// when the Parquet pipeline is extended to those signal types.
     pub fn default_sort_fields(self) -> &'static str {
         match self {
-            Self::Metrics => "metric_name|service|env|datacenter|region|host|timeseries_id|timestamp_secs/V2",
+            Self::Metrics => {
+                "metric_name|service|env|datacenter|region|host|timeseries_id|timestamp_secs/V2"
+            }
             // Placeholder: column names TBD when logs Parquet schema is defined.
             Self::Logs => "service_name|level|host|timestamp_secs/V2",
             // Placeholder: column names TBD when traces Parquet schema is defined.
