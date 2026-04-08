@@ -198,7 +198,7 @@ impl SearchService for SearchServiceImpl {
             targeted_splits: num_splits,
             status: None,
         };
-        let timeout = self.searcher_context.searcher_config.request_timeout();
+        let timeout = self.searcher_context.searcher_config.leaf_request_timeout();
         tokio::time::timeout(timeout, tracked_future).await?
     }
 
