@@ -2072,6 +2072,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "const-hex"
+version = "1.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "531185e432bb31db1ecda541e9e7ab21468d4d844ad7505e0546a49b4945d49b"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "proptest",
+ "serde_core",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5663,6 +5675,7 @@ dependencies = [
  "opentelemetry_sdk",
  "prost 0.14.3",
  "reqwest",
+ "serde_json",
  "thiserror 2.0.18",
  "tokio",
  "tonic 0.14.5",
@@ -5675,9 +5688,13 @@ version = "0.31.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7175df06de5eaee9909d4805a3d07e28bb752c34cab57fa9cff549da596b30f"
 dependencies = [
+ "base64 0.22.1",
+ "const-hex",
  "opentelemetry",
  "opentelemetry_sdk",
  "prost 0.14.3",
+ "serde",
+ "serde_json",
  "tonic 0.14.5",
  "tonic-prost",
 ]
@@ -7595,6 +7612,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-ingest",
  "quickwit-metastore",
+ "quickwit-parquet-engine",
  "quickwit-proto",
  "serde",
  "serde_json",

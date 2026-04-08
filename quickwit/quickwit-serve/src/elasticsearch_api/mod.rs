@@ -15,8 +15,8 @@
 mod bulk;
 mod bulk_v2;
 mod filter;
-mod model;
-mod rest_handler;
+pub(crate) mod model;
+pub(crate) mod rest_handler;
 
 use std::sync::Arc;
 
