@@ -15,6 +15,7 @@
 #![allow(clippy::derive_partial_eq_without_eq)]
 #![allow(clippy::disallowed_methods)]
 #![allow(clippy::doc_lazy_continuation)]
+#![allow(deprecated)] // prost::DecodeError::new is deprecated but used in generated decode impls
 #![allow(rustdoc::invalid_html_tags)]
 
 use std::cmp::Ordering;
@@ -37,10 +38,16 @@ pub mod indexing;
 pub mod ingest;
 pub mod metastore;
 pub mod search;
+pub mod sort_fields_error;
 pub mod types;
 
 pub use error::{GrpcServiceError, ServiceError, ServiceErrorCode};
 use search::ReportSplitsRequest;
+pub use sort_fields_error::SortFieldsError;
+
+pub mod sortschema {
+    include!("codegen/sortschema/sortschema.rs");
+}
 
 pub mod jaeger {
     pub mod api_v2 {
@@ -123,7 +130,8 @@ impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
 pub struct MutMetadataMap<'a>(&'a mut tonic::metadata::MetadataMap);
 
 impl Injector for MutMetadataMap<'_> {
-    /// Sets a key-value pair in the [`MetadataMap`]. No-op if the key or value is invalid.
+    /// Sets a key-value pair in the [`tonic::metadata::MetadataMap`]. No-op if the key or value
+    /// is invalid.
     fn set(&mut self, key: &str, value: String) {
         if let Ok(metadata_key) = tonic::metadata::MetadataKey::from_bytes(key.as_bytes())
             && let Ok(metadata_value) = tonic::metadata::MetadataValue::try_from(&value)
@@ -134,13 +142,13 @@ impl Injector for MutMetadataMap<'_> {
 }
 
 impl Extractor for MutMetadataMap<'_> {
-    /// Gets a value for a key from the MetadataMap.  If the value can't be converted to &str,
+    /// Gets a value for a key from the `MetadataMap`. If the value can't be converted to &str,
     /// returns None.
     fn get(&self, key: &str) -> Option<&str> {
         self.0.get(key).and_then(|metadata| metadata.to_str().ok())
     }
 
-    /// Collect all the keys from the MetadataMap.
+    /// Collect all the keys from the `MetadataMap`.
     fn keys(&self) -> Vec<&str> {
         self.0
             .keys()
@@ -174,13 +182,13 @@ impl Interceptor for SpanContextInterceptor {
 struct MetadataMap<'a>(&'a tonic::metadata::MetadataMap);
 
 impl Extractor for MetadataMap<'_> {
-    /// Gets a value for a key from the MetadataMap.  If the value can't be converted to &str,
+    /// Gets a value for a key from the `MetadataMap`. If the value can't be converted to &str,
     /// returns None.
     fn get(&self, key: &str) -> Option<&str> {
         self.0.get(key).and_then(|metadata| metadata.to_str().ok())
     }
 
-    /// Collect all the keys from the MetadataMap.
+    /// Collect all the keys from the `MetadataMap`.
     fn keys(&self) -> Vec<&str> {
         self.0
             .keys()

@@ -68,7 +68,7 @@ pub struct IndexingSchedulerState {
 ///
 /// Scheduling executes the following steps:
 /// 1. Builds a [`PhysicalIndexingPlan`] from the list of logical indexing tasks. See
-///    [`build_physical_indexing_plan`] for the implementation details.
+///    `build_physical_indexing_plan` for the implementation details.
 /// 2. Apply the [`PhysicalIndexingPlan`]: for each indexer, the scheduler send the indexing tasks
 ///    by gRPC. An indexer immediately returns an Ok and apply asynchronously the received plan. Any
 ///    errors (network) happening in this step are ignored. The scheduler runs a control loop that
@@ -98,7 +98,7 @@ pub struct IndexingSchedulerState {
 /// Concretely, it will send the faulty nodes of the plan they are supposed to follow.
 //
 /// Finally, in order to give the time for each indexer to run their indexing tasks, the control
-/// plane will wait at least [`MIN_DURATION_BETWEEN_SCHEDULING`] before comparing the desired
+/// plane will wait at least `MIN_DURATION_BETWEEN_SCHEDULING` before comparing the desired
 /// plan with the running plan.
 pub struct IndexingScheduler {
     cluster_id: String,

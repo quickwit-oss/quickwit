@@ -43,7 +43,7 @@ impl fmt::Debug for StorageResolver {
 }
 
 impl StorageResolver {
-    /// Creates an empty [`StorageResolverBuilder`].
+    /// Creates an empty `StorageResolverBuilder`.
     pub fn builder() -> StorageResolverBuilder {
         StorageResolverBuilder::default()
     }

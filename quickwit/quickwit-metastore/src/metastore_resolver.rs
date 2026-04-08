@@ -45,7 +45,7 @@ impl fmt::Debug for MetastoreResolver {
 }
 
 impl MetastoreResolver {
-    /// Creates an empty [`MetastoreResolverBuilder`].
+    /// Creates an empty `MetastoreResolverBuilder`.
     pub fn builder() -> MetastoreResolverBuilder {
         MetastoreResolverBuilder::default()
     }
