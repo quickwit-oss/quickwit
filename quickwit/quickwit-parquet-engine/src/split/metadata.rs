@@ -175,8 +175,7 @@ pub struct MetricsSplitMetadata {
     /// 0 for newly ingested splits.
     pub num_merge_ops: u32,
 
-    /// RowKeys (sort-key min/max boundaries) as serialized proto bytes
-    /// (`sortschema::RowKeys` in `event_store_sortschema.proto`).
+    /// RowKeys (sort-key min/max boundaries) as proto bytes.
     /// None for pre-Phase-31 splits or splits without sort schema.
     pub row_keys_proto: Option<Vec<u8>>,
 
