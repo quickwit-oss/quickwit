@@ -13,6 +13,7 @@ members = [
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
+  "quickwit-dst",
   "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
@@ -155,6 +156,8 @@ libz-sys = "1.1"
 lru = "0.16"
 matches = "0.1"
 md5 = "0.8"
+metrics = "0.24"
+metrics-exporter-dogstatsd = "0.9"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
@@ -233,6 +236,7 @@ serde_yaml = "0.9"
 serial_test = { version = "3.2", features = ["file_locks"] }
 sha2 = "0.10"
 siphasher = "1.0"
+stateright = "0.30"
 smallvec = "1"
 sqlx = { version = "0.8", features = [
   "migrate",
@@ -352,6 +356,7 @@ quickwit-control-plane = { path = "quickwit-control-plane" }
 quickwit-datetime = { path = "quickwit-datetime" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
+quickwit-dst = { path = "quickwit-dst" }
 quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }

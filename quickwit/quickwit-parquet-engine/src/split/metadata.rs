@@ -470,19 +470,21 @@ impl MetricsSplitMetadataBuilder {
     pub fn build(self) -> MetricsSplitMetadata {
         // TW-2 (ADR-003): window_duration must evenly divide 3600.
         // Enforced at build time so no invalid metadata propagates to storage.
-        debug_assert!(
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::TW2,
             self.window_duration_secs == 0 || 3600 % self.window_duration_secs == 0,
-            "TW-2 violated: window_duration_secs={} does not divide 3600",
+            ": window_duration_secs={} does not divide 3600",
             self.window_duration_secs
         );
 
         // TW-1 (ADR-003, partial): window_start and window_duration_secs are paired.
         // If one is set, the other must be too. Pre-Phase-31 splits have both at defaults.
-        debug_assert!(
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::TW1,
             (self.window_start.is_none() && self.window_duration_secs == 0)
                 || (self.window_start.is_some() && self.window_duration_secs > 0),
-            "TW-1 violated: window_start and window_duration_secs must be set together \
-             (window_start={:?}, window_duration_secs={})",
+            ": window_start and window_duration_secs must be set together (window_start={:?}, \
+             window_duration_secs={})",
             self.window_start,
             self.window_duration_secs
         );

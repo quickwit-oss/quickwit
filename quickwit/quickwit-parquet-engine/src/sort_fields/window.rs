@@ -77,16 +77,22 @@ pub fn window_start(
     timestamp_secs: i64,
     duration_secs: i64,
 ) -> Result<DateTime<Utc>, SortFieldsError> {
-    debug_assert!(duration_secs > 0, "window duration must be positive");
-    // TW-2 (ADR-003): window duration must evenly divide one hour.
-    // This ensures window boundaries align across hours and days.
-    debug_assert!(
+    use quickwit_dst::check_invariant;
+    use quickwit_dst::invariants::InvariantId;
+
+    check_invariant!(
+        InvariantId::TW2,
+        duration_secs > 0,
+        ": duration_secs must be positive"
+    );
+    check_invariant!(
+        InvariantId::TW2,
         3600 % duration_secs == 0,
-        "TW-2 violated: duration_secs={} does not divide 3600",
+        ": duration_secs={} does not divide 3600",
         duration_secs
     );
-    let remainder = timestamp_secs.rem_euclid(duration_secs);
-    let start_secs = timestamp_secs - remainder;
+    let start_secs =
+        quickwit_dst::invariants::window::window_start_secs(timestamp_secs, duration_secs);
     DateTime::from_timestamp(start_secs, 0).ok_or(SortFieldsError::WindowStartOutOfRange {
         timestamp_secs: start_secs,
     })
