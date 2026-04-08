@@ -1,6 +1,6 @@
-# TLA+ Specifications for Quickhouse-Pomsky
+# TLA+ Specifications for Quickwit
 
-This directory contains formal TLA+ specifications for critical Quickhouse-Pomsky protocols.
+This directory contains formal TLA+ specifications for critical Quickwit protocols.
 
 Specifications are written before implementation (see [Simulation-First Workflow](../../SIMULATION_FIRST_WORKFLOW.md)). Each spec defines the invariants that DST tests and production code must preserve.
 

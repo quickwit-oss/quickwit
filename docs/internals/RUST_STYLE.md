@@ -1,6 +1,6 @@
-# Quickhouse-Pomsky Rust Style Guide
+# Quickwit Rust Style Guide
 
-Supplements [CODE_STYLE.md](../../CODE_STYLE.md) with additional reliability patterns for the Quickhouse-Pomsky project. CODE_STYLE.md is the **primary style reference** — this document adds patterns that improve reliability and error detection.
+Supplements [CODE_STYLE.md](../../CODE_STYLE.md) with additional reliability patterns for the Quickwit project. CODE_STYLE.md is the **primary style reference** — this document adds patterns that improve reliability and error detection.
 
 Influences:
 - [Quickwit CODE_STYLE.md](../../CODE_STYLE.md) - Primary: proofreadability, naming, hidden contracts

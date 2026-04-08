@@ -22,7 +22,7 @@ Quickwit nodes serve all roles simultaneously. The `quickwit run` command starts
 
 ## State of the Art
 
-- **Husky (Datadog)**: Writers, compactors, and leaf readers are independently auto-scaled services. Compactor fleet scales based on file backlog; writer fleet scales based on ingest QPS; leaf readers scale based on query QPS.
+- **Husky**: Writers, compactors, and leaf readers are independently auto-scaled services. Compactor fleet scales based on file backlog; writer fleet scales based on ingest QPS; leaf readers scale based on query QPS.
 - **ClickHouse Commercial (SharedMergeTree)**: Compute/storage separation allows query nodes to scale independently. Merges run on separate resources.
 - **Mimir/Cortex**: Ingesters, compactors, and queriers are separate Kubernetes deployments with independent HPA policies.
 

@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADR) Index
 
-This directory serves as the **central knowledge base** for Quickhouse-Pomsky architecture.
+This directory serves as the **central knowledge base** for Quickwit architecture.
 
 ## Knowledge Map (Agent Context)
 
@@ -36,7 +36,7 @@ Detailed implementation plans and reports linked to ADRs.
 
 ## Architecture Evolution
 
-Quickhouse-Pomsky tracks architectural change through three lenses. See **[EVOLUTION.md](./EVOLUTION.md)** for the full process.
+Quickwit tracks architectural change through three lenses. See **[EVOLUTION.md](./EVOLUTION.md)** for the full process.
 
 ```
                     Architecture Evolution

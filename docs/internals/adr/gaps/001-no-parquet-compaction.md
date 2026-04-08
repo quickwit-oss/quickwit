@@ -27,7 +27,7 @@ The existing logs/traces compaction system (`StableLogMergePolicy` with Tantivy 
 
 - **ClickHouse**: MergeTree engine performs background merges of parts (equivalent to splits) using a sorted merge. Parts are organized by partition key (typically time) and merged within partitions.
 - **Apache Iceberg**: Compaction rewrites small data files into fewer larger files. Sort-order-aware compaction produces files with non-overlapping key ranges.
-- **Husky (Datadog)**: Size-tiered compaction within time buckets. Sort columns read first to determine merge order, then columns streamed through merge. Achieved 25-33% compression improvement and reduced query latency.
+- **Husky**: Size-tiered compaction within time buckets. Sort columns read first to determine merge order, then columns streamed through merge. Achieved 25-33% compression improvement and reduced query latency.
 - **Prometheus/Mimir**: Head block compaction produces sorted, time-bounded blocks. Vertical compaction merges blocks with overlapping time ranges.
 
 All of these systems treat compaction as essential infrastructure, not optional optimization.

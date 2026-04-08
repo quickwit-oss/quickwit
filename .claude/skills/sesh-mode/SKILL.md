@@ -41,7 +41,7 @@ All verification layers share the same invariants:
     ┌───────────────┼───────────────┐
     ▼               ▼               ▼
 Stateright      DST Tests      Production Metrics
-(exhaustive)    (simulation)   (Datadog)
+(exhaustive)    (simulation)   (Observability)
 ```
 
 ## Testing Through Production Path
@@ -69,7 +69,7 @@ curl http://localhost:7280/api/v1/<index>/search -d '{"query": "*"}'
 
 ## Architecture Evolution
 
-Pomsky tracks architectural change through three lenses. See `docs/internals/adr/EVOLUTION.md` for the full process.
+Quickwit tracks architectural change through three lenses. See `docs/internals/adr/EVOLUTION.md` for the full process.
 
 ```
                     Architecture Evolution

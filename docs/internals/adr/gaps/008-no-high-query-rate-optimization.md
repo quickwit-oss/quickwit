@@ -6,9 +6,9 @@
 
 ## Problem
 
-Quickwit's metadata and query infrastructure is not optimized for the high query rates required by monitor evaluation. Datadog's global metrics query rate is approximately 800k QPS. At this scale, the metadata service must respond to split-listing queries with sub-millisecond latency, and query results for repeated predicates must be cacheable to avoid redundant computation.
+Quickwit's metadata and query infrastructure is not optimized for the high query rates required by monitor evaluation at scale. Large-scale observability platforms can require hundreds of thousands of queries per second for monitor evaluation alone. At this scale, the metadata service must respond to split-listing queries with sub-millisecond latency, and query results for repeated predicates must be cacheable to avoid redundant computation.
 
-The current metadata service is PostgreSQL. While PostgreSQL handles moderate query planning loads, it is not designed for 800k QPS of metadata lookups with the per-split min/max/regex filtering that split-level pruning requires (see [GAP-004](./004-incomplete-split-metadata.md)). Each monitor evaluation cycle queries the metastore for relevant splits, evaluates the query, and discards the result. The next cycle repeats the same work.
+The current metadata service is PostgreSQL. While PostgreSQL handles moderate query planning loads, it is not designed for very high QPS of metadata lookups with the per-split min/max/regex filtering that split-level pruning requires (see [GAP-004](./004-incomplete-split-metadata.md)). Each monitor evaluation cycle queries the metastore for relevant splits, evaluates the query, and discards the result. The next cycle repeats the same work.
 
 ## Evidence
 
@@ -22,7 +22,7 @@ ADR-003 explicitly acknowledges the PostgreSQL scalability concern: "At high ing
 
 ## State of the Art
 
-- **Husky (Datadog)**: Dedicated metadata service optimized for high-rate pruning queries. Predicate and query result caching for monitor evaluation.
+- **Husky**: Dedicated metadata service optimized for high-rate pruning queries. Predicate and query result caching for monitor evaluation.
 - **Mimir/Cortex**: Index cache (memcached-backed) for label/series lookups. Query result cache for repeated queries.
 - **ClickHouse Commercial**: SharedMergeTree metadata in Keeper (ZooKeeper), with in-memory sparse primary key indexes on query nodes for fast granule-level pruning.
 

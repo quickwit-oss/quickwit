@@ -1,4 +1,4 @@
-# Quickhouse-Pomsky Benchmarking Guide
+# Quickwit Benchmarking Guide
 
 ## Philosophy
 
@@ -17,8 +17,8 @@ Similar to the correctness Verification Pyramid, performance is verified across 
                     │ verified by
     ┌───────────────┼───────────────┐
     ▼               ▼               ▼
-Production      Datadog         APM Profiles
-Metrics         Metrics         (eBPF/ddprof)
+Production      Observability   APM Profiles
+Metrics         Metrics         (perf/samply)
 ```
 
 ## Microbenchmarks
@@ -135,27 +135,21 @@ pub const QUERY_LATENCY_P99_BASELINE: PerformanceBaseline = PerformanceBaseline 
 ```rust
 // After every query execution
 let result = check_performance(&QUERY_LATENCY_P99_BASELINE, latency_ms);
-pomsky_observability::record_performance(result.name, result.actual, result.status);
+quickwit_observability::record_performance(result.name, result.actual, result.status);
 ```
 
-### Datadog Metrics
+### Observability Metrics
 
 | Metric | Purpose |
 |--------|---------|
-| `pomsky.performance.checks.total` | Total checks |
-| `pomsky.performance.checks.warning` | Warnings |
-| `pomsky.performance.checks.critical` | Critical (investigate now) |
-| `pomsky.performance.health` | Health gauge (0=healthy, 2=critical) |
+| `quickwit.performance.checks.total` | Total checks |
+| `quickwit.performance.checks.warning` | Warnings |
+| `quickwit.performance.checks.critical` | Critical (investigate now) |
+| `quickwit.performance.health` | Health gauge (0=healthy, 2=critical) |
 
 ## APM Correlation
 
-When performance degrades, baselines link to APM:
-
-```
-Performance critical - check APM profile path in Datadog
-```
-
-In Datadog APM -> Profiles -> search for the relevant code path to see CPU flamegraph.
+When performance degrades, use CPU profiling tools (perf, samply, Instruments) to identify the hot path. See the Profiling section below.
 
 ## Optimization Checklist
 

@@ -1,6 +1,6 @@
 # Simulation-First Development Workflow
 
-This document defines the mandatory workflow for all Quickhouse-Pomsky development,
+This document defines the mandatory workflow for all Quickwit development,
 following the verification pyramid philosophy.
 
 ## The Verification Pyramid
@@ -26,7 +26,7 @@ following the verification pyramid philosophy.
    /----------------+----------------\
   /                 |                 \
  /                  |                  \ Production Monitoring
-/-------------------+-------------------\- Datadog invariant metrics
+/-------------------+-------------------\- production invariant metrics
 ```
 
 ## Mandatory Workflow

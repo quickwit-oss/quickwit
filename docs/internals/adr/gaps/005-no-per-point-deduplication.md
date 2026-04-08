@@ -30,7 +30,7 @@ The impact depends on the query semantics. For `SUM` aggregations, duplicates in
 - **Mimir/Thanos**: Deduplicate at query time using replica labels. Each replica stores its own copy; the query frontend selects one replica's data per series.
 - **InfluxDB**: Supports upsert semantics — writing a point with the same measurement, tag set, and timestamp overwrites the previous value (LWW).
 - **ClickHouse**: `ReplacingMergeTree` engine deduplicates rows by sort key during merge (eventual dedup, not at ingest). Standard `MergeTree` stores all duplicates.
-- **Husky (Datadog)**: Does not deduplicate individual points. Dedup is handled upstream in the intake pipeline before data reaches storage.
+- **Husky**: Does not deduplicate individual points. Dedup is handled upstream in the intake pipeline before data reaches storage.
 
 There is no consensus in the industry. Some systems dedup at ingest (Prometheus, InfluxDB), some at query time (Mimir/Thanos), some at compaction (ClickHouse), and some not at all (Husky).
 

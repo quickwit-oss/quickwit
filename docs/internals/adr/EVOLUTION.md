@@ -1,6 +1,6 @@
 # Architecture Evolution
 
-This document defines how Quickhouse-Pomsky tracks architectural change through three complementary lenses.
+This document defines how Quickwit tracks architectural change through three complementary lenses.
 
 ## The Three Lenses
 
@@ -26,7 +26,7 @@ This document defines how Quickhouse-Pomsky tracks architectural change through 
 
 ## Signal Priority
 
-Quickhouse-Pomsky handles three observability signals: **metrics** (current priority), **traces**, and **logs**. Architectural decisions should generalize across all three, but metrics drives the initial implementation.
+Quickwit handles three observability signals: **metrics** (current priority), **traces**, and **logs**. Architectural decisions should generalize across all three, but metrics drives the initial implementation.
 
 ## Characteristics (Proactive)
 

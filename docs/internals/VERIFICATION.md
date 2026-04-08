@@ -1,4 +1,4 @@
-# Quickhouse-Pomsky Verification Guide
+# Quickwit Verification Guide
 
 For the philosophical foundation and "why" behind this stack, see [VERIFICATION_STACK.md](VERIFICATION_STACK.md).
 
@@ -14,7 +14,7 @@ All verification layers share the same invariants defined once in a shared invar
     ┌───────────────┼───────────────┬─────────────────────┐
     ▼               ▼               ▼                     ▼
 Stateright      DST Tests      Integration          Production Metrics
-(exhaustive)    (simulation)   Tests                (Datadog)
+(exhaustive)    (simulation)   Tests                (Observability)
 ```
 
 ## Simulation-First Development
@@ -302,7 +302,7 @@ mod kani_proofs {
 
 ## Production Observability
 
-Closing the verification loop with Datadog:
+Closing the verification loop with production observability:
 
 ```rust
 // Record invariant check in production
@@ -313,10 +313,10 @@ quickwit_observability::record_invariant("no_lost_splits", passed);
 
 | Metric | Purpose |
 |--------|---------|
-| `pomsky_invariant_checks.count` | Total checks |
-| `pomsky_invariant_checks_passed.count` | Passed checks |
-| `pomsky_invariant_checks_failed.count` | Failed checks (0 = healthy) |
-| `pomsky_invariant_health` | Health gauge (1.0 = all passing) |
+| `quickwit_invariant_checks.count` | Total checks |
+| `quickwit_invariant_checks_passed.count` | Passed checks |
+| `quickwit_invariant_checks_failed.count` | Failed checks (0 = healthy) |
+| `quickwit_invariant_health` | Health gauge (1.0 = all passing) |
 
 ### Adding Production Invariants
 

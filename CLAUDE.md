@@ -1,16 +1,14 @@
-# Pomsky Development Guide
+# Quickwit Development Guide
 
-## What is Pomsky?
+## About Quickwit
 
-**Fork of [Quickwit](https://github.com/quickwit-oss/quickwit)** — a cloud-native search engine for observability. This is the Datadog fork, adding:
+[Quickwit](https://github.com/quickwit-oss/quickwit) is a cloud-native search engine for observability data (logs, traces, metrics). Key components:
 
-- **Metrics engine** (`quickwit-metrics-engine`): DataFusion/Parquet-based analytics pipeline (current priority)
-- **Remote API** (`quickwit-remote-api`): gRPC/REST interface for remote operations
-- **Document transforms** (`quickwit-doc-transforms`): Preprocessing pipeline
-- **CloudPrem UI**: Datadog-specific frontend
 - **Tantivy + Parquet hybrid**: Full-text search via Tantivy, columnar analytics via Parquet
+- **Parquet metrics pipeline** (`quickwit-parquet-engine`): DataFusion/Parquet-based analytics (under active development)
+- **Three observability signals**: Metrics, traces, and logs — architectural decisions must generalize across all three
 
-**Signal priority**: Metrics first, then traces, then logs. Architectural decisions must generalize across all three.
+See `quickwit/CLAUDE.md` for architecture overview, crate descriptions, and build commands.
 
 ## Core Policies
 
@@ -99,32 +97,32 @@ curl http://localhost:7280/api/v1/<index>/search -d '{"query": "*"}'
 ## Repository Layout
 
 ```
-quickwit/
-├── quickwit/                    # Main Rust workspace (all crates live here)
-│   ├── Cargo.toml               # Workspace root
-│   ├── Makefile                 # Inner build targets (fmt, fix, test-all, build)
-│   ├── clippy.toml              # Disallowed methods (enforced)
-│   ├── rustfmt.toml             # Nightly formatter config
-│   ├── rust-toolchain.toml      # Pinned to Rust 1.91
-│   └── rest-api-tests/          # Python-based REST API integration tests
+quickwit/                            # Repository root
+├── quickwit/                        # Main Rust workspace (all crates live here)
+│   ├── Cargo.toml                   # Workspace root
+│   ├── CLAUDE.md                    # Build commands, architecture overview, crate guide
+│   ├── Makefile                     # Build targets (fmt, fix, test-all, build)
+│   ├── clippy.toml                  # Disallowed methods (enforced)
+│   ├── rustfmt.toml                 # Nightly formatter config
+│   ├── rust-toolchain.toml          # Pinned Rust toolchain
+│   ├── scripts/                     # License header checks, log format checks
+│   └── rest-api-tests/              # Python-based REST API integration tests
 ├── docs/
-│   └── internals/               # All architecture docs
-│       ├── adr/                 # Architecture Decision Records
-│       │   ├── README.md        # ADR index
-│       │   ├── gaps/            # Design limitations from incidents
-│       │   └── deviations/      # Intentional divergences from ADR intent
+│   └── internals/                   # Architecture docs
+│       ├── adr/                     # Architecture Decision Records
+│       │   ├── README.md            # ADR index
+│       │   ├── gaps/                # Design limitations from incidents
+│       │   └── deviations/          # Intentional divergences from ADR intent
 │       └── specs/
-│           └── tla/             # TLA+ specs for protocols and state machines
-├── config/                      # Runtime YAML configs (quickwit.yaml, etc.)
-├── scripts/                     # DD-specific operational scripts
-├── Makefile                     # Outer orchestration (docker, k8s, delegates to quickwit/)
-├── docker-compose.yml           # Local services (localstack, postgres, kafka, jaeger, etc.)
-└── k8s/                         # Kubernetes local dev (kind cluster)
+│           └── tla/                 # TLA+ specs for protocols and state machines
+├── config/                          # Runtime YAML configs (quickwit.yaml, etc.)
+├── Makefile                         # Outer orchestration (delegates to quickwit/)
+└── docker-compose.yml               # Local services (localstack, postgres, kafka, jaeger, etc.)
 ```
 
 ## Architecture Evolution
 
-Pomsky tracks architectural change through three lenses. See `docs/internals/adr/EVOLUTION.md` for the full process.
+Quickwit tracks architectural change through three lenses. See `docs/internals/adr/EVOLUTION.md` for the full process.
 
 ```
                     Architecture Evolution
@@ -167,7 +165,7 @@ cargo nextest run --test failpoints --features fail/failpoints
 cargo clippy --workspace --all-features --tests
 
 # Format (requires nightly)
-cargo +nightly fmt
+cargo +nightly fmt --all
 
 # Auto-fix clippy + format
 make fix    # from quickwit/
@@ -185,20 +183,6 @@ make typos  # or: typos
 cd quickwit/rest-api-tests
 pipenv shell && pipenv install
 ./run_tests.py --engine quickwit
-
-# Metrics E2E tests (requires Docker infra)
-# From quickwit/:
-make docker-metrics-up
-make test-metrics-e2e
-
-# Docker build
-make docker-build  # from repo root
-
-# Local k8s (kind)
-make k8s-up        # start cluster
-make k8s-status    # check status
-make k8s-logs      # follow logs
-make k8s-down      # tear down
 ```
 
 ## Testing Strategy
@@ -212,7 +196,6 @@ make k8s-down      # tear down
 ### Integration Tests
 - `quickwit-integration-tests/`: Rust integration tests exercising the full stack
 - `rest-api-tests/`: Python YAML-driven tests for Elasticsearch API compatibility
-- Metrics E2E: `make test-metrics-e2e` against Docker Compose (Minio + Postgres)
 
 ### Required for CI
 - `cargo nextest run --all-features --retries 5` (with Docker services running)
@@ -230,9 +213,6 @@ make docker-compose-up DOCKER_SERVICES='jaeger,localstack'
 
 # Tear down
 make docker-compose-down
-
-# Metrics-specific infra (Minio + Postgres)
-cd quickwit && make docker-metrics-up
 ```
 
 Environment variables set during test-all:
@@ -293,7 +273,6 @@ Environment variables set during test-all:
 
 ## References
 
-- [Quickwit upstream](https://github.com/quickwit-oss/quickwit)
+- [Quickwit](https://github.com/quickwit-oss/quickwit)
 - [Tantivy search engine](https://github.com/quickwit-oss/tantivy)
 - [Apache DataFusion](https://datafusion.apache.org/)
-- [PomChi dependency](https://github.com/DataDog/PomChi) (private)

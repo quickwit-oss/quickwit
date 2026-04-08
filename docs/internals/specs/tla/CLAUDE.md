@@ -1,6 +1,6 @@
 # TLA+ Specifications
 
-This directory contains formal TLA+ specifications for Quickhouse-Pomsky protocols.
+This directory contains formal TLA+ specifications for Quickwit protocols.
 
 ## Setup (One-Time)
 

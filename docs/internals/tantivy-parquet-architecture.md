@@ -6,7 +6,7 @@
 
 ## Context
 
-Quickhouse-Pomsky currently uses Tantivy (full-text search engine) for logs and traces. We have a proven DataFusion/Parquet analytics engine at scale for metrics. This document proposes **replacing Tantivy's fast fields with Parquet** to enable unified analytics across all Quickhouse products (metrics, logs, and traces) while maintaining full-text search capabilities.
+Quickwit currently uses Tantivy (full-text search engine) for logs and traces. We have a proven DataFusion/Parquet analytics engine at scale for metrics. This document proposes **replacing Tantivy's fast fields with Parquet** to enable unified analytics across all Quickwit products (metrics, logs, and traces) while maintaining full-text search capabilities.
 
 **Key question:** What is the storage cost of replacing Tantivy fast fields with Parquet, and what benefits do we gain from DataFusion ecosystem integration?
 

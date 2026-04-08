@@ -23,7 +23,7 @@ There is no mechanism to:
 
 ## State of the Art
 
-- **Husky (Datadog)**: Compactor prioritizes the leading edge. Recent time buckets are compacted first. Compaction auto-scales based on the backlog of uncompacted files at the leading edge.
+- **Husky**: Compactor prioritizes the leading edge. Recent time buckets are compacted first. Compaction auto-scales based on the backlog of uncompacted files at the leading edge.
 - **Prometheus/Mimir**: Head block compaction runs on a tight schedule (every 2 hours). Vertical compaction of overlapping blocks is lower priority.
 - **ClickHouse**: Merge scheduling prioritizes parts that would most improve query performance (many small parts in a partition).
 

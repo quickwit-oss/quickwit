@@ -68,7 +68,7 @@ SortColumn {
 
 ## State of the Art
 
-- **Husky (Datadog)**: Sort schema is defined per table/track as a configuration string (e.g., `service__s|status__s|tag.env__s|timestamp|tiebreaker__i/V2`). Different tables use different sort schemas optimized for their query patterns.
+- **Husky**: Sort schema is defined per table/track as a configuration string (e.g., `service__s|status__s|tag.env__s|timestamp|tiebreaker__i/V2`). Different tables use different sort schemas optimized for their query patterns.
 - **ClickHouse**: `ORDER BY` clause in table definition specifies the sort key. Different tables have different sort keys. The sort key is stored in table metadata and enforced at write time and merge time.
 - **Apache Iceberg**: Sort order is a table property that can be changed over time. Different sort orders coexist in the same table; the metadata tracks which files use which sort order.
 

@@ -212,7 +212,7 @@ Note: `node_id` is intentionally excluded from the compaction scope. In Phase 1,
 
 Data may arrive late \-- a data point with a timestamp in a past window may be ingested after that window has already been compacted.
 
-**Late data acceptance window.** Points with timestamps older than a configurable maximum age are **dropped at ingestion time** rather than accepted into the storage layer. This bounds the window of time during which late data can disturb already-compacted windows. The acceptance window should be set based on the product's lateness guarantees (e.g., Datadog Metrics advertises 1 hour after the point's timestamp; HSI accepts points up to 3 hours late). Without this cutoff, arbitrarily late data -- driven by customer behavior such as delayed batch uploads or misconfigured clocks -- can trigger expensive re-merges of fully-compacted windows indefinitely.
+**Late data acceptance window.** Points with timestamps older than a configurable maximum age are **dropped at ingestion time** rather than accepted into the storage layer. This bounds the window of time during which late data can disturb already-compacted windows. The acceptance window should be set based on the product's lateness guarantees (e.g., 1-3 hours after the point's timestamp is typical for metrics systems). Without this cutoff, arbitrarily late data -- driven by customer behavior such as delayed batch uploads or misconfigured clocks -- can trigger expensive re-merges of fully-compacted windows indefinitely.
 
 Within the acceptance window, late-arriving data is handled naturally:
 

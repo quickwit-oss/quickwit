@@ -11,7 +11,7 @@
 
 ## Context
 
-Quickhouse-Pomsky's metrics pipeline stores data in Parquet files. A fundamental design question is how metrics data is represented at the row level: what does one row in a Parquet file correspond to?
+Quickwit's metrics pipeline stores data in Parquet files. A fundamental design question is how metrics data is represented at the row level: what does one row in a Parquet file correspond to?
 
 Two models are in consideration:
 
@@ -86,7 +86,7 @@ Map columns are fundamentally non-columnar: all key-value pairs for a row are pa
 
 **Schema-on-read: attributes as columns.** A more effective storage representation is to extract each attribute into its own Parquet column at write time. Rather than storing `Map{"host": "web-01", "env": "prod", "region": "us-east-1"}` as one map value, we store three separate columns: `attr.host = "web-01"`, `attr.env = "prod"`, `attr.region = "us-east-1"`. Each column is independently typed, independently compressed, and independently accessible for predicate evaluation and page-level pruning.
 
-This is a **schema-on-read** approach: the storage layer stores data in whatever shape arrives, creating columns as needed, and any schema interpretation happens at query time. There is no requirement for the schema to be specified up front — new attribute keys that appear in incoming data produce new columns automatically. This is the approach taken by Datadog's internal systems (Husky, Metrics) and is identified as a key characteristic of cloud-native observability storage: "store all the data that the user sends, in whatever types they send it, resolving any ambiguity at query time."
+This is a **schema-on-read** approach: the storage layer stores data in whatever shape arrives, creating columns as needed, and any schema interpretation happens at query time. There is no requirement for the schema to be specified up front — new attribute keys that appear in incoming data produce new columns automatically. This is a key characteristic of cloud-native observability storage: "store all the data that the user sends, in whatever types they send it, resolving any ambiguity at query time."
 
 **Dense vs sparse columns.** Not every attribute needs its own column. Attributes that appear in <1% of rows produce extremely sparse columns that waste storage on null markers and add schema complexity. A practical threshold is to extract attributes as dedicated columns when they are **dense** (present in >1% of rows) and keep rare attributes in a residual map column. The density threshold is a tunable parameter. Over time, compaction could consolidate: an attribute that starts sparse (few sources report it) but becomes dense (adopted widely) can be promoted to its own column.
 
@@ -178,6 +178,4 @@ The no-LWW and no-storage-interpolation decisions are universal across signals. 
 - [Phase 1: Sorted Splits for Parquet](../locality-compaction/phase-1-sorted-splits.md) — full design document
 - [ADR-002: Configurable Sort Schema](./002-sort-schema-parquet-splits.md) — sort schema that operates on this data model
 - [ADR-003: Time-Windowed Sorted Compaction](./003-time-windowed-sorted-compaction.md) — compaction that relies on this data model
-- [Husky Storage Compaction Blog Post](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/)
-- [ClickStack OTel Schemas](https://clickhouse.com/docs/use-cases/observability/clickstack/ingesting-data/schemas) — OTel map-based attribute schema
-- [Characteristics of Cloud Native Storage relevant to Quickhouse](https://docs.google.com/document/d/...) — schema-on-read and cloud-native storage characteristics
+- [ClickStack OTel Schemas](https://clickhouse.com/docs/use-cases/observability/clickstack/ingesting-data/schemas) — OTel map-based attribute schema (useful reference for the schema-on-read discussion)

@@ -78,7 +78,7 @@ CREATE TABLE metrics_splits (
 
 ## State of the Art
 
-- **Husky (Datadog)**: Fragment metadata includes sort schema, per-column min/max/regex, time bucket assignment. Used for fragment-level query pruning.
+- **Husky**: Fragment metadata includes sort schema, per-column min/max/regex, time bucket assignment. Used for fragment-level query pruning.
 - **Apache Iceberg**: Manifest files store per-column lower/upper bounds for each data file. Used for file-level pruning during query planning.
 - **Delta Lake**: Transaction log entries include per-column statistics (min, max, null count). Used by the query optimizer to skip files.
 - **ClickHouse**: Part metadata includes primary key min/max per granule. Used for index-level pruning within parts.

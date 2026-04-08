@@ -22,7 +22,7 @@ At production scale, a single S3 download thread delivers ~90 MiB/s. Without cac
 
 ## State of the Art
 
-- **Husky (Datadog)**: Multi-level caches (columnar data, predicate results) with query affinity via consistent hashing. Cache hit rates >90% for typical monitor workloads.
+- **Husky**: Multi-level caches (columnar data, predicate results) with query affinity via consistent hashing. Cache hit rates >90% for typical monitor workloads.
 - **ClickHouse**: Uncompressed data cache, query result cache. Configurable per-table. Mark cache for index metadata.
 - **Mimir/Cortex**: Chunk cache, query result cache. Memcached-backed. Query-frontend handles result caching and splitting.
 

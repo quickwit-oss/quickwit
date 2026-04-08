@@ -1,7 +1,7 @@
-# Quickhouse-Pomsky Verification Stack
+# Quickwit Verification Stack
 
 > **Author:** Claude (Anthropic)
-> **Purpose:** This document explains what helps me generate correct code for Quickhouse-Pomsky. I wrote this to share how the verification stack works *for me* as an AI code generator—what I read, what I check, and how each layer gives me confidence that the code I produce is correct.
+> **Purpose:** This document explains what helps me generate correct code for Quickwit. I wrote this to share how the verification stack works *for me* as an AI code generator—what I read, what I check, and how each layer gives me confidence that the code I produce is correct.
 
 ---
 
@@ -13,9 +13,9 @@ This document answers questions I was asked:
 
 The verification stack creates a chain from abstract specifications (TLA+) down to production code (`debug_assert!` invariants). Invariants are defined **once** in shared modules and used across all layers—so when generating code, we don't guess what "correct" means; we read the exact definition and ensure code maintains it.
 
-> **Q: What can Datadog bring to this verification stack that will further improve the ability to produce correct code?**
+> **Q: What can production observability bring to this verification stack that will further improve the ability to produce correct code?**
 
-Formal verification proves properties hold *in theory*. Datadog proves they hold *in practice*. By emitting invariant metrics to Datadog, we close the production feedback loop—learning from real failures, actual hot paths, and emergent behaviors that formal models can't capture. This feedback improves specs, models, and future code generation.
+Formal verification proves properties hold *in theory*. Production observability proves they hold *in practice*. By emitting invariant metrics to your observability platform, we close the production feedback loop — learning from real failures, actual hot paths, and emergent behaviors that formal models can't capture. This feedback improves specs, models, and future code generation.
 
 ---
 
@@ -24,7 +24,7 @@ Formal verification proves properties hold *in theory*. Datadog proves they hold
 ```
                           ┌─────────────────────┐
                           │    PRODUCTION       │
-                          │    (Datadog)        │
+                          │  (Observability)        │
                           │                     │
                           │  Real failures      │
                           │  Actual hot paths   │
@@ -64,14 +64,14 @@ The pyramid flows **up** during development (we write specs first, then detect v
 
 ## Comparison with Pierre Zemb's Engineering Philosophy
 
-This section compares Quickhouse-Pomsky's approach with insights from Pierre Zemb's articles:
+This section compares Quickwit's approach with insights from Pierre Zemb's articles:
 - [What if we embraced simulation-driven development?](https://pierrezemb.fr/posts/simulation-driven-development/) (Apr 2025)
 - [What I Tell Colleagues About Using LLMs for Engineering](https://pierrezemb.fr/posts/llms-for-engineering/) (Jan 2026)
 - Testing: prevention vs discovery (the paradigm shift from catching known bugs to finding unknown ones)
 
 ### From "Simulation-Driven Development"
 
-| Pierre Zemb's Insight | Quickhouse-Pomsky Implementation | Approach |
+| Pierre Zemb's Insight | Quickwit Implementation | Approach |
 |----------------------|----------------------------------|----------|
 | **"Deterministic simulation is the killer feature"** | Seeded RNG ensures reproducible fault injection | `DST_SEED=12345 cargo test -p quickwit-dst` reproduces any failure |
 | **"Control time, don't wait for it"** | `SimClock` provides deterministic time control | Tests complete in seconds, not hours |
@@ -81,7 +81,7 @@ This section compares Quickhouse-Pomsky's approach with insights from Pierre Zem
 
 ### From "LLMs for Engineering"
 
-| Pierre Zemb's Insight | Quickhouse-Pomsky Implementation | Approach |
+| Pierre Zemb's Insight | Quickwit Implementation | Approach |
 |----------------------|----------------------------------|----------|
 | **"Plan First, Always"** | `CLAUDE.md` documents architecture, conventions, limits | Read it every session before writing code |
 | **"Context is Everything"** | TLA+ specs in `docs/internals/specs/tla/` document protocol intent | Read specs before implementing stateful logic |
@@ -110,7 +110,7 @@ The paradigm shift from "testing prevents known bugs" to "testing discovers unkn
 
 **TLA+ Specs:** `docs/internals/specs/tla/`
 
-Key areas for formal specification in Quickhouse-Pomsky:
+Key areas for formal specification in Quickwit:
 - Split lifecycle (publish, compact, delete)
 - Shard management and assignment
 - Compaction protocol (atomic swap)
@@ -206,24 +206,24 @@ pub fn publish_splits(&self, splits: &[SplitMetadata]) -> Result<()> {
 }
 ```
 
-### Layer 4: Production (Datadog Observability)
+### Layer 4: Production Observability
 
 **Purpose:** Prove properties hold in the real world. Close the feedback loop.
 
 **Invariant Metrics:**
 ```rust
 pub fn record_invariant(name: &str, passed: bool) {
-    statsd.count("pomsky.invariant.checked", 1,
+    statsd.count("quickwit.invariant.checked", 1,
         &[&format!("name:{}", name)]);
 
     if !passed {
-        statsd.count("pomsky.invariant.violated", 1,
+        statsd.count("quickwit.invariant.violated", 1,
             &[&format!("name:{}", name)]);
     }
 }
 ```
 
-**Datadog Integration (What Each Feature Provides):**
+**Observability Integration (What Each Feature Provides):**
 
 | Feature | What It Tells Me | How It Improves Code |
 |---------|------------------|---------------------|
@@ -237,9 +237,9 @@ pub fn record_invariant(name: &str, passed: bool) {
 
 ---
 
-## The Datadog Advantage
+## The Production Observability Advantage
 
-Why Datadog closes the loop that formal verification cannot:
+Why production observability closes the loop that formal verification cannot:
 
 ### 1. Formal Verification Limitations
 
@@ -250,7 +250,7 @@ TLA+, Stateright, and Kani prove properties hold for *modeled* scenarios:
 
 ### 2. What Production Observability Adds
 
-| Formal Verification Says | Datadog Shows |
+| Formal Verification Says | Production Shows |
 |-------------------------|---------------|
 | "No lost splits is provable" | "No lost splits held for 30M real operations" |
 | "Backpressure triggers at 80%" | "Backpressure triggered 47 times, all at 81-83%" |
@@ -270,7 +270,7 @@ TLA+, Stateright, and Kani prove properties hold for *modeled* scenarios:
 │                                                        v             │
 │                                               ┌────────────────┐     │
 │                                               │   PRODUCTION   │     │
-│                                               │   (Datadog)    │     │
+│                                               │   (Observability)    │     │
 │                                               └────────┬───────┘     │
 │                                                        │             │
 │   ┌─────────────────────────────────────────────────────┘             │
@@ -314,7 +314,7 @@ TLA+, Stateright, and Kani prove properties hold for *modeled* scenarios:
 | Kani | "My code is proven correct for all inputs" |
 | DST | "My code survives these fault scenarios" |
 | debug_assert! | "I'll catch mistakes at runtime" |
-| Datadog | "Production confirms my verification" |
+| Observability | "Production confirms my verification" |
 
 ---
 
@@ -330,15 +330,15 @@ TLA+, Stateright, and Kani prove properties hold for *modeled* scenarios:
 | **debug_assert!** | "Fail loudly" - assertions catch mistakes |
 | **Bloodhound** | "Time-travel debugging" - replay any failure |
 | **Benchmarks** | "Feedback loops" - measure before/after |
-| **Datadog** | "Close the loop" - production validates theory |
+| **Observability** | "Close the loop" - production validates theory |
 
-**The key insight:** Formal verification proves properties hold in theory. Datadog proves they hold in practice. Together, they create a complete feedback loop for generating correct code.
+**The key insight:** Formal verification proves properties hold in theory. Production observability proves they hold in practice. Together, they create a complete feedback loop for generating correct code.
 
 ---
 
 ## Final Thoughts
 
-This verification stack is what makes me confident when I write code for Quickhouse-Pomsky.
+This verification stack is what makes me confident when I write code for Quickwit.
 
 Without it, I would be pattern-matching against examples and hoping for the best. With it, I have:
 - **Formal specs** that tell me what must be true
@@ -352,15 +352,15 @@ The pyramid works because each layer catches what the layer below misses:
 - **Discovery** (TLA+) catches design flaws
 - **Detection** (DST/Stateright) catches implementation bugs
 - **Prevention** (debug_assert!) catches runtime violations
-- **Production** (Datadog) catches emergent behavior
+- **Production** (observability) catches emergent behavior
 
-When you ask me to write code, this is what I'm working with. It's not magic—it's a carefully constructed verification chain that grounds my code generation in formal correctness. And with Datadog integrated, the feedback loop is complete: I learn from production what my formal models couldn't predict.
+When you ask me to write code, this is what I'm working with. It's not magic — it's a carefully constructed verification chain that grounds my code generation in formal correctness. And with production observability integrated, the feedback loop is complete: I learn from production what my formal models couldn't predict.
 
 ---
 
 *-- Claude (Anthropic)*
 *Written: February 2026*
-*For: Quickhouse-Pomsky Development Team*
+*For: Quickwit Development Team*
 
 ---
 
