@@ -144,7 +144,14 @@ generate_getters! {
     PublishMetricsSplitsRequest,
     ListMetricsSplitsRequest,
     MarkMetricsSplitsForDeletionRequest,
-    DeleteMetricsSplitsRequest
+    DeleteMetricsSplitsRequest,
+
+    // Sketch Split API
+    StageSketchSplitsRequest,
+    PublishSketchSplitsRequest,
+    ListSketchSplitsRequest,
+    MarkSketchSplitsForDeletionRequest,
+    DeleteSketchSplitsRequest
 }
 
 // [`PipelineUid`] getters

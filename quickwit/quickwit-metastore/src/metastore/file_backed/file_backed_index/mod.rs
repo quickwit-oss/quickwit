@@ -28,7 +28,9 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_config::{
     DocMapping, IndexingSettings, IngestSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
-use quickwit_parquet_engine::split::{MetricsSplitMetadata, MetricsSplitState};
+use quickwit_parquet_engine::split::ParquetSplitMetadata;
+
+use crate::SplitState;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteTask, EntityKind, IndexStats, ListShardsSubrequest,
@@ -44,16 +46,16 @@ use tracing::{info, warn};
 
 use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::metastore::{ListMetricsSplitsQuery, SortBy, use_shard_api};
+use crate::metastore::{ListParquetSplitsQuery, SortBy, use_shard_api};
 use crate::{IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState, split_tag_filter};
 
-/// A stored metrics split with its state.
+/// A stored parquet split (metrics or sketch) with its state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct StoredMetricsSplit {
+pub(crate) struct StoredParquetSplit {
     /// The split metadata.
-    pub metadata: MetricsSplitMetadata,
+    pub metadata: ParquetSplitMetadata,
     /// The split state.
-    pub state: MetricsSplitState,
+    pub state: SplitState,
     /// Update timestamp (Unix epoch seconds).
     pub update_timestamp: i64,
     /// Create timestamp (Unix epoch seconds).
@@ -72,6 +74,11 @@ pub(crate) struct StoredMetricsSplit {
     pub maturity_timestamp: i64,
 }
 
+/// Backwards-compatible alias.
+pub(crate) type StoredMetricsSplit = StoredParquetSplit;
+/// Backwards-compatible alias.
+pub(crate) type StoredSketchSplit = StoredParquetSplit;
+
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
 // This struct is meant to be used only within the [`FileBackedMetastore`]. The public visibility is
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -88,6 +95,8 @@ pub(crate) struct FileBackedIndex {
     delete_tasks: Vec<DeleteTask>,
     /// Metrics splits (for metrics pipeline).
     metrics_splits: HashMap<String, StoredMetricsSplit>,
+    /// Sketch splits (for DDSketch pipeline).
+    sketch_splits: HashMap<String, StoredSketchSplit>,
     /// Stamper.
     stamper: Stamper,
     /// Flag used to avoid polling the metastore if
@@ -177,6 +186,7 @@ impl From<IndexMetadata> for FileBackedIndex {
             per_source_shards,
             delete_tasks: Default::default(),
             metrics_splits: Default::default(),
+            sketch_splits: Default::default(),
             stamper: Default::default(),
             recently_modified: false,
             discarded: false,
@@ -200,16 +210,24 @@ impl FileBackedIndex {
         per_source_shards: HashMap<SourceId, Shards>,
         delete_tasks: Vec<DeleteTask>,
     ) -> Self {
-        Self::new_with_metrics_splits(metadata, splits, per_source_shards, delete_tasks, vec![])
+        Self::new_with_metrics_splits(
+            metadata,
+            splits,
+            per_source_shards,
+            delete_tasks,
+            vec![],
+            vec![],
+        )
     }
 
-    /// Constructor with metrics splits.
+    /// Constructor with metrics and sketch splits.
     pub fn new_with_metrics_splits(
         metadata: IndexMetadata,
         splits: Vec<Split>,
         per_source_shards: HashMap<SourceId, Shards>,
         delete_tasks: Vec<DeleteTask>,
         metrics_splits: Vec<StoredMetricsSplit>,
+        sketch_splits: Vec<StoredSketchSplit>,
     ) -> Self {
         let last_opstamp = delete_tasks
             .iter()
@@ -224,12 +242,17 @@ impl FileBackedIndex {
             .into_iter()
             .map(|split| (split.metadata.split_id.to_string(), split))
             .collect();
+        let sketch_splits = sketch_splits
+            .into_iter()
+            .map(|split| (split.metadata.split_id.as_str().to_string(), split))
+            .collect();
         Self {
             metadata,
             splits,
             per_source_shards,
             delete_tasks,
             metrics_splits,
+            sketch_splits,
             stamper: Stamper::new(last_opstamp),
             recently_modified: false,
             discarded: false,
@@ -744,43 +767,14 @@ impl FileBackedIndex {
             .try_apply_delta(checkpoint_delta.source_delta, publish_token)
     }
 
-    // Metrics Splits API
+    // Parquet Splits API
 
     /// Stages metrics splits.
     pub(crate) fn stage_metrics_splits(
         &mut self,
-        splits_metadata: Vec<MetricsSplitMetadata>,
+        splits_metadata: Vec<ParquetSplitMetadata>,
     ) -> MetastoreResult<bool> {
-        if splits_metadata.is_empty() {
-            return Ok(false);
-        }
-        let now = OffsetDateTime::now_utc().unix_timestamp();
-        for metadata in splits_metadata {
-            let split_id = metadata.split_id.to_string();
-
-            // Reject if the split already exists in a non-Staged state.
-            if let Some(existing) = self.metrics_splits.get(&split_id)
-                && existing.state != MetricsSplitState::Staged
-            {
-                let entity = EntityKind::Split {
-                    split_id: split_id.clone(),
-                };
-                let message = "split is not in Staged state".to_string();
-                return Err(MetastoreError::FailedPrecondition { entity, message });
-            }
-
-            let stored = StoredMetricsSplit {
-                metadata,
-                state: MetricsSplitState::Staged,
-                update_timestamp: now,
-                create_timestamp: now,
-                node_id: String::new(),
-                delete_opstamp: 0,
-                maturity_timestamp: 0,
-            };
-            self.metrics_splits.insert(split_id, stored);
-        }
-        Ok(true)
+        stage_parquet_splits(&mut self.metrics_splits, splits_metadata)
     }
 
     /// Publishes metrics splits (transitions from Staged to Published).
@@ -791,7 +785,86 @@ impl FileBackedIndex {
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
         publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<bool> {
-        // Apply checkpoint delta to index metadata, matching publish_splits behavior.
+        self.apply_checkpoint_delta(checkpoint_delta_opt, publish_token_opt)?;
+        publish_parquet_splits(
+            &mut self.metrics_splits,
+            staged_split_ids,
+            replaced_split_ids,
+        )
+    }
+
+    /// Lists metrics splits matching the query.
+    pub(crate) fn list_metrics_splits(
+        &self,
+        query: &ListParquetSplitsQuery,
+    ) -> Vec<StoredParquetSplit> {
+        list_parquet_splits(&self.metrics_splits, query)
+    }
+
+    /// Marks metrics splits for deletion.
+    pub(crate) fn mark_metrics_splits_for_deletion(
+        &mut self,
+        split_ids: &[String],
+    ) -> MetastoreResult<bool> {
+        mark_parquet_splits_for_deletion(&mut self.metrics_splits, split_ids)
+    }
+
+    /// Deletes metrics splits (must be MarkedForDeletion).
+    pub(crate) fn delete_metrics_splits(&mut self, split_ids: &[String]) -> MetastoreResult<bool> {
+        delete_parquet_splits(&mut self.metrics_splits, split_ids)
+    }
+
+    /// Stages sketch splits.
+    pub(crate) fn stage_sketch_splits(
+        &mut self,
+        splits_metadata: Vec<ParquetSplitMetadata>,
+    ) -> MetastoreResult<bool> {
+        stage_parquet_splits(&mut self.sketch_splits, splits_metadata)
+    }
+
+    /// Publishes sketch splits (transitions from Staged to Published).
+    pub(crate) fn publish_sketch_splits(
+        &mut self,
+        staged_split_ids: &[String],
+        replaced_split_ids: &[String],
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
+    ) -> MetastoreResult<bool> {
+        self.apply_checkpoint_delta(checkpoint_delta_opt, publish_token_opt)?;
+        publish_parquet_splits(
+            &mut self.sketch_splits,
+            staged_split_ids,
+            replaced_split_ids,
+        )
+    }
+
+    /// Lists sketch splits matching the query.
+    pub(crate) fn list_sketch_splits(
+        &self,
+        query: &ListParquetSplitsQuery,
+    ) -> Vec<StoredParquetSplit> {
+        list_parquet_splits(&self.sketch_splits, query)
+    }
+
+    /// Marks sketch splits for deletion.
+    pub(crate) fn mark_sketch_splits_for_deletion(
+        &mut self,
+        split_ids: &[String],
+    ) -> MetastoreResult<bool> {
+        mark_parquet_splits_for_deletion(&mut self.sketch_splits, split_ids)
+    }
+
+    /// Deletes sketch splits (must be MarkedForDeletion).
+    pub(crate) fn delete_sketch_splits(&mut self, split_ids: &[String]) -> MetastoreResult<bool> {
+        delete_parquet_splits(&mut self.sketch_splits, split_ids)
+    }
+
+    /// Apply checkpoint delta for parquet split publishing
+    fn apply_checkpoint_delta(
+        &mut self,
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
+    ) -> MetastoreResult<()> {
         if let Some(checkpoint_delta) = checkpoint_delta_opt {
             let source_id = checkpoint_delta.source_id.clone();
             let source = self.metadata.sources.get(&source_id).ok_or_else(|| {
@@ -828,100 +901,142 @@ impl FileBackedIndex {
                     })?;
             }
         }
-
-        let now = OffsetDateTime::now_utc().unix_timestamp();
-
-        // Verify all staged splits exist and are in Staged state
-        for split_id in staged_split_ids {
-            let split = self.metrics_splits.get(split_id).ok_or_else(|| {
-                MetastoreError::NotFound(EntityKind::Splits {
-                    split_ids: vec![split_id.clone()],
-                })
-            })?;
-            if split.state != MetricsSplitState::Staged {
-                return Err(MetastoreError::FailedPrecondition {
-                    entity: EntityKind::Splits {
-                        split_ids: vec![split_id.clone()],
-                    },
-                    message: format!("split {} is not in Staged state", split_id),
-                });
-            }
-        }
-
-        // Transition staged splits to Published
-        for split_id in staged_split_ids {
-            if let Some(split) = self.metrics_splits.get_mut(split_id) {
-                split.state = MetricsSplitState::Published;
-                split.update_timestamp = now;
-            }
-        }
-
-        // Mark replaced splits for deletion
-        for split_id in replaced_split_ids {
-            if let Some(split) = self.metrics_splits.get_mut(split_id) {
-                split.state = MetricsSplitState::MarkedForDeletion;
-                split.update_timestamp = now;
-            }
-        }
-
-        Ok(true)
-    }
-
-    /// Lists metrics splits matching the query.
-    pub(crate) fn list_metrics_splits(
-        &self,
-        query: &ListMetricsSplitsQuery,
-    ) -> Vec<StoredMetricsSplit> {
-        self.metrics_splits
-            .values()
-            .filter(|split| metrics_split_matches_query(split, query))
-            .cloned()
-            .collect()
-    }
-
-    /// Marks metrics splits for deletion.
-    pub(crate) fn mark_metrics_splits_for_deletion(
-        &mut self,
-        split_ids: &[String],
-    ) -> MetastoreResult<bool> {
-        let now = OffsetDateTime::now_utc().unix_timestamp();
-        let mut mutated = false;
-        for split_id in split_ids {
-            if let Some(split) = self.metrics_splits.get_mut(split_id) {
-                split.state = MetricsSplitState::MarkedForDeletion;
-                split.update_timestamp = now;
-                mutated = true;
-            }
-        }
-        Ok(mutated)
-    }
-
-    /// Deletes metrics splits (must be MarkedForDeletion).
-    pub(crate) fn delete_metrics_splits(&mut self, split_ids: &[String]) -> MetastoreResult<bool> {
-        for split_id in split_ids {
-            if let Some(split) = self.metrics_splits.get(split_id)
-                && split.state != MetricsSplitState::MarkedForDeletion
-            {
-                return Err(MetastoreError::FailedPrecondition {
-                    entity: EntityKind::Splits {
-                        split_ids: vec![split_id.clone()],
-                    },
-                    message: format!("split {} is not marked for deletion", split_id),
-                });
-            }
-        }
-        let mut mutated = false;
-        for split_id in split_ids {
-            if self.metrics_splits.remove(split_id).is_some() {
-                mutated = true;
-            }
-        }
-        Ok(mutated)
+        Ok(())
     }
 }
 
-/// Checks if a metrics split matches the query criteria.
-fn metrics_split_matches_query(split: &StoredMetricsSplit, query: &ListMetricsSplitsQuery) -> bool {
+fn stage_parquet_splits(
+    splits_map: &mut HashMap<String, StoredParquetSplit>,
+    splits_metadata: Vec<ParquetSplitMetadata>,
+) -> MetastoreResult<bool> {
+    if splits_metadata.is_empty() {
+        return Ok(false);
+    }
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    for metadata in splits_metadata {
+        let split_id = metadata.split_id.as_str().to_string();
+
+        if let Some(existing) = splits_map.get(&split_id)
+            && existing.state != SplitState::Staged
+        {
+            let entity = EntityKind::Split {
+                split_id: split_id.clone(),
+            };
+            let message = "split is not in Staged state".to_string();
+            return Err(MetastoreError::FailedPrecondition { entity, message });
+        }
+
+        let stored = StoredParquetSplit {
+            metadata,
+            state: SplitState::Staged,
+            update_timestamp: now,
+            create_timestamp: now,
+            node_id: String::new(),
+            delete_opstamp: 0,
+            maturity_timestamp: 0,
+        };
+        splits_map.insert(split_id, stored);
+    }
+    Ok(true)
+}
+
+fn publish_parquet_splits(
+    splits_map: &mut HashMap<String, StoredParquetSplit>,
+    staged_split_ids: &[String],
+    replaced_split_ids: &[String],
+) -> MetastoreResult<bool> {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+
+    // Verify all staged splits exist and are in Staged state
+    for split_id in staged_split_ids {
+        let split = splits_map.get(split_id).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Splits {
+                split_ids: vec![split_id.clone()],
+            })
+        })?;
+        if split.state != SplitState::Staged {
+            return Err(MetastoreError::FailedPrecondition {
+                entity: EntityKind::Splits {
+                    split_ids: vec![split_id.clone()],
+                },
+                message: format!("split {} is not in Staged state", split_id),
+            });
+        }
+    }
+
+    // Transition staged splits to Published
+    for split_id in staged_split_ids {
+        if let Some(split) = splits_map.get_mut(split_id) {
+            split.state = SplitState::Published;
+            split.update_timestamp = now;
+        }
+    }
+
+    // Mark replaced splits for deletion
+    for split_id in replaced_split_ids {
+        if let Some(split) = splits_map.get_mut(split_id) {
+            split.state = SplitState::MarkedForDeletion;
+            split.update_timestamp = now;
+        }
+    }
+
+    Ok(true)
+}
+
+fn list_parquet_splits(
+    splits_map: &HashMap<String, StoredParquetSplit>,
+    query: &ListParquetSplitsQuery,
+) -> Vec<StoredParquetSplit> {
+    splits_map
+        .values()
+        .filter(|split| parquet_split_matches_query(split, query))
+        .cloned()
+        .collect()
+}
+
+fn mark_parquet_splits_for_deletion(
+    splits_map: &mut HashMap<String, StoredParquetSplit>,
+    split_ids: &[String],
+) -> MetastoreResult<bool> {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let mut mutated = false;
+    for split_id in split_ids {
+        if let Some(split) = splits_map.get_mut(split_id) {
+            split.state = SplitState::MarkedForDeletion;
+            split.update_timestamp = now;
+            mutated = true;
+        }
+    }
+    Ok(mutated)
+}
+
+fn delete_parquet_splits(
+    splits_map: &mut HashMap<String, StoredParquetSplit>,
+    split_ids: &[String],
+) -> MetastoreResult<bool> {
+    for split_id in split_ids {
+        if let Some(split) = splits_map.get(split_id)
+            && split.state != SplitState::MarkedForDeletion
+        {
+            return Err(MetastoreError::FailedPrecondition {
+                entity: EntityKind::Splits {
+                    split_ids: vec![split_id.clone()],
+                },
+                message: format!("split {} is not marked for deletion", split_id),
+            });
+        }
+    }
+    let mut mutated = false;
+    for split_id in split_ids {
+        if splits_map.remove(split_id).is_some() {
+            mutated = true;
+        }
+    }
+    Ok(mutated)
+}
+
+/// Checks if a parquet split matches the query criteria.
+fn parquet_split_matches_query(split: &StoredParquetSplit, query: &ListParquetSplitsQuery) -> bool {
     // Filter by state
     if !query.split_states.is_empty() {
         let state_str = split.state.as_str();
