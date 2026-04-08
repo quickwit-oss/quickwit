@@ -16,11 +16,13 @@ use quickwit_actors::ActorContext;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::{
+    ListMetricsSplitsQuery, ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt,
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
     SplitState,
 };
 use quickwit_proto::metastore::{
-    ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreService, MetastoreServiceClient,
+    ListMetricsSplitsRequest, ListSplitsRequest, MarkMetricsSplitsForDeletionRequest,
+    MarkSplitsForDeletionRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -90,4 +92,54 @@ pub async fn run_execute_retention_policy(
     ctx.protect_future(metastore.mark_splits_for_deletion(mark_splits_for_deletion_request))
         .await?;
     Ok(expired_splits)
+}
+
+/// Detect all expired parquet splits based on a retention policy and
+/// mark them as `MarkedForDeletion`.
+pub async fn run_execute_parquet_retention_policy(
+    index_uid: &IndexUid,
+    metastore: MetastoreServiceClient,
+    retention_policy: &RetentionPolicy,
+    ctx: &ActorContext<RetentionPolicyExecutor>,
+) -> anyhow::Result<usize> {
+    let retention_period = retention_policy.retention_period()?;
+    let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+    let max_retention_timestamp = current_timestamp - retention_period.as_secs() as i64;
+
+    let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
+        .with_max_time_range_end(max_retention_timestamp);
+
+    let request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)?;
+    let response = ctx
+        .protect_future(metastore.list_metrics_splits(request))
+        .await?;
+
+    let expired_splits: Vec<quickwit_parquet_engine::split::MetricsSplitRecord> =
+        response.deserialize_splits()?;
+
+    if expired_splits.is_empty() {
+        return Ok(0);
+    }
+
+    let expired_split_ids: Vec<String> = expired_splits
+        .iter()
+        .map(|s| s.metadata.split_id.to_string())
+        .collect();
+
+    info!(
+        index_uid=%index_uid,
+        split_ids=?PrettySample::new(&expired_split_ids, 5),
+        "Marking {} parquet splits for deletion based on retention policy.",
+        expired_split_ids.len()
+    );
+
+    ctx.protect_future(metastore.mark_metrics_splits_for_deletion(
+        MarkMetricsSplitsForDeletionRequest {
+            index_uid: Some(index_uid.clone()),
+            split_ids: expired_split_ids,
+        },
+    ))
+    .await?;
+
+    Ok(expired_splits.len())
 }

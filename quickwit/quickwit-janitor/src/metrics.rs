@@ -13,18 +13,14 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{
-    IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec, new_gauge_vec,
-};
+use quickwit_common::metrics::{IntCounterVec, IntGaugeVec, new_counter_vec, new_gauge_vec};
 
 pub struct JanitorMetrics {
     pub ongoing_num_delete_operations_total: IntGaugeVec<1>,
-    pub gc_deleted_splits: IntCounterVec<1>,
-    pub gc_deleted_bytes: IntCounter,
-    pub gc_runs: IntCounterVec<1>,
-    pub gc_seconds_total: IntCounter,
-    // TODO having a current run duration which is 0|undefined out of run, and returns `now -
-    // start_time` during a run would be nice
+    pub gc_deleted_splits: IntCounterVec<2>,
+    pub gc_deleted_bytes: IntCounterVec<1>,
+    pub gc_runs: IntCounterVec<2>,
+    pub gc_seconds_total: IntCounterVec<1>,
 }
 
 impl Default for JanitorMetrics {
@@ -42,26 +38,28 @@ impl Default for JanitorMetrics {
                 "Total number of splits deleted by the garbage collector.",
                 "quickwit_janitor",
                 &[],
-                ["result"],
+                ["result", "split_type"],
             ),
-            gc_deleted_bytes: new_counter(
+            gc_deleted_bytes: new_counter_vec(
                 "gc_deleted_bytes_total",
                 "Total number of bytes deleted by the garbage collector.",
                 "quickwit_janitor",
                 &[],
+                ["split_type"],
             ),
             gc_runs: new_counter_vec(
                 "gc_runs_total",
                 "Total number of garbage collector execition.",
                 "quickwit_janitor",
                 &[],
-                ["result"],
+                ["result", "split_type"],
             ),
-            gc_seconds_total: new_counter(
+            gc_seconds_total: new_counter_vec(
                 "gc_seconds_total",
                 "Total time spent running the garbage collector",
                 "quickwit_janitor",
                 &[],
+                ["split_type"],
             ),
         }
     }
