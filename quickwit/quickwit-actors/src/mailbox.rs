@@ -521,7 +521,7 @@ mod tests {
             .unwrap();
         // At this point the actor was started and even processed a message entirely.
         let backpressure_micros_counter =
-            IntCounter::new("test_counter", "help for test_counter").unwrap();
+            IntCounter::new("test_counter", "help for test_counter", "", &[]);
         let wait_duration = Duration::from_millis(1);
         let processed = mailbox
             .send_message_with_backpressure_counter(
@@ -548,7 +548,7 @@ mod tests {
             .await
             .unwrap();
         let backpressure_micros_counter =
-            IntCounter::new("test_counter", "help for test_counter").unwrap();
+            IntCounter::new("test_counter", "help for test_counter", "", &[]);
         let wait_duration = Duration::from_millis(1);
         mailbox
             .send_message_with_backpressure_counter(
@@ -580,7 +580,7 @@ mod tests {
             .await
             .unwrap();
         let backpressure_micros_counter =
-            IntCounter::new("test_counter", "help for test_counter").unwrap();
+            IntCounter::new("test_counter", "help for test_counter", "", &[]);
         let start = Instant::now();
         mailbox
             .ask_with_backpressure_counter(Duration::from_millis(1), None)

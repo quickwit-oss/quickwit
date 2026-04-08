@@ -17,11 +17,10 @@ use std::sync::Arc;
 
 use futures::{Future, TryFutureExt};
 use once_cell::sync::Lazy;
-use prometheus::IntGauge;
 use tokio::sync::oneshot;
 use tracing::error;
 
-use crate::metrics::{GaugeGuard, IntGaugeVec, OwnedGaugeGuard, new_gauge_vec};
+use crate::metrics::{GaugeGuard, IntGauge, IntGaugeVec, OwnedGaugeGuard, new_gauge_vec};
 
 /// An executor backed by a thread pool to run CPU-intensive tasks.
 ///

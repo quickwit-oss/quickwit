@@ -7214,6 +7214,8 @@ dependencies = [
  "hyper-util",
  "itertools 0.14.0",
  "once_cell",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "pin-project",
  "pnet",
  "prometheus",
