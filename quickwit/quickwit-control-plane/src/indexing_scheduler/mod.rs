@@ -549,7 +549,10 @@ fn format_indexing_task_map(
     const MAX_INDEXES: usize = 10;
     let mut index_displayed = 0;
     write!(formatter, "{{")?;
-    let mut indexer_iter = indexing_tasks.iter().enumerate();
+    let mut indexer_iter = indexing_tasks
+        .iter()
+        .filter(|(_, tasks)| !tasks.is_empty())
+        .enumerate();
     for (i, (index_name, tasks)) in &mut indexer_iter {
         if i != 0 {
             write!(formatter, ", ")?;

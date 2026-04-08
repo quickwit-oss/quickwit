@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -895,6 +896,7 @@ impl Handler<ObservePipeline> for IndexingService {
         msg: ObservePipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let _slow_handler_guard = SlowHandlerGuard::new("observe_pipeline");
         let pipeline_uid = msg.pipeline_id.pipeline_uid;
         let observation = self.observe_pipeline(&pipeline_uid).await;
         Ok(observation)
@@ -910,6 +912,7 @@ impl Handler<DetachIndexingPipeline> for IndexingService {
         msg: DetachIndexingPipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let _slow_handler_guard = SlowHandlerGuard::new("detach_indexing_pipeline");
         let pipeline_uid = msg.pipeline_id.pipeline_uid;
         let detach_pipeline_result = self.detach_indexing_pipeline(&pipeline_uid).await;
         Ok(detach_pipeline_result)
@@ -925,6 +928,7 @@ impl Handler<DetachMergePipeline> for IndexingService {
         msg: DetachMergePipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let _slow_handler_guard = SlowHandlerGuard::new("detach_merge_pipeline");
         Ok(self.detach_merge_pipeline(&msg.pipeline_id).await)
     }
 }
@@ -941,6 +945,7 @@ impl Handler<SuperviseLoop> for IndexingService {
         _message: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let _slow_handler_guard = SlowHandlerGuard::new("supervise_loop");
         self.handle_supervise().await?;
         ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, SuperviseLoop);
         Ok(())
@@ -969,6 +974,7 @@ impl Handler<SpawnPipeline> for IndexingService {
         message: SpawnPipeline,
         ctx: &ActorContext<Self>,
     ) -> Result<Result<IndexingPipelineId, IndexingError>, ActorExitStatus> {
+        let _slow_handler_guard = SlowHandlerGuard::new("spawn_pipeline");
         Ok(self
             .spawn_pipeline(
                 ctx,
@@ -989,6 +995,7 @@ impl Handler<ApplyIndexingPlanRequest> for IndexingService {
         plan_request: ApplyIndexingPlanRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let _slow_handler_guard = SlowHandlerGuard::new("apply_indexing_plan");
         Ok(self
             .apply_indexing_plan(&plan_request.indexing_tasks, ctx)
             .await
@@ -1014,6 +1021,32 @@ impl Handler<Healthz> for IndexingService {
 struct IndexingPipelineDiff {
     pipelines_to_shutdown: Vec<PipelineUid>,
     pipelines_to_spawn: Vec<IndexingTask>,
+}
+
+/// Logs a warning every 5 seconds until dropped. Useful to identify slow
+/// handlers that might compromise liveness checks.
+pub struct SlowHandlerGuard {
+    _cancel_tx: oneshot::Sender<()>,
+}
+
+impl SlowHandlerGuard {
+    pub fn new(handler_name: &'static str) -> Self {
+        let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+        let start = Instant::now();
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                        warn!(handler=handler_name, elapsed_secs=start.elapsed().as_secs(), "slow indexing service handler");
+                    }
+                    _ = &mut cancel_rx => { break; }
+                }
+            }
+        });
+        Self {
+            _cancel_tx: cancel_tx,
+        }
+    }
 }
 
 #[cfg(test)]
