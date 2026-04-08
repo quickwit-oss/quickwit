@@ -25,7 +25,9 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_common::pretty::PrettySample;
-use quickwit_config::{FileSourceParams, SourceParams, indexing_pipeline_params_fingerprint};
+use quickwit_config::{
+    FileSourceParams, SourceParams, disable_ingest_v1, indexing_pipeline_params_fingerprint,
+};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
     PIPELINE_THROUGHPUT,
@@ -218,7 +220,11 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             }
 
             SourceParams::IngestApi => {
-                // TODO ingest v1 is scheduled differently
+                if disable_ingest_v1() {
+                    // Existing indexes might still have the _ingest-api-source
+                    continue;
+                }
+                // Note: ingest v1 is scheduled differently
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::IngestV1,
