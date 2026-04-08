@@ -34,9 +34,10 @@ use quickwit_storage::Storage;
 use tokio::sync::{Semaphore, SemaphorePermit};
 use tracing::{Instrument, Span, debug, info, instrument, warn};
 
+use super::ParquetSplitBatch;
 use crate::actors::sequencer::SequencerCommand;
 use crate::actors::uploader::{SplitsUpdateMailbox, SplitsUpdateSender};
-use crate::actors::{ParquetPublisher, ParquetSplitBatch, UploaderCounters, UploaderType};
+use crate::actors::{Publisher, UploaderCounters, UploaderType};
 use crate::metrics::INDEXER_METRICS;
 use crate::models::ParquetSplitsUpdate;
 
@@ -53,7 +54,7 @@ pub struct ParquetUploader {
     uploader_type: UploaderType,
     metastore: MetastoreServiceClient,
     split_store: Arc<dyn Storage>,
-    split_update_mailbox: SplitsUpdateMailbox<ParquetPublisher>,
+    split_update_mailbox: SplitsUpdateMailbox<Publisher>,
     max_concurrent_uploads: usize,
     counters: UploaderCounters,
 }
@@ -64,7 +65,7 @@ impl ParquetUploader {
         uploader_type: UploaderType,
         metastore: MetastoreServiceClient,
         split_store: Arc<dyn Storage>,
-        split_update_mailbox: SplitsUpdateMailbox<ParquetPublisher>,
+        split_update_mailbox: SplitsUpdateMailbox<Publisher>,
         max_concurrent_uploads: usize,
     ) -> Self {
         Self {
@@ -406,7 +407,7 @@ mod tests {
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+            universe.create_test_mailbox::<Publisher>();
 
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
@@ -492,7 +493,7 @@ mod tests {
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+            universe.create_test_mailbox::<Publisher>();
 
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
@@ -577,7 +578,7 @@ mod tests {
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+            universe.create_test_mailbox::<Publisher>();
 
         let mut mock_metastore = MockMetastoreService::new();
         // Should NOT call stage_metrics_splits for empty batch
@@ -633,9 +634,9 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
 
         // Create a simple receiver actor to collect ParquetSplitsUpdate messages
-        // We use a test mailbox for ParquetPublisher to capture what would be sent
+        // We use a test mailbox for Publisher to capture what would be sent
         let (publisher_mailbox, publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+            universe.create_test_mailbox::<Publisher>();
 
         // Create sequencer that forwards to publisher
         let sequencer = Sequencer::new(publisher_mailbox);

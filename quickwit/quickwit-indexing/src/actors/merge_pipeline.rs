@@ -40,7 +40,7 @@ use tracing::{debug, error, info, instrument};
 
 use super::publisher::DisconnectMergePlanner;
 use super::{MergeSchedulerService, RunFinalizeMergePolicyAndQuit};
-use crate::actors::indexing_pipeline::wait_duration_before_retry;
+use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader, UploaderType};

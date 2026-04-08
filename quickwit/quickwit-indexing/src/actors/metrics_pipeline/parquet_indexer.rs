@@ -34,7 +34,7 @@ use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, warn};
 use ulid::Ulid;
 
-use crate::actors::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
+use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
 use crate::models::{NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).
@@ -552,9 +552,8 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::{
-        ParquetPackager, ParquetPublisher, ParquetUploader, SplitsUpdateMailbox, UploaderType,
-    };
+    use crate::actors::metrics_pipeline::{ParquetPackager, ParquetUploader};
+    use crate::actors::{Publisher, SplitsUpdateMailbox, UploaderType};
 
     /// Create a test ParquetUploader and return its mailbox.
     fn create_test_uploader(
@@ -563,7 +562,7 @@ mod tests {
         let mock_metastore = MockMetastoreService::new();
         let ram_storage = Arc::new(RamStorage::default());
         let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+            universe.create_test_mailbox::<Publisher>();
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
@@ -588,7 +587,7 @@ mod tests {
 
         let ram_storage = Arc::new(RamStorage::default());
         let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+            universe.create_test_mailbox::<Publisher>();
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
@@ -917,7 +916,7 @@ mod tests {
 
         let ram_storage = Arc::new(RamStorage::default());
         let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+            universe.create_test_mailbox::<Publisher>();
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),

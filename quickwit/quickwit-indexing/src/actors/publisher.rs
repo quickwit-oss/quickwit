@@ -23,12 +23,9 @@ use quickwit_proto::metastore::{
 use serde::Serialize;
 use tracing::{info, instrument};
 
-use crate::actors::{DocProcessor, MergePlanner, ParquetDocProcessor, Processor};
+use crate::actors::MergePlanner;
 use crate::models::{NewSplits, ParquetSplitsUpdate, SplitsUpdate};
 use crate::source::{SourceActor, SuggestTruncate};
-
-/// Type alias for the metrics publisher specialization.
-pub type ParquetPublisher = Publisher<ParquetDocProcessor>;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct PublisherCounters {
@@ -59,34 +56,22 @@ impl PublisherType {
 #[derive(Debug)]
 pub(crate) struct DisconnectMergePlanner;
 
-pub struct Publisher<P: Processor = DocProcessor> {
+#[derive(Clone)]
+pub struct Publisher {
     publisher_type: PublisherType,
     metastore: MetastoreServiceClient,
     merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
-    source_mailbox_opt: Option<Mailbox<SourceActor<P>>>,
+    source_mailbox_opt: Option<Mailbox<SourceActor>>,
     counters: PublisherCounters,
 }
 
-// Manual Clone impl to avoid a spurious `P: Clone` bound from #[derive(Clone)].
-impl<P: Processor> Clone for Publisher<P> {
-    fn clone(&self) -> Self {
-        Self {
-            publisher_type: self.publisher_type,
-            metastore: self.metastore.clone(),
-            merge_planner_mailbox_opt: self.merge_planner_mailbox_opt.clone(),
-            source_mailbox_opt: self.source_mailbox_opt.clone(),
-            counters: self.counters.clone(),
-        }
-    }
-}
-
-impl<P: Processor> Publisher<P> {
+impl Publisher {
     pub fn new(
         publisher_type: PublisherType,
         metastore: MetastoreServiceClient,
         merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
-        source_mailbox_opt: Option<Mailbox<SourceActor<P>>>,
-    ) -> Publisher<P> {
+        source_mailbox_opt: Option<Mailbox<SourceActor>>,
+    ) -> Publisher {
         Publisher {
             publisher_type,
             metastore,
@@ -107,9 +92,9 @@ fn serialize_checkpoint_delta(
         .context("failed to serialize `IndexCheckpointDelta`")
 }
 
-async fn suggest_truncate<A: Actor, P: Processor>(
-    ctx: &ActorContext<A>,
-    source_mailbox_opt: &Option<Mailbox<SourceActor<P>>>,
+async fn suggest_truncate(
+    ctx: &ActorContext<Publisher>,
+    source_mailbox_opt: &Option<Mailbox<SourceActor>>,
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
 ) {
     if let Some(source_mailbox) = source_mailbox_opt.as_ref()
@@ -125,7 +110,7 @@ async fn suggest_truncate<A: Actor, P: Processor>(
 }
 
 #[async_trait]
-impl<P: Processor> Actor for Publisher<P> {
+impl Actor for Publisher {
     type ObservableState = PublisherCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
@@ -146,7 +131,7 @@ impl<P: Processor> Actor for Publisher<P> {
 }
 
 #[async_trait]
-impl<P: Processor> Handler<DisconnectMergePlanner> for Publisher<P> {
+impl Handler<DisconnectMergePlanner> for Publisher {
     type Reply = ();
 
     async fn handle(
@@ -161,7 +146,7 @@ impl<P: Processor> Handler<DisconnectMergePlanner> for Publisher<P> {
 }
 
 #[async_trait]
-impl Handler<SplitsUpdate> for Publisher<DocProcessor> {
+impl Handler<SplitsUpdate> for Publisher {
     type Reply = ();
 
     #[instrument(name="publisher", parent=split_update.parent_span.id(),  skip(self, ctx))]
@@ -234,7 +219,7 @@ impl Handler<SplitsUpdate> for Publisher<DocProcessor> {
 }
 
 #[async_trait]
-impl Handler<ParquetSplitsUpdate> for Publisher<ParquetDocProcessor> {
+impl Handler<ParquetSplitsUpdate> for Publisher {
     type Reply = ();
 
     #[instrument(name = "parquet_publisher", parent = split_update.parent_span.id(), skip(self, ctx))]
@@ -595,7 +580,7 @@ mod parquet_publisher_tests {
             .times(1)
             .returning(|_| Ok(EmptyResponse {}));
 
-        let publisher = ParquetPublisher::new(
+        let publisher = Publisher::new(
             PublisherType::ParquetPublisher,
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
@@ -645,7 +630,7 @@ mod parquet_publisher_tests {
             .times(1)
             .returning(|_| Ok(EmptyResponse {}));
 
-        let publisher = ParquetPublisher::new(
+        let publisher = Publisher::new(
             PublisherType::ParquetPublisher,
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
@@ -683,7 +668,7 @@ mod parquet_publisher_tests {
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore.expect_publish_metrics_splits().never();
 
-        let publisher = ParquetPublisher::new(
+        let publisher = Publisher::new(
             PublisherType::ParquetPublisher,
             MetastoreServiceClient::from_mock(mock_metastore),
             None,

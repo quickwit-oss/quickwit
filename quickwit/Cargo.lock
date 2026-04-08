@@ -7633,7 +7633,6 @@ dependencies = [
  "chrono",
  "parquet",
  "proptest",
- "prost 0.14.3",
  "quickwit-common",
  "quickwit-proto",
  "sea-query",

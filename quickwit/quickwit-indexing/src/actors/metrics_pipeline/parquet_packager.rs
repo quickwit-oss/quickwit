@@ -35,8 +35,8 @@ use serde::Serialize;
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
-use crate::actors::ParquetUploader;
-use crate::actors::parquet_indexer::ParquetSplitBatch;
+use super::ParquetUploader;
+use super::parquet_indexer::ParquetSplitBatch;
 use crate::models::PublishLock;
 
 /// A concatenated RecordBatch ready to be written to a Parquet file.
@@ -244,7 +244,7 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::{ParquetPublisher, SplitsUpdateMailbox, UploaderType};
+    use crate::actors::{Publisher, SplitsUpdateMailbox, UploaderType};
 
     fn create_test_uploader(
         universe: &Universe,
@@ -256,7 +256,7 @@ mod tests {
 
         let ram_storage = Arc::new(RamStorage::default());
         let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+            universe.create_test_mailbox::<Publisher>();
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
