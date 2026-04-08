@@ -238,8 +238,9 @@ pub fn setup_logging_and_tracing(
     ))
 }
 
+/// Set up DogStatsD metrics exporter and invariant recorder.
 #[cfg(not(test))]
-pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
+pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
     // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
     // deprecated and can be removed after 2026-04-01.
     let host: String = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_HOST", false)
@@ -276,21 +277,13 @@ pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
         .context("failed to parse DogStatsD server address")?
         .install()
         .context("failed to register DogStatsD exporter")?;
+    quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
     Ok(())
 }
 
-/// Register the invariant recorder that emits DogStatsD counters.
-///
-/// Must be called after [`setup_dogstatsd_exporter`] so the `metrics` crate
-/// has a registered recorder.
 #[cfg(not(test))]
-pub fn setup_invariant_recorder() {
-    quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
-}
-
-#[cfg(not(test))]
-fn invariant_recorder(id: quickwit_dst::invariants::InvariantId, passed: bool) {
-    let name = id.as_str();
+fn invariant_recorder(invariant_id: quickwit_dst::invariants::InvariantId, passed: bool) {
+    let name = invariant_id.as_str();
     metrics::counter!("pomsky.invariant.checked", "invariant" => name).increment(1);
     if !passed {
         metrics::counter!("pomsky.invariant.violated", "invariant" => name).increment(1);

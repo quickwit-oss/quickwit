@@ -178,6 +178,16 @@ impl PgMetricsSplit {
             self.window_start
         );
 
+        // SS-5 continued: window_duration_secs must match.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            metadata.window_duration_secs()
+                == self.window_duration_secs.unwrap_or(0) as u32,
+            ": window_duration_secs mismatch between JSON ({}) and SQL column ({:?})",
+            metadata.window_duration_secs(),
+            self.window_duration_secs
+        );
+
         // SS-4 (SortSchema.tla): sort_fields is immutable after write.
         // We can't verify immutability at read time (no history available), but
         // we verify the row_keys_proto round-trips consistently.
