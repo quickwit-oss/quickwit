@@ -29,8 +29,14 @@ pub type CompactionResult<T> = std::result::Result<T, CompactionError>;
 #[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactionError {
-    #[error("{0}")]
+    #[error("internal error: {0}")]
     Internal(String),
+    #[error("request timed out: {0}")]
+    Timeout(String),
+    #[error("too many requests")]
+    TooManyRequests,
+    #[error("service unavailable: {0}")]
+    Unavailable(String),
 }
 
 impl ServiceError for CompactionError {
@@ -40,6 +46,9 @@ impl ServiceError for CompactionError {
                 rate_limited_error!(limit_per_min = 6, "compaction error: {err_msg}");
                 ServiceErrorCode::Internal
             }
+            Self::Timeout(_) => ServiceErrorCode::Timeout,
+            Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
+            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
 }
@@ -50,18 +59,18 @@ impl GrpcServiceError for CompactionError {
         Self::Internal(message)
     }
     fn new_timeout(message: String) -> Self {
-        Self::Internal(message)
+        Self::Timeout(message)
     }
     fn new_too_many_requests() -> Self {
-        Self::Internal("too many requests".to_string())
+        Self::TooManyRequests
     }
     fn new_unavailable(message: String) -> Self {
-        Self::Internal(message)
+        Self::Unavailable(message)
     }
 }
 
 impl MakeLoadShedError for CompactionError {
     fn make_load_shed_error() -> Self {
-        CompactionError::Internal("too many requests".to_string())
+        CompactionError::TooManyRequests
     }
 }

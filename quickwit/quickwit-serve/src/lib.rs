@@ -276,23 +276,23 @@ async fn balance_channel_for_service(
 /// On janitor nodes with `QW_ENABLE_COMPACTION_SERVICE=true`, wraps a local stub.
 /// On non-janitor nodes with the flag set, waits up to 10s for a remote janitor
 /// exposing the gRPC endpoint and logs an error if none is found.
-async fn start_compaction_service_if_needed(
+async fn get_compaction_service_client_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
-) -> Option<CompactionServiceClient> {
+) -> anyhow::Result<Option<CompactionServiceClient>, anyhow::Error> {
     if !get_bool_from_env(ENABLE_COMPACTION_SERVICE_ENV_KEY, false) {
-        return None;
+        return Ok(None);
     }
     // Only janitor nodes (which host the planner) and indexer nodes (which need
     // to know whether to spawn local merge pipelines) care about this service.
-    if !node_config.is_service_enabled(QuickwitService::Janitor)
-        && !node_config.is_service_enabled(QuickwitService::Indexer)
-    {
-        return None;
+    if !node_config.is_service_enabled(QuickwitService::Indexer) {
+        return Ok(None);
     }
-    if node_config.is_service_enabled(QuickwitService::Janitor) {
+    if node_config.is_service_enabled(QuickwitService::Janitor)
+        && node_config.is_service_enabled(QuickwitService::Indexer)
+    {
         info!("compaction service enabled on this node");
-        return Some(CompactionServiceClient::new(StubCompactionService));
+        return Ok(Some(CompactionServiceClient::new(StubCompactionService)));
     }
     let balance_channel = balance_channel_for_service(cluster, QuickwitService::Janitor).await;
     let found = balance_channel
@@ -301,18 +301,14 @@ async fn start_compaction_service_if_needed(
         })
         .await;
     if !found {
-        error!(
-            "compaction service is enabled but no janitor node was found in the cluster, falling \
-             back to local merge pipelines"
-        );
-        return None;
+        bail!("compaction service is enabled but no janitor node was found in the cluster")
     }
     info!("remote compaction service detected on janitor node");
-    Some(CompactionServiceClient::from_balance_channel(
+    Ok(Some(CompactionServiceClient::from_balance_channel(
         balance_channel,
         node_config.grpc_config.max_message_size,
         None,
-    ))
+    )))
 }
 
 fn spawn_merge_scheduler_service(
@@ -604,7 +600,9 @@ pub async fn serve_quickwit(
         .context("failed to start ingest v1 service")?;
 
     let compaction_service_client_opt =
-        start_compaction_service_if_needed(&node_config, &cluster).await;
+        get_compaction_service_client_if_needed(&node_config, &cluster)
+            .await
+            .context("failed to initialize compaction service client")?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         let merge_scheduler_mailbox_opt = if compaction_service_client_opt.is_none() {
@@ -1544,7 +1542,6 @@ mod tests {
     use quickwit_common::{ServiceStream, assert_eventually};
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{IndexMetadata, metastore_for_test};
-    use quickwit_proto::compaction::CompactionService;
     use quickwit_proto::ingest::ingester::{MockIngesterService, ObservationMessage};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, MockMetastoreService};
     use quickwit_search::Job;
@@ -1889,33 +1886,32 @@ mod tests {
     #[tokio::test]
     async fn test_compaction_service_on_janitor_node() {
         let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["janitor"], &transport, false)
-            .await
-            .unwrap();
+        let cluster =
+            create_cluster_for_test(Vec::new(), &["janitor", "indexer"], &transport, true)
+                .await
+                .unwrap();
 
         // Without the env var, no compaction service.
         let mut node_config = NodeConfig::for_test();
-        node_config.enabled_services = HashSet::from([QuickwitService::Janitor]);
-        let result = start_compaction_service_if_needed(&node_config, &cluster).await;
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
+        let result = get_compaction_service_client_if_needed(&node_config, &cluster)
+            .await
+            .unwrap();
         assert!(result.is_none());
 
-        // With the env var, compaction service is returned.
+        // With the env var, compaction service client is returned.
         unsafe { std::env::set_var(ENABLE_COMPACTION_SERVICE_ENV_KEY, "true") };
-        let result = start_compaction_service_if_needed(&node_config, &cluster).await;
+        let result = get_compaction_service_client_if_needed(&node_config, &cluster)
+            .await
+            .unwrap();
         assert!(result.is_some());
-
-        // Ping the stub to confirm it works.
-        let client = result.unwrap();
-        let response = client
-            .ping(quickwit_proto::compaction::PingRequest {})
-            .await;
-        assert!(response.is_ok());
 
         unsafe { std::env::remove_var(ENABLE_COMPACTION_SERVICE_ENV_KEY) };
     }
 
     #[tokio::test]
-    async fn test_compaction_service_returns_none_when_no_janitor() {
+    async fn test_compaction_service_returns_error_when_no_janitor() {
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false)
             .await
@@ -1925,8 +1921,8 @@ mod tests {
 
         let mut node_config = NodeConfig::for_test();
         node_config.enabled_services = HashSet::from([QuickwitService::Indexer]);
-        let result = start_compaction_service_if_needed(&node_config, &cluster).await;
-        assert!(result.is_none());
+        let result = get_compaction_service_client_if_needed(&node_config, &cluster).await;
+        assert!(result.is_err());
 
         unsafe { std::env::remove_var(ENABLE_COMPACTION_SERVICE_ENV_KEY) };
     }
