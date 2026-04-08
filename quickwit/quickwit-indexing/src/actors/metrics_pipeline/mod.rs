@@ -42,4 +42,4 @@ pub use parquet_doc_processor::{
 pub use parquet_indexer::{ParquetIndexer, ParquetIndexerCounters, ParquetSplitBatch};
 pub use parquet_packager::{ParquetBatchForPackager, ParquetPackager, ParquetPackagerCounters};
 pub use parquet_uploader::ParquetUploader;
-pub use pipeline::MetricsPipeline;
+pub use pipeline::{MetricsPipeline, MetricsPipelineParams};

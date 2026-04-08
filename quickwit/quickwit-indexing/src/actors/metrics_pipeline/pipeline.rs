@@ -22,6 +22,7 @@
 //! ```
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
@@ -32,13 +33,17 @@ use quickwit_actors::{
 };
 use quickwit_common::KillSwitch;
 use quickwit_common::metrics::OwnedGaugeGuard;
+use quickwit_common::pubsub::EventBroker;
+use quickwit_common::temp_dir::TempDirectory;
+use quickwit_config::{IndexingSettings, SourceConfig};
+use quickwit_ingest::IngesterPool;
+use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_proto::types::ShardId;
-use quickwit_storage::Storage;
+use quickwit_storage::{Storage, StorageResolver};
 use tracing::{debug, error, info, instrument};
 
 use super::{ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader};
-use crate::actors::log_pipeline::IndexingPipelineParams;
 use crate::actors::pipeline_shared::{
     SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop,
     wait_duration_before_retry,
@@ -75,8 +80,23 @@ impl MetricsPipelineHandles {
     }
 }
 
+pub struct MetricsPipelineParams {
+    pub pipeline_id: IndexingPipelineId,
+    pub metastore: MetastoreServiceClient,
+    pub storage: Arc<dyn Storage>,
+    pub indexing_directory: TempDirectory,
+    pub indexing_settings: IndexingSettings,
+    pub max_concurrent_split_uploads: usize,
+    pub source_config: SourceConfig,
+    pub source_storage_resolver: StorageResolver,
+    pub ingester_pool: IngesterPool,
+    pub queues_dir_path: std::path::PathBuf,
+    pub params_fingerprint: u64,
+    pub event_broker: EventBroker,
+}
+
 pub struct MetricsPipeline {
-    params: IndexingPipelineParams,
+    params: MetricsPipelineParams,
     previous_generations_statistics: IndexingStatistics,
     statistics: IndexingStatistics,
     handles_opt: Option<MetricsPipelineHandles>,
@@ -114,7 +134,7 @@ impl Actor for MetricsPipeline {
 }
 
 impl MetricsPipeline {
-    pub fn new(params: IndexingPipelineParams) -> Self {
+    pub fn new(params: MetricsPipelineParams) -> Self {
         let indexing_pipelines_gauge = crate::metrics::INDEXER_METRICS
             .indexing_pipelines
             .with_label_values([&params.pipeline_id.index_uid.index_id]);
@@ -316,7 +336,7 @@ impl MetricsPipeline {
             self.params.metastore.clone(),
             self.params.storage.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
-            self.params.max_concurrent_split_uploads_index,
+            self.params.max_concurrent_split_uploads,
         );
         let (uploader_mailbox, uploader_handle) = ctx
             .spawn_actor()

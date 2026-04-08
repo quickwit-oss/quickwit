@@ -64,7 +64,7 @@ use quickwit_common::is_metrics_index;
 use super::log_pipeline::{
     FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
 };
-use super::{MergePlanner, MergeSchedulerService, MetricsPipeline};
+use super::{MergePlanner, MergeSchedulerService, MetricsPipeline, MetricsPipelineParams};
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
@@ -509,34 +509,13 @@ impl IndexingService {
                 IndexingError::Internal(message)
             })?;
 
-        // Metrics pipelines reuse IndexingPipelineParams but don't need
-        // merge-related or doc-mapper fields. We fill them with defaults /
-        // dummies so the struct can be constructed. The MetricsPipeline actor
-        // ignores these fields.
-        let merge_policy =
-            crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
-        let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
-            .map_err(|error| IndexingError::Internal(error.to_string()))?;
-        let split_store = IndexingSplitStore::new(storage.clone(), self.local_split_store.clone());
-
-        // No merge pipeline is created for metrics indexes.
-        // We create a dummy merge planner mailbox that will never receive messages.
-        let (merge_planner_mailbox, _) = ctx.spawn_ctx().create_mailbox("MergePlanner", quickwit_actors::QueueCapacity::Bounded(0));
-
-        let pipeline_params = IndexingPipelineParams {
+        let pipeline_params = MetricsPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
             storage,
-            doc_mapper,
             indexing_directory,
             indexing_settings: index_config.indexing_settings.clone(),
-            split_store,
-            max_concurrent_split_uploads_index: self.max_concurrent_split_uploads,
-            cooperative_indexing_permits: None,
-            merge_policy,
-            retention_policy: None,
-            max_concurrent_split_uploads_merge: 0,
-            merge_planner_mailbox,
+            max_concurrent_split_uploads: self.max_concurrent_split_uploads,
             source_config,
             ingester_pool: self.ingester_pool.clone(),
             queues_dir_path: self.queue_dir_path.clone(),

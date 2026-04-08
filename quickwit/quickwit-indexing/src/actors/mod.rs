@@ -28,11 +28,11 @@ pub use log_pipeline::{
     merge_split_attrs, schedule_merge,
 };
 pub(crate) use log_pipeline::{MergePlanner, RunFinalizeMergePolicyAndQuit};
-pub use log_pipeline::{MergePermit};
+pub use log_pipeline::MergePermit;
 pub use metrics_pipeline::{
-    MetricsPipeline, ParquetDocProcessor, ParquetDocProcessorCounters, ParquetDocProcessorError,
-    ParquetIndexer, ParquetIndexerCounters, ParquetPackager, ParquetSplitBatch, ParquetUploader,
-    is_arrow_ipc,
+    MetricsPipeline, MetricsPipelineParams, ParquetDocProcessor, ParquetDocProcessorCounters,
+    ParquetDocProcessorError, ParquetIndexer, ParquetIndexerCounters, ParquetPackager,
+    ParquetSplitBatch, ParquetUploader, is_arrow_ipc,
 };
 pub use publisher::{Publisher, PublisherCounters, PublisherType};
 pub use quickwit_proto::indexing::IndexingError;
