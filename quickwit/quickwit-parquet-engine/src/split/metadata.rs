@@ -199,6 +199,8 @@ struct MetricsSplitMetadataSerde {
     low_cardinality_tags: HashMap<String, HashSet<String>>,
     high_cardinality_tag_keys: HashSet<String>,
     created_at: SystemTime,
+
+    #[serde(default)]
     parquet_file: String,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
