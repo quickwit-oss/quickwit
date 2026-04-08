@@ -7417,7 +7417,6 @@ dependencies = [
  "mockall",
  "oneshot",
  "openssl",
- "parquet",
  "percent-encoding",
  "proptest",
  "prost 0.14.3",

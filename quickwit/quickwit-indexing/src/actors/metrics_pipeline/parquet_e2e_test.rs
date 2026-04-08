@@ -15,7 +15,7 @@
 //! End-to-end tests for the metrics pipeline.
 //!
 //! These tests wire up the full metrics pipeline:
-//! ParquetDocProcessor → ParquetIndexer → ParquetUploader → ParquetPublisher
+//! ParquetDocProcessor → ParquetIndexer → ParquetUploader → Publisher
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -37,8 +37,8 @@ use quickwit_proto::types::IndexUid;
 use quickwit_storage::RamStorage;
 
 use crate::actors::{
-    ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetPublisher, ParquetUploader,
-    PublisherType, SplitsUpdateMailbox, UploaderType,
+    ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader, Publisher,
+    SplitsUpdateMailbox, UploaderType,
 };
 use crate::models::RawDocBatch;
 
@@ -47,7 +47,7 @@ use crate::models::RawDocBatch;
 // =============================================================================
 
 async fn wait_for_published_splits(
-    publisher_handle: &ActorHandle<ParquetPublisher>,
+    publisher_handle: &ActorHandle<Publisher>,
     expected_splits: u64,
 ) -> anyhow::Result<()> {
     wait_until_predicate(
@@ -153,8 +153,9 @@ async fn test_metrics_pipeline_e2e() {
         quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore);
     let ram_storage = Arc::new(RamStorage::default());
 
-    let publisher = ParquetPublisher::new(
-        PublisherType::ParquetPublisher,
+    let publisher = Publisher::new(
+        super::METRICS_PUBLISHER_NAME,
+        quickwit_actors::QueueCapacity::Bounded(1),
         metastore_client.clone(),
         None,
         None,

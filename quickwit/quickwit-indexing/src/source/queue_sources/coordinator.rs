@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use itertools::Itertools;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::ActorExitStatus;
 use quickwit_common::rate_limited_error;
 use quickwit_config::{FileSourceMessageType, FileSourceSqs};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
@@ -34,9 +34,8 @@ use super::local_state::QueueLocalState;
 use super::message::{MessageType, PreProcessingError, ReadyMessage};
 use super::shared_state::{QueueSharedState, checkpoint_messages};
 use super::visibility::{VisibilitySettings, spawn_visibility_task};
-use crate::actors::Processor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
-use crate::source::{SourceContext, SourceRuntime};
+use crate::source::{ProcessorMailbox, SourceContext, SourceRuntime};
 
 /// Maximum duration that the `emit_batches()` callback can wait for
 /// `queue.receive()` calls. If too small, the actor loop will spin
@@ -146,27 +145,23 @@ impl QueueCoordinator {
         ))
     }
 
-    pub async fn initialize<P: Processor>(
+    pub async fn initialize(
         &mut self,
-        doc_processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        doc_processor_mailbox: &ProcessorMailbox,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let publish_lock = self.publish_lock.clone();
-        ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
+        doc_processor_mailbox
+            .send_publish_lock(NewPublishLock(publish_lock), ctx)
             .await?;
-        ctx.send_message(
-            doc_processor_mailbox,
-            NewPublishToken(self.publish_token.clone()),
-        )
-        .await?;
+        doc_processor_mailbox
+            .send_publish_token(NewPublishToken(self.publish_token.clone()), ctx)
+            .await?;
         Ok(())
     }
 
     /// Polls messages from the queue and prepares them for processing
-    async fn poll_messages<P: Processor>(
-        &mut self,
-        ctx: &SourceContext<P>,
-    ) -> Result<(), ActorExitStatus> {
+    async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         let raw_messages = self
             .queue_receiver
             .receive(1, self.visibility_settings.deadline_for_receive)
@@ -252,10 +247,10 @@ impl QueueCoordinator {
         Ok(())
     }
 
-    pub async fn emit_batches<P: Processor>(
+    pub async fn emit_batches(
         &mut self,
-        doc_processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        doc_processor_mailbox: &ProcessorMailbox,
+        ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         if let Some(in_progress_ref) = self.local_state.read_in_progress_mut() {
             // TODO: should we kill the publish lock if the message visibility extension failed?
@@ -266,7 +261,7 @@ impl QueueCoordinator {
             self.observable_state.num_lines_processed += batch_builder.docs.len() as u64;
             self.observable_state.num_bytes_processed += batch_builder.num_bytes;
             doc_processor_mailbox
-                .send_message(batch_builder.build())
+                .send_raw_doc_batch(batch_builder.build(), ctx)
                 .await?;
             if in_progress_ref.batch_reader.is_eof() {
                 self.local_state.drop_currently_read().await?;
@@ -293,10 +288,10 @@ impl QueueCoordinator {
         Ok(Duration::ZERO)
     }
 
-    pub async fn suggest_truncate<P: Processor>(
+    pub async fn suggest_truncate(
         &mut self,
         checkpoint: SourceCheckpoint,
-        _ctx: &SourceContext<P>,
+        _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         let committed_partition_ids = checkpoint
             .iter()
@@ -335,7 +330,7 @@ mod tests {
     use crate::source::queue_sources::memory_queue::MemoryQueueForTests;
     use crate::source::queue_sources::message::PreProcessedPayload;
     use crate::source::queue_sources::shared_state::shared_state_for_tests::init_state;
-    use crate::source::{BATCH_NUM_BYTES_LIMIT, SourceActor};
+    use crate::source::{BATCH_NUM_BYTES_LIMIT, ProcessorMailbox, SourceActor};
 
     fn setup_coordinator(
         queue: Arc<MemoryQueueForTests>,
@@ -375,17 +370,18 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
+        let processor_mailbox = ProcessorMailbox::new(doc_processor_mailbox);
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
         coordinator
-            .initialize(&doc_processor_mailbox, &ctx)
+            .initialize(&processor_mailbox, &ctx)
             .await
             .unwrap();
 
         coordinator
-            .emit_batches(&doc_processor_mailbox, &ctx)
+            .emit_batches(&processor_mailbox, &ctx)
             .await
             .unwrap();
 
@@ -398,7 +394,7 @@ mod tests {
         // future.
         for _ in 0..(messages.len() * 4) {
             coordinator
-                .emit_batches(&doc_processor_mailbox, &ctx)
+                .emit_batches(&processor_mailbox, &ctx)
                 .await
                 .unwrap();
         }

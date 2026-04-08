@@ -16,14 +16,13 @@ use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::ActorExitStatus;
 use quickwit_common::Progress;
 use quickwit_proto::metastore::SourceType;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use super::{BATCH_NUM_BYTES_LIMIT, BatchBuilder};
-use crate::actors::Processor;
-use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
+use crate::source::{ProcessorMailbox, Source, SourceContext, SourceRuntime, TypedSourceFactory};
 
 pub struct StdinBatchReader {
     reader: BufReader<tokio::io::Stdin>,
@@ -76,20 +75,20 @@ impl fmt::Debug for StdinSource {
 }
 
 #[async_trait]
-impl<P: Processor> Source<P> for StdinSource {
+impl Source for StdinSource {
     async fn emit_batches(
         &mut self,
-        processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        processor_mailbox: &ProcessorMailbox,
+        ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let batch_builder = self.reader.read_batch(ctx.progress()).await?;
         self.num_bytes_processed += batch_builder.num_bytes;
         self.num_lines_processed += batch_builder.docs.len() as u64;
         processor_mailbox
-            .send_message(batch_builder.build())
+            .send_raw_doc_batch(batch_builder.build(), ctx)
             .await?;
         if self.reader.is_eof() {
-            ctx.send_exit_with_success(processor_mailbox).await?;
+            processor_mailbox.send_exit_with_success(ctx).await?;
             return Err(ActorExitStatus::Success);
         }
 

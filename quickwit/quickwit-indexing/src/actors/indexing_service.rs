@@ -28,6 +28,8 @@ use quickwit_actors::{
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::io::Limiter;
+#[cfg(feature = "metrics")]
+use quickwit_common::is_metrics_index;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::{io, temp_dir};
 use quickwit_config::{
@@ -60,8 +62,8 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
-use super::{MergePlanner, MergeSchedulerService};
-use crate::actors::merge_pipeline::FinishPendingMergesAndShutdownPipeline;
+use super::pipeline_shared::{ActorPipeline, PipelineHandle};
+use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
@@ -85,11 +87,7 @@ struct MergePipelineHandle {
     handle: ActorHandle<MergePipeline>,
 }
 
-struct PipelineHandle {
-    mailbox: Mailbox<IndexingPipeline>,
-    handle: ActorHandle<IndexingPipeline>,
-    indexing_pipeline_id: IndexingPipelineId,
-}
+pub type BoxPipelineHandle = Box<dyn PipelineHandle>;
 
 /// The indexing service is (single) actor service running on indexer and in charge
 /// of executing the indexing plans received from the control plane.
@@ -99,22 +97,22 @@ struct PipelineHandle {
 /// are respectively missing or extranumerous.
 pub struct IndexingService {
     node_id: NodeId,
-    indexing_root_directory: PathBuf,
-    queue_dir_path: PathBuf,
+    pub(crate) indexing_root_directory: PathBuf,
+    pub(crate) queue_dir_path: PathBuf,
     cluster: Cluster,
-    metastore: MetastoreServiceClient,
+    pub(crate) metastore: MetastoreServiceClient,
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
     merge_scheduler_service: Mailbox<MergeSchedulerService>,
-    ingester_pool: IngesterPool,
-    storage_resolver: StorageResolver,
-    indexing_pipelines: HashMap<PipelineUid, PipelineHandle>,
+    pub(crate) ingester_pool: IngesterPool,
+    pub(crate) storage_resolver: StorageResolver,
+    indexing_pipelines: HashMap<PipelineUid, BoxPipelineHandle>,
     counters: IndexingServiceCounters,
     local_split_store: Arc<IndexingSplitCache>,
-    max_concurrent_split_uploads: usize,
+    pub(crate) max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
     merge_io_throughput_limiter_opt: Option<Limiter>,
-    event_broker: EventBroker,
+    pub(crate) event_broker: EventBroker,
 }
 
 impl Debug for IndexingService {
@@ -184,7 +182,7 @@ impl IndexingService {
     async fn detach_indexing_pipeline(
         &mut self,
         pipeline_uid: &PipelineUid,
-    ) -> Result<ActorHandle<IndexingPipeline>, IndexingError> {
+    ) -> Result<BoxPipelineHandle, IndexingError> {
         let pipeline_handle = self
             .indexing_pipelines
             .remove(pipeline_uid)
@@ -193,7 +191,7 @@ impl IndexingService {
                 IndexingError::Internal(message)
             })?;
         self.counters.num_running_pipelines -= 1;
-        Ok(pipeline_handle.handle)
+        Ok(pipeline_handle)
     }
 
     async fn detach_merge_pipeline(
@@ -215,14 +213,10 @@ impl IndexingService {
         &mut self,
         pipeline_uid: &PipelineUid,
     ) -> Result<Observation<IndexingStatistics>, IndexingError> {
-        let pipeline_handle = &self
-            .indexing_pipelines
-            .get(pipeline_uid)
-            .ok_or_else(|| {
-                let message = format!("could not find indexing pipeline `{pipeline_uid}`");
-                IndexingError::Internal(message)
-            })?
-            .handle;
+        let pipeline_handle = self.indexing_pipelines.get(pipeline_uid).ok_or_else(|| {
+            let message = format!("could not find indexing pipeline `{pipeline_uid}`");
+            IndexingError::Internal(message)
+        })?;
         let observation = pipeline_handle.observe().await;
         Ok(observation)
     }
@@ -270,6 +264,69 @@ impl IndexingService {
             let message = format!("pipeline `{indexing_pipeline_id}` already exists");
             return Err(IndexingError::Internal(message));
         }
+
+        let params_fingerprint =
+            indexing_pipeline_params_fingerprint(&index_config, &source_config);
+        if let Some(expected_params_fingerprint) = expected_params_fingerprint {
+            if params_fingerprint != expected_params_fingerprint {
+                info!(
+                    index_id = indexing_pipeline_id.index_uid.index_id,
+                    source_id = indexing_pipeline_id.source_id,
+                    expected = expected_params_fingerprint,
+                    actual = params_fingerprint,
+                    "pipeline fingerprint mismatch, postponing pipeline creation"
+                );
+                return Ok(());
+            }
+        }
+
+        #[cfg(feature = "metrics")]
+        let pipeline_handle = if is_metrics_index(&indexing_pipeline_id.index_uid.index_id) {
+            self.spawn_metrics_pipeline(
+                ctx,
+                indexing_pipeline_id.clone(),
+                index_config,
+                source_config,
+                params_fingerprint,
+            )
+            .await?
+        } else {
+            self.spawn_log_pipeline(
+                ctx,
+                indexing_pipeline_id.clone(),
+                index_config,
+                source_config,
+                immature_splits_opt,
+                params_fingerprint,
+            )
+            .await?
+        };
+        #[cfg(not(feature = "metrics"))]
+        let pipeline_handle = self
+            .spawn_log_pipeline(
+                ctx,
+                indexing_pipeline_id.clone(),
+                index_config,
+                source_config,
+                immature_splits_opt,
+                params_fingerprint,
+            )
+            .await?;
+        self.indexing_pipelines
+            .insert(indexing_pipeline_id.pipeline_uid, pipeline_handle);
+        self.counters.num_running_pipelines += 1;
+        Ok(())
+    }
+
+    async fn spawn_log_pipeline(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        indexing_pipeline_id: IndexingPipelineId,
+        index_config: IndexConfig,
+        source_config: SourceConfig,
+        immature_splits_opt: Option<Vec<SplitMetadata>>,
+        params_fingerprint: u64,
+    ) -> Result<BoxPipelineHandle, IndexingError> {
         let pipeline_uid_str = indexing_pipeline_id.pipeline_uid.to_string();
         let indexing_directory = temp_dir::Builder::default()
             .join(&indexing_pipeline_id.index_uid.index_id)
@@ -319,63 +376,34 @@ impl IndexingService {
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
 
-        let params_fingerprint =
-            indexing_pipeline_params_fingerprint(&index_config, &source_config);
-        if let Some(expected_params_fingerprint) = expected_params_fingerprint {
-            // If the fingerprint of the config freshly fetched from the
-            // metastore is different from that received from the control plane,
-            // it means that the config changed again since the last indexing
-            // plan was built. In this case, postpone the pipeline creation.
-            if params_fingerprint != expected_params_fingerprint {
-                info!(
-                    index_id = indexing_pipeline_id.index_uid.index_id,
-                    source_id = indexing_pipeline_id.source_id,
-                    expected = expected_params_fingerprint,
-                    actual = params_fingerprint,
-                    "pipeline fingerprint mismatch, postponing pipeline creation"
-                );
-                return Ok(());
-            }
-        }
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
             storage,
-
-            // Indexing-related parameters
             doc_mapper,
             indexing_directory,
             indexing_settings: index_config.indexing_settings.clone(),
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
-
-            // Merge-related parameters
             merge_policy,
             retention_policy,
             max_concurrent_split_uploads_merge,
             merge_planner_mailbox,
-
-            // Source-related parameters
             source_config,
             ingester_pool: self.ingester_pool.clone(),
             queues_dir_path: self.queue_dir_path.clone(),
             source_storage_resolver: self.storage_resolver.clone(),
             params_fingerprint,
-
             event_broker: self.event_broker.clone(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
-        let pipeline_handle = PipelineHandle {
-            mailbox: pipeline_mailbox,
-            handle: pipeline_handle,
-            indexing_pipeline_id: indexing_pipeline_id.clone(),
-        };
-        self.indexing_pipelines
-            .insert(indexing_pipeline_id.pipeline_uid, pipeline_handle);
-        self.counters.num_running_pipelines += 1;
-        Ok(())
+        let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
+        Ok(Box::new(ActorPipeline {
+            pipeline_id: indexing_pipeline_id,
+            mailbox,
+            handle,
+        }))
     }
 
     async fn index_metadata(
@@ -485,7 +513,7 @@ impl IndexingService {
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
         self.indexing_pipelines
             .retain(|pipeline_uid, pipeline_handle| {
-                match pipeline_handle.handle.state() {
+                match pipeline_handle.state() {
                     ActorState::Paused | ActorState::Running => true,
                     ActorState::Success => {
                         info!(
@@ -512,7 +540,7 @@ impl IndexingService {
         let merge_pipelines_to_retain: HashSet<MergePipelineId> = self
             .indexing_pipelines
             .values()
-            .map(|pipeline_handle| pipeline_handle.indexing_pipeline_id.merge_pipeline_id())
+            .map(|pipeline_handle| pipeline_handle.indexing_pipeline_id().merge_pipeline_id())
             .collect();
 
         let merge_pipelines_to_shutdown: Vec<MergePipelineId> = self
@@ -557,9 +585,9 @@ impl IndexingService {
             .indexing_pipelines
             .values()
             .filter_map(|pipeline_handle| {
-                let indexing_statistics = pipeline_handle.handle.last_observation();
+                let indexing_statistics = pipeline_handle.last_observation();
                 let pipeline_metrics = indexing_statistics.pipeline_metrics_opt?;
-                Some((&pipeline_handle.indexing_pipeline_id, pipeline_metrics))
+                Some((pipeline_handle.indexing_pipeline_id(), pipeline_metrics))
             })
             .collect();
         self.cluster
@@ -614,7 +642,7 @@ impl IndexingService {
             };
             let message = AssignShards(assignment);
 
-            if let Err(error) = pipeline_handle.mailbox.send_message(message).await {
+            if let Err(error) = pipeline_handle.send_assign_shards(message).await {
                 error!(%error, "failed to assign shards to indexing pipeline");
             }
         }
@@ -755,7 +783,7 @@ impl IndexingService {
             .iter()
             .flat_map(|pipeline_uid| self.indexing_pipelines.get(pipeline_uid))
             .any(|pipeline_handle| {
-                pipeline_handle.indexing_pipeline_id.source_id == INGEST_API_SOURCE_ID
+                pipeline_handle.indexing_pipeline_id().source_id == INGEST_API_SOURCE_ID
             });
 
         for pipeline_to_shutdown in pipelines_to_shutdown {
@@ -792,12 +820,12 @@ impl IndexingService {
             .indexing_pipelines
             .values()
             .map(|pipeline_handle| {
-                let assignment = pipeline_handle.handle.last_observation();
+                let assignment = pipeline_handle.last_observation();
                 let shard_ids: Vec<ShardId> = assignment.shard_ids.iter().cloned().collect();
                 IndexingTask {
-                    index_uid: Some(pipeline_handle.indexing_pipeline_id.index_uid.clone()),
-                    source_id: pipeline_handle.indexing_pipeline_id.source_id.clone(),
-                    pipeline_uid: Some(pipeline_handle.indexing_pipeline_id.pipeline_uid),
+                    index_uid: Some(pipeline_handle.indexing_pipeline_id().index_uid.clone()),
+                    source_id: pipeline_handle.indexing_pipeline_id().source_id.clone(),
+                    pipeline_uid: Some(pipeline_handle.indexing_pipeline_id().pipeline_uid),
                     shard_ids,
                     params_fingerprint: assignment.params_fingerprint,
                 }
@@ -888,7 +916,7 @@ impl Handler<ObservePipeline> for IndexingService {
 
 #[async_trait]
 impl Handler<DetachIndexingPipeline> for IndexingService {
-    type Reply = Result<ActorHandle<IndexingPipeline>, IndexingError>;
+    type Reply = Result<BoxPipelineHandle, IndexingError>;
 
     async fn handle(
         &mut self,
@@ -1007,7 +1035,7 @@ mod tests {
     use std::path::Path;
     use std::time::Duration;
 
-    use quickwit_actors::{HEARTBEAT, Health, ObservationType, Supervisable, Universe};
+    use quickwit_actors::{HEARTBEAT, Health, ObservationType, Universe};
     use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_common::ServiceStream;
     use quickwit_common::rand::append_random_suffix;
@@ -1639,7 +1667,6 @@ mod tests {
                 .indexing_pipelines
                 .get(&message.0.pipeline_uid)
                 .unwrap()
-                .handle
                 .check_health(true))
         }
     }
