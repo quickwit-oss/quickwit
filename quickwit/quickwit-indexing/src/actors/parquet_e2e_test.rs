@@ -172,7 +172,8 @@ async fn test_metrics_pipeline_e2e() {
 
     // ParquetPackager between indexer and uploader
     let writer_config = ParquetWriterConfig::default();
-    let split_writer = ParquetSplitWriter::new(writer_config, temp_dir.path());
+    let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
+    let split_writer = ParquetSplitWriter::new(writer_config, temp_dir.path(), &table_config);
     let packager = ParquetPackager::new(split_writer, uploader_mailbox);
     let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
