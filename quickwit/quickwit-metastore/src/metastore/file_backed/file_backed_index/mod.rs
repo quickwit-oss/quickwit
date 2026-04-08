@@ -57,6 +57,7 @@ pub(crate) struct StoredMetricsSplit {
     /// Update timestamp (Unix epoch seconds).
     pub update_timestamp: i64,
     /// Create timestamp (Unix epoch seconds).
+    #[serde(default)]
     pub create_timestamp: i64,
     /// Node that produced this split.
     #[serde(default)]
