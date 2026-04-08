@@ -51,7 +51,7 @@ See `quickwit/CLAUDE.md` for architecture overview, crate descriptions, and buil
 |--------|----------|---------|
 | **Code Quality** | [CODE_STYLE.md](CODE_STYLE.md) + this doc | Coding standards & reliability |
 
-> For formal specs (TLA+, Stateright) and DST pillars, activate `/sesh-mode`.
+> For formal specs (TLA+, Stateright) and DST pillars, see the verification docs below. These describe the target workflow — implementation is in progress.
 
 ## Reliability Rules
 

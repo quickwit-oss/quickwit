@@ -21,7 +21,6 @@ A single S3 GET request has ~50-100ms latency-to-first-byte. For a query spannin
 ## State of the Art
 
 - **Husky**: Caches file metadata separately from data, enabling fast query planning without data fetches.
-- **ClickHouse**: Mark cache stores index granule metadata in memory; file headers are cached independently of data pages.
 - **Mimir/Cortex**: Index cache (backed by Memcached) caches block-level metadata separately from chunk data.
 - **Apache Spark**: Parquet footer caching is a built-in feature (`spark.sql.parquet.footerCache`).
 

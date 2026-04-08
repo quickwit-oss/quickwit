@@ -24,7 +24,6 @@ ADR-003 explicitly acknowledges the PostgreSQL scalability concern: "At high ing
 
 - **Husky**: Dedicated metadata service optimized for high-rate pruning queries. Predicate and query result caching for monitor evaluation.
 - **Mimir/Cortex**: Index cache (memcached-backed) for label/series lookups. Query result cache for repeated queries.
-- **ClickHouse Commercial**: SharedMergeTree metadata in Keeper (ZooKeeper), with in-memory sparse primary key indexes on query nodes for fast granule-level pruning.
 
 ## Potential Solutions
 

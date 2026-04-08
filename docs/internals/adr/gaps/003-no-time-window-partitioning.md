@@ -56,7 +56,6 @@ The design requires granularities from 1 minute to 60 minutes, with the default 
 ## State of the Art
 
 - **Husky**: Fragments are bucketed by fixed-duration time windows. Each fragment belongs to exactly one window. Compaction is scoped per window.
-- **ClickHouse**: Partitioning by `toYYYYMM(timestamp)` or finer granularity. Parts belong to a single partition. Merges only combine parts within the same partition.
 - **Apache Iceberg**: Partition specs define time-based partitioning (hours, days, months). Each data file belongs to a single partition. Compaction operates within partitions.
 - **Prometheus/Mimir**: Blocks cover fixed time ranges (2 hours by default). Compaction combines blocks with overlapping or adjacent time ranges into larger blocks.
 

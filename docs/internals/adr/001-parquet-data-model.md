@@ -77,7 +77,6 @@ To improve locality, the data model includes an optional **`timeseries_id`** col
 
 ### 5. OTel Attribute Schema and Schema-on-Read
 
-**Current state: OTel map-based attributes.** The OpenTelemetry schema for metrics (as implemented in systems like [ClickStack](https://clickhouse.com/docs/use-cases/observability/clickstack/ingesting-data/schemas)) represents metric attributes as key-value maps — typically `Map(LowCardinality(String), String)` for resource attributes, scope attributes, and metric-level attributes. This is the schema our metrics pipeline currently ingests.
 
 Map columns are fundamentally non-columnar: all key-value pairs for a row are packed into a single column value. This has two consequences for Parquet storage:
 
@@ -178,4 +177,3 @@ The no-LWW and no-storage-interpolation decisions are universal across signals. 
 - [Phase 1: Sorted Splits for Parquet](../locality-compaction/phase-1-sorted-splits.md) — full design document
 - [ADR-002: Configurable Sort Schema](./002-sort-schema-parquet-splits.md) — sort schema that operates on this data model
 - [ADR-003: Time-Windowed Sorted Compaction](./003-time-windowed-sorted-compaction.md) — compaction that relies on this data model
-- [ClickStack OTel Schemas](https://clickhouse.com/docs/use-cases/observability/clickstack/ingesting-data/schemas) — OTel map-based attribute schema (useful reference for the schema-on-read discussion)

@@ -69,7 +69,6 @@ Discovered → Open → Investigating → ADR-Drafted → Closed
 
 ## State of the Art
 
-[How other systems (ClickHouse, Prometheus, Mimir, etc.) solve this]
 
 ## Potential Solutions
 

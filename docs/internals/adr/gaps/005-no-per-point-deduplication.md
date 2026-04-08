@@ -29,10 +29,9 @@ The impact depends on the query semantics. For `SUM` aggregations, duplicates in
 - **Prometheus**: Accepts the latest sample per timeseries. Effectively LWW within the head block. TSDB compaction deduplicates samples with identical timestamps during vertical compaction.
 - **Mimir/Thanos**: Deduplicate at query time using replica labels. Each replica stores its own copy; the query frontend selects one replica's data per series.
 - **InfluxDB**: Supports upsert semantics — writing a point with the same measurement, tag set, and timestamp overwrites the previous value (LWW).
-- **ClickHouse**: `ReplacingMergeTree` engine deduplicates rows by sort key during merge (eventual dedup, not at ingest). Standard `MergeTree` stores all duplicates.
 - **Husky**: Does not deduplicate individual points. Dedup is handled upstream in the intake pipeline before data reaches storage.
 
-There is no consensus in the industry. Some systems dedup at ingest (Prometheus, InfluxDB), some at query time (Mimir/Thanos), some at compaction (ClickHouse), and some not at all (Husky).
+There is no consensus in the industry. Some systems dedup at ingest (Prometheus, InfluxDB), some at query time (Mimir/Thanos), some at compaction, and some not at all (Husky).
 
 ## Potential Solutions
 
@@ -40,7 +39,7 @@ There is no consensus in the industry. Some systems dedup at ingest (Prometheus,
 
 - **Option B: Query-time dedup.** Store all duplicates, deduplicate during query execution (e.g., `DISTINCT ON (metric_name, tags, timestamp)` or selecting one value per series per timestamp). Adds query cost proportional to the duplication rate. Similar to Mimir/Thanos.
 
-- **Option C: Compaction-time dedup.** During sorted merge, detect adjacent rows with identical (metric_name, tags, timestamp) and keep only one. This is cheap once data is sorted (duplicates are adjacent) but provides only eventual consistency — duplicates exist until the next compaction cycle. Similar to ClickHouse's `ReplacingMergeTree`.
+- **Option C: Compaction-time dedup.** During sorted merge, detect adjacent rows with identical (metric_name, tags, timestamp) and keep only one. This is cheap once data is sorted (duplicates are adjacent) but provides only eventual consistency — duplicates exist until the next compaction cycle.
 
 - **Option D: Ingest-time dedup with a bloom filter or dedup index.** Maintain a probabilistic (bloom filter) or exact index of recently-seen points, and drop duplicates at ingest. This adds memory and CPU overhead at ingest and introduces a new stateful component that must be consistent across nodes (or accept per-node dedup only).
 
