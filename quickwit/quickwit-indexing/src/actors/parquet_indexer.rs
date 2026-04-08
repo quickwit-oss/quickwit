@@ -424,6 +424,10 @@ impl Handler<ProcessedParquetBatch> for ParquetIndexer {
                         anyhow::anyhow!("failed to send to packager: {}", e).into(),
                     )
                 })?;
+
+            // Reset so the next batch schedules a fresh timeout.
+            self.workbench_id = Ulid::new();
+            self.commit_timeout_scheduled = false;
         }
 
         Ok(())
@@ -491,15 +495,21 @@ impl Handler<CommitTimeout> for ParquetIndexer {
         );
 
         // Flush the accumulator
-        if let Some(combined) = self.flush_accumulator()? {
+        let flushed_batch = self.flush_accumulator()?;
+        if let Some(ref combined) = flushed_batch {
             self.counters.record_flush();
             info!(
                 num_rows = combined.num_rows(),
-                "Flushed batch on commit timeout"
+                "flushed batch on commit timeout"
             );
+        }
 
+        // Forward if we have data or a pending checkpoint delta.
+        let should_send = flushed_batch.is_some() || !self.checkpoint_delta.is_empty();
+
+        if should_send {
             let batch_for_packager = ParquetBatchForPackager {
-                batch: Some(combined),
+                batch: flushed_batch,
                 index_uid: self.index_uid.clone(),
                 checkpoint_delta: self.make_index_checkpoint_delta(),
                 publish_lock: self.publish_lock.clone(),
@@ -518,6 +528,10 @@ impl Handler<CommitTimeout> for ParquetIndexer {
                         .into(),
                     )
                 })?;
+
+            // Reset so the next batch schedules a fresh timeout.
+            self.workbench_id = Ulid::new();
+            self.commit_timeout_scheduled = false;
         }
 
         Ok(())
