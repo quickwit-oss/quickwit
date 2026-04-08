@@ -19,6 +19,7 @@ use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
 use quickwit_ingest::CommitType;
+use quickwit_parquet_engine::schema::REQUIRED_FIELDS;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::metrics::v1::metrics_service_server::MetricsService;
@@ -208,7 +209,15 @@ impl OtlpGrpcMetricsService {
             Status::internal("failed to parse metric records")
         })??;
 
-        if num_data_points > 0 && num_data_points == num_parse_errors {
+        if num_data_points == 0 {
+            // Empty request — nothing to ingest, return success.
+            return Ok(ExportMetricsServiceResponse {
+                partial_success: None,
+            });
+        }
+
+        if num_data_points == num_parse_errors {
+            // All data points were rejected.
             return Err(tonic::Status::internal(error_message));
         }
 
@@ -381,7 +390,13 @@ fn parse_otlp_metrics(request: ExportMetricsServiceRequest) -> ParseOtlpResult {
 
         for scope_metrics in resource_metrics.scope_metrics {
             for metric in scope_metrics.metrics {
-                parse_metric(&metric, &service_name, &mut data_points, &mut num_rejected);
+                parse_metric(
+                    &metric,
+                    &service_name,
+                    &resource_attributes,
+                    &mut data_points,
+                    &mut num_rejected,
+                );
             }
         }
     }
@@ -395,6 +410,7 @@ fn parse_otlp_metrics(request: ExportMetricsServiceRequest) -> ParseOtlpResult {
 fn parse_metric(
     metric: &Metric,
     service_name: &str,
+    resource_attributes: &HashMap<String, JsonValue>,
     data_points: &mut Vec<MetricDataPoint>,
     num_rejected: &mut u64,
 ) {
@@ -414,6 +430,7 @@ fn parse_metric(
                     &metric_unit,
                     dp,
                     service_name,
+                    resource_attributes,
                 ) {
                     Ok(Some(data_point)) => data_points.push(data_point),
                     Ok(None) => *num_rejected += 1,
@@ -441,6 +458,7 @@ fn parse_metric(
                     &metric_unit,
                     dp,
                     service_name,
+                    resource_attributes,
                 ) {
                     Ok(Some(data_point)) => data_points.push(data_point),
                     Ok(None) => *num_rejected += 1,
@@ -451,17 +469,21 @@ fn parse_metric(
                 }
             }
         }
-        Some(metric::Data::Histogram(_)) => {
+        Some(metric::Data::Histogram(h)) => {
             warn!("histogram metrics not supported, skipping");
+            *num_rejected += h.data_points.len() as u64;
         }
-        Some(metric::Data::ExponentialHistogram(_)) => {
+        Some(metric::Data::ExponentialHistogram(h)) => {
             warn!("exponential histogram metrics not supported, skipping");
+            *num_rejected += h.data_points.len() as u64;
         }
-        Some(metric::Data::Summary(_)) => {
+        Some(metric::Data::Summary(s)) => {
             warn!("summary metrics not supported, skipping");
+            *num_rejected += s.data_points.len() as u64;
         }
         None => {
             warn!("metric has no data, skipping");
+            *num_rejected += 1;
         }
     }
 }
@@ -472,6 +494,7 @@ fn create_number_data_point(
     metric_unit: &Option<String>,
     dp: &NumberDataPoint,
     service_name: &str,
+    resource_attributes: &HashMap<String, JsonValue>,
 ) -> Result<Option<MetricDataPoint>, OtlpMetricsError> {
     // Convert timestamps to seconds
     let timestamp_secs = nanos_to_secs(dp.time_unix_nano);
@@ -499,12 +522,22 @@ fn create_number_data_point(
         None => 0.0,
     };
 
-    // Extract attributes and convert all values to strings for tags
-    let attributes = extract_attributes(dp.attributes.clone());
-    let mut tags = HashMap::with_capacity(attributes.len() + 3);
+    // Start with resource-level attributes as the base tags.
+    // Skip keys that collide with fixed column names to avoid duplicate columns.
+    let reserved = REQUIRED_FIELDS;
+    let mut tags = HashMap::with_capacity(resource_attributes.len() + dp.attributes.len() + 3);
+    for (key, json_val) in resource_attributes {
+        if !reserved.contains(&key.as_str()) {
+            tags.insert(key.clone(), json_value_to_string(json_val.clone()));
+        }
+    }
 
+    // Data-point attributes override resource attributes.
+    let attributes = extract_attributes(dp.attributes.clone());
     for (key, json_val) in attributes {
-        tags.insert(key, json_value_to_string(json_val));
+        if !reserved.contains(&key.as_str()) {
+            tags.insert(key, json_value_to_string(json_val));
+        }
     }
 
     // Add metric_unit and start_timestamp_secs using or_insert_with so a
@@ -965,5 +998,258 @@ mod tests {
 
         let data_points = parse_otlp_metrics(request).data_points;
         assert_eq!(data_points.len(), 0);
+    }
+
+    #[test]
+    fn test_resource_attributes_propagated() {
+        use quickwit_proto::opentelemetry::proto::common::v1::{AnyValue, KeyValue, any_value};
+        use quickwit_proto::opentelemetry::proto::metrics::v1::{
+            Gauge, ResourceMetrics, ScopeMetrics, number_data_point,
+        };
+        use quickwit_proto::opentelemetry::proto::resource::v1::Resource;
+
+        let request = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: Some(Resource {
+                    attributes: vec![
+                        KeyValue {
+                            key: "service.name".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue(
+                                    "my-service".to_string(),
+                                )),
+                            }),
+                        },
+                        KeyValue {
+                            key: "env".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue("prod".to_string())),
+                            }),
+                        },
+                        KeyValue {
+                            key: "region".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue("us-east-1".to_string())),
+                            }),
+                        },
+                    ],
+                    dropped_attributes_count: 0,
+                }),
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics: vec![Metric {
+                        name: "cpu.usage".to_string(),
+                        description: String::new(),
+                        unit: String::new(),
+                        data: Some(metric::Data::Gauge(Gauge {
+                            data_points: vec![NumberDataPoint {
+                                attributes: Vec::new(), // no data-point attributes
+                                start_time_unix_nano: 0,
+                                time_unix_nano: 1_000_000_000,
+                                exemplars: Vec::new(),
+                                flags: 0,
+                                value: Some(number_data_point::Value::AsDouble(42.0)),
+                            }],
+                        })),
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        };
+
+        let data_points = parse_otlp_metrics(request).data_points;
+        assert_eq!(data_points.len(), 1);
+        let dp = &data_points[0];
+        assert_eq!(dp.tags.get("env").map(|s| s.as_str()), Some("prod"));
+        assert_eq!(dp.tags.get("region").map(|s| s.as_str()), Some("us-east-1"));
+        assert_eq!(
+            dp.tags.get("service").map(|s| s.as_str()),
+            Some("my-service")
+        );
+    }
+
+    #[test]
+    fn test_data_point_attributes_override_resource_attributes() {
+        use quickwit_proto::opentelemetry::proto::common::v1::{AnyValue, KeyValue, any_value};
+        use quickwit_proto::opentelemetry::proto::metrics::v1::{
+            Gauge, ResourceMetrics, ScopeMetrics, number_data_point,
+        };
+        use quickwit_proto::opentelemetry::proto::resource::v1::Resource;
+
+        let request = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: Some(Resource {
+                    attributes: vec![
+                        KeyValue {
+                            key: "service.name".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue(
+                                    "my-service".to_string(),
+                                )),
+                            }),
+                        },
+                        KeyValue {
+                            key: "env".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue(
+                                    "resource-env".to_string(),
+                                )),
+                            }),
+                        },
+                        KeyValue {
+                            key: "host".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue(
+                                    "resource-host".to_string(),
+                                )),
+                            }),
+                        },
+                    ],
+                    dropped_attributes_count: 0,
+                }),
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics: vec![Metric {
+                        name: "cpu.usage".to_string(),
+                        description: String::new(),
+                        unit: String::new(),
+                        data: Some(metric::Data::Gauge(Gauge {
+                            data_points: vec![NumberDataPoint {
+                                attributes: vec![
+                                    // Override "env" from resource
+                                    KeyValue {
+                                        key: "env".to_string(),
+                                        value: Some(AnyValue {
+                                            value: Some(any_value::Value::StringValue(
+                                                "dp-env".to_string(),
+                                            )),
+                                        }),
+                                    },
+                                    // Override "service" from resource service.name
+                                    KeyValue {
+                                        key: "service".to_string(),
+                                        value: Some(AnyValue {
+                                            value: Some(any_value::Value::StringValue(
+                                                "dp-service".to_string(),
+                                            )),
+                                        }),
+                                    },
+                                ],
+                                start_time_unix_nano: 0,
+                                time_unix_nano: 1_000_000_000,
+                                exemplars: Vec::new(),
+                                flags: 0,
+                                value: Some(number_data_point::Value::AsDouble(42.0)),
+                            }],
+                        })),
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        };
+
+        let data_points = parse_otlp_metrics(request).data_points;
+        assert_eq!(data_points.len(), 1);
+        let dp = &data_points[0];
+        // Data-point "env" overrides resource "env"
+        assert_eq!(dp.tags.get("env").map(|s| s.as_str()), Some("dp-env"));
+        // Data-point "service" overrides resource service.name
+        assert_eq!(
+            dp.tags.get("service").map(|s| s.as_str()),
+            Some("dp-service")
+        );
+        // Resource "host" is preserved (not overridden by data-point)
+        assert_eq!(
+            dp.tags.get("host").map(|s| s.as_str()),
+            Some("resource-host")
+        );
+    }
+
+    #[test]
+    fn test_reserved_keys_stripped_from_tags() {
+        use quickwit_proto::opentelemetry::proto::common::v1::{AnyValue, KeyValue, any_value};
+        use quickwit_proto::opentelemetry::proto::metrics::v1::{
+            Gauge, ResourceMetrics, ScopeMetrics, number_data_point,
+        };
+        use quickwit_proto::opentelemetry::proto::resource::v1::Resource;
+
+        let request = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                resource: Some(Resource {
+                    attributes: vec![
+                        KeyValue {
+                            key: "service.name".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue(
+                                    "my-service".to_string(),
+                                )),
+                            }),
+                        },
+                        // Reserved key at resource level — should be dropped
+                        KeyValue {
+                            key: "metric_name".to_string(),
+                            value: Some(AnyValue {
+                                value: Some(any_value::Value::StringValue("injected".to_string())),
+                            }),
+                        },
+                    ],
+                    dropped_attributes_count: 0,
+                }),
+                scope_metrics: vec![ScopeMetrics {
+                    scope: None,
+                    metrics: vec![Metric {
+                        name: "cpu.usage".to_string(),
+                        description: String::new(),
+                        unit: String::new(),
+                        data: Some(metric::Data::Gauge(Gauge {
+                            data_points: vec![NumberDataPoint {
+                                attributes: vec![
+                                    // Reserved key at data-point level — should be dropped
+                                    KeyValue {
+                                        key: "timestamp_secs".to_string(),
+                                        value: Some(AnyValue {
+                                            value: Some(any_value::Value::StringValue(
+                                                "999".to_string(),
+                                            )),
+                                        }),
+                                    },
+                                    // Non-reserved key — should be kept
+                                    KeyValue {
+                                        key: "env".to_string(),
+                                        value: Some(AnyValue {
+                                            value: Some(any_value::Value::StringValue(
+                                                "prod".to_string(),
+                                            )),
+                                        }),
+                                    },
+                                ],
+                                start_time_unix_nano: 0,
+                                time_unix_nano: 1_000_000_000,
+                                exemplars: Vec::new(),
+                                flags: 0,
+                                value: Some(number_data_point::Value::AsDouble(42.0)),
+                            }],
+                        })),
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        };
+
+        let data_points = parse_otlp_metrics(request).data_points;
+        assert_eq!(data_points.len(), 1);
+        let dp = &data_points[0];
+        // Reserved keys should not appear in tags
+        assert!(!dp.tags.contains_key("metric_name"));
+        assert!(!dp.tags.contains_key("timestamp_secs"));
+        // Non-reserved keys should be present
+        assert_eq!(dp.tags.get("env").map(|s| s.as_str()), Some("prod"));
+        assert_eq!(
+            dp.tags.get("service").map(|s| s.as_str()),
+            Some("my-service")
+        );
     }
 }

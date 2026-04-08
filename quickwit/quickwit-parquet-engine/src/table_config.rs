@@ -47,7 +47,7 @@ impl ProductType {
     /// when the Parquet pipeline is extended to those signal types.
     pub fn default_sort_fields(self) -> &'static str {
         match self {
-            Self::Metrics => "metric_name|tag_service|tag_env|tag_datacenter|tag_region|tag_host|timeseries_id|timestamp_secs/V2",
+            Self::Metrics => "metric_name|service|env|datacenter|region|host|timeseries_id|timestamp_secs/V2",
             // Placeholder: column names TBD when logs Parquet schema is defined.
             Self::Logs => "service_name|level|host|timestamp_secs/V2",
             // Placeholder: column names TBD when traces Parquet schema is defined.
@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(schema.column.len(), 8);
         // Proto names are bare (suffixes stripped by parser).
         assert_eq!(schema.column[0].name, "metric_name");
-        assert_eq!(schema.column[1].name, "tag_service");
+        assert_eq!(schema.column[1].name, "service");
         assert_eq!(schema.column[6].name, "timeseries_id");
         assert_eq!(schema.column[7].name, "timestamp_secs");
     }

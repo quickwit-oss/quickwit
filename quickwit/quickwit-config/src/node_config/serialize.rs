@@ -680,6 +680,7 @@ mod tests {
                 _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
+                leaf_request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 storage_timeout_policy: Some(crate::StorageTimeoutPolicy {
                     min_throughtput_bytes_per_secs: 100_000,
                     timeout_millis: 2_000,
