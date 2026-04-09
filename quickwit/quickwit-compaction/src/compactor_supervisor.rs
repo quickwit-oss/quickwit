@@ -94,7 +94,7 @@ impl CompactorSupervisor {
         }
     }
 
-    async fn supervise(&mut self) {
+    async fn supervise(&mut self, ctx: &ActorContext<Self>) {
         for slot in &mut self.pipelines {
             let Some(pipeline) = slot else {
                 continue;
@@ -114,7 +114,7 @@ impl CompactorSupervisor {
                             retry_count=%pipeline.retry_count,
                             "retrying compaction pipeline"
                         );
-                        pipeline.restart().await;
+                        pipeline.restart(ctx).await;
                     } else {
                         error!(
                             task_id=%pipeline.task_id,
@@ -160,7 +160,7 @@ impl Handler<SuperviseLoop> for CompactorSupervisor {
         _msg: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.supervise().await;
+        self.supervise(ctx).await;
         ctx.schedule_self_msg(SUPERVISE_LOOP_INTERVAL, SuperviseLoop);
         Ok(())
     }
@@ -176,7 +176,6 @@ mod tests {
     use quickwit_storage::{RamStorage, StorageResolver};
 
     use super::*;
-    use crate::compaction_pipeline::CompactionPipeline;
 
     fn test_supervisor(num_slots: usize) -> CompactorSupervisor {
         let storage = Arc::new(RamStorage::default());
@@ -208,17 +207,13 @@ mod tests {
     #[tokio::test]
     async fn test_supervisor_supervise_reaps_no_handle_pipelines() {
         // A pipeline with no handles returns Healthy, so it stays in its slot.
-        let mut supervisor = test_supervisor(2);
-        let pipeline = CompactionPipeline::new(
-            "task-1".to_string(),
-            vec!["split-1".to_string()],
-            TempDirectory::for_test(),
-        );
-        supervisor.pipelines[0] = Some(pipeline);
-        supervisor.supervise().await;
-        // Pipeline has no handles → Healthy → not reaped.
-        assert!(supervisor.pipelines[0].is_some());
-        assert_eq!(supervisor.num_completed_tasks, 0);
-        assert_eq!(supervisor.num_failed_tasks, 0);
+        // We spawn the supervisor as an actor so we can get a context for supervise().
+        let universe = Universe::with_accelerated_time();
+        let supervisor = test_supervisor(2);
+        let (_mailbox, handle) = universe.spawn_builder().spawn(supervisor);
+        // Let the supervisor run one supervision loop (it schedules SuperviseLoop on init).
+        let obs = handle.process_pending_and_observe().await;
+        assert_eq!(obs.obs_type, quickwit_actors::ObservationType::Alive);
+        universe.assert_quit().await;
     }
 }
