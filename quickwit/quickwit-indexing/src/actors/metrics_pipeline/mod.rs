@@ -27,6 +27,7 @@ mod parquet_indexer;
 mod parquet_packager;
 mod parquet_uploader;
 mod pipeline;
+mod publisher_impl;
 
 #[cfg(test)]
 #[allow(

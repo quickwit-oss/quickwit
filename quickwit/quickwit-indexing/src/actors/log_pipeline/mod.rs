@@ -34,6 +34,7 @@ mod merge_scheduler_service;
 mod merge_split_downloader;
 mod packager;
 mod pipeline;
+mod publisher_impl;
 #[cfg(feature = "vrl")]
 mod vrl_processing;
 
