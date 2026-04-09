@@ -21,6 +21,7 @@ use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
+use quickwit_proto::extract_context_from_request_headers;
 use quickwit_search::SearchService;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -30,7 +31,9 @@ use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::cors::{AllowOrigin, CorsLayer};
-use tracing::{error, info};
+use tower_http::trace::TraceLayer;
+use tracing::{Level, error, info};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
 use warp::hyper::{Method, StatusCode, http};
@@ -208,7 +211,21 @@ pub(crate) async fn start_rest_server(
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
+    let trace_layer = TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {
+        let span = tracing::span!(
+            Level::INFO,
+            "http_request",
+            otel.kind = "Server",
+            http.method = %request.method(),
+            http.target = %request.uri(),
+        );
+        let ctx = extract_context_from_request_headers(request.headers());
+        let _ = span.set_parent(ctx);
+        span
+    });
+
     let service = ServiceBuilder::new()
+        .layer(trace_layer)
         .layer(
             CompressionLayer::new()
                 .zstd(true)
