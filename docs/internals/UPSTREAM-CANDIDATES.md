@@ -15,9 +15,7 @@ Items in pomsky that could be contributed back to quickwit-oss/quickwit in separ
 
 These are described in contributed documentation but not yet implemented in code. They represent the target architecture.
 
-- **`/sesh-mode` skill**: The `.claude/skills/sesh-mode/SKILL.md` describes a verification-first development workflow. The skill file is contributed but the workflow (TLA+ specs, DST tests before implementation) is a target, not current practice.
-- **TLA+ specs**: `docs/internals/specs/tla/` directory structure is contributed but no `.tla` spec files exist yet. The ADRs and verification docs reference TLA+ model checking as a goal.
-- **DST (Deterministic Simulation Testing)**: The `quickwit-dst` crate has shared invariants and Stateright model stubs, but full simulation testing infrastructure (SimClock, FaultInjector, simulated storage/network) is not yet implemented.
+- **DST simulation infrastructure**: The `quickwit-dst` crate has shared invariants, Stateright models, and TLA+ specs (`ParquetDataModel.tla`, `SortSchema.tla`, `TimeWindowedCompaction.tla`). What's not yet implemented is the full simulation testing infrastructure (SimClock, FaultInjector, simulated storage/network).
 - **Kani proofs**: Referenced in VERIFICATION_STACK.md as a verification layer but no Kani proof harnesses exist in the codebase.
 - **Bloodhound integration**: Referenced in verification docs but not implemented.
 - **Performance baselines framework**: BENCHMARKING.md describes a `PerformanceBaseline` struct and observability metrics pattern that doesn't exist in code yet.
