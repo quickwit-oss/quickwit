@@ -62,6 +62,7 @@ use tracing::{debug, error, info, warn};
 use super::log_pipeline::{
     FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
 };
+use super::pipeline_shared::{ActorPipeline, PipelineHandle};
 use super::{MergePlanner, MergeSchedulerService, MetricsPipeline, MetricsPipelineParams};
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
@@ -86,98 +87,7 @@ struct MergePipelineHandle {
     handle: ActorHandle<MergePipeline>,
 }
 
-pub struct PipelineHandle {
-    inner: PipelineHandleInner,
-    indexing_pipeline_id: IndexingPipelineId,
-}
-
-enum PipelineHandleInner {
-    Log {
-        mailbox: Mailbox<IndexingPipeline>,
-        handle: ActorHandle<IndexingPipeline>,
-    },
-    Metrics {
-        mailbox: Mailbox<MetricsPipeline>,
-        handle: ActorHandle<MetricsPipeline>,
-    },
-}
-
-impl PipelineHandle {
-    pub fn state(&self) -> ActorState {
-        match &self.inner {
-            PipelineHandleInner::Log { handle, .. } => handle.state(),
-            PipelineHandleInner::Metrics { handle, .. } => handle.state(),
-        }
-    }
-
-    pub fn refresh_observe(&self) {
-        match &self.inner {
-            PipelineHandleInner::Log { handle, .. } => handle.refresh_observe(),
-            PipelineHandleInner::Metrics { handle, .. } => handle.refresh_observe(),
-        }
-    }
-
-    pub fn last_observation(&self) -> IndexingStatistics {
-        match &self.inner {
-            PipelineHandleInner::Log { handle, .. } => handle.last_observation().clone(),
-            PipelineHandleInner::Metrics { handle, .. } => handle.last_observation().clone(),
-        }
-    }
-
-    async fn send_assign_shards(
-        &self,
-        message: AssignShards,
-    ) -> Result<(), quickwit_actors::SendError> {
-        match &self.inner {
-            PipelineHandleInner::Log { mailbox, .. } => {
-                mailbox.send_message(message).await?;
-            }
-            PipelineHandleInner::Metrics { mailbox, .. } => {
-                mailbox.send_message(message).await?;
-            }
-        }
-        Ok(())
-    }
-
-    pub async fn join(self) -> (ActorExitStatus, IndexingStatistics) {
-        match self.inner {
-            PipelineHandleInner::Log { handle, .. } => handle.join().await,
-            PipelineHandleInner::Metrics { handle, .. } => handle.join().await,
-        }
-    }
-
-    async fn observe(&self) -> Observation<IndexingStatistics> {
-        match &self.inner {
-            PipelineHandleInner::Log { handle, .. } => handle.observe().await,
-            PipelineHandleInner::Metrics { handle, .. } => handle.observe().await,
-        }
-    }
-
-    pub(crate) async fn quit(self) -> (ActorExitStatus, IndexingStatistics) {
-        match self.inner {
-            PipelineHandleInner::Log { handle, .. } => handle.quit().await,
-            PipelineHandleInner::Metrics { handle, .. } => handle.quit().await,
-        }
-    }
-
-    fn check_health(&self, check_for_progress: bool) -> quickwit_actors::Health {
-        match &self.inner {
-            PipelineHandleInner::Log { handle, .. } => handle.check_health(check_for_progress),
-            PipelineHandleInner::Metrics { handle, .. } => handle.check_health(check_for_progress),
-        }
-    }
-
-    async fn kill(self) {
-        match self.inner {
-            PipelineHandleInner::Log { handle, .. } => {
-                let _ = handle.kill().await;
-            }
-            PipelineHandleInner::Metrics { handle, .. } => {
-                let _ = handle.kill().await;
-            }
-        }
-    }
-}
+pub type BoxPipelineHandle = Box<dyn PipelineHandle>;
 
 /// The indexing service is (single) actor service running on indexer and in charge
 /// of executing the indexing plans received from the control plane.
@@ -187,22 +97,22 @@ impl PipelineHandle {
 /// are respectively missing or extranumerous.
 pub struct IndexingService {
     node_id: NodeId,
-    indexing_root_directory: PathBuf,
-    queue_dir_path: PathBuf,
+    pub(crate) indexing_root_directory: PathBuf,
+    pub(crate) queue_dir_path: PathBuf,
     cluster: Cluster,
-    metastore: MetastoreServiceClient,
+    pub(crate) metastore: MetastoreServiceClient,
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
     merge_scheduler_service: Mailbox<MergeSchedulerService>,
-    ingester_pool: IngesterPool,
-    storage_resolver: StorageResolver,
-    indexing_pipelines: HashMap<PipelineUid, PipelineHandle>,
+    pub(crate) ingester_pool: IngesterPool,
+    pub(crate) storage_resolver: StorageResolver,
+    indexing_pipelines: HashMap<PipelineUid, BoxPipelineHandle>,
     counters: IndexingServiceCounters,
     local_split_store: Arc<IndexingSplitCache>,
-    max_concurrent_split_uploads: usize,
+    pub(crate) max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
     merge_io_throughput_limiter_opt: Option<Limiter>,
-    event_broker: EventBroker,
+    pub(crate) event_broker: EventBroker,
 }
 
 impl Debug for IndexingService {
@@ -272,7 +182,7 @@ impl IndexingService {
     async fn detach_indexing_pipeline(
         &mut self,
         pipeline_uid: &PipelineUid,
-    ) -> Result<PipelineHandle, IndexingError> {
+    ) -> Result<BoxPipelineHandle, IndexingError> {
         let pipeline_handle = self
             .indexing_pipelines
             .remove(pipeline_uid)
@@ -404,7 +314,7 @@ impl IndexingService {
         source_config: SourceConfig,
         immature_splits_opt: Option<Vec<SplitMetadata>>,
         params_fingerprint: u64,
-    ) -> Result<PipelineHandle, IndexingError> {
+    ) -> Result<BoxPipelineHandle, IndexingError> {
         let pipeline_uid_str = indexing_pipeline_id.pipeline_uid.to_string();
         let indexing_directory = temp_dir::Builder::default()
             .join(&indexing_pipeline_id.index_uid.index_id)
@@ -477,60 +387,7 @@ impl IndexingService {
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
-        Ok(PipelineHandle {
-            inner: PipelineHandleInner::Log { mailbox, handle },
-            indexing_pipeline_id,
-        })
-    }
-
-    async fn spawn_metrics_pipeline(
-        &mut self,
-        ctx: &ActorContext<Self>,
-        indexing_pipeline_id: IndexingPipelineId,
-        index_config: IndexConfig,
-        source_config: SourceConfig,
-        params_fingerprint: u64,
-    ) -> Result<PipelineHandle, IndexingError> {
-        let pipeline_uid_str = indexing_pipeline_id.pipeline_uid.to_string();
-        let indexing_directory = temp_dir::Builder::default()
-            .join(&indexing_pipeline_id.index_uid.index_id)
-            .join(&indexing_pipeline_id.index_uid.incarnation_id.to_string())
-            .join(&indexing_pipeline_id.source_id)
-            .join(&pipeline_uid_str)
-            .tempdir_in(&self.indexing_root_directory)
-            .map_err(|error| {
-                let message = format!("failed to create indexing directory: {error}");
-                IndexingError::Internal(message)
-            })?;
-        let storage = self
-            .storage_resolver
-            .resolve(&index_config.index_uri)
-            .await
-            .map_err(|error| {
-                let message = format!("failed to spawn metrics pipeline: {error}");
-                IndexingError::Internal(message)
-            })?;
-
-        let pipeline_params = MetricsPipelineParams {
-            pipeline_id: indexing_pipeline_id.clone(),
-            metastore: self.metastore.clone(),
-            storage,
-            indexing_directory,
-            indexing_settings: index_config.indexing_settings.clone(),
-            max_concurrent_split_uploads: self.max_concurrent_split_uploads,
-            source_config,
-            ingester_pool: self.ingester_pool.clone(),
-            queues_dir_path: self.queue_dir_path.clone(),
-            source_storage_resolver: self.storage_resolver.clone(),
-            params_fingerprint,
-            event_broker: self.event_broker.clone(),
-        };
-        let pipeline = MetricsPipeline::new(pipeline_params);
-        let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
-        Ok(PipelineHandle {
-            inner: PipelineHandleInner::Metrics { mailbox, handle },
-            indexing_pipeline_id,
-        })
+        Ok(Box::new(ActorPipeline { pipeline_id: indexing_pipeline_id, mailbox, handle }))
     }
 
     async fn index_metadata(
@@ -667,7 +524,7 @@ impl IndexingService {
         let merge_pipelines_to_retain: HashSet<MergePipelineId> = self
             .indexing_pipelines
             .values()
-            .map(|pipeline_handle| pipeline_handle.indexing_pipeline_id.merge_pipeline_id())
+            .map(|pipeline_handle| pipeline_handle.indexing_pipeline_id().merge_pipeline_id())
             .collect();
 
         let merge_pipelines_to_shutdown: Vec<MergePipelineId> = self
@@ -714,7 +571,7 @@ impl IndexingService {
             .filter_map(|pipeline_handle| {
                 let indexing_statistics = pipeline_handle.last_observation();
                 let pipeline_metrics = indexing_statistics.pipeline_metrics_opt?;
-                Some((&pipeline_handle.indexing_pipeline_id, pipeline_metrics))
+                Some((pipeline_handle.indexing_pipeline_id(), pipeline_metrics))
             })
             .collect();
         self.cluster
@@ -910,7 +767,7 @@ impl IndexingService {
             .iter()
             .flat_map(|pipeline_uid| self.indexing_pipelines.get(pipeline_uid))
             .any(|pipeline_handle| {
-                pipeline_handle.indexing_pipeline_id.source_id == INGEST_API_SOURCE_ID
+                pipeline_handle.indexing_pipeline_id().source_id == INGEST_API_SOURCE_ID
             });
 
         for pipeline_to_shutdown in pipelines_to_shutdown {
@@ -950,9 +807,9 @@ impl IndexingService {
                 let assignment = pipeline_handle.last_observation();
                 let shard_ids: Vec<ShardId> = assignment.shard_ids.iter().cloned().collect();
                 IndexingTask {
-                    index_uid: Some(pipeline_handle.indexing_pipeline_id.index_uid.clone()),
-                    source_id: pipeline_handle.indexing_pipeline_id.source_id.clone(),
-                    pipeline_uid: Some(pipeline_handle.indexing_pipeline_id.pipeline_uid),
+                    index_uid: Some(pipeline_handle.indexing_pipeline_id().index_uid.clone()),
+                    source_id: pipeline_handle.indexing_pipeline_id().source_id.clone(),
+                    pipeline_uid: Some(pipeline_handle.indexing_pipeline_id().pipeline_uid),
                     shard_ids,
                     params_fingerprint: assignment.params_fingerprint,
                 }
@@ -1043,7 +900,7 @@ impl Handler<ObservePipeline> for IndexingService {
 
 #[async_trait]
 impl Handler<DetachIndexingPipeline> for IndexingService {
-    type Reply = Result<PipelineHandle, IndexingError>;
+    type Reply = Result<BoxPipelineHandle, IndexingError>;
 
     async fn handle(
         &mut self,

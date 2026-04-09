@@ -49,3 +49,90 @@ pub(crate) static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10)
 pub(crate) struct Spawn {
     pub(crate) retry_count: usize,
 }
+
+// ---------------------------------------------------------------------------
+// Pipeline trait — type-erased handle for any indexing pipeline actor
+// ---------------------------------------------------------------------------
+
+use async_trait::async_trait;
+use quickwit_actors::{
+    Actor, ActorExitStatus, ActorHandle, ActorState, DeferableReplyHandler, Handler, Health,
+    Mailbox, Observation, SendError, Supervisable,
+};
+
+use quickwit_proto::indexing::IndexingPipelineId;
+
+use crate::models::IndexingStatistics;
+use crate::source::AssignShards;
+
+/// Trait that abstracts over the concrete pipeline actor type
+/// (`IndexingPipeline` or `MetricsPipeline`). This allows `PipelineHandle`
+/// to hold a single `Box<dyn PipelineHandle>`.
+#[async_trait]
+pub trait PipelineHandle: Send + Sync {
+    fn indexing_pipeline_id(&self) -> &IndexingPipelineId;
+    fn state(&self) -> ActorState;
+    fn refresh_observe(&self);
+    fn last_observation(&self) -> IndexingStatistics;
+    fn check_health(&self, check_for_progress: bool) -> Health;
+    async fn send_assign_shards(&self, message: AssignShards) -> Result<(), SendError>;
+    async fn observe(&self) -> Observation<IndexingStatistics>;
+    async fn join(self: Box<Self>) -> (ActorExitStatus, IndexingStatistics);
+    async fn quit(self: Box<Self>) -> (ActorExitStatus, IndexingStatistics);
+    async fn kill(self: Box<Self>);
+}
+
+/// Generic wrapper that implements `PipelineHandle` for any actor with the right
+/// observable state and message handlers.
+pub(crate) struct ActorPipeline<A: Actor<ObservableState = IndexingStatistics>> {
+    pub pipeline_id: IndexingPipelineId,
+    pub mailbox: Mailbox<A>,
+    pub handle: ActorHandle<A>,
+}
+
+#[async_trait]
+impl<A> PipelineHandle for ActorPipeline<A>
+where
+    A: Actor<ObservableState = IndexingStatistics> + DeferableReplyHandler<AssignShards>,
+{
+    fn indexing_pipeline_id(&self) -> &IndexingPipelineId {
+        &self.pipeline_id
+    }
+
+    fn state(&self) -> ActorState {
+        self.handle.state()
+    }
+
+    fn refresh_observe(&self) {
+        self.handle.refresh_observe();
+    }
+
+    fn last_observation(&self) -> IndexingStatistics {
+        self.handle.last_observation().clone()
+    }
+
+    fn check_health(&self, check_for_progress: bool) -> Health {
+        self.handle.check_health(check_for_progress)
+    }
+
+    async fn send_assign_shards(&self, message: AssignShards) -> Result<(), SendError> {
+        self.mailbox.send_message(message).await?;
+        Ok(())
+    }
+
+    async fn observe(&self) -> Observation<IndexingStatistics> {
+        self.handle.observe().await
+    }
+
+    async fn join(self: Box<Self>) -> (ActorExitStatus, IndexingStatistics) {
+        self.handle.join().await
+    }
+
+    async fn quit(self: Box<Self>) -> (ActorExitStatus, IndexingStatistics) {
+        self.handle.quit().await
+    }
+
+    async fn kill(self: Box<Self>) {
+        let _ = self.handle.kill().await;
+    }
+}

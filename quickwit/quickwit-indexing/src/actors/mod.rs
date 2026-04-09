@@ -21,7 +21,7 @@ mod sequencer;
 mod uploader;
 
 pub use indexing_service::{
-    INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters, PipelineHandle,
+    INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters, BoxPipelineHandle,
 };
 pub use log_pipeline::{
     DocProcessor, DocProcessorCounters, FinishPendingMergesAndShutdownPipeline, IndexSerializer,

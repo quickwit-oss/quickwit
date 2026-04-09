@@ -750,7 +750,7 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
 /// Starts a tokio task that displays the indexing statistics
 /// every once in awhile.
 pub async fn start_statistics_reporting_loop(
-    pipeline_handle: quickwit_indexing::PipelineHandle,
+    pipeline_handle: quickwit_indexing::BoxPipelineHandle,
     is_stdin: bool,
 ) -> anyhow::Result<IndexingStatistics> {
     let mut stdout_handle = stdout();
