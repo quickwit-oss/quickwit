@@ -11,12 +11,21 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow = { workspace = true }
 async-trait = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true, features = ["testsuite"] }

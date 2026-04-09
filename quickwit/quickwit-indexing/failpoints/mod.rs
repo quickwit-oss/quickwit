@@ -285,9 +285,10 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         tantivy_dirs.push(get_tantivy_directory_from_split_bundle(&dest_filepath).unwrap());
     }
     let merge_operation = MergeOperation::new_merge_operation(split_metadatas);
-    let merge_task = MergeTask::from_merge_operation_for_test(merge_operation);
+    let merge_task = MergeTask::from_merge_operation_for_test(merge_operation.clone());
     let merge_scratch = MergeScratch {
-        merge_task,
+        merge_operation,
+        merge_task: Some(merge_task),
         merge_scratch_directory,
         downloaded_splits_directory,
         tantivy_dirs,
