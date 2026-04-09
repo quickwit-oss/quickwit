@@ -34,8 +34,8 @@ use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, warn};
 use ulid::Ulid;
 
-use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
 use super::ProcessedParquetBatch;
+use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).

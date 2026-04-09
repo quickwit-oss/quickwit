@@ -87,14 +87,12 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::Universe;
+    use quickwit_actors::{QueueCapacity, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
     use quickwit_proto::metastore::{EmptyResponse, MetastoreServiceClient, MockMetastoreService};
     use quickwit_proto::types::IndexUid;
     use tracing::Span;
-
-    use quickwit_actors::QueueCapacity;
 
     use super::{METRICS_PUBLISHER_NAME, ParquetSplitsUpdate};
     use crate::actors::publisher::Publisher;

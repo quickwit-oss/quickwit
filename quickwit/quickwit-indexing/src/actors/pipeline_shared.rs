@@ -59,7 +59,6 @@ use quickwit_actors::{
     Actor, ActorExitStatus, ActorHandle, ActorState, DeferableReplyHandler, Health, Mailbox,
     Observation, SendError, Supervisable,
 };
-
 use quickwit_proto::indexing::IndexingPipelineId;
 
 use crate::models::IndexingStatistics;
@@ -92,8 +91,7 @@ pub(crate) struct ActorPipeline<A: Actor<ObservableState = IndexingStatistics>> 
 
 #[async_trait]
 impl<A> PipelineHandle for ActorPipeline<A>
-where
-    A: Actor<ObservableState = IndexingStatistics> + DeferableReplyHandler<AssignShards>,
+where A: Actor<ObservableState = IndexingStatistics> + DeferableReplyHandler<AssignShards>
 {
     fn indexing_pipeline_id(&self) -> &IndexingPipelineId {
         &self.pipeline_id

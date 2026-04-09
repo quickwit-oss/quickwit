@@ -573,6 +573,7 @@ mod tests {
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use quickwit_actors::{Command, Universe};
     use quickwit_common::ServiceStream;
@@ -587,10 +588,8 @@ mod tests {
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use quickwit_storage::RamStorage;
 
-    use std::time::Duration;
-
     use super::{IndexingPipeline, *};
-    use crate::actors::log_pipeline::{MergePipeline, MergePipelineParams};
+    use crate::actors::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::default_merge_policy;
 
     #[test]

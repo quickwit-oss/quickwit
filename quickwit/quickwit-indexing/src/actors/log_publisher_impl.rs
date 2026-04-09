@@ -115,7 +115,7 @@ impl Handler<SplitsUpdate> for Publisher {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::Universe;
+    use quickwit_actors::{QueueCapacity, Universe};
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
     };
@@ -123,8 +123,6 @@ mod tests {
     use quickwit_proto::metastore::{EmptyResponse, MetastoreServiceClient, MockMetastoreService};
     use quickwit_proto::types::{IndexUid, Position};
     use tracing::Span;
-
-    use quickwit_actors::QueueCapacity;
 
     use super::PUBLISHER_NAME;
     use crate::actors::publisher::Publisher;

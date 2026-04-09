@@ -38,9 +38,8 @@ use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
-use super::{
-    MergeExecutor, MergePlanner, MergeSplitDownloader, Packager, RunFinalizeMergePolicyAndQuit,
-};
+use super::merge_planner::RunFinalizeMergePolicyAndQuit;
+use super::{MergeExecutor, MergePlanner, MergeSplitDownloader, Packager};
 use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Uploader, UploaderType};

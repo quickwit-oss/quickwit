@@ -3,7 +3,9 @@ use quickwit_common::temp_dir;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::indexing::{IndexingError, IndexingPipelineId};
 
-use crate::{IndexingService, BoxPipelineHandle, actors::{MetricsPipeline, MetricsPipelineParams, pipeline_shared::ActorPipeline}};
+use crate::actors::pipeline_shared::ActorPipeline;
+use crate::actors::{MetricsPipeline, MetricsPipelineParams};
+use crate::{BoxPipelineHandle, IndexingService};
 
 impl IndexingService {
     pub(crate) async fn spawn_metrics_pipeline(
@@ -50,6 +52,10 @@ impl IndexingService {
         };
         let pipeline = MetricsPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
-        Ok(Box::new(ActorPipeline { pipeline_id: indexing_pipeline_id, mailbox, handle }))
+        Ok(Box::new(ActorPipeline {
+            pipeline_id: indexing_pipeline_id,
+            mailbox,
+            handle,
+        }))
     }
 }

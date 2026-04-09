@@ -28,9 +28,9 @@ use quickwit_actors::{
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::io::Limiter;
-use quickwit_common::pubsub::EventBroker;
 #[cfg(feature = "metrics")]
 use quickwit_common::is_metrics_index;
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::{io, temp_dir};
 use quickwit_config::{
     INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, build_doc_mapper,
@@ -61,11 +61,9 @@ use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
-use super::log_pipeline::{
-    FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
-};
+use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::pipeline_shared::{ActorPipeline, PipelineHandle};
-use super::{MergePlanner, MergeSchedulerService};
+use super::{FinishPendingMergesAndShutdownPipeline, MergePlanner, MergeSchedulerService};
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
@@ -401,7 +399,11 @@ impl IndexingService {
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
-        Ok(Box::new(ActorPipeline { pipeline_id: indexing_pipeline_id, mailbox, handle }))
+        Ok(Box::new(ActorPipeline {
+            pipeline_id: indexing_pipeline_id,
+            mailbox,
+            handle,
+        }))
     }
 
     async fn index_metadata(
@@ -1054,7 +1056,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::actors::log_pipeline::merge_pipeline::SUPERVISE_LOOP_INTERVAL;
+    use crate::actors::merge_pipeline::SUPERVISE_LOOP_INTERVAL;
 
     async fn spawn_indexing_service_for_test(
         data_dir_path: &Path,

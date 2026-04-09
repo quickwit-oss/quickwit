@@ -34,12 +34,11 @@ use quickwit_storage::Storage;
 use tokio::sync::{Semaphore, SemaphorePermit};
 use tracing::{Instrument, Span, debug, info, instrument, warn};
 
-use super::ParquetSplitBatch;
+use super::{ParquetSplitBatch, ParquetSplitsUpdate};
 use crate::actors::sequencer::SequencerCommand;
 use crate::actors::uploader::{SplitsUpdateMailbox, SplitsUpdateSender};
 use crate::actors::{Publisher, UploaderCounters, UploaderType};
 use crate::metrics::INDEXER_METRICS;
-use super::ParquetSplitsUpdate;
 
 /// Concurrent upload permits for metrics uploader.
 /// Uses same permit pool as indexer uploads.
