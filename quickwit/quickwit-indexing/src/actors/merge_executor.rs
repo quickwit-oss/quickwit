@@ -109,6 +109,17 @@ impl Handler<MergeScratch> for MergeExecutor {
                 match merge_res {
                     Ok(indexed_split) => Some(indexed_split),
                     Err(err) => {
+                        // A failure in a merge is a bit special.
+                        //
+                        // Instead of failing the pipeline, we just log it.
+                        // The idea is to limit the risk associated with a potential split of death.
+                        //
+                        // Such a split is now not tracked by the merge planner and won't undergo a
+                        // merge until the merge pipeline is restarted.
+                        //
+                        // With a merge policy that marks splits as mature after a day or so, this
+                        // limits the noise associated to those failed
+                        // merges.
                         error!(task=?merge_operation, err=?err, "failed to merge splits");
                         return Ok(());
                     }
