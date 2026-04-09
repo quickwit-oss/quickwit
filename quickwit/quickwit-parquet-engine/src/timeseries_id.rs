@@ -42,16 +42,14 @@ use siphasher::sip::SipHasher;
 /// Temporal and value columns vary per data point within a timeseries and
 /// must not contribute to the hash.
 ///
-/// - `timestamp_secs` and `value` are fixed fields on `MetricDataPoint`
-///   (not in the tags HashMap) and are excluded by construction — they are
-///   never passed to the hash function.
-/// - `start_timestamp_secs` is the OTLP delta-window start time, stored
-///   as a tag. It varies per data point so must be excluded here.
-/// - `timestamp` is the generic well-known timestamp name from the sort
-///   schema system. Excluded defensively in case it appears as a
-///   user-provided attribute.
-/// - DDSketch value columns (`count`, `sum`, `min`, `max`, `flags`,
-///   `keys`, `counts`) are per-data-point sketch components.
+/// - `timestamp_secs` and `value` are fixed fields on `MetricDataPoint` (not in the tags HashMap)
+///   and are excluded by construction — they are never passed to the hash function.
+/// - `start_timestamp_secs` is the OTLP delta-window start time, stored as a tag. It varies per
+///   data point so must be excluded here.
+/// - `timestamp` is the generic well-known timestamp name from the sort schema system. Excluded
+///   defensively in case it appears as a user-provided attribute.
+/// - DDSketch value columns (`count`, `sum`, `min`, `max`, `flags`, `keys`, `counts`) are
+///   per-data-point sketch components.
 pub const EXCLUDED_TAGS: &[&str] = &[
     "count",
     "counts",
@@ -140,7 +138,8 @@ mod tests {
         let id = compute_timeseries_id("cpu.usage", 0, &tags);
         assert_eq!(
             id, -1249054409005369755,
-            "pinned hash for (cpu.usage, Gauge, env=prod, host=node-1, service=api) must not change"
+            "pinned hash for (cpu.usage, Gauge, env=prod, host=node-1, service=api) must not \
+             change"
         );
     }
 
@@ -383,7 +382,10 @@ mod tests {
 
         let id1 = compute_timeseries_id("m", 0, &tags1);
         let id2 = compute_timeseries_id("m", 0, &tags2);
-        assert_ne!(id1, id2, "different unicode values must produce different hashes");
+        assert_ne!(
+            id1, id2,
+            "different unicode values must produce different hashes"
+        );
     }
 
     #[test]
@@ -409,9 +411,9 @@ mod tests {
 /// Property-based tests for order independence and collision resistance.
 #[cfg(test)]
 mod proptests {
-    use super::*;
-
     use proptest::prelude::*;
+
+    use super::*;
 
     /// Generate a HashMap<String, String> with 0..max_tags entries.
     fn arb_tags(max_tags: usize) -> impl Strategy<Value = HashMap<String, String>> {
