@@ -28,6 +28,7 @@ pub mod sort_fields;
 pub mod split;
 pub mod storage;
 pub mod table_config;
+pub mod timeseries_id;
 
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_helpers;
