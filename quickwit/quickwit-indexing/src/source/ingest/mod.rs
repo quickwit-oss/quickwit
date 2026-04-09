@@ -1472,10 +1472,7 @@ mod tests {
         );
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
-        source
-            .emit_batches(&processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&processor_mailbox, &ctx).await.unwrap();
         let doc_batch = doc_processor_inbox
             .recv_typed_message::<RawDocBatch>()
             .await
@@ -1501,10 +1498,7 @@ mod tests {
         assert_eq!(partition_deltas[1].1.from, Position::offset(22u64));
         assert_eq!(partition_deltas[1].1.to, Position::eof(23u64));
 
-        source
-            .emit_batches(&processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&processor_mailbox, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(2)).unwrap();
         assert_eq!(shard.status, IndexingStatus::ReachedEof);
 
@@ -1518,10 +1512,7 @@ mod tests {
             .await
             .unwrap();
 
-        source
-            .emit_batches(&processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&processor_mailbox, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::Error);
 
@@ -1542,10 +1533,7 @@ mod tests {
         );
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
-        source
-            .emit_batches(&processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&processor_mailbox, &ctx).await.unwrap();
         let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::Active);
     }
@@ -1640,10 +1628,7 @@ mod tests {
             .await
             .unwrap();
 
-        source
-            .emit_batches(&processor_mailbox, &ctx)
-            .await
-            .unwrap();
+        source.emit_batches(&processor_mailbox, &ctx).await.unwrap();
 
         let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::NotFound);

@@ -45,8 +45,7 @@ use tracing::{debug, error, info, instrument};
 
 use super::{ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader};
 use crate::actors::pipeline_shared::{
-    SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop,
-    wait_duration_before_retry,
+    SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry,
 };
 use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
@@ -240,8 +239,7 @@ impl MetricsPipeline {
             stats.num_invalid_docs += doc_counters.num_errors();
             stats.total_bytes_processed += doc_counters.bytes_total;
             stats.num_local_splits += indexer_counters.batches_flushed;
-            stats.num_staged_splits +=
-                uploader_counters.num_staged_splits.load(Ordering::Relaxed);
+            stats.num_staged_splits += uploader_counters.num_staged_splits.load(Ordering::Relaxed);
             stats.num_uploaded_splits += uploader_counters
                 .num_uploaded_splits
                 .load(Ordering::Relaxed);
@@ -371,11 +369,8 @@ impl MetricsPipeline {
             .spawn(indexer);
 
         // ParquetDocProcessor
-        let doc_processor = ParquetDocProcessor::new(
-            index_id.to_string(),
-            source_id.to_string(),
-            indexer_mailbox,
-        );
+        let doc_processor =
+            ParquetDocProcessor::new(index_id.to_string(), source_id.to_string(), indexer_mailbox);
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())

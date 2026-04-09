@@ -29,7 +29,7 @@ use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
-use quickwit_common::{io, temp_dir};
+use quickwit_common::{io, is_metrics_index, temp_dir};
 use quickwit_config::{
     INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, build_doc_mapper,
     indexing_pipeline_params_fingerprint,
@@ -58,8 +58,6 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
-
-use quickwit_common::is_metrics_index;
 
 use super::log_pipeline::{
     FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
@@ -105,14 +103,21 @@ enum PipelineHandleInner {
 }
 
 impl PipelineHandle {
-    fn state(&self) -> ActorState {
+    pub fn state(&self) -> ActorState {
         match &self.inner {
             PipelineHandleInner::Log { handle, .. } => handle.state(),
             PipelineHandleInner::Metrics { handle, .. } => handle.state(),
         }
     }
 
-    fn last_observation(&self) -> IndexingStatistics {
+    pub fn refresh_observe(&self) {
+        match &self.inner {
+            PipelineHandleInner::Log { handle, .. } => handle.refresh_observe(),
+            PipelineHandleInner::Metrics { handle, .. } => handle.refresh_observe(),
+        }
+    }
+
+    pub fn last_observation(&self) -> IndexingStatistics {
         match &self.inner {
             PipelineHandleInner::Log { handle, .. } => handle.last_observation().clone(),
             PipelineHandleInner::Metrics { handle, .. } => handle.last_observation().clone(),
@@ -134,7 +139,7 @@ impl PipelineHandle {
         Ok(())
     }
 
-    pub(crate) async fn join(self) -> (ActorExitStatus, IndexingStatistics) {
+    pub async fn join(self) -> (ActorExitStatus, IndexingStatistics) {
         match self.inner {
             PipelineHandleInner::Log { handle, .. } => handle.join().await,
             PipelineHandleInner::Metrics { handle, .. } => handle.join().await,
@@ -298,13 +303,10 @@ impl IndexingService {
         &mut self,
         pipeline_uid: &PipelineUid,
     ) -> Result<Observation<IndexingStatistics>, IndexingError> {
-        let pipeline_handle = self
-            .indexing_pipelines
-            .get(pipeline_uid)
-            .ok_or_else(|| {
-                let message = format!("could not find indexing pipeline `{pipeline_uid}`");
-                IndexingError::Internal(message)
-            })?;
+        let pipeline_handle = self.indexing_pipelines.get(pipeline_uid).ok_or_else(|| {
+            let message = format!("could not find indexing pipeline `{pipeline_uid}`");
+            IndexingError::Internal(message)
+        })?;
         let observation = pipeline_handle.observe().await;
         Ok(observation)
     }

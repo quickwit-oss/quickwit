@@ -37,22 +37,20 @@ trait ProcessorMailboxInner: Send + Sync + 'static {
 /// Wraps a concrete `Mailbox<A>` for any actor A that handles the three
 /// processor messages (`RawDocBatch`, `NewPublishLock`, `NewPublishToken`).
 struct TypedProcessorMailbox<A>
-where
-    A: Actor
+where A: Actor
         + DeferableReplyHandler<RawDocBatch>
         + DeferableReplyHandler<NewPublishLock>
-        + DeferableReplyHandler<NewPublishToken>,
+        + DeferableReplyHandler<NewPublishToken>
 {
     mailbox: Mailbox<A>,
 }
 
 #[async_trait]
 impl<A> ProcessorMailboxInner for TypedProcessorMailbox<A>
-where
-    A: Actor
+where A: Actor
         + DeferableReplyHandler<RawDocBatch>
         + DeferableReplyHandler<NewPublishLock>
-        + DeferableReplyHandler<NewPublishToken>,
+        + DeferableReplyHandler<NewPublishToken>
 {
     async fn send_raw_doc_batch(&self, batch: RawDocBatch) -> Result<(), SendError> {
         self.mailbox.send_message(batch).await?;
@@ -88,12 +86,10 @@ impl ProcessorMailbox {
     /// Create a `ProcessorMailbox` from any actor mailbox whose actor implements
     /// the required message handlers.
     pub fn new<A>(mailbox: Mailbox<A>) -> Self
-    where
-        A: Actor
+    where A: Actor
             + DeferableReplyHandler<RawDocBatch>
             + DeferableReplyHandler<NewPublishLock>
-            + DeferableReplyHandler<NewPublishToken>,
-    {
+            + DeferableReplyHandler<NewPublishToken> {
         Self {
             inner: Arc::new(TypedProcessorMailbox { mailbox }),
         }

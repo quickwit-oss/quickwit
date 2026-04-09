@@ -33,7 +33,9 @@ use tokio::time;
 use tracing::{debug, info, warn};
 
 use super::{BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
-use crate::source::{BatchBuilder, ProcessorMailbox, Source, SourceContext, SourceRuntime, TypedSourceFactory};
+use crate::source::{
+    BatchBuilder, ProcessorMailbox, Source, SourceContext, SourceRuntime, TypedSourceFactory,
+};
 
 const DEFAULT_MAX_MESSAGES_PER_PULL: i32 = 1_000;
 
@@ -293,9 +295,8 @@ mod gcp_pubsub_emulator_tests {
     use super::*;
     use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
-    use crate::source::ProcessorMailbox;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{SourceActor, quickwit_supported_sources};
+    use crate::source::{ProcessorMailbox, SourceActor, quickwit_supported_sources};
 
     static GCP_TEST_PROJECT: &str = "quickwit-emulator";
 

@@ -255,8 +255,7 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
 
         let ram_storage = Arc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,

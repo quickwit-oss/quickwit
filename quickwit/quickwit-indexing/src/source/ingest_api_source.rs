@@ -201,7 +201,9 @@ impl Source for IngestApiSource {
             .map_err(anyhow::Error::from)?;
 
         self.update_counters(current_offset, batch_builder.docs.len() as u64);
-        batch_sink.send_raw_doc_batch(batch_builder.build(), ctx).await?;
+        batch_sink
+            .send_raw_doc_batch(batch_builder.build(), ctx)
+            .await?;
         Ok(Duration::default())
     }
 
@@ -262,9 +264,8 @@ mod tests {
     use super::*;
     use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
-    use crate::source::ProcessorMailbox;
-    use crate::source::SourceActor;
     use crate::source::tests::SourceRuntimeBuilder;
+    use crate::source::{ProcessorMailbox, SourceActor};
 
     fn make_ingest_request(
         index_id: IndexId,

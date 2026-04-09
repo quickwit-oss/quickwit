@@ -54,7 +54,6 @@
 //!   offset.
 mod doc_file_reader;
 mod file_source;
-mod processor_mailbox;
 #[cfg(feature = "gcp-pubsub")]
 mod gcp_pubsub_source;
 mod ingest;
@@ -63,6 +62,7 @@ mod ingest_api_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
+mod processor_mailbox;
 #[cfg(feature = "pulsar")]
 mod pulsar_source;
 #[cfg(feature = "queue-sources")]
@@ -87,6 +87,7 @@ pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 use once_cell::sync::{Lazy, OnceCell};
+pub use processor_mailbox::ProcessorMailbox;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
@@ -101,7 +102,6 @@ use quickwit_config::{
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
-pub use processor_mailbox::ProcessorMailbox;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreResult, MetastoreService,
@@ -368,11 +368,7 @@ impl Actor for SourceActor {
 impl Handler<Loop> for SourceActor {
     type Reply = ();
 
-    async fn handle(
-        &mut self,
-        _message: Loop,
-        ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         let wait_for = self
             .source
             .emit_batches(&self.processor_mailbox, ctx)

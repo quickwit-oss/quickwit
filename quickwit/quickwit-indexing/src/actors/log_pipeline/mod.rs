@@ -42,7 +42,9 @@ pub use doc_processor::{DocProcessor, DocProcessorCounters};
 pub use index_serializer::IndexSerializer;
 pub use indexer::{Indexer, IndexerCounters};
 pub use merge_executor::{MergeExecutor, combine_partition_ids, merge_split_attrs};
-pub use merge_pipeline::{FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams};
+pub use merge_pipeline::{
+    FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
+};
 pub(crate) use merge_planner::{MergePlanner, RunFinalizeMergePolicyAndQuit};
 pub use merge_scheduler_service::{MergePermit, MergeSchedulerService, schedule_merge};
 pub use merge_split_downloader::MergeSplitDownloader;

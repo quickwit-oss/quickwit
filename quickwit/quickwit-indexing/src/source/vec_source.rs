@@ -110,7 +110,9 @@ impl Source for VecSource {
             position_from_offset(to_item_idx),
         )
         .unwrap();
-        batch_sink.send_raw_doc_batch(batch_builder.build(), ctx).await?;
+        batch_sink
+            .send_raw_doc_batch(batch_builder.build(), ctx)
+            .await?;
 
         Ok(Duration::default())
     }
@@ -139,8 +141,8 @@ mod tests {
     use super::*;
     use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
-    use crate::source::{ProcessorMailbox, SourceActor};
     use crate::source::tests::SourceRuntimeBuilder;
+    use crate::source::{ProcessorMailbox, SourceActor};
 
     #[tokio::test]
     async fn test_vec_source() -> anyhow::Result<()> {

@@ -377,11 +377,11 @@ mod tests {
     use super::*;
     use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
-    use crate::source::{ProcessorMailbox, SourceActor};
     use crate::source::kinesis::helpers::tests::{
         make_shard_id, put_records_into_shards, setup, teardown,
     };
     use crate::source::tests::SourceRuntimeBuilder;
+    use crate::source::{ProcessorMailbox, SourceActor};
 
     // Sequence number
     type SeqNo = String;

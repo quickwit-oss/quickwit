@@ -20,20 +20,17 @@ mod publisher;
 mod sequencer;
 mod uploader;
 
-pub use indexing_service::{INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters};
+pub use indexing_service::{
+    INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters, PipelineHandle,
+};
 pub use log_pipeline::{
     DocProcessor, DocProcessorCounters, FinishPendingMergesAndShutdownPipeline, IndexSerializer,
-    Indexer, IndexerCounters, IndexingPipeline, IndexingPipelineParams, MergeExecutor,
+    Indexer, IndexerCounters, IndexingPipeline, IndexingPipelineParams, MergeExecutor, MergePermit,
     MergePipeline, MergeSchedulerService, MergeSplitDownloader, Packager, combine_partition_ids,
     merge_split_attrs, schedule_merge,
 };
 pub(crate) use log_pipeline::{MergePlanner, RunFinalizeMergePolicyAndQuit};
-pub use log_pipeline::MergePermit;
-pub use metrics_pipeline::{
-    MetricsPipeline, MetricsPipelineParams, ParquetDocProcessor, ParquetDocProcessorCounters,
-    ParquetDocProcessorError, ParquetIndexer, ParquetIndexerCounters, ParquetPackager,
-    ParquetSplitBatch, ParquetUploader, is_arrow_ipc,
-};
+pub use metrics_pipeline::*;
 pub use publisher::{Publisher, PublisherCounters, PublisherType};
 pub use quickwit_proto::indexing::IndexingError;
 pub use sequencer::Sequencer;

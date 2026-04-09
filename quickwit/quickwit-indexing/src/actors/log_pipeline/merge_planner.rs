@@ -25,8 +25,8 @@ use tantivy::Inventory;
 use time::OffsetDateTime;
 use tracing::{info, warn};
 
-use super::{MergeSchedulerService, MergeSplitDownloader};
 use super::merge_scheduler_service::schedule_merge;
+use super::{MergeSchedulerService, MergeSplitDownloader};
 use crate::MergePolicy;
 use crate::merge_policy::MergeOperation;
 use crate::models::NewSplits;

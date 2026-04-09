@@ -161,10 +161,7 @@ impl QueueCoordinator {
     }
 
     /// Polls messages from the queue and prepares them for processing
-    async fn poll_messages(
-        &mut self,
-        ctx: &SourceContext,
-    ) -> Result<(), ActorExitStatus> {
+    async fn poll_messages(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         let raw_messages = self
             .queue_receiver
             .receive(1, self.visibility_settings.deadline_for_receive)

@@ -454,11 +454,12 @@ mod pulsar_broker_tests {
 
     use super::*;
     use crate::actors::DocProcessor;
-    use crate::source::ProcessorMailbox;
     use crate::source::pulsar_source::{msg_id_from_position, msg_id_to_position};
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{RawDocBatch, SourceActor, SuggestTruncate, quickwit_supported_sources};
+    use crate::source::{
+        ProcessorMailbox, RawDocBatch, SourceActor, SuggestTruncate, quickwit_supported_sources,
+    };
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
     static PULSAR_ADMIN_URI: &str = "http://localhost:8081";

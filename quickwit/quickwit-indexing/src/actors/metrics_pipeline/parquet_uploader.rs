@@ -406,8 +406,7 @@ mod tests {
 
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
 
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
@@ -492,8 +491,7 @@ mod tests {
 
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
 
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
@@ -577,8 +575,7 @@ mod tests {
 
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
 
         let mut mock_metastore = MockMetastoreService::new();
         // Should NOT call stage_metrics_splits for empty batch
@@ -635,8 +632,7 @@ mod tests {
 
         // Create a simple receiver actor to collect ParquetSplitsUpdate messages
         // We use a test mailbox for Publisher to capture what would be sent
-        let (publisher_mailbox, publisher_inbox) =
-            universe.create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
 
         // Create sequencer that forwards to publisher
         let sequencer = Sequencer::new(publisher_mailbox);

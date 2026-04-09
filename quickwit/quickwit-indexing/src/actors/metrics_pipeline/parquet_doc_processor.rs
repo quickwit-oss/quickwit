@@ -525,9 +525,7 @@ mod tests {
         use quickwit_proto::metastore::MockMetastoreService;
         use quickwit_storage::RamStorage;
 
-        use crate::actors::metrics_pipeline::{
-            ParquetIndexer, ParquetPackager, ParquetUploader,
-        };
+        use crate::actors::metrics_pipeline::{ParquetIndexer, ParquetPackager, ParquetUploader};
         use crate::actors::{Publisher, SplitsUpdateMailbox, UploaderType};
 
         let universe = Universe::with_accelerated_time();
@@ -536,8 +534,7 @@ mod tests {
         // Create ParquetUploader
         let mock_metastore = MockMetastoreService::new();
         let ram_storage = StdArc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),

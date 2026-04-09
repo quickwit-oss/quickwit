@@ -561,8 +561,7 @@ mod tests {
     ) -> (Mailbox<ParquetUploader>, ActorHandle<ParquetUploader>) {
         let mock_metastore = MockMetastoreService::new();
         let ram_storage = Arc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
@@ -586,8 +585,7 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
 
         let ram_storage = Arc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
@@ -915,8 +913,7 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
 
         let ram_storage = Arc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<Publisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),

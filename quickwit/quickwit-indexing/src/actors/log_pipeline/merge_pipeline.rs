@@ -38,10 +38,11 @@ use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
-use super::{MergeExecutor, MergePlanner, MergeSplitDownloader, Packager, RunFinalizeMergePolicyAndQuit};
+use super::{
+    MergeExecutor, MergePlanner, MergeSplitDownloader, Packager, RunFinalizeMergePolicyAndQuit,
+};
 use crate::actors::pipeline_shared::wait_duration_before_retry;
-use crate::actors::publisher::DisconnectMergePlanner;
-use crate::actors::publisher::PublisherType;
+use crate::actors::publisher::{DisconnectMergePlanner, PublisherType};
 use crate::actors::{MergeSchedulerService, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
 use crate::models::MergeStatistics;
@@ -591,8 +592,8 @@ mod tests {
     use quickwit_proto::types::{IndexUid, NodeId};
     use quickwit_storage::RamStorage;
 
-    use crate::IndexingSplitStore;
     use super::{MergePipeline, MergePipelineParams};
+    use crate::IndexingSplitStore;
     use crate::actors::{MergePlanner, Publisher};
     use crate::merge_policy::default_merge_policy;
 

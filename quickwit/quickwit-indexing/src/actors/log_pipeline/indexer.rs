@@ -715,8 +715,7 @@ mod tests {
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use tantivy::{DateTime, doc};
 
-    use super::*;
-    use super::{IndexerCounters, record_timestamp};
+    use super::{IndexerCounters, record_timestamp, *};
 
     #[test]
     fn test_record_timestamp() {

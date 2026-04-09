@@ -37,7 +37,7 @@ use quickwit_proto::types::IndexUid;
 use quickwit_storage::RamStorage;
 
 use crate::actors::{
-    ParquetDocProcessor, ParquetIndexer, ParquetPackager, Publisher, ParquetUploader,
+    ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader, Publisher,
     PublisherType, SplitsUpdateMailbox, UploaderType,
 };
 use crate::models::RawDocBatch;

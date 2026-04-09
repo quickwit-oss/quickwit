@@ -25,10 +25,8 @@ use crate::source::SourceRuntime;
 
 #[async_trait]
 pub trait SourceFactory: Send + Sync + 'static {
-    async fn create_source(
-        &self,
-        source_runtime: SourceRuntime,
-    ) -> anyhow::Result<Box<dyn Source>>;
+    async fn create_source(&self, source_runtime: SourceRuntime)
+    -> anyhow::Result<Box<dyn Source>>;
 }
 
 #[async_trait]
