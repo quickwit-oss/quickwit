@@ -14,6 +14,7 @@
 
 mod indexing_service;
 pub(crate) mod log_pipeline;
+#[cfg(feature = "metrics")]
 pub(crate) mod metrics_pipeline;
 pub(crate) mod pipeline_shared;
 mod publisher;
@@ -32,6 +33,7 @@ pub use log_pipeline::{
 pub(crate) use log_pipeline::MergePlanner;
 #[cfg(test)]
 pub(crate) use log_pipeline::RunFinalizeMergePolicyAndQuit;
+#[cfg(feature = "metrics")]
 pub use metrics_pipeline::*;
 pub use publisher::{Publisher, PublisherCounters};
 pub use quickwit_proto::indexing::IndexingError;

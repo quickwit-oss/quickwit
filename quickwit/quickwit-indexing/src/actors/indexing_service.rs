@@ -29,7 +29,9 @@ use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
-use quickwit_common::{io, is_metrics_index, temp_dir};
+#[cfg(feature = "metrics")]
+use quickwit_common::is_metrics_index;
+use quickwit_common::{io, temp_dir};
 use quickwit_config::{
     INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, build_doc_mapper,
     indexing_pipeline_params_fingerprint,
@@ -280,6 +282,7 @@ impl IndexingService {
             }
         }
 
+        #[cfg(feature = "metrics")]
         let pipeline_handle = if is_metrics_index(&indexing_pipeline_id.index_uid.index_id) {
             self.spawn_metrics_pipeline(
                 ctx,
@@ -300,6 +303,17 @@ impl IndexingService {
             )
             .await?
         };
+        #[cfg(not(feature = "metrics"))]
+        let pipeline_handle = self
+            .spawn_log_pipeline(
+                ctx,
+                indexing_pipeline_id.clone(),
+                index_config,
+                source_config,
+                immature_splits_opt,
+                params_fingerprint,
+            )
+            .await?;
         self.indexing_pipelines
             .insert(indexing_pipeline_id.pipeline_uid, pipeline_handle);
         self.counters.num_running_pipelines += 1;
