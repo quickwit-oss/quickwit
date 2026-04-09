@@ -972,8 +972,10 @@ mod tests {
         // Create a batch with columns in a deliberately scrambled order.
         // The tag columns (service, env, region, host) plus two extra data
         // columns (zzz_extra, aaa_extra) that are NOT in the sort schema.
-        let batch =
-            create_test_batch_with_tags(3, &["host", "zzz_extra", "env", "region", "service", "aaa_extra"]);
+        let batch = create_test_batch_with_tags(
+            3,
+            &["host", "zzz_extra", "env", "region", "service", "aaa_extra"],
+        );
         let input_schema = batch.schema();
         let input_names: Vec<&str> = input_schema
             .fields()
@@ -992,11 +994,7 @@ mod tests {
 
         let reordered = writer.reorder_columns(&batch);
         let schema = reordered.schema();
-        let names: Vec<String> = schema
-            .fields()
-            .iter()
-            .map(|f| f.name().clone())
-            .collect();
+        let names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
 
         // Sort schema columns that are present should come first, in sort order.
         // From the default: metric_name, service, env, region, host, timestamp_secs
@@ -1022,7 +1020,11 @@ mod tests {
         );
 
         // Remaining columns should be alphabetical.
-        let remaining: Vec<&str> = names.iter().skip(sort_prefix.len()).map(|s| s.as_str()).collect();
+        let remaining: Vec<&str> = names
+            .iter()
+            .skip(sort_prefix.len())
+            .map(|s| s.as_str())
+            .collect();
         let mut sorted_remaining = remaining.clone();
         sorted_remaining.sort();
         assert_eq!(
@@ -1038,8 +1040,9 @@ mod tests {
 
     #[test]
     fn test_column_ordering_preserved_in_parquet_file() {
-        use parquet::file::reader::{FileReader, SerializedFileReader};
         use std::fs::File;
+
+        use parquet::file::reader::{FileReader, SerializedFileReader};
 
         let config = ParquetWriterConfig::default();
         let writer = ParquetWriter::new(config, &TableConfig::default());
