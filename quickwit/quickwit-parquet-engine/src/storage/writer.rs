@@ -980,9 +980,15 @@ mod tests {
             .iter()
             .map(|f| f.name().as_str())
             .collect();
-        // Sanity: the input batch has the columns in the order we gave them.
-        assert!(input_names.contains(&"zzz_extra"));
-        assert!(input_names.contains(&"aaa_extra"));
+        // Sanity: input has tag columns in the scrambled order we specified,
+        // not in sort-schema or alphabetical order.
+        let host_pos = input_names.iter().position(|n| *n == "host").unwrap();
+        let service_pos = input_names.iter().position(|n| *n == "service").unwrap();
+        assert!(
+            host_pos < service_pos,
+            "input should have host before service (scrambled), got: {:?}",
+            input_names
+        );
 
         let reordered = writer.reorder_columns(&batch);
         let schema = reordered.schema();
