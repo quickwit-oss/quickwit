@@ -284,7 +284,7 @@ impl<T> TrackedUnboundedSender<T> {
 
 #[cfg(test)]
 mod tests {
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock;
 
     use super::*;
     use crate::metrics::new_gauge;
@@ -300,8 +300,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_tracked_service_stream_bounded() {
-        static TEST_GAUGE: Lazy<IntGauge> =
-            Lazy::new(|| new_gauge("common", "help", "test_tracked_service_stream_bounded", &[]));
+        static TEST_GAUGE: LazyLock<IntGauge> = LazyLock::new(|| {
+            new_gauge("common", "help", "test_tracked_service_stream_bounded", &[])
+        });
 
         let (service_stream_tx, mut service_stream) =
             ServiceStream::new_bounded_with_gauge(3, &TEST_GAUGE);
@@ -319,7 +320,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tracked_service_stream_unbounded() {
-        static TEST_GAUGE: Lazy<IntGauge> = Lazy::new(|| {
+        static TEST_GAUGE: LazyLock<IntGauge> = LazyLock::new(|| {
             new_gauge(
                 "common",
                 "help",

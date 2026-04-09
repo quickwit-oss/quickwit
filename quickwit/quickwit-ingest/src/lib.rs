@@ -30,6 +30,7 @@ mod queue;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use anyhow::{Context, bail};
 pub use doc_batch::*;
@@ -38,7 +39,6 @@ pub use ingest_api_service::{GetMemoryCapacity, GetPartitionId, IngestApiService
 pub use ingest_service::*;
 pub use ingest_v2::*;
 pub use memory_capacity::MemoryCapacity;
-use once_cell::sync::OnceCell;
 pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
@@ -51,8 +51,8 @@ pub type Result<T> = std::result::Result<T, IngestServiceError>;
 
 type IngestApiServiceMailboxes = HashMap<PathBuf, Mailbox<IngestApiService>>;
 
-pub static INGEST_API_SERVICE_MAILBOXES: OnceCell<Mutex<IngestApiServiceMailboxes>> =
-    OnceCell::new();
+pub static INGEST_API_SERVICE_MAILBOXES: LazyLock<Mutex<IngestApiServiceMailboxes>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// Initializes an [`IngestApiService`] consuming the queue located at `queue_path`.
 pub async fn init_ingest_api(
@@ -60,10 +60,7 @@ pub async fn init_ingest_api(
     queues_dir_path: &Path,
     config: &IngestApiConfig,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
-    let mut guard = INGEST_API_SERVICE_MAILBOXES
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .await;
+    let mut guard = INGEST_API_SERVICE_MAILBOXES.lock().await;
     if let Some(mailbox) = guard.get(queues_dir_path) {
         return Ok(mailbox.clone());
     }
@@ -88,10 +85,7 @@ pub async fn init_ingest_api(
 pub async fn get_ingest_api_service(
     queues_dir_path: &Path,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
-    let guard = INGEST_API_SERVICE_MAILBOXES
-        .get_or_init(|| Mutex::new(HashMap::new()))
-        .lock()
-        .await;
+    let guard = INGEST_API_SERVICE_MAILBOXES.lock().await;
     if let Some(mailbox) = guard.get(queues_dir_path) {
         return Ok(mailbox.clone());
     }

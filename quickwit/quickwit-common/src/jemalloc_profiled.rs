@@ -14,11 +14,10 @@
 
 use std::alloc::{GlobalAlloc, Layout};
 use std::hash::Hasher;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 
 use bytesize::ByteSize;
-use once_cell::sync::Lazy;
 use tikv_jemallocator::Jemalloc;
 use tracing::{error, info, trace};
 
@@ -54,8 +53,8 @@ static FLAGS: Flags = Flags {
     _padding: [0; 119],
 };
 
-static ALLOCATION_TRACKER: Lazy<Mutex<Allocations>> =
-    Lazy::new(|| Mutex::new(Allocations::default()));
+static ALLOCATION_TRACKER: LazyLock<Mutex<Allocations>> =
+    LazyLock::new(|| Mutex::new(Allocations::default()));
 
 /// Starts measuring heap allocations and logs important leaks.
 ///

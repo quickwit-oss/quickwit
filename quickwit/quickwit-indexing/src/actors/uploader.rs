@@ -15,14 +15,13 @@
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::mem;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use anyhow::{Context, bail};
 use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
@@ -53,8 +52,8 @@ use crate::split_store::IndexingSplitStore;
 /// This "budget" is actually split into two semaphores: one for the indexing pipeline and the merge
 /// pipeline. The idea is that the merge pipeline is by nature a bit irregular, and we don't want it
 /// to stall the indexing pipeline, decreasing its throughput.
-static CONCURRENT_UPLOAD_PERMITS_INDEX: OnceCell<Semaphore> = OnceCell::new();
-static CONCURRENT_UPLOAD_PERMITS_MERGE: OnceCell<Semaphore> = OnceCell::new();
+static CONCURRENT_UPLOAD_PERMITS_INDEX: OnceLock<Semaphore> = OnceLock::new();
+static CONCURRENT_UPLOAD_PERMITS_MERGE: OnceLock<Semaphore> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug)]
 pub enum UploaderType {

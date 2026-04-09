@@ -14,10 +14,10 @@
 
 use std::borrow::Cow;
 use std::convert::TryFrom;
+use std::sync::LazyLock;
 
 use anyhow::bail;
 use base64::prelude::{BASE64_STANDARD, Engine};
-use once_cell::sync::Lazy;
 use quickwit_common::true_fn;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -870,8 +870,8 @@ pub const FIELD_MAPPING_NAME_PATTERN: &str = r"^[@$_\-a-zA-Z][@$_/\.\-a-zA-Z0-9]
 ///   `_field_presence`;
 /// - must not be longer than 255 characters.
 pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<()> {
-    static FIELD_MAPPING_NAME_PTN: Lazy<Regex> =
-        Lazy::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
+    static FIELD_MAPPING_NAME_PTN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(FIELD_MAPPING_NAME_PATTERN).unwrap());
 
     if QW_RESERVED_FIELD_NAMES.contains(&field_mapping_name) {
         bail!(

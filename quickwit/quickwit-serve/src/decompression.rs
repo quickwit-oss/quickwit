@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::io::Read;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use bytes::Bytes;
 use flate2::read::{MultiGzDecoder, ZlibDecoder};
@@ -26,8 +26,8 @@ use warp::reject::Reject;
 use crate::load_shield::{LoadShield, LoadShieldPermit};
 
 fn get_ingest_load_shield() -> &'static LoadShield {
-    static LOAD_SHIELD: OnceLock<LoadShield> = OnceLock::new();
-    LOAD_SHIELD.get_or_init(|| LoadShield::new("ingest"))
+    static LOAD_SHIELD: LazyLock<LoadShield> = LazyLock::new(|| LoadShield::new("ingest"));
+    &LOAD_SHIELD
 }
 
 /// There are two ways to decompress the body:

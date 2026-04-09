@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_telemetry::payload::TelemetryEvent;
 use regex::Regex;
 use rust_embed::RustEmbed;
@@ -46,7 +47,7 @@ async fn serve_file(path: Tail) -> Result<impl warp::Reply, Rejection> {
 }
 
 async fn serve_impl(path: &str) -> Result<impl warp::Reply + use<>, Rejection> {
-    static PATH_PTN: Lazy<Regex> = Lazy::new(|| Regex::new(PATH_PATTERN).unwrap());
+    static PATH_PTN: LazyLock<Regex> = LazyLock::new(|| Regex::new(PATH_PATTERN).unwrap());
     let path_to_file = if PATH_PTN.is_match(path) {
         path
     } else {

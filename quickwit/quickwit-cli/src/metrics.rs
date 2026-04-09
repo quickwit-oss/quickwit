@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{HistogramVec, new_histogram_vec};
 
 pub struct CliMetrics {
@@ -35,4 +36,4 @@ impl Default for CliMetrics {
 }
 
 /// Serve counters exposes a bunch a set of metrics about the request received to quickwit.
-pub static CLI_METRICS: Lazy<CliMetrics> = Lazy::new(CliMetrics::default);
+pub static CLI_METRICS: LazyLock<CliMetrics> = LazyLock::new(CliMetrics::default);

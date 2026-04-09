@@ -16,7 +16,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -24,7 +24,6 @@ use bytesize::ByteSize;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use mrecordlog::error::CreateQueueError;
-use once_cell::sync::OnceCell;
 use quickwit_cluster::Cluster;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pretty::PrettyDisplay;
@@ -87,10 +86,10 @@ pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature =
 const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB
 
 fn get_batch_num_bytes() -> usize {
-    static BATCH_NUM_BYTES_CELL: OnceCell<usize> = OnceCell::new();
-    *BATCH_NUM_BYTES_CELL.get_or_init(|| {
+    static BATCH_NUM_BYTES_CELL: LazyLock<usize> = LazyLock::new(|| {
         quickwit_common::get_from_env("QW_INGEST_BATCH_NUM_BYTES", DEFAULT_BATCH_NUM_BYTES, false)
-    })
+    });
+    *BATCH_NUM_BYTES_CELL
 }
 
 #[derive(Clone)]

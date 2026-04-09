@@ -25,6 +25,7 @@ use std::future::Future;
 use std::io;
 use std::io::IoSlice;
 use std::pin::Pin;
+use std::sync::LazyLock;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -32,7 +33,6 @@ pub use async_speed_limit::Limiter;
 use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
 use bytesize::ByteSize;
-use once_cell::sync::Lazy;
 use pin_project::pin_project;
 use prometheus::IntCounter;
 use tokio::io::AsyncWrite;
@@ -66,7 +66,7 @@ impl Default for IoMetrics {
     }
 }
 
-static IO_METRICS: Lazy<IoMetrics> = Lazy::new(IoMetrics::default);
+static IO_METRICS: LazyLock<IoMetrics> = LazyLock::new(IoMetrics::default);
 
 /// Parameter used in `async_speed_limit`.
 ///
