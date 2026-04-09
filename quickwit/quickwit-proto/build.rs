@@ -35,6 +35,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .run()
         .unwrap();
 
+    // Compaction service.
+    let mut prost_config = prost_build::Config::default();
+    prost_config.file_descriptor_set_path("src/codegen/quickwit/compaction_descriptor.bin");
+
+    Codegen::builder()
+        .with_prost_config(prost_config)
+        .with_protos(&["protos/quickwit/compaction.proto"])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::compaction::CompactionResult")
+        .with_error_type_path("crate::compaction::CompactionError")
+        .generate_rpc_name_impls()
+        .run()
+        .unwrap();
+
     // Control plane.
     let mut prost_config = prost_build::Config::default();
     prost_config.file_descriptor_set_path("src/codegen/quickwit/control_plane_descriptor.bin");

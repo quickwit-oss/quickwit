@@ -7145,6 +7145,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-compaction"
+version = "0.8.0"
+dependencies = [
+ "async-trait",
+ "quickwit-proto",
+]
+
+[[package]]
 name = "quickwit-config"
 version = "0.8.0"
 dependencies = [
@@ -7808,6 +7816,7 @@ dependencies = [
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
+ "quickwit-compaction",
  "quickwit-config",
  "quickwit-control-plane",
  "quickwit-doc-mapper",

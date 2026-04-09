@@ -162,3 +162,99 @@ async fn test_multi_nodes_cluster() {
 
     sandbox.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn test_no_merge_pipelines_when_compaction_service_enabled() {
+    quickwit_common::setup_logging_for_tests();
+    unsafe { std::env::set_var("QW_ENABLE_COMPACTION_SERVICE", "true") };
+
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
+
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(
+            r#"
+            version: 0.8
+            index_id: test-no-merge-pipelines
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            "#,
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
+
+    let stats = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .node_stats()
+        .indexing()
+        .await
+        .unwrap();
+    assert_eq!(stats.num_running_merge_pipelines, 0);
+
+    unsafe { std::env::remove_var("QW_ENABLE_COMPACTION_SERVICE") };
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_merge_pipelines_present_without_compaction_service() {
+    quickwit_common::setup_logging_for_tests();
+    unsafe { std::env::set_var("QW_ENABLE_COMPACTION_SERVICE", "false") };
+
+    let sandbox = ClusterSandboxBuilder::default()
+        .add_node([QuickwitService::Searcher])
+        .add_node([QuickwitService::Metastore])
+        .add_node([QuickwitService::Indexer])
+        .add_node([QuickwitService::ControlPlane])
+        .add_node([QuickwitService::Janitor])
+        .build_and_start()
+        .await;
+
+    sandbox
+        .rest_client(QuickwitService::Indexer)
+        .indexes()
+        .create(
+            r#"
+            version: 0.8
+            index_id: test-with-merge-pipelines
+            doc_mapping:
+              field_mappings:
+              - name: body
+                type: text
+            indexing_settings:
+              commit_timeout_secs: 1
+            "#,
+            quickwit_config::ConfigFormat::Yaml,
+            false,
+        )
+        .await
+        .unwrap();
+
+    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
+
+    let stats = sandbox
+        .rest_client(QuickwitService::Indexer)
+        .node_stats()
+        .indexing()
+        .await
+        .unwrap();
+    assert!(stats.num_running_merge_pipelines > 0);
+
+    unsafe { std::env::remove_var("QW_ENABLE_COMPACTION_SERVICE") };
+    sandbox.shutdown().await.unwrap();
+}

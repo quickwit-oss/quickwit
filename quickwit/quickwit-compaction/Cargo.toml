@@ -1,0 +1,15 @@
+[package]
+name = "quickwit-compaction"
+description = "Merge planner and merge worker services for split compaction"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+quickwit-proto = { workspace = true }

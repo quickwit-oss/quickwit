@@ -27,6 +27,7 @@ use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub mod cluster;
+pub mod compaction;
 pub mod control_plane;
 pub use bytes;
 pub use tonic;

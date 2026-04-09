@@ -12,6 +12,7 @@ members = [
   "quickwit-control-plane",
   "quickwit-datetime",
   "quickwit-directories",
+  "quickwit-compaction",
   "quickwit-doc-mapper",
   "quickwit-index-management",
   "quickwit-indexing",
@@ -52,6 +53,7 @@ default-members = [
   "quickwit-control-plane",
   "quickwit-datetime",
   "quickwit-directories",
+  "quickwit-compaction",
   "quickwit-doc-mapper",
   "quickwit-index-management",
   "quickwit-indexing",
@@ -352,6 +354,7 @@ quickwit-control-plane = { path = "quickwit-control-plane" }
 quickwit-datetime = { path = "quickwit-datetime" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
+quickwit-compaction = { path = "quickwit-compaction" }
 quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }

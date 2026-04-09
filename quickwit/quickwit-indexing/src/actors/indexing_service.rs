@@ -1702,6 +1702,86 @@ mod tests {
         universe.quit().await;
     }
 
+    #[tokio::test]
+    async fn test_indexing_service_spawns_merge_pipeline_with_merge_scheduler() {
+        quickwit_common::setup_logging_for_tests();
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
+            .await
+            .unwrap();
+        let metastore = metastore_for_test();
+
+        let index_id = append_random_suffix("test-indexing-service-with-merge");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::void(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid()
+            .clone();
+        let add_source_request =
+            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
+        metastore.add_source(add_source_request).await.unwrap();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_dir_path = temp_dir.path().to_path_buf();
+        let indexer_config = IndexerConfig::for_test().unwrap();
+        let num_blocking_threads = 1;
+        let storage_resolver = StorageResolver::unconfigured();
+        let universe = Universe::with_accelerated_time();
+        let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
+        let ingest_api_service =
+            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
+                .await
+                .unwrap();
+        let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
+        let indexing_server = IndexingService::new(
+            NodeId::from("test-node"),
+            data_dir_path,
+            indexer_config,
+            num_blocking_threads,
+            cluster.clone(),
+            metastore.clone(),
+            Some(ingest_api_service),
+            Some(merge_scheduler_mailbox),
+            IngesterPool::default(),
+            storage_resolver.clone(),
+            EventBroker::default(),
+        )
+        .await
+        .unwrap();
+        let (indexing_server_mailbox, indexing_server_handle) =
+            universe.spawn_builder().spawn(indexing_server);
+
+        indexing_server_mailbox
+            .ask_for_res(SpawnPipeline {
+                index_id: index_id.clone(),
+                source_config,
+                pipeline_uid: PipelineUid::default(),
+            })
+            .await
+            .unwrap();
+
+        let observation = indexing_server_handle.observe().await;
+        assert_eq!(observation.num_running_pipelines, 1);
+        assert_eq!(observation.num_running_merge_pipelines, 1);
+        assert!(universe.get_one::<MergePipeline>().is_some());
+
+        universe.quit().await;
+    }
+
     #[derive(Debug)]
     struct FreezePipeline;
     #[async_trait]

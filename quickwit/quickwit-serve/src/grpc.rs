@@ -141,6 +141,21 @@ pub(crate) async fn start_grpc_server(
         None
     };
 
+    // Mount gRPC compaction service if this node is a janitor with the compaction service enabled.
+    let compaction_grpc_service = if services
+        .node_config
+        .is_service_enabled(QuickwitService::Janitor)
+    {
+        if let Some(compaction_service) = &services.compaction_service_client_opt {
+            enabled_grpc_services.insert("compaction");
+            file_descriptor_sets.push(quickwit_proto::compaction::COMPACTION_FILE_DESCRIPTOR_SET);
+            Some(compaction_service.as_grpc_service(grpc_config.max_message_size))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     // Mount gRPC control plane service if `QuickwitService::ControlPlane` is enabled on node.
     let control_plane_grpc_service = if services
         .node_config
@@ -238,6 +253,7 @@ pub(crate) async fn start_grpc_server(
         .add_service(developer_grpc_service)
         .add_service(health_service)
         .add_service(reflection_service)
+        .add_optional_service(compaction_grpc_service)
         .add_optional_service(control_plane_grpc_service)
         .add_optional_service(indexing_grpc_service)
         .add_optional_service(ingest_api_grpc_service)
