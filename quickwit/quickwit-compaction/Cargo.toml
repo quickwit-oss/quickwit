@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-compaction"
-description = "Merge planner and merge worker services for split compaction"
+description = "Compactor implementation and CompactionService"
 
 version.workspace = true
 edition.workspace = true
@@ -12,4 +12,11 @@ license.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+quickwit-actors = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-indexing = { workspace = true }
 quickwit-proto = { workspace = true }
+quickwit-storage = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
