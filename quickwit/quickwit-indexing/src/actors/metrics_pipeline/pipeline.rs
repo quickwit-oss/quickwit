@@ -47,7 +47,6 @@ use super::{ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploade
 use crate::actors::pipeline_shared::{
     SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry,
 };
-use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::{Publisher, SplitsUpdateMailbox, UploaderType};
 use crate::models::IndexingStatistics;
@@ -311,7 +310,8 @@ impl MetricsPipeline {
 
         // Publisher
         let publisher = Publisher::new(
-            PublisherType::ParquetPublisher,
+            super::METRICS_PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             self.params.metastore.clone(),
             None,
             Some(source_mailbox.clone()),

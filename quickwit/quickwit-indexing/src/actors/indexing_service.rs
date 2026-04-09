@@ -22,8 +22,8 @@ use async_trait::async_trait;
 use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, Healthz,
-    Mailbox, Observation, Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
+    Observation,
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
@@ -63,7 +63,7 @@ use super::log_pipeline::{
     FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
 };
 use super::pipeline_shared::{ActorPipeline, PipelineHandle};
-use super::{MergePlanner, MergeSchedulerService, MetricsPipeline, MetricsPipelineParams};
+use super::{MergePlanner, MergeSchedulerService};
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
@@ -1019,7 +1019,7 @@ mod tests {
     use std::path::Path;
     use std::time::Duration;
 
-    use quickwit_actors::{HEARTBEAT, Health, ObservationType, Supervisable, Universe};
+    use quickwit_actors::{HEARTBEAT, Health, ObservationType, Universe};
     use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_common::ServiceStream;
     use quickwit_common::rand::append_random_suffix;

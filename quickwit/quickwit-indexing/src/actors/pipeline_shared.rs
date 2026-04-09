@@ -56,8 +56,8 @@ pub(crate) struct Spawn {
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorExitStatus, ActorHandle, ActorState, DeferableReplyHandler, Handler, Health,
-    Mailbox, Observation, SendError, Supervisable,
+    Actor, ActorExitStatus, ActorHandle, ActorState, DeferableReplyHandler, Health, Mailbox,
+    Observation, SendError, Supervisable,
 };
 
 use quickwit_proto::indexing::IndexingPipelineId;

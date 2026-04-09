@@ -39,7 +39,7 @@ use crate::actors::sequencer::SequencerCommand;
 use crate::actors::uploader::{SplitsUpdateMailbox, SplitsUpdateSender};
 use crate::actors::{Publisher, UploaderCounters, UploaderType};
 use crate::metrics::INDEXER_METRICS;
-use crate::models::ParquetSplitsUpdate;
+use super::ParquetSplitsUpdate;
 
 /// Concurrent upload permits for metrics uploader.
 /// Uses same permit pool as indexer uploads.

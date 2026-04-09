@@ -15,8 +15,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use quickwit_actors::{
@@ -42,7 +41,6 @@ use crate::SplitsUpdateMailbox;
 use crate::actors::pipeline_shared::{
     SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry,
 };
-use crate::actors::publisher::PublisherType;
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
@@ -305,7 +303,8 @@ impl IndexingPipeline {
 
         // Publisher
         let publisher = Publisher::new(
-            PublisherType::MainPublisher,
+            super::PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             self.params.metastore.clone(),
             Some(self.params.merge_planner_mailbox.clone()),
             Some(source_mailbox.clone()),
@@ -587,6 +586,8 @@ mod tests {
     };
     use quickwit_proto::types::{IndexUid, NodeId, PipelineUid};
     use quickwit_storage::RamStorage;
+
+    use std::time::Duration;
 
     use super::{IndexingPipeline, *};
     use crate::actors::log_pipeline::{MergePipeline, MergePipelineParams};

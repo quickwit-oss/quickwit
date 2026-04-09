@@ -21,8 +21,10 @@ use quickwit_actors::{ActorContext, ActorExitStatus, Handler};
 use quickwit_proto::metastore::{MetastoreService, PublishMetricsSplitsRequest};
 use tracing::{info, instrument};
 
+use super::ParquetSplitsUpdate;
 use crate::actors::publisher::{Publisher, serialize_checkpoint_delta, suggest_truncate};
-use crate::models::ParquetSplitsUpdate;
+
+pub(crate) const METRICS_PUBLISHER_NAME: &str = "ParquetPublisher";
 
 #[async_trait]
 impl Handler<ParquetSplitsUpdate> for Publisher {
@@ -92,8 +94,11 @@ mod tests {
     use quickwit_proto::types::IndexUid;
     use tracing::Span;
 
-    use crate::actors::publisher::{Publisher, PublisherType};
-    use crate::models::{ParquetSplitsUpdate, PublishLock};
+    use quickwit_actors::QueueCapacity;
+
+    use super::{METRICS_PUBLISHER_NAME, ParquetSplitsUpdate};
+    use crate::actors::publisher::Publisher;
+    use crate::models::PublishLock;
 
     fn create_test_metrics_split_metadata(index_uid: &str, split_id: &str) -> MetricsSplitMetadata {
         MetricsSplitMetadata::builder()
@@ -123,7 +128,8 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
 
         let publisher = Publisher::new(
-            PublisherType::ParquetPublisher,
+            METRICS_PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
             None,
@@ -173,7 +179,8 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
 
         let publisher = Publisher::new(
-            PublisherType::ParquetPublisher,
+            METRICS_PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
             None,
@@ -211,7 +218,8 @@ mod tests {
         mock_metastore.expect_publish_metrics_splits().never();
 
         let publisher = Publisher::new(
-            PublisherType::ParquetPublisher,
+            METRICS_PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             MetastoreServiceClient::from_mock(mock_metastore),
             None,
             None,

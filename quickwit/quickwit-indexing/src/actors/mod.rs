@@ -29,9 +29,11 @@ pub use log_pipeline::{
     MergePipeline, MergeSchedulerService, MergeSplitDownloader, Packager, combine_partition_ids,
     merge_split_attrs, schedule_merge,
 };
-pub(crate) use log_pipeline::{MergePlanner, RunFinalizeMergePolicyAndQuit};
+pub(crate) use log_pipeline::MergePlanner;
+#[cfg(test)]
+pub(crate) use log_pipeline::RunFinalizeMergePolicyAndQuit;
 pub use metrics_pipeline::*;
-pub use publisher::{Publisher, PublisherCounters, PublisherType};
+pub use publisher::{Publisher, PublisherCounters};
 pub use quickwit_proto::indexing::IndexingError;
 pub use sequencer::Sequencer;
 pub use uploader::{SplitsUpdateMailbox, Uploader, UploaderCounters, UploaderType};

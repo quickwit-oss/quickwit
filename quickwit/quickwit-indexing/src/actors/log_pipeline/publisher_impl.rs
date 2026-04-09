@@ -27,6 +27,9 @@ use crate::actors::publisher::{
 };
 use crate::models::{NewSplits, SplitsUpdate};
 
+pub(crate) const PUBLISHER_NAME: &str = "Publisher";
+pub(crate) const MERGE_PUBLISHER_NAME: &str = "MergePublisher";
+
 #[async_trait]
 impl Handler<DisconnectMergePlanner> for Publisher {
     type Reply = ();
@@ -121,7 +124,10 @@ mod tests {
     use quickwit_proto::types::{IndexUid, Position};
     use tracing::Span;
 
-    use crate::actors::publisher::{Publisher, PublisherType};
+    use quickwit_actors::QueueCapacity;
+
+    use super::PUBLISHER_NAME;
+    use crate::actors::publisher::Publisher;
     use crate::models::{PublishLock, SplitsUpdate};
     use crate::source::SuggestTruncate;
 
@@ -151,7 +157,8 @@ mod tests {
         let (source_mailbox, source_inbox) = universe.create_test_mailbox();
 
         let publisher = Publisher::new(
-            PublisherType::MainPublisher,
+            PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             MetastoreServiceClient::from_mock(mock_metastore),
             Some(merge_planner_mailbox),
             Some(source_mailbox),
@@ -230,7 +237,8 @@ mod tests {
         let (source_mailbox, source_inbox) = universe.create_test_mailbox();
 
         let publisher = Publisher::new(
-            PublisherType::MainPublisher,
+            PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             MetastoreServiceClient::from_mock(mock_metastore),
             Some(merge_planner_mailbox),
             Some(source_mailbox),
@@ -295,7 +303,8 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
         let publisher = Publisher::new(
-            PublisherType::MainPublisher,
+            PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             MetastoreServiceClient::from_mock(mock_metastore),
             Some(merge_planner_mailbox),
             None,
@@ -336,7 +345,8 @@ mod tests {
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
 
         let publisher = Publisher::new(
-            PublisherType::MainPublisher,
+            PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             MetastoreServiceClient::from_mock(mock_metastore),
             Some(merge_planner_mailbox),
             None,

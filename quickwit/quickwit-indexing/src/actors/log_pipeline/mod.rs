@@ -50,3 +50,4 @@ pub use merge_scheduler_service::{MergePermit, MergeSchedulerService, schedule_m
 pub use merge_split_downloader::MergeSplitDownloader;
 pub use packager::Packager;
 pub use pipeline::{IndexingPipeline, IndexingPipelineParams};
+pub(crate) use publisher_impl::{MERGE_PUBLISHER_NAME, PUBLISHER_NAME};

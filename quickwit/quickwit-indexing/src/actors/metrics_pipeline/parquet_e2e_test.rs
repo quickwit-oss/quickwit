@@ -38,7 +38,7 @@ use quickwit_storage::RamStorage;
 
 use crate::actors::{
     ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader, Publisher,
-    PublisherType, SplitsUpdateMailbox, UploaderType,
+    SplitsUpdateMailbox, UploaderType,
 };
 use crate::models::RawDocBatch;
 
@@ -154,7 +154,8 @@ async fn test_metrics_pipeline_e2e() {
     let ram_storage = Arc::new(RamStorage::default());
 
     let publisher = Publisher::new(
-        PublisherType::ParquetPublisher,
+        super::METRICS_PUBLISHER_NAME,
+        quickwit_actors::QueueCapacity::Bounded(1),
         metastore_client.clone(),
         None,
         None,

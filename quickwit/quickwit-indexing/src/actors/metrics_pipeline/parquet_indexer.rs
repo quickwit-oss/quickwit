@@ -35,7 +35,8 @@ use tracing::{debug, info, info_span, warn};
 use ulid::Ulid;
 
 use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
-use crate::models::{NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock};
+use super::ProcessedParquetBatch;
+use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).
 // TODO: read from index config commit_timeout_secs.

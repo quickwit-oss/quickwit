@@ -26,8 +26,10 @@ mod indexing_service_impl;
 mod parquet_doc_processor;
 mod parquet_indexer;
 mod parquet_packager;
+mod parquet_splits_update;
 mod parquet_uploader;
 mod pipeline;
+mod processed_parquet_batch;
 mod publisher_impl;
 
 #[cfg(test)]
@@ -43,5 +45,8 @@ pub use parquet_doc_processor::{
 };
 pub use parquet_indexer::{ParquetIndexer, ParquetIndexerCounters, ParquetSplitBatch};
 pub use parquet_packager::{ParquetBatchForPackager, ParquetPackager, ParquetPackagerCounters};
+pub use parquet_splits_update::ParquetSplitsUpdate;
 pub use parquet_uploader::ParquetUploader;
 pub use pipeline::{MetricsPipeline, MetricsPipelineParams};
+pub use processed_parquet_batch::ProcessedParquetBatch;
+pub(crate) use publisher_impl::METRICS_PUBLISHER_NAME;

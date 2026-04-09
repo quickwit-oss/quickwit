@@ -29,10 +29,8 @@ use serde::Serialize;
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument};
 
-use super::ParquetIndexer;
-use crate::models::{
-    NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock, RawDocBatch,
-};
+use super::{ParquetIndexer, ProcessedParquetBatch};
+use crate::models::{NewPublishLock, NewPublishToken, PublishLock, RawDocBatch};
 
 /// Arrow IPC stream continuation marker (4 bytes of 0xFF).
 const ARROW_IPC_CONTINUATION_MARKER: [u8; 4] = [0xFF, 0xFF, 0xFF, 0xFF];

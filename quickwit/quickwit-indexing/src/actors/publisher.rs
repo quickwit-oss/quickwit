@@ -14,11 +14,10 @@
 
 use anyhow::Context;
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use serde::Serialize;
-use tracing::info;
 
 use crate::actors::MergePlanner;
 use crate::source::{SourceActor, SuggestTruncate};
@@ -30,23 +29,6 @@ pub struct PublisherCounters {
     pub num_empty_splits: u64,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum PublisherType {
-    MainPublisher,
-    MergePublisher,
-    ParquetPublisher,
-}
-
-impl PublisherType {
-    pub fn actor_name(&self) -> &'static str {
-        match self {
-            PublisherType::MainPublisher => "Publisher",
-            PublisherType::MergePublisher => "MergePublisher",
-            PublisherType::ParquetPublisher => "ParquetPublisher",
-        }
-    }
-}
-
 /// Disconnect the merge planner loop back.
 /// This message is used to cut the merge pipeline loop, and let it terminate.
 #[derive(Debug)]
@@ -54,7 +36,8 @@ pub(crate) struct DisconnectMergePlanner;
 
 #[derive(Clone)]
 pub struct Publisher {
-    pub(crate) publisher_type: PublisherType,
+    pub(crate) name: &'static str,
+    pub(crate) queue_capacity: QueueCapacity,
     pub(crate) metastore: MetastoreServiceClient,
     pub(crate) merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
     pub(crate) source_mailbox_opt: Option<Mailbox<SourceActor>>,
@@ -63,13 +46,15 @@ pub struct Publisher {
 
 impl Publisher {
     pub fn new(
-        publisher_type: PublisherType,
+        name: &'static str,
+        queue_capacity: QueueCapacity,
         metastore: MetastoreServiceClient,
         merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
         source_mailbox_opt: Option<Mailbox<SourceActor>>,
     ) -> Publisher {
         Publisher {
-            publisher_type,
+            name,
+            queue_capacity,
             metastore,
             merge_planner_mailbox_opt,
             source_mailbox_opt,
@@ -114,14 +99,10 @@ impl Actor for Publisher {
     }
 
     fn name(&self) -> String {
-        self.publisher_type.actor_name().to_string()
+        self.name.to_string()
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        match self.publisher_type {
-            PublisherType::MainPublisher => QueueCapacity::Bounded(1),
-            PublisherType::MergePublisher => QueueCapacity::Unbounded,
-            PublisherType::ParquetPublisher => QueueCapacity::Bounded(1),
-        }
+        self.queue_capacity.clone()
     }
 }
