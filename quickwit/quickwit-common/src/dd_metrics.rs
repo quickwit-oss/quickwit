@@ -13,10 +13,9 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use metrics::{Counter, Histogram as MetricsHistogram, Label, counter, histogram};
-use std::sync::LazyLock;
 
 pub const DD_STATUS_CODES: &[&str] = &[
     "200", "400", "401", "403", "404", "408", "429", "500", "501", "503",

@@ -13,11 +13,10 @@
 // limitations under the License.
 
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::{env, fmt};
 
 use anyhow::Context;
-use std::sync::LazyLock;
 use opentelemetry::propagation::text_map_propagator::FieldIter;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use opentelemetry::trace::{

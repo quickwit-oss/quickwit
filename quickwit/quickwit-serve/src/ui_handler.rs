@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::sync::LazyLock;
+
 use regex::Regex;
 use rust_embed::RustEmbed;
 use warp::hyper::header::HeaderValue;
