@@ -25,6 +25,7 @@ pub mod ingest;
 pub mod metrics;
 pub mod schema;
 pub mod sort_fields;
+pub mod sorted_series;
 pub mod split;
 pub mod storage;
 pub mod table_config;
