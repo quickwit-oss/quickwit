@@ -191,7 +191,8 @@ async fn test_indexer_implicitly_runs_compactor() {
         .find(|node_state| {
             node_state
                 .get("enabled_services")
-                .map_or(false, |s| s.contains("indexer"))
+                .map(|s| s.contains("indexer"))
+                .unwrap_or(false)
         })
         .expect("indexer node not found in cluster state");
     let services = indexer_node.get("enabled_services").unwrap();
