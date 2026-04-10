@@ -42,6 +42,7 @@ See `quickwit/CLAUDE.md` for architecture overview, crate descriptions, and buil
 | Uses `JoinHandle::abort()` | **FORBIDDEN** — arbitrary cancellation violates invariants. Use `CancellationToken` | GAP-002 |
 | Recreates futures in `select!` loops | Use `&mut fut` to resume, not recreate — dropping loses data | GAP-002 |
 | Holds locks across await points | Invariant violations on cancel. Use message passing or synchronous critical sections | GAP-002 |
+| Silently swallows unexpected state | If a condition "shouldn't happen," return an error or assert — don't silently return Ok. Skipping optional/missing data is fine; pretending a bug didn't occur is not | Code quality |
 
 ## Engineering Priority
 
