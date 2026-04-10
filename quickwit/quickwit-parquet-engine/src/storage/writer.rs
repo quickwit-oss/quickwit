@@ -121,7 +121,7 @@ fn verify_ss5_kv_consistency(metadata: &ParquetSplitMetadata, kvs: &[KeyValue]) 
         quickwit_dst::check_invariant!(
             quickwit_dst::invariants::InvariantId::SS5,
             find_kv(PARQUET_META_SORT_FIELDS) == Some(metadata.sort_fields.as_str()),
-            ": sort_fields in kv_metadata does not match MetricsSplitMetadata"
+            ": sort_fields in kv_metadata does not match ParquetSplitMetadata"
         );
     }
 
@@ -129,7 +129,7 @@ fn verify_ss5_kv_consistency(metadata: &ParquetSplitMetadata, kvs: &[KeyValue]) 
         quickwit_dst::check_invariant!(
             quickwit_dst::invariants::InvariantId::SS5,
             find_kv(PARQUET_META_WINDOW_START) == Some(ws.to_string()).as_deref(),
-            ": window_start in kv_metadata does not match MetricsSplitMetadata"
+            ": window_start in kv_metadata does not match ParquetSplitMetadata"
         );
     }
 }
@@ -365,12 +365,16 @@ impl ParquetWriter {
             .expect("reorder_columns: schema and columns must be consistent")
     }
 
-    /// Validate, compute derived columns, sort, reorder, and build WriterProperties.
+    /// Validate, compute derived columns, sort, reorder, extract row keys,
+    /// and build WriterProperties.
+    ///
+    /// Returns the prepared batch, writer properties, and the serialized
+    /// `RowKeys` proto bytes (if the batch is non-empty).
     fn prepare_write(
         &self,
         batch: &RecordBatch,
         split_metadata: Option<&ParquetSplitMetadata>,
-    ) -> Result<(RecordBatch, WriterProperties), ParquetWriteError> {
+    ) -> Result<(RecordBatch, WriterProperties, Option<Vec<u8>>), ParquetWriteError> {
         let is_sketch = split_metadata
             .map(|m| m.kind == ParquetSplitKind::Sketches)
             .unwrap_or(false);
@@ -390,11 +394,35 @@ impl ParquetWriter {
 
         let sorted_batch = self.reorder_columns(&self.sort_batch(&batch)?);
 
-        let kv_metadata = split_metadata.map(build_compaction_key_value_metadata);
+        // Extract RowKeys from the sorted batch (first/last row boundaries).
+        let row_keys_proto =
+            crate::row_keys::extract_row_keys(&self.sort_fields_string, &sorted_batch)
+                .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?
+                .map(|rk| crate::row_keys::encode_row_keys_proto(&rk));
+
+        // Build KV metadata from split metadata + row keys.
+        let mut kv_entries = split_metadata
+            .map(build_compaction_key_value_metadata)
+            .unwrap_or_default();
+
+        if let Some(ref rk_bytes) = row_keys_proto {
+            kv_entries.push(KeyValue::new(
+                PARQUET_META_ROW_KEYS.to_string(),
+                BASE64.encode(rk_bytes),
+            ));
+
+            // Best-effort human-readable JSON for debugging.
+            if let Ok(rk) =
+                <quickwit_proto::sortschema::RowKeys as prost::Message>::decode(rk_bytes.as_slice())
+                && let Ok(json) = serde_json::to_string(&rk)
+            {
+                kv_entries.push(KeyValue::new(PARQUET_META_ROW_KEYS_JSON.to_string(), json));
+            }
+        }
 
         // SS-5: verify kv_metadata sort_fields matches source.
-        if let (Some(meta), Some(kvs)) = (split_metadata, &kv_metadata) {
-            verify_ss5_kv_consistency(meta, kvs);
+        if let Some(meta) = split_metadata {
+            verify_ss5_kv_consistency(meta, &kv_entries);
         }
 
         let sort_field_names: Vec<String> = self
@@ -405,20 +433,22 @@ impl ParquetWriter {
         let props = self.config.to_writer_properties_with_metadata(
             &sorted_batch.schema(),
             self.sorting_columns(&sorted_batch),
-            kv_metadata,
+            Some(kv_entries),
             &sort_field_names,
         );
-        Ok((sorted_batch, props))
+        Ok((sorted_batch, props, row_keys_proto))
     }
 
     /// Write a RecordBatch to Parquet bytes in memory.
+    ///
+    /// Returns `(parquet_bytes, row_keys_proto)`.
     #[instrument(skip(self, batch), fields(batch_rows = batch.num_rows()))]
     pub fn write_to_bytes(
         &self,
         batch: &RecordBatch,
         split_metadata: Option<&ParquetSplitMetadata>,
-    ) -> Result<Vec<u8>, ParquetWriteError> {
-        let (sorted_batch, props) = self.prepare_write(batch, split_metadata)?;
+    ) -> Result<(Vec<u8>, Option<Vec<u8>>), ParquetWriteError> {
+        let (sorted_batch, props, row_keys_proto) = self.prepare_write(batch, split_metadata)?;
 
         let buffer = Cursor::new(Vec::new());
         let mut writer = ArrowWriter::try_new(buffer, sorted_batch.schema(), Some(props))?;
@@ -426,20 +456,20 @@ impl ParquetWriter {
         let bytes = writer.into_inner()?.into_inner();
 
         debug!(bytes_written = bytes.len(), "completed write to bytes");
-        Ok(bytes)
+        Ok((bytes, row_keys_proto))
     }
 
     /// Write a RecordBatch to a Parquet file with optional compaction metadata.
     ///
-    /// Returns the number of bytes written.
+    /// Returns `(bytes_written, row_keys_proto)`.
     #[instrument(skip(self, batch, split_metadata), fields(batch_rows = batch.num_rows(), path = %path.display()))]
     pub fn write_to_file_with_metadata(
         &self,
         batch: &RecordBatch,
         path: &Path,
         split_metadata: Option<&ParquetSplitMetadata>,
-    ) -> Result<u64, ParquetWriteError> {
-        let (sorted_batch, props) = self.prepare_write(batch, split_metadata)?;
+    ) -> Result<(u64, Option<Vec<u8>>), ParquetWriteError> {
+        let (sorted_batch, props, row_keys_proto) = self.prepare_write(batch, split_metadata)?;
 
         let file = File::create(path)?;
         let mut writer = ArrowWriter::try_new(file, sorted_batch.schema(), Some(props))?;
@@ -447,7 +477,7 @@ impl ParquetWriter {
 
         let bytes_written = writer.into_inner()?.metadata()?.len();
         debug!(bytes_written, "completed write to file");
-        Ok(bytes_written)
+        Ok((bytes_written, row_keys_proto))
     }
 }
 
@@ -501,7 +531,7 @@ mod tests {
         let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         let batch = create_test_batch();
-        let bytes = writer.write_to_bytes(&batch, None).unwrap();
+        let (bytes, _) = writer.write_to_bytes(&batch, None).unwrap();
 
         assert!(bytes.len() > 4);
         assert_eq!(&bytes[0..4], b"PAR1");
@@ -516,7 +546,7 @@ mod tests {
         let temp_dir = std::env::temp_dir();
         let path = temp_dir.join("test_metrics.parquet");
 
-        let bytes_written = writer
+        let (bytes_written, _) = writer
             .write_to_file_with_metadata(&batch, &path, None)
             .unwrap();
         assert!(bytes_written > 0);
@@ -556,7 +586,7 @@ mod tests {
         let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         let batch = create_test_batch();
-        let bytes = writer.write_to_bytes(&batch, None).unwrap();
+        let (bytes, _) = writer.write_to_bytes(&batch, None).unwrap();
 
         assert!(bytes.len() > 4);
         assert_eq!(&bytes[0..4], b"PAR1");
@@ -761,7 +791,7 @@ mod tests {
     }
 
     #[test]
-    fn test_write_to_file_without_metadata_has_no_qh_keys() {
+    fn test_write_without_split_metadata_has_only_row_keys() {
         use std::fs::File;
 
         use parquet::file::reader::{FileReader, SerializedFileReader};
@@ -782,14 +812,25 @@ mod tests {
         let file_metadata = reader.metadata().file_metadata();
 
         if let Some(kv_metadata) = file_metadata.key_value_metadata() {
-            let qh_keys: Vec<_> = kv_metadata
+            let qh_keys: Vec<String> = kv_metadata
                 .iter()
                 .filter(|kv| kv.key.starts_with("qh."))
+                .map(|kv| kv.key.clone())
                 .collect();
+
+            // Row keys are always computed from the batch, even without
+            // split metadata. Split-specific keys must be absent.
             assert!(
-                qh_keys.is_empty(),
-                "should have no qh.* keys without metadata, got: {:?}",
-                qh_keys
+                qh_keys.contains(&"qh.row_keys".to_string()),
+                "qh.row_keys must always be present"
+            );
+            assert!(
+                !qh_keys.contains(&"qh.sort_fields".to_string()),
+                "qh.sort_fields must not be present without split metadata"
+            );
+            assert!(
+                !qh_keys.contains(&"qh.window_start".to_string()),
+                "qh.window_start must not be present without split metadata"
             );
         }
 

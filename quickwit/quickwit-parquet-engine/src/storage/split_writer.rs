@@ -147,11 +147,14 @@ impl ParquetSplitWriter {
         let mut metadata = builder.build();
 
         // Write with compaction metadata embedded in Parquet KV metadata.
-        let size_bytes =
+        // The writer sorts the batch and extracts RowKeys from the sorted
+        // first/last rows, returning them alongside the byte count.
+        let (size_bytes, row_keys_proto) =
             self.writer
                 .write_to_file_with_metadata(batch, &file_path, Some(&metadata))?;
 
         metadata.size_bytes = size_bytes;
+        metadata.row_keys_proto = row_keys_proto;
 
         info!(
             split_id = %split_id,
