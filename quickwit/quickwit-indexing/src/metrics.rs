@@ -26,7 +26,7 @@ pub struct IndexerMetrics {
     pub backpressure_micros: IntCounterVec<1>,
     pub available_concurrent_upload_permits: IntGaugeVec<1>,
     pub split_builders: IntUpDownCounter,
-    pub ongoing_merge_operations: IntUpDownCounter,
+    pub ongoing_merge_operations: IntGauge,
     pub pending_merge_operations: IntGauge,
     pub pending_merge_bytes: IntGauge,
     // We use a lazy counter, as most users do not use Kafka.
@@ -81,7 +81,7 @@ impl Default for IndexerMetrics {
                 "indexing",
                 &[],
             ),
-            ongoing_merge_operations: new_up_down_counter(
+            ongoing_merge_operations: new_gauge(
                 "ongoing_merge_operations",
                 "Number of ongoing merge operations",
                 "indexing",

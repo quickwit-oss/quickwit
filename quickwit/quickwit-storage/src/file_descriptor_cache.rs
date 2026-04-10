@@ -101,10 +101,9 @@ impl FileDescriptorCache {
 
     fn put_split_file(&self, split_id: Ulid, split_file: SplitFile) {
         let mut fd_cache_lock = self.fd_cache.lock().unwrap();
-        fd_cache_lock.push(split_id, split_file);
-        self.fd_cache_metrics
-            .in_cache_count
-            .set(fd_cache_lock.len() as i64);
+        if fd_cache_lock.push(split_id, split_file).is_none() {
+            self.fd_cache_metrics.in_cache_count.inc();
+        }
     }
 
     /// Evicts the given list of split ids from the file descriptor cache.
@@ -112,14 +111,11 @@ impl FileDescriptorCache {
     pub fn evict_split_files(&self, split_ids: &[Ulid]) {
         let mut fd_cache_lock = self.fd_cache.lock().unwrap();
         for split_id in split_ids {
-            fd_cache_lock.pop(split_id);
+            if fd_cache_lock.pop(split_id).is_some() {
+                self.fd_cache_metrics.in_cache_count.dec();
+                self.fd_cache_metrics.evict_num_items.inc();
+            }
         }
-        self.fd_cache_metrics
-            .in_cache_count
-            .set(fd_cache_lock.len() as i64);
-        self.fd_cache_metrics
-            .evict_num_items
-            .inc_by(split_ids.len() as u64);
     }
 
     pub async fn get_or_open_split_file(

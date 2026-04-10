@@ -19,9 +19,9 @@ use std::fmt;
 use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    Histogram, HistogramVec, IntCounter, IntCounterVec, IntUpDownCounter, exponential_buckets,
-    linear_buckets, new_counter, new_counter_vec, new_histogram, new_histogram_vec,
-    new_up_down_counter, new_up_down_counter_vec,
+    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntUpDownCounter,
+    exponential_buckets, linear_buckets, new_counter, new_counter_vec, new_gauge, new_histogram,
+    new_histogram_vec, new_up_down_counter,
 };
 
 fn print_if_not_null(
@@ -115,7 +115,7 @@ pub struct SearchMetrics {
     pub split_search_outcome_total: SplitSearchOutcomeCounters,
     pub leaf_search_split_duration_secs: Histogram,
     pub job_assigned_total: IntCounterVec<1>,
-    pub leaf_search_single_split_tasks_pending: IntUpDownCounter,
+    pub leaf_search_single_split_tasks_pending: IntGauge,
     pub leaf_search_single_split_tasks_ongoing: IntUpDownCounter,
     pub leaf_search_single_split_warmup_num_bytes: Histogram,
     pub searcher_local_kv_store_size_bytes: IntUpDownCounter,
@@ -150,14 +150,6 @@ impl Default for SearchMetrics {
             ByteSize::gb(2).as_u64() as f64,
             ByteSize::gb(5).as_u64() as f64,
         ];
-
-        let leaf_search_single_split_tasks = new_up_down_counter_vec::<1>(
-            "leaf_search_single_split_tasks",
-            "Number of single split search tasks pending or ongoing",
-            "search",
-            &[],
-            ["status"], // takes values "ongoing" or "pending"
-        );
 
         SearchMetrics {
             root_search_requests_total: new_counter_vec(
@@ -222,10 +214,18 @@ impl Default for SearchMetrics {
                 "search",
                 duration_buckets(),
             ),
-            leaf_search_single_split_tasks_ongoing: leaf_search_single_split_tasks
-                .with_label_values(["ongoing"]),
-            leaf_search_single_split_tasks_pending: leaf_search_single_split_tasks
-                .with_label_values(["pending"]),
+            leaf_search_single_split_tasks_ongoing: new_up_down_counter(
+                "leaf_search_single_split_tasks_ongoing",
+                "Number of single split search tasks ongoing.",
+                "search",
+                &[],
+            ),
+            leaf_search_single_split_tasks_pending: new_gauge(
+                "leaf_search_single_split_tasks_pending",
+                "Number of single split search tasks pending.",
+                "search",
+                &[],
+            ),
             leaf_search_single_split_warmup_num_bytes: new_histogram(
                 "leaf_search_single_split_warmup_num_bytes",
                 "Size of the short lived cache for a single split once the warmup is done.",

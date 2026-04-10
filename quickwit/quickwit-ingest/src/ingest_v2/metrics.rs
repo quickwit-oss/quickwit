@@ -81,6 +81,7 @@ pub(super) struct IngestV2Metrics {
     pub wal_acquire_lock_requests_in_flight: IntUpDownCounterVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
     pub wal_disk_used_bytes: IntGauge,
+    pub wal_memory_allocated_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
     pub ingest_attempts: IntCounterVec<1>,
@@ -149,6 +150,12 @@ impl Default for IngestV2Metrics {
                 "ingest",
                 &[],
             ),
+            wal_memory_allocated_bytes: new_gauge(
+                "wal_memory_allocated_bytes",
+                "WAL memory allocated in bytes.",
+                "ingest",
+                &[],
+            ),
             wal_memory_used_bytes: new_gauge(
                 "wal_memory_used_bytes",
                 "WAL memory used in bytes.",
@@ -163,9 +170,8 @@ pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
     INGEST_V2_METRICS
         .wal_disk_used_bytes
         .set(wal_usage.disk_used_bytes as i64);
-    quickwit_common::metrics::MEMORY_METRICS
-        .in_flight
-        .wal
+    INGEST_V2_METRICS
+        .wal_memory_allocated_bytes
         .set(wal_usage.memory_allocated_bytes as i64);
     INGEST_V2_METRICS
         .wal_memory_used_bytes

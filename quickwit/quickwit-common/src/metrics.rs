@@ -283,10 +283,6 @@ pub struct IntUpDownCounter {
 }
 
 impl IntUpDownCounter {
-    /// No-op dummy. Exists only so call sites that mix `set` with relative ops
-    /// still compile after migrating from `IntGauge`.
-    pub fn set(&self, _v: i64) {}
-
     pub fn inc(&self) {
         self.prometheus.inc();
         self.otel.add(1);
@@ -851,7 +847,6 @@ pub struct InFlightDataGauges {
     pub ingest_router: IntUpDownCounter,
     pub ingester_persist: IntUpDownCounter,
     pub ingester_replicate: IntUpDownCounter,
-    pub wal: IntUpDownCounter,
     pub fetch_stream: IntUpDownCounter,
     pub multi_fetch_stream: IntUpDownCounter,
     pub doc_processor_mailbox: IntUpDownCounter,
@@ -874,7 +869,6 @@ impl Default for InFlightDataGauges {
             ingest_router: in_flight_counter_vec.with_label_values(["ingest_router"]),
             ingester_persist: in_flight_counter_vec.with_label_values(["ingester_persist"]),
             ingester_replicate: in_flight_counter_vec.with_label_values(["ingester_replicate"]),
-            wal: in_flight_counter_vec.with_label_values(["wal"]),
             fetch_stream: in_flight_counter_vec.with_label_values(["fetch_stream"]),
             multi_fetch_stream: in_flight_counter_vec.with_label_values(["multi_fetch_stream"]),
             doc_processor_mailbox: in_flight_counter_vec
