@@ -22,14 +22,29 @@ use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 
 use super::{BuildTantivyAst, BuildTantivyAstContext, QueryAst};
 use crate::query_ast::TantivyQueryAst;
+use crate::tokenizers::TokenizerManager;
 use crate::{InvalidQuery, find_field_or_hit_dynamic};
 
 /// Result of resolving a `RegexQuery` against a schema.
+/// When a `TokenizerManager` is provided during resolution, the regex is
+/// automatically made case-insensitive if the field's tokenizer lowercases.
 pub struct ResolvedRegex {
     pub field: Field,
     pub json_path: Option<Vec<u8>>,
     pub regex: String,
-    pub tokenizer_name: Option<String>,
+}
+
+/// Returns true if the regex already contains a case-insensitive flag `i`
+/// inside a leading `(?...)` group. Handles combined flags like `(?is)`,
+/// `(?mi)`, etc.
+fn regex_has_case_insensitive_flag(regex: &str) -> bool {
+    let Some(rest) = regex.strip_prefix("(?") else {
+        return false;
+    };
+    let Some(flags_end) = rest.find(')') else {
+        return false;
+    };
+    rest[..flags_end].contains('i')
 }
 
 /// A Regex query
@@ -56,10 +71,16 @@ impl RegexQuery {
 }
 
 impl RegexQuery {
-    /// Resolves this regex query against the given schema.
-    pub fn to_field_and_regex(
+    /// Resolves this regex query against the given schema and optionally
+    /// applies case-insensitive matching when the field's tokenizer lowercases.
+    ///
+    /// When `tokenizer_manager` is provided and the field's tokenizer lowercases
+    /// its output, the regex is automatically prepended with `(?i)` unless it
+    /// already contains a case-insensitive flag.
+    pub fn to_resolved(
         &self,
         schema: &TantivySchema,
+        tokenizer_manager: Option<&TokenizerManager>,
     ) -> Result<ResolvedRegex, InvalidQuery> {
         let Some((field, field_entry, json_path)) = find_field_or_hit_dynamic(&self.field, schema)
         else {
@@ -69,7 +90,7 @@ impl RegexQuery {
         };
         let field_type = field_entry.field_type();
 
-        match field_type {
+        let (tokenizer_name, json_path) = match field_type {
             FieldType::Str(text_options) => {
                 let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
                     InvalidQuery::SchemaError(format!(
@@ -77,14 +98,7 @@ impl RegexQuery {
                         field_entry.name()
                     ))
                 })?;
-                let tokenizer_name = text_field_indexing.tokenizer().to_string();
-
-                Ok(ResolvedRegex {
-                    field,
-                    json_path: None,
-                    regex: self.regex.to_string(),
-                    tokenizer_name: Some(tokenizer_name),
-                })
+                (text_field_indexing.tokenizer().to_string(), None)
             }
             FieldType::JsonObject(json_options) => {
                 let text_field_indexing =
@@ -104,20 +118,37 @@ impl RegexQuery {
                 term_for_path.append_type_and_str("");
 
                 let value = term_for_path.value();
-                // We skip the 1st byte which is a marker to tell this is json. This isn't present
-                // in the dictionary
+                // We skip the 1st byte which is a marker to tell this is json.
+                // This isn't present in the dictionary.
                 let byte_path_prefix = value.as_serialized()[1..].to_owned();
-                Ok(ResolvedRegex {
-                    field,
-                    json_path: Some(byte_path_prefix),
-                    regex: self.regex.to_string(),
-                    tokenizer_name: Some(tokenizer_name),
-                })
+                (tokenizer_name, Some(byte_path_prefix))
             }
-            _ => Err(InvalidQuery::SchemaError(
-                "trying to run a regex query on a non-text field".to_string(),
-            )),
-        }
+            _ => {
+                return Err(InvalidQuery::SchemaError(
+                    "trying to run a regex query on a non-text field".to_string(),
+                ));
+            }
+        };
+
+        // If the field's tokenizer lowercases indexed terms and the regex
+        // doesn't already contain a (?i) flag, automatically make the match
+        // case-insensitive. Without this, a regex like `.*ECONNREFUSED.*`
+        // would never match because the inverted index only contains
+        // lowercase tokens.
+        let does_lowercasing = tokenizer_manager
+            .and_then(|tm| tm.tokenizer_does_lowercasing(&tokenizer_name))
+            .unwrap_or(false);
+        let regex = if does_lowercasing && !regex_has_case_insensitive_flag(&self.regex) {
+            format!("(?i){}", self.regex)
+        } else {
+            self.regex.to_string()
+        };
+
+        Ok(ResolvedRegex {
+            field,
+            json_path,
+            regex,
+        })
     }
 }
 
@@ -126,24 +157,9 @@ impl BuildTantivyAst for RegexQuery {
         &self,
         context: &BuildTantivyAstContext,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let resolved = self.to_field_and_regex(context.schema)?;
+        let resolved = self.to_resolved(context.schema, Some(context.tokenizer_manager))?;
 
-        // If the field's tokenizer lowercases indexed terms (e.g. "default",
-        // "raw_lowercase", "lowercase") and the regex doesn't already contain a
-        // (?i) flag, automatically make the match case-insensitive. Without
-        // this, an upstream regex like `.*ECONNREFUSED.*` would never match
-        // because the inverted index only contains lowercase tokens.
-        let does_lowercasing = match resolved.tokenizer_name.as_deref() {
-            Some(name) => context.tokenizer_manager.tokenizer_does_lowercasing(name),
-            None => false,
-        };
-        let regex = if !resolved.regex.starts_with("(?i)") && does_lowercasing {
-            format!("(?i){}", resolved.regex)
-        } else {
-            resolved.regex
-        };
-
-        let regex = tantivy_fst::Regex::new(&regex).context("failed to parse regex")?;
+        let regex = tantivy_fst::Regex::new(&resolved.regex).context("failed to parse regex")?;
         let regex_automaton_with_path = JsonPathPrefix {
             prefix: resolved.json_path.unwrap_or_default(),
             automaton: regex.into(),
@@ -286,11 +302,25 @@ mod prefix {
 mod tests {
     use std::sync::Arc;
 
-    use tantivy::schema::{Schema as TantivySchema, TEXT};
+    use tantivy::schema::{Schema as TantivySchema, TEXT, TextFieldIndexing, TextOptions};
     use tantivy_fst::{Automaton, Regex};
 
     use super::prefix::JsonPathPrefixState;
-    use super::{JsonPathPrefix, RegexQuery};
+    use super::{JsonPathPrefix, RegexQuery, regex_has_case_insensitive_flag};
+    use crate::tokenizers::create_default_quickwit_tokenizer_manager;
+
+    #[test]
+    fn test_regex_has_case_insensitive_flag() {
+        assert!(regex_has_case_insensitive_flag("(?i)abc"));
+        assert!(regex_has_case_insensitive_flag("(?is)abc"));
+        assert!(regex_has_case_insensitive_flag("(?mi)abc"));
+        assert!(regex_has_case_insensitive_flag("(?sim)abc"));
+        assert!(!regex_has_case_insensitive_flag("(?s)abc"));
+        assert!(!regex_has_case_insensitive_flag("(?m)abc"));
+        assert!(!regex_has_case_insensitive_flag("abc"));
+        assert!(!regex_has_case_insensitive_flag("abc(?i)def"));
+        assert!(!regex_has_case_insensitive_flag("(?"));
+    }
 
     #[test]
     fn test_regex_query_text_field() {
@@ -302,7 +332,7 @@ mod tests {
             field: "field".to_string(),
             regex: "abc.*xyz".to_string(),
         };
-        let resolved = query.to_field_and_regex(&schema).unwrap();
+        let resolved = query.to_resolved(&schema, None).unwrap();
         assert_eq!(resolved.field, schema.get_field("field").unwrap());
         assert!(resolved.json_path.is_none());
         assert_eq!(resolved.regex, query.regex);
@@ -318,7 +348,7 @@ mod tests {
             field: "field.sub.field".to_string(),
             regex: "abc.*xyz".to_string(),
         };
-        let resolved = query.to_field_and_regex(&schema).unwrap();
+        let resolved = query.to_resolved(&schema, None).unwrap();
         assert_eq!(resolved.field, schema.get_field("field").unwrap());
         assert_eq!(resolved.json_path.unwrap(), b"sub\x01field\0s");
         assert_eq!(resolved.regex, query.regex);
@@ -328,90 +358,69 @@ mod tests {
             field: "field".to_string(),
             regex: "abc.*xyz".to_string(),
         };
-        let resolved = query_empty_path.to_field_and_regex(&schema).unwrap();
+        let resolved = query_empty_path.to_resolved(&schema, None).unwrap();
         assert_eq!(resolved.field, schema.get_field("field").unwrap());
         assert_eq!(resolved.json_path.unwrap(), b"\0s");
         assert_eq!(resolved.regex, query_empty_path.regex);
     }
 
     #[test]
-    fn test_tokenizer_does_lowercasing() {
-        let tokenizer_manager = crate::tokenizers::create_default_quickwit_tokenizer_manager();
-
-        assert!(tokenizer_manager.tokenizer_does_lowercasing("raw_lowercase"));
-        assert!(tokenizer_manager.tokenizer_does_lowercasing("default"));
-        assert!(tokenizer_manager.tokenizer_does_lowercasing("lowercase"));
-        assert!(!tokenizer_manager.tokenizer_does_lowercasing("raw"));
-        assert!(!tokenizer_manager.tokenizer_does_lowercasing("nonexistent"));
-    }
-
-    #[test]
-    fn test_regex_query_returns_tokenizer_name() {
-        let mut schema_builder = TantivySchema::builder();
-        schema_builder.add_text_field("field", TEXT);
-        let schema = schema_builder.build();
-
-        let query = RegexQuery {
-            field: "field".to_string(),
-            regex: "abc.*xyz".to_string(),
-        };
-        let resolved = query.to_field_and_regex(&schema).unwrap();
-        // TEXT uses the "default" tokenizer
-        assert_eq!(resolved.tokenizer_name.as_deref(), Some("default"));
-    }
-
-    #[test]
     fn test_regex_case_insensitive_with_lowercasing_tokenizer() {
-        use super::BuildTantivyAstContext;
-        use crate::query_ast::BuildTantivyAst;
-
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
         let mut schema_builder = TantivySchema::builder();
-        // TEXT uses the "default" tokenizer which lowercases
         schema_builder.add_text_field("field", TEXT);
         let schema = schema_builder.build();
-
-        let context = BuildTantivyAstContext::for_test(&schema);
 
         let query = RegexQuery {
             field: "field".to_string(),
             regex: ".*ECONNREFUSED.*".to_string(),
         };
-
-        // The query should succeed (regex is valid with (?i) prepended)
-        let result = query.build_tantivy_ast_impl(&context);
-        assert!(result.is_ok(), "regex query should build successfully");
+        let resolved = query
+            .to_resolved(&schema, Some(&tokenizer_manager))
+            .unwrap();
+        assert_eq!(resolved.regex, "(?i).*ECONNREFUSED.*");
     }
 
     #[test]
     fn test_regex_already_case_insensitive_not_doubled() {
-        use super::BuildTantivyAstContext;
-        use crate::query_ast::BuildTantivyAst;
-
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
         let mut schema_builder = TantivySchema::builder();
         schema_builder.add_text_field("field", TEXT);
         let schema = schema_builder.build();
 
-        let context = BuildTantivyAstContext::for_test(&schema);
-
-        // Already has (?i), should not be doubled
         let query = RegexQuery {
             field: "field".to_string(),
             regex: "(?i).*ECONNREFUSED.*".to_string(),
         };
+        let resolved = query
+            .to_resolved(&schema, Some(&tokenizer_manager))
+            .unwrap();
+        // must NOT be doubled to (?i)(?i)...
+        assert_eq!(resolved.regex, "(?i).*ECONNREFUSED.*");
+    }
 
-        let result = query.build_tantivy_ast_impl(&context);
-        assert!(
-            result.is_ok(),
-            "regex query with existing (?i) should build successfully"
-        );
+    #[test]
+    fn test_regex_combined_flags_not_doubled() {
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        let mut schema_builder = TantivySchema::builder();
+        schema_builder.add_text_field("field", TEXT);
+        let schema = schema_builder.build();
+
+        let query = RegexQuery {
+            field: "field".to_string(),
+            regex: "(?is).*test.*".to_string(),
+        };
+        let resolved = query
+            .to_resolved(&schema, Some(&tokenizer_manager))
+            .unwrap();
+        // (?is) already contains 'i', should not prepend (?i)
+        assert_eq!(resolved.regex, "(?is).*test.*");
     }
 
     #[test]
     fn test_regex_no_case_insensitive_with_raw_tokenizer() {
-        use tantivy::schema::{TextFieldIndexing, TextOptions};
-
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
         let mut schema_builder = TantivySchema::builder();
-        // Use "raw" tokenizer which does not lowercase
         let text_options = TextOptions::default()
             .set_indexing_options(TextFieldIndexing::default().set_tokenizer("raw"));
         schema_builder.add_text_field("raw_field", text_options);
@@ -421,14 +430,30 @@ mod tests {
             field: "raw_field".to_string(),
             regex: "abc.*xyz".to_string(),
         };
-        let resolved = query.to_field_and_regex(&schema).unwrap();
-        assert_eq!(resolved.tokenizer_name.as_deref(), Some("raw"));
-        // The regex should NOT have (?i) since raw doesn't lowercase
+        let resolved = query
+            .to_resolved(&schema, Some(&tokenizer_manager))
+            .unwrap();
+        // raw tokenizer does not lowercase, regex should be unchanged
         assert_eq!(resolved.regex, "abc.*xyz");
     }
 
     #[test]
-    fn test_regex_json_field_returns_tokenizer_name() {
+    fn test_regex_without_tokenizer_manager() {
+        let mut schema_builder = TantivySchema::builder();
+        schema_builder.add_text_field("field", TEXT);
+        let schema = schema_builder.build();
+
+        let query = RegexQuery {
+            field: "field".to_string(),
+            regex: ".*UPPER.*".to_string(),
+        };
+        // without tokenizer_manager, no (?i) is added
+        let resolved = query.to_resolved(&schema, None).unwrap();
+        assert_eq!(resolved.regex, ".*UPPER.*");
+    }
+
+    #[test]
+    fn test_regex_json_field() {
         let mut schema_builder = TantivySchema::builder();
         schema_builder.add_json_field("field", TEXT);
         let schema = schema_builder.build();
@@ -437,10 +462,8 @@ mod tests {
             field: "field.key".to_string(),
             regex: "abc".to_string(),
         };
-        let resolved = query.to_field_and_regex(&schema).unwrap();
+        let resolved = query.to_resolved(&schema, None).unwrap();
         assert!(resolved.json_path.is_some());
-        // JSON field with TEXT also uses "default" tokenizer
-        assert_eq!(resolved.tokenizer_name.as_deref(), Some("default"));
     }
 
     #[test]

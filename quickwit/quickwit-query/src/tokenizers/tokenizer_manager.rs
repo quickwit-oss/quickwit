@@ -77,13 +77,8 @@ impl TokenizerManager {
 
     /// Query whether a given tokenizer does lowercasing
     pub fn get_normalizer(&self, tokenizer_name: &str) -> Option<TextAnalyzer> {
-        let use_lowercaser = self
-            .is_lowercaser
-            .read()
-            .unwrap()
-            .get(tokenizer_name)
-            .copied()?;
-        let analyzer = if use_lowercaser {
+        let does_lowercasing = self.tokenizer_does_lowercasing(tokenizer_name)?;
+        let analyzer = if does_lowercasing {
             RAW_LOWERCASE_TOKENIZER_NAME
         } else {
             RAW_TOKENIZER_NAME
@@ -91,14 +86,14 @@ impl TokenizerManager {
         self.get_tokenizer(analyzer)
     }
 
-    /// Returns true if the given tokenizer lowercases its output.
-    pub fn tokenizer_does_lowercasing(&self, tokenizer_name: &str) -> bool {
+    /// Returns whether the given tokenizer lowercases its output.
+    /// Returns `None` if the tokenizer is not registered.
+    pub fn tokenizer_does_lowercasing(&self, tokenizer_name: &str) -> Option<bool> {
         self.is_lowercaser
             .read()
             .unwrap()
             .get(tokenizer_name)
             .copied()
-            .unwrap_or(false)
     }
 
     /// Get the inner TokenizerManager
@@ -110,5 +105,37 @@ impl TokenizerManager {
 impl Default for TokenizerManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tokenizers::create_default_quickwit_tokenizer_manager;
+
+    #[test]
+    fn test_tokenizer_does_lowercasing() {
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+
+        assert_eq!(
+            tokenizer_manager.tokenizer_does_lowercasing("raw_lowercase"),
+            Some(true)
+        );
+        assert_eq!(
+            tokenizer_manager.tokenizer_does_lowercasing("default"),
+            Some(true)
+        );
+        assert_eq!(
+            tokenizer_manager.tokenizer_does_lowercasing("lowercase"),
+            Some(true)
+        );
+        assert_eq!(
+            tokenizer_manager.tokenizer_does_lowercasing("raw"),
+            Some(false)
+        );
+        assert_eq!(
+            tokenizer_manager.tokenizer_does_lowercasing("nonexistent"),
+            None
+        );
     }
 }
