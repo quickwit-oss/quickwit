@@ -37,13 +37,22 @@ pub fn create_dict_array(values: &[&str]) -> ArrayRef {
 /// Each `Some(value)` gets a key into the dictionary; `None` values produce
 /// a null key.
 pub fn create_nullable_dict_array(values: &[Option<&str>]) -> ArrayRef {
+    let mut unique_values: Vec<&str> = Vec::new();
     let keys: Vec<Option<i32>> = values
         .iter()
-        .enumerate()
-        .map(|(i, v)| v.map(|_| i as i32))
+        .map(|v| {
+            v.map(|s| {
+                if let Some(pos) = unique_values.iter().position(|&u| u == s) {
+                    pos as i32
+                } else {
+                    let pos = unique_values.len();
+                    unique_values.push(s);
+                    pos as i32
+                }
+            })
+        })
         .collect();
-    let string_values: Vec<&str> = values.iter().filter_map(|v| *v).collect();
-    let string_array = StringArray::from(string_values);
+    let string_array = StringArray::from(unique_values);
     Arc::new(
         DictionaryArray::<Int32Type>::try_new(Int32Array::from(keys), Arc::new(string_array))
             .unwrap(),
