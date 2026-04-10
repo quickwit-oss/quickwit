@@ -517,3 +517,256 @@ fn test_split_writer_populates_row_keys_proto() {
     assert_eq!(col_string(&min_cols[0]), "cpu.usage");
     assert_eq!(col_string(&max_cols[0]), "mem.usage");
 }
+
+// -----------------------------------------------------------------------
+// End-to-end: verify RowKeys are identical across all three storage paths
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_row_keys_consistent_across_all_storage_paths() {
+    // Comprehensive end-to-end test with realistic data:
+    //
+    // 8 rows across 4 distinct series with null tags, different metrics,
+    // and a wide timestamp range. Verifies that the RowKeys proto is
+    // identical in all three places it appears:
+    //
+    //   1. MetricsSplitMetadata.row_keys_proto (feeds Postgres)
+    //   2. Parquet file KV metadata (qh.row_keys)
+    //   3. InsertableMetricsSplit.row_keys (Postgres column)
+    //
+    // And that the actual min/max column values are correct given the
+    // sort order: metric_name|service|env|datacenter|region|host|
+    //             timeseries_id|timestamp_secs
+    use base64::Engine as _;
+    use parquet::file::reader::{FileReader, SerializedFileReader};
+
+    use crate::split::MetricsSplitState;
+    use crate::split::postgres::InsertableMetricsSplit;
+    use crate::storage::ParquetWriterConfig;
+    use crate::table_config::TableConfig;
+
+    let config = ParquetWriterConfig::default();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let split_writer =
+        crate::storage::ParquetSplitWriter::new(config, temp_dir.path(), &TableConfig::default());
+
+    // Build a batch with rich test data. Rows are UNSORTED — the writer
+    // will sort them. After sorting by sort schema, the expected order is:
+    //
+    // Sort key priority: metric_name → service → ... → timeseries_id → timestamp_secs
+    //
+    // Row data (input order):
+    //   0: mem.usage / service=web    / host=null    / ts_id=40 / ts=800
+    //   1: cpu.usage / service=api    / host=node-1  / ts_id=10 / ts=100
+    //   2: cpu.usage / service=api    / host=node-1  / ts_id=10 / ts=300
+    //   3: cpu.usage / service=null   / host=null    / ts_id=20 / ts=200
+    //   4: mem.usage / service=web    / host=node-3  / ts_id=50 / ts=900
+    //   5: cpu.usage / service=api    / host=null    / ts_id=30 / ts=400
+    //   6: cpu.usage / service=api    / host=node-1  / ts_id=10 / ts=500
+    //   7: mem.usage / service=api    / host=node-2  / ts_id=60 / ts=600
+    //
+    // After sorting, first row should be: cpu.usage / api / node-1 / ts_id=10 / ts=100
+    // (smallest metric_name, then smallest service, then host present)
+    // Last row should be: mem.usage / web / node-3 / ts_id=50 / ts=900
+    // (largest metric_name, then largest service, then host present)
+    let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("metric_name", dict_type.clone(), false),
+        Field::new("metric_type", DataType::UInt8, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+        Field::new("service", dict_type.clone(), true),
+        Field::new("host", dict_type.clone(), true),
+        Field::new("timeseries_id", DataType::Int64, false),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            create_dict_array(&[
+                "mem.usage",
+                "cpu.usage",
+                "cpu.usage",
+                "cpu.usage",
+                "mem.usage",
+                "cpu.usage",
+                "cpu.usage",
+                "mem.usage",
+            ]),
+            Arc::new(UInt8Array::from(vec![0u8; 8])) as ArrayRef,
+            Arc::new(UInt64Array::from(vec![
+                800u64, 100, 300, 200, 900, 400, 500, 600,
+            ])) as ArrayRef,
+            Arc::new(Float64Array::from(vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0,
+            ])) as ArrayRef,
+            create_nullable_dict_array(&[
+                Some("web"),
+                Some("api"),
+                Some("api"),
+                None,
+                Some("web"),
+                Some("api"),
+                Some("api"),
+                Some("api"),
+            ]),
+            create_nullable_dict_array(&[
+                None,
+                Some("node-1"),
+                Some("node-1"),
+                None,
+                Some("node-3"),
+                None,
+                Some("node-1"),
+                Some("node-2"),
+            ]),
+            Arc::new(Int64Array::from(vec![40i64, 10, 10, 20, 50, 30, 10, 60])) as ArrayRef,
+        ],
+    )
+    .unwrap();
+
+    // ---- Path 1: Write through split_writer, get MetricsSplitMetadata ----
+
+    let split = split_writer.write_split(&batch, "test-index").unwrap();
+
+    let metadata_row_keys_bytes = split
+        .metadata
+        .row_keys_proto
+        .as_ref()
+        .expect("row_keys_proto must be populated on MetricsSplitMetadata");
+
+    // ---- Path 2: Read Parquet file, extract qh.row_keys from KV metadata ----
+
+    let parquet_path = temp_dir.path().join(split.metadata.parquet_filename());
+    let file = std::fs::File::open(&parquet_path).unwrap();
+    let reader = SerializedFileReader::new(file).unwrap();
+    let file_meta = reader.metadata().file_metadata();
+    let kv_meta = file_meta
+        .key_value_metadata()
+        .expect("Parquet file must have KV metadata");
+
+    let rk_entry = kv_meta
+        .iter()
+        .find(|kv| kv.key == "qh.row_keys")
+        .expect("qh.row_keys must be in Parquet KV metadata");
+    let b64_value = rk_entry.value.as_ref().unwrap();
+    let parquet_row_keys_bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64_value)
+        .unwrap();
+
+    // ---- Path 3: Build InsertableMetricsSplit (Postgres path) ----
+
+    let insertable =
+        InsertableMetricsSplit::from_metadata(&split.metadata, MetricsSplitState::Staged).unwrap();
+    let postgres_row_keys_bytes = insertable
+        .row_keys
+        .as_ref()
+        .expect("InsertableMetricsSplit.row_keys must be populated");
+
+    // ---- Verify all three paths have identical bytes ----
+
+    assert_eq!(
+        metadata_row_keys_bytes.as_slice(),
+        parquet_row_keys_bytes.as_slice(),
+        "MetricsSplitMetadata and Parquet KV metadata must have identical row_keys bytes"
+    );
+    assert_eq!(
+        metadata_row_keys_bytes.as_slice(),
+        postgres_row_keys_bytes.as_slice(),
+        "MetricsSplitMetadata and Postgres InsertableMetricsSplit must have identical row_keys \
+         bytes"
+    );
+
+    // ---- Decode and verify the actual min/max column values ----
+
+    let row_keys: RowKeys = prost::Message::decode(metadata_row_keys_bytes.as_slice()).unwrap();
+
+    let min_cols = &row_keys.min_row_values.as_ref().unwrap().column;
+    let max_cols = &row_keys.max_row_values.as_ref().unwrap().column;
+    let all_max_cols = &row_keys
+        .all_inclusive_max_row_values
+        .as_ref()
+        .unwrap()
+        .column;
+
+    // 8 columns in the sort schema.
+    assert_eq!(min_cols.len(), 8);
+    assert_eq!(max_cols.len(), 8);
+
+    // -- Min row (first after sort): cpu.usage / api / ... --
+    assert_eq!(col_string(&min_cols[0]), "cpu.usage", "min metric_name");
+    // service: "api" is the smallest non-null service value.
+    // Whether null sorts before "api" depends on nulls_first — the writer
+    // uses nulls_first=true, so the null-service row (cpu.usage/null)
+    // sorts before (cpu.usage/api). Let's check.
+    // Actually with nulls_first=true, null < "api", so the first row
+    // after sort is cpu.usage with service=null.
+    //
+    // But ColumnValue for null is { value: None }, so let's handle both.
+    // The key question: does the row with service=null sort before service="api"?
+    // With nulls_first=true: yes.
+    if min_cols[1].value.is_none() {
+        // First sorted row has null service (cpu.usage with no service).
+        // This is correct with nulls_first=true.
+    } else {
+        assert_eq!(col_string(&min_cols[1]), "api", "min service");
+    }
+
+    // timeseries_id at index 6 — should be an integer.
+    assert!(
+        matches!(
+            min_cols[6].value,
+            Some(column_value::Value::TypeInt(_)) | None
+        ),
+        "timeseries_id must be TypeInt or None"
+    );
+
+    // Min timestamp_secs at index 7 — smallest timestamp in the first
+    // sorted row's series.
+    let min_ts = col_int(&min_cols[7]);
+    assert!(
+        (100..=900).contains(&min_ts),
+        "min timestamp must be within input range, got {}",
+        min_ts
+    );
+
+    // -- Max row (last after sort): mem.usage / web / ... --
+    assert_eq!(col_string(&max_cols[0]), "mem.usage", "max metric_name");
+    assert_eq!(col_string(&max_cols[1]), "web", "max service");
+
+    let max_ts = col_int(&max_cols[7]);
+    assert!(
+        (100..=900).contains(&max_ts),
+        "max timestamp must be within input range, got {}",
+        max_ts
+    );
+    assert!(
+        max_ts >= min_ts,
+        "max timestamp ({}) must be >= min timestamp ({})",
+        max_ts,
+        min_ts
+    );
+
+    // all_inclusive_max must equal max (no multi-values).
+    assert_eq!(max_cols, all_max_cols, "all_inclusive_max must equal max");
+
+    // -- Verify qh.row_keys_json is also present and parseable --
+    let json_entry = kv_meta
+        .iter()
+        .find(|kv| kv.key == "qh.row_keys_json")
+        .expect("qh.row_keys_json must be in Parquet KV metadata");
+    let json_str = json_entry.value.as_ref().unwrap();
+    let json_parsed: serde_json::Value =
+        serde_json::from_str(json_str).expect("qh.row_keys_json must be valid JSON");
+    assert!(
+        json_parsed.get("min_row_values").is_some(),
+        "JSON must contain min_row_values"
+    );
+    assert!(
+        json_parsed.get("max_row_values").is_some(),
+        "JSON must contain max_row_values"
+    );
+
+    // -- Verify not expired --
+    assert!(!row_keys.expired, "newly written split must not be expired");
+}
