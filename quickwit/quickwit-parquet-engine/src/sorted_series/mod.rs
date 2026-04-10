@@ -57,11 +57,6 @@ use crate::sort_fields::parse_sort_fields;
 /// Column name for the sorted series key in the Parquet schema.
 pub const SORTED_SERIES_COLUMN: &str = "sorted_series";
 
-/// Sort schema column names that mark the end of the key encoding.
-/// The sorted series key includes all sort columns *before* the first
-/// terminal column, then appends `timeseries_id` separately.
-const TERMINAL_COLUMNS: &[&str] = &["timeseries_id", "timestamp_secs", "timestamp"];
-
 /// Compute the sorted series column for a [`RecordBatch`].
 ///
 /// Returns a [`arrow::array::BinaryArray`] with one entry per row. The
@@ -79,12 +74,12 @@ pub fn compute_sorted_series_column(
     let schema = parse_sort_fields(sort_fields_str)?;
     let batch_schema = batch.schema();
 
-    // Resolve sort columns that contribute to the key.
-    // Stop at the first terminal column (timeseries_id, timestamp_secs).
-    let key_columns = resolve_key_columns(&schema, &batch_schema);
-
-    // Find timeseries_id column index (appended after tag columns).
-    let ts_id_col_idx = batch_schema.index_of("timeseries_id").ok();
+    // Resolve sort columns that contribute to the key, plus the
+    // timeseries_id column and its ordinal position in the schema.
+    let ResolvedKeySchema {
+        tag_columns,
+        ts_id_column,
+    } = resolve_key_columns(&schema, &batch_schema);
 
     let num_rows = batch.num_rows();
     // Estimate ~48 bytes per key: a few ordinal+string pairs + 8-byte i64.
@@ -93,7 +88,13 @@ pub fn compute_sorted_series_column(
 
     for row_idx in 0..num_rows {
         buf.clear();
-        encode_row_key(&key_columns, ts_id_col_idx, batch, row_idx, &mut buf)?;
+        encode_row_key(
+            &tag_columns,
+            ts_id_column.as_ref(),
+            batch,
+            row_idx,
+            &mut buf,
+        )?;
         builder.append_value(&buf);
     }
 
@@ -151,37 +152,61 @@ struct KeyColumn {
     batch_idx: usize,
 }
 
-/// Walk the sort schema and resolve columns present in the batch,
-/// stopping at the first terminal column.
+/// The resolved key schema: tag columns plus optional timeseries_id.
+struct ResolvedKeySchema {
+    tag_columns: Vec<KeyColumn>,
+    ts_id_column: Option<KeyColumn>,
+}
+
+/// Walk the sort schema and resolve columns present in the batch.
+///
+/// Tag columns are collected up to (but not including) `timeseries_id`.
+/// The `timeseries_id` column is resolved separately with its own ordinal
+/// so the key encoding is consistent: every component gets an ordinal prefix.
 fn resolve_key_columns(
     sort_schema: &quickwit_proto::sortschema::SortSchema,
     batch_schema: &Schema,
-) -> Vec<KeyColumn> {
-    let mut columns = Vec::new();
+) -> ResolvedKeySchema {
+    let mut tag_columns = Vec::new();
+    let mut ts_id_column = None;
+
     for (ordinal, col) in sort_schema.column.iter().enumerate() {
-        if TERMINAL_COLUMNS.contains(&col.name.as_str()) {
+        if col.name == "timeseries_id" {
+            if let Ok(idx) = batch_schema.index_of("timeseries_id") {
+                ts_id_column = Some(KeyColumn {
+                    ordinal: ordinal as u8,
+                    batch_idx: idx,
+                });
+            }
+            break;
+        }
+        if col.name == "timestamp_secs" || col.name == "timestamp" {
             break;
         }
         if let Ok(idx) = batch_schema.index_of(&col.name) {
-            columns.push(KeyColumn {
+            tag_columns.push(KeyColumn {
                 ordinal: ordinal as u8,
                 batch_idx: idx,
             });
         }
     }
-    columns
+
+    ResolvedKeySchema {
+        tag_columns,
+        ts_id_column,
+    }
 }
 
 /// Encode a single row's sorted series key into `buf`.
 fn encode_row_key(
-    key_columns: &[KeyColumn],
-    ts_id_col_idx: Option<usize>,
+    tag_columns: &[KeyColumn],
+    ts_id_column: Option<&KeyColumn>,
     batch: &RecordBatch,
     row_idx: usize,
     buf: &mut Vec<u8>,
 ) -> Result<()> {
     // Encode non-null sort schema columns: ordinal + string value.
-    for kc in key_columns {
+    for kc in tag_columns {
         let col = batch.column(kc.batch_idx);
         if col.is_null(row_idx) {
             continue;
@@ -194,11 +219,13 @@ fn encode_row_key(
         }
     }
 
-    // Append timeseries_id as the final discriminator.
-    if let Some(idx) = ts_id_col_idx {
-        let col = batch.column(idx);
+    // Append timeseries_id with its ordinal as the final discriminator.
+    if let Some(kc) = ts_id_column {
+        let col = batch.column(kc.batch_idx);
         if !col.is_null(row_idx) {
             let ts_id = extract_i64_value(col.as_ref(), row_idx);
+            storekey::encode(&mut *buf, &kc.ordinal)
+                .map_err(|e| anyhow!("storekey encode timeseries_id ordinal: {}", e))?;
             storekey::encode(&mut *buf, &ts_id)
                 .map_err(|e| anyhow!("storekey encode timeseries_id: {}", e))?;
         }
