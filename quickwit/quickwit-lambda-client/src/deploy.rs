@@ -26,7 +26,7 @@
 //! - Old versions are garbage collected (keep current + top 5 most recent)
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::{Context, anyhow};
 use aws_sdk_lambda::Client as LambdaClient;
@@ -55,16 +55,14 @@ const GC_KEEP_RECENT_VERSIONS: usize = 5;
 /// Format: "{quickwit_version}-{hash_short}" with dots replaced by underscores.
 /// Example: "0_8_0-fa752891"
 fn lambda_qualifier() -> &'static str {
-    static LAMBDA_QUALIFIER: OnceLock<String> = OnceLock::new();
-    LAMBDA_QUALIFIER
-        .get_or_init(|| {
-            format!(
-                "{}_{}",
-                env!("CARGO_PKG_VERSION").replace('.', "_"),
-                env!("LAMBDA_BINARY_HASH")
-            )
-        })
-        .as_str()
+    static LAMBDA_QUALIFIER: LazyLock<String> = LazyLock::new(|| {
+        format!(
+            "{}_{}",
+            env!("CARGO_PKG_VERSION").replace('.', "_"),
+            env!("LAMBDA_BINARY_HASH")
+        )
+    });
+    LAMBDA_QUALIFIER.as_str()
 }
 
 /// Returns the version description for our qualifier.

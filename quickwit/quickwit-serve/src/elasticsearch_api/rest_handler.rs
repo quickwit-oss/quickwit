@@ -70,6 +70,28 @@ use crate::rest::recover_fn;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::{BuildInfo, with_arg};
 
+pub(crate) fn es_compat_cluster_info(
+    config: Arc<NodeConfig>,
+    build_info: &'static BuildInfo,
+) -> Value {
+    json!({
+        "name" : config.node_id,
+        "cluster_name" : config.cluster_id,
+        "cluster_uuid" : config.cluster_id,
+        "tagline" : "You Know, for Search",
+        "version" : {
+            "distribution" : "quickwit",
+            "number" : "7.17.0",
+            "build_hash" : build_info.commit_hash,
+            "build_date" : build_info.build_date,
+            "build_snapshot" : false,
+            "lucene_version" : "8.11.1",
+            "minimum_wire_compatibility_version" : "6.8.0",
+            "minimum_index_compatibility_version" : "6.0.0-beta1",
+        }
+    })
+}
+
 /// Elastic compatible cluster info handler.
 pub fn es_compat_cluster_info_handler(
     node_config: Arc<NodeConfig>,
@@ -164,7 +186,7 @@ pub(crate) fn es_compat_search_shards(index_id: String, config: Arc<NodeConfig>)
 pub fn es_compat_aliases_handler()
 -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_aliases_filter()
-        .then(|| async { Ok(Value::Object(Map::new())) })
+        .then(|| async { Ok(es_compat_aliases()) })
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
         .boxed()
@@ -315,6 +337,15 @@ pub fn es_compat_cluster_health_handler(
         (status = 503, description = "The cluster is unhealthy.", body = bool),
     ),
 )]
+pub(crate) async fn es_compat_cluster_health_check(cluster: &Cluster) -> (Value, StatusCode) {
+    let is_ready = cluster.is_self_node_ready().await;
+    if is_ready {
+        (json!({"status": "green"}), StatusCode::OK)
+    } else {
+        (json!({"status": "red"}), StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
 /// Get Node Liveliness
 async fn es_compat_cluster_health(
     query_params: HashMap<String, String>,
@@ -440,6 +471,13 @@ pub fn es_compat_scroll_handler(
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
         .boxed()
+}
+
+pub(crate) fn es_compat_delete_scroll() -> Value {
+    json!({
+        "succeeded": true,
+        "num_freed": 0
+    })
 }
 
 /// DELETE _elastic/_search/scroll

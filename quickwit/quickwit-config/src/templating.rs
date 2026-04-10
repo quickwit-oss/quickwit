@@ -14,17 +14,17 @@
 
 use std::collections::HashMap;
 use std::io::BufRead;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result, bail};
 use new_string_template::template::Template;
-use once_cell::sync::Lazy;
 use regex::Regex;
 use tracing::debug;
 
 // Matches `${value}` if value is formatted as:
 // `ENV_VAR` or `ENV_VAR:DEFAULT`
 // Ignores whitespaces in curly braces
-static TEMPLATE_ENV_VAR_CAPTURE: Lazy<Regex> = Lazy::new(|| {
+static TEMPLATE_ENV_VAR_CAPTURE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\$\{\s*([A-Za-z0-9_]+)\s*(?::\-\s*([^\s\}]+)\s*)?}")
         .expect("regular expression should compile")
 });

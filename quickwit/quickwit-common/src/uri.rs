@@ -18,9 +18,9 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::path::{Component, Path, PathBuf};
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use anyhow::{Context, bail};
-use once_cell::sync::OnceCell;
 use regex::Regex;
 use serde::de::Error;
 use serde::{Deserialize, Serialize, Serializer};
@@ -141,13 +141,11 @@ impl Uri {
     /// Strips sensitive information such as credentials from URI.
     fn as_redacted_str(&self) -> Cow<'_, str> {
         if self.protocol().is_database() {
-            static DATABASE_URI_PATTERN: OnceCell<Regex> = OnceCell::new();
-            DATABASE_URI_PATTERN
-                .get_or_init(|| {
-                    Regex::new("(?P<before>^.*://.*)(?P<password>:.*@)(?P<after>.*)")
-                        .expect("regular expression should compile")
-                })
-                .replace(&self.uri, "$before:***redacted***@$after")
+            static DATABASE_URI_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+                Regex::new("(?P<before>^.*://.*)(?P<password>:.*@)(?P<after>.*)")
+                    .expect("regular expression should compile")
+            });
+            DATABASE_URI_PATTERN.replace(&self.uri, "$before:***redacted***@$after")
         } else {
             Cow::Borrowed(&self.uri)
         }

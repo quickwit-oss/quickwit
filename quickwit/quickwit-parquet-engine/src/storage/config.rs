@@ -16,7 +16,7 @@
 
 use arrow::datatypes::{DataType, Schema as ArrowSchema};
 use parquet::basic::Compression as ParquetCompression;
-use parquet::file::metadata::SortingColumn;
+use parquet::file::metadata::{KeyValue, SortingColumn};
 use parquet::file::properties::{EnabledStatistics, WriterProperties, WriterPropertiesBuilder};
 use parquet::schema::types::ColumnPath;
 
@@ -119,19 +119,41 @@ impl ParquetWriterConfig {
     }
 
     /// Convert to Parquet WriterProperties using the given Arrow schema to configure
-    /// per-column settings like dictionary encoding and bloom filters.
+    /// per-column settings like dictionary encoding and bloom filters, with an empty
+    /// sort order and no metadata.
+    ///
+    /// Prefer `to_writer_properties_with_metadata()` in production — this method
+    /// is mainly for tests that don't care about sort order.
     pub fn to_writer_properties(&self, schema: &ArrowSchema) -> WriterProperties {
+        self.to_writer_properties_with_metadata(schema, Vec::new(), None)
+    }
+
+    /// Convert to Parquet WriterProperties with sorting columns and optional key_value_metadata.
+    ///
+    /// `sorting_cols` is produced by `ParquetWriter::sorting_columns()` from the
+    /// resolved table_config sort fields.
+    ///
+    /// When `kv_metadata` is provided, the entries are embedded in the Parquet file's
+    /// key_value_metadata, making files self-describing (META-07).
+    pub fn to_writer_properties_with_metadata(
+        &self,
+        schema: &ArrowSchema,
+        sorting_cols: Vec<SortingColumn>,
+        kv_metadata: Option<Vec<KeyValue>>,
+    ) -> WriterProperties {
         let mut builder = WriterProperties::builder()
             .set_max_row_group_size(self.row_group_size)
             .set_data_page_size_limit(self.data_page_size)
             .set_write_batch_size(self.write_batch_size)
-            // Enable column index for efficient pruning on sorted data (64 bytes default)
             .set_column_index_truncate_length(Some(64))
-            // Set sorting columns metadata for readers to use during pruning
-            .set_sorting_columns(Some(Self::sorting_columns(schema)))
-            // Enable row group level statistics (min/max/null_count) for query pruning
-            // This allows DataFusion to skip row groups based on timestamp ranges
+            .set_sorting_columns(Some(sorting_cols))
             .set_statistics_enabled(EnabledStatistics::Chunk);
+
+        if let Some(kvs) = kv_metadata
+            && !kvs.is_empty()
+        {
+            builder = builder.set_key_value_metadata(Some(kvs));
+        }
 
         builder = match self.compression {
             Compression::Zstd => {
@@ -183,20 +205,6 @@ impl ParquetWriterConfig {
             }
         }
         builder
-    }
-
-    /// Get the sorting columns for parquet metadata, computed from the schema
-    /// and SORT_ORDER. Only columns present in the schema are included.
-    fn sorting_columns(schema: &ArrowSchema) -> Vec<SortingColumn> {
-        SORT_ORDER
-            .iter()
-            .filter_map(|name| schema.index_of(name).ok())
-            .map(|idx| SortingColumn {
-                column_idx: idx as i32,
-                descending: false,
-                nulls_first: false,
-            })
-            .collect()
     }
 }
 
@@ -369,35 +377,5 @@ mod tests {
                 col_name
             );
         }
-    }
-
-    #[test]
-    fn test_sorting_columns_order() {
-        let schema = create_test_schema();
-        let sorting_cols = ParquetWriterConfig::sorting_columns(&schema);
-
-        // The test schema has metric_name (idx 0), timestamp_secs (idx 2),
-        // service (idx 4), env (idx 5), host (idx 6).
-        // SORT_ORDER is: metric_name, service, env, datacenter, region, host, timestamp_secs
-        // Only present columns are included, so: metric_name, service, env, host, timestamp_secs
-        assert_eq!(
-            sorting_cols.len(),
-            5,
-            "should have 5 sorting columns from the test schema"
-        );
-
-        // Verify all are ascending with nulls first
-        for col in &sorting_cols {
-            assert!(!col.descending, "sorting should be ascending");
-            assert!(!col.nulls_first, "nulls should be last");
-        }
-
-        // Verify order matches SORT_ORDER filtered by schema presence:
-        // metric_name (idx 0), service (idx 4), env (idx 5), host (idx 6), timestamp_secs (idx 2)
-        assert_eq!(sorting_cols[0].column_idx, 0); // metric_name
-        assert_eq!(sorting_cols[1].column_idx, 4); // service
-        assert_eq!(sorting_cols[2].column_idx, 5); // env
-        assert_eq!(sorting_cols[3].column_idx, 6); // host
-        assert_eq!(sorting_cols[4].column_idx, 2); // timestamp_secs
     }
 }

@@ -261,6 +261,7 @@ pub fn setup_logging_and_tracing(
     ))
 }
 
+/// Set up DogStatsD metrics exporter and invariant recorder.
 #[cfg(not(any(test, feature = "testsuite")))]
 pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
     // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
@@ -299,7 +300,17 @@ pub fn setup_dogstatsd_exporter(build_info: &BuildInfo) -> anyhow::Result<()> {
         .context("failed to parse DogStatsD server address")?
         .install()
         .context("failed to register DogStatsD exporter")?;
+    quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
     Ok(())
+}
+
+#[cfg(not(any(test, feature = "testsuite")))]
+fn invariant_recorder(invariant_id: quickwit_dst::invariants::InvariantId, passed: bool) {
+    let name = invariant_id.as_str();
+    metrics::counter!("pomsky.invariant.checked", "invariant" => name).increment(1);
+    if !passed {
+        metrics::counter!("pomsky.invariant.violated", "invariant" => name).increment(1);
+    }
 }
 
 #[derive(Debug)]

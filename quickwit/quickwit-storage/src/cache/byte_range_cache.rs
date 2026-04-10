@@ -396,8 +396,8 @@ mod tests {
     use std::collections::HashMap;
     use std::ops::Range;
     use std::path::Path;
+    use std::sync::LazyLock;
 
-    use once_cell::sync::Lazy;
     use proptest::prelude::*;
 
     use super::ByteRangeCache;
@@ -510,8 +510,8 @@ mod tests {
     fn test_byte_range_cache_doesnt_merge_unnecessarily() {
         // we need to get a 'static ref to metrics, and want a dedicated metrics because we assert
         // on it
-        static METRICS: Lazy<CacheMetrics> =
-            Lazy::new(|| CacheMetrics::for_component("byterange_cache_test"));
+        static METRICS: LazyLock<CacheMetrics> =
+            LazyLock::new(|| CacheMetrics::for_component("byterange_cache_test"));
 
         let cache = ByteRangeCache::with_infinite_capacity(&METRICS);
 

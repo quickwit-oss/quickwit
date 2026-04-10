@@ -24,8 +24,10 @@ pub mod index;
 pub mod ingest;
 pub mod metrics;
 pub mod schema;
+pub mod sort_fields;
 pub mod split;
 pub mod storage;
+pub mod table_config;
 
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_helpers;
