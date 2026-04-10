@@ -321,6 +321,16 @@ impl ParquetWriter {
             }
         }
 
+        // Phase 1b: sorted_series immediately after sort schema columns.
+        // It encodes the same information and benefits from early arrival
+        // during streaming reads, but is not in the sort schema string.
+        if let Ok(idx) = schema.index_of(crate::sorted_series::SORTED_SERIES_COLUMN)
+            && !used[idx]
+        {
+            ordered_indices.push(idx);
+            used[idx] = true;
+        }
+
         // Phase 2: remaining columns, alphabetically by name.
         let mut remaining: Vec<(usize, &str)> = schema
             .fields()
@@ -352,7 +362,7 @@ impl ParquetWriter {
             .expect("reorder_columns: schema and columns must be consistent")
     }
 
-    /// Validate, sort, reorder columns, and build WriterProperties for a batch.
+    /// Validate, compute derived columns, sort, reorder, and build WriterProperties.
     fn prepare_write(
         &self,
         batch: &RecordBatch,
@@ -360,7 +370,15 @@ impl ParquetWriter {
     ) -> Result<(RecordBatch, WriterProperties), ParquetWriteError> {
         validate_required_fields(&batch.schema())
             .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?;
-        let sorted_batch = self.reorder_columns(&self.sort_batch(batch)?);
+
+        // Compute sorted_series column before sorting — the column is derived
+        // from the tag columns and timeseries_id, so it must exist before the
+        // sort step can include it in the physical ordering.
+        let batch =
+            crate::sorted_series::append_sorted_series_column(&self.sort_fields_string, batch)
+                .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?;
+
+        let sorted_batch = self.reorder_columns(&self.sort_batch(&batch)?);
 
         let kv_metadata = split_metadata.map(build_compaction_key_value_metadata);
 
@@ -1064,14 +1082,16 @@ mod tests {
             .collect();
 
         // Sort columns first: metric_name, service, env, host, timestamp_secs
+        // Then sorted_series (computed column, placed after sort columns)
         // Then remaining alphabetically: metric_type, value, zzz_extra
         assert_eq!(col_names[0], "metric_name");
         assert_eq!(col_names[1], "service");
         assert_eq!(col_names[2], "env");
         assert_eq!(col_names[3], "host");
         assert_eq!(col_names[4], "timestamp_secs");
+        assert_eq!(col_names[5], "sorted_series");
 
-        let remaining = &col_names[5..];
+        let remaining = &col_names[6..];
         let mut sorted = remaining.to_vec();
         sorted.sort();
         assert_eq!(remaining, &sorted, "data columns should be alphabetical");

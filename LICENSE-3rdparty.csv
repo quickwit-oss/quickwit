@@ -699,6 +699,7 @@ sqlx-sqlite,https://github.com/launchbadge/sqlx,MIT OR Apache-2.0,"Ryan Leckey <
 stable_deref_trait,https://github.com/storyyeller/stable_deref_trait,MIT OR Apache-2.0,Robert Grosse <n210241048576@gmail.com>
 stateright,https://github.com/stateright/stateright,MIT,Jonathan Nadal <jon.nadal@gmail.com>
 static_assertions,https://github.com/nvzqz/static-assertions-rs,MIT OR Apache-2.0,Nikolai Vazquez
+storekey,https://github.com/surrealdb/storekey,Apache-2.0,"Tobie Morgan Hitchcock <tobie@surrealdb.com>, Michal Hornicky <mhornick@redhat.com>, Dan Burkert <dan@danburkert.com>"
 str_stack,https://github.com/Stebalien/str_stack,MIT OR Apache-2.0,Steven Allen <steven@stebalien.com>
 string_cache,https://github.com/servo/string-cache,MIT OR Apache-2.0,The Servo Project Developers
 stringprep,https://github.com/sfackler/rust-stringprep,MIT OR Apache-2.0,Steven Fackler <sfackler@gmail.com>

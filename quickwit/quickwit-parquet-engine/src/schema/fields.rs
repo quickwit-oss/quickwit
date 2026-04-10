@@ -43,6 +43,7 @@ pub enum ParquetField {
     StartTimestampSecs,
     Value,
     TimeseriesId,
+    SortedSeries,
     TagService,
     TagEnv,
     TagDatacenter,
@@ -64,6 +65,7 @@ impl ParquetField {
             Self::StartTimestampSecs => "start_timestamp_secs",
             Self::Value => "value",
             Self::TimeseriesId => "timeseries_id",
+            Self::SortedSeries => "sorted_series",
             Self::TagService => "tag_service",
             Self::TagEnv => "tag_env",
             Self::TagDatacenter => "tag_datacenter",
@@ -115,6 +117,8 @@ impl ParquetField {
             Self::Value => DataType::Float64,
             // Deterministic hash of timeseries identity columns
             Self::TimeseriesId => DataType::Int64,
+            // Order-preserving composite key for DataFusion streaming aggregation
+            Self::SortedSeries => DataType::Binary,
             // Plain string for metric unit
             Self::MetricUnit => DataType::Utf8,
             // VARIANT type for semi-structured attributes
@@ -151,6 +155,7 @@ impl ParquetField {
             Self::StartTimestampSecs,
             Self::Value,
             Self::TimeseriesId,
+            Self::SortedSeries,
             Self::TagService,
             Self::TagEnv,
             Self::TagDatacenter,
