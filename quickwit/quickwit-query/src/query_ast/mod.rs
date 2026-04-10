@@ -39,7 +39,7 @@ pub use field_presence::FieldPresenceQuery;
 pub use full_text_query::{FullTextMode, FullTextParams, FullTextQuery};
 pub use phrase_prefix_query::PhrasePrefixQuery;
 pub use range_query::RangeQuery;
-pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery};
+pub use regex_query::{AutomatonQuery, JsonPathPrefix, RegexQuery, ResolvedRegex};
 use tantivy_query_ast::TantivyQueryAst;
 pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;

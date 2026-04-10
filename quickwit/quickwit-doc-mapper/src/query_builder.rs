@@ -394,13 +394,16 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     }
 
     fn visit_regex(&mut self, regex_query: &'a RegexQuery) -> Result<(), Self::Err> {
-        let (field, path, regex) = match regex_query.to_field_and_regex(self.schema) {
+        let resolved = match regex_query.to_resolved(self.schema, Some(self.tokenizer_manager)) {
             Ok(res) => res,
             /* the query will be nullified when casting to a tantivy ast */
             Err(InvalidQuery::FieldDoesNotExist { .. }) => return Ok(()),
             Err(e) => return Err(e),
         };
-        self.add_automaton(field, Automaton::Regex(path, regex));
+        self.add_automaton(
+            resolved.field,
+            Automaton::Regex(resolved.json_path, resolved.regex),
+        );
         Ok(())
     }
 }
