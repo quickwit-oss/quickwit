@@ -26,7 +26,8 @@ const QW_MESSAGE_FIELD: &str = "message";
 const QW_TIEBREAKER: &str = "tiebreaker";
 const QW_WES_FIELD: &str = "all";
 
-/// Returns true for fields indexed with the DatadogTokenizer (see config/cloudprem/datadog.yaml).
+/// Returns true for fields indexed with the DatadogTokenizer (see
+/// config/cloudprem/datadog-logs.yaml).
 fn is_datadog_tokenized(field: &str) -> bool {
     field == QW_MESSAGE_FIELD || field == QW_ERROR_FIELD || field.starts_with("error.")
 }

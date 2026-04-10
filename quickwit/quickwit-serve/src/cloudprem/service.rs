@@ -507,8 +507,8 @@ impl CloudPremService for CloudPremServiceImpl {
             .join(&request.index_id)
             .map_err(|e| CloudPremError::Internal(e.to_string()))?;
 
-        // Load the default datadog.yaml config
-        let default_config_bytes = include_bytes!("../../../../config/cloudprem/datadog.yaml");
+        // Load the default datadog-logs.yaml config
+        let default_config_bytes = include_bytes!("../../../../config/cloudprem/datadog-logs.yaml");
         let mut index_config = quickwit_config::load_index_config_from_user_config(
             quickwit_config::ConfigFormat::Yaml,
             default_config_bytes,

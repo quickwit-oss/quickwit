@@ -47,9 +47,12 @@ RUN apt-get -y update \
 
 COPY quickwit /quickwit
 COPY .cargo/config.toml /quickwit/.cargo/config.toml
+
+COPY config/cloudprem/datadog-logs.yaml /config/cloudprem/datadog-logs.yaml
+COPY config/cloudprem/datadog-metrics.yaml /config/cloudprem/datadog-metrics.yaml
+COPY config/cloudprem/datadog-traces.yaml /config/cloudprem/datadog-traces.yaml
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
 
-COPY config/cloudprem/datadog.yaml /config/cloudprem/datadog.yaml
 COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 COPY --from=cloudprem-ui-loader /quickwit/cloudprem-ui/cloudprem_ui_build /quickwit/cloudprem-ui/cloudprem_ui_build
 

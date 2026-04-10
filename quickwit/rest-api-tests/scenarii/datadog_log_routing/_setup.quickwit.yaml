@@ -26,7 +26,7 @@ json:
     commit_timeout_secs: 1
   ingest_settings:
     validate_docs: false
-  doc_mapping: !include ../../config/cloudprem/datadog.yaml::doc_mapping
+  doc_mapping: !include ../../config/cloudprem/datadog-logs.yaml::doc_mapping
 ---
 # Create error index (matches my-tag:critical OR @event.result.status:failed)
 method: POST
@@ -39,7 +39,7 @@ json:
     commit_timeout_secs: 1
   ingest_settings:
     validate_docs: false
-  doc_mapping: !include ../../config/cloudprem/datadog.yaml::doc_mapping
+  doc_mapping: !include ../../config/cloudprem/datadog-logs.yaml::doc_mapping
 ---
 # Create web index (matches (source:nginx OR host:web*) status:*)
 method: POST
@@ -52,7 +52,7 @@ json:
     commit_timeout_secs: 1
   ingest_settings:
     validate_docs: false
-  doc_mapping: !include ../../config/cloudprem/datadog.yaml::doc_mapping
+  doc_mapping: !include ../../config/cloudprem/datadog-logs.yaml::doc_mapping
 ---
 # Create main catch-all index
 method: POST
@@ -65,7 +65,7 @@ json:
     commit_timeout_secs: 1
   ingest_settings:
     validate_docs: false
-  doc_mapping: !include ../../config/cloudprem/datadog.yaml::doc_mapping
+  doc_mapping: !include ../../config/cloudprem/datadog-logs.yaml::doc_mapping
 ---
 # Set routing table
 method: PUT

@@ -51,11 +51,11 @@ pub mod ui_handler;
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
-use std::fs;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{fmt, fs};
 
 use anyhow::{Context, bail};
 use bytesize::ByteSize;
@@ -1519,26 +1519,81 @@ async fn create_managed_indexes(
             Err(error) => bail!("failed to create {index_name} index: {error}"),
         };
     }
-    create_or_update_datadog_index(node_config, &mut index_manager).await?;
+    create_or_update_datadog_indexes(node_config, &mut index_manager).await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DatadogIndexType {
+    Logs,
+    Metrics,
+    Traces,
+}
+
+impl fmt::Display for DatadogIndexType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DatadogIndexType::Logs => write!(f, "logs"),
+            DatadogIndexType::Metrics => write!(f, "metrics"),
+            DatadogIndexType::Traces => write!(f, "traces"),
+        }
+    }
+}
+
+async fn create_or_update_datadog_indexes(
+    node_config: &NodeConfig,
+    index_manager: &mut IndexManager,
+) -> anyhow::Result<()> {
+    for (should_create_index, index_type) in [
+        (
+            node_config.cloudprem_config.create_dd_logs_index,
+            DatadogIndexType::Logs,
+        ),
+        (
+            node_config.cloudprem_config.create_dd_metrics_index,
+            DatadogIndexType::Metrics,
+        ),
+        (
+            node_config.cloudprem_config.create_dd_traces_index,
+            DatadogIndexType::Traces,
+        ),
+    ] {
+        if should_create_index {
+            create_or_update_datadog_index(
+                &node_config.default_index_root_uri,
+                index_manager,
+                index_type,
+            )
+            .await?;
+        }
+    }
     Ok(())
 }
 
 /// Creates the Datadog index if it doesn't exist, or updates its retention policy if necessary.
 async fn create_or_update_datadog_index(
-    node_config: &NodeConfig,
+    default_index_root_uri: &Uri,
     index_manager: &mut IndexManager,
+    index_type: DatadogIndexType,
 ) -> anyhow::Result<()> {
-    if !node_config.cloudprem_config.create_datadog_index {
-        return Ok(());
-    }
-    let desired_index_config_bytes = include_bytes!("../../../config/cloudprem/datadog.yaml");
+    let desired_index_config_bytes = match index_type {
+        DatadogIndexType::Logs => {
+            &include_bytes!("../../../config/cloudprem/datadog-logs.yaml")[..]
+        }
+        DatadogIndexType::Metrics => {
+            &include_bytes!("../../../config/cloudprem/datadog-metrics.yaml")[..]
+        }
+        DatadogIndexType::Traces => {
+            &include_bytes!("../../../config/cloudprem/datadog-spans.yaml")[..]
+        }
+    };
     let mut desired_index_config = quickwit_config::load_index_config_from_user_config(
         quickwit_config::ConfigFormat::Yaml,
         desired_index_config_bytes,
-        &node_config.default_index_root_uri,
+        default_index_root_uri,
     )?;
     let index_id = desired_index_config.index_id.clone();
-    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.clone());
 
     let mut current_index_metadata = match index_manager
         .index_metadata_opt(index_metadata_request)
@@ -1548,7 +1603,7 @@ async fn create_or_update_datadog_index(
         None => {
             patch_index_config(&mut desired_index_config);
 
-            info!("creating Datadog index");
+            info!("creating Datadog {index_type} index `{index_id}`");
             index_manager
                 .create_index(desired_index_config, false)
                 .await?;
@@ -1567,7 +1622,7 @@ async fn create_or_update_datadog_index(
     if !mutation_occurred {
         return Ok(());
     }
-    info!("updating Datadog index");
+    info!("updating Datadog {index_type} index `{index_id}`");
     index_manager
         .update_index(
             current_index_metadata.index_uid,

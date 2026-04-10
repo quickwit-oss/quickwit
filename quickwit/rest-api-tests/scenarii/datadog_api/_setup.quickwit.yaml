@@ -12,7 +12,7 @@ json:
   index_id: datadog
   indexing_settings:
     commit_timeout_secs: 1
-  doc_mapping: !include ../../config/cloudprem/datadog.yaml::doc_mapping
+  doc_mapping: !include ../../config/cloudprem/datadog-logs.yaml::doc_mapping
 ---
 # Set routing table to route all logs to datadog index
 method: PUT
@@ -84,4 +84,3 @@ data: |
     }
   ]
 sleep_after: 10
-

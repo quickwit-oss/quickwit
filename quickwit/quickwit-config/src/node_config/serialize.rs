@@ -261,7 +261,7 @@ impl NodeConfigBuilder {
 
         self.grpc_config.validate()?;
 
-        self.cloudprem_config.datadog_config = self.cloudprem_config.datadog_config.resolve();
+        self.cloudprem_config.resolve(env_vars)?;
         self.cloudprem_config.validate(&enabled_services)?;
 
         let gossip_listen_port = self
@@ -1411,7 +1411,9 @@ mod tests {
                         dd_api_key: None,
                     },
                     enable_reverse_connection: false,
-                    create_datadog_index: false,
+                    create_dd_logs_index: false,
+                    create_dd_metrics_index: false,
+                    create_dd_traces_index: false,
                 },
                 ..NodeConfigBuilder::default()
                     .build_and_validate(&HashMap::new())

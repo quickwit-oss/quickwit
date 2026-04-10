@@ -604,9 +604,7 @@ impl DocProcessor {
         // Try to deserialize pipeline config into `PipelineConfig` from the path provided in the
         // environment variable QW_PIPELINE_CONFIG_PATH
         let pipeline_config_opt: Option<PipelineConfig> =
-            if index_id.as_str().starts_with("datadog")
-                && !index_id.as_str().starts_with("datadog-spans")
-            {
+            if !index_id.starts_with("datadog-spans") && index_id.starts_with("datadog") {
                 // Add Fallback to empty pipeline, so still have the preprocessing enabled
                 load_pipeline_config_from_env().or(Some(PipelineConfig::default()))
             } else {

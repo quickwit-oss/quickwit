@@ -56,7 +56,9 @@ use super::shutdown::NodeShutdownHandle;
 pub struct TestNodeConfig {
     pub services: HashSet<QuickwitService>,
     pub enable_otlp: bool,
-    pub create_datadog_index: bool,
+    pub create_dd_logs_index: bool,
+    pub create_dd_metrics_index: bool,
+    pub create_dd_traces_index: bool,
 }
 
 impl TestNodeConfig {
@@ -93,7 +95,10 @@ impl TestNodeConfig {
             QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();
         config.default_index_root_uri =
             QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/indexes")).unwrap();
-        config.cloudprem_config.create_datadog_index = self.create_datadog_index;
+
+        config.cloudprem_config.create_dd_logs_index = self.create_dd_logs_index;
+        config.cloudprem_config.create_dd_metrics_index = self.create_dd_metrics_index;
+        config.cloudprem_config.create_dd_traces_index = self.create_dd_traces_index;
         config
     }
 }
@@ -119,7 +124,9 @@ impl ClusterSandboxBuilder {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: false,
-            create_datadog_index: false,
+            create_dd_logs_index: false,
+            create_dd_metrics_index: false,
+            create_dd_traces_index: false,
         });
         self
     }
@@ -131,7 +138,9 @@ impl ClusterSandboxBuilder {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: true,
-            create_datadog_index: false,
+            create_dd_logs_index: false,
+            create_dd_metrics_index: false,
+            create_dd_traces_index: false,
         });
         self
     }
@@ -143,7 +152,9 @@ impl ClusterSandboxBuilder {
         self.node_configs.push(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: false,
-            create_datadog_index: true,
+            create_dd_logs_index: true,
+            create_dd_metrics_index: true,
+            create_dd_traces_index: true,
         });
         self
     }
@@ -325,7 +336,9 @@ impl ClusterSandbox {
         self.add_node_inner(TestNodeConfig {
             services: HashSet::from_iter(services),
             enable_otlp: false,
-            create_datadog_index: false,
+            create_dd_logs_index: false,
+            create_dd_metrics_index: false,
+            create_dd_traces_index: false,
         })
         .await;
     }

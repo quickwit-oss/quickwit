@@ -222,7 +222,9 @@ macro_rules! assert_eventually {
 /// Metrics indexes use the Parquet/DataFusion pipeline instead of the Tantivy pipeline.
 /// An index is considered a metrics index if it starts with "otel-metrics" or "metrics-".
 pub fn is_metrics_index(index_id: &str) -> bool {
-    index_id.starts_with("otel-metrics") || index_id.starts_with("metrics-")
+    ["datadog-metrics", "metrics-", "otel-metrics"]
+        .iter()
+        .any(|prefix| index_id.starts_with(prefix))
 }
 
 #[macro_export]

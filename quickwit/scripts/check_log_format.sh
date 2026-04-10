@@ -4,7 +4,7 @@ RESULT=0
 
 for file in $(git ls-files | grep -E "src/.*\.rs$")
 do
-    LOG_STARTING_WITH_UPPERCASE=$(grep -E -n "(warn|info|error|debug)!\(\"[A-Z][a-z]" $file)
+    LOG_STARTING_WITH_UPPERCASE=$(grep -E -n "(warn|info|error|debug)!\(\"[A-Z][a-z]" $file | grep -v -E "(warn|info|error|debug)!\(\"Datadog ")
     DIFFRESULT=$?
     LOG_ENDING_WITH_PERIOD=$(grep -E -n "(warn|info|error|debug)!.*\.\"\);" $file)
     DIFFRESULT=$(($DIFFRESULT && $?))
