@@ -110,7 +110,6 @@ impl Default for TokenizerManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::tokenizers::create_default_quickwit_tokenizer_manager;
 
     #[test]
