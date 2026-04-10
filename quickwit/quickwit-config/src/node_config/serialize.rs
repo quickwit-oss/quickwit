@@ -1391,7 +1391,11 @@ mod tests {
                 .await
                 .unwrap();
         assert!(config.enabled_services.contains(&QuickwitService::Indexer));
-        assert!(config.enabled_services.contains(&QuickwitService::Compactor));
+        assert!(
+            config
+                .enabled_services
+                .contains(&QuickwitService::Compactor)
+        );
     }
 
     #[tokio::test]
@@ -1400,20 +1404,28 @@ mod tests {
             version: 0.8
             enabled_services: [indexer]
         "#;
-        let env_vars =
-            HashMap::from([("QW_ENABLE_STANDALONE_COMPACTORS".to_string(), "true".to_string())]);
+        let env_vars = HashMap::from([(
+            "QW_ENABLE_STANDALONE_COMPACTORS".to_string(),
+            "true".to_string(),
+        )]);
         let config =
             load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
                 .await
                 .unwrap();
         assert!(config.enabled_services.contains(&QuickwitService::Indexer));
-        assert!(!config.enabled_services.contains(&QuickwitService::Compactor));
+        assert!(
+            !config
+                .enabled_services
+                .contains(&QuickwitService::Compactor)
+        );
     }
 
     #[tokio::test]
     async fn test_standalone_compactors_env_var_override() {
-        let env_vars =
-            HashMap::from([("QW_ENABLE_STANDALONE_COMPACTORS".to_string(), "true".to_string())]);
+        let env_vars = HashMap::from([(
+            "QW_ENABLE_STANDALONE_COMPACTORS".to_string(),
+            "true".to_string(),
+        )]);
         let config_yaml = r#"
             version: 0.8
             enabled_services: [indexer]
@@ -1423,6 +1435,10 @@ mod tests {
                 .await
                 .unwrap();
         assert!(config.enabled_services.contains(&QuickwitService::Indexer));
-        assert!(!config.enabled_services.contains(&QuickwitService::Compactor));
+        assert!(
+            !config
+                .enabled_services
+                .contains(&QuickwitService::Compactor)
+        );
     }
 }

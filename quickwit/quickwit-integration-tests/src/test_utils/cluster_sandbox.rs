@@ -79,9 +79,7 @@ impl TestNodeConfig {
         if config.enabled_services.contains(&QuickwitService::Indexer)
             && !config.indexer_config.enable_standalone_compactors
         {
-            config
-                .enabled_services
-                .insert(QuickwitService::Compactor);
+            config.enabled_services.insert(QuickwitService::Compactor);
         }
         config.jaeger_config.enable_endpoint = true;
         config.cluster_id.clone_from(&cluster_id);

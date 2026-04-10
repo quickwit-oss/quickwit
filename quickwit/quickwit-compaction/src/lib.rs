@@ -20,6 +20,7 @@ mod compaction_pipeline;
 mod compactor_supervisor;
 pub mod planner;
 
+pub use compactor_supervisor::CompactorSupervisor;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::io;
 use quickwit_common::pubsub::EventBroker;
@@ -29,8 +30,6 @@ use quickwit_indexing::IndexingSplitStore;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 use tracing::info;
-
-pub use compactor_supervisor::CompactorSupervisor;
 
 pub async fn start_compactor_service(
     universe: &Universe,
