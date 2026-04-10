@@ -70,22 +70,6 @@ use crate::rest::recover_fn;
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::{BuildInfo, with_arg};
 
-/// Elastic compatible cluster info handler.
-pub fn es_compat_cluster_info_handler(
-    node_config: Arc<NodeConfig>,
-    build_info: &'static BuildInfo,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_cluster_info_filter()
-        .and(with_arg(node_config.clone()))
-        .and(with_arg(build_info))
-        .then(
-            |config: Arc<NodeConfig>, build_info: &'static BuildInfo| async move {
-                warp::reply::json(&es_compat_cluster_info(config, build_info))
-            },
-        )
-        .boxed()
-}
-
 pub(crate) fn es_compat_cluster_info(
     config: Arc<NodeConfig>,
     build_info: &'static BuildInfo,
@@ -106,6 +90,22 @@ pub(crate) fn es_compat_cluster_info(
             "minimum_index_compatibility_version" : "6.0.0-beta1",
         }
     })
+}
+
+/// Elastic compatible cluster info handler.
+pub fn es_compat_cluster_info_handler(
+    node_config: Arc<NodeConfig>,
+    build_info: &'static BuildInfo,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_cluster_info_filter()
+        .and(with_arg(node_config.clone()))
+        .and(with_arg(build_info))
+        .then(
+            |config: Arc<NodeConfig>, build_info: &'static BuildInfo| async move {
+                warp::reply::json(&es_compat_cluster_info(config, build_info))
+            },
+        )
+        .boxed()
 }
 
 /// GET _elastic/_nodes/http
@@ -164,7 +164,7 @@ pub(crate) fn es_compat_search_shards(index_id: String, config: Arc<NodeConfig>)
 pub fn es_compat_aliases_handler()
 -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_aliases_filter()
-        .then(|| async { Ok(Value::Object(Map::new())) })
+        .then(|| async { Ok(es_compat_aliases()) })
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
         .boxed()
@@ -315,6 +315,15 @@ pub fn es_compat_cluster_health_handler(
         (status = 503, description = "The cluster is unhealthy.", body = bool),
     ),
 )]
+pub(crate) async fn es_compat_cluster_health_check(cluster: &Cluster) -> (Value, StatusCode) {
+    let is_ready = cluster.is_self_node_ready().await;
+    if is_ready {
+        (json!({"status": "green"}), StatusCode::OK)
+    } else {
+        (json!({"status": "red"}), StatusCode::SERVICE_UNAVAILABLE)
+    }
+}
+
 /// Get Node Liveliness
 async fn es_compat_cluster_health(
     query_params: HashMap<String, String>,
@@ -329,16 +338,6 @@ async fn es_compat_cluster_health(
     }
     let (body, status) = es_compat_cluster_health_check(&cluster).await;
     with_status(warp::reply::json(&body), status)
-}
-
-/// Returns cluster health as a JSON value and HTTP status code.
-pub(crate) async fn es_compat_cluster_health_check(cluster: &Cluster) -> (Value, StatusCode) {
-    let is_ready = cluster.is_self_node_ready().await;
-    if is_ready {
-        (json!({"status": "green"}), StatusCode::OK)
-    } else {
-        (json!({"status": "red"}), StatusCode::SERVICE_UNAVAILABLE)
-    }
 }
 
 /// GET _elastic/{index}/_stats
@@ -442,6 +441,13 @@ pub fn es_compat_scroll_handler(
         .boxed()
 }
 
+pub(crate) fn es_compat_delete_scroll() -> Value {
+    json!({
+        "succeeded": true,
+        "num_freed": 0
+    })
+}
+
 /// DELETE _elastic/_search/scroll
 ///
 /// Clears a scroll context. Quickwit manages scroll lifetime via TTL,
@@ -453,13 +459,6 @@ pub fn es_compat_delete_scroll_handler()
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
         .boxed()
-}
-
-pub(crate) fn es_compat_delete_scroll() -> Value {
-    json!({
-        "succeeded": true,
-        "num_freed": 0
-    })
 }
 
 #[allow(clippy::result_large_err)]

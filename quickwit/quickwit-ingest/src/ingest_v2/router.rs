@@ -14,7 +14,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -59,8 +59,7 @@ fn ingest_request_timeout() -> Duration {
     } else {
         Duration::from_secs(35)
     };
-    static TIMEOUT: OnceLock<Duration> = OnceLock::new();
-    *TIMEOUT.get_or_init(|| {
+    static TIMEOUT: LazyLock<Duration> = LazyLock::new(|| {
         let duration_ms = quickwit_common::get_from_env(
             "QW_INGEST_REQUEST_TIMEOUT_MS",
             DEFAULT_INGEST_REQUEST_TIMEOUT.as_millis() as u64,
@@ -79,7 +78,8 @@ fn ingest_request_timeout() -> Duration {
         } else {
             requested_ingest_request_timeout
         }
-    })
+    });
+    *TIMEOUT
 }
 
 const MAX_PERSIST_ATTEMPTS: usize = 5;

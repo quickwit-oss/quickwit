@@ -16,7 +16,6 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
 metrics = { workspace = true }
-once_cell = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }

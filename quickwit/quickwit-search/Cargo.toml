@@ -22,7 +22,6 @@ http = { workspace = true }
 itertools = { workspace = true }
 metrics = { workspace = true }
 mockall = { workspace = true }
-once_cell = { workspace = true }
 pin-project = { workspace = true }
 postcard = { workspace = true }
 prost = { workspace = true }

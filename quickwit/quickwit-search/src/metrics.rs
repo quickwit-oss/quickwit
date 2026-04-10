@@ -15,9 +15,9 @@
 // See https://prometheus.io/docs/practices/naming/
 
 use std::fmt;
+use std::sync::LazyLock;
 
 use bytesize::ByteSize;
-use once_cell::sync::Lazy;
 use quickwit_common::dd_metrics::{DDCounters, DDHistograms};
 use quickwit_common::metrics::{
     Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, exponential_buckets,
@@ -278,4 +278,4 @@ impl Default for SearchMetrics {
 
 /// `SEARCH_METRICS` exposes a bunch a set of storage/cache related metrics through a prometheus
 /// endpoint.
-pub static SEARCH_METRICS: Lazy<SearchMetrics> = Lazy::new(SearchMetrics::default);
+pub static SEARCH_METRICS: LazyLock<SearchMetrics> = LazyLock::new(SearchMetrics::default);

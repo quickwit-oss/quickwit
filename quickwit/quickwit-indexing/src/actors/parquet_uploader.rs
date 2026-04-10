@@ -19,12 +19,11 @@
 //! Parquet files to storage.
 
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Context;
 use async_trait::async_trait;
-use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, QueueCapacity};
 use quickwit_common::spawn_named_task;
 use quickwit_metastore::StageMetricsSplitsRequestExt;
@@ -42,7 +41,7 @@ use crate::models::ParquetSplitsUpdate;
 
 /// Concurrent upload permits for metrics uploader.
 /// Uses same permit pool as indexer uploads.
-static CONCURRENT_UPLOAD_PERMITS_METRICS: OnceCell<Semaphore> = OnceCell::new();
+static CONCURRENT_UPLOAD_PERMITS_METRICS: OnceLock<Semaphore> = OnceLock::new();
 
 /// ParquetUploader actor for staging and uploading metrics splits.
 ///

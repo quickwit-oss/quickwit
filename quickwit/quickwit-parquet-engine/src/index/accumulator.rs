@@ -151,7 +151,13 @@ impl ParquetBatchAccumulator {
 
     /// Internal flush implementation.
     fn flush_internal(&mut self) -> Result<Option<RecordBatch>, IndexingError> {
-        if self.pending_batches.is_empty() {
+        if self.pending_batches.is_empty() || self.union_fields.is_empty() {
+            // Nothing to flush: either no batches at all, or only empty
+            // (zero-column) batches were accumulated.
+            self.pending_batches.clear();
+            self.union_fields.clear();
+            self.pending_rows = 0;
+            self.pending_bytes = 0;
             return Ok(None);
         }
 

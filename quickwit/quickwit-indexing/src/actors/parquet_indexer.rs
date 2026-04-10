@@ -607,7 +607,8 @@ mod tests {
         uploader_mailbox: Mailbox<ParquetUploader>,
     ) -> (Mailbox<ParquetPackager>, ActorHandle<ParquetPackager>) {
         let writer_config = ParquetWriterConfig::default();
-        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir);
+        let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
+        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir, &table_config);
 
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)

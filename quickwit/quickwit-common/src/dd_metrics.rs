@@ -13,10 +13,9 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use metrics::{Counter, Histogram as MetricsHistogram, Label, counter, histogram};
-use once_cell::sync::Lazy;
 
 pub const DD_STATUS_CODES: &[&str] = &[
     "200", "400", "401", "403", "404", "408", "429", "500", "501", "503",
@@ -128,7 +127,7 @@ impl Default for DDIngestMetrics {
     }
 }
 
-pub static DD_INGEST_METRICS: Lazy<DDIngestMetrics> = Lazy::new(DDIngestMetrics::default);
+pub static DD_INGEST_METRICS: LazyLock<DDIngestMetrics> = LazyLock::new(DDIngestMetrics::default);
 
 #[cfg(test)]
 mod tests {
