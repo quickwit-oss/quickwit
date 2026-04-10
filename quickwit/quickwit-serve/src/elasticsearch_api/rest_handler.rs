@@ -108,28 +108,6 @@ pub fn es_compat_cluster_info_handler(
         .boxed()
 }
 
-pub(crate) fn es_compat_cluster_info(
-    config: Arc<NodeConfig>,
-    build_info: &'static BuildInfo,
-) -> Value {
-    json!({
-        "name" : config.node_id,
-        "cluster_name" : config.cluster_id,
-        "cluster_uuid" : config.cluster_id,
-        "tagline" : "You Know, for Search",
-        "version" : {
-            "distribution" : "quickwit",
-            "number" : "7.17.0",
-            "build_hash" : build_info.commit_hash,
-            "build_date" : build_info.build_date,
-            "build_snapshot" : false,
-            "lucene_version" : "8.11.1",
-            "minimum_wire_compatibility_version" : "6.8.0",
-            "minimum_index_compatibility_version" : "6.0.0-beta1",
-        }
-    })
-}
-
 /// GET _elastic/_nodes/http
 pub fn es_compat_nodes_handler(
     node_config: Arc<NodeConfig>,
@@ -362,16 +340,6 @@ async fn es_compat_cluster_health(
     with_status(warp::reply::json(&body), status)
 }
 
-/// Returns cluster health as a JSON value and HTTP status code.
-pub(crate) async fn es_compat_cluster_health_check(cluster: &Cluster) -> (Value, StatusCode) {
-    let is_ready = cluster.is_self_node_ready().await;
-    if is_ready {
-        (json!({"status": "green"}), StatusCode::OK)
-    } else {
-        (json!({"status": "red"}), StatusCode::SERVICE_UNAVAILABLE)
-    }
-}
-
 /// GET _elastic/{index}/_stats
 pub fn es_compat_index_stats_handler(
     metastore_service: MetastoreServiceClient,
@@ -491,13 +459,6 @@ pub fn es_compat_delete_scroll_handler()
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
         .recover(recover_fn)
         .boxed()
-}
-
-pub(crate) fn es_compat_delete_scroll() -> Value {
-    json!({
-        "succeeded": true,
-        "num_freed": 0
-    })
 }
 
 #[allow(clippy::result_large_err)]

@@ -399,8 +399,6 @@ encoding_rs = "=0.8.35"
 chrono-tz = "0.10"
 either = "1.13"
 httparse = "1.10"
-metrics = "0.24"
-metrics-exporter-dogstatsd = "0.9"
 pem = "3.0.5"
 pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "bfd96dc" }
 ryu = "1.0.20"

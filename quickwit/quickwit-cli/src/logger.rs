@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::{env, fmt};
 
 use anyhow::Context;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use opentelemetry::propagation::text_map_propagator::FieldIter;
 use opentelemetry::propagation::{TextMapCompositePropagator, TextMapPropagator};
 use opentelemetry::trace::{
@@ -117,7 +117,7 @@ const DD_SOURCE_HEADER: &str = "x-datadog-querysource";
 const DD_SPAN_PARENT_HEADER: &str = "x-datadog-parent-id";
 const DD_SPAN_TRACE_HEADER: &str = "x-datadog-trace-id";
 
-static DD_APM_HEADERS: Lazy<Vec<String>> = Lazy::new(|| {
+static DD_APM_HEADERS: LazyLock<Vec<String>> = LazyLock::new(|| {
     vec![
         DD_SAMPLING_PRIORITY_HEADER.to_string(),
         DD_SOURCE_HEADER.to_string(),

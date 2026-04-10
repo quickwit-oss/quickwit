@@ -183,8 +183,8 @@ static METASTORE_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
 static METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
     LazyLock::new(|| GrpcMetricsLayer::new("metastore", "server"));
 
-static METASTORE_DD_GRPC_SERVER_METRICS_LAYER: Lazy<DDGrpcMetricsLayer> =
-    Lazy::new(DDGrpcMetricsLayer::for_metastore);
+static METASTORE_DD_GRPC_SERVER_METRICS_LAYER: LazyLock<DDGrpcMetricsLayer> =
+    LazyLock::new(DDGrpcMetricsLayer::for_metastore);
 
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
