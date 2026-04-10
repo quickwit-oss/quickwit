@@ -607,7 +607,10 @@ fn test_split_round_trip_verifies_key_correctness_with_nulls() {
 
     // Verify ordinal structure of key C (all tags null):
     // Only metric_name at ordinal 0 + timeseries_id at ordinal 6.
-    assert_eq!(key_c[0], 0x00, "key C must start with ordinal 0 (metric_name)");
+    assert_eq!(
+        key_c[0], 0x00,
+        "key C must start with ordinal 0 (metric_name)"
+    );
     // After storekey("cpu.usage") = "cpu.usage" bytes + null terminator,
     // the next byte should be ordinal 6 (timeseries_id).
     // storekey encodes the string bytes verbatim (no 0x00/0x01 in "cpu.usage")
@@ -623,7 +626,10 @@ fn test_split_round_trip_verifies_key_correctness_with_nulls() {
     // No ordinal 5 (host) because it's null.
     assert_eq!(key_b[0], 0x00, "key B must start with ordinal 0");
     // After "cpu.usage" (10 bytes) + ordinal 0 (1 byte) = offset 11 is ordinal 1.
-    assert_eq!(key_b[11], 0x01, "key B must have ordinal 1 (service) after metric_name");
+    assert_eq!(
+        key_b[11], 0x01,
+        "key B must have ordinal 1 (service) after metric_name"
+    );
 
     // Verify the written keys are contiguous by series (data is sorted).
     // After sorting, rows with the same key should be adjacent.
@@ -661,7 +667,8 @@ fn test_split_round_trip_verifies_key_correctness_with_nulls() {
     }
     for (key, run_count) in &seen_keys {
         assert_eq!(
-            *run_count, 1,
+            *run_count,
+            1,
             "key {:?} appeared in {} non-contiguous runs (should be 1)",
             &key[..key.len().min(8)],
             run_count
@@ -709,10 +716,7 @@ fn test_key_structure_timeseries_id_ordinal() {
     // After ordinal(0) + "m" + terminator = 3 bytes, the next byte
     // should be ordinal 6 (timeseries_id).
     assert_eq!(key_bytes[0], 0x00, "first ordinal must be 0 (metric_name)");
-    assert_eq!(
-        key_bytes[3], 0x06,
-        "timeseries_id ordinal must be 6"
-    );
+    assert_eq!(key_bytes[3], 0x06, "timeseries_id ordinal must be 6");
 
     // After the ordinal, storekey encodes i64 as 8 bytes (XOR with
     // i64::MIN, then big-endian). Total key length: 3 + 1 + 8 = 12.
