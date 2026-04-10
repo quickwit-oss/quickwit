@@ -24,11 +24,13 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, Float64Builder, RecordBatch, StringDictionaryBuilder, UInt8Builder, UInt64Builder,
+    ArrayRef, Float64Builder, Int64Builder, RecordBatch, StringDictionaryBuilder, UInt8Builder,
+    UInt64Builder,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
+use quickwit_parquet_engine::timeseries_id::compute_timeseries_id;
 use quickwit_proto::bytes::Bytes;
 use quickwit_proto::ingest::{DocBatchV2, DocFormat};
 use quickwit_proto::types::DocUid;
@@ -73,8 +75,9 @@ impl ArrowMetricsBatchBuilder {
         }
         let sorted_tag_keys: Vec<&str> = tag_keys.into_iter().collect();
 
-        // Build the Arrow schema dynamically
-        let mut fields = Vec::with_capacity(4 + sorted_tag_keys.len());
+        // Build the Arrow schema dynamically.
+        // 5 fixed columns: metric_name, metric_type, timestamp_secs, value, timeseries_id
+        let mut fields = Vec::with_capacity(5 + sorted_tag_keys.len());
         fields.push(Field::new(
             "metric_name",
             DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
@@ -83,6 +86,7 @@ impl ArrowMetricsBatchBuilder {
         fields.push(Field::new("metric_type", DataType::UInt8, false));
         fields.push(Field::new("timestamp_secs", DataType::UInt64, false));
         fields.push(Field::new("value", DataType::Float64, false));
+        fields.push(Field::new("timeseries_id", DataType::Int64, false));
 
         for &tag_key in &sorted_tag_keys {
             fields.push(Field::new(
@@ -100,6 +104,7 @@ impl ArrowMetricsBatchBuilder {
         let mut metric_type_builder = UInt8Builder::with_capacity(num_rows);
         let mut timestamp_secs_builder = UInt64Builder::with_capacity(num_rows);
         let mut value_builder = Float64Builder::with_capacity(num_rows);
+        let mut timeseries_id_builder = Int64Builder::with_capacity(num_rows);
 
         let mut tag_builders: Vec<StringDictionaryBuilder<Int32Type>> = sorted_tag_keys
             .iter()
@@ -122,6 +127,11 @@ impl ArrowMetricsBatchBuilder {
             metric_type_builder.append_value(dp.metric_type as u8);
             timestamp_secs_builder.append_value(dp.timestamp_secs);
             value_builder.append_value(dp.value);
+            timeseries_id_builder.append_value(compute_timeseries_id(
+                &dp.metric_name,
+                dp.metric_type as u8,
+                &dp.tags,
+            ));
 
             // Only touch builders for tags this data point has.
             for (tag_key, tag_val) in &dp.tags {
@@ -145,11 +155,12 @@ impl ArrowMetricsBatchBuilder {
             }
         }
 
-        let mut arrays: Vec<ArrayRef> = Vec::with_capacity(4 + sorted_tag_keys.len());
+        let mut arrays: Vec<ArrayRef> = Vec::with_capacity(5 + sorted_tag_keys.len());
         arrays.push(Arc::new(metric_name_builder.finish()));
         arrays.push(Arc::new(metric_type_builder.finish()));
         arrays.push(Arc::new(timestamp_secs_builder.finish()));
         arrays.push(Arc::new(value_builder.finish()));
+        arrays.push(Arc::new(timeseries_id_builder.finish()));
 
         for tag_builder in &mut tag_builders {
             arrays.push(Arc::new(tag_builder.finish()));
@@ -264,6 +275,10 @@ pub fn ipc_to_json_values(
                     } else {
                         serde_json::Value::Number(val.into())
                     }
+                }
+                DataType::Int64 => {
+                    let arr = column.as_primitive::<arrow::datatypes::Int64Type>();
+                    serde_json::Value::Number(arr.value(row_idx).into())
                 }
                 DataType::UInt64 => {
                     let arr = column.as_primitive::<arrow::datatypes::UInt64Type>();
@@ -387,8 +402,8 @@ mod tests {
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 1);
-        // 4 fixed columns + 9 tag columns
-        assert_eq!(batch.num_columns(), 13);
+        // 5 fixed columns + 9 tag columns
+        assert_eq!(batch.num_columns(), 14);
     }
 
     #[test]
@@ -471,8 +486,8 @@ mod tests {
         let batch = builder.finish();
 
         assert_eq!(batch.num_rows(), 1);
-        // 4 fixed columns + 1 tag column (service_name)
-        assert_eq!(batch.num_columns(), 5);
+        // 5 fixed columns + 1 tag column (service_name)
+        assert_eq!(batch.num_columns(), 6);
     }
 
     #[test]
@@ -507,8 +522,8 @@ mod tests {
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 2);
-        // 4 fixed + 3 tag columns (env, host, region) - sorted alphabetically
-        assert_eq!(batch.num_columns(), 7);
+        // 5 fixed + 3 tag columns (env, host, region) - sorted alphabetically
+        assert_eq!(batch.num_columns(), 8);
 
         let schema = batch.schema();
         let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
@@ -519,6 +534,7 @@ mod tests {
                 "metric_type",
                 "timestamp_secs",
                 "value",
+                "timeseries_id",
                 "env",
                 "host",
                 "region",
@@ -569,8 +585,8 @@ mod tests {
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 3);
-        // 4 fixed + 2 tags (a, b)
-        assert_eq!(batch.num_columns(), 6);
+        // 5 fixed + 2 tags (a, b)
+        assert_eq!(batch.num_columns(), 7);
 
         let schema = batch.schema();
         let a_idx = schema.index_of("a").unwrap();
