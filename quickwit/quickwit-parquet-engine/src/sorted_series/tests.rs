@@ -395,14 +395,17 @@ fn test_append_sorted_series_column() {
 }
 
 #[test]
-fn test_append_sorted_series_idempotent() {
+fn test_append_sorted_series_rejects_duplicate() {
     let batch = build_test_batch(&[TestRow::new("cpu.usage", Some("api"), None, 100)]);
 
     let first = append_sorted_series_column(METRICS_SORT_FIELDS, &batch).unwrap();
-    let second = append_sorted_series_column(METRICS_SORT_FIELDS, &first).unwrap();
+    let err = append_sorted_series_column(METRICS_SORT_FIELDS, &first).unwrap_err();
 
-    // Second call should be a no-op.
-    assert_eq!(first.num_columns(), second.num_columns());
+    assert!(
+        err.to_string().contains("already contains"),
+        "expected duplicate-column error, got: {}",
+        err
+    );
 }
 
 // -----------------------------------------------------------------------

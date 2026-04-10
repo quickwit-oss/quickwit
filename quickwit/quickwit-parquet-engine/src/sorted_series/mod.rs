@@ -102,13 +102,20 @@ pub fn compute_sorted_series_column(
 
 /// Append the sorted_series column to a [`RecordBatch`].
 ///
-/// If the column already exists, returns the batch unchanged.
+/// # Errors
+///
+/// Returns an error if the column already exists (indicates a bug in
+/// the caller), if the sort fields string cannot be parsed, or if
+/// storekey encoding fails.
 pub fn append_sorted_series_column(
     sort_fields_str: &str,
     batch: &RecordBatch,
 ) -> Result<RecordBatch> {
     if batch.schema().index_of(SORTED_SERIES_COLUMN).is_ok() {
-        return Ok(batch.clone());
+        anyhow::bail!(
+            "batch already contains a '{}' column — double computation is a bug",
+            SORTED_SERIES_COLUMN
+        );
     }
 
     let sorted_series = compute_sorted_series_column(sort_fields_str, batch)?;
