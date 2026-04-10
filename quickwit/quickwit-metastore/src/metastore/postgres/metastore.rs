@@ -2625,6 +2625,7 @@ impl MetastoreService for PostgresqlMetastore {
         if request.split_ids.is_empty() {
             return Ok(EmptyResponse {});
         }
+        let index_uid: IndexUid = request.index_uid().clone();
 
         info!(
             index_uid = %request.index_uid(),
@@ -2632,16 +2633,23 @@ impl MetastoreService for PostgresqlMetastore {
             "deleting metrics splits"
         );
 
-        // Only delete splits that are marked for deletion
-        // Match the non-metrics delete_splits pattern: distinguish
-        // "not found" (warn + succeed) from "not deletable" (FailedPrecondition).
+        // Match the non-metrics delete_splits pattern: CTE with FOR UPDATE
+        // to lock rows before reading state, avoiding stale-state races under
+        // concurrent mark_metrics_splits_for_deletion. Distinguishes "not found"
+        // (warn + succeed) from "not deletable" (FailedPrecondition).
         const DELETE_SPLITS_QUERY: &str = r#"
             WITH input_splits AS (
                 SELECT input_splits.split_id, metrics_splits.split_state
                 FROM UNNEST($2::text[]) AS input_splits(split_id)
-                LEFT JOIN metrics_splits
-                    ON metrics_splits.index_uid = $1
-                    AND metrics_splits.split_id = input_splits.split_id
+                LEFT JOIN (
+                    SELECT split_id, split_state
+                    FROM metrics_splits
+                    WHERE
+                        index_uid = $1
+                        AND split_id = ANY($2)
+                    FOR UPDATE
+                ) AS metrics_splits
+                USING (split_id)
             ),
             deleted AS (
                 DELETE FROM metrics_splits
@@ -2680,7 +2688,7 @@ impl MetastoreService for PostgresqlMetastore {
             .bind(&request.split_ids)
             .fetch_one(&self.connection_pool)
             .await
-            .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid().index_id, sqlx_error))?;
+            .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
 
         if !not_deletable_ids.is_empty() {
             let message = format!(
