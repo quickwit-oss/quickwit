@@ -163,10 +163,19 @@ pub struct IndexerConfig {
     pub enable_cooperative_indexing: bool,
     #[serde(default = "IndexerConfig::default_cpu_capacity")]
     pub cpu_capacity: CpuCapacity,
+    /// When true, the compactor service is not implicitly started on indexer
+    /// nodes. Dedicated compactor nodes must be deployed separately.
+    /// When false (default), every indexer node also runs the compactor.
+    #[serde(default = "IndexerConfig::default_enable_standalone_compactors")]
+    pub enable_standalone_compactors: bool,
 }
 
 impl IndexerConfig {
     fn default_enable_cooperative_indexing() -> bool {
+        false
+    }
+
+    fn default_enable_standalone_compactors() -> bool {
         false
     }
 
@@ -213,6 +222,7 @@ impl IndexerConfig {
             cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
             max_merge_write_throughput: None,
             merge_concurrency: NonZeroUsize::new(3).unwrap(),
+            enable_standalone_compactors: false,
         };
         Ok(indexer_config)
     }
@@ -229,6 +239,77 @@ impl Default for IndexerConfig {
             cpu_capacity: Self::default_cpu_capacity(),
             merge_concurrency: Self::default_merge_concurrency(),
             max_merge_write_throughput: None,
+            enable_standalone_compactors: Self::default_enable_standalone_compactors(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompactorConfig {
+    /// Maximum number of concurrent merge pipelines. Defaults to 2/3 of CPU count.
+    #[serde(default = "CompactorConfig::default_max_concurrent_pipelines")]
+    pub max_concurrent_pipelines: NonZeroUsize,
+    /// Maximum number of concurrent split uploads across all pipelines.
+    #[serde(default = "CompactorConfig::default_max_concurrent_split_uploads")]
+    pub max_concurrent_split_uploads: usize,
+    /// Limits the IO throughput of the split downloader and the merge executor.
+    #[serde(default)]
+    pub max_merge_write_throughput: Option<ByteSize>,
+    /// Maximum local retries before reporting a merge as failed to the planner.
+    #[serde(default = "CompactorConfig::default_max_local_retries")]
+    pub max_local_retries: usize,
+    /// Maximum size of the local split store cache in bytes.
+    #[serde(default = "CompactorConfig::default_split_store_max_num_bytes")]
+    pub split_store_max_num_bytes: ByteSize,
+    /// Maximum number of splits in the local split store cache.
+    #[serde(default = "CompactorConfig::default_split_store_max_num_splits")]
+    pub split_store_max_num_splits: usize,
+}
+
+impl CompactorConfig {
+    fn default_max_concurrent_pipelines() -> NonZeroUsize {
+        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3).unwrap_or(NonZeroUsize::MIN)
+    }
+
+    fn default_max_concurrent_split_uploads() -> usize {
+        12
+    }
+
+    fn default_max_local_retries() -> usize {
+        2
+    }
+
+    pub fn default_split_store_max_num_bytes() -> ByteSize {
+        ByteSize::gib(100)
+    }
+
+    pub fn default_split_store_max_num_splits() -> usize {
+        1_000
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
+        CompactorConfig {
+            max_concurrent_pipelines: NonZeroUsize::new(2).unwrap(),
+            max_concurrent_split_uploads: 4,
+            max_merge_write_throughput: None,
+            max_local_retries: 2,
+            split_store_max_num_bytes: ByteSize::mb(1),
+            split_store_max_num_splits: 3,
+        }
+    }
+}
+
+impl Default for CompactorConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_pipelines: Self::default_max_concurrent_pipelines(),
+            max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
+            max_merge_write_throughput: None,
+            max_local_retries: Self::default_max_local_retries(),
+            split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
+            split_store_max_num_splits: Self::default_split_store_max_num_splits(),
         }
     }
 }
@@ -778,6 +859,7 @@ pub struct NodeConfig {
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
+    pub compactor_config: CompactorConfig,
 }
 
 impl NodeConfig {

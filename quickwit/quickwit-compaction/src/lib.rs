@@ -20,4 +20,40 @@ mod compaction_pipeline;
 mod compactor_supervisor;
 pub mod planner;
 
+use quickwit_actors::{Mailbox, Universe};
+use quickwit_common::io;
+use quickwit_common::pubsub::EventBroker;
+use quickwit_common::temp_dir::TempDirectory;
+use quickwit_config::CompactorConfig;
+use quickwit_indexing::IndexingSplitStore;
+use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_storage::StorageResolver;
+use tracing::info;
+
 pub use compactor_supervisor::CompactorSupervisor;
+
+pub async fn start_compactor_service(
+    universe: &Universe,
+    compactor_config: &CompactorConfig,
+    split_store: IndexingSplitStore,
+    metastore: MetastoreServiceClient,
+    storage_resolver: StorageResolver,
+    event_broker: EventBroker,
+    compaction_root_directory: TempDirectory,
+) -> anyhow::Result<Mailbox<CompactorSupervisor>> {
+    info!("starting compactor service");
+    let io_throughput_limiter = compactor_config.max_merge_write_throughput.map(io::limiter);
+    let supervisor = CompactorSupervisor::new(
+        compactor_config.max_concurrent_pipelines.get(),
+        io_throughput_limiter,
+        split_store,
+        metastore,
+        storage_resolver,
+        compactor_config.max_concurrent_split_uploads,
+        event_broker,
+        compaction_root_directory,
+        compactor_config.max_local_retries,
+    );
+    let (mailbox, _handle) = universe.spawn_builder().spawn(supervisor);
+    Ok(mailbox)
+}

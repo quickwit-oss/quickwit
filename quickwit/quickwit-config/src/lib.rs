@@ -73,9 +73,9 @@ pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    CacheConfig, CachePolicy, DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig, IngestApiConfig,
-    JaegerConfig, KeepAliveConfig, LambdaConfig, LambdaDeployConfig, NodeConfig, RestConfig,
-    SearcherConfig, SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
+    CacheConfig, CachePolicy, CompactorConfig, DEFAULT_QW_CONFIG_PATH, GrpcConfig, IndexerConfig,
+    IngestApiConfig, JaegerConfig, KeepAliveConfig, LambdaConfig, LambdaDeployConfig, NodeConfig,
+    RestConfig, SearcherConfig, SplitCacheLimits, StorageTimeoutPolicy, TlsConfig,
 };
 use crate::source_config::serialize::{SourceConfigV0_7, SourceConfigV0_8, VersionedSourceConfig};
 pub use crate::storage_config::{

@@ -164,97 +164,44 @@ async fn test_multi_nodes_cluster() {
 }
 
 #[tokio::test]
-async fn test_no_merge_pipelines_when_compaction_service_enabled() {
+async fn test_indexer_implicitly_runs_compactor() {
     quickwit_common::setup_logging_for_tests();
-    unsafe { std::env::set_var("QW_ENABLE_COMPACTION_SERVICE", "true") };
-
     let sandbox = ClusterSandboxBuilder::default()
         .add_node([QuickwitService::Searcher])
         .add_node([QuickwitService::Metastore])
-        .add_node([QuickwitService::Indexer])
         .add_node([QuickwitService::ControlPlane])
         .add_node([QuickwitService::Janitor])
+        .add_node([QuickwitService::Indexer])
         .build_and_start()
         .await;
 
-    sandbox
-        .rest_client(QuickwitService::Indexer)
-        .indexes()
-        .create(
-            r#"
-            version: 0.8
-            index_id: test-no-merge-pipelines
-            doc_mapping:
-              field_mappings:
-              - name: body
-                type: text
-            indexing_settings:
-              commit_timeout_secs: 1
-            "#,
-            quickwit_config::ConfigFormat::Yaml,
-            false,
-        )
+    let cluster_snapshot = sandbox
+        .rest_client(QuickwitService::Searcher)
+        .cluster()
+        .snapshot()
         .await
         .unwrap();
+    assert_eq!(cluster_snapshot.ready_nodes.len(), 5);
 
-    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
+    // The indexer node should also advertise the compactor service.
+    let indexer_node = cluster_snapshot
+        .chitchat_state_snapshot
+        .node_states
+        .iter()
+        .find(|node_state| {
+            node_state
+                .get("enabled_services")
+                .map_or(false, |s| s.contains("indexer"))
+        })
+        .expect("indexer node not found in cluster state");
+    let services = indexer_node.get("enabled_services").unwrap();
+    assert!(
+        services.contains("compactor"),
+        "indexer node should implicitly run the compactor, got: {services}"
+    );
 
-    let stats = sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_stats()
-        .indexing()
-        .await
-        .unwrap();
-    assert_eq!(stats.num_running_merge_pipelines, 0);
-
-    unsafe { std::env::remove_var("QW_ENABLE_COMPACTION_SERVICE") };
     sandbox.shutdown().await.unwrap();
 }
 
-#[tokio::test]
-async fn test_merge_pipelines_present_without_compaction_service() {
-    quickwit_common::setup_logging_for_tests();
-    unsafe { std::env::set_var("QW_ENABLE_COMPACTION_SERVICE", "false") };
-
-    let sandbox = ClusterSandboxBuilder::default()
-        .add_node([QuickwitService::Searcher])
-        .add_node([QuickwitService::Metastore])
-        .add_node([QuickwitService::Indexer])
-        .add_node([QuickwitService::ControlPlane])
-        .add_node([QuickwitService::Janitor])
-        .build_and_start()
-        .await;
-
-    sandbox
-        .rest_client(QuickwitService::Indexer)
-        .indexes()
-        .create(
-            r#"
-            version: 0.8
-            index_id: test-with-merge-pipelines
-            doc_mapping:
-              field_mappings:
-              - name: body
-                type: text
-            indexing_settings:
-              commit_timeout_secs: 1
-            "#,
-            quickwit_config::ConfigFormat::Yaml,
-            false,
-        )
-        .await
-        .unwrap();
-
-    sandbox.wait_for_indexing_pipelines(1).await.unwrap();
-
-    let stats = sandbox
-        .rest_client(QuickwitService::Indexer)
-        .node_stats()
-        .indexing()
-        .await
-        .unwrap();
-    assert!(stats.num_running_merge_pipelines > 0);
-
-    unsafe { std::env::remove_var("QW_ENABLE_COMPACTION_SERVICE") };
-    sandbox.shutdown().await.unwrap();
-}
+// TODO: add test_standalone_compactor_node once the test config builder
+// resolves QW_ENABLE_STANDALONE_COMPACTORS from the environment.
