@@ -502,23 +502,82 @@ fn test_sorted_series_in_parquet_round_trip() {
 // -----------------------------------------------------------------------
 
 #[test]
-fn test_key_structure_ordinals() {
-    // With all sort columns present (no nulls), the key should
-    // contain ordinals 0 and 1 (metric_name, service).
+fn test_key_structure_tag_ordinals() {
+    // With metric_name and service present, the key should contain
+    // ordinals 0 and 1 followed by their storekey-encoded values.
     let batch = build_test_batch(&[TestRow::new("m", Some("s"), None, 100)]);
 
     let keys = compute_sorted_series_column(METRICS_SORT_FIELDS, &batch).unwrap();
     let key_bytes = keys.value(0);
 
-    // First byte: ordinal 0 (metric_name)
-    assert_eq!(key_bytes[0], 0x00);
+    // storekey encodes "m" as [0x6d, 0x00] (byte for 'm' + null terminator).
+    // Key layout: [ord0, 'm', 0x00, ord1, 's', 0x00, ord6, <8-byte ts_id>]
+    assert_eq!(key_bytes[0], 0x00, "first ordinal must be 0 (metric_name)");
+    assert_eq!(key_bytes[3], 0x01, "second ordinal must be 1 (service)");
+}
 
-    // After the storekey-encoded "m" string, the next ordinal
-    // should be 1 (service). storekey encodes "m" as [0x6d, 0x00]
-    // (the byte for 'm' followed by null terminator).
-    // So bytes: [0x00, 0x6d, 0x00, 0x01, ...]
-    //            ord0  'm'   term  ord1
-    assert_eq!(key_bytes[3], 0x01, "second ordinal should be 1 (service)");
+#[test]
+fn test_key_structure_timeseries_id_ordinal() {
+    // The timeseries_id is at ordinal 6 in the default metrics sort schema.
+    // Verify it gets an ordinal prefix just like tag columns.
+    //
+    // Sort schema: metric_name(0)|service(1)|env(2)|datacenter(3)|
+    //              region(4)|host(5)|timeseries_id(6)|timestamp_secs(7)
+    //
+    // With only metric_name present (all tags null), the key is:
+    //   [ord0, <"m" encoded>, ord6, <i64 encoded>]
+    let batch = build_test_batch(&[TestRow::new("m", None, None, 100)]);
+
+    let keys = compute_sorted_series_column(METRICS_SORT_FIELDS, &batch).unwrap();
+    let key_bytes = keys.value(0);
+
+    // storekey encodes "m" as [0x6d, 0x00].
+    // After ordinal(0) + "m" + terminator = 3 bytes, the next byte
+    // should be ordinal 6 (timeseries_id).
+    assert_eq!(key_bytes[0], 0x00, "first ordinal must be 0 (metric_name)");
+    assert_eq!(
+        key_bytes[3], 0x06,
+        "timeseries_id ordinal must be 6"
+    );
+
+    // After the ordinal, storekey encodes i64 as 8 bytes (XOR with
+    // i64::MIN, then big-endian). Total key length: 3 + 1 + 8 = 12.
+    assert_eq!(
+        key_bytes.len(),
+        12,
+        "key must be ordinal(1) + str(2) + ordinal(1) + i64(8) = 12 bytes"
+    );
+}
+
+#[test]
+fn test_key_without_timeseries_id_has_no_trailing_ordinal() {
+    // When timeseries_id is absent from the batch, the key should
+    // contain only tag ordinals — no dangling ordinal 6.
+    let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("metric_name", dict_type.clone(), false),
+        Field::new("metric_type", DataType::UInt8, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            create_dict_array(&["m"]),
+            Arc::new(UInt8Array::from(vec![0u8])),
+            Arc::new(UInt64Array::from(vec![100u64])),
+            Arc::new(Float64Array::from(vec![42.0])),
+        ],
+    )
+    .unwrap();
+
+    let keys = compute_sorted_series_column(METRICS_SORT_FIELDS, &batch).unwrap();
+    let key_bytes = keys.value(0);
+
+    // Only ordinal(0) + "m" + terminator = 3 bytes, no timeseries_id.
+    assert_eq!(key_bytes.len(), 3);
+    assert_eq!(key_bytes[0], 0x00);
 }
 
 // -----------------------------------------------------------------------
