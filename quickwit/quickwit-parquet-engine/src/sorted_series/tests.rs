@@ -497,6 +497,180 @@ fn test_sorted_series_in_parquet_round_trip() {
     std::fs::remove_file(&path).ok();
 }
 
+#[test]
+fn test_split_round_trip_verifies_key_correctness_with_nulls() {
+    // Integration test: write a Parquet file through the full writer pipeline
+    // with multiple series including null tags, read it back, and verify that
+    // the sorted_series column values match independently computed keys.
+    //
+    // This exercises:
+    // - sorted_series computation in the writer pipeline
+    // - ordinal encoding for present vs absent (null) tag columns
+    // - timeseries_id ordinal (6) is always present
+    // - identical series produce identical keys after sort
+    // - different series (including null differences) produce different keys
+    use arrow::array::BinaryArray;
+    use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+    use crate::storage::{ParquetWriter, ParquetWriterConfig};
+    use crate::table_config::TableConfig;
+
+    let config = ParquetWriterConfig::default();
+    let writer = ParquetWriter::new(config, &TableConfig::default());
+
+    // Build a batch with 6 rows covering 4 distinct series:
+    //
+    // Series A: cpu.usage / service=api / host=node-1  (rows 0, 3 — different timestamps)
+    // Series B: cpu.usage / service=api / host=null    (row 1 — null host)
+    // Series C: cpu.usage / service=null / host=null   (row 2 — both tags null)
+    // Series D: mem.usage / service=api / host=node-1  (row 4 — different metric)
+    // Series A again:                                   (row 5 — duplicate of A)
+    let batch = build_test_batch(&[
+        TestRow::new("cpu.usage", Some("api"), Some("node-1"), 100), // A
+        TestRow::new("cpu.usage", Some("api"), None, 200),           // B
+        TestRow::new("cpu.usage", None, None, 300),                  // C
+        TestRow::new("cpu.usage", Some("api"), Some("node-1"), 400), // A
+        TestRow::new("mem.usage", Some("api"), Some("node-1"), 500), // D
+        TestRow::new("cpu.usage", Some("api"), Some("node-1"), 600), // A
+    ]);
+
+    // Compute expected keys independently (before the writer sorts/reorders).
+    let expected_keys = compute_sorted_series_column(METRICS_SORT_FIELDS, &batch).unwrap();
+
+    // Write through the full pipeline (validate → compute sorted_series → sort → reorder).
+    let temp_dir = std::env::temp_dir();
+    let path = temp_dir.join("test_split_sorted_series_with_nulls.parquet");
+    writer
+        .write_to_file_with_metadata(&batch, &path, None)
+        .unwrap();
+
+    // Read back.
+    let file = std::fs::File::open(&path).unwrap();
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+        .unwrap()
+        .build()
+        .unwrap();
+    let read_batches: Vec<RecordBatch> = reader.collect::<Result<Vec<_>, _>>().unwrap();
+    assert_eq!(read_batches.len(), 1);
+    let read_batch = &read_batches[0];
+
+    // Extract the sorted_series column from the read-back batch.
+    let ss_idx = read_batch.schema().index_of(SORTED_SERIES_COLUMN).unwrap();
+    let ss_col = read_batch
+        .column(ss_idx)
+        .as_any()
+        .downcast_ref::<BinaryArray>()
+        .expect("sorted_series must be BinaryArray");
+    assert_eq!(ss_col.null_count(), 0);
+    assert_eq!(ss_col.len(), 6);
+
+    // The writer sorts by the sort schema, so row order changes.
+    // Collect all written keys into a set grouped by value to verify:
+    // 1. There are exactly 4 distinct keys (series A, B, C, D).
+    // 2. Series A has 3 rows, others have 1.
+    let mut key_groups: HashMap<Vec<u8>, usize> = HashMap::new();
+    for i in 0..ss_col.len() {
+        *key_groups.entry(ss_col.value(i).to_vec()).or_insert(0) += 1;
+    }
+    assert_eq!(
+        key_groups.len(),
+        4,
+        "expected 4 distinct series keys, got {}: {:?}",
+        key_groups.len(),
+        key_groups.keys().collect::<Vec<_>>()
+    );
+
+    // Series A should appear 3 times.
+    let key_a = expected_keys.value(0).to_vec(); // row 0 = series A
+    assert_eq!(
+        key_groups[&key_a], 3,
+        "series A (cpu.usage/api/node-1) should have 3 rows"
+    );
+
+    // Series B (null host) must differ from A.
+    let key_b = expected_keys.value(1).to_vec();
+    assert_ne!(key_a, key_b, "null host must produce a different key");
+    assert_eq!(key_groups[&key_b], 1);
+
+    // Series C (both tags null) must differ from A and B.
+    let key_c = expected_keys.value(2).to_vec();
+    assert_ne!(key_c, key_a);
+    assert_ne!(key_c, key_b);
+    assert_eq!(key_groups[&key_c], 1);
+
+    // Series D (different metric) must differ from all others.
+    let key_d = expected_keys.value(4).to_vec();
+    assert_ne!(key_d, key_a);
+    assert_ne!(key_d, key_b);
+    assert_ne!(key_d, key_c);
+    assert_eq!(key_groups[&key_d], 1);
+
+    // Verify ordinal structure of key C (all tags null):
+    // Only metric_name at ordinal 0 + timeseries_id at ordinal 6.
+    assert_eq!(key_c[0], 0x00, "key C must start with ordinal 0 (metric_name)");
+    // After storekey("cpu.usage") = "cpu.usage" bytes + null terminator,
+    // the next byte should be ordinal 6 (timeseries_id).
+    // storekey encodes the string bytes verbatim (no 0x00/0x01 in "cpu.usage")
+    // plus a 0x00 terminator: 9 bytes for "cpu.usage" + 1 for terminator = 10.
+    // So ordinal 6 is at offset 1 + 10 = 11.
+    assert_eq!(
+        key_c[11], 0x06,
+        "key C (all tags null) must have timeseries_id ordinal 6 after metric_name"
+    );
+
+    // Verify ordinal structure of key B (host=null, service=api):
+    // ordinal 0 (metric_name) + ordinal 1 (service) + ordinal 6 (timeseries_id).
+    // No ordinal 5 (host) because it's null.
+    assert_eq!(key_b[0], 0x00, "key B must start with ordinal 0");
+    // After "cpu.usage" (10 bytes) + ordinal 0 (1 byte) = offset 11 is ordinal 1.
+    assert_eq!(key_b[11], 0x01, "key B must have ordinal 1 (service) after metric_name");
+
+    // Verify the written keys are contiguous by series (data is sorted).
+    // After sorting, rows with the same key should be adjacent.
+    let mut prev_key = ss_col.value(0).to_vec();
+    let mut saw_change = false;
+    for i in 1..ss_col.len() {
+        let cur = ss_col.value(i).to_vec();
+        if cur != prev_key {
+            saw_change = true;
+        } else if saw_change && cur == prev_key {
+            // If we see the same key again after a different key,
+            // that's OK — the sort might group differently than our
+            // input order. What matters is that equal keys are contiguous.
+        }
+        prev_key = cur;
+    }
+
+    // Stronger contiguity check: collect run lengths and verify each key
+    // appears in exactly one contiguous run.
+    let mut runs: Vec<(Vec<u8>, usize)> = Vec::new();
+    for i in 0..ss_col.len() {
+        let key = ss_col.value(i).to_vec();
+        if let Some(last) = runs.last_mut() {
+            if last.0 == key {
+                last.1 += 1;
+                continue;
+            }
+        }
+        runs.push((key, 1));
+    }
+    // Each distinct key should appear in exactly one run.
+    let mut seen_keys: HashMap<Vec<u8>, usize> = HashMap::new();
+    for (key, _) in &runs {
+        *seen_keys.entry(key.clone()).or_insert(0) += 1;
+    }
+    for (key, run_count) in &seen_keys {
+        assert_eq!(
+            *run_count, 1,
+            "key {:?} appeared in {} non-contiguous runs (should be 1)",
+            &key[..key.len().min(8)],
+            run_count
+        );
+    }
+
+    std::fs::remove_file(&path).ok();
+}
+
 // -----------------------------------------------------------------------
 // Structural: key encodes ordinals correctly
 // -----------------------------------------------------------------------
