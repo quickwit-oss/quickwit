@@ -19,9 +19,9 @@ use std::fmt;
 use bytesize::ByteSize;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, exponential_buckets,
-    linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
-    new_histogram_vec,
+    Histogram, HistogramVec, IntCounter, IntCounterVec, IntUpDownCounter, exponential_buckets,
+    linear_buckets, new_counter, new_counter_vec, new_histogram, new_histogram_vec,
+    new_up_down_counter, new_up_down_counter_vec,
 };
 
 fn print_if_not_null(
@@ -115,10 +115,10 @@ pub struct SearchMetrics {
     pub split_search_outcome_total: SplitSearchOutcomeCounters,
     pub leaf_search_split_duration_secs: Histogram,
     pub job_assigned_total: IntCounterVec<1>,
-    pub leaf_search_single_split_tasks_pending: IntGauge,
-    pub leaf_search_single_split_tasks_ongoing: IntGauge,
+    pub leaf_search_single_split_tasks_pending: IntUpDownCounter,
+    pub leaf_search_single_split_tasks_ongoing: IntUpDownCounter,
     pub leaf_search_single_split_warmup_num_bytes: Histogram,
-    pub searcher_local_kv_store_size_bytes: IntGauge,
+    pub searcher_local_kv_store_size_bytes: IntUpDownCounter,
 }
 
 /// From 0.008s to 131.072s
@@ -151,7 +151,7 @@ impl Default for SearchMetrics {
             ByteSize::gb(5).as_u64() as f64,
         ];
 
-        let leaf_search_single_split_tasks = new_gauge_vec::<1>(
+        let leaf_search_single_split_tasks = new_up_down_counter_vec::<1>(
             "leaf_search_single_split_tasks",
             "Number of single split search tasks pending or ongoing",
             "search",
@@ -239,7 +239,7 @@ impl Default for SearchMetrics {
                 &[],
                 ["affinity"],
             ),
-            searcher_local_kv_store_size_bytes: new_gauge(
+            searcher_local_kv_store_size_bytes: new_up_down_counter(
                 "searcher_local_kv_store_size_bytes",
                 "Size of the searcher kv store in bytes. This store is used to cache scroll \
                  contexts.",

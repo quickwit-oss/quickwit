@@ -152,6 +152,12 @@ impl OtelMetric<opentelemetry::metrics::Histogram<f64>> {
     }
 }
 
+impl OtelMetric<opentelemetry::metrics::UpDownCounter<i64>> {
+    fn add(&self, value: i64) {
+        self.with_instrument(|counter, attributes| counter.add(value, attributes));
+    }
+}
+
 #[derive(Clone)]
 pub struct IntCounter {
     prometheus: prometheus::IntCounter,
@@ -237,14 +243,6 @@ impl<const N: usize> IntCounterVec<N> {
     }
 }
 
-/// For relative operations (`inc`, `dec`, `add`, `sub`), the OTel value is derived by reading the
-/// Prometheus gauge after mutation, since OTel gauges do not support relative updates. This is not
-/// atomic: under concurrent updates, the OTel side may briefly record a stale value. This is
-/// acceptable for now because gauges are inherently point-in-time approximations, and the next
-/// update self-corrects.
-///
-/// TODO: for strict correctness, manage a single `AtomicI64` as the source of truth and feed its
-/// value into both Prometheus and OTel.
 #[derive(Clone)]
 pub struct IntGauge {
     prometheus: prometheus::IntGauge,
@@ -255,26 +253,6 @@ impl IntGauge {
     pub fn set(&self, v: i64) {
         self.prometheus.set(v);
         self.otel.record(v);
-    }
-
-    pub fn inc(&self) {
-        self.prometheus.inc();
-        self.otel.record(self.prometheus.get());
-    }
-
-    pub fn dec(&self) {
-        self.prometheus.dec();
-        self.otel.record(self.prometheus.get());
-    }
-
-    pub fn add(&self, delta: i64) {
-        self.prometheus.add(delta);
-        self.otel.record(self.prometheus.get());
-    }
-
-    pub fn sub(&self, delta: i64) {
-        self.prometheus.sub(delta);
-        self.otel.record(self.prometheus.get());
     }
 
     pub fn get(&self) -> i64 {
@@ -292,6 +270,58 @@ pub struct IntGaugeVec<const N: usize> {
 impl<const N: usize> IntGaugeVec<N> {
     pub fn with_label_values(&self, label_values: [&str; N]) -> IntGauge {
         IntGauge {
+            prometheus: self.prometheus.with_label_values(&label_values),
+            otel: self.otel.with_attributes(&self.label_names, label_values),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct IntUpDownCounter {
+    prometheus: prometheus::IntGauge,
+    otel: OtelMetric<opentelemetry::metrics::UpDownCounter<i64>>,
+}
+
+impl IntUpDownCounter {
+    /// No-op dummy. Exists only so call sites that mix `set` with relative ops
+    /// still compile after migrating from `IntGauge`.
+    pub fn set(&self, _v: i64) {}
+
+    pub fn inc(&self) {
+        self.prometheus.inc();
+        self.otel.add(1);
+    }
+
+    pub fn dec(&self) {
+        self.prometheus.dec();
+        self.otel.add(-1);
+    }
+
+    pub fn add(&self, delta: i64) {
+        self.prometheus.add(delta);
+        self.otel.add(delta);
+    }
+
+    pub fn sub(&self, delta: i64) {
+        self.prometheus.sub(delta);
+        self.otel.add(-delta);
+    }
+
+    pub fn get(&self) -> i64 {
+        self.prometheus.get()
+    }
+}
+
+#[derive(Clone)]
+pub struct IntUpDownCounterVec<const N: usize> {
+    prometheus: prometheus::IntGaugeVec,
+    otel: OtelMetric<opentelemetry::metrics::UpDownCounter<i64>>,
+    label_names: Vec<String>,
+}
+
+impl<const N: usize> IntUpDownCounterVec<N> {
+    pub fn with_label_values(&self, label_values: [&str; N]) -> IntUpDownCounter {
+        IntUpDownCounter {
             prometheus: self.prometheus.with_label_values(&label_values),
             otel: self.otel.with_attributes(&self.label_names, label_values),
         }
@@ -442,6 +472,19 @@ fn new_float_gauge_otel_state(
     })
 }
 
+fn new_i64_up_down_counter_otel_state(
+    name: &str,
+    subsystem: &str,
+    help: &str,
+) -> Arc<OtelState<opentelemetry::metrics::UpDownCounter<i64>>> {
+    new_otel_state(name, subsystem, help, |meter, name, description| {
+        meter
+            .i64_up_down_counter(name.to_string())
+            .with_description(description.to_string())
+            .build()
+    })
+}
+
 fn new_histogram_otel_state(
     name: &str,
     subsystem: &str,
@@ -551,6 +594,53 @@ pub fn new_gauge_vec<const N: usize>(
     }
 }
 
+pub fn new_up_down_counter(
+    name: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
+) -> IntUpDownCounter {
+    let gauge_opts = Opts::new(name, help)
+        .namespace(METRICS_NAMESPACE)
+        .subsystem(subsystem)
+        .const_labels(build_prometheus_labels(const_labels));
+    let prom = prometheus::IntGauge::with_opts(gauge_opts).expect("failed to create gauge");
+    prometheus::register(Box::new(prom.clone())).expect("failed to register gauge");
+
+    IntUpDownCounter {
+        prometheus: prom,
+        otel: OtelMetric::new(
+            Some(new_i64_up_down_counter_otel_state(name, subsystem, help)),
+            build_otel_attributes(const_labels),
+        ),
+    }
+}
+
+pub fn new_up_down_counter_vec<const N: usize>(
+    name: &str,
+    help: &str,
+    subsystem: &str,
+    const_labels: &[(&str, &str)],
+    label_names: [&str; N],
+) -> IntUpDownCounterVec<N> {
+    let gauge_opts = Opts::new(name, help)
+        .namespace(METRICS_NAMESPACE)
+        .subsystem(subsystem)
+        .const_labels(build_prometheus_labels(const_labels));
+    let prom =
+        prometheus::IntGaugeVec::new(gauge_opts, &label_names).expect("failed to create gauge vec");
+    prometheus::register(Box::new(prom.clone())).expect("failed to register gauge vec");
+
+    IntUpDownCounterVec {
+        prometheus: prom,
+        otel: OtelMetric::new(
+            Some(new_i64_up_down_counter_otel_state(name, subsystem, help)),
+            build_otel_attributes(const_labels),
+        ),
+        label_names: label_names.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
 pub fn new_float_gauge(
     name: &str,
     help: &str,
@@ -628,20 +718,23 @@ pub fn new_histogram_vec<const N: usize>(
     }
 }
 
-pub struct GaugeGuard<'a> {
-    gauge: &'a IntGauge,
+pub struct UpDownCounterGuard<'a> {
+    counter: &'a IntUpDownCounter,
     delta: i64,
 }
 
-impl std::fmt::Debug for GaugeGuard<'_> {
+impl std::fmt::Debug for UpDownCounterGuard<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.delta.fmt(f)
     }
 }
 
-impl<'a> GaugeGuard<'a> {
-    pub fn from_gauge(gauge: &'a IntGauge) -> Self {
-        Self { gauge, delta: 0i64 }
+impl<'a> UpDownCounterGuard<'a> {
+    pub fn from_counter(counter: &'a IntUpDownCounter) -> Self {
+        Self {
+            counter,
+            delta: 0i64,
+        }
     }
 
     pub fn get(&self) -> i64 {
@@ -649,36 +742,39 @@ impl<'a> GaugeGuard<'a> {
     }
 
     pub fn add(&mut self, delta: i64) {
-        self.gauge.add(delta);
+        self.counter.add(delta);
         self.delta += delta;
     }
 
     pub fn sub(&mut self, delta: i64) {
-        self.gauge.sub(delta);
+        self.counter.sub(delta);
         self.delta -= delta;
     }
 }
 
-impl Drop for GaugeGuard<'_> {
+impl Drop for UpDownCounterGuard<'_> {
     fn drop(&mut self) {
-        self.gauge.sub(self.delta)
+        self.counter.sub(self.delta)
     }
 }
 
-pub struct OwnedGaugeGuard {
-    gauge: IntGauge,
+pub struct OwnedUpDownCounterGuard {
+    counter: IntUpDownCounter,
     delta: i64,
 }
 
-impl std::fmt::Debug for OwnedGaugeGuard {
+impl std::fmt::Debug for OwnedUpDownCounterGuard {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.delta.fmt(f)
     }
 }
 
-impl OwnedGaugeGuard {
-    pub fn from_gauge(gauge: IntGauge) -> Self {
-        Self { gauge, delta: 0i64 }
+impl OwnedUpDownCounterGuard {
+    pub fn from_counter(counter: IntUpDownCounter) -> Self {
+        Self {
+            counter,
+            delta: 0i64,
+        }
     }
 
     pub fn get(&self) -> i64 {
@@ -686,19 +782,19 @@ impl OwnedGaugeGuard {
     }
 
     pub fn add(&mut self, delta: i64) {
-        self.gauge.add(delta);
+        self.counter.add(delta);
         self.delta += delta;
     }
 
     pub fn sub(&mut self, delta: i64) {
-        self.gauge.sub(delta);
+        self.counter.sub(delta);
         self.delta -= delta;
     }
 }
 
-impl Drop for OwnedGaugeGuard {
+impl Drop for OwnedUpDownCounterGuard {
     fn drop(&mut self) {
-        self.gauge.sub(self.delta)
+        self.counter.sub(self.delta)
     }
 }
 
@@ -751,22 +847,22 @@ impl Default for MemoryMetrics {
 
 #[derive(Clone)]
 pub struct InFlightDataGauges {
-    pub rest_server: IntGauge,
-    pub ingest_router: IntGauge,
-    pub ingester_persist: IntGauge,
-    pub ingester_replicate: IntGauge,
-    pub wal: IntGauge,
-    pub fetch_stream: IntGauge,
-    pub multi_fetch_stream: IntGauge,
-    pub doc_processor_mailbox: IntGauge,
-    pub indexer_mailbox: IntGauge,
-    pub index_writer: IntGauge,
-    in_flight_gauge_vec: IntGaugeVec<1>,
+    pub rest_server: IntUpDownCounter,
+    pub ingest_router: IntUpDownCounter,
+    pub ingester_persist: IntUpDownCounter,
+    pub ingester_replicate: IntUpDownCounter,
+    pub wal: IntUpDownCounter,
+    pub fetch_stream: IntUpDownCounter,
+    pub multi_fetch_stream: IntUpDownCounter,
+    pub doc_processor_mailbox: IntUpDownCounter,
+    pub indexer_mailbox: IntUpDownCounter,
+    pub index_writer: IntUpDownCounter,
+    in_flight_counter_vec: IntUpDownCounterVec<1>,
 }
 
 impl Default for InFlightDataGauges {
     fn default() -> Self {
-        let in_flight_gauge_vec = new_gauge_vec(
+        let in_flight_counter_vec = new_up_down_counter_vec(
             "in_flight_data_bytes",
             "Amount of data in-flight in various buffers in bytes.",
             "memory",
@@ -774,75 +870,82 @@ impl Default for InFlightDataGauges {
             ["component"],
         );
         Self {
-            rest_server: in_flight_gauge_vec.with_label_values(["rest_server"]),
-            ingest_router: in_flight_gauge_vec.with_label_values(["ingest_router"]),
-            ingester_persist: in_flight_gauge_vec.with_label_values(["ingester_persist"]),
-            ingester_replicate: in_flight_gauge_vec.with_label_values(["ingester_replicate"]),
-            wal: in_flight_gauge_vec.with_label_values(["wal"]),
-            fetch_stream: in_flight_gauge_vec.with_label_values(["fetch_stream"]),
-            multi_fetch_stream: in_flight_gauge_vec.with_label_values(["multi_fetch_stream"]),
-            doc_processor_mailbox: in_flight_gauge_vec.with_label_values(["doc_processor_mailbox"]),
-            indexer_mailbox: in_flight_gauge_vec.with_label_values(["indexer_mailbox"]),
-            index_writer: in_flight_gauge_vec.with_label_values(["index_writer"]),
-            in_flight_gauge_vec: in_flight_gauge_vec.clone(),
+            rest_server: in_flight_counter_vec.with_label_values(["rest_server"]),
+            ingest_router: in_flight_counter_vec.with_label_values(["ingest_router"]),
+            ingester_persist: in_flight_counter_vec.with_label_values(["ingester_persist"]),
+            ingester_replicate: in_flight_counter_vec.with_label_values(["ingester_replicate"]),
+            wal: in_flight_counter_vec.with_label_values(["wal"]),
+            fetch_stream: in_flight_counter_vec.with_label_values(["fetch_stream"]),
+            multi_fetch_stream: in_flight_counter_vec.with_label_values(["multi_fetch_stream"]),
+            doc_processor_mailbox: in_flight_counter_vec
+                .with_label_values(["doc_processor_mailbox"]),
+            indexer_mailbox: in_flight_counter_vec.with_label_values(["indexer_mailbox"]),
+            index_writer: in_flight_counter_vec.with_label_values(["index_writer"]),
+            in_flight_counter_vec: in_flight_counter_vec.clone(),
         }
     }
 }
 
 impl InFlightDataGauges {
     #[inline]
-    pub fn file(&self) -> &IntGauge {
-        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
-        GAUGE.get_or_init(|| self.in_flight_gauge_vec.with_label_values(["file_source"]))
+    pub fn file(&self) -> &IntUpDownCounter {
+        static COUNTER: OnceLock<IntUpDownCounter> = OnceLock::new();
+        COUNTER.get_or_init(|| {
+            self.in_flight_counter_vec
+                .with_label_values(["file_source"])
+        })
     }
 
     #[inline]
-    pub fn ingest(&self) -> &IntGauge {
-        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
-        GAUGE.get_or_init(|| {
-            self.in_flight_gauge_vec
+    pub fn ingest(&self) -> &IntUpDownCounter {
+        static COUNTER: OnceLock<IntUpDownCounter> = OnceLock::new();
+        COUNTER.get_or_init(|| {
+            self.in_flight_counter_vec
                 .with_label_values(["ingest_source"])
         })
     }
 
     #[inline]
-    pub fn kafka(&self) -> &IntGauge {
-        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
-        GAUGE.get_or_init(|| self.in_flight_gauge_vec.with_label_values(["kafka_source"]))
+    pub fn kafka(&self) -> &IntUpDownCounter {
+        static COUNTER: OnceLock<IntUpDownCounter> = OnceLock::new();
+        COUNTER.get_or_init(|| {
+            self.in_flight_counter_vec
+                .with_label_values(["kafka_source"])
+        })
     }
 
     #[inline]
-    pub fn kinesis(&self) -> &IntGauge {
-        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
-        GAUGE.get_or_init(|| {
-            self.in_flight_gauge_vec
+    pub fn kinesis(&self) -> &IntUpDownCounter {
+        static COUNTER: OnceLock<IntUpDownCounter> = OnceLock::new();
+        COUNTER.get_or_init(|| {
+            self.in_flight_counter_vec
                 .with_label_values(["kinesis_source"])
         })
     }
 
     #[inline]
-    pub fn pubsub(&self) -> &IntGauge {
-        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
-        GAUGE.get_or_init(|| {
-            self.in_flight_gauge_vec
+    pub fn pubsub(&self) -> &IntUpDownCounter {
+        static COUNTER: OnceLock<IntUpDownCounter> = OnceLock::new();
+        COUNTER.get_or_init(|| {
+            self.in_flight_counter_vec
                 .with_label_values(["pubsub_source"])
         })
     }
 
     #[inline]
-    pub fn pulsar(&self) -> &IntGauge {
-        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
-        GAUGE.get_or_init(|| {
-            self.in_flight_gauge_vec
+    pub fn pulsar(&self) -> &IntUpDownCounter {
+        static COUNTER: OnceLock<IntUpDownCounter> = OnceLock::new();
+        COUNTER.get_or_init(|| {
+            self.in_flight_counter_vec
                 .with_label_values(["pulsar_source"])
         })
     }
 
     #[inline]
-    pub fn other(&self) -> &IntGauge {
-        static GAUGE: OnceLock<IntGauge> = OnceLock::new();
-        GAUGE.get_or_init(|| {
-            self.in_flight_gauge_vec
+    pub fn other(&self) -> &IntUpDownCounter {
+        static COUNTER: OnceLock<IntUpDownCounter> = OnceLock::new();
+        COUNTER.get_or_init(|| {
+            self.in_flight_counter_vec
                 .with_label_values(["pulsar_source"])
         })
     }
@@ -1012,7 +1115,6 @@ mod tests {
     fn test_gauge() {
         let (exporter, provider) = ensure_test_otel_provider();
 
-        // set
         let gauge = new_gauge("test_gauge_set", "test", "test", &[]);
         assert_eq!(gauge.get(), 0);
         gauge.set(10);
@@ -1020,41 +1122,64 @@ mod tests {
         let otel_value =
             flush_and_get_gauge_value(exporter, provider, "quickwit_test_test_gauge_set");
         assert_eq!(otel_value, 10);
+    }
+
+    fn flush_and_get_up_down_counter_value(
+        exporter: &InMemoryMetricExporter,
+        provider: &SdkMeterProvider,
+        metric_name: &str,
+    ) -> i64 {
+        flush_and_read_metric(exporter, provider, metric_name, |data| {
+            let AggregatedMetrics::I64(MetricData::Sum(sum_data)) = data else {
+                panic!("expected i64 sum metric");
+            };
+            sum_data
+                .data_points()
+                .next()
+                .expect("should have one data point")
+                .value()
+        })
+    }
+
+    #[test]
+    #[serial]
+    fn test_up_down_counter() {
+        let (exporter, provider) = ensure_test_otel_provider();
 
         // inc
-        let gauge = new_gauge("test_gauge_inc", "test", "test", &[]);
-        assert_eq!(gauge.get(), 0);
-        gauge.inc();
-        assert_eq!(gauge.get(), 1);
+        let counter = new_up_down_counter("test_udc_inc", "test", "test", &[]);
+        assert_eq!(counter.get(), 0);
+        counter.inc();
+        assert_eq!(counter.get(), 1);
         let otel_value =
-            flush_and_get_gauge_value(exporter, provider, "quickwit_test_test_gauge_inc");
+            flush_and_get_up_down_counter_value(exporter, provider, "quickwit_test_test_udc_inc");
         assert_eq!(otel_value, 1);
 
         // dec
-        let gauge = new_gauge("test_gauge_dec", "test", "test", &[]);
-        assert_eq!(gauge.get(), 0);
-        gauge.dec();
-        assert_eq!(gauge.get(), -1);
+        let counter = new_up_down_counter("test_udc_dec", "test", "test", &[]);
+        assert_eq!(counter.get(), 0);
+        counter.dec();
+        assert_eq!(counter.get(), -1);
         let otel_value =
-            flush_and_get_gauge_value(exporter, provider, "quickwit_test_test_gauge_dec");
+            flush_and_get_up_down_counter_value(exporter, provider, "quickwit_test_test_udc_dec");
         assert_eq!(otel_value, -1);
 
         // add
-        let gauge = new_gauge("test_gauge_add", "test", "test", &[]);
-        assert_eq!(gauge.get(), 0);
-        gauge.add(15);
-        assert_eq!(gauge.get(), 15);
+        let counter = new_up_down_counter("test_udc_add", "test", "test", &[]);
+        assert_eq!(counter.get(), 0);
+        counter.add(15);
+        assert_eq!(counter.get(), 15);
         let otel_value =
-            flush_and_get_gauge_value(exporter, provider, "quickwit_test_test_gauge_add");
+            flush_and_get_up_down_counter_value(exporter, provider, "quickwit_test_test_udc_add");
         assert_eq!(otel_value, 15);
 
         // sub
-        let gauge = new_gauge("test_gauge_sub", "test", "test", &[]);
-        assert_eq!(gauge.get(), 0);
-        gauge.sub(3);
-        assert_eq!(gauge.get(), -3);
+        let counter = new_up_down_counter("test_udc_sub", "test", "test", &[]);
+        assert_eq!(counter.get(), 0);
+        counter.sub(3);
+        assert_eq!(counter.get(), -3);
         let otel_value =
-            flush_and_get_gauge_value(exporter, provider, "quickwit_test_test_gauge_sub");
+            flush_and_get_up_down_counter_value(exporter, provider, "quickwit_test_test_udc_sub");
         assert_eq!(otel_value, -3);
     }
 
@@ -1208,30 +1333,30 @@ mod tests {
     }
 
     #[test]
-    fn test_gauge_guard_add_sub_drop() {
-        let gauge = new_gauge("test_guard", "test", "test", &[]);
+    fn test_up_down_counter_guard_add_sub_drop() {
+        let counter = new_up_down_counter("test_guard", "test", "test", &[]);
         {
-            let mut guard = GaugeGuard::from_gauge(&gauge);
+            let mut guard = UpDownCounterGuard::from_counter(&counter);
             guard.add(5);
-            assert_eq!(gauge.get(), 5);
+            assert_eq!(counter.get(), 5);
             guard.sub(2);
-            assert_eq!(gauge.get(), 3);
+            assert_eq!(counter.get(), 3);
         }
         // After drop, the delta (3) is subtracted.
-        assert_eq!(gauge.get(), 0);
+        assert_eq!(counter.get(), 0);
     }
 
     #[test]
-    fn test_owned_gauge_guard_add_sub_drop() {
-        let gauge = new_gauge("test_owned_guard", "test", "test", &[]);
+    fn test_owned_up_down_counter_guard_add_sub_drop() {
+        let counter = new_up_down_counter("test_owned_guard", "test", "test", &[]);
         {
-            let mut guard = OwnedGaugeGuard::from_gauge(gauge.clone());
+            let mut guard = OwnedUpDownCounterGuard::from_counter(counter.clone());
             guard.add(5);
-            assert_eq!(gauge.get(), 5);
+            assert_eq!(counter.get(), 5);
             guard.sub(2);
-            assert_eq!(gauge.get(), 3);
+            assert_eq!(counter.get(), 3);
         }
-        assert_eq!(gauge.get(), 0);
+        assert_eq!(counter.get(), 0);
     }
 
     #[test]

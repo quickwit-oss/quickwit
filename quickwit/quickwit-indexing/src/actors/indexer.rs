@@ -27,7 +27,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Command, Handler, Mailbox, QueueCapacity,
 };
 use quickwit_common::io::IoControls;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_common::metrics::UpDownCounterGuard;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
@@ -220,7 +220,7 @@ impl IndexerState {
         let publish_token_opt = self.publish_token_opt.clone();
 
         let mut split_builders_guard =
-            GaugeGuard::from_gauge(&crate::metrics::INDEXER_METRICS.split_builders);
+            UpDownCounterGuard::from_counter(&crate::metrics::INDEXER_METRICS.split_builders);
         split_builders_guard.add(1);
 
         let workbench = IndexingWorkbench {
@@ -233,7 +233,7 @@ impl IndexerState {
             publish_lock,
             publish_token_opt,
             last_delete_opstamp,
-            memory_usage: GaugeGuard::from_gauge(
+            memory_usage: UpDownCounterGuard::from_counter(
                 &quickwit_common::metrics::MEMORY_METRICS
                     .in_flight
                     .index_writer,
@@ -358,8 +358,8 @@ struct IndexingWorkbench {
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
     // Number of bytes declared as used by tantivy.
-    memory_usage: GaugeGuard<'static>,
-    split_builders_guard: GaugeGuard<'static>,
+    memory_usage: UpDownCounterGuard<'static>,
+    split_builders_guard: UpDownCounterGuard<'static>,
     cooperative_indexing_period: Option<CooperativeIndexingPeriod>,
 }
 

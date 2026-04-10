@@ -20,7 +20,10 @@ use once_cell::sync::Lazy;
 use tokio::sync::oneshot;
 use tracing::error;
 
-use crate::metrics::{GaugeGuard, IntGauge, IntGaugeVec, OwnedGaugeGuard, new_gauge_vec};
+use crate::metrics::{
+    IntUpDownCounter, IntUpDownCounterVec, OwnedUpDownCounterGuard, UpDownCounterGuard,
+    new_up_down_counter_vec,
+};
 
 /// An executor backed by a thread pool to run CPU-intensive tasks.
 ///
@@ -29,8 +32,8 @@ use crate::metrics::{GaugeGuard, IntGauge, IntGaugeVec, OwnedGaugeGuard, new_gau
 #[derive(Clone)]
 pub struct ThreadPool {
     thread_pool: Arc<rayon::ThreadPool>,
-    ongoing_tasks: IntGauge,
-    pending_tasks: IntGauge,
+    ongoing_tasks: IntUpDownCounter,
+    pending_tasks: IntUpDownCounter,
 }
 
 impl ThreadPool {
@@ -84,8 +87,8 @@ impl ThreadPool {
     {
         let span = tracing::Span::current();
         let ongoing_tasks = self.ongoing_tasks.clone();
-        let mut pending_tasks_guard: OwnedGaugeGuard =
-            OwnedGaugeGuard::from_gauge(self.pending_tasks.clone());
+        let mut pending_tasks_guard: OwnedUpDownCounterGuard =
+            OwnedUpDownCounterGuard::from_counter(self.pending_tasks.clone());
         pending_tasks_guard.add(1i64);
         let (tx, rx) = oneshot::channel();
         self.thread_pool.spawn(move || {
@@ -94,7 +97,7 @@ impl ThreadPool {
                 return;
             }
             let _guard = span.enter();
-            let mut ongoing_task_guard = GaugeGuard::from_gauge(&ongoing_tasks);
+            let mut ongoing_task_guard = UpDownCounterGuard::from_counter(&ongoing_tasks);
             ongoing_task_guard.add(1i64);
             let result = cpu_intensive_fn();
             let _ = tx.send(result);
@@ -137,21 +140,21 @@ impl fmt::Display for Panicked {
 impl std::error::Error for Panicked {}
 
 struct ThreadPoolMetrics {
-    ongoing_tasks: IntGaugeVec<1>,
-    pending_tasks: IntGaugeVec<1>,
+    ongoing_tasks: IntUpDownCounterVec<1>,
+    pending_tasks: IntUpDownCounterVec<1>,
 }
 
 impl Default for ThreadPoolMetrics {
     fn default() -> Self {
         ThreadPoolMetrics {
-            ongoing_tasks: new_gauge_vec(
+            ongoing_tasks: new_up_down_counter_vec(
                 "ongoing_tasks",
                 "number of tasks being currently processed by threads in the thread pool",
                 "thread_pool",
                 &[],
                 ["pool"],
             ),
-            pending_tasks: new_gauge_vec(
+            pending_tasks: new_up_down_counter_vec(
                 "pending_tasks",
                 "number of tasks waiting in the queue before being processed by the thread pool",
                 "thread_pool",

@@ -26,7 +26,7 @@ use futures::stream::FuturesUnordered;
 use mrecordlog::error::CreateQueueError;
 use once_cell::sync::OnceCell;
 use quickwit_cluster::Cluster;
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::{MEMORY_METRICS, UpDownCounterGuard};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -1112,7 +1112,8 @@ impl IngesterService for Ingester {
                 _ => None,
             })
             .sum::<usize>();
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_persist);
+        let mut gauge_guard =
+            UpDownCounterGuard::from_counter(&MEMORY_METRICS.in_flight.ingester_persist);
         gauge_guard.add(request_size_bytes as i64);
 
         self.persist_inner(persist_request).await

@@ -14,15 +14,15 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec,
-    new_gauge_vec, new_histogram_vec,
+    HistogramVec, IntCounter, IntCounterVec, IntUpDownCounterVec, new_counter, new_counter_vec,
+    new_histogram_vec, new_up_down_counter_vec,
 };
 
 pub struct ServeMetrics {
     pub http_requests_total: IntCounterVec<2>,
     pub request_duration_secs: HistogramVec<2>,
-    pub ongoing_requests: IntGaugeVec<1>,
-    pub pending_requests: IntGaugeVec<1>,
+    pub ongoing_requests: IntUpDownCounterVec<1>,
+    pub pending_requests: IntUpDownCounterVec<1>,
     pub circuit_break_total: IntCounter,
 }
 
@@ -51,14 +51,14 @@ impl Default for ServeMetrics {
                 // last bucket is 163.84s
                 quickwit_common::metrics::exponential_buckets(0.02, 2.0, 14).unwrap(),
             ),
-            ongoing_requests: new_gauge_vec(
+            ongoing_requests: new_up_down_counter_vec(
                 "ongoing_requests",
                 "Number of ongoing requests.",
                 "",
                 &[],
                 ["endpoint_group"],
             ),
-            pending_requests: new_gauge_vec(
+            pending_requests: new_up_down_counter_vec(
                 "pending_requests",
                 "Number of pending requests.",
                 "",

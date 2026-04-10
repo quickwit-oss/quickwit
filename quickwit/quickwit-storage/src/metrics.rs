@@ -19,8 +19,8 @@ use std::sync::RwLock;
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
-    new_gauge, new_histogram_vec,
+    Histogram, IntCounter, IntCounterVec, IntUpDownCounter, UpDownCounterGuard, new_counter,
+    new_counter_vec, new_histogram_vec, new_up_down_counter,
 };
 use quickwit_config::CacheConfig;
 
@@ -37,8 +37,8 @@ pub struct StorageMetrics {
     pub get_slice_timeout_all_timeouts: IntCounter,
     pub object_storage_get_total: IntCounter,
     pub object_storage_get_errors_total: IntCounterVec<1>,
-    pub object_storage_get_slice_in_flight_count: IntGauge,
-    pub object_storage_get_slice_in_flight_num_bytes: IntGauge,
+    pub object_storage_get_slice_in_flight_count: IntUpDownCounter,
+    pub object_storage_get_slice_in_flight_num_bytes: IntUpDownCounter,
     pub object_storage_put_total: IntCounter,
     pub object_storage_put_parts: IntCounter,
     pub object_storage_download_num_bytes: IntCounter,
@@ -117,14 +117,14 @@ impl Default for StorageMetrics {
                 &[],
                 ["code"],
             ),
-            object_storage_get_slice_in_flight_count: new_gauge(
+            object_storage_get_slice_in_flight_count: new_up_down_counter(
                 "object_storage_get_slice_in_flight_count",
                 "Number of GetObject for which the memory was allocated but the download is still \
                  in progress.",
                 "storage",
                 &[],
             ),
-            object_storage_get_slice_in_flight_num_bytes: new_gauge(
+            object_storage_get_slice_in_flight_num_bytes: new_up_down_counter(
                 "object_storage_get_slice_in_flight_num_bytes",
                 "Memory allocated for GetObject requests that are still in progress.",
                 "storage",
@@ -172,8 +172,8 @@ pub struct CacheMetrics {
 
 #[derive(Clone)]
 pub struct SingleCacheMetrics {
-    pub in_cache_count: IntGauge,
-    pub in_cache_num_bytes: IntGauge,
+    pub in_cache_count: IntUpDownCounter,
+    pub in_cache_num_bytes: IntUpDownCounter,
     pub hits_num_items: IntCounter,
     pub hits_num_bytes: IntCounter,
     pub misses_num_items: IntCounter,
@@ -188,13 +188,13 @@ impl CacheMetrics {
         CacheMetrics {
             component_name: component_name.to_string(),
             cache_metrics: SingleCacheMetrics {
-                in_cache_count: new_gauge(
+                in_cache_count: new_up_down_counter(
                     "in_cache_count",
                     "Count of in cache by component",
                     CACHE_METRICS_NAMESPACE,
                     &labels,
                 ),
-                in_cache_num_bytes: new_gauge(
+                in_cache_num_bytes: new_up_down_counter(
                     "in_cache_num_bytes",
                     "Number of bytes in cache by component",
                     CACHE_METRICS_NAMESPACE,
@@ -250,13 +250,13 @@ impl CacheMetrics {
             ("policy", &policy),
         ];
         let new_virtual_cache_metrics = SingleCacheMetrics {
-            in_cache_count: new_gauge(
+            in_cache_count: new_up_down_counter(
                 "virtual_in_cache_count",
                 "Count of in cache by component",
                 CACHE_METRICS_NAMESPACE,
                 &labels,
             ),
-            in_cache_num_bytes: new_gauge(
+            in_cache_num_bytes: new_up_down_counter(
                 "virtual_in_cache_num_bytes",
                 "Number of bytes in cache by component",
                 CACHE_METRICS_NAMESPACE,
@@ -313,13 +313,14 @@ pub static CACHE_METRICS_FOR_TESTS: Lazy<CacheMetrics> =
 
 pub fn object_storage_get_slice_in_flight_guards(
     get_request_size: usize,
-) -> (GaugeGuard<'static>, GaugeGuard<'static>) {
-    let mut bytes_guard = GaugeGuard::from_gauge(
+) -> (UpDownCounterGuard<'static>, UpDownCounterGuard<'static>) {
+    let mut bytes_guard = UpDownCounterGuard::from_counter(
         &crate::STORAGE_METRICS.object_storage_get_slice_in_flight_num_bytes,
     );
     bytes_guard.add(get_request_size as i64);
-    let mut count_guard =
-        GaugeGuard::from_gauge(&crate::STORAGE_METRICS.object_storage_get_slice_in_flight_count);
+    let mut count_guard = UpDownCounterGuard::from_counter(
+        &crate::STORAGE_METRICS.object_storage_get_slice_in_flight_count,
+    );
     count_guard.add(1);
     (bytes_guard, count_guard)
 }

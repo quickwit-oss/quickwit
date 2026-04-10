@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use quickwit_common::metrics::{GaugeGuard, IntGauge};
+use quickwit_common::metrics::{IntUpDownCounter, UpDownCounterGuard};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::rest::TooManyRequests;
@@ -22,14 +22,14 @@ use crate::rest::TooManyRequests;
 pub struct LoadShield {
     in_flight_semaphore_opt: Option<Semaphore>, // This one is doing the load shedding.
     concurrency_semaphore_opt: Option<Semaphore>,
-    ongoing_gauge: IntGauge,
-    pending_gauge: IntGauge,
+    ongoing_gauge: IntUpDownCounter,
+    pending_gauge: IntUpDownCounter,
 }
 
 pub struct LoadShieldPermit {
     _concurrency_permit_opt: Option<SemaphorePermit<'static>>,
     _in_flight_permit_opt: Option<SemaphorePermit<'static>>,
-    _ongoing_gauge_guard: GaugeGuard<'static>,
+    _ongoing_gauge_guard: UpDownCounterGuard<'static>,
 }
 
 impl LoadShield {
@@ -78,12 +78,12 @@ impl LoadShield {
     }
 
     pub async fn acquire_permit(&'static self) -> Result<LoadShieldPermit, warp::Rejection> {
-        let mut pending_gauge_guard = GaugeGuard::from_gauge(&self.pending_gauge);
+        let mut pending_gauge_guard = UpDownCounterGuard::from_counter(&self.pending_gauge);
         pending_gauge_guard.add(1);
         let in_flight_permit_opt = self.acquire_in_flight_permit().await?;
         let concurrency_permit_opt = self.acquire_concurrency_permit().await;
         drop(pending_gauge_guard);
-        let mut ongoing_gauge_guard = GaugeGuard::from_gauge(&self.ongoing_gauge);
+        let mut ongoing_gauge_guard = UpDownCounterGuard::from_counter(&self.ongoing_gauge);
         ongoing_gauge_guard.add(1);
         Ok(LoadShieldPermit {
             _in_flight_permit_opt: in_flight_permit_opt,

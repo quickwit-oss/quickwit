@@ -91,7 +91,7 @@ pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
 pub use queue_sources::sqs_queue;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::{MEMORY_METRICS, UpDownCounterGuard};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{
@@ -542,7 +542,7 @@ pub(super) struct BatchBuilder {
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
     force_commit: bool,
-    gauge_guard: GaugeGuard<'static>,
+    gauge_guard: UpDownCounterGuard<'static>,
 }
 
 impl BatchBuilder {
@@ -560,7 +560,7 @@ impl BatchBuilder {
             SourceType::Pulsar => MEMORY_METRICS.in_flight.pulsar(),
             _ => MEMORY_METRICS.in_flight.other(),
         };
-        let gauge_guard = GaugeGuard::from_gauge(gauge);
+        let gauge_guard = UpDownCounterGuard::from_counter(gauge);
 
         Self {
             docs: Vec::with_capacity(capacity),

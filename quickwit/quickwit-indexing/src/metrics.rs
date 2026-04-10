@@ -14,18 +14,19 @@
 
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
-    new_gauge_vec,
+    IntCounter, IntCounterVec, IntGauge, IntGaugeVec, IntUpDownCounter, IntUpDownCounterVec,
+    new_counter, new_counter_vec, new_gauge, new_gauge_vec, new_up_down_counter,
+    new_up_down_counter_vec,
 };
 
 pub struct IndexerMetrics {
     pub processed_docs_total: IntCounterVec<2>,
     pub processed_bytes: IntCounterVec<2>,
-    pub indexing_pipelines: IntGaugeVec<1>,
+    pub indexing_pipelines: IntUpDownCounterVec<1>,
     pub backpressure_micros: IntCounterVec<1>,
     pub available_concurrent_upload_permits: IntGaugeVec<1>,
-    pub split_builders: IntGauge,
-    pub ongoing_merge_operations: IntGauge,
+    pub split_builders: IntUpDownCounter,
+    pub ongoing_merge_operations: IntUpDownCounter,
     pub pending_merge_operations: IntGauge,
     pub pending_merge_bytes: IntGauge,
     // We use a lazy counter, as most users do not use Kafka.
@@ -52,7 +53,7 @@ impl Default for IndexerMetrics {
                 &[],
                 ["index", "docs_processed_status"],
             ),
-            indexing_pipelines: new_gauge_vec(
+            indexing_pipelines: new_up_down_counter_vec(
                 "indexing_pipelines",
                 "Number of running indexing pipelines",
                 "indexing",
@@ -74,13 +75,13 @@ impl Default for IndexerMetrics {
                 &[],
                 ["component"],
             ),
-            split_builders: new_gauge(
+            split_builders: new_up_down_counter(
                 "split_builders",
                 "Number of existing index writer instances.",
                 "indexing",
                 &[],
             ),
-            ongoing_merge_operations: new_gauge(
+            ongoing_merge_operations: new_up_down_counter(
                 "ongoing_merge_operations",
                 "Number of ongoing merge operations",
                 "indexing",

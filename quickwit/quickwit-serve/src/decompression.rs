@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 
 use bytes::Bytes;
 use flate2::read::{MultiGzDecoder, ZlibDecoder};
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::{MEMORY_METRICS, UpDownCounterGuard};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use thiserror::Error;
 use warp::Filter;
@@ -108,13 +108,14 @@ pub(crate) fn get_body_bytes() -> impl Filter<Extract = (Body,), Error = warp::R
 
 pub(crate) struct Body {
     pub content: Bytes,
-    _gauge_guard: GaugeGuard<'static>,
+    _gauge_guard: UpDownCounterGuard<'static>,
     _permit: LoadShieldPermit,
 }
 
 impl Body {
     pub fn new(content: Bytes, load_shield_permit: LoadShieldPermit) -> Body {
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.rest_server);
+        let mut gauge_guard =
+            UpDownCounterGuard::from_counter(&MEMORY_METRICS.in_flight.rest_server);
         gauge_guard.add(content.len() as i64);
         Body {
             content,

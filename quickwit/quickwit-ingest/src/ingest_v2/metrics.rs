@@ -15,8 +15,9 @@
 use mrecordlog::ResourceUsage;
 use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
-    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, exponential_buckets,
-    linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram, new_histogram_vec,
+    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntUpDownCounterVec,
+    exponential_buckets, linear_buckets, new_counter_vec, new_gauge, new_histogram,
+    new_histogram_vec, new_up_down_counter_vec,
 };
 
 // Counter vec counting the different outcomes of ingest requests as
@@ -77,7 +78,7 @@ pub(super) struct IngestV2Metrics {
     pub closed_shards: IntGauge,
     pub shard_lt_throughput_mib: Histogram,
     pub shard_st_throughput_mib: Histogram,
-    pub wal_acquire_lock_requests_in_flight: IntGaugeVec<2>,
+    pub wal_acquire_lock_requests_in_flight: IntUpDownCounterVec<2>,
     pub wal_acquire_lock_request_duration_secs: HistogramVec<2>,
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
@@ -127,7 +128,7 @@ impl Default for IngestV2Metrics {
                 "ingest",
                 linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
             ),
-            wal_acquire_lock_requests_in_flight: new_gauge_vec(
+            wal_acquire_lock_requests_in_flight: new_up_down_counter_vec(
                 "wal_acquire_lock_requests_in_flight",
                 "Number of acquire lock requests in-flight.",
                 "ingest",

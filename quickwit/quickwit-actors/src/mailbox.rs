@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::time::Instant;
 
-use quickwit_common::metrics::{GaugeGuard, IntCounter, IntGauge};
+use quickwit_common::metrics::{IntCounter, IntUpDownCounter, UpDownCounterGuard};
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Receiver, Sender, TrySendError};
@@ -308,7 +308,7 @@ impl<A: Actor> Mailbox<A> {
 
 struct InboxInner<A: Actor> {
     rx: Receiver<Envelope<A>>,
-    _inboxes_count_gauge_guard: GaugeGuard<'static>,
+    _inboxes_count_gauge_guard: UpDownCounterGuard<'static>,
 }
 
 pub struct Inbox<A: Actor> {
@@ -385,19 +385,19 @@ impl<A: Actor> Inbox<A> {
     }
 }
 
-fn get_actor_inboxes_count_gauge_guard() -> GaugeGuard<'static> {
-    static INBOX_GAUGE: std::sync::OnceLock<IntGauge> = OnceLock::new();
-    let gauge = INBOX_GAUGE.get_or_init(|| {
-        quickwit_common::metrics::new_gauge(
+fn get_actor_inboxes_count_gauge_guard() -> UpDownCounterGuard<'static> {
+    static INBOX_COUNTER: std::sync::OnceLock<IntUpDownCounter> = OnceLock::new();
+    let counter = INBOX_COUNTER.get_or_init(|| {
+        quickwit_common::metrics::new_up_down_counter(
             "inboxes_count",
             "overall count of actors",
             "actor",
             &[],
         )
     });
-    let mut gauge_guard = GaugeGuard::from_gauge(gauge);
-    gauge_guard.add(1);
-    gauge_guard
+    let mut guard = UpDownCounterGuard::from_counter(counter);
+    guard.add(1);
+    guard
 }
 
 pub(crate) fn create_mailbox<A: Actor>(

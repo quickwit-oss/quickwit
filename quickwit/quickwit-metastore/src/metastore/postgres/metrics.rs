@@ -13,11 +13,11 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{IntGauge, new_gauge};
+use quickwit_common::metrics::{IntGauge, IntUpDownCounter, new_gauge, new_up_down_counter};
 
 #[derive(Clone)]
 pub(super) struct PostgresMetrics {
-    pub acquire_connections: IntGauge,
+    pub acquire_connections: IntUpDownCounter,
     pub active_connections: IntGauge,
     pub idle_connections: IntGauge,
 }
@@ -25,7 +25,7 @@ pub(super) struct PostgresMetrics {
 impl Default for PostgresMetrics {
     fn default() -> Self {
         Self {
-            acquire_connections: new_gauge(
+            acquire_connections: new_up_down_counter(
                 "acquire_connections",
                 "Number of connections being acquired.",
                 "metastore",

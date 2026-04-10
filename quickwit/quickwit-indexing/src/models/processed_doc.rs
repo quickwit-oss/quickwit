@@ -14,7 +14,7 @@
 
 use std::fmt;
 
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::{MEMORY_METRICS, UpDownCounterGuard};
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 use tantivy::{DateTime, TantivyDocument};
 
@@ -41,7 +41,7 @@ pub struct ProcessedDocBatch {
     pub docs: Vec<ProcessedDoc>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
-    _gauge_guard: GaugeGuard<'static>,
+    _gauge_guard: UpDownCounterGuard<'static>,
 }
 
 impl ProcessedDocBatch {
@@ -51,7 +51,8 @@ impl ProcessedDocBatch {
         force_commit: bool,
     ) -> Self {
         let delta = docs.iter().map(|doc| doc.num_bytes as i64).sum::<i64>();
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.indexer_mailbox);
+        let mut gauge_guard =
+            UpDownCounterGuard::from_counter(&MEMORY_METRICS.in_flight.indexer_mailbox);
         gauge_guard.add(delta);
         Self {
             docs,

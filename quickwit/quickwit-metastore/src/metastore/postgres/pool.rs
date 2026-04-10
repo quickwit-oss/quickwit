@@ -14,7 +14,7 @@
 
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_common::metrics::UpDownCounterGuard;
 use sqlx::pool::PoolConnection;
 use sqlx::pool::maybe::MaybePoolConnection;
 use sqlx::{
@@ -58,7 +58,8 @@ impl<'a, DB: Database> Acquire<'a> for &TrackedPool<DB> {
             .set(self.inner_pool.num_idle() as i64);
 
         Box::pin(async move {
-            let mut gauge_guard = GaugeGuard::from_gauge(&POSTGRES_METRICS.acquire_connections);
+            let mut gauge_guard =
+                UpDownCounterGuard::from_counter(&POSTGRES_METRICS.acquire_connections);
             gauge_guard.add(1);
 
             let conn = acquire_conn_fut.await?;

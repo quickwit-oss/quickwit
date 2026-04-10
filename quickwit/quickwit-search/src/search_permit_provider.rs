@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use bytesize::ByteSize;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_common::metrics::UpDownCounterGuard;
 use quickwit_proto::search::SplitIdAndFooterOffsets;
 use tokio::sync::{mpsc, oneshot};
 
@@ -332,7 +332,7 @@ impl SearchPermitActor {
 
     fn assign_available_permits(&mut self) {
         while let Some(permit_request) = self.pop_next_request_if_serviceable() {
-            let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
+            let mut ongoing_gauge_guard = UpDownCounterGuard::from_counter(
                 &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
             );
             ongoing_gauge_guard.add(1);
@@ -357,7 +357,7 @@ impl SearchPermitActor {
 }
 
 pub struct SearchPermit {
-    _ongoing_gauge_guard: GaugeGuard<'static>,
+    _ongoing_gauge_guard: UpDownCounterGuard<'static>,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     memory_allocation: u64,
     warmup_slot_freed: bool,

@@ -22,7 +22,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
 use tracing::warn;
 
-use crate::metrics::{GaugeGuard, IntGauge};
+use crate::metrics::{IntUpDownCounter, UpDownCounterGuard};
 use crate::tower::RpcName;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
@@ -76,7 +76,7 @@ where T: Send + 'static
 
     pub fn new_bounded_with_gauge(
         capacity: usize,
-        gauge: &'static IntGauge,
+        gauge: &'static IntUpDownCounter,
     ) -> (TrackedSender<T>, Self) {
         let (sender, receiver) = mpsc::channel(capacity);
         let tracked_sender = TrackedSender { sender, gauge };
@@ -93,7 +93,9 @@ where T: Send + 'static
         (sender, receiver.into())
     }
 
-    pub fn new_unbounded_with_gauge(gauge: &'static IntGauge) -> (TrackedUnboundedSender<T>, Self) {
+    pub fn new_unbounded_with_gauge(
+        gauge: &'static IntUpDownCounter,
+    ) -> (TrackedUnboundedSender<T>, Self) {
         let (sender, receiver) = mpsc::unbounded_channel();
         let tracked_sender = TrackedUnboundedSender { sender, gauge };
         let receiver_stream = UnboundedReceiverStream::new(receiver)
@@ -227,7 +229,7 @@ where T: RpcName
     }
 }
 
-pub struct InFlightValue<T>(T, #[allow(dead_code)] GaugeGuard<'static>);
+pub struct InFlightValue<T>(T, #[allow(dead_code)] UpDownCounterGuard<'static>);
 
 impl<T> fmt::Debug for InFlightValue<T>
 where T: fmt::Debug
@@ -238,8 +240,8 @@ where T: fmt::Debug
 }
 
 impl<T> InFlightValue<T> {
-    pub fn new(value: T, value_size: ByteSize, gauge: &'static IntGauge) -> Self {
-        let mut gauge_guard = GaugeGuard::from_gauge(gauge);
+    pub fn new(value: T, value_size: ByteSize, gauge: &'static IntUpDownCounter) -> Self {
+        let mut gauge_guard = UpDownCounterGuard::from_counter(gauge);
         gauge_guard.add(value_size.as_u64() as i64);
 
         Self(value, gauge_guard)
@@ -252,7 +254,7 @@ impl<T> InFlightValue<T> {
 
 pub struct TrackedSender<T> {
     sender: mpsc::Sender<InFlightValue<T>>,
-    gauge: &'static IntGauge,
+    gauge: &'static IntUpDownCounter,
 }
 
 impl<T> TrackedSender<T> {
@@ -270,7 +272,7 @@ impl<T> TrackedSender<T> {
 
 pub struct TrackedUnboundedSender<T> {
     sender: mpsc::UnboundedSender<InFlightValue<T>>,
-    gauge: &'static IntGauge,
+    gauge: &'static IntUpDownCounter,
 }
 
 impl<T> TrackedUnboundedSender<T> {
@@ -286,7 +288,7 @@ mod tests {
     use once_cell::sync::Lazy;
 
     use super::*;
-    use crate::metrics::new_gauge;
+    use crate::metrics::new_up_down_counter;
 
     #[tokio::test]
     async fn test_service_stream_map() {
@@ -299,27 +301,28 @@ mod tests {
 
     #[tokio::test]
     async fn test_tracked_service_stream_bounded() {
-        static TEST_GAUGE: Lazy<IntGauge> =
-            Lazy::new(|| new_gauge("common", "help", "test_tracked_service_stream_bounded", &[]));
+        static TEST_COUNTER: Lazy<IntUpDownCounter> = Lazy::new(|| {
+            new_up_down_counter("common", "help", "test_tracked_service_stream_bounded", &[])
+        });
 
         let (service_stream_tx, mut service_stream) =
-            ServiceStream::new_bounded_with_gauge(3, &TEST_GAUGE);
+            ServiceStream::new_bounded_with_gauge(3, &TEST_COUNTER);
 
         service_stream_tx.send(1, ByteSize(42)).await.unwrap();
-        assert_eq!(TEST_GAUGE.get(), 42);
+        assert_eq!(TEST_COUNTER.get(), 42);
 
         service_stream_tx.send(2, ByteSize(1337)).await.unwrap();
-        assert_eq!(TEST_GAUGE.get(), 1379);
+        assert_eq!(TEST_COUNTER.get(), 1379);
 
         let value = service_stream.next().await.unwrap();
         assert_eq!(value, 1);
-        assert_eq!(TEST_GAUGE.get(), 1337);
+        assert_eq!(TEST_COUNTER.get(), 1337);
     }
 
     #[tokio::test]
     async fn test_tracked_service_stream_unbounded() {
-        static TEST_GAUGE: Lazy<IntGauge> = Lazy::new(|| {
-            new_gauge(
+        static TEST_COUNTER: Lazy<IntUpDownCounter> = Lazy::new(|| {
+            new_up_down_counter(
                 "common",
                 "help",
                 "test_tracked_service_stream_unbounded",
@@ -328,16 +331,16 @@ mod tests {
         });
 
         let (service_stream_tx, mut service_stream) =
-            ServiceStream::new_unbounded_with_gauge(&TEST_GAUGE);
+            ServiceStream::new_unbounded_with_gauge(&TEST_COUNTER);
 
         service_stream_tx.send(1, ByteSize(42)).unwrap();
-        assert_eq!(TEST_GAUGE.get(), 42);
+        assert_eq!(TEST_COUNTER.get(), 42);
 
         service_stream_tx.send(2, ByteSize(1337)).unwrap();
-        assert_eq!(TEST_GAUGE.get(), 1379);
+        assert_eq!(TEST_COUNTER.get(), 1379);
 
         let value = service_stream.next().await.unwrap();
         assert_eq!(value, 1);
-        assert_eq!(TEST_GAUGE.get(), 1337);
+        assert_eq!(TEST_COUNTER.get(), 1337);
     }
 }

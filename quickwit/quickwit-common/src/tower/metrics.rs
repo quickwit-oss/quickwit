@@ -22,7 +22,8 @@ use prometheus::exponential_buckets;
 use tower::{Layer, Service};
 
 use crate::metrics::{
-    HistogramVec, IntCounterVec, IntGaugeVec, new_counter_vec, new_gauge_vec, new_histogram_vec,
+    HistogramVec, IntCounterVec, IntUpDownCounterVec, new_counter_vec, new_histogram_vec,
+    new_up_down_counter_vec,
 };
 
 pub trait RpcName {
@@ -33,7 +34,7 @@ pub trait RpcName {
 pub struct GrpcMetrics<S> {
     inner: S,
     requests_total: IntCounterVec<2>,
-    requests_in_flight: IntGaugeVec<1>,
+    requests_in_flight: IntUpDownCounterVec<1>,
     request_duration_seconds: HistogramVec<2>,
 }
 
@@ -72,7 +73,7 @@ where
 #[derive(Clone)]
 pub struct GrpcMetricsLayer {
     requests_total: IntCounterVec<2>,
-    requests_in_flight: IntGaugeVec<1>,
+    requests_in_flight: IntUpDownCounterVec<1>,
     request_duration_seconds: HistogramVec<2>,
 }
 
@@ -86,7 +87,7 @@ impl GrpcMetricsLayer {
                 &[("kind", kind)],
                 ["rpc", "status"],
             ),
-            requests_in_flight: new_gauge_vec(
+            requests_in_flight: new_up_down_counter_vec(
                 "grpc_requests_in_flight",
                 "Number of gRPC requests in-flight.",
                 subsystem,
@@ -127,7 +128,7 @@ pub struct ResponseFuture<F> {
     rpc_name: &'static str,
     status: &'static str,
     requests_total: IntCounterVec<2>,
-    requests_in_flight: IntGaugeVec<1>,
+    requests_in_flight: IntUpDownCounterVec<1>,
     request_duration_seconds: HistogramVec<2>,
 }
 

@@ -16,7 +16,7 @@ use std::fmt;
 use std::path::Path;
 
 use quickwit_common::io::IoControls;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_common::metrics::UpDownCounterGuard;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::indexing::IndexingPipelineId;
@@ -182,8 +182,8 @@ pub struct IndexedSplitBatchBuilder {
     pub publish_token_opt: Option<PublishToken>,
     pub commit_trigger: CommitTrigger,
     pub batch_parent_span: Span,
-    pub memory_usage: GaugeGuard<'static>,
-    pub _split_builders_guard: GaugeGuard<'static>,
+    pub memory_usage: UpDownCounterGuard<'static>,
+    pub _split_builders_guard: UpDownCounterGuard<'static>,
 }
 
 /// Sends notifications to the Publisher that the last batch of splits was empty.
