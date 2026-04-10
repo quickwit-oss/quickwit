@@ -652,11 +652,11 @@ fn test_split_round_trip_verifies_key_correctness_with_nulls() {
     let mut runs: Vec<(Vec<u8>, usize)> = Vec::new();
     for i in 0..ss_col.len() {
         let key = ss_col.value(i).to_vec();
-        if let Some(last) = runs.last_mut() {
-            if last.0 == key {
-                last.1 += 1;
-                continue;
-            }
+        if let Some(last) = runs.last_mut()
+            && last.0 == key
+        {
+            last.1 += 1;
+            continue;
         }
         runs.push((key, 1));
     }
