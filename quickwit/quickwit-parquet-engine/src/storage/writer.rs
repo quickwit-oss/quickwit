@@ -313,11 +313,11 @@ impl ParquetWriter {
 
         // Phase 1: sort schema columns in their configured order.
         for sf in &self.resolved_sort_fields {
-            if let Ok(idx) = schema.index_of(sf.name.as_str()) {
-                if !used[idx] {
-                    ordered_indices.push(idx);
-                    used[idx] = true;
-                }
+            if let Ok(idx) = schema.index_of(sf.name.as_str())
+                && !used[idx]
+            {
+                ordered_indices.push(idx);
+                used[idx] = true;
             }
         }
 
