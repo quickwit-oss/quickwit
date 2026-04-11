@@ -35,6 +35,8 @@ pub use crate::split_store::{IndexingSplitStore, get_tantivy_directory_from_spli
 
 pub mod actors;
 mod controlled_directory;
+pub mod mature_merge;
+pub mod mature_merge_plan;
 pub mod merge_policy;
 mod metrics;
 pub mod models;

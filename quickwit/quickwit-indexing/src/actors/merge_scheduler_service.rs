@@ -33,6 +33,15 @@ pub struct MergePermit {
 }
 
 impl MergePermit {
+    /// Creates a `MergePermit` from an owned semaphore permit, without notifying any
+    /// `MergeSchedulerService` on drop. Use this when managing concurrency externally.
+    pub fn new(permit: OwnedSemaphorePermit) -> MergePermit {
+        MergePermit {
+            _semaphore_permit: Some(permit),
+            merge_scheduler_mailbox: None,
+        }
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> MergePermit {
         MergePermit {
