@@ -3,3 +3,6 @@ endpoint: indexes/simple
 ---
 method: DELETE
 endpoint: indexes/nested
+---
+method: DELETE
+endpoint: indexes/millisec

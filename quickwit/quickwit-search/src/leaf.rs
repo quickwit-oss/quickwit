@@ -844,28 +844,24 @@ fn remove_redundant_timestamp_range(
             }
         }
         (Bound::Unbounded, Some(_)) => Bound::Unbounded,
-        (timestamp, None) => timestamp,
+        (query_bound, None) => query_bound,
     };
-    let final_end_timestamp = match (
-        visitor.end_timestamp,
-        split.timestamp_end.map(DateTime::from_timestamp_secs),
-    ) {
-        (Bound::Included(query_ts), Some(split_ts)) => {
-            if query_ts < split_ts {
-                Bound::Included(query_ts)
-            } else {
-                Bound::Unbounded
-            }
-        }
-        (Bound::Excluded(query_ts), Some(split_ts)) => {
-            if query_ts <= split_ts {
-                Bound::Excluded(query_ts)
+    let final_end_timestamp = match (visitor.end_timestamp, split.timestamp_end) {
+        (
+            query_bound @ (Bound::Included(query_ts) | Bound::Excluded(query_ts)),
+            Some(split_end),
+        ) => {
+            // split.timestamp_end is the truncation of the highest timestamp in the split,
+            // so the actual known bound for the split is split.timestamp_end+1 (exclusive)
+            let split_end_exclusive = DateTime::from_timestamp_secs(split_end + 1);
+            if query_ts < split_end_exclusive {
+                query_bound
             } else {
                 Bound::Unbounded
             }
         }
         (Bound::Unbounded, Some(_)) => Bound::Unbounded,
-        (timestamp, None) => timestamp,
+        (query_bound, None) => query_bound,
     };
     if final_start_timestamp != Bound::Unbounded || final_end_timestamp != Bound::Unbounded {
         let range = RangeQuery {
@@ -1998,6 +1994,11 @@ mod tests {
         };
         remove_timestamp_test_case(&search_request, &split, None);
 
+        let expected_upper_inclusive = RangeQuery {
+            field: timestamp_field.to_string(),
+            lower_bound: Bound::Unbounded,
+            upper_bound: Bound::Included((time3 * S_TO_NS).into()),
+        };
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
                 field: timestamp_field.to_string(),
@@ -2007,7 +2008,7 @@ mod tests {
             .unwrap(),
             ..SearchRequest::default()
         };
-        remove_timestamp_test_case(&search_request, &split, None);
+        remove_timestamp_test_case(&search_request, &split, Some(expected_upper_inclusive));
 
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
@@ -2050,10 +2051,10 @@ mod tests {
             Some(expected_upper_exclusive.clone()),
         );
 
-        let expected_lower_exclusive = RangeQuery {
+        let expected_lower_excl_upper_incl = RangeQuery {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Excluded((time2 * S_TO_NS).into()),
-            upper_bound: Bound::Unbounded,
+            upper_bound: Bound::Included((time3 * S_TO_NS).into()),
         };
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
@@ -2067,10 +2068,22 @@ mod tests {
         remove_timestamp_test_case(
             &search_request,
             &split,
-            Some(expected_lower_exclusive.clone()),
+            Some(expected_lower_excl_upper_incl.clone()),
         );
+    }
 
-        // we take the most restrictive bounds
+    #[test]
+    fn test_remove_timestamp_range_multiple_bounds() {
+        // When bounds are defined both in the AST and in the search request,
+        // make sure we take the most restrictive ones.
+        const S_TO_NS: i64 = 1_000_000_000;
+        let time1 = 1700001000;
+        let time2 = 1700002000;
+        let time3 = 1700003000;
+        let time4 = 1700004000;
+
+        let timestamp_field = "timestamp".to_string();
+
         let split = SplitIdAndFooterOffsets {
             timestamp_start: Some(time1),
             timestamp_end: Some(time4),
@@ -2113,10 +2126,10 @@ mod tests {
         };
         remove_timestamp_test_case(&search_request, &split, Some(expected_upper_2_inc));
 
-        let expected_lower_3 = RangeQuery {
+        let expected_lower_3_upper_4 = RangeQuery {
             field: timestamp_field.to_string(),
             lower_bound: Bound::Included((time3 * S_TO_NS).into()),
-            upper_bound: Bound::Unbounded,
+            upper_bound: Bound::Included((time4 * S_TO_NS).into()),
         };
 
         let search_request = SearchRequest {
@@ -2130,7 +2143,11 @@ mod tests {
             end_timestamp: Some(time4 + 1),
             ..SearchRequest::default()
         };
-        remove_timestamp_test_case(&search_request, &split, Some(expected_lower_3.clone()));
+        remove_timestamp_test_case(
+            &search_request,
+            &split,
+            Some(expected_lower_3_upper_4.clone()),
+        );
 
         let search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::Range(RangeQuery {
@@ -2143,7 +2160,7 @@ mod tests {
             end_timestamp: Some(time4 + 1),
             ..SearchRequest::default()
         };
-        remove_timestamp_test_case(&search_request, &split, Some(expected_lower_3));
+        remove_timestamp_test_case(&search_request, &split, Some(expected_lower_3_upper_4));
 
         let mut search_request = SearchRequest {
             query_ast: serde_json::to_string(&QueryAst::MatchAll).unwrap(),
