@@ -20,11 +20,11 @@ quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
-serde = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }

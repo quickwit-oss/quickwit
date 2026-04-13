@@ -16,9 +16,39 @@ syntax = "proto3";
 
 package quickwit.compaction;
 
-service CompactionService {
+import "quickwit/common.proto";
+
+service CompactionPlannerService {
   rpc Ping(PingRequest) returns (PingResponse);
+  rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
 }
 
 message PingRequest {}
 message PingResponse {}
+
+message ReportStatusRequest {
+  string node_id = 1;
+  uint32 available_slots = 2;
+  repeated CompactionInProgress in_progress = 3;
+  repeated CompactionSuccess successes = 4;
+  repeated CompactionFailure failures = 5;
+}
+
+message CompactionInProgress {
+  string task_id = 1;
+  quickwit.common.IndexUid index_uid = 2;
+  string source_id = 3;
+  repeated string split_ids = 4;
+}
+
+message CompactionSuccess {
+  string task_id = 1;
+  string merged_split_id = 2;
+}
+
+message CompactionFailure {
+  string task_id = 1;
+  string error_message = 2;
+}
+
+message ReportStatusResponse {}

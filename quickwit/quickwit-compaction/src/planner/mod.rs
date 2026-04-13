@@ -14,4 +14,4 @@
 
 mod compaction_service;
 
-pub use compaction_service::StubCompactionService;
+pub use compaction_service::StubCompactionPlannerService;

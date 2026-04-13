@@ -138,6 +138,7 @@ impl Display for IndexingPipelineId {
 /// Uniquely identifies a merge pipeline. There exists at most one merge pipeline per
 /// `(index_uid, source_id)` running on indexer at any given time fed by one or more indexing
 /// pipelines.
+/// TODO: Rework/remove this as part of splitting up merges.
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct MergePipelineId {
     pub node_id: NodeId,

@@ -13,14 +13,24 @@
 // limitations under the License.
 
 use async_trait::async_trait;
-use quickwit_proto::compaction::{CompactionResult, CompactionService, PingRequest, PingResponse};
+use quickwit_proto::compaction::{
+    CompactionPlannerService, CompactionResult, PingRequest, PingResponse, ReportStatusRequest,
+    ReportStatusResponse,
+};
 
 #[derive(Debug, Clone)]
-pub struct StubCompactionService;
+pub struct StubCompactionPlannerService;
 
 #[async_trait]
-impl CompactionService for StubCompactionService {
+impl CompactionPlannerService for StubCompactionPlannerService {
     async fn ping(&self, _request: PingRequest) -> CompactionResult<PingResponse> {
         Ok(PingResponse {})
+    }
+
+    async fn report_status(
+        &self,
+        _request: ReportStatusRequest,
+    ) -> CompactionResult<ReportStatusResponse> {
+        Ok(ReportStatusResponse {})
     }
 }
