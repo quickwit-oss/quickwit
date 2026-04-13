@@ -652,29 +652,20 @@ fn test_extract_zonemap_regexes_long_service_name() {
 
 #[test]
 fn test_benchmark_data_produces_valid_regex() {
-    let values = &[
-        "active_directory",
-        "amazon_ec2",
-        "amazon_s3",
-        "apache",
-        "azure_vm",
-        "cassandra",
-        "docker",
-        "elasticsearch",
-        "github",
-        "kafka",
-        "kubernetes",
-        "mysql",
-        "nginx",
-        "postgres",
-        "redis",
-        "spark",
-    ];
+    let data = include_str!("../benchmark_data/integrations");
+    let values: Vec<&str> = data.lines().filter(|l| !l.is_empty()).collect();
+    assert_eq!(values.len(), 584, "should load all 584 integration names");
 
-    let regex = generate_regex_from_strings(values, 64, 1000, 2.0);
+    let regex = generate_regex_from_strings(&values, 64, 1000, 2.0);
     assert!(regex.starts_with('^'), "regex should start with ^");
     assert!(regex.ends_with('$'), "regex should end with $");
     assert!(!regex.is_empty());
+    // With 64 transitions the regex must be bounded — it should not
+    // enumerate all 584 values verbatim.
+    assert!(
+        regex.contains(".+"),
+        "584 values with max 64 transitions should require pruning"
+    );
 }
 
 // ---------------------------------------------------------------------------
