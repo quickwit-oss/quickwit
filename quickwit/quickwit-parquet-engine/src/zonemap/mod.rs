@@ -87,7 +87,7 @@ pub fn extract_zonemap_regexes(
     batch: &RecordBatch,
     opts: &ZonemapOptions,
 ) -> Result<HashMap<String, String>> {
-    if batch.num_rows() == 0 || opts.superset_regex_max_size <= 0 {
+    if batch.num_rows() == 0 || opts.superset_regex_max_size <= 0 || sort_fields_str.is_empty() {
         return Ok(HashMap::new());
     }
 
@@ -96,7 +96,16 @@ pub fn extract_zonemap_regexes(
     let mut regexes = HashMap::new();
     let mut builder = regex_builder::PrefixPreservingRegexBuilder::new();
 
-    for col_def in &sort_schema.column {
+    // Respect LSM comparison cutoff: only columns before the cutoff get
+    // zonemaps, matching the Go FragmentZoneMapBuilder.Reset() behavior.
+    let cutoff = sort_schema.lsm_comparison_cutoff as usize;
+    let columns = if cutoff > 0 && cutoff < sort_schema.column.len() {
+        &sort_schema.column[..cutoff]
+    } else {
+        &sort_schema.column
+    };
+
+    for col_def in columns {
         let batch_idx = match batch_schema.index_of(&col_def.name) {
             Ok(idx) => idx,
             Err(_) => continue,

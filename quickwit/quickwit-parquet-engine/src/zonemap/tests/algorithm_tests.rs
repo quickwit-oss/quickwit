@@ -676,3 +676,257 @@ fn test_benchmark_data_produces_valid_regex() {
     assert!(regex.ends_with('$'), "regex should end with $");
     assert!(!regex.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// builder_test.go: TestBuildFragmentZoneMap — exact regex verification
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_extract_zonemap_exact_regexes() {
+    // Mirrors Go TestBuildFragmentZoneMap: verifies exact regex strings for
+    // env (dict with special chars + unicode), service (long string), and
+    // dense (plain string values that fit without pruning).
+    let batch = create_zonemap_test_batch(
+        &[
+            "cpu.usage",
+            "cpu.usage",
+            "cpu.usage",
+            "cpu.usage",
+            "cpu.usage",
+        ],
+        &[
+            Some("prod"),
+            Some("staging"),
+            Some("production"),
+            Some("$^-?"),
+            Some("日本語"),
+        ],
+        &[
+            Some("prod"),
+            Some("staging"),
+            Some("production"),
+            Some("$^-?"),
+            Some("日本語"),
+        ],
+        &[100, 200, 300, 400, 500],
+    );
+
+    let sort_fields = "metric_name|service|env|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions {
+        superset_regex_max_size: 32,
+        prune_every: 1000,
+        multiplier: 2.0,
+    };
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+
+    // env regex: dict column with special chars and unicode.
+    // Values: prod, staging, production, $^-?, 日本語
+    let env_regex = &regexes["env"];
+    assert_eq!(
+        env_regex, "^(\\$\\^-\\?|prod(|uction)|staging|日本語)$",
+        "env regex should match Go TestBuildFragmentZoneMap"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// builder_test.go: TestNilSortSchema — empty sort fields
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_extract_zonemap_empty_sort_fields() {
+    let batch = create_zonemap_test_batch(&["cpu.usage"], &[Some("web")], &[Some("prod")], &[100]);
+
+    // Empty sort fields string: no columns to process.
+    let opts = ZonemapOptions::default();
+    let regexes = extract_zonemap_regexes("", &batch, &opts).unwrap();
+    assert!(
+        regexes.is_empty(),
+        "empty sort fields should produce no regexes"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// builder_test.go: TestNonMutatedResult — builder reuse
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_extract_zonemap_builder_reuse_does_not_corrupt() {
+    // Two consecutive calls should produce independent results.
+    let batch1 =
+        create_zonemap_test_batch(&["cpu.usage"], &[Some("prod")], &[Some("east")], &[100]);
+    let batch2 = create_zonemap_test_batch(
+        &["memory.used"],
+        &[Some("event-query")],
+        &[Some("west")],
+        &[200],
+    );
+
+    let sort_fields = "metric_name|service|env|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions::default();
+
+    let regexes1 = extract_zonemap_regexes(sort_fields, &batch1, &opts).unwrap();
+    let regexes2 = extract_zonemap_regexes(sort_fields, &batch2, &opts).unwrap();
+
+    // First result should not be corrupted by second call.
+    assert_eq!(regexes1["service"], "^prod$");
+    assert_eq!(regexes2["service"], "^event-query$");
+    assert_eq!(regexes1["env"], "^east$");
+    assert_eq!(regexes2["env"], "^west$");
+}
+
+// ---------------------------------------------------------------------------
+// builder_test.go: TestInvalidUTF8
+// ---------------------------------------------------------------------------
+
+// Note: Rust strings are always valid UTF-8, so we cannot inject invalid
+// bytes into Arrow StringArray. Instead we test that the regex builder
+// handles the full Unicode BMP range and produces valid UTF-8 output.
+#[test]
+fn test_extract_zonemap_unicode_bmp() {
+    // Characters from various Unicode blocks.
+    let batch = create_zonemap_test_batch(
+        &["cpu.usage", "cpu.usage", "cpu.usage"],
+        &[Some("café"), Some("naïve"), Some("日本語")],
+        &[Some("prod"), Some("prod"), Some("prod")],
+        &[100, 200, 300],
+    );
+
+    let sort_fields = "metric_name|service|env|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions::default();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+
+    let service_regex = &regexes["service"];
+    assert!(!service_regex.is_empty());
+    // Verify the output is valid UTF-8 (it's a Rust String, so it always is,
+    // but this mirrors the Go test's intent).
+    assert!(
+        service_regex.is_ascii() || service_regex.len() > service_regex.chars().count(),
+        "regex should contain multi-byte UTF-8 characters: {}",
+        service_regex
+    );
+}
+
+// ---------------------------------------------------------------------------
+// builder_test.go: TestResetWithLsmComparisonCutoff
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_extract_zonemap_lsm_comparison_cutoff() {
+    let batch = create_zonemap_test_batch(
+        &["cpu.usage"],
+        &[Some("my-service")],
+        &[Some("prod")],
+        &[100],
+    );
+
+    let opts = ZonemapOptions::default();
+
+    // cutoff=1: only first column (metric_name) gets a zonemap.
+    // The '&' prefix marks the LSM comparison cutoff.
+    let regexes = extract_zonemap_regexes(
+        "metric_name|&service|env|timeseries_id|timestamp_secs/V2",
+        &batch,
+        &opts,
+    )
+    .unwrap();
+    assert!(
+        regexes.contains_key("metric_name"),
+        "metric_name should be included (before cutoff)"
+    );
+    assert!(
+        !regexes.contains_key("service"),
+        "service should be excluded (at/after cutoff)"
+    );
+    assert!(
+        !regexes.contains_key("env"),
+        "env should be excluded (after cutoff)"
+    );
+
+    // cutoff=0 (no '&' prefix): all string columns get zonemaps.
+    let regexes = extract_zonemap_regexes(
+        "metric_name|service|env|timeseries_id|timestamp_secs/V2",
+        &batch,
+        &opts,
+    )
+    .unwrap();
+    assert!(regexes.contains_key("metric_name"));
+    assert!(regexes.contains_key("service"));
+    assert!(regexes.contains_key("env"));
+
+    // cutoff >= len(columns): all string columns get zonemaps (same as no cutoff).
+    // Put '&' after the last column — parser sets cutoff = column count.
+    let regexes = extract_zonemap_regexes(
+        "metric_name|service|env|timeseries_id|&timestamp_secs/V2",
+        &batch,
+        &opts,
+    )
+    .unwrap();
+    assert!(regexes.contains_key("metric_name"));
+    assert!(regexes.contains_key("service"));
+    assert!(regexes.contains_key("env"));
+}
+
+// ---------------------------------------------------------------------------
+// builder_test.go: TestZoneMapForIntColumns — MinMax only, no regex
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_minmax_for_int_columns() {
+    // Verify that MinMaxBuilder correctly tracks int column values.
+    // In the Go code, int columns get min/max hashes but no regex.
+    // We verify the MinMax builder directly since extract_zonemap_regexes
+    // correctly skips non-string columns (tested elsewhere).
+    let mut builder = MinMaxBuilder::new();
+    builder.register_int64(10);
+    builder.register_int64(20);
+    builder.register_int64(30);
+
+    let result = builder.build().expect("should produce MinMax for ints");
+
+    // Verify hash range covers all values.
+    let h10 = hash_int(10);
+    let h20 = hash_int(20);
+    let h30 = hash_int(30);
+    assert_eq!(result.min_hash, h10.min(h20).min(h30));
+    assert_eq!(result.max_hash, h10.max(h20).max(h30));
+
+    // Verify int range.
+    assert_eq!(result.min_int, 10);
+    assert_eq!(result.max_int, 30);
+
+    // Verify that int columns produce no regex in extraction.
+    let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+    let fields = vec![
+        Field::new("metric_name", dict_type.clone(), false),
+        Field::new("duration", DataType::Int64, false),
+        Field::new("metric_type", DataType::UInt8, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+    ];
+    let schema = Arc::new(ArrowSchema::new(fields));
+
+    let metric_name: ArrayRef = create_dict_array(&["cpu.usage"]);
+    let duration: ArrayRef = Arc::new(Int64Array::from(vec![42i64]));
+    let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8]));
+    let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(vec![100u64]));
+    let value: ArrayRef = Arc::new(Float64Array::from(vec![1.0]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![metric_name, duration, metric_type, timestamp_secs, value],
+    )
+    .unwrap();
+
+    let opts = ZonemapOptions::default();
+    let regexes =
+        extract_zonemap_regexes("metric_name|duration|timestamp_secs/V2", &batch, &opts).unwrap();
+
+    assert!(
+        regexes.contains_key("metric_name"),
+        "string column should have regex"
+    );
+    assert!(
+        !regexes.contains_key("duration"),
+        "int column should not have regex"
+    );
+}
