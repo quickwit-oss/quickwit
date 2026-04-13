@@ -860,6 +860,7 @@ mod tests {
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
+            _compactor_supervisor_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
         };
 

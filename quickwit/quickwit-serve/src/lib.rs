@@ -73,6 +73,7 @@ use quickwit_common::tower::{
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_compaction::planner::StubCompactionService;
+use quickwit_compaction::{CompactorSupervisor, start_compactor_service};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
@@ -80,7 +81,7 @@ use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
-use quickwit_indexing::start_indexing_service;
+use quickwit_indexing::{IndexingSplitStore, start_indexing_service};
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
     IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
@@ -113,7 +114,7 @@ use quickwit_search::{
     SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
     create_search_client_from_channel, start_searcher_service,
 };
-use quickwit_storage::{SplitCache, StorageResolver};
+use quickwit_storage::{RamStorage, SplitCache, StorageResolver};
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
@@ -148,8 +149,6 @@ const COMPACTION_SERVICE_DISCOVERY_TIMEOUT: Duration = if cfg!(any(test, feature
 const METASTORE_CLIENT_MAX_CONCURRENCY_ENV_KEY: &str = "QW_METASTORE_CLIENT_MAX_CONCURRENCY";
 const DEFAULT_METASTORE_CLIENT_MAX_CONCURRENCY: usize = 6;
 const DISABLE_DELETE_TASK_SERVICE_ENV_KEY: &str = "QW_DISABLE_DELETE_TASK_SERVICE";
-const ENABLE_COMPACTION_SERVICE_ENV_KEY: &str = "QW_ENABLE_COMPACTION_SERVICE";
-
 pub type EnvFilterReloadFn = Arc<dyn Fn(&str) -> anyhow::Result<()> + Send + Sync>;
 
 pub fn do_nothing_env_filter_reload_fn() -> EnvFilterReloadFn {
@@ -205,6 +204,7 @@ struct QuickwitServices {
     ingester_opt: Option<Ingester>,
 
     pub compaction_service_client_opt: Option<CompactionServiceClient>,
+    pub _compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
@@ -280,7 +280,7 @@ async fn get_compaction_service_client_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
 ) -> anyhow::Result<Option<CompactionServiceClient>, anyhow::Error> {
-    if !get_bool_from_env(ENABLE_COMPACTION_SERVICE_ENV_KEY, false) {
+    if !node_config.indexer_config.enable_standalone_compactors {
         return Ok(None);
     }
     // Only janitor nodes (which host the planner) and indexer nodes (which need
@@ -785,6 +785,31 @@ pub async fn serve_quickwit(
         None
     };
 
+    let compactor_supervisor_opt = if node_config.is_service_enabled(QuickwitService::Compactor) {
+        let compaction_dir = node_config.data_dir_path.join("compaction");
+        fs::create_dir_all(&compaction_dir)?;
+        let compaction_root_directory = quickwit_common::temp_dir::Builder::default()
+            .tempdir_in(&compaction_dir)
+            .context("failed to create compaction temp directory")?;
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(Arc::new(
+            RamStorage::default(),
+        ));
+        let compactor_mailbox = start_compactor_service(
+            &universe,
+            &node_config.compactor_config,
+            split_store,
+            metastore_through_control_plane.clone(),
+            storage_resolver.clone(),
+            event_broker.clone(),
+            compaction_root_directory,
+        )
+        .await
+        .context("failed to start compactor service")?;
+        Some(compactor_mailbox)
+    } else {
+        None
+    };
+
     let jaeger_service_opt = if node_config.jaeger_config.enable_endpoint
         && node_config.is_service_enabled(QuickwitService::Searcher)
     {
@@ -834,6 +859,7 @@ pub async fn serve_quickwit(
         ingest_service,
         ingester_opt: ingester_opt.clone(),
         compaction_service_client_opt,
+        _compactor_supervisor_opt: compactor_supervisor_opt,
         janitor_service_opt,
         jaeger_service_opt,
         otlp_logs_service_opt,
@@ -1891,7 +1917,7 @@ mod tests {
                 .await
                 .unwrap();
 
-        // Without the env var, no compaction service.
+        // Without standalone compactors, no compaction service.
         let mut node_config = NodeConfig::for_test();
         node_config.enabled_services =
             HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
@@ -1900,14 +1926,12 @@ mod tests {
             .unwrap();
         assert!(result.is_none());
 
-        // With the env var, compaction service client is returned.
-        unsafe { std::env::set_var(ENABLE_COMPACTION_SERVICE_ENV_KEY, "true") };
+        // With standalone compactors enabled, compaction service client is returned.
+        node_config.indexer_config.enable_standalone_compactors = true;
         let result = get_compaction_service_client_if_needed(&node_config, &cluster)
             .await
             .unwrap();
         assert!(result.is_some());
-
-        unsafe { std::env::remove_var(ENABLE_COMPACTION_SERVICE_ENV_KEY) };
     }
 
     #[tokio::test]
@@ -1917,13 +1941,10 @@ mod tests {
             .await
             .unwrap();
 
-        unsafe { std::env::set_var(ENABLE_COMPACTION_SERVICE_ENV_KEY, "true") };
-
         let mut node_config = NodeConfig::for_test();
         node_config.enabled_services = HashSet::from([QuickwitService::Indexer]);
+        node_config.indexer_config.enable_standalone_compactors = true;
         let result = get_compaction_service_client_if_needed(&node_config, &cluster).await;
         assert!(result.is_err());
-
-        unsafe { std::env::remove_var(ENABLE_COMPACTION_SERVICE_ENV_KEY) };
     }
 }
