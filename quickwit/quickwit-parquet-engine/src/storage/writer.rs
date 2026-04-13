@@ -449,9 +449,10 @@ impl ParquetWriter {
             }
         }
 
-        if !zonemap_regexes.is_empty()
-            && let Ok(json) = serde_json::to_string(&zonemap_regexes)
-        {
+        if !zonemap_regexes.is_empty() {
+            // HashMap<String, String> serialization is infallible.
+            let json = serde_json::to_string(&zonemap_regexes)
+                .expect("HashMap<String, String> JSON serialization cannot fail");
             kv_entries.push(KeyValue::new(
                 PARQUET_META_ZONEMAP_REGEXES.to_string(),
                 json,
