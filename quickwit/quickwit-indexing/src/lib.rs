@@ -26,7 +26,7 @@ use tracing::info;
 
 use crate::actors::MergeSchedulerService;
 pub use crate::actors::{
-    BoxPipelineHandle, FinishPendingMergesAndShutdownPipeline, IndexingError, IndexingPipeline,
+    BoxedPipelineHandle, FinishPendingMergesAndShutdownPipeline, IndexingError, IndexingPipeline,
     IndexingPipelineParams, IndexingService, Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;

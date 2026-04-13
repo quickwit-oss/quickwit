@@ -87,7 +87,7 @@ struct MergePipelineHandle {
     handle: ActorHandle<MergePipeline>,
 }
 
-pub type BoxPipelineHandle = Box<dyn PipelineHandle>;
+pub type BoxedPipelineHandle = Box<dyn PipelineHandle>;
 
 /// The indexing service is (single) actor service running on indexer and in charge
 /// of executing the indexing plans received from the control plane.
@@ -105,7 +105,7 @@ pub struct IndexingService {
     merge_scheduler_service: Mailbox<MergeSchedulerService>,
     pub(crate) ingester_pool: IngesterPool,
     pub(crate) storage_resolver: StorageResolver,
-    indexing_pipelines: HashMap<PipelineUid, BoxPipelineHandle>,
+    indexing_pipelines: HashMap<PipelineUid, BoxedPipelineHandle>,
     counters: IndexingServiceCounters,
     local_split_store: Arc<IndexingSplitCache>,
     pub(crate) max_concurrent_split_uploads: usize,
@@ -182,7 +182,7 @@ impl IndexingService {
     async fn detach_indexing_pipeline(
         &mut self,
         pipeline_uid: &PipelineUid,
-    ) -> Result<BoxPipelineHandle, IndexingError> {
+    ) -> Result<BoxedPipelineHandle, IndexingError> {
         let pipeline_handle = self
             .indexing_pipelines
             .remove(pipeline_uid)
@@ -280,42 +280,41 @@ impl IndexingService {
             }
         }
 
-        #[cfg(feature = "metrics")]
-        let pipeline_handle = if is_metrics_index(&indexing_pipeline_id.index_uid.index_id) {
-            self.spawn_metrics_pipeline(
-                ctx,
-                indexing_pipeline_id.clone(),
-                index_config,
-                source_config,
-                params_fingerprint,
-            )
-            .await?
-        } else {
-            self.spawn_log_pipeline(
-                ctx,
-                indexing_pipeline_id.clone(),
-                index_config,
-                source_config,
-                immature_splits_opt,
-                params_fingerprint,
-            )
-            .await?
-        };
-        #[cfg(not(feature = "metrics"))]
-        let pipeline_handle = self
-            .spawn_log_pipeline(
-                ctx,
-                indexing_pipeline_id.clone(),
-                index_config,
-                source_config,
-                immature_splits_opt,
-                params_fingerprint,
-            )
-            .await?;
+        let pipeline_handle: BoxedPipelineHandle = self.spawn_log_or_metrics_pipeline(
+            ctx,
+            indexing_pipeline_id.clone(),
+            index_config,
+            source_config,
+            immature_splits_opt,
+            params_fingerprint,
+        )
+        .await?;
+
         self.indexing_pipelines
             .insert(indexing_pipeline_id.pipeline_uid, pipeline_handle);
         self.counters.num_running_pipelines += 1;
         Ok(())
+    }
+
+    #[cfg(not(feature = "metrics"))]
+    async fn spawn_log_or_metrics_pipeline(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        indexing_pipeline_id: IndexingPipelineId,
+        index_config: IndexConfig,
+        source_config: SourceConfig,
+        immature_splits_opt: Option<Vec<SplitMetadata>>,
+        params_fingerprint: u64,
+    ) -> Result<BoxedPipelineHandle, IndexingError> {
+        self.spawn_log_pipeline(
+                   ctx,
+                   indexing_pipeline_id.clone(),
+                   index_config,
+                   source_config,
+                   immature_splits_opt,
+                   params_fingerprint,
+        )
+        .await
     }
 
     async fn spawn_log_pipeline(
@@ -326,7 +325,7 @@ impl IndexingService {
         source_config: SourceConfig,
         immature_splits_opt: Option<Vec<SplitMetadata>>,
         params_fingerprint: u64,
-    ) -> Result<BoxPipelineHandle, IndexingError> {
+    ) -> Result<BoxedPipelineHandle, IndexingError> {
         let pipeline_uid_str = indexing_pipeline_id.pipeline_uid.to_string();
         let indexing_directory = temp_dir::Builder::default()
             .join(&indexing_pipeline_id.index_uid.index_id)
@@ -916,7 +915,7 @@ impl Handler<ObservePipeline> for IndexingService {
 
 #[async_trait]
 impl Handler<DetachIndexingPipeline> for IndexingService {
-    type Reply = Result<BoxPipelineHandle, IndexingError>;
+    type Reply = Result<BoxedPipelineHandle, IndexingError>;
 
     async fn handle(
         &mut self,

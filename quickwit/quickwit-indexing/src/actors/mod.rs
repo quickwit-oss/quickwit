@@ -39,7 +39,7 @@ pub use index_serializer::IndexSerializer;
 pub use indexer::{Indexer, IndexerCounters};
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
 pub use indexing_service::{
-    BoxPipelineHandle, INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters,
+    BoxedPipelineHandle, INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters,
 };
 pub(crate) use log_publisher_impl::{MERGE_PUBLISHER_NAME, PUBLISHER_NAME};
 pub use merge_executor::{MergeExecutor, combine_partition_ids, merge_split_attrs};

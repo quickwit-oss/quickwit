@@ -72,14 +72,14 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
         info!("publish-metrics-splits");
         suggest_truncate(ctx, &self.source_mailbox_opt, checkpoint_delta_opt).await;
 
-        if !split_ids.is_empty() {
+        if split_ids.is_empty() {
+            self.counters.num_empty_splits += 1;
+        } else {
             if replaced_split_ids.is_empty() {
                 self.counters.num_published_splits += 1;
             } else {
                 self.counters.num_replace_operations += 1;
             }
-        } else {
-            self.counters.num_empty_splits += 1;
         }
         Ok(())
     }

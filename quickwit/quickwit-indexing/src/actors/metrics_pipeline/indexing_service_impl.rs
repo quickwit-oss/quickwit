@@ -19,7 +19,7 @@ use quickwit_proto::indexing::{IndexingError, IndexingPipelineId};
 
 use crate::actors::pipeline_shared::ActorPipeline;
 use crate::actors::{MetricsPipeline, MetricsPipelineParams};
-use crate::{BoxPipelineHandle, IndexingService};
+use crate::{BoxedPipelineHandle, IndexingService};
 
 impl IndexingService {
     pub(crate) async fn spawn_metrics_pipeline(
@@ -29,7 +29,7 @@ impl IndexingService {
         index_config: IndexConfig,
         source_config: SourceConfig,
         params_fingerprint: u64,
-    ) -> Result<BoxPipelineHandle, IndexingError> {
+    ) -> Result<BoxedPipelineHandle, IndexingError> {
         let pipeline_uid_str = indexing_pipeline_id.pipeline_uid.to_string();
         let indexing_directory = temp_dir::Builder::default()
             .join(&indexing_pipeline_id.index_uid.index_id)
@@ -71,5 +71,36 @@ impl IndexingService {
             mailbox,
             handle,
         }))
+    }
+
+    pub(crate) async fn spawn_log_or_metrics_pipeline(
+        &mut self,
+        ctx: &ActorContext<Self>,
+        indexing_pipeline_id: IndexingPipelineId,
+        index_config: IndexConfig,
+        source_config: SourceConfig,
+        immature_splits_opt: Option<Vec<SplitMetadata>>,
+        params_fingerprint: u64,
+    ) -> Result<BoxedPipelineHandle, IndexingError> {
+        if is_metrics_index(&indexing_pipeline_id.index_uid.index_id) {
+            self.spawn_metrics_pipeline(
+                        ctx,
+                        indexing_pipeline_id.clone(),
+                        index_config,
+                        source_config,
+                        params_fingerprint,
+                    )
+            .await
+        } else {
+            self.spawn_log_pipeline(
+                        ctx,
+                        indexing_pipeline_id.clone(),
+                        index_config,
+                        source_config,
+                        immature_splits_opt,
+                        params_fingerprint,
+                    )
+            .await
+        }
     }
 }

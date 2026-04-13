@@ -37,6 +37,7 @@ use quickwit_config::{
     TransformConfig, VecSourceParams,
 };
 use quickwit_index_management::{IndexService, clear_cache_directory};
+use quickwit_indexing::BoxedPipelineHandle;
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
@@ -750,7 +751,7 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
 /// Starts a tokio task that displays the indexing statistics
 /// every once in awhile.
 pub async fn start_statistics_reporting_loop(
-    pipeline_handle: quickwit_indexing::BoxPipelineHandle,
+    pipeline_handle: BoxedPipelineHandle,
     is_stdin: bool,
 ) -> anyhow::Result<IndexingStatistics> {
     let mut stdout_handle = stdout();
