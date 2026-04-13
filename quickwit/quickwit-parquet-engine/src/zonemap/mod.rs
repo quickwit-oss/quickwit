@@ -34,10 +34,10 @@ use anyhow::Result;
 use arrow::array::{Array, DictionaryArray, StringArray};
 use arrow::datatypes::{DataType, Int32Type};
 use arrow::record_batch::RecordBatch;
-
-use crate::sort_fields::parse_sort_fields;
 pub use minmax::{MinMax, MinMaxBuilder};
 pub use regex_builder::SupersetRegex;
+
+use crate::sort_fields::parse_sort_fields;
 
 /// Default maximum number of transitions in the regex automaton.
 /// Bounds the regex size: regex length ≤ 6 * max_transitions + 4.
