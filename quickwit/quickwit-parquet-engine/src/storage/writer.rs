@@ -1246,13 +1246,9 @@ mod tests {
         ]));
 
         // Three rows: service = "beta", null, "alpha".
-        let metric_name: ArrayRef = crate::test_helpers::create_dict_array(&[
-            "cpu.usage",
-            "cpu.usage",
-            "cpu.usage",
-        ]);
-        let service: ArrayRef =
-            create_nullable_dict_array(&[Some("beta"), None, Some("alpha")]);
+        let metric_name: ArrayRef =
+            crate::test_helpers::create_dict_array(&["cpu.usage", "cpu.usage", "cpu.usage"]);
+        let service: ArrayRef = create_nullable_dict_array(&[Some("beta"), None, Some("alpha")]);
         let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; 3]));
         let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(vec![100u64, 200, 300]));
         let value: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0]));
@@ -1295,11 +1291,18 @@ mod tests {
         // Row 0: alpha, Row 1: beta, Row 2: null (last).
         assert!(!svc_dict.is_null(0), "row 0 should not be null (ascending)");
         let key0 = svc_dict.keys().value(0) as usize;
-        assert_eq!(svc_strings.value(key0), "alpha", "row 0 = alpha (ascending)");
+        assert_eq!(
+            svc_strings.value(key0),
+            "alpha",
+            "row 0 = alpha (ascending)"
+        );
         assert!(!svc_dict.is_null(1), "row 1 should not be null (ascending)");
         let key1 = svc_dict.keys().value(1) as usize;
         assert_eq!(svc_strings.value(key1), "beta", "row 1 = beta (ascending)");
-        assert!(svc_dict.is_null(2), "row 2 should be null (last, ascending)");
+        assert!(
+            svc_dict.is_null(2),
+            "row 2 should be null (last, ascending)"
+        );
 
         std::fs::remove_file(&path).ok();
 
@@ -1337,11 +1340,7 @@ mod tests {
             "row 0 should not be null (descending)"
         );
         let key0 = svc_dict.keys().value(0) as usize;
-        assert_eq!(
-            svc_strings.value(key0),
-            "beta",
-            "row 0 = beta (descending)"
-        );
+        assert_eq!(svc_strings.value(key0), "beta", "row 0 = beta (descending)");
         assert!(
             !svc_dict.is_null(1),
             "row 1 should not be null (descending)"
