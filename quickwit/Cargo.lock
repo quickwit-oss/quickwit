@@ -7158,7 +7158,6 @@ dependencies = [
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
- "serde",
  "tokio",
  "tracing",
 ]

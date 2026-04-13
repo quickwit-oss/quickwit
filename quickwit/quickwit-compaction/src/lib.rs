@@ -33,6 +33,7 @@ use quickwit_proto::types::NodeId;
 use quickwit_storage::StorageResolver;
 use tracing::info;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn start_compactor_service(
     universe: &Universe,
     node_id: NodeId,
@@ -58,7 +59,6 @@ pub async fn start_compactor_service(
         compactor_config.max_concurrent_split_uploads,
         event_broker,
         compaction_root_directory,
-        compactor_config.max_local_retries,
     );
     let (mailbox, _handle) = universe.spawn_builder().spawn(supervisor);
     Ok(mailbox)

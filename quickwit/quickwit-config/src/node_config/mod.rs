@@ -256,9 +256,6 @@ pub struct CompactorConfig {
     /// Limits the IO throughput of the split downloader and the merge executor.
     #[serde(default)]
     pub max_merge_write_throughput: Option<ByteSize>,
-    /// Maximum local retries before reporting a merge as failed to the planner.
-    #[serde(default = "CompactorConfig::default_max_local_retries")]
-    pub max_local_retries: usize,
     /// Maximum size of the local split store cache in bytes.
     #[serde(default = "CompactorConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: ByteSize,
@@ -276,10 +273,6 @@ impl CompactorConfig {
         12
     }
 
-    fn default_max_local_retries() -> usize {
-        2
-    }
-
     pub fn default_split_store_max_num_bytes() -> ByteSize {
         ByteSize::gib(100)
     }
@@ -294,7 +287,6 @@ impl CompactorConfig {
             max_concurrent_pipelines: NonZeroUsize::new(2).unwrap(),
             max_concurrent_split_uploads: 4,
             max_merge_write_throughput: None,
-            max_local_retries: 2,
             split_store_max_num_bytes: ByteSize::mb(1),
             split_store_max_num_splits: 3,
         }
@@ -307,7 +299,6 @@ impl Default for CompactorConfig {
             max_concurrent_pipelines: Self::default_max_concurrent_pipelines(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             max_merge_write_throughput: None,
-            max_local_retries: Self::default_max_local_retries(),
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
         }

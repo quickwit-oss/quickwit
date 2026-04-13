@@ -33,7 +33,7 @@ use tracing::{debug, error, info};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PipelineStatus {
-    InProgress { retry_count: usize },
+    InProgress,
     Completed,
     Failed { error: String },
 }
@@ -65,7 +65,6 @@ pub struct CompactionPipeline {
     merge_operation: MergeOperation,
     pipeline_id: MergePipelineId,
     status: PipelineStatus,
-    max_retries: usize,
     kill_switch: KillSwitch,
     scratch_directory: TempDirectory,
     handles: Option<CompactionPipelineHandles>,
@@ -94,12 +93,10 @@ impl CompactionPipeline {
         io_throughput_limiter: Option<Limiter>,
         max_concurrent_split_uploads: usize,
         event_broker: EventBroker,
-        max_retries: usize,
     ) -> Self {
         CompactionPipeline {
             task_id,
-            status: PipelineStatus::InProgress { retry_count: 0 },
-            max_retries,
+            status: PipelineStatus::InProgress,
             kill_switch: KillSwitch::default(),
             scratch_directory,
             handles: None,
@@ -133,17 +130,13 @@ impl CompactionPipeline {
     ///
     /// If the pipeline is already completed or failed (terminal status), returns the status
     /// without re-checking actors. Otherwise checks actor health and:
-    /// - Restarts the pipeline on failure if retries remain.
     /// - Marks the pipeline as completed or failed when appropriate.
-    pub fn pipeline_status_update(
-        &mut self,
-        spawn_ctx: &SpawnContext,
-    ) -> PipelineStatusUpdate {
-        self.update_status(spawn_ctx);
+    pub fn pipeline_status_update(&mut self) -> PipelineStatusUpdate {
+        self.update_status();
         self.build_status_update()
     }
 
-    fn update_status(&mut self, spawn_ctx: &SpawnContext) {
+    fn update_status(&mut self) {
         // Pipeline is finished but yet to be cleaned up.
         if matches!(
             self.status,
@@ -156,51 +149,28 @@ impl CompactionPipeline {
             return;
         }
 
-        let mut healthy_actors: Vec<String> = Vec::new();
-        let mut failure_or_unhealthy_actors: Vec<String> = Vec::new();
-        let mut success_actors: Vec<String> = Vec::new();
+        let mut has_healthy = false;
+        let mut failure_actor_names: Vec<String> = Vec::new();
 
         for supervisable in self.supervisables() {
             match supervisable.check_health(true) {
                 Health::Healthy => {
-                    healthy_actors.push(supervisable.name().to_string());
+                    has_healthy = true;
                 }
                 Health::FailureOrUnhealthy => {
-                    failure_or_unhealthy_actors.push(supervisable.name().to_string());
+                    failure_actor_names.push(supervisable.name().to_string());
                 }
-                Health::Success => {
-                    success_actors.push(supervisable.name().to_string());
-                }
+                Health::Success => {}
             }
         }
 
-        if !failure_or_unhealthy_actors.is_empty() {
-            let PipelineStatus::InProgress { retry_count } = self.status else {
-                return;
-            };
-            if retry_count < self.max_retries {
-                let new_retry_count = retry_count + 1;
-                info!(
-                    task_id=%self.task_id,
-                    retry_count=%new_retry_count,
-                    failed_actors=?failure_or_unhealthy_actors,
-                    "retrying compaction pipeline"
-                );
-                self.restart(spawn_ctx);
-                self.status = PipelineStatus::InProgress {
-                    retry_count: new_retry_count,
-                };
-                return;
-            }
-            let error_msg = format!(
-                "exhausted retries, failed actors: {:?}",
-                failure_or_unhealthy_actors
-            );
-            error!(task_id=%self.task_id, retry_count=%retry_count, "{error_msg}");
+        if !failure_actor_names.is_empty() {
+            let error_msg = format!("failed actors: {:?}", failure_actor_names);
+            error!(task_id=%self.task_id, "{error_msg}");
             self.status = PipelineStatus::Failed { error: error_msg };
             return;
         }
-        if healthy_actors.is_empty() {
+        if !has_healthy {
             debug!(task_id=%self.task_id, "all compaction pipeline actors completed");
             self.status = PipelineStatus::Completed;
         }
@@ -220,17 +190,6 @@ impl CompactionPipeline {
             merged_split_id: self.merge_operation.merge_split_id.clone(),
             status: self.status.clone(),
         }
-    }
-
-    /// Terminates the current actor chain and re-spawns with a fresh kill
-    /// switch. Downloaded splits remain on disk in the scratch directory.
-    fn restart(&mut self, spawn_ctx: &SpawnContext) {
-        self.kill_switch.kill();
-        self.handles = None;
-        self.kill_switch = KillSwitch::default();
-        // TODO: handle spawn failure gracefully instead of panicking.
-        self.spawn_pipeline(spawn_ctx)
-            .expect("failed to respawn compaction pipeline");
     }
 
     /// Spawns the 5-actor merge execution chain and sends the `MergeOperation`
@@ -332,6 +291,7 @@ impl CompactionPipeline {
 pub(crate) mod tests {
     use std::sync::Arc;
 
+    use quickwit_actors::Universe;
     use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
@@ -343,15 +303,9 @@ pub(crate) mod tests {
     use quickwit_proto::types::{IndexUid, NodeId};
     use quickwit_storage::RamStorage;
 
-    use quickwit_actors::Universe;
-
     use super::{CompactionPipeline, PipelineStatus};
 
-    pub fn test_pipeline(
-        task_id: &str,
-        split_ids: &[&str],
-        max_retries: usize,
-    ) -> CompactionPipeline {
+    pub fn test_pipeline(task_id: &str, split_ids: &[&str]) -> CompactionPipeline {
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage);
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
@@ -378,14 +332,13 @@ pub(crate) mod tests {
             None,
             2,
             EventBroker::default(),
-            max_retries,
         )
     }
 
     #[tokio::test]
     async fn test_spawn_pipeline_creates_handles() {
         let universe = Universe::new();
-        let mut pipeline = test_pipeline("task-1", &["split-1", "split-2"], 2);
+        let mut pipeline = test_pipeline("task-1", &["split-1", "split-2"]);
         assert!(pipeline.handles.is_none());
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
         assert!(pipeline.handles.is_some());
@@ -393,10 +346,9 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn test_status_update_unspawned_pipeline() {
-        let universe = Universe::new();
-        let mut pipeline = test_pipeline("task-1", &["split-1"], 2);
-        let update = pipeline.pipeline_status_update(universe.spawn_ctx());
-        assert_eq!(update.status, PipelineStatus::InProgress { retry_count: 0 });
+        let mut pipeline = test_pipeline("task-1", &["split-1"]);
+        let update = pipeline.pipeline_status_update();
+        assert_eq!(update.status, PipelineStatus::InProgress);
         assert_eq!(update.task_id, "task-1");
         assert_eq!(update.split_ids, vec!["split-1"]);
         assert_eq!(update.source_id, "test-source");
@@ -406,40 +358,25 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_status_update_healthy_pipeline() {
         let universe = Universe::new();
-        let mut pipeline = test_pipeline("task-1", &["split-1"], 2);
+        let mut pipeline = test_pipeline("task-1", &["split-1"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
-        let update = pipeline.pipeline_status_update(universe.spawn_ctx());
-        assert_eq!(update.status, PipelineStatus::InProgress { retry_count: 0 });
+        let update = pipeline.pipeline_status_update();
+        assert_eq!(update.status, PipelineStatus::InProgress);
     }
 
     #[tokio::test]
-    async fn test_killed_pipeline_with_retries_restarts() {
+    async fn test_killed_pipeline_fails() {
         let universe = Universe::new();
-        let mut pipeline = test_pipeline("task-1", &["split-1"], 2);
+        let mut pipeline = test_pipeline("task-1", &["split-1"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
 
         pipeline.kill_switch.kill();
-        // Let actors process the kill signal.
         tokio::task::yield_now().await;
-        let update = pipeline.pipeline_status_update(universe.spawn_ctx());
-        assert_eq!(update.status, PipelineStatus::InProgress { retry_count: 1 });
-        assert!(pipeline.handles.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_killed_pipeline_exhausted_retries_fails() {
-        let universe = Universe::new();
-        let mut pipeline = test_pipeline("task-1", &["split-1"], 0);
-        pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
-
-        pipeline.kill_switch.kill();
-        // Let actors process the kill signal.
-        tokio::task::yield_now().await;
-        let update = pipeline.pipeline_status_update(universe.spawn_ctx());
+        let update = pipeline.pipeline_status_update();
         assert!(matches!(update.status, PipelineStatus::Failed { .. }));
 
         // Calling again still returns Failed (sticky).
-        let update = pipeline.pipeline_status_update(universe.spawn_ctx());
+        let update = pipeline.pipeline_status_update();
         assert!(matches!(update.status, PipelineStatus::Failed { .. }));
     }
 }

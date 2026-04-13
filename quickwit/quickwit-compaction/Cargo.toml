@@ -20,7 +20,6 @@ quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
-serde = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 

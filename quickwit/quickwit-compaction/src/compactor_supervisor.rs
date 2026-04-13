@@ -15,7 +15,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, SpawnContext};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
@@ -55,8 +55,6 @@ pub struct CompactorSupervisor {
 
     // Scratch directory root (<data_dir>/compaction/).
     compaction_root_directory: TempDirectory,
-
-    max_local_retries: usize,
 }
 
 impl CompactorSupervisor {
@@ -72,7 +70,6 @@ impl CompactorSupervisor {
         max_concurrent_split_uploads: usize,
         event_broker: EventBroker,
         compaction_root_directory: TempDirectory,
-        max_local_retries: usize,
     ) -> Self {
         let pipelines = (0..num_pipeline_slots).map(|_| None).collect();
         CompactorSupervisor {
@@ -86,20 +83,16 @@ impl CompactorSupervisor {
             max_concurrent_split_uploads,
             event_broker,
             compaction_root_directory,
-            max_local_retries,
         }
     }
 
-    fn check_pipeline_statuses(
-        &mut self,
-        spawn_ctx: &SpawnContext,
-    ) -> Vec<PipelineStatusUpdate> {
+    fn check_pipeline_statuses(&mut self) -> Vec<PipelineStatusUpdate> {
         let mut statuses = Vec::new();
         for slot in &mut self.pipelines {
             let Some(pipeline) = slot else {
                 continue;
             };
-            statuses.push(pipeline.pipeline_status_update(spawn_ctx));
+            statuses.push(pipeline.pipeline_status_update());
         }
         statuses
     }
@@ -110,7 +103,7 @@ impl CompactorSupervisor {
     ) -> WorkerStatusUpdateRequest {
         let in_progress_count = statuses
             .iter()
-            .filter(|s| matches!(s.status, PipelineStatus::InProgress { .. }))
+            .filter(|s| matches!(s.status, PipelineStatus::InProgress))
             .count();
         let available_slots = (self.pipelines.len() - in_progress_count) as u32;
 
@@ -120,7 +113,7 @@ impl CompactorSupervisor {
 
         for update in statuses {
             match &update.status {
-                PipelineStatus::InProgress { .. } => {
+                PipelineStatus::InProgress => {
                     in_progress_compactions.push(InProgressCompaction {
                         task_id: update.task_id.clone(),
                         index_uid: Some(update.index_uid.clone()),
@@ -182,7 +175,7 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
         _msg: CheckPipelineStatuses,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let statuses = self.check_pipeline_statuses(ctx.spawn_ctx());
+        let statuses = self.check_pipeline_statuses();
         let _request = self.build_worker_status_update(&statuses);
         // TODO: send request to planner via gRPC, clear completed/failed slots on success.
         ctx.schedule_self_msg(CHECK_PIPELINE_STATUSES_INTERVAL, CheckPipelineStatuses);
@@ -221,15 +214,13 @@ mod tests {
             2,
             EventBroker::default(),
             TempDirectory::for_test(),
-            2,
         )
     }
 
-    #[tokio::test]
-    async fn test_check_pipeline_statuses_empty_slots() {
-        let universe = Universe::new();
+    #[test]
+    fn test_check_pipeline_statuses_empty_slots() {
         let mut supervisor = test_supervisor(4);
-        let statuses = supervisor.check_pipeline_statuses(universe.spawn_ctx());
+        let statuses = supervisor.check_pipeline_statuses();
         assert!(statuses.is_empty());
     }
 
@@ -238,15 +229,15 @@ mod tests {
         let universe = Universe::new();
         let mut supervisor = test_supervisor(4);
 
-        let mut pipeline = test_pipeline("task-1", &["split-a", "split-b"], 2);
+        let mut pipeline = test_pipeline("task-1", &["split-a", "split-b"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
         supervisor.pipelines[0] = Some(pipeline);
 
-        let mut pipeline = test_pipeline("task-2", &["split-c"], 2);
+        let mut pipeline = test_pipeline("task-2", &["split-c"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
         supervisor.pipelines[2] = Some(pipeline);
 
-        let statuses = supervisor.check_pipeline_statuses(universe.spawn_ctx());
+        let statuses = supervisor.check_pipeline_statuses();
         assert_eq!(statuses.len(), 2);
         assert_eq!(statuses[0].task_id, "task-1");
         assert_eq!(statuses[0].split_ids, vec!["split-a", "split-b"]);
@@ -259,11 +250,11 @@ mod tests {
         let universe = Universe::new();
         let mut supervisor = test_supervisor(3);
 
-        let mut pipeline = test_pipeline("task-1", &["s1", "s2"], 2);
+        let mut pipeline = test_pipeline("task-1", &["s1", "s2"]);
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
         supervisor.pipelines[0] = Some(pipeline);
 
-        let statuses = supervisor.check_pipeline_statuses(universe.spawn_ctx());
+        let statuses = supervisor.check_pipeline_statuses();
         let request = supervisor.build_worker_status_update(&statuses);
 
         assert_eq!(request.worker_id, "test-node");
@@ -271,7 +262,10 @@ mod tests {
         assert_eq!(request.available_slots, 2);
         assert_eq!(request.in_progress_compactions.len(), 1);
         assert_eq!(request.in_progress_compactions[0].task_id, "task-1");
-        assert_eq!(request.in_progress_compactions[0].split_ids, vec!["s1", "s2"]);
+        assert_eq!(
+            request.in_progress_compactions[0].split_ids,
+            vec!["s1", "s2"]
+        );
         assert!(request.completed_compactions.is_empty());
         assert!(request.failed_compactions.is_empty());
     }
@@ -297,7 +291,7 @@ mod tests {
                 source_id: "src".to_string(),
                 split_ids: vec!["s1".to_string(), "s2".to_string()],
                 merged_split_id: "merged-1".to_string(),
-                status: PipelineStatus::InProgress { retry_count: 0 },
+                status: PipelineStatus::InProgress,
             },
             PipelineStatusUpdate {
                 task_id: "task-2".to_string(),
@@ -325,7 +319,10 @@ mod tests {
         assert_eq!(request.available_slots, 3);
         assert_eq!(request.in_progress_compactions.len(), 1);
         assert_eq!(request.in_progress_compactions[0].task_id, "task-1");
-        assert_eq!(request.in_progress_compactions[0].split_ids, vec!["s1", "s2"]);
+        assert_eq!(
+            request.in_progress_compactions[0].split_ids,
+            vec!["s1", "s2"]
+        );
         assert_eq!(request.completed_compactions.len(), 1);
         assert_eq!(request.completed_compactions[0].task_id, "task-2");
         assert_eq!(request.completed_compactions[0].merged_split_id, "merged-2");
