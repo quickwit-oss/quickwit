@@ -28,11 +28,21 @@ ARG QW_COMMIT_HASH
 ARG QW_COMMIT_TAGS
 # it's dangerous to expose tokens in ARGs like this, but this is an intermediate build container, so its arguments are not stored in the final image
 ARG CI_JOB_TOKEN
+ARG POMCHI_TOKEN
+ARG EVENT_PERCOLATION_TOKEN
 
 ENV QW_COMMIT_DATE=$QW_COMMIT_DATE
 ENV QW_COMMIT_HASH=$QW_COMMIT_HASH
 ENV QW_COMMIT_TAGS=$QW_COMMIT_TAGS
 
+# Use dd-octo-sts tokens for private GitHub repos (repo-specific, longest prefix wins)
+RUN if [ -n "$POMCHI_TOKEN" ]; then \
+      git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi"; \
+    fi
+RUN if [ -n "$EVENT_PERCOLATION_TOKEN" ]; then \
+      git config --global url."https://x-access-token:${EVENT_PERCOLATION_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"; \
+    fi
+# Fall back to CI_JOB_TOKEN via GitLab mirror for remaining DataDog repos
 RUN git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "ssh://git@github.com/DataDog/"
 
 RUN apt-get -y update \
@@ -57,14 +67,6 @@ COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 COPY --from=cloudprem-ui-loader /quickwit/cloudprem-ui/cloudprem_ui_build /quickwit/cloudprem-ui/cloudprem_ui_build
 
 WORKDIR /quickwit
-
-# Use internal Datadog cargo registry for event-percolation instead of GitHub git,
-# because CI_JOB_TOKEN lacks access to the GitLab mirror.
-RUN cat >> Cargo.toml <<'EOF'
-
-[patch."ssh://git@github.com/DataDog/event-percolation.git"]
-event-percolation = { version = "0.5.2", registry = "datadog" }
-EOF
 
 RUN rustup toolchain install
 
