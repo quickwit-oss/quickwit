@@ -15,9 +15,8 @@
 // See https://prometheus.io/docs/practices/naming/
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{LazyLock, RwLock};
 
-use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
     new_gauge, new_histogram_vec,
@@ -305,11 +304,11 @@ impl CacheMetrics {
 
 /// Storage counters exposes a bunch a set of storage/cache related metrics through a prometheus
 /// endpoint.
-pub static STORAGE_METRICS: Lazy<StorageMetrics> = Lazy::new(StorageMetrics::default);
+pub static STORAGE_METRICS: LazyLock<StorageMetrics> = LazyLock::new(StorageMetrics::default);
 
 #[cfg(test)]
-pub static CACHE_METRICS_FOR_TESTS: Lazy<CacheMetrics> =
-    Lazy::new(|| CacheMetrics::for_component("fortest"));
+pub static CACHE_METRICS_FOR_TESTS: LazyLock<CacheMetrics> =
+    LazyLock::new(|| CacheMetrics::for_component("fortest"));
 
 pub fn object_storage_get_slice_in_flight_guards(
     get_request_size: usize,

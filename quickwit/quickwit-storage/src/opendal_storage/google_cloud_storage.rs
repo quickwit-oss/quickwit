@@ -13,10 +13,9 @@
 // limitations under the License.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use async_trait::async_trait;
-use once_cell::sync::OnceCell;
 use quickwit_common::uri::Uri;
 use quickwit_config::{GoogleCloudStorageConfig, StorageBackend};
 use regex::Regex;
@@ -97,14 +96,12 @@ fn from_uri(
 
 fn parse_google_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     // Ex: gs://bucket/prefix.
-    static URI_PTN: OnceCell<Regex> = OnceCell::new();
+    static URI_PTN: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"gs(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.*))?$")
+            .expect("The regular expression should compile.")
+    });
 
-    let captures = URI_PTN
-        .get_or_init(|| {
-            Regex::new(r"gs(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.*))?$")
-                .expect("The regular expression should compile.")
-        })
-        .captures(uri.as_str())?;
+    let captures = URI_PTN.captures(uri.as_str())?;
 
     let bucket = captures.name("bucket")?.as_str().to_string();
     let prefix = captures

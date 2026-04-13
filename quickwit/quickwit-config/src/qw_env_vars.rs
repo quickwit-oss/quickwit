@@ -13,8 +13,7 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 /// Expands the list of QW environment variables into constants of the form `const <ENV_VAR_KEY>:
 /// usize = <env var index>;` and builds the map `QW_EN_VARS` of environment variable index to
@@ -31,7 +30,7 @@ macro_rules! qw_env_vars {
     ($($ident:ident),*) => {
         qw_env_vars!(@step 0usize, $($ident,)*);
 
-        pub(crate) static QW_ENV_VARS: Lazy<HashMap<usize, &'static str>> = Lazy::new(|| {
+        pub(crate) static QW_ENV_VARS: LazyLock<HashMap<usize, &'static str>> = LazyLock::new(|| {
             let mut env_vars = HashMap::new();
             $(env_vars.insert($ident, stringify!($ident));)*
             env_vars
