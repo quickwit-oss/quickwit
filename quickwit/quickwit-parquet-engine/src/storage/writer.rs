@@ -1261,8 +1261,10 @@ mod tests {
 
         // Test ascending: service sorted ascending, nulls last.
         // Expected order: alpha(300), beta(100), null(200).
-        let mut asc_config = TableConfig::default();
-        asc_config.sort_fields = Some("metric_name|service|timestamp_secs/V2".to_string());
+        let asc_config = TableConfig {
+            sort_fields: Some("metric_name|service|timestamp_secs/V2".to_string()),
+            ..TableConfig::default()
+        };
         let writer = ParquetWriter::new(ParquetWriterConfig::default(), &asc_config);
 
         let temp_dir = std::env::temp_dir();
@@ -1308,8 +1310,10 @@ mod tests {
 
         // Test descending: service sorted descending, nulls STILL last.
         // Expected order: beta(100), alpha(300), null(200).
-        let mut desc_config = TableConfig::default();
-        desc_config.sort_fields = Some("metric_name|-service|timestamp_secs/V2".to_string());
+        let desc_config = TableConfig {
+            sort_fields: Some("metric_name|-service|timestamp_secs/V2".to_string()),
+            ..TableConfig::default()
+        };
         let writer = ParquetWriter::new(ParquetWriterConfig::default(), &desc_config);
 
         let path = temp_dir.join("test_nulls_last_desc.parquet");
