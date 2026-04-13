@@ -27,7 +27,7 @@ use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::CompactorConfig;
 use quickwit_indexing::IndexingSplitStore;
-use quickwit_proto::compaction::CompactionServiceClient;
+use quickwit_proto::compaction::CompactionPlannerServiceClient;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::NodeId;
 use quickwit_storage::StorageResolver;
@@ -37,7 +37,7 @@ use tracing::info;
 pub async fn start_compactor_service(
     universe: &Universe,
     node_id: NodeId,
-    compaction_client: CompactionServiceClient,
+    compaction_client: CompactionPlannerServiceClient,
     compactor_config: &CompactorConfig,
     split_store: IndexingSplitStore,
     metastore: MetastoreServiceClient,

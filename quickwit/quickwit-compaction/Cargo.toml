@@ -24,6 +24,7 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 
 [dev-dependencies]
+quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }

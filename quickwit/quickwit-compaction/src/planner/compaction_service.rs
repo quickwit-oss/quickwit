@@ -14,23 +14,23 @@
 
 use async_trait::async_trait;
 use quickwit_proto::compaction::{
-    CompactionResult, CompactionService, PingRequest, PingResponse, WorkerStatusUpdateRequest,
-    WorkerStatusUpdateResponse,
+    CompactionPlannerService, CompactionResult, PingRequest, PingResponse, ReportStatusRequest,
+    ReportStatusResponse,
 };
 
 #[derive(Debug, Clone)]
-pub struct StubCompactionService;
+pub struct StubCompactionPlannerService;
 
 #[async_trait]
-impl CompactionService for StubCompactionService {
+impl CompactionPlannerService for StubCompactionPlannerService {
     async fn ping(&self, _request: PingRequest) -> CompactionResult<PingResponse> {
         Ok(PingResponse {})
     }
 
-    async fn worker_status_update(
+    async fn report_status(
         &self,
-        _request: WorkerStatusUpdateRequest,
-    ) -> CompactionResult<WorkerStatusUpdateResponse> {
-        Ok(WorkerStatusUpdateResponse {})
+        _request: ReportStatusRequest,
+    ) -> CompactionResult<ReportStatusResponse> {
+        Ok(ReportStatusResponse {})
     }
 }

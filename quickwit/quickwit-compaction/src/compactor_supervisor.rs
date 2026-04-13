@@ -21,8 +21,8 @@ use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_indexing::IndexingSplitStore;
 use quickwit_proto::compaction::{
-    CompactionServiceClient, CompletedCompaction, FailedCompaction, InProgressCompaction,
-    WorkerStatusUpdateRequest,
+    CompactionFailure, CompactionInProgress, CompactionPlannerServiceClient, CompactionSuccess,
+    ReportStatusRequest,
 };
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::NodeId;
@@ -42,7 +42,7 @@ struct CheckPipelineStatuses;
 /// compaction planner. Pipelines manage their own retry logic internally.
 pub struct CompactorSupervisor {
     node_id: NodeId,
-    compaction_client: CompactionServiceClient,
+    planner_client: CompactionPlannerServiceClient,
     pipelines: Vec<Option<CompactionPipeline>>,
 
     // Shared resources distributed to pipelines when spawning actor chains.
@@ -61,7 +61,7 @@ impl CompactorSupervisor {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeId,
-        compaction_client: CompactionServiceClient,
+        planner_client: CompactionPlannerServiceClient,
         num_pipeline_slots: usize,
         io_throughput_limiter: Option<Limiter>,
         split_store: IndexingSplitStore,
@@ -74,7 +74,7 @@ impl CompactorSupervisor {
         let pipelines = (0..num_pipeline_slots).map(|_| None).collect();
         CompactorSupervisor {
             node_id,
-            compaction_client,
+            planner_client,
             pipelines,
             io_throughput_limiter,
             split_store,
@@ -97,24 +97,24 @@ impl CompactorSupervisor {
         statuses
     }
 
-    fn build_worker_status_update(
+    fn build_report_status_request(
         &self,
         statuses: &[PipelineStatusUpdate],
-    ) -> WorkerStatusUpdateRequest {
+    ) -> ReportStatusRequest {
         let in_progress_count = statuses
             .iter()
             .filter(|s| matches!(s.status, PipelineStatus::InProgress))
             .count();
         let available_slots = (self.pipelines.len() - in_progress_count) as u32;
 
-        let mut in_progress_compactions = Vec::new();
-        let mut completed_compactions = Vec::new();
-        let mut failed_compactions = Vec::new();
+        let mut in_progress = Vec::new();
+        let mut successes = Vec::new();
+        let mut failures = Vec::new();
 
         for update in statuses {
             match &update.status {
                 PipelineStatus::InProgress => {
-                    in_progress_compactions.push(InProgressCompaction {
+                    in_progress.push(CompactionInProgress {
                         task_id: update.task_id.clone(),
                         index_uid: Some(update.index_uid.clone()),
                         source_id: update.source_id.clone(),
@@ -122,13 +122,13 @@ impl CompactorSupervisor {
                     });
                 }
                 PipelineStatus::Completed => {
-                    completed_compactions.push(CompletedCompaction {
+                    successes.push(CompactionSuccess {
                         task_id: update.task_id.clone(),
                         merged_split_id: update.merged_split_id.clone(),
                     });
                 }
                 PipelineStatus::Failed { error } => {
-                    failed_compactions.push(FailedCompaction {
+                    failures.push(CompactionFailure {
                         task_id: update.task_id.clone(),
                         error_message: error.clone(),
                     });
@@ -136,12 +136,12 @@ impl CompactorSupervisor {
             }
         }
 
-        WorkerStatusUpdateRequest {
-            worker_id: self.node_id.to_string(),
+        ReportStatusRequest {
+            node_id: self.node_id.to_string(),
             available_slots,
-            in_progress_compactions,
-            completed_compactions,
-            failed_compactions,
+            in_progress,
+            successes,
+            failures,
         }
     }
 }
@@ -176,7 +176,7 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let statuses = self.check_pipeline_statuses();
-        let _request = self.build_worker_status_update(&statuses);
+        let _request = self.build_report_status_request(&statuses);
         // TODO: send request to planner via gRPC, clear completed/failed slots on success.
         ctx.schedule_self_msg(CHECK_PIPELINE_STATUSES_INTERVAL, CheckPipelineStatuses);
         Ok(())
@@ -189,20 +189,20 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::temp_dir::TempDirectory;
-    use quickwit_proto::compaction::CompactionServiceClient;
+    use quickwit_proto::compaction::CompactionPlannerServiceClient;
     use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
     use quickwit_proto::types::NodeId;
     use quickwit_storage::{RamStorage, StorageResolver};
 
     use super::*;
     use crate::compaction_pipeline::tests::test_pipeline;
-    use crate::planner::StubCompactionService;
+    use crate::planner::StubCompactionPlannerService;
 
     fn test_supervisor(num_slots: usize) -> CompactorSupervisor {
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage);
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
-        let compaction_client = CompactionServiceClient::new(StubCompactionService);
+        let compaction_client = CompactionPlannerServiceClient::new(StubCompactionPlannerService);
         CompactorSupervisor::new(
             NodeId::from("test-node"),
             compaction_client,
@@ -243,6 +243,7 @@ mod tests {
         assert_eq!(statuses[0].split_ids, vec!["split-a", "split-b"]);
         assert_eq!(statuses[1].task_id, "task-2");
         assert_eq!(statuses[1].split_ids, vec!["split-c"]);
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -255,34 +256,32 @@ mod tests {
         supervisor.pipelines[0] = Some(pipeline);
 
         let statuses = supervisor.check_pipeline_statuses();
-        let request = supervisor.build_worker_status_update(&statuses);
+        let request = supervisor.build_report_status_request(&statuses);
 
-        assert_eq!(request.worker_id, "test-node");
+        assert_eq!(request.node_id, "test-node");
         // 3 slots, 1 in-progress = 2 available
         assert_eq!(request.available_slots, 2);
-        assert_eq!(request.in_progress_compactions.len(), 1);
-        assert_eq!(request.in_progress_compactions[0].task_id, "task-1");
-        assert_eq!(
-            request.in_progress_compactions[0].split_ids,
-            vec!["s1", "s2"]
-        );
-        assert!(request.completed_compactions.is_empty());
-        assert!(request.failed_compactions.is_empty());
+        assert_eq!(request.in_progress.len(), 1);
+        assert_eq!(request.in_progress[0].task_id, "task-1");
+        assert_eq!(request.in_progress[0].split_ids, vec!["s1", "s2"]);
+        assert!(request.successes.is_empty());
+        assert!(request.failures.is_empty());
+        universe.assert_quit().await;
     }
 
     #[test]
-    fn test_build_worker_status_update_empty() {
+    fn test_build_report_status_request_empty() {
         let supervisor = test_supervisor(4);
-        let request = supervisor.build_worker_status_update(&[]);
-        assert_eq!(request.worker_id, "test-node");
+        let request = supervisor.build_report_status_request(&[]);
+        assert_eq!(request.node_id, "test-node");
         assert_eq!(request.available_slots, 4);
-        assert!(request.in_progress_compactions.is_empty());
-        assert!(request.completed_compactions.is_empty());
-        assert!(request.failed_compactions.is_empty());
+        assert!(request.in_progress.is_empty());
+        assert!(request.successes.is_empty());
+        assert!(request.failures.is_empty());
     }
 
     #[test]
-    fn test_build_worker_status_update_mixed_statuses() {
+    fn test_build_report_status_request_mixed_statuses() {
         let supervisor = test_supervisor(4);
         let statuses = vec![
             PipelineStatusUpdate {
@@ -313,21 +312,17 @@ mod tests {
             },
         ];
 
-        let request = supervisor.build_worker_status_update(&statuses);
+        let request = supervisor.build_report_status_request(&statuses);
 
-        // 4 slots, 1 in-progress = 3 available
         assert_eq!(request.available_slots, 3);
-        assert_eq!(request.in_progress_compactions.len(), 1);
-        assert_eq!(request.in_progress_compactions[0].task_id, "task-1");
-        assert_eq!(
-            request.in_progress_compactions[0].split_ids,
-            vec!["s1", "s2"]
-        );
-        assert_eq!(request.completed_compactions.len(), 1);
-        assert_eq!(request.completed_compactions[0].task_id, "task-2");
-        assert_eq!(request.completed_compactions[0].merged_split_id, "merged-2");
-        assert_eq!(request.failed_compactions.len(), 1);
-        assert_eq!(request.failed_compactions[0].task_id, "task-3");
-        assert_eq!(request.failed_compactions[0].error_message, "boom");
+        assert_eq!(request.in_progress.len(), 1);
+        assert_eq!(request.in_progress[0].task_id, "task-1");
+        assert_eq!(request.in_progress[0].split_ids, vec!["s1", "s2"]);
+        assert_eq!(request.successes.len(), 1);
+        assert_eq!(request.successes[0].task_id, "task-2");
+        assert_eq!(request.successes[0].merged_split_id, "merged-2");
+        assert_eq!(request.failures.len(), 1);
+        assert_eq!(request.failures[0].task_id, "task-3");
+        assert_eq!(request.failures[0].error_message, "boom");
     }
 }

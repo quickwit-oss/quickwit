@@ -18,37 +18,37 @@ package quickwit.compaction;
 
 import "quickwit/common.proto";
 
-service CompactionService {
+service CompactionPlannerService {
   rpc Ping(PingRequest) returns (PingResponse);
-  rpc WorkerStatusUpdate(WorkerStatusUpdateRequest) returns (WorkerStatusUpdateResponse);
+  rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
 }
 
 message PingRequest {}
 message PingResponse {}
 
-message WorkerStatusUpdateRequest {
-  string worker_id = 1;
+message ReportStatusRequest {
+  string node_id = 1;
   uint32 available_slots = 2;
-  repeated InProgressCompaction in_progress_compactions = 3;
-  repeated CompletedCompaction completed_compactions = 4;
-  repeated FailedCompaction failed_compactions = 5;
+  repeated CompactionInProgress in_progress = 3;
+  repeated CompactionSuccess successes = 4;
+  repeated CompactionFailure failures = 5;
 }
 
-message InProgressCompaction {
+message CompactionInProgress {
   string task_id = 1;
   quickwit.common.IndexUid index_uid = 2;
   string source_id = 3;
   repeated string split_ids = 4;
 }
 
-message CompletedCompaction {
+message CompactionSuccess {
   string task_id = 1;
   string merged_split_id = 2;
 }
 
-message FailedCompaction {
+message CompactionFailure {
   string task_id = 1;
   string error_message = 2;
 }
 
-message WorkerStatusUpdateResponse {}
+message ReportStatusResponse {}

@@ -72,7 +72,7 @@ use quickwit_common::tower::{
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
-use quickwit_compaction::planner::StubCompactionService;
+use quickwit_compaction::planner::StubCompactionPlannerService;
 use quickwit_compaction::{CompactorSupervisor, start_compactor_service};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
@@ -95,7 +95,7 @@ use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
-use quickwit_proto::compaction::CompactionServiceClient;
+use quickwit_proto::compaction::CompactionPlannerServiceClient;
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
@@ -203,7 +203,7 @@ struct QuickwitServices {
     pub ingest_router_service: IngestRouterServiceClient,
     ingester_opt: Option<Ingester>,
 
-    pub compaction_service_client_opt: Option<CompactionServiceClient>,
+    pub compaction_service_client_opt: Option<CompactionPlannerServiceClient>,
     pub _compactor_supervisor_opt: Option<Mailbox<CompactorSupervisor>>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
@@ -271,28 +271,22 @@ async fn balance_channel_for_service(
     BalanceChannel::from_stream(service_change_stream)
 }
 
-/// Builds a `CompactionServiceClient` if the compaction service is available.
+/// Builds a `CompactionPlannerServiceClient` if the node runs the compactor.
 ///
-/// On janitor nodes with `QW_ENABLE_COMPACTION_SERVICE=true`, wraps a local stub.
-/// On non-janitor nodes with the flag set, waits up to 10s for a remote janitor
-/// exposing the gRPC endpoint and logs an error if none is found.
-async fn get_compaction_service_client_if_needed(
+/// On janitor+compactor nodes, wraps a local `StubCompactionPlannerService`.
+/// On compactor-only nodes, connects to a remote janitor via gRPC.
+async fn get_compaction_planner_client_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
-) -> anyhow::Result<Option<CompactionServiceClient>, anyhow::Error> {
-    if !node_config.indexer_config.enable_standalone_compactors {
+) -> anyhow::Result<Option<CompactionPlannerServiceClient>, anyhow::Error> {
+    if !node_config.is_service_enabled(QuickwitService::Compactor) {
         return Ok(None);
     }
-    // Only janitor nodes (which host the planner) and indexer nodes (which need
-    // to know whether to spawn local merge pipelines) care about this service.
-    if !node_config.is_service_enabled(QuickwitService::Indexer) {
-        return Ok(None);
-    }
-    if node_config.is_service_enabled(QuickwitService::Janitor)
-        && node_config.is_service_enabled(QuickwitService::Indexer)
-    {
-        info!("compaction service enabled on this node");
-        return Ok(Some(CompactionServiceClient::new(StubCompactionService)));
+    if node_config.is_service_enabled(QuickwitService::Janitor) {
+        info!("compaction planner service enabled on this node");
+        return Ok(Some(CompactionPlannerServiceClient::new(
+            StubCompactionPlannerService,
+        )));
     }
     let balance_channel = balance_channel_for_service(cluster, QuickwitService::Janitor).await;
     let found = balance_channel
@@ -301,10 +295,10 @@ async fn get_compaction_service_client_if_needed(
         })
         .await;
     if !found {
-        bail!("compaction service is enabled but no janitor node was found in the cluster")
+        bail!("compactor is enabled but no janitor node was found in the cluster")
     }
-    info!("remote compaction service detected on janitor node");
-    Ok(Some(CompactionServiceClient::from_balance_channel(
+    info!("remote compaction planner detected on janitor node");
+    Ok(Some(CompactionPlannerServiceClient::from_balance_channel(
         balance_channel,
         node_config.grpc_config.max_message_size,
         None,
@@ -600,12 +594,12 @@ pub async fn serve_quickwit(
         .context("failed to start ingest v1 service")?;
 
     let compaction_service_client_opt =
-        get_compaction_service_client_if_needed(&node_config, &cluster)
+        get_compaction_planner_client_if_needed(&node_config, &cluster)
             .await
             .context("failed to initialize compaction service client")?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
-        let merge_scheduler_mailbox_opt = if compaction_service_client_opt.is_none() {
+        let merge_scheduler_mailbox_opt = if !node_config.indexer_config.enable_standalone_compactors {
             Some(spawn_merge_scheduler_service(&universe, &node_config))
         } else {
             None
@@ -1923,18 +1917,22 @@ mod tests {
                 .await
                 .unwrap();
 
-        // Without standalone compactors, no compaction service.
+        // Without compactor service enabled, no planner client.
         let mut node_config = NodeConfig::for_test();
         node_config.enabled_services =
             HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
-        let result = get_compaction_service_client_if_needed(&node_config, &cluster)
+        let result = get_compaction_planner_client_if_needed(&node_config, &cluster)
             .await
             .unwrap();
         assert!(result.is_none());
 
-        // With standalone compactors enabled, compaction service client is returned.
-        node_config.indexer_config.enable_standalone_compactors = true;
-        let result = get_compaction_service_client_if_needed(&node_config, &cluster)
+        // With compactor + janitor enabled, planner client is returned (local stub).
+        node_config.enabled_services = HashSet::from([
+            QuickwitService::Janitor,
+            QuickwitService::Indexer,
+            QuickwitService::Compactor,
+        ]);
+        let result = get_compaction_planner_client_if_needed(&node_config, &cluster)
             .await
             .unwrap();
         assert!(result.is_some());
@@ -1948,9 +1946,9 @@ mod tests {
             .unwrap();
 
         let mut node_config = NodeConfig::for_test();
-        node_config.enabled_services = HashSet::from([QuickwitService::Indexer]);
-        node_config.indexer_config.enable_standalone_compactors = true;
-        let result = get_compaction_service_client_if_needed(&node_config, &cluster).await;
+        node_config.enabled_services =
+            HashSet::from([QuickwitService::Indexer, QuickwitService::Compactor]);
+        let result = get_compaction_planner_client_if_needed(&node_config, &cluster).await;
         assert!(result.is_err());
     }
 }

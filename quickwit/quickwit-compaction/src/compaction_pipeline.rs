@@ -129,8 +129,9 @@ impl CompactionPipeline {
     /// Returns pipeline status update by checking the health of individual pipeline actors.
     ///
     /// If the pipeline is already completed or failed (terminal status), returns the status
-    /// without re-checking actors. Otherwise checks actor health and:
-    /// - Marks the pipeline as completed or failed when appropriate.
+    /// without re-checking actors. The pipeline sits in this "completed" state (finished or failed)
+    /// until the supervisor cleans up the spot in favor of a new pipeline. This is done to
+    /// ensure that the planner acks the success/failure.
     pub fn pipeline_status_update(&mut self) -> PipelineStatusUpdate {
         self.update_status();
         self.build_status_update()
@@ -342,6 +343,7 @@ pub(crate) mod tests {
         assert!(pipeline.handles.is_none());
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
         assert!(pipeline.handles.is_some());
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -362,6 +364,7 @@ pub(crate) mod tests {
         pipeline.spawn_pipeline(universe.spawn_ctx()).unwrap();
         let update = pipeline.pipeline_status_update();
         assert_eq!(update.status, PipelineStatus::InProgress);
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -378,5 +381,6 @@ pub(crate) mod tests {
         // Calling again still returns Failed (sticky).
         let update = pipeline.pipeline_status_update();
         assert!(matches!(update.status, PipelineStatus::Failed { .. }));
+        universe.assert_quit().await;
     }
 }
