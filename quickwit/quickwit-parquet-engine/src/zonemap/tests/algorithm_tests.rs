@@ -674,9 +674,7 @@ fn test_benchmark_data_produces_valid_regex() {
 
 #[test]
 fn test_extract_zonemap_exact_regexes() {
-    // Mirrors Go TestBuildFragmentZoneMap: verifies exact regex strings for
-    // env (dict with special chars + unicode), service (long string), and
-    // dense (plain string values that fit without pruning).
+    // Mirrors Go TestBuildFragmentZoneMap: verifies exact regex strings.
     let batch = create_zonemap_test_batch(
         &[
             "cpu.usage",
@@ -710,12 +708,48 @@ fn test_extract_zonemap_exact_regexes() {
     };
     let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
 
-    // env regex: dict column with special chars and unicode.
-    // Values: prod, staging, production, $^-?, 日本語
+    // env/service: dict columns with special chars and unicode.
+    // Distinct dict values: prod, staging, production, $^-?, 日本語
     let env_regex = &regexes["env"];
     assert_eq!(
         env_regex, "^(\\$\\^-\\?|prod(|uction)|staging|日本語)$",
         "env regex should match Go TestBuildFragmentZoneMap"
+    );
+
+    // service has same values → same regex (both are dict columns).
+    let service_regex = &regexes["service"];
+    assert_eq!(
+        service_regex, env_regex,
+        "service regex should match env (same dict values)"
+    );
+
+    // metric_name: single distinct value "cpu.usage".
+    let metric_regex = &regexes["metric_name"];
+    assert_eq!(metric_regex, "^cpu\\.usage$");
+}
+
+/// Go TestBuildFragmentZoneMap: long service name → pruned regex.
+#[test]
+fn test_extract_zonemap_long_string_exact_regex() {
+    let long_name = "a_very_very_very_very_long_long_".to_string() + &"service_".repeat(60);
+    let batch =
+        create_zonemap_test_batch(&["cpu.usage"], &[Some(&long_name)], &[Some("prod")], &[100]);
+
+    let sort_fields = "metric_name|service|env|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions {
+        superset_regex_max_size: 32,
+        prune_every: 1000,
+        multiplier: 2.0,
+    };
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+
+    // The Go test expects "^a_very_very_very_very_long_long_.+$" for a single
+    // very long string with maxSize=32. With a single string the automaton
+    // has one transition per character; pruning to 32 truncates at depth 32.
+    let service_regex = &regexes["service"];
+    assert_eq!(
+        service_regex, "^a_very_very_very_very_long_long_.+$",
+        "long service name should be pruned at 32 transitions"
     );
 }
 
