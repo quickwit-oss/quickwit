@@ -14,4 +14,10 @@
 
 #![deny(clippy::disallowed_methods)]
 
+#[allow(dead_code)]
+mod compaction_pipeline;
+#[allow(dead_code)]
+mod compactor_supervisor;
 pub mod planner;
+
+pub use compactor_supervisor::CompactorSupervisor;

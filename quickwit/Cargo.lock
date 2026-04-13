@@ -7148,8 +7148,17 @@ dependencies = [
 name = "quickwit-compaction"
 version = "0.8.0"
 dependencies = [
+ "anyhow",
  "async-trait",
+ "quickwit-actors",
+ "quickwit-common",
+ "quickwit-indexing",
+ "quickwit-metastore",
  "quickwit-proto",
+ "quickwit-storage",
+ "serde",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
