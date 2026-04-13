@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 use std::num::NonZeroU8;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use time::error::{Format, TryFromParsed};
 use time::format_description::modifier::{
@@ -257,38 +257,37 @@ fn match_java_date_format_token(
 // If the java_datetime_format is not an alias, it is expected to be a
 // java date time format and should be returned as is.
 fn resolve_java_datetime_format_alias(java_datetime_format: &str) -> &str {
-    static JAVA_DATE_FORMAT_ALIASES: OnceLock<HashMap<&'static str, &'static str>> =
-        OnceLock::new();
-    let java_datetime_format_map = JAVA_DATE_FORMAT_ALIASES.get_or_init(|| {
-        let mut m = HashMap::new();
-        m.insert("date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");
-        m.insert(
-            "strict_date_optional_time",
-            "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSS[Z]]]]]]]",
-        );
-        m.insert(
-            "strict_date_optional_time_nanos",
-            "yyyy[-MM[-dd['T'HH:mm:ss.SSSSSSZ]]]",
-        );
-        m.insert("basic_date", "yyyyMMdd");
+    static JAVA_DATE_FORMAT_ALIASES: LazyLock<HashMap<&'static str, &'static str>> =
+        LazyLock::new(|| {
+            let mut m = HashMap::new();
+            m.insert("date_optional_time", "yyyy-MM-dd['T'HH:mm:ss.SSSZ]");
+            m.insert(
+                "strict_date_optional_time",
+                "yyyy[-MM[-dd['T'HH[:mm[:ss[.SSS[Z]]]]]]]",
+            );
+            m.insert(
+                "strict_date_optional_time_nanos",
+                "yyyy[-MM[-dd['T'HH:mm:ss.SSSSSSZ]]]",
+            );
+            m.insert("basic_date", "yyyyMMdd");
 
-        m.insert("strict_basic_week_date", "xxxx'W'wwe");
-        m.insert("basic_week_date", "xxxx'W'wwe");
+            m.insert("strict_basic_week_date", "xxxx'W'wwe");
+            m.insert("basic_week_date", "xxxx'W'wwe");
 
-        m.insert("strict_basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
-        m.insert("basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
+            m.insert("strict_basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
+            m.insert("basic_week_date_time", "xxxx'W'wwe'T'HHmmss.SSSZ");
 
-        m.insert(
-            "strict_basic_week_date_time_no_millis",
-            "xxxx'W'wwe'T'HHmmssZ",
-        );
-        m.insert("basic_week_date_time_no_millis", "xxxx'W'wwe'T'HHmmssZ");
+            m.insert(
+                "strict_basic_week_date_time_no_millis",
+                "xxxx'W'wwe'T'HHmmssZ",
+            );
+            m.insert("basic_week_date_time_no_millis", "xxxx'W'wwe'T'HHmmssZ");
 
-        m.insert("strict_week_date", "xxxx-'W'ww-e");
-        m.insert("week_date", "xxxx-'W'w[w]-e");
-        m
-    });
-    java_datetime_format_map
+            m.insert("strict_week_date", "xxxx-'W'ww-e");
+            m.insert("week_date", "xxxx-'W'w[w]-e");
+            m
+        });
+    JAVA_DATE_FORMAT_ALIASES
         .get(java_datetime_format)
         .copied()
         .unwrap_or(java_datetime_format)

@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{
     HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram_vec,
 };
@@ -85,4 +86,5 @@ impl Default for OtlpServiceMetrics {
 }
 
 /// `OTLP_SERVICE_METRICS` exposes metrics for each OTLP service.
-pub static OTLP_SERVICE_METRICS: Lazy<OtlpServiceMetrics> = Lazy::new(OtlpServiceMetrics::default);
+pub static OTLP_SERVICE_METRICS: LazyLock<OtlpServiceMetrics> =
+    LazyLock::new(OtlpServiceMetrics::default);

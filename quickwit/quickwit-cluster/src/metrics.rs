@@ -14,11 +14,10 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
-use std::sync::Weak;
+use std::sync::{LazyLock, Weak};
 use std::time::Duration;
 
 use chitchat::{Chitchat, ChitchatId};
-use once_cell::sync::Lazy;
 use quickwit_common::metrics::{IntCounter, IntGauge, new_counter, new_gauge};
 use tokio::sync::Mutex;
 
@@ -118,7 +117,7 @@ impl Default for ClusterMetrics {
     }
 }
 
-pub static CLUSTER_METRICS: Lazy<ClusterMetrics> = Lazy::new(ClusterMetrics::default);
+pub static CLUSTER_METRICS: LazyLock<ClusterMetrics> = LazyLock::new(ClusterMetrics::default);
 
 pub(crate) fn spawn_metrics_task(
     weak_chitchat: Weak<Mutex<Chitchat>>,
