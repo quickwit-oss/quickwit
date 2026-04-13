@@ -38,10 +38,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Compaction service.
     let mut prost_config = prost_build::Config::default();
     prost_config.file_descriptor_set_path("src/codegen/quickwit/compaction_descriptor.bin");
+    prost_config.extern_path(".quickwit.common.IndexUid", "crate::types::IndexUid");
 
     Codegen::builder()
         .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/compaction.proto"])
+        .with_includes(&["protos"])
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::compaction::CompactionResult")
         .with_error_type_path("crate::compaction::CompactionError")

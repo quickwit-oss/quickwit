@@ -5,6 +5,51 @@ pub struct PingRequest {}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PingResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorkerStatusUpdateRequest {
+    #[prost(string, tag = "1")]
+    pub worker_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "2")]
+    pub available_slots: u32,
+    #[prost(message, repeated, tag = "3")]
+    pub in_progress_compactions: ::prost::alloc::vec::Vec<InProgressCompaction>,
+    #[prost(message, repeated, tag = "4")]
+    pub completed_compactions: ::prost::alloc::vec::Vec<CompletedCompaction>,
+    #[prost(message, repeated, tag = "5")]
+    pub failed_compactions: ::prost::alloc::vec::Vec<FailedCompaction>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct InProgressCompaction {
+    #[prost(string, tag = "1")]
+    pub task_id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "3")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "4")]
+    pub split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CompletedCompaction {
+    #[prost(string, tag = "1")]
+    pub task_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub merged_split_id: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct FailedCompaction {
+    #[prost(string, tag = "1")]
+    pub task_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub error_message: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct WorkerStatusUpdateResponse {}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -15,6 +60,11 @@ impl RpcName for PingRequest {
         "ping"
     }
 }
+impl RpcName for WorkerStatusUpdateRequest {
+    fn rpc_name() -> &'static str {
+        "worker_status_update"
+    }
+}
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait CompactionService: std::fmt::Debug + Send + Sync + 'static {
@@ -22,6 +72,10 @@ pub trait CompactionService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: PingRequest,
     ) -> crate::compaction::CompactionResult<PingResponse>;
+    async fn worker_status_update(
+        &self,
+        request: WorkerStatusUpdateRequest,
+    ) -> crate::compaction::CompactionResult<WorkerStatusUpdateResponse>;
 }
 #[derive(Debug, Clone)]
 pub struct CompactionServiceClient {
@@ -136,6 +190,12 @@ impl CompactionService for CompactionServiceClient {
     ) -> crate::compaction::CompactionResult<PingResponse> {
         self.inner.0.ping(request).await
     }
+    async fn worker_status_update(
+        &self,
+        request: WorkerStatusUpdateRequest,
+    ) -> crate::compaction::CompactionResult<WorkerStatusUpdateResponse> {
+        self.inner.0.worker_status_update(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod mock_compaction_service {
@@ -151,6 +211,12 @@ pub mod mock_compaction_service {
             request: super::PingRequest,
         ) -> crate::compaction::CompactionResult<super::PingResponse> {
             self.inner.lock().await.ping(request).await
+        }
+        async fn worker_status_update(
+            &self,
+            request: super::WorkerStatusUpdateRequest,
+        ) -> crate::compaction::CompactionResult<super::WorkerStatusUpdateResponse> {
+            self.inner.lock().await.worker_status_update(request).await
         }
     }
 }
@@ -173,6 +239,22 @@ impl tower::Service<PingRequest> for InnerCompactionServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<WorkerStatusUpdateRequest> for InnerCompactionServiceClient {
+    type Response = WorkerStatusUpdateResponse;
+    type Error = crate::compaction::CompactionError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: WorkerStatusUpdateRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.worker_status_update(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower service stack is a set of tower services.
 #[derive(Debug)]
 struct CompactionServiceTowerServiceStack {
@@ -183,6 +265,11 @@ struct CompactionServiceTowerServiceStack {
         PingResponse,
         crate::compaction::CompactionError,
     >,
+    worker_status_update_svc: quickwit_common::tower::BoxService<
+        WorkerStatusUpdateRequest,
+        WorkerStatusUpdateResponse,
+        crate::compaction::CompactionError,
+    >,
 }
 #[async_trait::async_trait]
 impl CompactionService for CompactionServiceTowerServiceStack {
@@ -191,6 +278,12 @@ impl CompactionService for CompactionServiceTowerServiceStack {
         request: PingRequest,
     ) -> crate::compaction::CompactionResult<PingResponse> {
         self.ping_svc.clone().ready().await?.call(request).await
+    }
+    async fn worker_status_update(
+        &self,
+        request: WorkerStatusUpdateRequest,
+    ) -> crate::compaction::CompactionResult<WorkerStatusUpdateResponse> {
+        self.worker_status_update_svc.clone().ready().await?.call(request).await
     }
 }
 type PingLayer = quickwit_common::tower::BoxLayer<
@@ -203,9 +296,20 @@ type PingLayer = quickwit_common::tower::BoxLayer<
     PingResponse,
     crate::compaction::CompactionError,
 >;
+type WorkerStatusUpdateLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        WorkerStatusUpdateRequest,
+        WorkerStatusUpdateResponse,
+        crate::compaction::CompactionError,
+    >,
+    WorkerStatusUpdateRequest,
+    WorkerStatusUpdateResponse,
+    crate::compaction::CompactionError,
+>;
 #[derive(Debug, Default)]
 pub struct CompactionServiceTowerLayerStack {
     ping_layers: Vec<PingLayer>,
+    worker_status_update_layers: Vec<WorkerStatusUpdateLayer>,
 }
 impl CompactionServiceTowerLayerStack {
     pub fn stack_layer<L>(mut self, layer: L) -> Self
@@ -235,8 +339,37 @@ impl CompactionServiceTowerLayerStack {
                 crate::compaction::CompactionError,
             >,
         >>::Service as tower::Service<PingRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    WorkerStatusUpdateRequest,
+                    WorkerStatusUpdateResponse,
+                    crate::compaction::CompactionError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                WorkerStatusUpdateRequest,
+                WorkerStatusUpdateResponse,
+                crate::compaction::CompactionError,
+            >,
+        >>::Service: tower::Service<
+                WorkerStatusUpdateRequest,
+                Response = WorkerStatusUpdateResponse,
+                Error = crate::compaction::CompactionError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                WorkerStatusUpdateRequest,
+                WorkerStatusUpdateResponse,
+                crate::compaction::CompactionError,
+            >,
+        >>::Service as tower::Service<
+            WorkerStatusUpdateRequest,
+        >>::Future: Send + 'static,
     {
         self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.worker_status_update_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
     pub fn stack_ping_layer<L>(mut self, layer: L) -> Self
@@ -256,6 +389,28 @@ impl CompactionServiceTowerLayerStack {
         <L::Service as tower::Service<PingRequest>>::Future: Send + 'static,
     {
         self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_worker_status_update_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    WorkerStatusUpdateRequest,
+                    WorkerStatusUpdateResponse,
+                    crate::compaction::CompactionError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                WorkerStatusUpdateRequest,
+                Response = WorkerStatusUpdateResponse,
+                Error = crate::compaction::CompactionError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            WorkerStatusUpdateRequest,
+        >>::Future: Send + 'static,
+    {
+        self.worker_status_update_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> CompactionServiceClient
@@ -329,9 +484,18 @@ impl CompactionServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let worker_status_update_svc = self
+            .worker_status_update_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let tower_svc_stack = CompactionServiceTowerServiceStack {
             inner: inner_client,
             ping_svc,
+            worker_status_update_svc,
         };
         CompactionServiceClient::new(tower_svc_stack)
     }
@@ -409,16 +573,31 @@ where
     CompactionServiceMailbox<
         A,
     >: tower::Service<
-        PingRequest,
-        Response = PingResponse,
-        Error = crate::compaction::CompactionError,
-        Future = BoxFuture<PingResponse, crate::compaction::CompactionError>,
-    >,
+            PingRequest,
+            Response = PingResponse,
+            Error = crate::compaction::CompactionError,
+            Future = BoxFuture<PingResponse, crate::compaction::CompactionError>,
+        >
+        + tower::Service<
+            WorkerStatusUpdateRequest,
+            Response = WorkerStatusUpdateResponse,
+            Error = crate::compaction::CompactionError,
+            Future = BoxFuture<
+                WorkerStatusUpdateResponse,
+                crate::compaction::CompactionError,
+            >,
+        >,
 {
     async fn ping(
         &self,
         request: PingRequest,
     ) -> crate::compaction::CompactionResult<PingResponse> {
+        self.clone().call(request).await
+    }
+    async fn worker_status_update(
+        &self,
+        request: WorkerStatusUpdateRequest,
+    ) -> crate::compaction::CompactionResult<WorkerStatusUpdateResponse> {
         self.clone().call(request).await
     }
 }
@@ -470,6 +649,20 @@ where
                 PingRequest::rpc_name(),
             ))
     }
+    async fn worker_status_update(
+        &self,
+        request: WorkerStatusUpdateRequest,
+    ) -> crate::compaction::CompactionResult<WorkerStatusUpdateResponse> {
+        self.inner
+            .clone()
+            .worker_status_update(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                WorkerStatusUpdateRequest::rpc_name(),
+            ))
+    }
 }
 #[derive(Debug)]
 pub struct CompactionServiceGrpcServerAdapter {
@@ -495,6 +688,17 @@ for CompactionServiceGrpcServerAdapter {
         self.inner
             .0
             .ping(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn worker_status_update(
+        &self,
+        request: tonic::Request<WorkerStatusUpdateRequest>,
+    ) -> Result<tonic::Response<WorkerStatusUpdateResponse>, tonic::Status> {
+        self.inner
+            .0
+            .worker_status_update(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -614,6 +818,35 @@ pub mod compaction_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn worker_status_update(
+            &mut self,
+            request: impl tonic::IntoRequest<super::WorkerStatusUpdateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WorkerStatusUpdateResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.compaction.CompactionService/WorkerStatusUpdate",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.compaction.CompactionService",
+                        "WorkerStatusUpdate",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -633,6 +866,13 @@ pub mod compaction_service_grpc_server {
             &self,
             request: tonic::Request<super::PingRequest>,
         ) -> std::result::Result<tonic::Response<super::PingResponse>, tonic::Status>;
+        async fn worker_status_update(
+            &self,
+            request: tonic::Request<super::WorkerStatusUpdateRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WorkerStatusUpdateResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
     pub struct CompactionServiceGrpcServer<T> {
@@ -740,6 +980,55 @@ pub mod compaction_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = PingSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.compaction.CompactionService/WorkerStatusUpdate" => {
+                    #[allow(non_camel_case_types)]
+                    struct WorkerStatusUpdateSvc<T: CompactionServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CompactionServiceGrpc,
+                    > tonic::server::UnaryService<super::WorkerStatusUpdateRequest>
+                    for WorkerStatusUpdateSvc<T> {
+                        type Response = super::WorkerStatusUpdateResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::WorkerStatusUpdateRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CompactionServiceGrpc>::worker_status_update(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = WorkerStatusUpdateSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

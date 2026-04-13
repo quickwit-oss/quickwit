@@ -591,7 +591,7 @@ pub async fn serve_quickwit(
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
         control_plane_client.clone(),
-        metastore_client,
+        metastore_client.clone(),
     ));
 
     // Setup ingest service v1.
@@ -791,14 +791,20 @@ pub async fn serve_quickwit(
         let compaction_root_directory = quickwit_common::temp_dir::Builder::default()
             .tempdir_in(&compaction_dir)
             .context("failed to create compaction temp directory")?;
+        // TODO: Real split store
         let split_store = IndexingSplitStore::create_without_local_store_for_test(Arc::new(
             RamStorage::default(),
         ));
+        let compaction_client = compaction_service_client_opt
+            .clone()
+            .expect("compactor service enabled but no compaction client available");
         let compactor_mailbox = start_compactor_service(
             &universe,
+            cluster.self_node_id().into(),
+            compaction_client,
             &node_config.compactor_config,
             split_store,
-            metastore_through_control_plane.clone(),
+            metastore_client.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
             compaction_root_directory,

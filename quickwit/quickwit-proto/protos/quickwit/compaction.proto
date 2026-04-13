@@ -16,9 +16,39 @@ syntax = "proto3";
 
 package quickwit.compaction;
 
+import "quickwit/common.proto";
+
 service CompactionService {
   rpc Ping(PingRequest) returns (PingResponse);
+  rpc WorkerStatusUpdate(WorkerStatusUpdateRequest) returns (WorkerStatusUpdateResponse);
 }
 
 message PingRequest {}
 message PingResponse {}
+
+message WorkerStatusUpdateRequest {
+  string worker_id = 1;
+  uint32 available_slots = 2;
+  repeated InProgressCompaction in_progress_compactions = 3;
+  repeated CompletedCompaction completed_compactions = 4;
+  repeated FailedCompaction failed_compactions = 5;
+}
+
+message InProgressCompaction {
+  string task_id = 1;
+  quickwit.common.IndexUid index_uid = 2;
+  string source_id = 3;
+  repeated string split_ids = 4;
+}
+
+message CompletedCompaction {
+  string task_id = 1;
+  string merged_split_id = 2;
+}
+
+message FailedCompaction {
+  string task_id = 1;
+  string error_message = 2;
+}
+
+message WorkerStatusUpdateResponse {}

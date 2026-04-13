@@ -27,12 +27,16 @@ use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::CompactorConfig;
 use quickwit_indexing::IndexingSplitStore;
+use quickwit_proto::compaction::CompactionServiceClient;
 use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::types::NodeId;
 use quickwit_storage::StorageResolver;
 use tracing::info;
 
 pub async fn start_compactor_service(
     universe: &Universe,
+    node_id: NodeId,
+    compaction_client: CompactionServiceClient,
     compactor_config: &CompactorConfig,
     split_store: IndexingSplitStore,
     metastore: MetastoreServiceClient,
@@ -41,8 +45,11 @@ pub async fn start_compactor_service(
     compaction_root_directory: TempDirectory,
 ) -> anyhow::Result<Mailbox<CompactorSupervisor>> {
     info!("starting compactor service");
+    // TODO: configure this for real
     let io_throughput_limiter = compactor_config.max_merge_write_throughput.map(io::limiter);
     let supervisor = CompactorSupervisor::new(
+        node_id,
+        compaction_client,
         compactor_config.max_concurrent_pipelines.get(),
         io_throughput_limiter,
         split_store,
