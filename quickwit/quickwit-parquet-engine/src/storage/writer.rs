@@ -557,7 +557,8 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::array::{
-        ArrayRef, DictionaryArray, Float64Array, Int64Array, StringArray, UInt8Array, UInt64Array,
+        Array, ArrayRef, DictionaryArray, Float64Array, Int64Array, StringArray, UInt8Array,
+        UInt64Array,
     };
     use arrow::datatypes::{DataType, Field, Int32Type, Schema};
 
@@ -1221,6 +1222,140 @@ mod tests {
         let mut sorted = remaining.to_vec();
         sorted.sort();
         assert_eq!(remaining, &sorted, "data columns should be alphabetical");
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// Verify that nulls always sort last, regardless of ascending or descending
+    /// direction. This is critical for compaction: when a column is absent from a
+    /// split, it is treated as null, and nulls-last ensures the comparison is
+    /// well-defined without special-casing missing columns.
+    #[test]
+    fn test_nulls_sort_last_ascending_and_descending() {
+        use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+        use crate::test_helpers::create_nullable_dict_array;
+
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("service", dict_type.clone(), true),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+        ]));
+
+        // Three rows: service = "beta", null, "alpha".
+        let metric_name: ArrayRef = crate::test_helpers::create_dict_array(&[
+            "cpu.usage",
+            "cpu.usage",
+            "cpu.usage",
+        ]);
+        let service: ArrayRef =
+            create_nullable_dict_array(&[Some("beta"), None, Some("alpha")]);
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; 3]));
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(vec![100u64, 200, 300]));
+        let value: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![metric_name, service, metric_type, timestamp_secs, value],
+        )
+        .unwrap();
+
+        // Test ascending: service sorted ascending, nulls last.
+        // Expected order: alpha(300), beta(100), null(200).
+        let mut asc_config = TableConfig::default();
+        asc_config.sort_fields = Some("metric_name|service|timestamp_secs/V2".to_string());
+        let writer = ParquetWriter::new(ParquetWriterConfig::default(), &asc_config);
+
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_nulls_last_asc.parquet");
+        writer
+            .write_to_file_with_metadata(&batch, &path, None)
+            .unwrap();
+
+        let file = std::fs::File::open(&path).unwrap();
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+            .unwrap()
+            .build()
+            .unwrap();
+        let batches: Vec<_> = reader.collect::<Result<Vec<_>, _>>().unwrap();
+        let result = &batches[0];
+
+        let svc_idx = result.schema().index_of("service").unwrap();
+        let svc_col = result.column(svc_idx);
+        let svc_dict = svc_col
+            .as_any()
+            .downcast_ref::<DictionaryArray<Int32Type>>()
+            .unwrap();
+        let svc_values = svc_dict.values();
+        let svc_strings = svc_values.as_any().downcast_ref::<StringArray>().unwrap();
+
+        // Row 0: alpha, Row 1: beta, Row 2: null (last).
+        assert!(!svc_dict.is_null(0), "row 0 should not be null (ascending)");
+        let key0 = svc_dict.keys().value(0) as usize;
+        assert_eq!(svc_strings.value(key0), "alpha", "row 0 = alpha (ascending)");
+        assert!(!svc_dict.is_null(1), "row 1 should not be null (ascending)");
+        let key1 = svc_dict.keys().value(1) as usize;
+        assert_eq!(svc_strings.value(key1), "beta", "row 1 = beta (ascending)");
+        assert!(svc_dict.is_null(2), "row 2 should be null (last, ascending)");
+
+        std::fs::remove_file(&path).ok();
+
+        // Test descending: service sorted descending, nulls STILL last.
+        // Expected order: beta(100), alpha(300), null(200).
+        let mut desc_config = TableConfig::default();
+        desc_config.sort_fields = Some("metric_name|-service|timestamp_secs/V2".to_string());
+        let writer = ParquetWriter::new(ParquetWriterConfig::default(), &desc_config);
+
+        let path = temp_dir.join("test_nulls_last_desc.parquet");
+        writer
+            .write_to_file_with_metadata(&batch, &path, None)
+            .unwrap();
+
+        let file = std::fs::File::open(&path).unwrap();
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+            .unwrap()
+            .build()
+            .unwrap();
+        let batches: Vec<_> = reader.collect::<Result<Vec<_>, _>>().unwrap();
+        let result = &batches[0];
+
+        let svc_idx = result.schema().index_of("service").unwrap();
+        let svc_col = result.column(svc_idx);
+        let svc_dict = svc_col
+            .as_any()
+            .downcast_ref::<DictionaryArray<Int32Type>>()
+            .unwrap();
+        let svc_values = svc_dict.values();
+        let svc_strings = svc_values.as_any().downcast_ref::<StringArray>().unwrap();
+
+        // Row 0: beta, Row 1: alpha, Row 2: null (last).
+        assert!(
+            !svc_dict.is_null(0),
+            "row 0 should not be null (descending)"
+        );
+        let key0 = svc_dict.keys().value(0) as usize;
+        assert_eq!(
+            svc_strings.value(key0),
+            "beta",
+            "row 0 = beta (descending)"
+        );
+        assert!(
+            !svc_dict.is_null(1),
+            "row 1 should not be null (descending)"
+        );
+        let key1 = svc_dict.keys().value(1) as usize;
+        assert_eq!(
+            svc_strings.value(key1),
+            "alpha",
+            "row 1 = alpha (descending)"
+        );
+        assert!(
+            svc_dict.is_null(2),
+            "row 2 should be null (last, descending)"
+        );
 
         std::fs::remove_file(&path).ok();
     }

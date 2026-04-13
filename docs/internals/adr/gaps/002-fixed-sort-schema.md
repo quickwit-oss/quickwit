@@ -100,7 +100,7 @@ All of these systems treat sort order as a configurable, per-table property.
 - [ ] Store sort schema as per-index property in the metastore (mutable at runtime) — future Phase 32
 - [ ] Propagate sort schema changes from metastore to indexing pipelines on appropriate nodes — future Phase 32
 - [x] Replace `ParquetField::sort_order()` with schema-driven column selection — PR #6287 (`writer.rs` uses `resolved_sort_fields` from `TableConfig.effective_sort_fields()`)
-- [ ] Fix null ordering: ascending columns use `nulls_first: false`, descending columns use `nulls_first: true`
+- [x] Fix null ordering: nulls always sort last (`nulls_first: false`) regardless of column direction — PR #6295 (`sort_batch()`, `sorting_columns()`, SS-1 verification). Tested with ascending and descending columns in `test_nulls_sort_last_ascending_and_descending`
 - [x] Support per-column sort direction (`+`/`-` suffix) — PR #6290 (parser) + PR #6287 (writer respects `descending` flag)
 - [x] Implement optional timeseries_id computation — PR #6286 (SipHash-2-4 over canonicalized tags, computed at OTLP ingest in `arrow_metrics.rs`)
 - [x] Store sort schema in MetricsSplitMetadata and Parquet file key_value_metadata — PR #6292 (`qh.sort_fields` KV entry + `metadata.sort_fields`)
