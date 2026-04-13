@@ -1,0 +1,678 @@
+// Copyright 2021-Present Datadog, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Automaton, regex builder, and MinMax tests.
+//!
+//! Ported from Go `automaton_test.go`.
+
+use std::sync::Arc;
+
+use arrow::array::{ArrayRef, Float64Array, Int64Array, UInt8Array, UInt64Array};
+use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
+use arrow::record_batch::RecordBatch;
+
+use crate::test_helpers::{create_dict_array, create_nullable_dict_array};
+use crate::zonemap::automaton::{
+    write_character_class, write_disjunctive_clauses, write_disjunctive_clauses_factoring_suffix,
+};
+use crate::zonemap::minmax::{MinMaxBuilder, hash_int, hash_string};
+use crate::zonemap::{self, ZonemapOptions, extract_zonemap_regexes, generate_regex_from_strings};
+
+// ---------------------------------------------------------------------------
+// Helper: build a superset regex from values with optional pruning.
+// ---------------------------------------------------------------------------
+
+fn build_superset_regex(
+    values: &[&str],
+    max_num_transitions: i32,
+) -> zonemap::automaton::Automaton {
+    let max_depth = if max_num_transitions >= 0 {
+        (max_num_transitions as usize) * 2
+    } else {
+        0
+    };
+    let mut aut = zonemap::automaton::Automaton::new(max_depth);
+    for value in values {
+        aut.add(value);
+    }
+    if max_num_transitions >= 0 {
+        aut.prune(max_num_transitions as usize);
+    }
+    aut
+}
+
+fn assert_automaton(regex: &str, is_strict_superset: bool, aut: &zonemap::automaton::Automaton) {
+    assert_eq!(aut.regex(), regex, "regex mismatch");
+    assert_eq!(
+        aut.is_strict_superset, is_strict_superset,
+        "is_strict_superset mismatch for regex '{}'",
+        regex
+    );
+}
+
+// ---------------------------------------------------------------------------
+// automaton_test.go: TestRegex
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_regex_basic() {
+    assert_automaton("^a$", true, &build_superset_regex(&["a"], -1));
+    assert_automaton("^(a|bc)$", true, &build_superset_regex(&["bc", "a"], -1));
+    assert_automaton("^a(|b)$", true, &build_superset_regex(&["ab", "a"], -1));
+    assert_automaton(
+        "^(|a(|bc))$",
+        true,
+        &build_superset_regex(&["abc", "a", ""], -1),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// automaton_test.go: TestEscaping
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_escaping() {
+    assert_automaton("^\\^\\$$", true, &build_superset_regex(&["^$"], -1));
+    assert_automaton(
+        "^\\$(|\\?-\\^)$",
+        true,
+        &build_superset_regex(&["$", "$?-^"], -1),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// automaton_test.go: TestPrune
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_prune_booleans() {
+    let values = &["false", "False", "true", "True"];
+    assert_automaton(
+        "^([Ff]alse|[Tt]rue)$",
+        true,
+        &build_superset_regex(values, -1),
+    );
+    assert_automaton(
+        "^([Ff]alse|[Tt]rue)$",
+        true,
+        &build_superset_regex(values, 18),
+    );
+    assert_automaton(
+        "^(False|[Tt]rue|fals.+)$",
+        false,
+        &build_superset_regex(values, 17),
+    );
+    assert_automaton("^[FTft].+$", false, &build_superset_regex(values, 4));
+    assert_automaton("^.+$", false, &build_superset_regex(values, 3));
+}
+
+#[test]
+fn test_prune_alphanumeric() {
+    let values = &["a0", "a1", "b0", "b1", "b2"];
+    assert_automaton("^(a[01]|b[012])$", true, &build_superset_regex(values, -1));
+    assert_automaton("^(a[01]|b[012])$", true, &build_superset_regex(values, 7));
+    assert_automaton("^(a.+|b[012])$", false, &build_superset_regex(values, 6));
+    assert_automaton("^(a[01]|b.+)$", false, &build_superset_regex(values, 4));
+    assert_automaton("^[ab].+$", false, &build_superset_regex(values, 3));
+    assert_automaton("^.+$", false, &build_superset_regex(values, 1));
+}
+
+#[test]
+fn test_prune_duplicates() {
+    let values = &["aa", "bb", "bb"];
+    assert_automaton("^(aa|bb)$", true, &build_superset_regex(values, -1));
+    assert_automaton("^(aa|bb)$", true, &build_superset_regex(values, 4));
+    assert_automaton("^(a.+|bb)$", false, &build_superset_regex(values, 3));
+    assert_automaton("^[ab].+$", false, &build_superset_regex(values, 2));
+    assert_automaton("^.+$", false, &build_superset_regex(values, 1));
+}
+
+#[test]
+fn test_prune_with_empty_string() {
+    let values = &["", "a", "aaa"];
+    assert_automaton("^(|a(|aa))$", true, &build_superset_regex(values, -1));
+    assert_automaton("^(|a(|aa))$", true, &build_superset_regex(values, 3));
+    assert_automaton("^(|a(|a.+))$", false, &build_superset_regex(values, 2));
+    assert_automaton("^(|a.*)$", false, &build_superset_regex(values, 1));
+    assert_automaton("^.*$", false, &build_superset_regex(values, 0));
+}
+
+// ---------------------------------------------------------------------------
+// automaton_test.go: TestWriteCharacterClass
+// ---------------------------------------------------------------------------
+
+fn character_class(chars: &[char]) -> String {
+    let mut sb = String::new();
+    write_character_class(&mut sb, chars);
+    sb
+}
+
+#[test]
+fn test_write_character_class() {
+    assert_eq!("a", character_class(&['a']));
+    assert_eq!("[ab]", character_class(&['a', 'b']));
+    assert_eq!("[ac]", character_class(&['a', 'c']));
+    assert_eq!("[abc]", character_class(&['a', 'b', 'c']));
+    assert_eq!("[a-d]", character_class(&['a', 'b', 'c', 'd']));
+    assert_eq!("[a-df]", character_class(&['a', 'b', 'c', 'd', 'f']));
+    assert_eq!(
+        "[a-df-i]",
+        character_class(&['a', 'b', 'c', 'd', 'f', 'g', 'h', 'i'])
+    );
+    assert_eq!(
+        "[\\-\\^$\\\\`\\[\\]語]",
+        character_class(&['-', '^', '$', '\\', '`', '[', ']', '語'])
+    );
+}
+
+// ---------------------------------------------------------------------------
+// automaton_test.go: TestWriteDisjunctiveClausesFactoringSuffix
+// ---------------------------------------------------------------------------
+
+fn disjunctive_clauses_factoring_suffix(clauses: &[&str], suffix: &str) -> String {
+    let owned: Vec<String> = clauses.iter().map(|s| s.to_string()).collect();
+    let mut sb = String::new();
+    write_disjunctive_clauses_factoring_suffix(&mut sb, &owned, suffix);
+    sb
+}
+
+#[test]
+fn test_write_disjunctive_clauses_factoring_suffix() {
+    assert_eq!("", disjunctive_clauses_factoring_suffix(&[], ""));
+    assert_eq!("", disjunctive_clauses_factoring_suffix(&[], "abc"));
+    assert_eq!("abc", disjunctive_clauses_factoring_suffix(&["abc"], ""));
+    assert_eq!("abc", disjunctive_clauses_factoring_suffix(&["abc"], "c"));
+    assert_eq!("abc", disjunctive_clauses_factoring_suffix(&["abc"], "a"));
+    assert_eq!("abc", disjunctive_clauses_factoring_suffix(&["abc"], "abc"));
+    assert_eq!(
+        "(abc|def|ghi)",
+        disjunctive_clauses_factoring_suffix(&["abc", "def", "ghi"], "")
+    );
+    assert_eq!(
+        "(abc|def|ghi)",
+        disjunctive_clauses_factoring_suffix(&["abc", "def", "ghi"], "123")
+    );
+    assert_eq!(
+        "(abc|def123|ghi)",
+        disjunctive_clauses_factoring_suffix(&["abc", "def123", "ghi"], "123")
+    );
+    assert_eq!(
+        "((abc|def)123|ghi)",
+        disjunctive_clauses_factoring_suffix(&["abc123", "def123", "ghi"], "123")
+    );
+    assert_eq!(
+        "(abc|def|ghi)123",
+        disjunctive_clauses_factoring_suffix(&["abc123", "def123", "ghi123"], "123")
+    );
+    assert_eq!(
+        "(abc123|def123|ghi123)",
+        disjunctive_clauses_factoring_suffix(&["abc123", "def123", "ghi123"], "12")
+    );
+}
+
+// ---------------------------------------------------------------------------
+// automaton_test.go: TestWriteDisjunctiveClauses
+// ---------------------------------------------------------------------------
+
+fn disjunctive_clauses(clauses: &[&str], stripped_suffix_len: usize) -> String {
+    let owned: Vec<String> = clauses.iter().map(|s| s.to_string()).collect();
+    let mut sb = String::new();
+    write_disjunctive_clauses(&mut sb, &owned, stripped_suffix_len);
+    sb
+}
+
+#[test]
+fn test_write_disjunctive_clauses() {
+    assert_eq!("", disjunctive_clauses(&[], 0));
+    assert_eq!("abc", disjunctive_clauses(&["abc"], 0));
+    assert_eq!("ab", disjunctive_clauses(&["abc"], 1));
+    assert_eq!("", disjunctive_clauses(&["abc"], 3));
+    assert_eq!(
+        "(abc|defg|hij)",
+        disjunctive_clauses(&["abc", "defg", "hij"], 0)
+    );
+    assert_eq!(
+        "(ab|def|hi)",
+        disjunctive_clauses(&["abc", "defg", "hij"], 1)
+    );
+    assert_eq!("(|d|)", disjunctive_clauses(&["abc", "defg", "hij"], 3));
+}
+
+// ---------------------------------------------------------------------------
+// automaton_test.go: TestAfterPrune
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_after_prune() {
+    let mut aut = zonemap::automaton::Automaton::new(64);
+    for s in &[
+        "a",
+        "ab",
+        "abc",
+        "abcd",
+        "abcde",
+        "abcdef",
+        "abcdefg",
+        "abcdefgh",
+        "abcdefghi",
+        "abcdefghij",
+        "abcdefghijk",
+        "abcdefghijkl",
+    ] {
+        aut.add(s);
+    }
+    aut.prune(8);
+
+    assert_eq!("^a(|b(|c(|d(|e(|f(|g(|h.*)))))))$", aut.regex());
+    assert!(!aut.is_strict_superset);
+
+    // Adding after pruning should not change the regex past the pruned point.
+    aut.add("abcdefghxrqx");
+
+    assert_eq!("^a(|b(|c(|d(|e(|f(|g(|h.*)))))))$", aut.regex());
+    assert!(!aut.is_strict_superset);
+}
+
+// ---------------------------------------------------------------------------
+// automaton_test.go: TestLongStrings
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_long_strings() {
+    let mut aut = zonemap::automaton::Automaton::new(8);
+    for s in &[
+        "a",
+        "ab",
+        "abc",
+        "abcd",
+        "abcde",
+        "abcdef",
+        "abcdefg",
+        "abcdefgh",
+        "abcdefghi",
+        "abcdefghij",
+        "abcdefghijk",
+        "abcdefghijkl",
+        "1234567890",
+    ] {
+        aut.add(s);
+    }
+
+    assert_eq!(
+        "^(12345678.+|a(|b(|c(|d(|e(|f(|g(|h.*))))))))$",
+        aut.regex()
+    );
+    assert!(!aut.is_strict_superset);
+}
+
+// ---------------------------------------------------------------------------
+// MinMax tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_minmax_string_hashing() {
+    let mut builder = MinMaxBuilder::new();
+    builder.register("hello");
+    builder.register("world");
+
+    let result = builder.build().expect("should produce MinMax");
+    let h1 = hash_string("hello");
+    let h2 = hash_string("world");
+    assert_eq!(result.min_hash, h1.min(h2));
+    assert_eq!(result.max_hash, h1.max(h2));
+}
+
+#[test]
+fn test_minmax_int_hashing() {
+    let mut builder = MinMaxBuilder::new();
+    builder.register_int64(10);
+    builder.register_int64(20);
+    builder.register_int64(30);
+
+    let result = builder.build().expect("should produce MinMax");
+    let h10 = hash_int(10);
+    let h20 = hash_int(20);
+    let h30 = hash_int(30);
+    let expected_min = h10.min(h20).min(h30);
+    let expected_max = h10.max(h20).max(h30);
+    assert_eq!(result.min_hash, expected_min);
+    assert_eq!(result.max_hash, expected_max);
+    assert_eq!(result.min_int, 10);
+    assert_eq!(result.max_int, 30);
+}
+
+#[test]
+fn test_minmax_empty_build() {
+    let builder = MinMaxBuilder::new();
+    assert!(builder.build().is_none());
+}
+
+#[test]
+fn test_minmax_single_value() {
+    let mut builder = MinMaxBuilder::new();
+    builder.register("only");
+    let result = builder.build().unwrap();
+    let h = hash_string("only");
+    assert_eq!(result.min_hash, h);
+    assert_eq!(result.max_hash, h);
+}
+
+#[test]
+fn test_minmax_reset() {
+    let mut builder = MinMaxBuilder::new();
+    builder.register("first");
+    builder.reset();
+    builder.register("second");
+    let result = builder.build().unwrap();
+    let h = hash_string("second");
+    assert_eq!(result.min_hash, h);
+    assert_eq!(result.max_hash, h);
+}
+
+// ---------------------------------------------------------------------------
+// PrefixPreservingRegexBuilder tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_regex_builder_basic() {
+    let mut builder = zonemap::regex_builder::PrefixPreservingRegexBuilder::new();
+    builder.reset(64, 0, 2.0);
+    builder.register("prod");
+    builder.register("staging");
+    builder.register("production");
+
+    let result = builder.build();
+    assert_eq!(result.regex, "^(prod(|uction)|staging)$");
+    assert!(result.is_also_subset_regex);
+}
+
+#[test]
+fn test_regex_builder_with_pruning() {
+    let mut builder = zonemap::regex_builder::PrefixPreservingRegexBuilder::new();
+    builder.reset(4, 0, 2.0);
+    builder.register("false");
+    builder.register("False");
+    builder.register("true");
+    builder.register("True");
+
+    let result = builder.build();
+    assert_eq!(result.regex, "^[FTft].+$");
+    assert!(!result.is_also_subset_regex);
+}
+
+#[test]
+fn test_regex_builder_progressive_pruning() {
+    let mut builder = zonemap::regex_builder::PrefixPreservingRegexBuilder::new();
+    builder.reset(3, 2, 2.0);
+    builder.register("abc");
+    builder.register("def");
+    builder.register("ghi");
+    builder.register("jkl");
+
+    let result = builder.build();
+    assert!(!result.regex.is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// generate_regex_from_strings tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_generate_regex_from_strings() {
+    let regex = generate_regex_from_strings(&["prod", "staging", "production"], 64, 0, 2.0);
+    assert_eq!(regex, "^(prod(|uction)|staging)$");
+}
+
+#[test]
+fn test_generate_regex_from_strings_with_special_chars() {
+    let regex = generate_regex_from_strings(&["$^-?", "日本語"], 64, 0, 2.0);
+    assert!(regex.contains("\\$\\^-\\?"));
+    assert!(regex.contains("日本語"));
+}
+
+// ---------------------------------------------------------------------------
+// extract_zonemap_regexes tests (Arrow integration)
+// ---------------------------------------------------------------------------
+
+/// Create a test batch with sort schema columns.
+fn create_zonemap_test_batch(
+    metric_names: &[&str],
+    services: &[Option<&str>],
+    envs: &[Option<&str>],
+    timestamps: &[u64],
+) -> RecordBatch {
+    let n = metric_names.len();
+    let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+
+    let fields = vec![
+        Field::new("metric_name", dict_type.clone(), false),
+        Field::new("service", dict_type.clone(), true),
+        Field::new("env", dict_type.clone(), true),
+        Field::new("metric_type", DataType::UInt8, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
+        Field::new("value", DataType::Float64, false),
+    ];
+    let schema = Arc::new(ArrowSchema::new(fields));
+
+    let metric_name: ArrayRef = create_dict_array(metric_names);
+    let service: ArrayRef = create_nullable_dict_array(services);
+    let env: ArrayRef = create_nullable_dict_array(envs);
+    let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; n]));
+    let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps.to_vec()));
+    let timeseries_id: ArrayRef = Arc::new(Int64Array::from(vec![42i64; n]));
+    let value: ArrayRef = Arc::new(Float64Array::from(vec![1.0; n]));
+
+    RecordBatch::try_new(
+        schema,
+        vec![
+            metric_name,
+            service,
+            env,
+            metric_type,
+            timestamp_secs,
+            timeseries_id,
+            value,
+        ],
+    )
+    .unwrap()
+}
+
+#[test]
+fn test_extract_zonemap_regexes_basic() {
+    let batch = create_zonemap_test_batch(
+        &["cpu.usage", "cpu.usage", "memory.used"],
+        &[Some("web"), Some("api"), Some("web")],
+        &[Some("prod"), Some("staging"), Some("prod")],
+        &[100, 200, 300],
+    );
+
+    let sort_fields = "metric_name|service|env|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions::default();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+
+    assert!(
+        regexes.contains_key("metric_name"),
+        "should have metric_name"
+    );
+    assert!(regexes.contains_key("service"), "should have service");
+    assert!(regexes.contains_key("env"), "should have env");
+    assert!(
+        !regexes.contains_key("timeseries_id"),
+        "int column should not produce regex"
+    );
+    assert!(
+        !regexes.contains_key("timestamp_secs"),
+        "uint column should not produce regex"
+    );
+
+    let metric_regex = &regexes["metric_name"];
+    assert!(
+        metric_regex.contains("cpu"),
+        "regex should contain cpu prefix"
+    );
+    assert!(
+        metric_regex.contains("memory"),
+        "regex should contain memory prefix"
+    );
+}
+
+#[test]
+fn test_extract_zonemap_regexes_empty_batch() {
+    let fields = vec![
+        Field::new(
+            "metric_name",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            false,
+        ),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+    ];
+    let schema = Arc::new(ArrowSchema::new(fields));
+
+    let metric_name: ArrayRef = create_dict_array(&[] as &[&str]);
+    let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(Vec::<u64>::new()));
+    let batch = RecordBatch::try_new(schema, vec![metric_name, timestamp_secs]).unwrap();
+
+    let sort_fields = "metric_name|timestamp_secs/V2";
+    let opts = ZonemapOptions::default();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+    assert!(regexes.is_empty(), "empty batch should produce no regexes");
+}
+
+#[test]
+fn test_extract_zonemap_regexes_disabled_when_zero_max_size() {
+    let batch = create_zonemap_test_batch(&["cpu.usage"], &[Some("web")], &[Some("prod")], &[100]);
+
+    let sort_fields = "metric_name|service|env|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions {
+        superset_regex_max_size: 0,
+        ..Default::default()
+    };
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+    assert!(
+        regexes.is_empty(),
+        "zero max_size should disable zonemap generation"
+    );
+}
+
+#[test]
+fn test_extract_zonemap_regexes_with_nulls() {
+    let batch = create_zonemap_test_batch(
+        &["cpu.usage", "cpu.usage"],
+        &[Some("web"), None],
+        &[None, None],
+        &[100, 200],
+    );
+
+    let sort_fields = "metric_name|service|env|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions::default();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+
+    assert!(regexes.contains_key("metric_name"));
+    assert!(regexes.contains_key("service"));
+}
+
+#[test]
+fn test_extract_zonemap_regexes_column_not_in_batch() {
+    let batch = create_zonemap_test_batch(&["cpu.usage"], &[Some("web")], &[Some("prod")], &[100]);
+
+    let sort_fields = "metric_name|service|datacenter|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions::default();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+
+    assert!(regexes.contains_key("metric_name"));
+    assert!(regexes.contains_key("service"));
+    assert!(
+        !regexes.contains_key("datacenter"),
+        "missing column should be skipped"
+    );
+}
+
+#[test]
+fn test_extract_zonemap_regexes_special_characters() {
+    let batch = create_zonemap_test_batch(
+        &["cpu.usage", "cpu.usage"],
+        &[Some("$^-?"), Some("日本語")],
+        &[Some("prod"), Some("staging")],
+        &[100, 200],
+    );
+
+    let sort_fields = "metric_name|service|env|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions::default();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+
+    let service_regex = &regexes["service"];
+    assert!(
+        service_regex.contains("\\$\\^-\\?") || service_regex.contains("\\$\\^\\-\\?"),
+        "special chars should be escaped in regex: {}",
+        service_regex
+    );
+    assert!(
+        service_regex.contains("日本語"),
+        "unicode should be preserved in regex: {}",
+        service_regex
+    );
+}
+
+#[test]
+fn test_extract_zonemap_regexes_long_service_name() {
+    let long_name = "a_very".to_string() + &"_long".repeat(100);
+    let batch =
+        create_zonemap_test_batch(&["cpu.usage"], &[Some(&long_name)], &[Some("prod")], &[100]);
+
+    let sort_fields = "metric_name|service|env|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions {
+        superset_regex_max_size: 32,
+        ..Default::default()
+    };
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+
+    let service_regex = &regexes["service"];
+    assert!(
+        service_regex.contains(".+"),
+        "long string should be pruned: {}",
+        service_regex
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark data test (equivalent to Go BenchmarkBuildSupersetRegex)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_benchmark_data_produces_valid_regex() {
+    let values = &[
+        "active_directory",
+        "amazon_ec2",
+        "amazon_s3",
+        "apache",
+        "azure_vm",
+        "cassandra",
+        "docker",
+        "elasticsearch",
+        "github",
+        "kafka",
+        "kubernetes",
+        "mysql",
+        "nginx",
+        "postgres",
+        "redis",
+        "spark",
+    ];
+
+    let regex = generate_regex_from_strings(values, 64, 1000, 2.0);
+    assert!(regex.starts_with('^'), "regex should start with ^");
+    assert!(regex.ends_with('$'), "regex should end with $");
+    assert!(!regex.is_empty());
+}

@@ -35,6 +35,18 @@ use crate::schema::{validate_required_fields, validate_required_sketch_fields};
 use crate::sort_fields::parse_sort_fields;
 use crate::split::{ParquetSplitKind, ParquetSplitMetadata};
 use crate::table_config::TableConfig;
+use crate::zonemap::ZonemapOptions;
+
+/// Metadata extracted during the write pipeline (row keys + zonemap regexes).
+pub type WriteMetadata = (Option<Vec<u8>>, std::collections::HashMap<String, String>);
+
+/// Result of preparing a batch for writing, containing all extracted metadata.
+struct PreparedWrite {
+    sorted_batch: RecordBatch,
+    props: WriterProperties,
+    row_keys_proto: Option<Vec<u8>>,
+    zonemap_regexes: std::collections::HashMap<String, String>,
+}
 
 /// Parquet key_value_metadata keys for compaction metadata.
 /// Prefixed with "qh." to avoid collision with standard Parquet/Arrow keys.
@@ -44,6 +56,7 @@ pub(crate) const PARQUET_META_WINDOW_DURATION: &str = "qh.window_duration_secs";
 pub(crate) const PARQUET_META_NUM_MERGE_OPS: &str = "qh.num_merge_ops";
 pub(crate) const PARQUET_META_ROW_KEYS: &str = "qh.row_keys";
 pub(crate) const PARQUET_META_ROW_KEYS_JSON: &str = "qh.row_keys_json";
+pub(crate) const PARQUET_META_ZONEMAP_REGEXES: &str = "qh.zonemap_regexes";
 
 /// Build Parquet key_value_metadata entries for compaction metadata.
 /// Returns Vec<KeyValue> that can be added to WriterProperties.
@@ -365,16 +378,16 @@ impl ParquetWriter {
             .expect("reorder_columns: schema and columns must be consistent")
     }
 
-    /// Validate, compute derived columns, sort, reorder, extract row keys,
-    /// and build WriterProperties.
+    /// Validate, compute derived columns, sort, reorder, extract row keys
+    /// and zonemap regexes, and build WriterProperties.
     ///
-    /// Returns the prepared batch, writer properties, and the serialized
-    /// `RowKeys` proto bytes (if the batch is non-empty).
+    /// Returns a [`PreparedWrite`] containing the sorted batch, writer
+    /// properties, serialized RowKeys proto, and per-column zonemap regexes.
     fn prepare_write(
         &self,
         batch: &RecordBatch,
         split_metadata: Option<&ParquetSplitMetadata>,
-    ) -> Result<(RecordBatch, WriterProperties, Option<Vec<u8>>), ParquetWriteError> {
+    ) -> Result<PreparedWrite, ParquetWriteError> {
         let is_sketch = split_metadata
             .map(|m| m.kind == ParquetSplitKind::Sketches)
             .unwrap_or(false);
@@ -400,7 +413,16 @@ impl ParquetWriter {
                 .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?
                 .map(|rk| crate::row_keys::encode_row_keys_proto(&rk));
 
-        // Build KV metadata from split metadata + row keys.
+        // Extract zonemap regexes for string-valued sort schema columns.
+        let zonemap_opts = ZonemapOptions::default();
+        let zonemap_regexes = crate::zonemap::extract_zonemap_regexes(
+            &self.sort_fields_string,
+            &sorted_batch,
+            &zonemap_opts,
+        )
+        .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?;
+
+        // Build KV metadata from split metadata + row keys + zonemap.
         let mut kv_entries = split_metadata
             .map(build_compaction_key_value_metadata)
             .unwrap_or_default();
@@ -427,6 +449,15 @@ impl ParquetWriter {
             }
         }
 
+        if !zonemap_regexes.is_empty()
+            && let Ok(json) = serde_json::to_string(&zonemap_regexes)
+        {
+            kv_entries.push(KeyValue::new(
+                PARQUET_META_ZONEMAP_REGEXES.to_string(),
+                json,
+            ));
+        }
+
         // SS-5: verify kv_metadata sort_fields matches source.
         if let Some(meta) = split_metadata {
             verify_ss5_kv_consistency(meta, &kv_entries);
@@ -443,48 +474,58 @@ impl ParquetWriter {
             Some(kv_entries),
             &sort_field_names,
         );
-        Ok((sorted_batch, props, row_keys_proto))
+        Ok(PreparedWrite {
+            sorted_batch,
+            props,
+            row_keys_proto,
+            zonemap_regexes,
+        })
     }
 
     /// Write a RecordBatch to Parquet bytes in memory.
     ///
-    /// Returns `(parquet_bytes, row_keys_proto)`.
+    /// Returns `(parquet_bytes, (row_keys_proto, zonemap_regexes))`.
     #[instrument(skip(self, batch), fields(batch_rows = batch.num_rows()))]
     pub fn write_to_bytes(
         &self,
         batch: &RecordBatch,
         split_metadata: Option<&ParquetSplitMetadata>,
-    ) -> Result<(Vec<u8>, Option<Vec<u8>>), ParquetWriteError> {
-        let (sorted_batch, props, row_keys_proto) = self.prepare_write(batch, split_metadata)?;
+    ) -> Result<(Vec<u8>, WriteMetadata), ParquetWriteError> {
+        let prepared = self.prepare_write(batch, split_metadata)?;
 
         let buffer = Cursor::new(Vec::new());
-        let mut writer = ArrowWriter::try_new(buffer, sorted_batch.schema(), Some(props))?;
-        writer.write(&sorted_batch)?;
+        let mut writer =
+            ArrowWriter::try_new(buffer, prepared.sorted_batch.schema(), Some(prepared.props))?;
+        writer.write(&prepared.sorted_batch)?;
         let bytes = writer.into_inner()?.into_inner();
 
         debug!(bytes_written = bytes.len(), "completed write to bytes");
-        Ok((bytes, row_keys_proto))
+        Ok((bytes, (prepared.row_keys_proto, prepared.zonemap_regexes)))
     }
 
     /// Write a RecordBatch to a Parquet file with optional compaction metadata.
     ///
-    /// Returns `(bytes_written, row_keys_proto)`.
+    /// Returns `(bytes_written, (row_keys_proto, zonemap_regexes))`.
     #[instrument(skip(self, batch, split_metadata), fields(batch_rows = batch.num_rows(), path = %path.display()))]
     pub fn write_to_file_with_metadata(
         &self,
         batch: &RecordBatch,
         path: &Path,
         split_metadata: Option<&ParquetSplitMetadata>,
-    ) -> Result<(u64, Option<Vec<u8>>), ParquetWriteError> {
-        let (sorted_batch, props, row_keys_proto) = self.prepare_write(batch, split_metadata)?;
+    ) -> Result<(u64, WriteMetadata), ParquetWriteError> {
+        let prepared = self.prepare_write(batch, split_metadata)?;
 
         let file = File::create(path)?;
-        let mut writer = ArrowWriter::try_new(file, sorted_batch.schema(), Some(props))?;
-        writer.write(&sorted_batch)?;
+        let mut writer =
+            ArrowWriter::try_new(file, prepared.sorted_batch.schema(), Some(prepared.props))?;
+        writer.write(&prepared.sorted_batch)?;
 
         let bytes_written = writer.into_inner()?.metadata()?.len();
         debug!(bytes_written, "completed write to file");
-        Ok((bytes_written, row_keys_proto))
+        Ok((
+            bytes_written,
+            (prepared.row_keys_proto, prepared.zonemap_regexes),
+        ))
     }
 }
 

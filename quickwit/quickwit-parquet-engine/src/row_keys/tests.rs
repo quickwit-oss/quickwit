@@ -414,7 +414,7 @@ fn test_row_keys_in_parquet_kv_metadata() {
 
     let temp_dir = std::env::temp_dir();
     let path = temp_dir.join("test_row_keys_kv.parquet");
-    let (_, row_keys_proto) = writer
+    let (_, (row_keys_proto, _zonemap_regexes)) = writer
         .write_to_file_with_metadata(&batch, &path, None)
         .unwrap();
 
