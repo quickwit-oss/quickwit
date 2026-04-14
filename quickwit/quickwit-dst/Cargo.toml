@@ -1,0 +1,16 @@
+[package]
+name = "quickwit-dst"
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Deterministic simulation testing and stateright model checking for Quickhouse-Pomsky"
+
+[features]
+model-checking = ["stateright"]
+
+[dependencies]
+stateright = { workspace = true, optional = true }

@@ -16,7 +16,7 @@ use std::any::Any;
 use std::convert::Infallible;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use std::time::Instant;
 
 use quickwit_common::metrics::{IntCounter, IntUpDownCounter, UpDownCounterGuard};
@@ -386,8 +386,7 @@ impl<A: Actor> Inbox<A> {
 }
 
 fn get_actor_inboxes_count_gauge_guard() -> UpDownCounterGuard<'static> {
-    static INBOX_COUNTER: std::sync::OnceLock<IntUpDownCounter> = OnceLock::new();
-    let counter = INBOX_COUNTER.get_or_init(|| {
+    static INBOX_COUNTER: LazyLock<IntUpDownCounter> = LazyLock::new(|| {
         quickwit_common::metrics::new_up_down_counter(
             "inboxes_count",
             "overall count of actors",
@@ -395,7 +394,7 @@ fn get_actor_inboxes_count_gauge_guard() -> UpDownCounterGuard<'static> {
             &[],
         )
     });
-    let mut guard = UpDownCounterGuard::from_counter(counter);
+    let mut guard = UpDownCounterGuard::from_counter(&INBOX_COUNTER);
     guard.add(1);
     guard
 }

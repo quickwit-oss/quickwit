@@ -47,7 +47,7 @@ use std::convert::Infallible;
 use std::fs;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use anyhow::{Context, bail};
@@ -56,7 +56,6 @@ pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
     Cluster, ClusterChange, ClusterChangeStream, ClusterNode, ListenerHandle, start_cluster_service,
@@ -155,25 +154,25 @@ fn get_metastore_client_max_concurrency() -> usize {
     )
 }
 
-static CP_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "client"));
-static CP_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "server"));
+static CP_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "client"));
+static CP_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "server"));
 
-static INDEXING_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "client"));
-pub(crate) static INDEXING_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "server"));
+static INDEXING_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("indexing", "client"));
+pub(crate) static INDEXING_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("indexing", "server"));
 
-static INGEST_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "client"));
-static INGEST_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "server"));
+static INGEST_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("ingest", "client"));
+static INGEST_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("ingest", "server"));
 
-static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "client"));
-static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
+static METASTORE_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "client"));
+static METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "server"));
 
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);

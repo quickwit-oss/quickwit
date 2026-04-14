@@ -51,17 +51,15 @@ use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
 
 /// Query parameters for listing metrics splits.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListMetricsSplitsQuery {
     /// Index UID to filter by (required).
     pub index_uid: IndexUid,
     /// Split states to include.
     #[serde(default)]
-    pub split_states: Vec<String>,
-    /// Time range start (inclusive).
-    pub time_range_start: Option<i64>,
-    /// Time range end (inclusive).
-    pub time_range_end: Option<i64>,
+    pub split_states: Vec<SplitState>,
+    /// The time range to filter by.
+    pub time_range: FilterRange<i64>,
     /// Metric names to filter by (any match).
     #[serde(default)]
     pub metric_names: Vec<String>,
@@ -75,8 +73,43 @@ pub struct ListMetricsSplitsQuery {
     pub tag_region: Option<String>,
     /// Host tag filter.
     pub tag_host: Option<String>,
+    /// Sort fields filter for compaction scope queries.
+    pub sort_fields: Option<String>,
+    /// A specific node ID to filter by.
+    pub node_id: Option<NodeId>,
+    /// The delete opstamp range to filter by.
+    pub delete_opstamp: FilterRange<u64>,
+    /// The update timestamp range to filter by.
+    pub update_timestamp: FilterRange<i64>,
+    /// The create timestamp range to filter by.
+    pub create_timestamp: FilterRange<i64>,
+    /// The datetime at which you include or exclude mature splits.
+    pub mature: Bound<OffsetDateTime>,
     /// Limit number of results.
     pub limit: Option<usize>,
+}
+
+impl Default for ListMetricsSplitsQuery {
+    fn default() -> Self {
+        Self {
+            index_uid: IndexUid::default(),
+            split_states: Vec::new(),
+            time_range: Default::default(),
+            metric_names: Vec::new(),
+            tag_service: None,
+            tag_env: None,
+            tag_datacenter: None,
+            tag_region: None,
+            tag_host: None,
+            sort_fields: None,
+            node_id: None,
+            delete_opstamp: Default::default(),
+            update_timestamp: Default::default(),
+            create_timestamp: Default::default(),
+            mature: Bound::Unbounded,
+            limit: None,
+        }
+    }
 }
 
 impl ListMetricsSplitsQuery {
@@ -84,27 +117,47 @@ impl ListMetricsSplitsQuery {
     pub fn for_index(index_uid: impl Into<IndexUid>) -> Self {
         Self {
             index_uid: index_uid.into(),
-            split_states: vec!["Published".to_string()],
+            split_states: vec![SplitState::Published],
             ..Default::default()
         }
     }
 
     /// Filter by split states.
-    pub fn with_split_states(mut self, states: Vec<String>) -> Self {
-        self.split_states = states;
+    pub fn with_split_states(mut self, states: impl AsRef<[SplitState]>) -> Self {
+        self.split_states = states.as_ref().to_vec();
         self
     }
 
-    /// Filter by time range.
-    pub fn with_time_range(mut self, start: i64, end: i64) -> Self {
-        self.time_range_start = Some(start);
-        self.time_range_end = Some(end);
+    /// Filter by time range (inclusive on both ends).
+    pub fn with_time_range_start_gte(mut self, v: i64) -> Self {
+        self.time_range.start = Bound::Included(v);
+        self
+    }
+
+    /// Filter by time range (inclusive on both ends).
+    pub fn with_time_range_end_lte(mut self, v: i64) -> Self {
+        self.time_range.end = Bound::Included(v);
         self
     }
 
     /// Filter by metric names.
     pub fn with_metric_names(mut self, names: Vec<String>) -> Self {
         self.metric_names = names;
+        self
+    }
+
+    /// Filter by compaction scope: splits whose window intersects
+    /// `[window_start, window_start + window_duration_secs)` and whose
+    /// sort_fields match exactly.
+    pub fn with_compaction_scope(
+        mut self,
+        window_start: i64,
+        window_duration_secs: u32,
+        sort_fields: impl Into<String>,
+    ) -> Self {
+        self.time_range.start = Bound::Included(window_start);
+        self.time_range.end = Bound::Excluded(window_start + window_duration_secs as i64);
+        self.sort_fields = Some(sort_fields.into());
         self
     }
 }

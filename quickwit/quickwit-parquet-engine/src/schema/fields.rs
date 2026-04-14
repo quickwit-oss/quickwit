@@ -12,10 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Parquet field definitions with column metadata.
+//! Parquet field definitions with column metadata, sort order constants, and validation.
 
+use anyhow::{Result, bail};
 use arrow::datatypes::{DataType, Field, Fields};
 use parquet::variant::VariantType;
+
+/// Required field names that must exist in every batch.
+pub const REQUIRED_FIELDS: &[&str] = &["metric_name", "metric_type", "timestamp_secs", "value"];
+
+/// Sort order column names. Columns not present in a batch are skipped.
+pub const SORT_ORDER: &[&str] = &[
+    "metric_name",
+    "service",
+    "env",
+    "datacenter",
+    "region",
+    "host",
+    "timestamp_secs",
+];
 
 /// All fields in the parquet schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -58,7 +73,7 @@ impl ParquetField {
     }
 
     /// Whether this field is nullable.
-    pub fn is_nullable(&self) -> bool {
+    pub fn nullable(&self) -> bool {
         matches!(
             self,
             Self::MetricUnit
@@ -112,7 +127,7 @@ impl ParquetField {
 
     /// Convert to Arrow Field.
     pub fn to_arrow_field(&self) -> Field {
-        let field = Field::new(self.name(), self.arrow_type(), self.is_nullable());
+        let field = Field::new(self.name(), self.arrow_type(), self.nullable());
 
         // Add VARIANT extension type metadata for attributes fields
         match self {
@@ -141,22 +156,52 @@ impl ParquetField {
         ]
     }
 
-    /// Sort order for metrics data (used for pruning).
-    /// Order: metric_name, common tags (service, env, datacenter, region, host), timestamp.
-    pub fn sort_order() -> &'static [ParquetField] {
-        &[
-            Self::MetricName,
-            Self::TagService,
-            Self::TagEnv,
-            Self::TagDatacenter,
-            Self::TagRegion,
-            Self::TagHost,
-            Self::TimestampSecs,
-        ]
-    }
-
     /// Get the column index in the schema.
     pub fn column_index(&self) -> usize {
         Self::all().iter().position(|f| f == self).unwrap()
     }
+
+    /// Look up a ParquetField by its Parquet column name.
+    ///
+    /// Used by the sort fields resolver to map sort schema column names
+    /// to physical schema columns.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::all().iter().find(|f| f.name() == name).copied()
+    }
+}
+
+/// Arrow type for required fields by name.
+pub fn required_field_type(name: &str) -> Option<DataType> {
+    match name {
+        "metric_name" => Some(DataType::Dictionary(
+            Box::new(DataType::Int32),
+            Box::new(DataType::Utf8),
+        )),
+        "metric_type" => Some(DataType::UInt8),
+        "timestamp_secs" => Some(DataType::UInt64),
+        "value" => Some(DataType::Float64),
+        _ => None,
+    }
+}
+
+/// Validate that a batch schema contains all required fields with correct types.
+pub fn validate_required_fields(schema: &arrow::datatypes::Schema) -> Result<()> {
+    for &name in REQUIRED_FIELDS {
+        match schema.index_of(name) {
+            Ok(idx) => {
+                let expected_type = required_field_type(name).unwrap();
+                let actual_type = schema.field(idx).data_type();
+                if *actual_type != expected_type {
+                    bail!(
+                        "field '{}' has type {:?}, expected {:?}",
+                        name,
+                        actual_type,
+                        expected_type
+                    );
+                }
+            }
+            Err(_) => bail!("missing required field '{}'", name),
+        }
+    }
+    Ok(())
 }

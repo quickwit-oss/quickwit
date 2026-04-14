@@ -638,12 +638,12 @@ impl IndexingPipeline {
             .spawn(parquet_uploader);
 
         // ParquetPackager
-        let parquet_schema = quickwit_parquet_engine::schema::ParquetSchema::new();
         let writer_config = quickwit_parquet_engine::storage::ParquetWriterConfig::default();
+        let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
         let split_writer = quickwit_parquet_engine::storage::ParquetSplitWriter::new(
-            parquet_schema,
             writer_config,
             self.params.indexing_directory.path(),
+            &table_config,
         );
         let parquet_packager = ParquetPackager::new(split_writer, parquet_uploader_mailbox);
         let (parquet_packager_mailbox, parquet_packager_handle) = ctx

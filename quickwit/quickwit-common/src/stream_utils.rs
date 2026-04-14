@@ -285,7 +285,7 @@ impl<T> TrackedUnboundedSender<T> {
 
 #[cfg(test)]
 mod tests {
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock;
 
     use super::*;
     use crate::metrics::new_up_down_counter;
@@ -301,7 +301,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tracked_service_stream_bounded() {
-        static TEST_COUNTER: Lazy<IntUpDownCounter> = Lazy::new(|| {
+        static TEST_COUNTER: LazyLock<IntUpDownCounter> = LazyLock::new(|| {
             new_up_down_counter("common", "help", "test_tracked_service_stream_bounded", &[])
         });
 
@@ -321,7 +321,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_tracked_service_stream_unbounded() {
-        static TEST_COUNTER: Lazy<IntUpDownCounter> = Lazy::new(|| {
+        static TEST_COUNTER: LazyLock<IntUpDownCounter> = LazyLock::new(|| {
             new_up_down_counter(
                 "common",
                 "help",

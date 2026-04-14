@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{
     IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec, new_gauge_vec,
 };
@@ -69,4 +70,4 @@ impl Default for JanitorMetrics {
 
 /// `JANITOR_METRICS` exposes a bunch of related metrics through a prometheus
 /// endpoint.
-pub static JANITOR_METRICS: Lazy<JanitorMetrics> = Lazy::new(JanitorMetrics::default);
+pub static JANITOR_METRICS: LazyLock<JanitorMetrics> = LazyLock::new(JanitorMetrics::default);

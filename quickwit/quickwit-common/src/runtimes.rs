@@ -13,16 +13,16 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use once_cell::sync::OnceCell;
 use tokio::runtime::Runtime;
 use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 
 use crate::metrics::{Gauge, IntCounter, IntGauge, new_counter, new_float_gauge, new_gauge};
 
-static RUNTIMES: OnceCell<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceCell::new();
+static RUNTIMES: OnceLock<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceLock::new();
 
 /// Describes which runtime an actor should run on.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]

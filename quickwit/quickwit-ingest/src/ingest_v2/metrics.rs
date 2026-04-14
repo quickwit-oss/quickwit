@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::LazyLock;
+
 use mrecordlog::ResourceUsage;
-use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntUpDownCounterVec,
     exponential_buckets, linear_buckets, new_counter_vec, new_gauge, new_histogram,
@@ -178,4 +179,5 @@ pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
         .set(wal_usage.memory_used_bytes as i64);
 }
 
-pub(super) static INGEST_V2_METRICS: Lazy<IngestV2Metrics> = Lazy::new(IngestV2Metrics::default);
+pub(super) static INGEST_V2_METRICS: LazyLock<IngestV2Metrics> =
+    LazyLock::new(IngestV2Metrics::default);

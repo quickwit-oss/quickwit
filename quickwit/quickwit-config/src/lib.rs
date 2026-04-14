@@ -16,10 +16,10 @@
 
 use std::hash::Hasher;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use anyhow::{Context, bail, ensure};
 use json_comments::StripComments;
-use once_cell::sync::Lazy;
 use quickwit_common::get_bool_from_env;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
@@ -85,15 +85,15 @@ pub use crate::storage_config::{
 
 /// Returns true if the ingest API v2 is enabled.
 pub fn enable_ingest_v2() -> bool {
-    static ENABLE_INGEST_V2: Lazy<bool> =
-        Lazy::new(|| get_bool_from_env("QW_ENABLE_INGEST_V2", true));
+    static ENABLE_INGEST_V2: LazyLock<bool> =
+        LazyLock::new(|| get_bool_from_env("QW_ENABLE_INGEST_V2", true));
     *ENABLE_INGEST_V2
 }
 
 /// Returns true if the ingest API v1 is disabled.
 pub fn disable_ingest_v1() -> bool {
-    static DISABLE_INGEST_V1: Lazy<bool> =
-        Lazy::new(|| get_bool_from_env("QW_DISABLE_INGEST_V1", false));
+    static DISABLE_INGEST_V1: LazyLock<bool> =
+        LazyLock::new(|| get_bool_from_env("QW_DISABLE_INGEST_V1", false));
     *DISABLE_INGEST_V1
 }
 
@@ -136,7 +136,7 @@ pub struct ConfigApiSchemas;
 
 /// Checks whether an identifier conforms to Quickwit naming conventions.
 pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
-    static IDENTIFIER_REGEX: Lazy<Regex> = Lazy::new(|| {
+    static IDENTIFIER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_\.]{2,254}$").expect("regular expression should compile")
     });
     ensure!(
@@ -151,11 +151,11 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
 /// Index ID patterns accept the same characters as identifiers AND accept `*`
 /// chars to allow for glob-like patterns.
 pub fn validate_index_id_pattern(pattern: &str, allow_negative: bool) -> anyhow::Result<()> {
-    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$")
             .expect("regular expression should compile")
     });
-    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN_NEGATIVE: Lazy<Regex> = Lazy::new(|| {
+    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN_NEGATIVE: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"^-?[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$")
             .expect("regular expression should compile")
     });

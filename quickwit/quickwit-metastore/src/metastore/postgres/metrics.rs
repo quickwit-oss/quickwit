@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
 use quickwit_common::metrics::{IntGauge, IntUpDownCounter, new_gauge, new_up_down_counter};
 
 #[derive(Clone)]
@@ -47,4 +46,5 @@ impl Default for PostgresMetrics {
     }
 }
 
-pub(super) static POSTGRES_METRICS: Lazy<PostgresMetrics> = Lazy::new(PostgresMetrics::default);
+pub(super) static POSTGRES_METRICS: LazyLock<PostgresMetrics> =
+    LazyLock::new(PostgresMetrics::default);

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Module for [`FileBackedMetastore`]. It is public so that the crate `quickwit-backward-compat`
-//! can import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to
+//! can import `FileBackedIndex` and run backward-compatibility tests. You should not have to
 //! import anything from here directly.
 
 pub mod file_backed_index;
@@ -116,9 +116,9 @@ impl From<bool> for MutationOccurred<()> {
 /// into as many files and stores a map of indexes
 /// (index_id, index_status) in a dedicated file `manifest.json`.
 ///
-/// A [`LazyIndexStatus`] describes the lifecycle of an index: [`LazyIndexStatus::Creating`] and
-/// [`LazyIndexStatus::Deleting`] are transitioning states that indicates that the index is not
-/// yet available. On the contrary, the [`LazyIndexStatus::Active`] status indicates the index is
+/// A `LazyIndexStatus` describes the lifecycle of an index: `LazyIndexStatus::Creating` and
+/// `LazyIndexStatus::Deleting` are transitioning states that indicates that the index is not
+/// yet available. On the contrary, the `LazyIndexStatus::Active` status indicates the index is
 /// ready to be fetched and updated.
 ///
 /// Transitioning states are useful to track inconsistencies between the in-memory and on-disk data
