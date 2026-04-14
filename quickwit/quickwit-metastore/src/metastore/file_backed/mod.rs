@@ -1490,7 +1490,7 @@ mod tests {
     use quickwit_proto::types::SourceId;
     use quickwit_query::query_ast::qast_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
-    use rand::Rng;
+    use rand::RngExt;
     use tests::manifest::{IndexStatus, Manifest};
     use time::OffsetDateTime;
     use tokio::time::Duration;

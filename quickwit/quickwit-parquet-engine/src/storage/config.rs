@@ -142,7 +142,7 @@ impl ParquetWriterConfig {
         kv_metadata: Option<Vec<KeyValue>>,
     ) -> WriterProperties {
         let mut builder = WriterProperties::builder()
-            .set_max_row_group_size(self.row_group_size)
+            .set_max_row_group_row_count(Some(self.row_group_size))
             .set_data_page_size_limit(self.data_page_size)
             .set_write_batch_size(self.write_batch_size)
             .set_column_index_truncate_length(Some(64))
@@ -268,7 +268,7 @@ mod tests {
         let config = ParquetWriterConfig::default();
         let schema = create_test_schema();
         let props = config.to_writer_properties(&schema);
-        assert!(props.max_row_group_size() == 128 * 1024);
+        assert!(props.max_row_group_row_count() == Some(128 * 1024));
     }
 
     #[test]
@@ -276,7 +276,7 @@ mod tests {
         let config = ParquetWriterConfig::new().with_compression(Compression::Snappy);
         let schema = create_test_schema();
         let props = config.to_writer_properties(&schema);
-        assert!(props.max_row_group_size() == 128 * 1024);
+        assert!(props.max_row_group_row_count() == Some(128 * 1024));
     }
 
     #[test]
@@ -284,7 +284,7 @@ mod tests {
         let config = ParquetWriterConfig::new().with_compression(Compression::Uncompressed);
         let schema = create_test_schema();
         let props = config.to_writer_properties(&schema);
-        assert!(props.max_row_group_size() == 128 * 1024);
+        assert!(props.max_row_group_row_count() == Some(128 * 1024));
     }
 
     #[test]

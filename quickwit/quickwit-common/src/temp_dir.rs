@@ -216,7 +216,7 @@ impl<'a> Builder<'a> {
 mod tests {
     use std::cmp;
 
-    use rand::Rng;
+    use rand::RngExt;
 
     use super::*;
 
