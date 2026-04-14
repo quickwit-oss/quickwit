@@ -4877,9 +4877,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.16.3"
+version = "0.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1dc47f592c06f33f8e3aea9591776ec7c9f9e4124778ff8a3c3b87159f7e593"
+checksum = "7f66e8d5d03f609abc3a39e6f08e4164ebf1447a732906d39eb9b99b7919ef39"
 dependencies = [
  "hashbrown 0.16.1",
 ]
@@ -7283,7 +7283,7 @@ dependencies = [
  "fnv",
  "futures",
  "itertools 0.14.0",
- "lru 0.16.3",
+ "lru 0.16.4",
  "mockall",
  "proptest",
  "quickwit-actors",
@@ -7970,7 +7970,7 @@ dependencies = [
  "http 1.4.0",
  "http-body-util",
  "hyper 1.9.0",
- "lru 0.16.3",
+ "lru 0.16.4",
  "md5",
  "mini-moka",
  "mockall",
@@ -10017,7 +10017,7 @@ dependencies = [
  "itertools 0.14.0",
  "levenshtein_automata",
  "log",
- "lru 0.16.3",
+ "lru 0.16.4",
  "lz4_flex 0.13.0",
  "measure_time",
  "memmap2",
