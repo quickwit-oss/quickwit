@@ -22,8 +22,8 @@ use quickwit_common::metrics::{
 };
 
 pub struct IndexerMetrics {
-    pub processed_docs_total: IntCounterVec<3>,
-    pub processed_bytes: IntCounterVec<3>,
+    pub processed_docs_total: IntCounterVec<2>,
+    pub processed_bytes: IntCounterVec<2>,
     pub indexing_pipelines: IntGaugeVec<1>,
     pub backpressure_micros: IntCounterVec<1>,
     pub available_concurrent_upload_permits: IntGaugeVec<1>,
@@ -38,7 +38,7 @@ pub struct IndexerMetrics {
     pub dd_indexed_events: DDCounters,
     pub dd_indexed_events_bytes: DDCounters,
     pub dd_pending_merge_ops: Gauge,
-    pub processing_pipeline_thread_cpu_micros_total: IntCounterVec<3>,
+    pub processing_pipeline_thread_cpu_micros_total: IntCounterVec<2>,
 }
 
 impl Default for IndexerMetrics {
@@ -46,19 +46,19 @@ impl Default for IndexerMetrics {
         IndexerMetrics {
             processed_docs_total: new_counter_vec(
                 "processed_docs_total",
-                "Number of processed docs by index, pipeline and processed status in [valid, \
-                 schema_error, parse_error, transform_error, outside_time_range]",
+                "Number of processed docs by index and processed status in [valid, schema_error, \
+                 parse_error, transform_error, outside_time_range]",
                 "indexing",
                 &[],
-                ["index", "pipeline_uid", "docs_processed_status"],
+                ["index", "docs_processed_status"],
             ),
             processed_bytes: new_counter_vec(
                 "processed_bytes",
-                "Number of bytes of processed documents by index, pipeline and processed status \
-                 in [valid, schema_error, parse_error, transform_error, outside_time_range]",
+                "Number of bytes of processed documents by index and processed status in [valid, \
+                 schema_error, parse_error, transform_error, outside_time_range]",
                 "indexing",
                 &[],
-                ["index", "pipeline_uid", "docs_processed_status"],
+                ["index", "docs_processed_status"],
             ),
             indexing_pipelines: new_gauge_vec(
                 "indexing_pipelines",
@@ -146,7 +146,7 @@ impl Default for IndexerMetrics {
                 "Total thread CPU time spent in processing pipeline (microseconds).",
                 "indexing",
                 &[],
-                ["index", "pipeline_uid", "source"],
+                ["index", "source"],
             ),
         }
     }
