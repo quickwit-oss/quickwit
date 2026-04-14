@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::time::Duration;
+
 use anyhow::Result;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
@@ -21,7 +22,7 @@ use quickwit_metastore::{
 };
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
 use time::OffsetDateTime;
-use tracing::{error, warn};
+use tracing::error;
 
 use super::compaction_state::CompactionState;
 use super::index_config_store::IndexConfigStore;
@@ -82,7 +83,7 @@ impl CompactionPlanner {
         Ok(splits)
     }
 
-    async fn scan_and_plan(&mut self) -> Result<()>{
+    async fn scan_and_plan(&mut self) -> Result<()> {
         let splits = self.scan_metastore().await?;
         self.ingest_splits(splits).await;
         self.run_merge_policies();
@@ -307,4 +308,3 @@ mod tests {
         assert_eq!(planner.cursor, 6000);
     }
 }
-

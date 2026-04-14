@@ -33,7 +33,8 @@ pub struct IndexEntry {
 impl IndexEntry {
     pub fn is_split_mature(&self, split: &SplitMetadata) -> bool {
         matches!(
-            self.merge_policy.split_maturity(split.num_docs, split.num_merge_ops),
+            self.merge_policy
+                .split_maturity(split.num_docs, split.num_merge_ops),
             SplitMaturity::Mature
         )
     }
@@ -133,10 +134,7 @@ impl IndexConfigStore {
         Ok(&self.indexes[index_uid])
     }
 
-    pub async fn get_for_split(
-        &mut self,
-        split: &SplitMetadata,
-    ) -> anyhow::Result<&IndexEntry> {
+    pub async fn get_for_split(&mut self, split: &SplitMetadata) -> anyhow::Result<&IndexEntry> {
         self.get_or_fetch(&split.index_uid, &split.doc_mapping_uid)
             .await
     }
@@ -149,9 +147,7 @@ impl IndexConfigStore {
 #[cfg(test)]
 mod tests {
     use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt};
-    use quickwit_proto::metastore::{
-        IndexMetadataResponse, MetastoreError, MockMetastoreService,
-    };
+    use quickwit_proto::metastore::{IndexMetadataResponse, MetastoreError, MockMetastoreService};
 
     use super::*;
 
@@ -178,14 +174,20 @@ mod tests {
         let mut store = IndexConfigStore::new(MetastoreServiceClient::from_mock(mock));
 
         // First call fetches from metastore.
-        let entry = store.get_or_fetch(&index_uid, &doc_mapping_uid).await.unwrap();
+        let entry = store
+            .get_or_fetch(&index_uid, &doc_mapping_uid)
+            .await
+            .unwrap();
         assert!(!entry.doc_mapping_json().is_empty());
         assert!(!entry.search_settings_json().is_empty());
         assert!(!entry.indexing_settings_json().is_empty());
         assert!(!entry.index_storage_uri().is_empty());
 
         // Second call hits cache (times(1) would panic otherwise).
-        store.get_or_fetch(&index_uid, &doc_mapping_uid).await.unwrap();
+        store
+            .get_or_fetch(&index_uid, &doc_mapping_uid)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

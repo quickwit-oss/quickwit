@@ -58,7 +58,8 @@ pub struct CompactionState {
     needs_compaction_split_ids: HashSet<SplitId>,
     in_flight: HashMap<String, InFlightCompaction>,
     in_flight_split_ids: HashSet<SplitId>,
-    /// TODO: add index_uid and source_id to MergeOperation so we don't need the partition key here.
+    /// TODO: add index_uid and source_id to MergeOperation so we don't need the partition key
+    /// here.
     pending_operations: VecDeque<(CompactionPartitionKey, MergeOperation)>,
 }
 
@@ -101,7 +102,7 @@ impl CompactionState {
         let Some(splits) = self.needs_compaction.get_mut(partition_key) else {
             return;
         };
-        for operation in merge_policy.operations(splits) { 
+        for operation in merge_policy.operations(splits) {
             for split in operation.splits_as_slice() {
                 self.needs_compaction_split_ids.remove(split.split_id());
                 self.in_flight_split_ids
@@ -192,12 +193,7 @@ impl CompactionState {
     }
 
     /// Records that an operation has been assigned to a worker.
-    pub fn record_assignment(
-        &mut self,
-        task_id: String,
-        split_ids: Vec<SplitId>,
-        node_id: NodeId,
-    ) {
+    pub fn record_assignment(&mut self, task_id: String, split_ids: Vec<SplitId>, node_id: NodeId) {
         self.in_flight.insert(
             task_id.clone(),
             InFlightCompaction {
@@ -215,7 +211,9 @@ mod tests {
     use std::time::Duration;
 
     use quickwit_config::IndexingSettings;
-    use quickwit_config::merge_policy_config::{ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig};
+    use quickwit_config::merge_policy_config::{
+        ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig,
+    };
     use quickwit_indexing::merge_policy::merge_policy_from_settings;
     use quickwit_proto::types::IndexUid;
 
@@ -288,7 +286,7 @@ mod tests {
         state.plan_partition(&keys[0], &merge_policy);
 
         // Splits moved from needs_compaction to in_flight.
-        assert!(state.pending_operations.len() >= 1);
+        assert!(!state.pending_operations.is_empty());
         for (_, op) in &state.pending_operations {
             for split in op.splits_as_slice() {
                 assert!(!state.needs_compaction_split_ids.contains(split.split_id()));
@@ -313,11 +311,7 @@ mod tests {
         );
 
         state.in_flight_split_ids.insert("s3".to_string());
-        state.record_assignment(
-            "task-2".to_string(),
-            vec!["s3".to_string()],
-            node_id,
-        );
+        state.record_assignment("task-2".to_string(), vec!["s3".to_string()], node_id);
 
         assert!(state.is_split_known("s1"));
         assert!(state.is_split_known("s3"));
