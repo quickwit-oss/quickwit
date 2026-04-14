@@ -50,6 +50,19 @@ pub(crate) fn make_http_request_span<B>(request: &http::Request<B>) -> tracing::
     if let Some(query) = request.uri().query() {
         span.set_attribute("url.query", query.to_string());
     };
+    // Best effort attempt to extract the server address from the incoming HTTP request
+    // See: https://opentelemetry.io/docs/specs/semconv/http/http-spans/#setting-serveraddress-and-serverport-attributes
+    if let Some(server_address) = request.uri().authority() {
+        span.set_attribute("server.address", server_address.host().to_string());
+        if let Some(port) = server_address.port_u16() {
+            span.set_attribute("server.port", port as i64);
+        }
+    }
+    if let Some(user_agent) = request.headers().get(http::header::USER_AGENT)
+        && let Ok(user_agent_str) = user_agent.to_str()
+    {
+        span.set_attribute("user_agent.original", user_agent_str.to_string());
+    };
     let ctx = extract_context_from_request_headers(request.headers());
     let _ = span.set_parent(ctx);
     span
