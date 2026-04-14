@@ -18,8 +18,11 @@ quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
+quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 
