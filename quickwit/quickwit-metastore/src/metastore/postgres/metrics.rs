@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{IntGauge, IntUpDownCounter, new_gauge, new_up_down_counter};
 
 #[derive(Clone)]
