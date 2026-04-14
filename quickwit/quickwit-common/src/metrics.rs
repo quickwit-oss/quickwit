@@ -16,8 +16,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Instant;
 
-use opentelemetry::KeyValue;
 use opentelemetry::metrics::Meter;
+use opentelemetry::{Key, KeyValue};
 use prometheus::{HistogramOpts, Opts, TextEncoder};
 pub use prometheus::{exponential_buckets, linear_buckets};
 
@@ -34,11 +34,20 @@ fn otel_meter() -> Option<&'static Meter> {
     OTEL_METER.get()
 }
 
-fn build_otel_attributes(const_labels: &[(&str, &str)]) -> Vec<KeyValue> {
+fn build_otel_attributes(const_labels: &[(&str, &str)]) -> Arc<[KeyValue]> {
     const_labels
         .iter()
-        .map(|(k, v)| KeyValue::new(k.to_string(), v.to_string()))
-        .collect()
+        .map(|(k, v)| KeyValue::new(Arc::<str>::from(*k), Arc::<str>::from(*v)))
+        .collect::<Vec<_>>()
+        .into()
+}
+
+fn build_otel_label_names<const N: usize>(label_names: [&str; N]) -> Arc<[Key]> {
+    label_names
+        .into_iter()
+        .map(|label_name| Key::new(Arc::<str>::from(label_name)))
+        .collect::<Vec<_>>()
+        .into()
 }
 
 fn build_prometheus_labels(const_labels: &[(&str, &str)]) -> HashMap<String, String> {
@@ -76,25 +85,26 @@ impl<T> OtelState<T> {
 #[derive(Clone)]
 struct OtelMetric<T> {
     state: Option<Arc<OtelState<T>>>,
-    attributes: Vec<KeyValue>,
+    attributes: Arc<[KeyValue]>,
 }
 
 impl<T> OtelMetric<T> {
-    fn new(state: Option<Arc<OtelState<T>>>, attributes: Vec<KeyValue>) -> Self {
+    fn new(state: Option<Arc<OtelState<T>>>, attributes: Arc<[KeyValue]>) -> Self {
         Self { state, attributes }
     }
 
-    fn with_attributes<const N: usize>(&self, names: &[String], values: [&str; N]) -> Self {
+    fn with_attributes<const N: usize>(&self, names: &[Key], values: [&str; N]) -> Self {
         if self.state.is_none() {
             return Self::default();
         }
-        let mut attributes = self.attributes.clone();
+        let mut attributes = Vec::with_capacity(self.attributes.len() + N);
+        attributes.extend(self.attributes.iter().cloned());
         for (name, value) in names.iter().zip(values.iter()) {
-            attributes.push(KeyValue::new(name.clone(), value.to_string()));
+            attributes.push(KeyValue::new(name.clone(), Arc::<str>::from(*value)));
         }
         Self {
             state: self.state.clone(),
-            attributes,
+            attributes: attributes.into(),
         }
     }
 
@@ -106,7 +116,7 @@ impl<T> OtelMetric<T> {
         let Some(instrument) = self.get_or_bind_instrument() else {
             return;
         };
-        f(instrument, &self.attributes);
+        f(instrument, self.attributes.as_ref());
     }
 
     fn get_or_bind_instrument(&self) -> Option<&T> {
@@ -123,7 +133,7 @@ impl<T> Default for OtelMetric<T> {
     fn default() -> Self {
         Self {
             state: None,
-            attributes: Vec::new(),
+            attributes: Vec::new().into(),
         }
     }
 }
@@ -210,7 +220,7 @@ impl IntCounter {
 pub struct IntCounterVec<const N: usize> {
     prometheus: prometheus::IntCounterVec,
     otel: OtelMetric<opentelemetry::metrics::Counter<u64>>,
-    label_names: Vec<String>,
+    label_names: Arc<[Key]>,
 }
 
 impl<const N: usize> IntCounterVec<N> {
@@ -231,7 +241,7 @@ impl<const N: usize> IntCounterVec<N> {
         IntCounterVec {
             prometheus: prom,
             otel: OtelMetric::new(None, build_otel_attributes(const_labels)),
-            label_names: label_names.iter().map(|s| s.to_string()).collect(),
+            label_names: build_otel_label_names(label_names),
         }
     }
 
@@ -264,7 +274,7 @@ impl IntGauge {
 pub struct IntGaugeVec<const N: usize> {
     prometheus: prometheus::IntGaugeVec,
     otel: OtelMetric<opentelemetry::metrics::Gauge<i64>>,
-    label_names: Vec<String>,
+    label_names: Arc<[Key]>,
 }
 
 impl<const N: usize> IntGaugeVec<N> {
@@ -312,7 +322,7 @@ impl IntUpDownCounter {
 pub struct IntUpDownCounterVec<const N: usize> {
     prometheus: prometheus::IntGaugeVec,
     otel: OtelMetric<opentelemetry::metrics::UpDownCounter<i64>>,
-    label_names: Vec<String>,
+    label_names: Arc<[Key]>,
 }
 
 impl<const N: usize> IntUpDownCounterVec<N> {
@@ -386,7 +396,7 @@ impl Drop for HistogramTimer {
 pub struct HistogramVec<const N: usize> {
     prometheus: prometheus::HistogramVec,
     otel: OtelMetric<opentelemetry::metrics::Histogram<f64>>,
-    label_names: Vec<String>,
+    label_names: Arc<[Key]>,
 }
 
 impl<const N: usize> HistogramVec<N> {
@@ -539,7 +549,7 @@ pub fn new_counter_vec<const N: usize>(
             Some(new_counter_otel_state(name, subsystem, help)),
             build_otel_attributes(const_labels),
         ),
-        label_names: label_names.iter().map(|s| s.to_string()).collect(),
+        label_names: build_otel_label_names(label_names),
     }
 }
 
@@ -586,7 +596,7 @@ pub fn new_gauge_vec<const N: usize>(
             Some(new_int_gauge_otel_state(name, subsystem, help)),
             build_otel_attributes(const_labels),
         ),
-        label_names: label_names.iter().map(|s| s.to_string()).collect(),
+        label_names: build_otel_label_names(label_names),
     }
 }
 
@@ -633,7 +643,7 @@ pub fn new_up_down_counter_vec<const N: usize>(
             Some(new_i64_up_down_counter_otel_state(name, subsystem, help)),
             build_otel_attributes(const_labels),
         ),
-        label_names: label_names.iter().map(|s| s.to_string()).collect(),
+        label_names: build_otel_label_names(label_names),
     }
 }
 
@@ -677,7 +687,7 @@ pub fn new_histogram(name: &str, help: &str, subsystem: &str, buckets: Vec<f64>)
                 help,
                 buckets.clone(),
             )),
-            Vec::new(),
+            Vec::new().into(),
         ),
     }
 }
@@ -710,7 +720,7 @@ pub fn new_histogram_vec<const N: usize>(
             )),
             build_otel_attributes(const_labels),
         ),
-        label_names: label_names.iter().map(|s| s.to_string()).collect(),
+        label_names: build_otel_label_names(label_names),
     }
 }
 
