@@ -29,6 +29,7 @@ humantime = { workspace = true }
 hyper-util = {workspace = true}
 itertools = { workspace = true }
 mime_guess = { workspace = true }
+opentelemetry = { workspace = true }
 percent-encoding = { workspace = true }
 pprof = { workspace = true, optional = true }
 prost = { workspace = true }

@@ -21,7 +21,6 @@ use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
-use quickwit_proto::extract_context_from_request_headers;
 use quickwit_search::SearchService;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -32,8 +31,7 @@ use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tracing::{Level, error, info};
-use tracing_opentelemetry::OpenTelemetrySpanExt;
+use tracing::{error, info};
 use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
 use warp::hyper::{Method, StatusCode, http};
@@ -52,6 +50,7 @@ use crate::jaeger_api::jaeger_api_handlers;
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
+use crate::rest_api_request_span::{make_http_request_span, set_status_code_on_request_span};
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::search_api::{
     search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
@@ -126,25 +125,6 @@ async fn apply_tls_if_necessary(
         .await
         .inspect_err(|err| error!("failed to perform tls handshake: {err:#}"))?;
     Ok(Either::Left(tls_stream_res))
-}
-
-fn make_http_request_span<B>(request: &http::Request<B>) -> tracing::Span {
-    let span = tracing::span!(
-        Level::INFO,
-        "http_request",
-        otel.kind = "Server",
-        http.request.method = %request.method(),
-        url.path = %request.uri().path()
-    );
-    if let Some(scheme) = request.uri().scheme_str() {
-        span.set_attribute("url.scheme", scheme.to_string());
-    };
-    if let Some(query) = request.uri().query() {
-        span.set_attribute("url.query", query.to_string());
-    };
-    let ctx = extract_context_from_request_headers(request.headers());
-    let _ = span.set_parent(ctx);
-    span
 }
 
 /// Starts REST services.
@@ -233,10 +213,8 @@ pub(crate) async fn start_rest_server(
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(make_http_request_span as fn(&http::Request<_>) -> tracing::Span)
         .on_response(
-            |response: &http::Response<_>, _latency: std::time::Duration, span: &tracing::Span| {
-                let status_code: i64 = response.status().as_u16().into();
-                span.set_attribute("http.response.status_code", status_code);
-            },
+            set_status_code_on_request_span
+                as fn(&http::Response<_>, std::time::Duration, &tracing::Span),
         );
 
     let service = ServiceBuilder::new()
@@ -929,22 +907,5 @@ mod tests {
             resp_404.headers().get("x-custom-header-2").unwrap(),
             "custom-value-2"
         );
-    }
-
-    #[test]
-    fn test_make_http_request_span() {
-        let _guard = tracing::subscriber::set_default(
-            tracing_subscriber::fmt()
-                .with_max_level(Level::INFO)
-                .finish(),
-        );
-        let request = http::Request::builder()
-            .method(Method::POST)
-            .uri("http://quickwit:7280/api/v1/_elastic/otel-traces-v0_9/_search")
-            .header(http::header::USER_AGENT, "test-agent/1.0")
-            .body(r#"{"query":{"match_all":{}},"size":1}"#)
-            .unwrap();
-        let span = make_http_request_span(&request);
-        assert!(!span.is_disabled());
     }
 }
