@@ -128,6 +128,25 @@ async fn apply_tls_if_necessary(
     Ok(Either::Left(tls_stream_res))
 }
 
+fn make_http_request_span<B>(request: &http::Request<B>) -> tracing::Span {
+    let span = tracing::span!(
+        Level::INFO,
+        "http_request",
+        otel.kind = "Server",
+        http.request.method = %request.method(),
+        url.path = %request.uri().path()
+    );
+    if let Some(scheme) = request.uri().scheme_str() {
+        span.set_attribute("url.scheme", scheme.to_string());
+    };
+    if let Some(query) = request.uri().query() {
+        span.set_attribute("url.query", query.to_string());
+    };
+    let ctx = extract_context_from_request_headers(request.headers());
+    let _ = span.set_parent(ctx);
+    span
+}
+
 /// Starts REST services.
 pub(crate) async fn start_rest_server(
     tcp_listener: TcpListener,
@@ -211,18 +230,14 @@ pub(crate) async fn start_rest_server(
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
-    let trace_layer = TraceLayer::new_for_http().make_span_with(|request: &http::Request<_>| {
-        let span = tracing::span!(
-            Level::INFO,
-            "http_request",
-            otel.kind = "Server",
-            http.method = %request.method(),
-            http.target = %request.uri(),
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(make_http_request_span as fn(&http::Request<_>) -> tracing::Span)
+        .on_response(
+            |response: &http::Response<_>, _latency: std::time::Duration, span: &tracing::Span| {
+                let status_code: i64 = response.status().as_u16().into();
+                span.set_attribute("http.response.status_code", status_code);
+            },
         );
-        let ctx = extract_context_from_request_headers(request.headers());
-        let _ = span.set_parent(ctx);
-        span
-    });
 
     let service = ServiceBuilder::new()
         .layer(trace_layer)
@@ -914,5 +929,22 @@ mod tests {
             resp_404.headers().get("x-custom-header-2").unwrap(),
             "custom-value-2"
         );
+    }
+
+    #[test]
+    fn test_make_http_request_span() {
+        let _guard = tracing::subscriber::set_default(
+            tracing_subscriber::fmt()
+                .with_max_level(Level::INFO)
+                .finish(),
+        );
+        let request = http::Request::builder()
+            .method(Method::POST)
+            .uri("http://quickwit:7280/api/v1/_elastic/otel-traces-v0_9/_search")
+            .header(http::header::USER_AGENT, "test-agent/1.0")
+            .body(r#"{"query":{"match_all":{}},"size":1}"#)
+            .unwrap();
+        let span = make_http_request_span(&request);
+        assert!(!span.is_disabled());
     }
 }
