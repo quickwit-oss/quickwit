@@ -44,6 +44,7 @@
 | Uses `JoinHandle::abort()` | **FORBIDDEN** — arbitrary cancellation violates invariants. Use `CancellationToken` | GAP-002 |
 | Recreates futures in `select!` loops | Use `&mut fut` to resume, not recreate — dropping loses data | GAP-002 |
 | Holds locks across await points | Invariant violations on cancel. Use message passing or synchronous critical sections | GAP-002 |
+| Silently swallows unexpected state | If a condition "shouldn't happen," return an error or assert — don't silently return Ok. Skipping optional/missing data is fine; pretending a bug didn't occur is not | Code quality |
 
 ## Engineering Priority
 
@@ -53,7 +54,7 @@
 |--------|----------|---------|
 | **Code Quality** | [CODE_STYLE.md](CODE_STYLE.md) + this doc | Coding standards & reliability |
 
-> For formal specs (TLA+, Stateright) and DST pillars, activate `/sesh-mode`.
+> For formal specs (TLA+, Stateright) and DST pillars, see the verification docs below. These describe the target workflow — implementation is in progress.
 
 ## Reliability Rules
 
@@ -167,7 +168,7 @@ cargo nextest run --test failpoints --features fail/failpoints
 cargo clippy --workspace --all-features --tests
 
 # Format (requires nightly)
-cargo +nightly fmt
+cargo +nightly fmt --all
 
 # Auto-fix clippy + format
 make fix    # from quickwit/
@@ -253,16 +254,18 @@ Environment variables set during test-all:
 
 **MUST** (required for merge):
 - [ ] `cargo clippy --workspace --all-features --tests` passes with no warnings
-- [ ] `cargo +nightly fmt -- --check` passes
+- [ ] `cargo +nightly fmt --all -- --check` passes (run `cargo +nightly fmt --all` to fix; applies to **all** changed `.rs` files including tests — CI checks every file, not just lib code)
 - [ ] `debug_assert!` for non-obvious invariants
 - [ ] No `unwrap()` in library code
 - [ ] No silent error ignoring (`let _ =`)
 - [ ] New files under 500 lines (split by responsibility if larger)
 - [ ] No unnecessary `.clone()` (OK in actor/async code for clarity)
 - [ ] Tests through production path (HTTP/gRPC)
-- [ ] License headers present (run `bash quickwit/scripts/check_license_headers.sh`)
+- [ ] License headers present (run `bash quickwit/scripts/check_license_headers.sh` — every `.rs`, `.proto`, and `.py` file needs the Apache 2.0 header)
 - [ ] Log format correct (run `bash quickwit/scripts/check_log_format.sh`)
 - [ ] `typos` passes (spellcheck)
+- [ ] `cargo machete` passes (no unused dependencies in Cargo.toml)
+- [ ] `cargo doc --no-deps` passes (each PR must compile independently, not just the final stack)
 - [ ] Tests pass: `cargo nextest run --all-features`
 
 **SHOULD** (expected unless justified):

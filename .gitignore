@@ -32,3 +32,6 @@ qwdata
 *descriptor.bin
 /.envrc.local
 cluster/
+
+# GSD planning artifacts (local only)
+.planning

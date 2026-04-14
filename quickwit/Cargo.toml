@@ -381,7 +381,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 # Fork: removed quickwit-telemetry (present in upstream)
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "04beab3b29", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "58aa4b7", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
