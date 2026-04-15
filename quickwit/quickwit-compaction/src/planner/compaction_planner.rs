@@ -18,22 +18,21 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
+use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitState,
 };
 use quickwit_proto::compaction::{
-    CompactionResult, MergeTaskAssignment, PingRequest, PingResponse, ReportStatusRequest,
-    ReportStatusResponse,
+    CompactionResult, MergeTaskAssignment, ReportStatusRequest, ReportStatusResponse,
 };
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{IndexUid, NodeId, SourceId};
 use time::OffsetDateTime;
 use tracing::error;
 use ulid::Ulid;
 
-use super::compaction_service::build_task_assignment;
 use super::compaction_state::CompactionState;
-use super::index_config_store::IndexConfigStore;
+use super::index_config_store::{IndexConfigStore, IndexEntry};
 
 pub struct CompactionPlanner {
     state: CompactionState,
@@ -47,6 +46,67 @@ impl Debug for CompactionPlanner {
         f.debug_struct("CompactionPlanner")
             .field("cursor", &self.cursor)
             .finish()
+    }
+}
+
+const SCAN_AND_PLAN_INTERVAL: Duration = Duration::from_secs(5);
+/// On initialization, we want to wait for two intervals to allow any in-progress workers to report
+/// their progress, preventing us from frivolously rescheduling work.
+const INITIAL_SCAN_AND_PLAN_INTERVAL: Duration = SCAN_AND_PLAN_INTERVAL.saturating_mul(2);
+
+#[derive(Debug)]
+struct ScanAndPlan;
+
+#[async_trait]
+impl Actor for CompactionPlanner {
+    type ObservableState = ();
+
+    fn name(&self) -> String {
+        "CompactionPlanner".to_string()
+    }
+
+    fn observable_state(&self) -> Self::ObservableState {}
+
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        tracing::info!("compaction planner starting, scanning metastore for immature splits");
+        ctx.schedule_self_msg(INITIAL_SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<ScanAndPlan> for CompactionPlanner {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _msg: ScanAndPlan,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if let Err(err) = self.scan_and_plan().await {
+            error!(error=%err, "error scanning metastore and planning merges");
+        }
+        self.state.check_heartbeat_timeouts();
+        ctx.schedule_self_msg(SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<ReportStatusRequest> for CompactionPlanner {
+    type Reply = CompactionResult<ReportStatusResponse>;
+
+    async fn handle(
+        &mut self,
+        msg: ReportStatusRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<CompactionResult<ReportStatusResponse>, ActorExitStatus> {
+        let node_id = NodeId::from(msg.node_id);
+        self.state.process_successes(&msg.successes);
+        self.state.process_failures(&msg.failures);
+        self.state.update_heartbeats(&node_id, &msg.in_progress);
+        let new_tasks = self.assign_tasks(&node_id, msg.available_slots);
+        Ok(Ok(ReportStatusResponse { new_tasks }))
     }
 }
 
@@ -147,77 +207,29 @@ impl CompactionPlanner {
     }
 }
 
-const SCAN_AND_PLAN_INTERVAL: Duration = Duration::from_secs(5);
-/// On initialization, we want to wait for two intervals to allow any in-progress workers to report
-/// their progress, preventing us from frivolously rescheduling work.
-const INITIAL_SCAN_AND_PLAN_INTERVAL: Duration = SCAN_AND_PLAN_INTERVAL.saturating_mul(2);
-
-#[derive(Debug)]
-struct ScanAndPlan;
-
-#[async_trait]
-impl Actor for CompactionPlanner {
-    type ObservableState = ();
-
-    fn name(&self) -> String {
-        "CompactionPlanner".to_string()
-    }
-
-    fn observable_state(&self) -> Self::ObservableState {}
-
-    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        tracing::info!("compaction planner starting, scanning metastore for immature splits");
-        ctx.schedule_self_msg(INITIAL_SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<ScanAndPlan> for CompactionPlanner {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        _msg: ScanAndPlan,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        if let Err(err) = self.scan_and_plan().await {
-            error!(error=%err, "error scanning metastore and planning merges");
-        }
-        self.state.check_heartbeat_timeouts();
-        ctx.schedule_self_msg(SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<PingRequest> for CompactionPlanner {
-    type Reply = CompactionResult<PingResponse>;
-
-    async fn handle(
-        &mut self,
-        _msg: PingRequest,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<CompactionResult<PingResponse>, ActorExitStatus> {
-        Ok(Ok(PingResponse {}))
-    }
-}
-
-#[async_trait]
-impl Handler<ReportStatusRequest> for CompactionPlanner {
-    type Reply = CompactionResult<ReportStatusResponse>;
-
-    async fn handle(
-        &mut self,
-        msg: ReportStatusRequest,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<CompactionResult<ReportStatusResponse>, ActorExitStatus> {
-        let node_id = NodeId::from(msg.node_id);
-        self.state.process_successes(&msg.successes);
-        self.state.process_failures(&msg.failures);
-        self.state.update_heartbeats(&node_id, &msg.in_progress);
-        let new_tasks = self.assign_tasks(&node_id, msg.available_slots);
-        Ok(Ok(ReportStatusResponse { new_tasks }))
+fn build_task_assignment(
+    task_id: &str,
+    index_entry: &IndexEntry,
+    operation: &MergeOperation,
+    index_uid: &IndexUid,
+    source_id: &SourceId,
+) -> MergeTaskAssignment {
+    MergeTaskAssignment {
+        task_id: task_id.to_string(),
+        splits_metadata_json: operation
+            .splits_as_slice()
+            .iter()
+            .map(|s| {
+                serde_json::to_string(s).expect("split metadata serialization should not fail")
+            })
+            .collect(),
+        doc_mapping_json: index_entry.doc_mapping_json(),
+        search_settings_json: index_entry.search_settings_json(),
+        indexing_settings_json: index_entry.indexing_settings_json(),
+        retention_policy_json: index_entry.retention_policy_json(),
+        index_uid: Some(index_uid.clone()),
+        source_id: source_id.to_string(),
+        index_storage_uri: index_entry.index_storage_uri(),
     }
 }
 
