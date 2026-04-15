@@ -48,8 +48,33 @@ pub struct CompactionFailure {
     pub error_message: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct ReportStatusResponse {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ReportStatusResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub new_tasks: ::prost::alloc::vec::Vec<MergeTaskAssignment>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MergeTaskAssignment {
+    #[prost(string, tag = "1")]
+    pub task_id: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub splits_metadata_json: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag = "3")]
+    pub doc_mapping_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
+    pub search_settings_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "5")]
+    pub indexing_settings_json: ::prost::alloc::string::String,
+    #[prost(string, tag = "6")]
+    pub retention_policy_json: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "7")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "8")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "9")]
+    pub index_storage_uri: ::prost::alloc::string::String,
+}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
