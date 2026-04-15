@@ -13,9 +13,11 @@
 // limitations under the License.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::hash::{BuildHasherDefault, Hasher};
+use std::sync::{Arc, LazyLock, OnceLock, RwLock};
 use std::time::Instant;
 
+use fnv::FnvHasher;
 use opentelemetry::metrics::Meter;
 use opentelemetry::{Key, KeyValue};
 use prometheus::{HistogramOpts, Opts, TextEncoder};
@@ -55,6 +57,68 @@ fn build_prometheus_labels(const_labels: &[(&str, &str)]) -> HashMap<String, Str
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()
+}
+
+/// Identity hasher for pre-hashed `u64` keys. The metric cache keys are
+/// already FNV-hashed, so re-hashing them inside the HashMap (default SipHash)
+/// would be redundant.
+#[derive(Default)]
+struct NoHashHasher(u64);
+
+impl Hasher for NoHashHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, _bytes: &[u8]) {
+        unreachable!("NoHashHasher only supports write_u64");
+    }
+
+    fn write_u64(&mut self, i: u64) {
+        self.0 = i;
+    }
+}
+
+type BuildNoHashHasher = BuildHasherDefault<NoHashHasher>;
+
+fn hash_label_values(values: &[&str]) -> u64 {
+    let mut hasher = FnvHasher::default();
+    for value in values {
+        // Length prefix prevents collisions when label boundaries shift,
+        // e.g. ["ab", "c"] vs ["a", "bc"] produce the same byte stream
+        // without this.
+        hasher.write_u64(value.len() as u64);
+        hasher.write(value.as_bytes());
+    }
+    hasher.finish()
+}
+
+fn new_metric_cache<T>() -> Arc<RwLock<HashMap<u64, T, BuildNoHashHasher>>> {
+    Arc::new(RwLock::new(HashMap::with_hasher(
+        BuildNoHashHasher::default(),
+    )))
+}
+
+fn get_or_insert_cached<T: Clone>(
+    cache: &RwLock<HashMap<u64, T, BuildNoHashHasher>>,
+    label_values: &[&str],
+    build: impl FnOnce() -> T,
+) -> T {
+    let hash = hash_label_values(label_values);
+    {
+        let cache = cache.read().expect("metric cache lock poisoned");
+        if let Some(metric) = cache.get(&hash) {
+            return metric.clone();
+        }
+    }
+    let metric = build();
+    let mut cache = cache.write().expect("metric cache lock poisoned");
+    // Another thread may have inserted between the read lock and the write lock acquisition.
+    if let Some(cached) = cache.get(&hash) {
+        return cached.clone();
+    }
+    cache.insert(hash, metric.clone());
+    metric
 }
 
 struct OtelState<T> {
@@ -221,6 +285,7 @@ pub struct IntCounterVec<const N: usize> {
     prometheus: prometheus::IntCounterVec,
     otel: OtelMetric<opentelemetry::metrics::Counter<u64>>,
     label_names: Arc<[Key]>,
+    cache: Arc<RwLock<HashMap<u64, IntCounter, BuildNoHashHasher>>>,
 }
 
 impl<const N: usize> IntCounterVec<N> {
@@ -242,14 +307,15 @@ impl<const N: usize> IntCounterVec<N> {
             prometheus: prom,
             otel: OtelMetric::new(None, build_otel_attributes(const_labels)),
             label_names: build_otel_label_names(label_names),
+            cache: new_metric_cache(),
         }
     }
 
     pub fn with_label_values(&self, label_values: [&str; N]) -> IntCounter {
-        IntCounter {
+        get_or_insert_cached(&self.cache, &label_values, || IntCounter {
             prometheus: self.prometheus.with_label_values(&label_values),
             otel: self.otel.with_attributes(&self.label_names, label_values),
-        }
+        })
     }
 }
 
@@ -275,14 +341,15 @@ pub struct IntGaugeVec<const N: usize> {
     prometheus: prometheus::IntGaugeVec,
     otel: OtelMetric<opentelemetry::metrics::Gauge<i64>>,
     label_names: Arc<[Key]>,
+    cache: Arc<RwLock<HashMap<u64, IntGauge, BuildNoHashHasher>>>,
 }
 
 impl<const N: usize> IntGaugeVec<N> {
     pub fn with_label_values(&self, label_values: [&str; N]) -> IntGauge {
-        IntGauge {
+        get_or_insert_cached(&self.cache, &label_values, || IntGauge {
             prometheus: self.prometheus.with_label_values(&label_values),
             otel: self.otel.with_attributes(&self.label_names, label_values),
-        }
+        })
     }
 }
 
@@ -323,14 +390,15 @@ pub struct IntUpDownCounterVec<const N: usize> {
     prometheus: prometheus::IntGaugeVec,
     otel: OtelMetric<opentelemetry::metrics::UpDownCounter<i64>>,
     label_names: Arc<[Key]>,
+    cache: Arc<RwLock<HashMap<u64, IntUpDownCounter, BuildNoHashHasher>>>,
 }
 
 impl<const N: usize> IntUpDownCounterVec<N> {
     pub fn with_label_values(&self, label_values: [&str; N]) -> IntUpDownCounter {
-        IntUpDownCounter {
+        get_or_insert_cached(&self.cache, &label_values, || IntUpDownCounter {
             prometheus: self.prometheus.with_label_values(&label_values),
             otel: self.otel.with_attributes(&self.label_names, label_values),
-        }
+        })
     }
 }
 
@@ -397,14 +465,15 @@ pub struct HistogramVec<const N: usize> {
     prometheus: prometheus::HistogramVec,
     otel: OtelMetric<opentelemetry::metrics::Histogram<f64>>,
     label_names: Arc<[Key]>,
+    cache: Arc<RwLock<HashMap<u64, Histogram, BuildNoHashHasher>>>,
 }
 
 impl<const N: usize> HistogramVec<N> {
     pub fn with_label_values(&self, label_values: [&str; N]) -> Histogram {
-        Histogram {
+        get_or_insert_cached(&self.cache, &label_values, || Histogram {
             prometheus: self.prometheus.with_label_values(&label_values),
             otel: self.otel.with_attributes(&self.label_names, label_values),
-        }
+        })
     }
 }
 
@@ -550,6 +619,7 @@ pub fn new_counter_vec<const N: usize>(
             build_otel_attributes(const_labels),
         ),
         label_names: build_otel_label_names(label_names),
+        cache: new_metric_cache(),
     }
 }
 
@@ -597,6 +667,7 @@ pub fn new_gauge_vec<const N: usize>(
             build_otel_attributes(const_labels),
         ),
         label_names: build_otel_label_names(label_names),
+        cache: new_metric_cache(),
     }
 }
 
@@ -644,6 +715,7 @@ pub fn new_up_down_counter_vec<const N: usize>(
             build_otel_attributes(const_labels),
         ),
         label_names: build_otel_label_names(label_names),
+        cache: new_metric_cache(),
     }
 }
 
@@ -721,6 +793,7 @@ pub fn new_histogram_vec<const N: usize>(
             build_otel_attributes(const_labels),
         ),
         label_names: build_otel_label_names(label_names),
+        cache: new_metric_cache(),
     }
 }
 
@@ -1370,5 +1443,25 @@ mod tests {
         let payload = metrics_text_payload().unwrap();
         assert!(payload.contains("quickwit_test_test_payload_ctr"));
         assert!(payload.contains("42"));
+    }
+
+    #[test]
+    fn test_hash_label_values() {
+        // Same values produce the same hash.
+        assert_eq!(
+            hash_label_values(&["foo", "bar"]),
+            hash_label_values(&["foo", "bar"]),
+        );
+        // Different values produce different hashes.
+        assert_ne!(
+            hash_label_values(&["foo", "bar"]),
+            hash_label_values(&["foo", "baz"]),
+        );
+        // Shifted label boundaries produce different hashes
+        // (length prefix prevents "ab"+"c" from colliding with "a"+"bc").
+        assert_ne!(
+            hash_label_values(&["ab", "c"]),
+            hash_label_values(&["a", "bc"]),
+        );
     }
 }
