@@ -113,6 +113,10 @@ impl CompactionPipeline {
         }
     }
 
+    pub fn status(&self) -> &PipelineStatus {
+        &self.status
+    }
+
     fn supervisables(&self) -> Vec<&dyn Supervisable> {
         let Some(handles) = &self.handles else {
             return Vec::new();

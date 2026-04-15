@@ -81,7 +81,7 @@ use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
 use quickwit_indexing::models::ShardPositionsService;
-use quickwit_indexing::{IndexingSplitStore, start_indexing_service};
+use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool,
     IngesterPoolEntry, LocalShardsUpdate, get_idle_shard_timeout,
@@ -114,7 +114,7 @@ use quickwit_search::{
     SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext, SearcherPool,
     create_search_client_from_channel, start_searcher_service,
 };
-use quickwit_storage::{RamStorage, SplitCache, StorageResolver};
+use quickwit_storage::{SplitCache, StorageResolver};
 use tcp_listener::TcpListenerResolver;
 use tokio::sync::oneshot;
 use tonic::codec::CompressionEncoding;
@@ -795,10 +795,7 @@ pub async fn serve_quickwit(
         let compaction_root_directory = quickwit_common::temp_dir::Builder::default()
             .tempdir_in(&compaction_dir)
             .context("failed to create compaction temp directory")?;
-        // TODO: Real split store
-        let split_store = IndexingSplitStore::create_without_local_store_for_test(Arc::new(
-            RamStorage::default(),
-        ));
+        let split_cache = Arc::new(quickwit_indexing::IndexingSplitCache::no_caching());
         let compaction_client = compaction_service_client_opt
             .clone()
             .expect("compactor service enabled but no compaction client available");
@@ -807,7 +804,7 @@ pub async fn serve_quickwit(
             cluster.self_node_id().into(),
             compaction_client,
             &node_config.compactor_config,
-            split_store,
+            split_cache,
             metastore_client.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
