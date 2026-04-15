@@ -20,8 +20,6 @@ use parquet::file::metadata::{KeyValue, SortingColumn};
 use parquet::file::properties::{EnabledStatistics, WriterProperties, WriterPropertiesBuilder};
 use parquet::schema::types::ColumnPath;
 
-use crate::schema::SORT_ORDER;
-
 /// Default row group size: 128K rows for efficient columnar scans.
 const DEFAULT_ROW_GROUP_SIZE: usize = 128 * 1024;
 
@@ -125,7 +123,7 @@ impl ParquetWriterConfig {
     /// Prefer `to_writer_properties_with_metadata()` in production — this method
     /// is mainly for tests that don't care about sort order.
     pub fn to_writer_properties(&self, schema: &ArrowSchema) -> WriterProperties {
-        self.to_writer_properties_with_metadata(schema, Vec::new(), None)
+        self.to_writer_properties_with_metadata(schema, Vec::new(), None, &[])
     }
 
     /// Convert to Parquet WriterProperties with sorting columns and optional key_value_metadata.
@@ -140,6 +138,7 @@ impl ParquetWriterConfig {
         schema: &ArrowSchema,
         sorting_cols: Vec<SortingColumn>,
         kv_metadata: Option<Vec<KeyValue>>,
+        sort_field_names: &[String],
     ) -> WriterProperties {
         let mut builder = WriterProperties::builder()
             .set_max_row_group_size(self.row_group_size)
@@ -167,7 +166,7 @@ impl ParquetWriterConfig {
         };
 
         // Apply dictionary encoding and bloom filters based on schema column types
-        builder = Self::configure_columns(builder, schema);
+        builder = Self::configure_columns(builder, schema, sort_field_names);
 
         builder.build()
     }
@@ -179,6 +178,7 @@ impl ParquetWriterConfig {
     fn configure_columns(
         mut builder: WriterPropertiesBuilder,
         schema: &ArrowSchema,
+        sort_field_names: &[String],
     ) -> WriterPropertiesBuilder {
         for field in schema.fields() {
             let col_path = ColumnPath::new(vec![field.name().to_string()]);
@@ -188,10 +188,11 @@ impl ParquetWriterConfig {
                 builder = builder.set_column_dictionary_enabled(col_path.clone(), true);
             }
 
-            // Enable bloom filters on dictionary-typed metric_name and sort order tag columns.
-            // Exclude non-dictionary columns, like timestamp_secs.
+            // Enable bloom filters on metric_name and sort order tag columns.
+            // Only dictionary-typed columns are eligible (excludes timestamp_secs etc.).
             let is_bloom_column = matches!(field.data_type(), DataType::Dictionary(_, _))
-                && (field.name() == "metric_name" || SORT_ORDER.contains(&field.name().as_str()));
+                && (field.name() == "metric_name"
+                    || sort_field_names.iter().any(|s| s == field.name()));
             if is_bloom_column {
                 let ndv = if field.name() == "metric_name" {
                     BLOOM_FILTER_NDV_METRIC_NAME
@@ -291,7 +292,9 @@ mod tests {
     fn test_bloom_filter_configuration() {
         let config = ParquetWriterConfig::default();
         let schema = create_test_schema();
-        let props = config.to_writer_properties(&schema);
+        let sort_fields = vec!["service".to_string()];
+        let props =
+            config.to_writer_properties_with_metadata(&schema, Vec::new(), None, &sort_fields);
 
         // Verify bloom filter is enabled on metric_name column
         let metric_name_path = ColumnPath::new(vec!["metric_name".to_string()]);
