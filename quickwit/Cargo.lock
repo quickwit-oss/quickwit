@@ -7207,6 +7207,7 @@ dependencies = [
  "backtrace",
  "bytesize",
  "coarsetime",
+ "dashmap 6.1.0",
  "dyn-clone",
  "env_logger",
  "fnv",

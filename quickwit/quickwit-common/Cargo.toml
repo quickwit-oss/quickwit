@@ -17,6 +17,7 @@ async-trait = { workspace = true }
 backtrace = { workspace = true, optional = true }
 bytesize = { workspace = true }
 coarsetime = { workspace = true }
+dashmap = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
 fnv = { workspace = true }

@@ -14,9 +14,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{BuildHasherDefault, Hasher};
-use std::sync::{Arc, LazyLock, OnceLock, RwLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::Instant;
 
+use dashmap::DashMap;
 use fnv::FnvHasher;
 use opentelemetry::metrics::Meter;
 use opentelemetry::{Key, KeyValue};
@@ -93,32 +94,17 @@ fn hash_label_values(values: &[&str]) -> u64 {
     hasher.finish()
 }
 
-fn new_metric_cache<T>() -> Arc<RwLock<HashMap<u64, T, BuildNoHashHasher>>> {
-    Arc::new(RwLock::new(HashMap::with_hasher(
-        BuildNoHashHasher::default(),
-    )))
+fn new_metric_cache<T>() -> Arc<DashMap<u64, T, BuildNoHashHasher>> {
+    Arc::new(DashMap::with_hasher(BuildNoHashHasher::default()))
 }
 
 fn get_or_insert_cached<T: Clone>(
-    cache: &RwLock<HashMap<u64, T, BuildNoHashHasher>>,
+    cache: &DashMap<u64, T, BuildNoHashHasher>,
     label_values: &[&str],
     build: impl FnOnce() -> T,
 ) -> T {
     let hash = hash_label_values(label_values);
-    {
-        let cache = cache.read().expect("metric cache lock poisoned");
-        if let Some(metric) = cache.get(&hash) {
-            return metric.clone();
-        }
-    }
-    let metric = build();
-    let mut cache = cache.write().expect("metric cache lock poisoned");
-    // Another thread may have inserted between the read lock and the write lock acquisition.
-    if let Some(cached) = cache.get(&hash) {
-        return cached.clone();
-    }
-    cache.insert(hash, metric.clone());
-    metric
+    cache.entry(hash).or_insert_with(build).value().clone()
 }
 
 struct OtelState<T> {
@@ -285,7 +271,7 @@ pub struct IntCounterVec<const N: usize> {
     prometheus: prometheus::IntCounterVec,
     otel: OtelMetric<opentelemetry::metrics::Counter<u64>>,
     label_names: Arc<[Key]>,
-    cache: Arc<RwLock<HashMap<u64, IntCounter, BuildNoHashHasher>>>,
+    cache: Arc<DashMap<u64, IntCounter, BuildNoHashHasher>>,
 }
 
 impl<const N: usize> IntCounterVec<N> {
@@ -341,7 +327,7 @@ pub struct IntGaugeVec<const N: usize> {
     prometheus: prometheus::IntGaugeVec,
     otel: OtelMetric<opentelemetry::metrics::Gauge<i64>>,
     label_names: Arc<[Key]>,
-    cache: Arc<RwLock<HashMap<u64, IntGauge, BuildNoHashHasher>>>,
+    cache: Arc<DashMap<u64, IntGauge, BuildNoHashHasher>>,
 }
 
 impl<const N: usize> IntGaugeVec<N> {
@@ -390,7 +376,7 @@ pub struct IntUpDownCounterVec<const N: usize> {
     prometheus: prometheus::IntGaugeVec,
     otel: OtelMetric<opentelemetry::metrics::UpDownCounter<i64>>,
     label_names: Arc<[Key]>,
-    cache: Arc<RwLock<HashMap<u64, IntUpDownCounter, BuildNoHashHasher>>>,
+    cache: Arc<DashMap<u64, IntUpDownCounter, BuildNoHashHasher>>,
 }
 
 impl<const N: usize> IntUpDownCounterVec<N> {
@@ -465,7 +451,7 @@ pub struct HistogramVec<const N: usize> {
     prometheus: prometheus::HistogramVec,
     otel: OtelMetric<opentelemetry::metrics::Histogram<f64>>,
     label_names: Arc<[Key]>,
-    cache: Arc<RwLock<HashMap<u64, Histogram, BuildNoHashHasher>>>,
+    cache: Arc<DashMap<u64, Histogram, BuildNoHashHasher>>,
 }
 
 impl<const N: usize> HistogramVec<N> {
