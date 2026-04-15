@@ -197,7 +197,7 @@ pub struct SortField {
     pub sort_order: i32,
     /// Optional sort value format for datetime field only.
     /// If none, the default output format for datetime field is
-    /// unix_timestamp_nanos.
+    /// unix_timestamp_millis.
     #[prost(enumeration = "SortDatetimeFormat", optional, tag = "3")]
     pub sort_datetime_format: ::core::option::Option<i32>,
 }
@@ -410,16 +410,16 @@ pub struct PartialHit {
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Ord, PartialOrd)]
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SortByValue {
-    #[prost(oneof = "sort_by_value::SortValue", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "sort_by_value::SortValue", tags = "1, 2, 3, 4, 5, 6")]
     pub sort_value: ::core::option::Option<sort_by_value::SortValue>,
 }
 /// Nested message and enum types in `SortByValue`.
 pub mod sort_by_value {
     #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
     #[serde(rename_all = "snake_case")]
-    #[derive(Clone, Copy, PartialEq, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum SortValue {
         #[prost(uint64, tag = "1")]
         U64(u64),
@@ -429,6 +429,10 @@ pub mod sort_by_value {
         F64(f64),
         #[prost(bool, tag = "4")]
         Boolean(bool),
+        #[prost(string, tag = "5")]
+        Str(::prost::alloc::string::String),
+        #[prost(int64, tag = "6")]
+        Datetime(i64),
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

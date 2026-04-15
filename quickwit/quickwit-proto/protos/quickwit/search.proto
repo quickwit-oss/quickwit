@@ -264,7 +264,7 @@ message SortField {
   SortOrder sort_order = 2;
   // Optional sort value format for datetime field only.
   // If none, the default output format for datetime field is
-  // unix_timestamp_nanos.
+  // unix_timestamp_millis.
   optional SortDatetimeFormat sort_datetime_format = 3;
 }
 
@@ -463,9 +463,11 @@ message SortByValue {
   int64 i64 = 2;
   double f64 = 3;
   bool boolean = 4;
+  string str = 5;
+  int64 datetime = 6;
   }
   // Room for eventual future sorted key types.
-  reserved 5 to 20;
+  reserved 7 to 20;
 }
 
 message LeafSearchResponse {

@@ -778,16 +778,16 @@ fn convert_hit(
             .unwrap_or_else(|_| Source::from_string("{}".to_string()).unwrap());
 
     let mut sort = Vec::new();
-    if let Some(partial_hit) = hit.partial_hit {
-        if let Some(sort_value) = partial_hit.sort_value {
-            sort.push(sort_value.into_json());
+    if let Some(partial_hit) = &hit.partial_hit {
+        if let Some(sort_value) = &partial_hit.sort_value {
+            sort.push(sort_value.clone().into_json());
         }
-        if let Some(sort_value2) = partial_hit.sort_value2 {
-            sort.push(sort_value2.into_json());
+        if let Some(sort_value2) = &partial_hit.sort_value2 {
+            sort.push(sort_value2.clone().into_json());
         }
         if append_shard_doc {
             sort.push(serde_json::Value::String(
-                quickwit_search::GlobalDocAddress::from_partial_hit(&partial_hit).to_string(),
+                quickwit_search::GlobalDocAddress::from_partial_hit(partial_hit).to_string(),
             ));
         }
     }

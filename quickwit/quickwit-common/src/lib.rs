@@ -27,6 +27,7 @@ pub mod jemalloc_profiled;
 mod kill_switch;
 pub mod metrics;
 pub mod net;
+pub mod numeric_types;
 mod path_hasher;
 pub mod pretty;
 mod progress;

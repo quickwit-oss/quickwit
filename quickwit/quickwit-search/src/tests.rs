@@ -14,6 +14,7 @@
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
+use std::vec;
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
@@ -22,8 +23,8 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::search::{
-    LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField, SortOrder,
-    SortValue,
+    LeafListTermsResponse, ListTermsRequest, PartialHit, SearchRequest, SortByValue,
+    SortDatetimeFormat, SortField, SortOrder, SortValue,
 };
 use quickwit_query::query_ast::{
     QueryAst, qast_helper, qast_json_helper, query_ast_from_user_text,
@@ -371,7 +372,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
-    .await?;
+    .await
+    .unwrap();
     assert_eq!(single_node_response.num_hits, 10);
     assert_eq!(single_node_response.hits.len(), 10);
     assert!(&single_node_response.hits[0].json.contains("t:19"));
@@ -395,7 +397,8 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
-    .await?;
+    .await
+    .unwrap();
     assert_eq!(single_node_response.num_hits, 19);
     assert_eq!(single_node_response.hits.len(), 19);
     assert!(&single_node_response.hits[0].json.contains("t:19"));
@@ -890,7 +893,7 @@ async fn test_sort_by_2_field() {
 }
 
 #[tokio::test]
-async fn test_single_node_invalid_sorting_with_query() {
+async fn test_sort_by_text() {
     let index_id = "single-node-invalid-sorting";
     let doc_mapping_yaml = r#"
             field_mappings:
@@ -906,7 +909,7 @@ async fn test_single_node_invalid_sorting_with_query() {
 
     let mut docs = Vec::new();
     for i in 0..30 {
-        let description = format!("city info-{}", i + 1);
+        let description = format!("city info-{:02}", i + 1);
         docs.push(json!({"description": description, "ts": i+1, "temperature": i+32}));
     }
     test_sandbox.add_documents(docs).await.unwrap();
@@ -927,13 +930,19 @@ async fn test_single_node_invalid_sorting_with_query() {
         test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
-    .await;
-    assert!(single_node_response.is_err());
-    let error_msg = single_node_response.unwrap_err().to_string();
-    assert_eq!(
-        error_msg,
-        "Invalid argument: sort by field on type text is currently not supported `description`"
-    );
+    .await
+    .unwrap();
+
+    assert_eq!(single_node_response.num_hits, 30);
+    assert_eq!(single_node_response.hits.len(), 15);
+    assert!(single_node_response.hits.windows(2).all(|hits| {
+        let hit0: JsonValue = serde_json::from_str(&hits[0].json).unwrap();
+        let hit1: JsonValue = serde_json::from_str(&hits[1].json).unwrap();
+        hit0["description"].as_str().unwrap() >= hit1["description"].as_str().unwrap()
+    }));
+    assert!(single_node_response.hits[0].json.contains("city info-30"));
+    assert!(single_node_response.hits[14].json.contains("city info-16"));
+
     test_sandbox.assert_quit().await;
 }
 
@@ -2157,6 +2166,359 @@ async fn test_single_node_soft_delete_count_only_term_query() -> anyhow::Result<
     .await?;
     assert_eq!(result.num_hits, 2);
     assert!(result.hits.is_empty());
+
+    test_sandbox.assert_quit().await;
+    Ok(())
+}
+
+/// Tests that when sorting by a datetime field with `sort_datetime_format` set to millis:
+/// 1. The sort values returned in `partial_hit` are in milliseconds (not nanoseconds).
+/// 2. Those values can be fed back as `search_after` to retrieve the next page correctly.
+#[tokio::test]
+async fn test_sort_by_datetime_format_millis_and_search_after() -> anyhow::Result<()> {
+    let index_id = "sort-datetime-millis-search-after";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: ts
+                type: datetime
+                fast: true
+              - name: body
+                type: text
+            timestamp_field: ts
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+
+    // Index 10 documents with timestamps 100_000_000_000 .. 100_000_009_000 ms since epoch.
+    let base_secs: i64 = 100_000_000;
+    let docs: Vec<_> = (0..10)
+        .map(|i| json!({"ts": base_secs + i, "body": format!("doc {i}")}))
+        .collect();
+    test_sandbox.add_documents(docs).await?;
+
+    let sort_field = SortField {
+        field_name: "ts".to_string(),
+        sort_order: SortOrder::Desc as i32,
+        sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+    };
+
+    // Page 1: top 5 hits sorted by ts desc with millis output
+    let page1 = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: qast_json_helper("*", &["body"]),
+            max_hits: 5,
+            sort_fields: vec![sort_field.clone()],
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+
+    assert_eq!(page1.num_hits, 10);
+    assert_eq!(page1.hits.len(), 5);
+
+    // Verify sort values are in milliseconds (not nanoseconds)
+    let expected_millis: Vec<i64> = (5..10).rev().map(|i| (base_secs + i) * 1_000).collect();
+    let actual_millis: Vec<i64> = page1
+        .hits
+        .iter()
+        .map(|hit| {
+            let partial_hit = hit.partial_hit.as_ref().unwrap();
+            match &partial_hit.sort_value.as_ref().unwrap().sort_value {
+                Some(SortValue::I64(ms)) => *ms,
+                other => panic!("expected I64 sort value in millis, got {other:?}"),
+            }
+        })
+        .collect();
+    assert_eq!(actual_millis, expected_millis);
+
+    // Page 2: use the last hit's sort value as search_after
+    let last_hit = page1.hits.last().unwrap().partial_hit.as_ref().unwrap();
+    let search_after = PartialHit {
+        sort_value: last_hit.sort_value.clone(),
+        sort_value2: None,
+        split_id: String::new(),
+        segment_ord: 0,
+        doc_id: 0,
+    };
+
+    let page2 = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: qast_json_helper("*", &["body"]),
+            max_hits: 5,
+            sort_fields: vec![sort_field],
+            search_after: Some(search_after),
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+
+    assert_eq!(page2.hits.len(), 5);
+    // Page 2 should contain docs with timestamps base_secs+4 down to base_secs+0 in millis
+    let expected_millis_page2: Vec<i64> = (0..5).rev().map(|i| (base_secs + i) * 1_000).collect();
+    let actual_millis_page2: Vec<i64> = page2
+        .hits
+        .iter()
+        .map(|hit| {
+            let partial_hit = hit.partial_hit.as_ref().unwrap();
+            match &partial_hit.sort_value.as_ref().unwrap().sort_value {
+                Some(SortValue::I64(ms)) => *ms,
+                other => panic!("expected I64 sort value in millis, got {other:?}"),
+            }
+        })
+        .collect();
+    assert_eq!(actual_millis_page2, expected_millis_page2);
+
+    test_sandbox.assert_quit().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_sort_by_dynamic_with_datetime_page_fails() -> anyhow::Result<()> {
+    let index_id = "sort-dynamic-datetime-page-fails";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: ts
+                type: datetime
+                fast: true
+            mode: dynamic
+            dynamic_mapping:
+                fast: true
+            timestamp_field: ts
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+
+    let docs = [
+        json!({"ts": 100_000_001, "my_dynamic_field": 2024}),
+        json!({"ts": 100_000_002, "my_dynamic_field": "2024-03-30T00:00:00Z"}),
+        json!({"ts": 100_000_001, "my_dynamic_field": 2025}),
+        json!({"ts": 100_000_002, "my_dynamic_field": "2025-03-30T00:00:00Z"}),
+        json!({"ts": 100_000_001, "my_dynamic_field": 2026}),
+        json!({"ts": 100_000_002, "my_dynamic_field": "2026-03-30T00:00:00Z"}),
+    ];
+    test_sandbox.add_documents(docs).await?;
+
+    let sort_field = SortField {
+        field_name: "my_dynamic_field".to_string(),
+        sort_order: SortOrder::Desc as i32,
+        ..Default::default()
+    };
+
+    // Page 1: sort should work even on a dynamic field with a datetime column
+    // values for the first page
+    let page1 = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: qast_json_helper("*", &["body"]),
+            max_hits: 5,
+            sort_fields: vec![sort_field.clone()],
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+
+    assert_eq!(page1.num_hits, 6);
+    assert_eq!(page1.hits.len(), 5);
+
+    // Verify sort values are in milliseconds (not nanoseconds)
+    let page_1_sort_values: Vec<_> = page1
+        .hits
+        .iter()
+        .map(|hit| {
+            &hit.partial_hit
+                .as_ref()
+                .unwrap()
+                .sort_value
+                .as_ref()
+                .unwrap()
+                .sort_value
+        })
+        .collect();
+    assert_eq!(
+        page_1_sort_values,
+        vec![
+            &Some(SortValue::Datetime(1774828800000000000)),
+            &Some(SortValue::Datetime(1743292800000000000)),
+            &Some(SortValue::Datetime(1711756800000000000)),
+            &Some(SortValue::I64(2026)),
+            &Some(SortValue::I64(2025)),
+        ]
+    );
+
+    // Page 2: search after not yet supported
+    let last_hit = page1.hits.last().unwrap().partial_hit.as_ref().unwrap();
+    let search_after = PartialHit {
+        sort_value: last_hit.sort_value.clone(),
+        sort_value2: None,
+        split_id: String::new(),
+        segment_ord: 0,
+        doc_id: 0,
+    };
+
+    let page2 = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: qast_json_helper("*", &["body"]),
+            max_hits: 5,
+            sort_fields: vec![sort_field],
+            search_after: Some(search_after),
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page2.failed_splits.len(), 1);
+    assert_eq!(page2.hits.len(), 0);
+
+    test_sandbox.assert_quit().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_sort_by_two_fields_with_null() -> anyhow::Result<()> {
+    let index_id = "sort-datetime-millis-search-after";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: ts
+                type: datetime
+                fast: true
+              - name: body
+                type: text
+                fast: true
+            timestamp_field: ts
+        "#;
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+
+    // timestamps with 10 digits should be interpreted as secs
+    let docs: Vec<_> = vec![
+        json!({"ts": 1_000_000_001i64, "body": format!("doc 9")}),
+        json!({"ts": 1_000_000_002i64, "body": format!("doc 8")}),
+        json!({"ts": 1_000_000_003i64, "body": format!("doc 7")}),
+        json!({"ts": 1_000_000_004i64}),
+        json!({"ts": 1_000_000_005i64}),
+        json!({"ts": 1_000_000_006i64}),
+    ];
+    test_sandbox.add_documents(docs).await?;
+
+    let sort_fields = vec![
+        SortField {
+            field_name: "body".to_string(),
+            sort_order: SortOrder::Asc as i32,
+            ..Default::default()
+        },
+        SortField {
+            field_name: "ts".to_string(),
+            sort_order: SortOrder::Asc as i32,
+            sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+        },
+    ];
+
+    let page1 = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: qast_json_helper("*", &["body"]),
+            max_hits: 5,
+            sort_fields: sort_fields.clone(),
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await?;
+
+    assert_eq!(page1.num_hits, 6);
+    assert_eq!(page1.hits.len(), 5);
+    let page_1_hits = page1
+        .hits
+        .iter()
+        .map(|hit| hit.partial_hit.clone().unwrap())
+        .collect::<Vec<_>>();
+    let split_id = page_1_hits[0].split_id.clone();
+    // for the timestamp field we convert to sort_datetime_format repr as I64
+    assert_eq!(
+        page_1_hits,
+        vec![
+            PartialHit {
+                sort_value: Some(SortValue::Str("doc 7".to_string()).into()),
+                sort_value2: Some(SortValue::I64(1_000_000_003_000).into()),
+                split_id: split_id.clone(),
+                segment_ord: 0,
+                doc_id: 2,
+            },
+            PartialHit {
+                sort_value: Some(SortValue::Str("doc 8".to_string()).into()),
+                sort_value2: Some(SortValue::I64(1_000_000_002_000).into()),
+                split_id: split_id.clone(),
+                segment_ord: 0,
+                doc_id: 1,
+            },
+            PartialHit {
+                sort_value: Some(SortValue::Str("doc 9".to_string()).into()),
+                sort_value2: Some(SortValue::I64(1_000_000_001_000).into()),
+                split_id: split_id.clone(),
+                segment_ord: 0,
+                doc_id: 0,
+            },
+            PartialHit {
+                sort_value: Some(SortByValue { sort_value: None }),
+                sort_value2: Some(SortValue::I64(1_000_000_004_000).into()),
+                split_id: split_id.clone(),
+                segment_ord: 0,
+                doc_id: 3,
+            },
+            PartialHit {
+                sort_value: Some(SortByValue { sort_value: None }),
+                sort_value2: Some(SortValue::I64(1_000_000_005_000).into()),
+                split_id: split_id.clone(),
+                segment_ord: 0,
+                doc_id: 4,
+            },
+        ]
+    );
+
+    let page2 = single_node_search(
+        SearchRequest {
+            index_id_patterns: vec![index_id.to_string()],
+            query_ast: qast_json_helper("*", &["body"]),
+            max_hits: 5,
+            sort_fields: sort_fields.clone(),
+            search_after: Some(page_1_hits[4].clone()),
+            ..Default::default()
+        },
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(page2.num_hits, 6);
+    assert_eq!(page2.hits.len(), 1);
+    let page_2_hits = page2
+        .hits
+        .iter()
+        .map(|hit| hit.partial_hit.clone().unwrap())
+        .collect::<Vec<_>>();
+    let split_id = page_2_hits[0].split_id.clone();
+    // for the timestamp field we convert to sort_datetime_format repr as I64
+    assert_eq!(
+        page_2_hits,
+        vec![PartialHit {
+            sort_value: Some(SortByValue { sort_value: None }),
+            sort_value2: Some(SortValue::I64(1_000_000_006_000).into()),
+            split_id: split_id.clone(),
+            segment_ord: 0,
+            doc_id: 5,
+        },]
+    );
 
     test_sandbox.assert_quit().await;
     Ok(())

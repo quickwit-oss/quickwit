@@ -227,9 +227,9 @@ expected:
       relation: eq
     hits:
       - sort: [0]
-      - sort: [True]
       - sort: [10.5]
       - sort: [18000000000000000000]
+      - sort: [True]
 ---
 desc: "search after on mixed column desc match nothing"
 json:
@@ -263,8 +263,8 @@ expected:
       value: 5
       relation: eq
     hits:
-      - sort: [True]
       - sort: [0]
       - sort: [-10]
+
 
 
