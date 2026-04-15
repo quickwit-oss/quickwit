@@ -72,7 +72,7 @@ use quickwit_common::tower::{
 };
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
-use quickwit_compaction::planner::StubCompactionPlannerService;
+use quickwit_compaction::planner::CompactionPlanner;
 use quickwit_compaction::{CompactorSupervisor, start_compactor_service};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
@@ -271,23 +271,28 @@ async fn balance_channel_for_service(
     BalanceChannel::from_stream(service_change_stream)
 }
 
-/// Builds a `CompactionPlannerServiceClient` if the node runs the compactor.
+/// Builds a `CompactionPlannerServiceClient` if the node runs the janitor or compactor.
 ///
-/// On janitor+compactor nodes, wraps a local `StubCompactionPlannerService`.
-/// On compactor-only nodes, connects to a remote janitor via gRPC.
+/// On janitor nodes, spawns a `CompactionPlanner` actor and builds the client from
+/// its mailbox. On compactor-only nodes, connects to a remote janitor via gRPC.
 async fn get_compaction_planner_client_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
-) -> anyhow::Result<Option<CompactionPlannerServiceClient>, anyhow::Error> {
-    if !node_config.is_service_enabled(QuickwitService::Compactor) {
+    universe: &Universe,
+    metastore_client: &MetastoreServiceClient,
+) -> anyhow::Result<Option<CompactionPlannerServiceClient>> {
+    let is_janitor = node_config.is_service_enabled(QuickwitService::Janitor);
+    let is_compactor = node_config.is_service_enabled(QuickwitService::Compactor);
+    if !is_janitor && !is_compactor {
         return Ok(None);
     }
-    if node_config.is_service_enabled(QuickwitService::Janitor) {
-        info!("compaction planner service enabled on this node");
-        return Ok(Some(CompactionPlannerServiceClient::new(
-            StubCompactionPlannerService,
-        )));
+    if is_janitor {
+        let planner = CompactionPlanner::new(metastore_client.clone());
+        let (mailbox, _handle) = universe.spawn_builder().spawn(planner);
+        info!("compaction planner actor started on janitor node");
+        return Ok(Some(CompactionPlannerServiceClient::from_mailbox(mailbox)));
     }
+    // Compactor-only node: connect to the planner on a remote janitor.
     let balance_channel = balance_channel_for_service(cluster, QuickwitService::Janitor).await;
     let found = balance_channel
         .wait_for(COMPACTION_SERVICE_DISCOVERY_TIMEOUT, |connections| {
@@ -593,10 +598,14 @@ pub async fn serve_quickwit(
         .await
         .context("failed to start ingest v1 service")?;
 
-    let compaction_service_client_opt =
-        get_compaction_planner_client_if_needed(&node_config, &cluster)
-            .await
-            .context("failed to initialize compaction service client")?;
+    let compaction_service_client_opt = get_compaction_planner_client_if_needed(
+        &node_config,
+        &cluster,
+        &universe,
+        &metastore_client,
+    )
+    .await
+    .context("failed to initialize compaction service client")?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
         let merge_scheduler_mailbox_opt =
@@ -1917,26 +1926,40 @@ mod tests {
             create_cluster_for_test(Vec::new(), &["janitor", "indexer"], &transport, true)
                 .await
                 .unwrap();
+        let universe = Universe::new();
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
 
-        // Without compactor service enabled, no planner client.
+        // Janitor without compactor: planner client is returned (for gRPC registration).
         let mut node_config = NodeConfig::for_test();
         node_config.enabled_services =
             HashSet::from([QuickwitService::Janitor, QuickwitService::Indexer]);
-        let result = get_compaction_planner_client_if_needed(&node_config, &cluster)
-            .await
-            .unwrap();
-        assert!(result.is_none());
+        let result =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(result.is_some());
 
-        // With compactor + janitor enabled, planner client is returned (local stub).
+        // With compactor + janitor enabled, planner client is also returned.
         node_config.enabled_services = HashSet::from([
             QuickwitService::Janitor,
             QuickwitService::Indexer,
             QuickwitService::Compactor,
         ]);
-        let result = get_compaction_planner_client_if_needed(&node_config, &cluster)
-            .await
-            .unwrap();
+        let result =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
         assert!(result.is_some());
+
+        // Neither janitor nor compactor: no client.
+        node_config.enabled_services = HashSet::from([QuickwitService::Indexer]);
+        let result =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await
+                .unwrap();
+        assert!(result.is_none());
+
+        universe.assert_quit().await;
     }
 
     #[tokio::test]
@@ -1945,11 +1968,17 @@ mod tests {
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, false)
             .await
             .unwrap();
+        let universe = Universe::new();
+        let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
 
         let mut node_config = NodeConfig::for_test();
         node_config.enabled_services =
             HashSet::from([QuickwitService::Indexer, QuickwitService::Compactor]);
-        let result = get_compaction_planner_client_if_needed(&node_config, &cluster).await;
+        let result =
+            get_compaction_planner_client_if_needed(&node_config, &cluster, &universe, &metastore)
+                .await;
         assert!(result.is_err());
+
+        universe.assert_quit().await;
     }
 }

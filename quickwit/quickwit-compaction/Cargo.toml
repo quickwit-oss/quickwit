@@ -25,6 +25,7 @@ serde_json = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
+ulid = { workspace = true }
 
 [dev-dependencies]
 quickwit-actors = { workspace = true, features = ["testsuite"] }
