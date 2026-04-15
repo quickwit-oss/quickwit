@@ -27,13 +27,14 @@
 //! query results.
 //!
 //! The implementation uses SipHash-2-4 with fixed keys `(0, 0)` from the
-//! `siphasher` crate, and feeds bytes via Rust's `Hash` trait. The `Hash`
-//! implementation for `str` writes `bytes ++ [0xFF]` and for `u8` writes
-//! `[byte]`; this has been stable since Rust 1.0. A pinned stability test
-//! (`test_hash_stability_pinned`) will catch any regression.
+//! `siphasher` crate, feeding raw bytes directly rather than going through
+//! Rust's `Hash` trait (whose byte-level encoding is not a guaranteed API
+//! contract). Strings are fed as `bytes ++ [0xFF]` and `metric_type` as a
+//! single byte. A pinned stability test (`test_hash_stability_pinned`) will
+//! catch any regression.
 
 use std::collections::HashMap;
-use std::hash::{Hash, Hasher};
+use std::hash::Hasher;
 
 use siphasher::sip::SipHasher;
 
@@ -64,15 +65,24 @@ pub const EXCLUDED_TAGS: &[&str] = &[
     "value",
 ];
 
+/// Feed a string into the hasher with an explicit `bytes ++ [0xFF]` encoding.
+///
+/// This matches what `Hash for str` has done since Rust 1.0, but spelled out
+/// so the on-disk hash is not coupled to an undocumented trait implementation.
+fn hash_str(hasher: &mut impl Hasher, s: &str) {
+    hasher.write(s.as_bytes());
+    hasher.write(&[0xFF]);
+}
+
 /// Compute a deterministic timeseries ID from metric identity columns.
 ///
 /// # Hash inputs (in order)
 ///
-/// 1. `metric_name` (string, via `Hash` trait — writes bytes + 0xFF)
-/// 2. `metric_type` (u8, via `Hash` trait — writes single byte)
+/// 1. `metric_name` (string — writes bytes + 0xFF)
+/// 2. `metric_type` (u8 — writes single byte)
 /// 3. For each tag in **lexicographic key order**, excluding [`EXCLUDED_TAGS`]:
-///    - tag key (string)
-///    - tag value (string)
+///    - tag key (string — writes bytes + 0xFF)
+///    - tag value (string — writes bytes + 0xFF)
 ///
 /// The tag sort ensures the result is independent of HashMap iteration order.
 ///
@@ -88,8 +98,8 @@ pub fn compute_timeseries_id(
 ) -> i64 {
     let mut hasher = SipHasher::new_with_keys(0, 0);
 
-    metric_name.hash(&mut hasher);
-    metric_type.hash(&mut hasher);
+    hash_str(&mut hasher, metric_name);
+    hasher.write(&[metric_type]);
 
     // Collect and sort tags for deterministic ordering.
     let mut sorted_tags: Vec<(&str, &str)> = tags
@@ -100,8 +110,8 @@ pub fn compute_timeseries_id(
     sorted_tags.sort_unstable_by_key(|(k, _)| *k);
 
     for (key, value) in sorted_tags {
-        key.hash(&mut hasher);
-        value.hash(&mut hasher);
+        hash_str(&mut hasher, key);
+        hash_str(&mut hasher, value);
     }
 
     hasher.finish() as i64

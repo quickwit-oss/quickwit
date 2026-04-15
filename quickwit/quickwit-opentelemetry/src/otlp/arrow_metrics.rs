@@ -86,6 +86,8 @@ impl ArrowMetricsBatchBuilder {
         fields.push(Field::new("metric_type", DataType::UInt8, false));
         fields.push(Field::new("timestamp_secs", DataType::UInt64, false));
         fields.push(Field::new("value", DataType::Float64, false));
+        // TODO: customer could submit a timeseries_id tag, and I don't think we want to explicitly
+        // reserve it.
         fields.push(Field::new("timeseries_id", DataType::Int64, false));
 
         for &tag_key in &sorted_tag_keys {
@@ -127,6 +129,9 @@ impl ArrowMetricsBatchBuilder {
             metric_type_builder.append_value(dp.metric_type as u8);
             timestamp_secs_builder.append_value(dp.timestamp_secs);
             value_builder.append_value(dp.value);
+            // TODO: can we not have to compute the timeseries for every point? especially with
+            // compaction, there may be many points with the same tags, in the same
+            // batch.
             timeseries_id_builder.append_value(compute_timeseries_id(
                 &dp.metric_name,
                 dp.metric_type as u8,
