@@ -69,6 +69,14 @@ COPY --from=cloudprem-ui-loader /quickwit/cloudprem-ui/cloudprem_ui_build /quick
 
 WORKDIR /quickwit
 
+# Use internal Datadog cargo registry for event-percolation instead of GitHub git,
+# because CI_JOB_TOKEN lacks access to the GitLab mirror.
+RUN cat >> Cargo.toml <<'EOF'
+
+[patch."ssh://git@github.com/DataDog/event-percolation.git"]
+event-percolation = { version = "=0.5.3", registry = "datadog" }
+EOF
+
 RUN rustup toolchain install
 
 RUN echo "Building binaries with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \

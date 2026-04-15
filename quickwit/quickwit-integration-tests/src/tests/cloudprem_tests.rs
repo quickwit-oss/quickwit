@@ -991,15 +991,18 @@ async fn test_extra_fts_indexing_and_search() {
     ]))
     .unwrap();
 
-    // Verify PomChi produces a single extra_fts string
+    // Verify PomChi produces ExtraFts with individual fields
     let msg: DatadogLogMsg = serde_json::from_value(docs[0].clone()).unwrap();
     let processed = pomchi::ProcessedLog::from_datadog_log_msg(msg);
-    let fts = processed
-        .extra_fts
-        .as_deref()
-        .expect("extra_fts should be populated");
-    assert!(fts.contains("connection refused by remote host"));
-    assert!(fts.contains("payment service crash"));
+    assert!(!processed.extra_fts.is_empty());
+    assert_eq!(
+        processed.extra_fts.error_message.as_deref(),
+        Some("connection refused by remote host")
+    );
+    assert_eq!(
+        processed.extra_fts.title.as_deref(),
+        Some("payment service crash")
+    );
 
     let sandbox = setup_env(&mut docs).await;
 

@@ -21,7 +21,9 @@ const EVP_DEFAULT_FIELD: &str = "_default_";
 const EVP_RANDOM_DRAW: &str = "random_draw";
 const EVP_WES_FIELD: &str = "*";
 
-const QW_EXTRA_FTS: &str = "extra_fts";
+const QW_EXTRA_FTS_ERROR_MESSAGE: &str = "extra_fts.error_message";
+const QW_EXTRA_FTS_ERROR_STACK: &str = "extra_fts.error_stack";
+const QW_EXTRA_FTS_TITLE: &str = "extra_fts.title";
 const QW_MESSAGE_FIELD: &str = "message";
 const QW_TIEBREAKER: &str = "tiebreaker";
 const QW_WES_FIELD: &str = "all";
@@ -29,7 +31,10 @@ const QW_WES_FIELD: &str = "all";
 /// Returns true for fields indexed with the DatadogTokenizer (see
 /// config/cloudprem/datadog-logs.yaml).
 fn is_datadog_tokenized(field: &str) -> bool {
-    field == QW_MESSAGE_FIELD || field == QW_EXTRA_FTS
+    field == QW_MESSAGE_FIELD
+        || field == QW_EXTRA_FTS_ERROR_MESSAGE
+        || field == QW_EXTRA_FTS_ERROR_STACK
+        || field == QW_EXTRA_FTS_TITLE
 }
 
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
@@ -623,10 +628,15 @@ fn wildcard_pattern_to_string(pattern: &WildcardPattern) -> String {
 /// - because duplicating the indexing of `message` took a significant amount of space.
 fn expand_virtual_fields(field_name: String) -> Vec<String> {
     if field_name == EVP_DEFAULT_FIELD {
-        // FTS: message + extra_fts (a single text field where PomChi
-        // concatenates custom.error.message, custom.error.stack, custom.title).
-        // Keep in sync with default_search_fields in config/cloudprem/datadog.yaml
-        vec![QW_MESSAGE_FIELD.to_string(), QW_EXTRA_FTS.to_string()]
+        // FTS: message + extra_fts sub-fields (JSON field where PomChi
+        // populates error_message, error_stack, title from custom).
+        // Keep in sync with default_search_fields in config/cloudprem/datadog-logs.yaml
+        vec![
+            QW_MESSAGE_FIELD.to_string(),
+            QW_EXTRA_FTS_ERROR_MESSAGE.to_string(),
+            QW_EXTRA_FTS_ERROR_STACK.to_string(),
+            QW_EXTRA_FTS_TITLE.to_string(),
+        ]
     } else if field_name == EVP_WES_FIELD {
         vec![QW_MESSAGE_FIELD.to_string(), QW_WES_FIELD.to_string()]
     } else {
@@ -841,7 +851,19 @@ mod tests {
                     lenient: false,
                 }),
                 QueryAst::FullText(FullTextQuery {
-                    field: "extra_fts".to_string(),
+                    field: "extra_fts.error_message".to_string(),
+                    text: "hello".to_string(),
+                    params: fts_params.clone(),
+                    lenient: false,
+                }),
+                QueryAst::FullText(FullTextQuery {
+                    field: "extra_fts.error_stack".to_string(),
+                    text: "hello".to_string(),
+                    params: fts_params.clone(),
+                    lenient: false,
+                }),
+                QueryAst::FullText(FullTextQuery {
+                    field: "extra_fts.title".to_string(),
                     text: "hello".to_string(),
                     params: fts_params,
                     lenient: false,
@@ -1122,7 +1144,15 @@ mod tests {
     #[test]
     fn test_expand_virtual_fields_fts_default() {
         let fields = super::expand_virtual_fields(super::EVP_DEFAULT_FIELD.to_string());
-        assert_eq!(fields, vec!["message", "extra_fts"]);
+        assert_eq!(
+            fields,
+            vec![
+                "message",
+                "extra_fts.error_message",
+                "extra_fts.error_stack",
+                "extra_fts.title"
+            ]
+        );
     }
 
     #[test]
@@ -1140,7 +1170,9 @@ mod tests {
     #[test]
     fn test_is_datadog_tokenized() {
         assert!(super::is_datadog_tokenized("message"));
-        assert!(super::is_datadog_tokenized("extra_fts"));
+        assert!(super::is_datadog_tokenized("extra_fts.error_message"));
+        assert!(super::is_datadog_tokenized("extra_fts.error_stack"));
+        assert!(super::is_datadog_tokenized("extra_fts.title"));
         assert!(!super::is_datadog_tokenized("custom"));
         assert!(!super::is_datadog_tokenized("service"));
         assert!(!super::is_datadog_tokenized("tag"));

@@ -1,7 +1,7 @@
 # Tests for extra_fts: FTS queries should find text inside
 # custom.error.message, custom.error.stack, and custom.title
-# via the extra_fts text field (PomChi concatenates these values
-# at ingest time) indexed with the datadog tokenizer.
+# via the extra_fts JSON field (PomChi populates sub-fields
+# error_message, error_stack, title) indexed with the datadog tokenizer.
 
 # Step 1: Verify document was ingested
 endpoint: api/v1/datadog/search
