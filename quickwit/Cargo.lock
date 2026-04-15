@@ -7732,7 +7732,6 @@ dependencies = [
  "quickwit-common",
  "quickwit-dst",
  "quickwit-proto",
- "sea-query",
  "serde",
  "serde_json",
  "tempfile",
