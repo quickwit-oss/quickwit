@@ -13,11 +13,9 @@
 // limitations under the License.
 
 mod compaction_planner;
-mod compaction_service;
 #[allow(dead_code)]
 mod compaction_state;
 #[allow(dead_code)]
 mod index_config_store;
 
 pub use compaction_planner::CompactionPlanner;
-pub use compaction_service::StubCompactionPlannerService;

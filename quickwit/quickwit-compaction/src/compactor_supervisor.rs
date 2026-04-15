@@ -189,20 +189,22 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::temp_dir::TempDirectory;
-    use quickwit_proto::compaction::CompactionPlannerServiceClient;
+    use quickwit_proto::compaction::{
+        CompactionPlannerServiceClient, MockCompactionPlannerService,
+    };
     use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
     use quickwit_proto::types::NodeId;
     use quickwit_storage::{RamStorage, StorageResolver};
 
     use super::*;
     use crate::compaction_pipeline::tests::test_pipeline;
-    use crate::planner::StubCompactionPlannerService;
 
     fn test_supervisor(num_slots: usize) -> CompactorSupervisor {
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage);
         let metastore = MetastoreServiceClient::from_mock(MockMetastoreService::new());
-        let compaction_client = CompactionPlannerServiceClient::new(StubCompactionPlannerService);
+        let compaction_client =
+            CompactionPlannerServiceClient::from_mock(MockCompactionPlannerService::new());
         CompactorSupervisor::new(
             NodeId::from("test-node"),
             compaction_client,

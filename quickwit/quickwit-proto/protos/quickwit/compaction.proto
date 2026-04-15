@@ -19,12 +19,8 @@ package quickwit.compaction;
 import "quickwit/common.proto";
 
 service CompactionPlannerService {
-  rpc Ping(PingRequest) returns (PingResponse);
   rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
 }
-
-message PingRequest {}
-message PingResponse {}
 
 message ReportStatusRequest {
   string node_id = 1;
