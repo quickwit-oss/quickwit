@@ -49,20 +49,29 @@ use siphasher::sip::SipHasher;
 ///   data point so must be excluded here.
 /// - `timestamp` is the generic well-known timestamp name from the sort schema system. Excluded
 ///   defensively in case it appears as a user-provided attribute.
-/// - DDSketch value columns (`count`, `sum`, `min`, `max`, `flags`, `keys`, `counts`) are
-///   per-data-point sketch components.
 pub const EXCLUDED_TAGS: &[&str] = &[
+    "start_timestamp_secs",
+    "sum",
+    "timestamp",
+    "timestamp_secs",
+    "value",
+];
+
+/// Tag columns excluded from the timeseries ID hash, for sketches.
+///
+/// Includes sketch "value" fields.
+pub const SKETCHES_EXCLUDED_TAGS: &[&str] = &[
+    "start_timestamp_secs",
+    "sum",
+    "timestamp",
+    "timestamp_secs",
+    "value",
     "count",
     "counts",
     "flags",
     "keys",
     "max",
     "min",
-    "start_timestamp_secs",
-    "sum",
-    "timestamp",
-    "timestamp_secs",
-    "value",
 ];
 
 /// Feed a string into the hasher with an explicit `bytes ++ [0xFF]` encoding.
