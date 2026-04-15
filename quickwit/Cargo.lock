@@ -7898,6 +7898,8 @@ dependencies = [
  "itertools 0.14.0",
  "mime_guess",
  "mockall",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "percent-encoding",
  "pprof",
  "prost 0.14.3",
@@ -7942,6 +7944,8 @@ dependencies = [
  "tower 0.5.3",
  "tower-http",
  "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
  "utoipa",
  "warp",
  "zstd",
@@ -10734,6 +10738,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]

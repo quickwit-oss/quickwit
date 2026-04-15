@@ -29,6 +29,7 @@ humantime = { workspace = true }
 hyper-util = {workspace = true}
 itertools = { workspace = true }
 mime_guess = { workspace = true }
+opentelemetry = { workspace = true }
 percent-encoding = { workspace = true }
 pprof = { workspace = true, optional = true }
 prost = { workspace = true }
@@ -52,6 +53,7 @@ tonic-reflection = { workspace = true }
 tower = { workspace = true, features = ["limit"] }
 tower-http = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 utoipa = { workspace = true }
 warp = { workspace = true, features = ["server"] }
 zstd = { workspace = true }
@@ -84,10 +86,14 @@ assert-json-diff = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tonic = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
