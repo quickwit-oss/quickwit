@@ -198,7 +198,7 @@ pulsar = { version = "6.6", default-features = false, features = [
 ] }
 quick_cache = "0.6.18"
 quote = "1.0"
-rand = "0.9"
+rand = "0.10"
 rand_distr = "0.5"
 rayon = "1.11"
 rdkafka = { version = "0.38", default-features = false, features = [
