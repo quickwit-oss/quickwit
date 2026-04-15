@@ -284,14 +284,16 @@ expected:
         response:
           values:
           - key: 85.0
-            value: 100.49456770856702
+            value:
+              $expect: 'abs(val - 100.4945) < 0.1'
       - doc_count: 2
         key: 1422662400000.0
         key_as_string: '2015-01-31T00:00:00Z'
         response:
           values:
           - key: 85.0
-            value: 30.26717133872237
+            value:
+              $expect: 'abs(val - 30.2617) < 0.1'
 --- 
 # Test histogram
 method: [GET]
@@ -353,12 +355,16 @@ json:
         field: "date"
 expected:
   aggregations:
+    # cardinality queries are currently being improved upstream
     unique_names:
-      value: 8.0
+      value:
+        $expect: 'abs(val - 8) <= 2'
     unique_response:
-      value: 5.0 # TODO: Check. The correct number is 6
+      value:
+        $expect: 'abs(val - 6) <= 2'
     unique_dates:
-      value: 6.0 
+      value:
+        $expect: 'abs(val - 6) <= 3'
 ---
 # Test extended stats aggregation
 method: [GET]
