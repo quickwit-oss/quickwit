@@ -25,7 +25,7 @@ use quickwit_proto::types::SourceId;
 use super::doc_file_reader::ObjectUriBatchReader;
 #[cfg(feature = "queue-sources")]
 use super::queue_sources::coordinator::QueueCoordinator;
-use crate::source::{ProcessorMailbox, Source, SourceContext, SourceRuntime, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory};
 
 enum FileSourceState {
     #[cfg(feature = "queue-sources")]
@@ -54,13 +54,13 @@ impl Source for FileSource {
     #[allow(unused_variables)]
     async fn initialize(
         &mut self,
-        processor_mailbox: &ProcessorMailbox,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
             FileSourceState::Notification(coordinator) => {
-                coordinator.initialize(processor_mailbox, ctx).await
+                coordinator.initialize(source_sink, ctx).await
             }
             FileSourceState::Filepath { .. } => Ok(()),
         }
@@ -69,13 +69,13 @@ impl Source for FileSource {
     #[allow(unused_variables)]
     async fn emit_batches(
         &mut self,
-        processor_mailbox: &ProcessorMailbox,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
             FileSourceState::Notification(coordinator) => {
-                coordinator.emit_batches(processor_mailbox, ctx).await?;
+                coordinator.emit_batches(source_sink, ctx).await?;
             }
             FileSourceState::Filepath {
                 batch_reader,
@@ -87,11 +87,11 @@ impl Source for FileSource {
                     .await?;
                 *num_bytes_processed += batch_builder.num_bytes;
                 *num_lines_processed += batch_builder.docs.len() as u64;
-                processor_mailbox
+                source_sink
                     .send_raw_doc_batch(batch_builder.build(), ctx)
                     .await?;
                 if batch_reader.is_eof() {
-                    processor_mailbox.send_exit_with_success(ctx).await?;
+                    source_sink.send_exit_with_success(ctx).await?;
                     return Err(ActorExitStatus::Success);
                 }
             }

@@ -62,7 +62,7 @@ mod ingest_api_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
-mod processor_mailbox;
+mod source_sink;
 #[cfg(feature = "pulsar")]
 mod pulsar_source;
 #[cfg(feature = "queue-sources")]
@@ -87,6 +87,7 @@ pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
+pub use source_sink::SourceSink;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
@@ -237,7 +238,7 @@ pub trait Source: Send + 'static {
     /// This method will be called before any calls to `emit_batches`.
     async fn initialize(
         &mut self,
-        _processor_mailbox: &ProcessorMailbox,
+        _source_sink: &SourceSink,
         _ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         Ok(())
@@ -252,7 +253,7 @@ pub trait Source: Send + 'static {
     /// should wait before polling again.
     async fn emit_batches(
         &mut self,
-        processor_mailbox: &ProcessorMailbox,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus>;
 
@@ -261,7 +262,7 @@ pub trait Source: Send + 'static {
     async fn assign_shards(
         &mut self,
         _shard_ids: BTreeSet<ShardId>,
-        _processor_mailbox: &ProcessorMailbox,
+        _source_sink: &SourceSink,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         Ok(())
@@ -313,11 +314,11 @@ pub trait Source: Send + 'static {
 /// It mostly takes care of running a loop calling `emit_batches(...)`.
 pub struct SourceActor {
     source: Box<dyn Source>,
-    processor_mailbox: ProcessorMailbox,
+    source_sink: SourceSink,
 }
 
 impl SourceActor {
-    pub fn new<A>(source: Box<dyn Source>, processor_mailbox: Mailbox<A>) -> Self
+    pub fn new<A>(source: Box<dyn Source>, source_sink: Mailbox<A>) -> Self
     where A: Actor
             + DeferableReplyHandler<RawDocBatch>
             + DeferableReplyHandler<NewPublishLock>
@@ -325,7 +326,7 @@ impl SourceActor {
     {
         SourceActor {
             source,
-            processor_mailbox: ProcessorMailbox::new(processor_mailbox),
+            source_sink: SourceSink::new(source_sink),
         }
     }
 }
@@ -362,7 +363,7 @@ impl Actor for SourceActor {
     }
 
     async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        self.source.initialize(&self.processor_mailbox, ctx).await?;
+        self.source.initialize(&self.source_sink, ctx).await?;
         self.handle(Loop, ctx).await?;
         Ok(())
     }
@@ -384,7 +385,7 @@ impl Handler<Loop> for SourceActor {
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
         let wait_for = self
             .source
-            .emit_batches(&self.processor_mailbox, ctx)
+            .emit_batches(&self.source_sink, ctx)
             .await?;
         if wait_for.is_zero() {
             ctx.send_self_message(Loop).await?;
@@ -406,7 +407,7 @@ impl Handler<AssignShards> for SourceActor {
     ) -> Result<(), ActorExitStatus> {
         let AssignShards(Assignment { shard_ids }) = assign_shards_message;
         self.source
-            .assign_shards(shard_ids, &self.processor_mailbox, ctx)
+            .assign_shards(shard_ids, &self.source_sink, ctx)
             .await?;
         Ok(())
     }

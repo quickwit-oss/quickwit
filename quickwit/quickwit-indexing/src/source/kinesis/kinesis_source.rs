@@ -37,8 +37,8 @@ use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
 use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{
-    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, ProcessorMailbox, Source,
-    SourceContext, SourceRuntime, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext, SourceRuntime,
+    SourceSink, TypedSourceFactory,
 };
 
 type ShardId = String;
@@ -187,7 +187,7 @@ impl KinesisSource {
 impl Source for KinesisSource {
     async fn initialize(
         &mut self,
-        _processor_mailbox: &ProcessorMailbox,
+        _source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let shards = ctx
@@ -217,7 +217,7 @@ impl Source for KinesisSource {
 
     async fn emit_batches(
         &mut self,
-        indexer_mailbox: &ProcessorMailbox,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Kinesis);
@@ -312,13 +312,13 @@ impl Source for KinesisSource {
         self.state.num_records_processed += batch_builder.docs.len() as u64;
 
         if !batch_builder.checkpoint_delta.is_empty() {
-            indexer_mailbox
+            source_sink
                 .send_raw_doc_batch(batch_builder.build(), ctx)
                 .await?;
         }
         if self.state.shard_consumers.is_empty() {
             info!(stream_name = %self.stream_name, "reached end of stream");
-            indexer_mailbox.send_exit_with_success(ctx).await?;
+            source_sink.send_exit_with_success(ctx).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())

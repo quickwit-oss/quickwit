@@ -36,8 +36,8 @@ use tokio::time;
 use tracing::{debug, info, warn};
 
 use crate::source::{
-    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, ProcessorMailbox, Source,
-    SourceContext, SourceRuntime, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext, SourceRuntime,
+    SourceSink, TypedSourceFactory,
 };
 
 type PulsarConsumer = Consumer<PulsarMessage, TokioExecutor>;
@@ -212,7 +212,7 @@ impl PulsarSource {
 impl Source for PulsarSource {
     async fn emit_batches(
         &mut self,
-        processor_mailbox: &ProcessorMailbox,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
@@ -251,7 +251,7 @@ impl Source for PulsarSource {
                 "sending doc batch to indexer"
             );
             let message = batch_builder.build();
-            processor_mailbox.send_raw_doc_batch(message, ctx).await?;
+            source_sink.send_raw_doc_batch(message, ctx).await?;
         }
         Ok(Duration::default())
     }

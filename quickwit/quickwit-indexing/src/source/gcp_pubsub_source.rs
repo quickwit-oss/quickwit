@@ -34,7 +34,7 @@ use tracing::{debug, info, warn};
 
 use super::{BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
 use crate::source::{
-    BatchBuilder, ProcessorMailbox, Source, SourceContext, SourceRuntime, TypedSourceFactory,
+    BatchBuilder, Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory,
 };
 
 const DEFAULT_MAX_MESSAGES_PER_PULL: i32 = 1_000;
@@ -157,7 +157,7 @@ impl GcpPubSubSource {
 impl Source for GcpPubSubSource {
     async fn emit_batches(
         &mut self,
-        processor_mailbox: &ProcessorMailbox,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
@@ -192,7 +192,7 @@ impl Source for GcpPubSubSource {
         // TODO: need to wait for all the id to be ack for at_least_once
         if self.should_exit() {
             info!(subscription=%self.subscription_name, "reached end of subscription");
-            processor_mailbox.send_exit_with_success(ctx).await?;
+            source_sink.send_exit_with_success(ctx).await?;
             return Err(ActorExitStatus::Success);
         }
         if !batch_builder.checkpoint_delta.is_empty() {
@@ -202,7 +202,7 @@ impl Source for GcpPubSubSource {
                 num_millis=%now.elapsed().as_millis(),
                 "Sending doc batch to indexer.");
             let message = batch_builder.build();
-            processor_mailbox.send_raw_doc_batch(message, ctx).await?;
+            source_sink.send_raw_doc_batch(message, ctx).await?;
         }
         Ok(Duration::default())
     }

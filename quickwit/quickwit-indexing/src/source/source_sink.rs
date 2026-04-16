@@ -27,7 +27,7 @@ use crate::models::{NewPublishLock, NewPublishToken, RawDocBatch};
 
 /// Internal trait used to type-erase the concrete `Mailbox<T>`.
 #[async_trait]
-trait ProcessorMailboxInner: Send + Sync + 'static {
+trait SourceSinkTrait: Send + Sync + 'static {
     async fn send_raw_doc_batch(&self, batch: RawDocBatch) -> Result<(), SendError>;
     async fn send_publish_lock(&self, lock: NewPublishLock) -> Result<(), SendError>;
     async fn send_publish_token(&self, token: NewPublishToken) -> Result<(), SendError>;
@@ -35,7 +35,7 @@ trait ProcessorMailboxInner: Send + Sync + 'static {
 }
 
 #[async_trait]
-impl<A> ProcessorMailboxInner for Mailbox<A>
+impl<A> SourceSinkTrait for Mailbox<A>
 where A: Actor
         + DeferableReplyHandler<RawDocBatch>
         + DeferableReplyHandler<NewPublishLock>
@@ -62,17 +62,17 @@ where A: Actor
     }
 }
 
-/// Type-erased mailbox for sending messages to any doc processor actor.
+/// Output of source, usually the entrypoint of metrics and logs index pipeline,
+/// and more specifically a Processor's Mailbox.
 ///
-/// This decouples `Source` implementations from the specific processor actor
-/// type (e.g. `DocProcessor` for logs, `ParquetDocProcessor` for metrics).
+/// This decouples `Source` implementations from pipelines.
 #[derive(Clone)]
-pub struct ProcessorMailbox {
-    inner: Arc<dyn ProcessorMailboxInner>,
+pub struct SourceSink {
+    inner: Arc<dyn SourceSinkTrait>,
 }
 
-impl ProcessorMailbox {
-    /// Create a `ProcessorMailbox` from any actor mailbox whose actor implements
+impl SourceSink {
+    /// Create a `SourceSink` from any actor mailbox whose actor implements
     /// the required message handlers.
     pub fn new<A>(mailbox: Mailbox<A>) -> Self
     where A: Actor

@@ -19,7 +19,7 @@ use quickwit_actors::{ActorExitStatus, HEARTBEAT};
 use quickwit_config::VoidSourceParams;
 use serde_json::Value as JsonValue;
 
-use crate::source::{ProcessorMailbox, Source, SourceContext, SourceRuntime, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory};
 
 pub struct VoidSource;
 
@@ -27,7 +27,7 @@ pub struct VoidSource;
 impl Source for VoidSource {
     async fn emit_batches(
         &mut self,
-        _: &ProcessorMailbox,
+        _: &SourceSink,
         _: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         tokio::time::sleep(*HEARTBEAT / 2).await;

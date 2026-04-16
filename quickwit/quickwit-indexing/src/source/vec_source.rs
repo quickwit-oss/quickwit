@@ -25,7 +25,7 @@ use serde_json::Value as JsonValue;
 use tracing::info;
 
 use super::BatchBuilder;
-use crate::source::{ProcessorMailbox, Source, SourceContext, SourceRuntime, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory};
 
 pub struct VecSource {
     source_id: SourceId,
@@ -83,7 +83,7 @@ fn position_from_offset(offset: usize) -> Position {
 impl Source for VecSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &ProcessorMailbox,
+        batch_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Vec);
