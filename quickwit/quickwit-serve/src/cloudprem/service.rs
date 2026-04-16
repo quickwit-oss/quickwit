@@ -46,7 +46,9 @@ use quickwit_proto::search::{
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
 use quickwit_query::cloudprem::sanitize_metric_id_aggregations;
-use quickwit_query::query_ast::{BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst};
+use quickwit_query::query_ast::{
+    BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst, TermQuery,
+};
 use quickwit_search::{SearchError, SearchService};
 use serde_json::Value as JsonValue;
 use tokio::time::timeout;
@@ -109,12 +111,22 @@ fn doc_id_to_query_ast(doc_id: &str) -> QueryAst {
     };
     // Right now, the id field does not use a raw tokenizer, so we cannot
     // rely on the term query.
-    QueryAst::FullText(FullTextQuery {
+    FullTextQuery {
         field: "id".to_string(),
         text: doc_id.to_string(),
         params: full_text_params,
         lenient: false,
-    })
+    }
+    .into()
+}
+
+fn timestamp_to_query_ast(timestamp_ms: u64) -> QueryAst {
+    TermQuery {
+        field: "timestamp".to_string(),
+        // quickwit automatically detects this is ms
+        value: timestamp_ms.to_string(),
+    }
+    .into()
 }
 
 #[async_trait]
@@ -237,9 +249,10 @@ impl CloudPremService for CloudPremServiceImpl {
         };
 
         let fetch_id_query = doc_id_to_query_ast(&event_tracker.id);
+        let ts_filter = timestamp_to_query_ast(event_tracker.epoch_ms);
 
         let query_ast = QueryAst::Bool(BoolQuery {
-            must: vec![fetch_id_query, restriction_query],
+            must: vec![fetch_id_query, restriction_query, ts_filter],
             ..BoolQuery::default()
         });
 
