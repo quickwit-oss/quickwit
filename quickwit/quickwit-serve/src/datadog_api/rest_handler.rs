@@ -22,8 +22,7 @@ use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::DocBatchV2Builder;
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
-    IngestFailureReason, IngestRequestV2, IngestRouterService, IngestRouterServiceClient,
-    IngestSubrequest,
+    IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
 };
 use quickwit_proto::types::DocUidGenerator;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -35,6 +34,7 @@ use warp::{Filter, Rejection};
 
 use super::index_router::IndexRouter;
 use super::log_msg_accessors::{custom_field_accessor, tag_accessor};
+use crate::datadog_api::get_error_code_and_message;
 use crate::decompression::get_body_bytes;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{Body, BodyFormat, with_arg};
@@ -337,29 +337,8 @@ async fn datadog_ingest_logs(
     }
     // Return the first failure reason (could be improved to aggregate errors).
     let failure_reason = response.failures[0].reason();
+    let (error_code, error_message) = get_error_code_and_message(failure_reason);
 
-    // Same mapping as Elastic bulk v2:
-    let (error_code, error_message) = match failure_reason {
-        IngestFailureReason::Unspecified => (ServiceErrorCode::Internal, "unknown error"),
-        IngestFailureReason::IndexNotFound => (ServiceErrorCode::NotFound, "index not found"),
-        IngestFailureReason::SourceNotFound => (ServiceErrorCode::NotFound, "source not found"),
-        IngestFailureReason::Internal => (ServiceErrorCode::Internal, "internal error"),
-        IngestFailureReason::NoShardsAvailable => (
-            ServiceErrorCode::TooManyRequests,
-            "too many requests (no shards available)",
-        ),
-        IngestFailureReason::ShardRateLimited => (
-            ServiceErrorCode::TooManyRequests,
-            "too many requests (rate limiting)",
-        ),
-        IngestFailureReason::WalFull => (ServiceErrorCode::Internal, "WAL full"),
-        IngestFailureReason::Timeout => (ServiceErrorCode::Timeout, "request timed out"),
-        IngestFailureReason::RouterLoadShedding => {
-            (ServiceErrorCode::Internal, "router load shedding")
-        }
-        IngestFailureReason::LoadShedding => (ServiceErrorCode::Internal, "load shedding)"),
-        IngestFailureReason::CircuitBreaker => (ServiceErrorCode::Internal, "circuit breaker)"),
-    };
     let status_code = error_code.http_status_code();
     DD_INGEST_METRICS
         .ingest_requests_total
@@ -380,8 +359,8 @@ async fn datadog_ingest_logs(
 mod tests {
     use quickwit_proto::ingest::IngestV2Error;
     use quickwit_proto::ingest::router::{
-        IngestFailure, IngestResponseV2, IngestRouterServiceClient, IngestSuccess,
-        MockIngestRouterService,
+        IngestFailure, IngestFailureReason, IngestResponseV2, IngestRouterServiceClient,
+        IngestSuccess, MockIngestRouterService,
     };
     use quickwit_proto::metastore::IndexRoutingRule;
     use quickwit_proto::types::{IndexUid, Position, ShardId};

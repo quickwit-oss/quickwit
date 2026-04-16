@@ -1,0 +1,43 @@
+[package]
+name = "pomsky-intake"
+description = "Pomsky intake and processing service: runs Vector with a default pipeline config"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pomsky-intake"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+arrow = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+parquet = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+typetag = { workspace = true }
+vector = { workspace = true }
+vector-lib = { workspace = true }
+
+[dev-dependencies]
+chrono = { workspace = true }
+
+[package.metadata.cargo-machete]
+# tokio is a direct dep for the binary (main.rs) and its `tracing` feature is
+# required by vector-buffers (tokio::task::Builder needs tokio_unstable + tracing).
+ignored = ["tokio"]
+
+[features]

@@ -163,7 +163,7 @@ impl CloudPremService for CloudPremServiceImpl {
         let search_request = SearchRequest {
             index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
             query_ast: serde_json::to_string(&query_ast)
-                .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+                .map_err(|error| CloudPremError::Internal(error.to_string()))?,
             start_timestamp: None,
             end_timestamp: None,
             max_hits: request.num_events_to_fetch.into(),
@@ -257,7 +257,7 @@ impl CloudPremService for CloudPremServiceImpl {
         });
 
         let query_ast_json = serde_json::to_string(&query_ast)
-            .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+            .map_err(|error| CloudPremError::Internal(error.to_string()))?;
 
         debug!(query=%query_ast_json, "query ast for fetch one");
 
@@ -352,14 +352,14 @@ impl CloudPremService for CloudPremServiceImpl {
         let search_request = SearchRequest {
             index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
             query_ast: serde_json::to_string(&query_ast)
-                .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+                .map_err(|error| CloudPremError::Internal(error.to_string()))?,
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 0,
             start_offset: 0,
             aggregation_request: Some(
                 serde_json::to_string(&aggregation_ast)
-                    .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+                    .map_err(|error| CloudPremError::Internal(error.to_string()))?,
             ),
             snippet_fields: Vec::new(),
             sort_fields: Vec::new(),
@@ -512,13 +512,13 @@ impl CloudPremService for CloudPremServiceImpl {
 
         // Validate index_id
         validate_identifier("index ID", &request.index_id)
-            .map_err(|e| CloudPremError::InvalidArgument(e.to_string()))?;
+            .map_err(|error| CloudPremError::InvalidArgument(error.to_string()))?;
 
         // Build index_uri from default root
         let default_index_root_uri = &self.node_config.default_index_root_uri;
         let index_uri = default_index_root_uri
             .join(&request.index_id)
-            .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+            .map_err(|error| CloudPremError::Internal(error.to_string()))?;
 
         // Load the default datadog-logs.yaml config
         let default_config_bytes = include_bytes!("../../../../config/cloudprem/datadog-logs.yaml");
@@ -527,7 +527,7 @@ impl CloudPremService for CloudPremServiceImpl {
             default_config_bytes,
             default_index_root_uri,
         )
-        .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+        .map_err(|error| CloudPremError::Internal(error.to_string()))?;
 
         // Override the index_id and index_uri from the request
         index_config.index_id = request.index_id.clone();
@@ -540,8 +540,8 @@ impl CloudPremService for CloudPremServiceImpl {
                     retention_period: proto_rp.period,
                     evaluation_schedule: RetentionPolicy::default_schedule(),
                 };
-                retention_policy.retention_period().map_err(|e| {
-                    CloudPremError::InvalidArgument(format!("invalid retention period: {e}"))
+                retention_policy.retention_period().map_err(|error| {
+                    CloudPremError::InvalidArgument(format!("invalid retention period: {error}"))
                 })?;
                 index_config.retention_policy_opt = Some(retention_policy);
             } else {
@@ -613,8 +613,8 @@ impl CloudPremService for CloudPremServiceImpl {
                     retention_period: proto_rp.period,
                     evaluation_schedule: RetentionPolicy::default_schedule(),
                 };
-                retention_policy.retention_period().map_err(|e| {
-                    CloudPremError::InvalidArgument(format!("invalid retention period: {e}"))
+                retention_policy.retention_period().map_err(|error| {
+                    CloudPremError::InvalidArgument(format!("invalid retention period: {error}"))
                 })?;
                 updated_config.retention_policy_opt = Some(retention_policy);
             } else {
@@ -693,7 +693,7 @@ impl CloudPremService for CloudPremServiceImpl {
         let rules =
             crate::datadog_api::index_router::get_or_default_routing_rules(&self.metastore_client)
                 .await
-                .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+                .map_err(|error| CloudPremError::Internal(error.to_string()))?;
 
         let routing_table = rules.into_iter().map(Into::into).collect();
 
@@ -907,7 +907,7 @@ impl HitMapper {
     fn hit_to_event(&self, hit: Hit) -> CloudPremResult<Event> {
         // TODO use serde_json_borrowed ?
         let map: serde_json::Map<String, JsonValue> = serde_json::from_str(&hit.json)
-            .map_err(|e| CloudPremError::Internal(format!("failed to parse hit: {e}")))?;
+            .map_err(|error| CloudPremError::Internal(format!("failed to parse hit: {error}")))?;
 
         let event_id = if let Some(JsonValue::String(id_str)) = map.get(self.id_field) {
             id_str.clone()

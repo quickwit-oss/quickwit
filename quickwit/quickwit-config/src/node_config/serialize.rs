@@ -30,6 +30,7 @@ use tracing::{info, warn};
 
 use super::{CloudPremConfig, GrpcConfig, RestConfig};
 use crate::config_value::ConfigValue;
+use crate::node_config::intake_config::IntakeConfig;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
@@ -212,6 +213,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "indexer")]
     #[serde(default)]
     indexer_config: IndexerConfig,
+    #[serde(rename = "intake")]
+    #[serde(default)]
+    intake_config: IntakeConfig,
     #[serde(rename = "searcher")]
     #[serde(default)]
     searcher_config: SearcherConfig,
@@ -344,6 +348,7 @@ impl NodeConfigBuilder {
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
             indexer_config: self.indexer_config,
+            intake_config: self.intake_config,
             searcher_config: self.searcher_config,
             ingest_api_config: self.ingest_api_config,
             jaeger_config: self.jaeger_config,
@@ -444,6 +449,7 @@ impl Default for NodeConfigBuilder {
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
             indexer_config: IndexerConfig::default(),
+            intake_config: IntakeConfig::default(),
             searcher_config: SearcherConfig::default(),
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
@@ -550,6 +556,7 @@ pub fn node_config_for_tests_from_ports(
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
         indexer_config: IndexerConfig::default(),
+        intake_config: IntakeConfig::default(),
         searcher_config: SearcherConfig::default(),
         ingest_api_config: IngestApiConfig::default(),
         jaeger_config: JaegerConfig::default(),

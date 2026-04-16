@@ -37,6 +37,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
 use crate::config_value::ConfigValue;
+use crate::node_config::intake_config::IntakeConfig;
 use crate::node_config::serialize::load_node_config_with_env;
 use crate::qw_env_vars::{
     CP_CREATE_DD_LOGS_INDEX, CP_CREATE_DD_METRICS_INDEX, CP_CREATE_DD_TRACES_INDEX,
@@ -45,6 +46,8 @@ use crate::serde_utils::DurationAsStr;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
+
+mod intake_config;
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 
@@ -998,6 +1001,7 @@ pub struct NodeConfig {
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,
+    pub intake_config: IntakeConfig,
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,

@@ -32,15 +32,21 @@ struct DDCounterInner {
 }
 
 impl DDCounters {
-    pub fn new(name: &'static str, label_key: &'static str, label_values: &[&'static str]) -> Self {
+    pub fn new(
+        name: &'static str,
+        label_key: &'static str,
+        label_values: &[&'static str],
+        extra_labels: &[Label],
+    ) -> Self {
         let mut counters = HashMap::with_capacity(label_values.len());
         for &label_value in label_values {
-            counters.insert(
-                label_value,
-                counter!(name, vec![Label::new(label_key, label_value)]),
-            );
+            let mut labels = extra_labels.to_vec();
+            labels.push(Label::new(label_key, label_value));
+            counters.insert(label_value, counter!(name, labels));
         }
-        let other = counter!(name, vec![Label::new(label_key, "other")]);
+        let mut other_labels = extra_labels.to_vec();
+        other_labels.push(Label::new(label_key, "other"));
+        let other = counter!(name, other_labels);
         let inner = DDCounterInner { counters, other };
         Self {
             inner: Arc::new(inner),
@@ -73,15 +79,21 @@ struct DDHistogramInner {
 }
 
 impl DDHistograms {
-    pub fn new(name: &'static str, label_key: &'static str, label_values: &[&'static str]) -> Self {
+    pub fn new(
+        name: &'static str,
+        label_key: &'static str,
+        label_values: &[&'static str],
+        extra_labels: &[Label],
+    ) -> Self {
         let mut histograms = HashMap::with_capacity(label_values.len());
         for &label_value in label_values {
-            histograms.insert(
-                label_value,
-                histogram!(name, vec![Label::new(label_key, label_value)]),
-            );
+            let mut labels = extra_labels.to_vec();
+            labels.push(Label::new(label_key, label_value));
+            histograms.insert(label_value, histogram!(name, labels));
         }
-        let other = histogram!(name, vec![Label::new(label_key, "other")]);
+        let mut other_labels = extra_labels.to_vec();
+        other_labels.push(Label::new(label_key, "other"));
+        let other = histogram!(name, other_labels);
         let inner = DDHistogramInner { histograms, other };
         Self {
             inner: Arc::new(inner),
@@ -116,11 +128,13 @@ impl Default for DDIngestMetrics {
                 "ingest_requests.count",
                 "status_code",
                 DD_STATUS_CODES,
+                &[],
             ),
             ingest_request_duration_seconds: DDHistograms::new(
                 "ingest_requests.duration_seconds",
                 "status_code",
                 DD_STATUS_CODES,
+                &[],
             ),
             ingest_unrouted_docs_total: counter!("ingest_unrouted_docs.count"),
         }
@@ -154,7 +168,7 @@ mod tests {
         let recorder = DebuggingRecorder::default();
         let snapshotter = recorder.snapshotter();
         metrics::with_local_recorder(&recorder, move || {
-            let counters = DDCounters::new("test.counter", "label", &["value1", "value2"]);
+            let counters = DDCounters::new("test.counter", "label", &["value1", "value2"], &[]);
             counters.get("value1").increment(1);
             counters.get("value2").increment(2);
             counters.get("value3").increment(3);
@@ -187,7 +201,8 @@ mod tests {
         let recorder = DebuggingRecorder::default();
         let snapshotter = recorder.snapshotter();
         metrics::with_local_recorder(&recorder, move || {
-            let histograms = DDHistograms::new("test.histogram", "label", &["value1", "value2"]);
+            let histograms =
+                DDHistograms::new("test.histogram", "label", &["value1", "value2"], &[]);
             histograms.get("value1").record(1.0f64);
             histograms.get("value2").record(2.0f64);
             histograms.get("value3").record(3.0f64);

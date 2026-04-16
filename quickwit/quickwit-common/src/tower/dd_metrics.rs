@@ -67,11 +67,13 @@ impl DDGrpcMetricsLayer {
                 "metastore_requests.count",
                 "status",
                 &["cancelled", "success", "error"],
+                &[],
             ),
             request_duration_seconds: DDHistograms::new(
                 "metastore_requests.duration_seconds",
                 "status",
                 &["cancelled", "success", "error"],
+                &[],
             ),
         }
     }

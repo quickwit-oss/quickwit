@@ -15,6 +15,7 @@
 #![recursion_limit = "256"]
 
 mod build_info;
+mod byoc_api;
 mod cloudprem;
 mod cloudprem_ui_api;
 pub mod cloudprem_ui_handler;

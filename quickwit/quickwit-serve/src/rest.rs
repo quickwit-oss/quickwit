@@ -36,6 +36,7 @@ use warp::hyper::http::HeaderValue;
 use warp::hyper::{Method, StatusCode, http};
 use warp::{Filter, Rejection, Reply, redirect};
 
+use crate::byoc_api::byoc_api_handlers;
 use crate::cloudprem_ui_api::cloudprem_ui_api_handlers;
 use crate::cloudprem_ui_handler::cloudprem_ui_handler;
 use crate::cluster_api::cluster_handler;
@@ -202,15 +203,21 @@ pub(crate) async fn start_rest_server(
     );
 
     // Combine all the routes together.
-    let rest_routes = api_v1_root_route
+    let api_routes = api_v1_root_route
         .or(datadog_api_handlers(
+            quickwit_services.ingest_router_service.clone(),
+            index_router.clone(),
+        ))
+        .or(byoc_api_handlers(
             quickwit_services.ingest_router_service.clone(),
             index_router,
         ))
         .or(cloudprem_ui_api_handlers(
             quickwit_services.search_service.clone(),
         ))
-        .boxed()
+        .boxed();
+
+    let rest_routes = api_routes
         .or(api_doc)
         .or(redirect_root_to_ui_route)
         .or(ui_handler())

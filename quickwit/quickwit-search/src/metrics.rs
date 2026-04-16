@@ -260,6 +260,7 @@ impl Default for SearchMetrics {
                     "plan-error",
                     "plan-cancelled",
                 ],
+                &[],
             ),
             dd_root_search_request_duration_seconds: DDHistograms::new(
                 "search_requests.duration_seconds",
@@ -271,6 +272,7 @@ impl Default for SearchMetrics {
                     "plan-error",
                     "plan-cancelled",
                 ],
+                &[],
             ),
         }
     }

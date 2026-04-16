@@ -126,6 +126,7 @@ impl Default for IndexerMetrics {
                     "otlp_parse_error",
                     "outside_time_range",
                 ],
+                &[],
             ),
             dd_indexed_events_bytes: DDCounters::new(
                 "indexed_events_bytes.count",
@@ -139,6 +140,7 @@ impl Default for IndexerMetrics {
                     "otlp_parse_error",
                     "outside_time_range",
                 ],
+                &[],
             ),
             dd_pending_merge_ops: gauge!("pending_merge_ops.gauge"),
             processing_pipeline_thread_cpu_micros_total: new_counter_vec(

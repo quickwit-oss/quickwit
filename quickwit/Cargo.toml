@@ -29,6 +29,7 @@ members = [
   # Disabling metastore-utils from the quickwit projects to ease build/deps.
   # We can reenable it when we need it.
   # "quickwit-metastore-utils",
+  "pomsky-intake", # Fork: added (not present upstream)
   "quickwit-opentelemetry",
   "quickwit-parquet-engine",
   "quickwit-proto",
@@ -44,6 +45,9 @@ members = [
 # The following list excludes `quickwit-metastore-utils`
 # from the default member to ease build/deps.
 default-members = [
+  # pomsky-intake is excluded voluntarily: Vector enables serde_json/preserve_order
+  # which replaces BTreeMap with IndexMap for JSON objects. Quickwit avoids IndexMap
+  # for performance reasons. Build it separately with `cargo build -p pomsky-intake`.
   "quickwit-actors",
   "quickwit-aws",
   "quickwit-cli",
@@ -256,7 +260,7 @@ thousands = "0.2"
 tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
 tikv-jemallocator = "0.6"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
-tokio = { version = "1.48", features = ["full"] }
+tokio = { version = "1.48", features = ["full", "tracing"] }
 tokio-metrics = { version = "0.4", features = ["rt"] }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -347,6 +351,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
 opendal = { version = "0.55", default-features = false }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
+pomsky-intake = { path = "pomsky-intake" }
 quickwit-actors = { path = "quickwit-actors" }
 quickwit-aws = { path = "quickwit-aws" }
 quickwit-cli = { path = "quickwit-cli" }
@@ -406,6 +411,15 @@ tokio-tungstenite = { version = "0.27.0", features = ["native-tls"] }
 uaparser = "0.6.4"
 unicode-segmentation = "1.12"
 urlencoding = "2"
+vector = { git = "https://github.com/vectordotdev/vector", rev = "fbb1e4b501d6081d72f864da891a98464e60d097", default-features = false, features = [
+  "sinks-blackhole",
+  "sinks-console",
+  "sinks-http",
+  "sources-datadog_agent",
+  "sources-http_server",
+  "sources-opentelemetry",
+] }
+vector-lib = { git = "https://github.com/vectordotdev/vector", rev = "fbb1e4b501d6081d72f864da891a98464e60d097", default-features = false, features = ["vrl"] }
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }
