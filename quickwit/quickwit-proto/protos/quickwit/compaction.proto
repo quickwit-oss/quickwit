@@ -19,12 +19,8 @@ package quickwit.compaction;
 import "quickwit/common.proto";
 
 service CompactionPlannerService {
-  rpc Ping(PingRequest) returns (PingResponse);
   rpc ReportStatus(ReportStatusRequest) returns (ReportStatusResponse);
 }
-
-message PingRequest {}
-message PingResponse {}
 
 message ReportStatusRequest {
   string node_id = 1;
@@ -51,4 +47,18 @@ message CompactionFailure {
   string error_message = 2;
 }
 
-message ReportStatusResponse {}
+message ReportStatusResponse {
+  repeated MergeTaskAssignment new_tasks = 1;
+}
+
+message MergeTaskAssignment {
+  string task_id = 1;
+  repeated string splits_metadata_json = 2;
+  string doc_mapping_json = 3;
+  string search_settings_json = 4;
+  string indexing_settings_json = 5;
+  string retention_policy_json = 6;
+  quickwit.common.IndexUid index_uid = 7;
+  string source_id = 8;
+  string index_storage_uri = 9;
+}

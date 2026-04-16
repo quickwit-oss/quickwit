@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use quickwit_actors::AskError;
 use quickwit_common::rate_limited_error;
 use quickwit_common::tower::MakeLoadShedError;
 use serde::{Deserialize, Serialize};
@@ -72,5 +73,19 @@ impl GrpcServiceError for CompactionError {
 impl MakeLoadShedError for CompactionError {
     fn make_load_shed_error() -> Self {
         CompactionError::TooManyRequests
+    }
+}
+
+impl From<AskError<CompactionError>> for CompactionError {
+    fn from(error: AskError<CompactionError>) -> Self {
+        match error {
+            AskError::ErrorReply(error) => error,
+            AskError::MessageNotDelivered => {
+                Self::new_unavailable("request could not be delivered to actor".to_string())
+            }
+            AskError::ProcessMessageError => {
+                Self::new_internal("an error occurred while processing the request".to_string())
+            }
+        }
     }
 }
