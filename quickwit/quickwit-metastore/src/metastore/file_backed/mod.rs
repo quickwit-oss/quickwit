@@ -1445,7 +1445,7 @@ impl MetastoreService for FileBackedMetastore {
         let staged_split_ids = request.staged_split_ids;
         let replaced_split_ids = request.replaced_split_ids;
         let publish_token_opt = request.publish_token_opt;
-        
+
         self.mutate(&index_uid, |index| {
             let mutated = index.publish_sketch_splits(
                 &staged_split_ids,

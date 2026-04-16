@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS sketch_splits (
     update_timestamp TIMESTAMP NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
     publish_timestamp TIMESTAMP,
 
-    FOREIGN KEY(index_uid) REFERENCES indexes(index_uid)
+    FOREIGN KEY(index_uid) REFERENCES indexes(index_uid) ON DELETE CASCADE
 );
 
 -- Auto-set publish_timestamp when a split transitions Staged -> Published.
