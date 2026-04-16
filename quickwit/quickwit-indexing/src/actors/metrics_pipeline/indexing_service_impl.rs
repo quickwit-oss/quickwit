@@ -12,9 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+
+// This file is meant to "override" some behavior of the indexing service when
+// the metrics feature flag is enabled.
+//
+// In that case, metrics index will be started as a metrics pipeline.
+
 use quickwit_actors::ActorContext;
 use quickwit_common::temp_dir;
+use quickwit_common::is_metrics_index;
 use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::{IndexingError, IndexingPipelineId};
 
 use crate::actors::pipeline_shared::ActorPipeline;
@@ -22,7 +30,7 @@ use crate::actors::{MetricsPipeline, MetricsPipelineParams};
 use crate::{BoxedPipelineHandle, IndexingService};
 
 impl IndexingService {
-    pub(crate) async fn spawn_metrics_pipeline(
+    async fn spawn_metrics_pipeline(
         &mut self,
         ctx: &ActorContext<Self>,
         indexing_pipeline_id: IndexingPipelineId,

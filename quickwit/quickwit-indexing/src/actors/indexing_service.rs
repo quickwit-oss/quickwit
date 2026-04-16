@@ -28,8 +28,6 @@ use quickwit_actors::{
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::io::Limiter;
-#[cfg(feature = "metrics")]
-use quickwit_common::is_metrics_index;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::{io, temp_dir};
 use quickwit_config::{
@@ -317,7 +315,7 @@ impl IndexingService {
         .await
     }
 
-    async fn spawn_log_pipeline(
+    pub(crate) async fn spawn_log_pipeline(
         &mut self,
         ctx: &ActorContext<Self>,
         indexing_pipeline_id: IndexingPipelineId,

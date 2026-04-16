@@ -34,41 +34,30 @@ trait ProcessorMailboxInner: Send + Sync + 'static {
     async fn send_exit_with_success(&self) -> Result<(), SendError>;
 }
 
-/// Wraps a concrete `Mailbox<A>` for any actor A that handles the three
-/// processor messages (`RawDocBatch`, `NewPublishLock`, `NewPublishToken`).
-struct TypedProcessorMailbox<A>
-where A: Actor
-        + DeferableReplyHandler<RawDocBatch>
-        + DeferableReplyHandler<NewPublishLock>
-        + DeferableReplyHandler<NewPublishToken>
-{
-    mailbox: Mailbox<A>,
-}
-
 #[async_trait]
-impl<A> ProcessorMailboxInner for TypedProcessorMailbox<A>
+impl<A> ProcessorMailboxInner for Mailbox<A>
 where A: Actor
         + DeferableReplyHandler<RawDocBatch>
         + DeferableReplyHandler<NewPublishLock>
         + DeferableReplyHandler<NewPublishToken>
 {
     async fn send_raw_doc_batch(&self, batch: RawDocBatch) -> Result<(), SendError> {
-        self.mailbox.send_message(batch).await?;
+        self.send_message(batch).await?;
         Ok(())
     }
 
     async fn send_publish_lock(&self, lock: NewPublishLock) -> Result<(), SendError> {
-        self.mailbox.send_message(lock).await?;
+        self.send_message(lock).await?;
         Ok(())
     }
 
     async fn send_publish_token(&self, token: NewPublishToken) -> Result<(), SendError> {
-        self.mailbox.send_message(token).await?;
+        self.send_message(token).await?;
         Ok(())
     }
 
     async fn send_exit_with_success(&self) -> Result<(), SendError> {
-        self.mailbox.send_message(Command::ExitWithSuccess).await?;
+        self.send_message(Command::ExitWithSuccess).await?;
         Ok(())
     }
 }
@@ -91,7 +80,7 @@ impl ProcessorMailbox {
             + DeferableReplyHandler<NewPublishLock>
             + DeferableReplyHandler<NewPublishToken> {
         Self {
-            inner: Arc::new(TypedProcessorMailbox { mailbox }),
+            inner: Arc::new(mailbox),
         }
     }
 
