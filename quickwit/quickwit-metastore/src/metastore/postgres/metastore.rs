@@ -2364,6 +2364,7 @@ impl PostgresqlMetastore {
         query: ListParquetSplitsQuery,
     ) -> MetastoreResult<Vec<ParquetSplitRecord>> {
         let table_name = kind.table_name();
+        let label = kind.label();
 
         let mut sql = format!(
             r#"
