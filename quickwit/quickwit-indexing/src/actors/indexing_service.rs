@@ -278,15 +278,16 @@ impl IndexingService {
             }
         }
 
-        let pipeline_handle: BoxedPipelineHandle = self.spawn_log_or_metrics_pipeline(
-            ctx,
-            indexing_pipeline_id.clone(),
-            index_config,
-            source_config,
-            immature_splits_opt,
-            params_fingerprint,
-        )
-        .await?;
+        let pipeline_handle: BoxedPipelineHandle = self
+            .spawn_log_or_metrics_pipeline(
+                ctx,
+                indexing_pipeline_id.clone(),
+                index_config,
+                source_config,
+                immature_splits_opt,
+                params_fingerprint,
+            )
+            .await?;
 
         self.indexing_pipelines
             .insert(indexing_pipeline_id.pipeline_uid, pipeline_handle);
@@ -305,12 +306,12 @@ impl IndexingService {
         params_fingerprint: u64,
     ) -> Result<BoxedPipelineHandle, IndexingError> {
         self.spawn_log_pipeline(
-                   ctx,
-                   indexing_pipeline_id.clone(),
-                   index_config,
-                   source_config,
-                   immature_splits_opt,
-                   params_fingerprint,
+            ctx,
+            indexing_pipeline_id.clone(),
+            index_config,
+            source_config,
+            immature_splits_opt,
+            params_fingerprint,
         )
         .await
     }

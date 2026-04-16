@@ -274,7 +274,10 @@ impl Handler<PackagedSplitBatch> for Uploader {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         fail_point!("uploader:before");
-        let split_update_sender = self.split_update_mailbox.get_split_update_sender(ctx).await?;
+        let split_update_sender = self
+            .split_update_mailbox
+            .get_split_update_sender(ctx)
+            .await?;
 
         // The permit will be added back manually to the semaphore the task after it is finished.
         // This is not a valid usage of protected zone here.
@@ -429,7 +432,10 @@ impl Handler<EmptySplit> for Uploader {
         empty_split: EmptySplit,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let split_update_sender = self.split_update_mailbox.get_split_update_sender(ctx).await?;
+        let split_update_sender = self
+            .split_update_mailbox
+            .get_split_update_sender(ctx)
+            .await?;
         let splits_update = SplitsUpdate {
             index_uid: empty_split.index_uid,
             new_splits: Vec::new(),

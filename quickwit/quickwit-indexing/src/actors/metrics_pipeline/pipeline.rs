@@ -51,8 +51,7 @@ use crate::actors::sequencer::Sequencer;
 use crate::actors::{Publisher, UploaderType};
 use crate::models::IndexingStatistics;
 use crate::source::{
-    AssignShards, Assignment, SourceActor, SourceRuntime,
-    quickwit_supported_sources,
+    AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
 
 struct MetricsPipelineHandles {

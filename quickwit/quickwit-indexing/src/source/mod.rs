@@ -62,12 +62,12 @@ mod ingest_api_source;
 mod kafka_source;
 #[cfg(feature = "kinesis")]
 mod kinesis;
-mod source_sink;
 #[cfg(feature = "pulsar")]
 mod pulsar_source;
 #[cfg(feature = "queue-sources")]
 mod queue_sources;
 mod source_factory;
+mod source_sink;
 mod stdin_source;
 mod vec_source;
 mod void_source;
@@ -87,7 +87,6 @@ pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
 #[cfg(feature = "kinesis")]
 pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
-pub use source_sink::SourceSink;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
@@ -111,6 +110,7 @@ use quickwit_proto::types::{IndexUid, NodeIdRef, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
+pub use source_sink::SourceSink;
 use tokio::runtime::Handle;
 use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
@@ -378,10 +378,7 @@ impl Handler<Loop> for SourceActor {
     type Reply = ();
 
     async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
-        let wait_for = self
-            .source
-            .emit_batches(&self.source_sink, ctx)
-            .await?;
+        let wait_for = self.source.emit_batches(&self.source_sink, ctx).await?;
         if wait_for.is_zero() {
             ctx.send_self_message(Loop).await?;
             return Ok(());
@@ -430,7 +427,6 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     });
     &SOURCE_LOADER
 }
-
 
 pub async fn check_source_connectivity(
     storage_resolver: &StorageResolver,

@@ -47,8 +47,7 @@ use crate::actors::{Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
 use crate::source::{
-    AssignShards, Assignment, SourceActor, SourceRuntime,
-    quickwit_supported_sources,
+    AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
 };
 use crate::split_store::IndexingSplitStore;
 

@@ -918,7 +918,8 @@ mod tests {
 
         let ram_storage = Arc::new(RamStorage::default());
         let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
-        let sequencer_mailbox = super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
+        let sequencer_mailbox =
+            super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),

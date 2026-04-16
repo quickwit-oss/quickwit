@@ -264,8 +264,8 @@ mod tests {
     use super::*;
     use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
-    use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::SourceActor;
+    use crate::source::tests::SourceRuntimeBuilder;
 
     fn make_ingest_request(
         index_id: IndexId,

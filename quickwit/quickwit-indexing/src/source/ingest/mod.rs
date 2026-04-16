@@ -46,8 +46,8 @@ use tracing::{debug, error, info, warn};
 use ulid::Ulid;
 
 use super::{
-    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext, SourceRuntime,
-    SourceSink, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
+    SourceRuntime, SourceSink, TypedSourceFactory,
 };
 use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
 
@@ -952,7 +952,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_sink = SourceSink::new(doc_processor_mailbox.clone());
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1158,7 +1158,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, _doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_sink = SourceSink::new(doc_processor_mailbox.clone());
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1325,7 +1325,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, _doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_sink = SourceSink::new(doc_processor_mailbox.clone());
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1392,7 +1392,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_sink = SourceSink::new(doc_processor_mailbox.clone());
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1616,7 +1616,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_sink = SourceSink::new(doc_processor_mailbox.clone());
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1904,7 +1904,7 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, _doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_sink = SourceSink::new(doc_processor_mailbox.clone());
+        let source_sink = SourceSink::from(doc_processor_mailbox.clone());
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);

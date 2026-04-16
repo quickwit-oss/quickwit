@@ -42,8 +42,8 @@ use tracing::{debug, info, warn};
 
 use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{
-    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext, SourceRuntime,
-    SourceSink, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
+    SourceRuntime, SourceSink, TypedSourceFactory,
 };
 
 type GroupId = String;
@@ -1122,7 +1122,7 @@ mod kafka_broker_tests {
         assert!(publish_lock.is_alive());
         assert_eq!(kafka_source.state.num_rebalances, 0);
 
-        let source_sink = SourceSink::new(indexer_mailbox);
+        let source_sink = SourceSink::from(indexer_mailbox);
         kafka_source
             .process_revoke_partitions(&ctx, &source_sink, &mut batch_builder, ack_tx)
             .await

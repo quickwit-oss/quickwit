@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // This file is meant to "override" some behavior of the indexing service when
 // the metrics feature flag is enabled.
 //
 // In that case, metrics index will be started as a metrics pipeline.
 
 use quickwit_actors::ActorContext;
-use quickwit_common::temp_dir;
-use quickwit_common::is_metrics_index;
+use quickwit_common::{is_metrics_index, temp_dir};
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::{IndexingError, IndexingPipelineId};
@@ -92,22 +90,22 @@ impl IndexingService {
     ) -> Result<BoxedPipelineHandle, IndexingError> {
         if is_metrics_index(&indexing_pipeline_id.index_uid.index_id) {
             self.spawn_metrics_pipeline(
-                        ctx,
-                        indexing_pipeline_id.clone(),
-                        index_config,
-                        source_config,
-                        params_fingerprint,
-                    )
+                ctx,
+                indexing_pipeline_id.clone(),
+                index_config,
+                source_config,
+                params_fingerprint,
+            )
             .await
         } else {
             self.spawn_log_pipeline(
-                        ctx,
-                        indexing_pipeline_id.clone(),
-                        index_config,
-                        source_config,
-                        immature_splits_opt,
-                        params_fingerprint,
-                    )
+                ctx,
+                indexing_pipeline_id.clone(),
+                index_config,
+                source_config,
+                immature_splits_opt,
+                params_fingerprint,
+            )
             .await
         }
     }

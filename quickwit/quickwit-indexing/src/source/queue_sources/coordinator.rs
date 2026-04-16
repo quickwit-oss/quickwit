@@ -370,20 +370,14 @@ mod tests {
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_sink = SourceSink::new(doc_processor_mailbox);
+        let source_sink = SourceSink::from(doc_processor_mailbox);
         let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        coordinator
-            .initialize(&source_sink, &ctx)
-            .await
-            .unwrap();
+        coordinator.initialize(&source_sink, &ctx).await.unwrap();
 
-        coordinator
-            .emit_batches(&source_sink, &ctx)
-            .await
-            .unwrap();
+        coordinator.emit_batches(&source_sink, &ctx).await.unwrap();
 
         for (uri, ack_id) in messages {
             queue.send_message(uri.to_string(), ack_id);
@@ -393,10 +387,7 @@ mod tests {
         // start, emit), assuming the `QueueReceiver` doesn't chunk the receive
         // future.
         for _ in 0..(messages.len() * 4) {
-            coordinator
-                .emit_batches(&source_sink, &ctx)
-                .await
-                .unwrap();
+            coordinator.emit_batches(&source_sink, &ctx).await.unwrap();
         }
 
         let batches = doc_processor_inbox

@@ -368,7 +368,8 @@ mod tests {
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
-        let sequencer_mailbox = super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
+        let sequencer_mailbox =
+            super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
 
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
@@ -454,7 +455,8 @@ mod tests {
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
-        let sequencer_mailbox = super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
+        let sequencer_mailbox =
+            super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
 
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
@@ -539,7 +541,8 @@ mod tests {
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
-        let sequencer_mailbox = super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
+        let sequencer_mailbox =
+            super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
 
         let mut mock_metastore = MockMetastoreService::new();
         // Should NOT call stage_metrics_splits for empty batch
