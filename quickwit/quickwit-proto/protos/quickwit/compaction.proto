@@ -39,7 +39,6 @@ message CompactionInProgress {
 
 message CompactionSuccess {
   string task_id = 1;
-  string merged_split_id = 2;
 }
 
 message CompactionFailure {

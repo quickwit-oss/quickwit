@@ -608,12 +608,7 @@ pub async fn serve_quickwit(
     .context("failed to initialize compaction service client")?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
-        let merge_scheduler_mailbox_opt =
-            if !node_config.indexer_config.enable_standalone_compactors {
-                Some(spawn_merge_scheduler_service(&universe, &node_config))
-            } else {
-                None
-            };
+        let merge_scheduler_mailbox_opt = None;
         let indexing_service = start_indexing_service(
             &universe,
             &node_config,

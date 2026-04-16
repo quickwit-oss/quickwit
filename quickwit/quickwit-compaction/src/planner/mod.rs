@@ -16,6 +16,6 @@ mod compaction_planner;
 #[allow(dead_code)]
 mod compaction_state;
 #[allow(dead_code)]
-mod index_config_store;
+mod index_config_metastore;
 
 pub use compaction_planner::CompactionPlanner;

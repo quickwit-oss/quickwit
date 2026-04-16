@@ -32,11 +32,11 @@ use tracing::error;
 use ulid::Ulid;
 
 use super::compaction_state::CompactionState;
-use super::index_config_store::{IndexConfigStore, IndexEntry};
+use super::index_config_metastore::{IndexConfigMetastore, IndexEntry};
 
 pub struct CompactionPlanner {
     state: CompactionState,
-    index_config_store: IndexConfigStore,
+    index_config_metastore: IndexConfigMetastore,
     cursor: i64,
     metastore: MetastoreServiceClient,
 }
@@ -83,8 +83,8 @@ impl Handler<ScanAndPlan> for CompactionPlanner {
         _msg: ScanAndPlan,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Err(err) = self.scan_and_plan().await {
-            error!(error=%err, "error scanning metastore and planning merges");
+        if let Err(error) = ctx.protect_future(self.scan_and_plan()).await {
+            error!(%error, "error scanning metastore and planning merges");
         }
         self.state.check_heartbeat_timeouts();
         ctx.schedule_self_msg(SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
@@ -117,7 +117,7 @@ impl CompactionPlanner {
         let cursor = OffsetDateTime::now_utc().unix_timestamp() - STARTUP_LOOKBACK.as_secs() as i64;
         CompactionPlanner {
             state: CompactionState::new(),
-            index_config_store: IndexConfigStore::new(metastore.clone()),
+            index_config_metastore: IndexConfigMetastore::new(metastore.clone()),
             cursor,
             metastore,
         }
@@ -125,11 +125,11 @@ impl CompactionPlanner {
 
     async fn ingest_splits(&mut self, splits: Vec<Split>) {
         for split in splits {
-            if self.state.is_split_known(&split.split_metadata.split_id) {
+            if self.state.is_split_tracked(&split.split_metadata.split_id) {
                 continue;
             }
             let Ok(index_entry) = self
-                .index_config_store
+                .index_config_metastore
                 .get_for_split(&split.split_metadata)
                 .await
             else {
@@ -168,7 +168,7 @@ impl CompactionPlanner {
 
     fn run_merge_policies(&mut self) {
         for partition_key in self.state.partition_keys() {
-            if let Some(index_entry) = self.index_config_store.get(&partition_key.index_uid) {
+            if let Some(index_entry) = self.index_config_metastore.get(&partition_key.index_uid) {
                 self.state
                     .plan_partition(&partition_key, index_entry.merge_policy());
             }
@@ -181,7 +181,7 @@ impl CompactionPlanner {
 
         for (partition_key, operation) in pending {
             let task_id = Ulid::new().to_string();
-            let Some(index_entry) = self.index_config_store.get(&partition_key.index_uid) else {
+            let Some(index_entry) = self.index_config_metastore.get(&partition_key.index_uid) else {
                 error!(index_uid=%partition_key.index_uid, "index config not found for pending operation, skipping");
                 continue;
             };
@@ -352,9 +352,9 @@ mod tests {
 
         planner.ingest_splits(splits).await;
 
-        assert!(planner.state.is_split_known("fresh"));
-        assert!(planner.state.is_split_known("in-flight"));
-        assert!(!planner.state.is_split_known("mature"));
+        assert!(planner.state.is_split_tracked("fresh"));
+        assert!(planner.state.is_split_tracked("in-flight"));
+        assert!(!planner.state.is_split_tracked("mature"));
         assert_eq!(planner.cursor, 3000);
     }
 
@@ -393,7 +393,7 @@ mod tests {
         planner.cursor = 0;
         planner.ingest_splits(splits).await;
 
-        assert!(!planner.state.is_split_known("orphan"));
+        assert!(!planner.state.is_split_tracked("orphan"));
     }
 
     #[tokio::test]
@@ -420,8 +420,8 @@ mod tests {
         planner.cursor = 0;
         planner.scan_and_plan().await.unwrap();
 
-        assert!(planner.state.is_split_known("s1"));
-        assert!(planner.state.is_split_known("s2"));
+        assert!(planner.state.is_split_tracked("s1"));
+        assert!(planner.state.is_split_tracked("s2"));
         assert_eq!(planner.cursor, 6000);
     }
 
@@ -503,7 +503,6 @@ mod tests {
         // Report success for the task.
         planner.state.process_successes(&[CompactionSuccess {
             task_id,
-            merged_split_id: "merged-1".to_string(),
         }]);
 
         // The original splits are no longer tracked. Re-ingesting them

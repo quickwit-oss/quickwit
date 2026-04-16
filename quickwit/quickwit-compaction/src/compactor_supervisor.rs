@@ -112,8 +112,8 @@ impl CompactorSupervisor {
     ) {
         for assignment in assignments {
             let task_id = assignment.task_id.clone();
-            if let Err(err) = self.spawn_task(assignment, spawn_ctx).await {
-                error!(task_id=%task_id, error=%err, "failed to spawn compaction task");
+            if let Err(error) = self.spawn_task(assignment, spawn_ctx).await {
+                error!(%task_id, %error, "failed to spawn compaction task");
             }
         }
     }
@@ -226,7 +226,6 @@ impl CompactorSupervisor {
                 PipelineStatus::Completed => {
                     successes.push(CompactionSuccess {
                         task_id: update.task_id.clone(),
-                        merged_split_id: update.merged_split_id.clone(),
                     });
                 }
                 PipelineStatus::Failed { error } => {
@@ -279,13 +278,13 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
     ) -> Result<(), ActorExitStatus> {
         let statuses = self.check_pipeline_statuses();
         let request = self.build_report_status_request(&statuses);
-        match self.planner_client.report_status(request).await {
+        match ctx.protect_future(self.planner_client.report_status(request)).await {
             Ok(response) => {
-                self.process_new_tasks(response.new_tasks, ctx.spawn_ctx())
+                ctx.protect_future(self.process_new_tasks(response.new_tasks, ctx.spawn_ctx()))
                     .await;
             }
-            Err(err) => {
-                warn!(error=%err, "failed to report status to compaction planner");
+            Err(error) => {
+                warn!(%error, "failed to report status to compaction planner");
             }
         }
         ctx.schedule_self_msg(CHECK_PIPELINE_STATUSES_INTERVAL, CheckPipelineStatuses);
@@ -394,9 +393,9 @@ mod tests {
         let index_metadata =
             quickwit_metastore::IndexMetadata::for_test("test-index", "ram:///test-index");
         let config = &index_metadata.index_config;
-        let splits: Vec<quickwit_metastore::SplitMetadata> = split_ids
+        let splits: Vec<SplitMetadata> = split_ids
             .iter()
-            .map(|id| quickwit_metastore::SplitMetadata::for_test(id.to_string()))
+            .map(|id| SplitMetadata::for_test(id.to_string()))
             .collect();
         MergeTaskAssignment {
             task_id: task_id.to_string(),
@@ -513,7 +512,7 @@ mod tests {
         let assignment = test_assignment("planner-task-1", &["s1", "s2"]);
         let assignments = vec![assignment];
         let assignments_clone = assignments.clone();
-        let mut mock = quickwit_proto::compaction::MockCompactionPlannerService::new();
+        let mut mock = MockCompactionPlannerService::new();
         mock.expect_report_status().times(1).returning(move |_req| {
             Ok(quickwit_proto::compaction::ReportStatusResponse {
                 new_tasks: assignments_clone.clone(),
@@ -569,7 +568,6 @@ mod tests {
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
                 split_ids: vec!["s1".to_string(), "s2".to_string()],
-                merged_split_id: "merged-1".to_string(),
                 status: PipelineStatus::InProgress,
             },
             PipelineStatusUpdate {
@@ -577,7 +575,6 @@ mod tests {
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
                 split_ids: vec!["s3".to_string()],
-                merged_split_id: "merged-2".to_string(),
                 status: PipelineStatus::Completed,
             },
             PipelineStatusUpdate {
@@ -585,7 +582,6 @@ mod tests {
                 index_uid: quickwit_proto::types::IndexUid::for_test("test-index", 0),
                 source_id: "src".to_string(),
                 split_ids: vec!["s4".to_string()],
-                merged_split_id: "merged-3".to_string(),
                 status: PipelineStatus::Failed {
                     error: "boom".to_string(),
                 },
@@ -600,7 +596,6 @@ mod tests {
         assert_eq!(request.in_progress[0].split_ids, vec!["s1", "s2"]);
         assert_eq!(request.successes.len(), 1);
         assert_eq!(request.successes[0].task_id, "task-2");
-        assert_eq!(request.successes[0].merged_split_id, "merged-2");
         assert_eq!(request.failures.len(), 1);
         assert_eq!(request.failures[0].task_id, "task-3");
         assert_eq!(request.failures[0].error_message, "boom");

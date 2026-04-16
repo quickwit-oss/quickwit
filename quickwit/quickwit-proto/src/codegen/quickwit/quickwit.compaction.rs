@@ -30,8 +30,6 @@ pub struct CompactionInProgress {
 pub struct CompactionSuccess {
     #[prost(string, tag = "1")]
     pub task_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub merged_split_id: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
