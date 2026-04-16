@@ -53,16 +53,9 @@ impl<T: TypedSourceFactory> SourceFactory for T {
     }
 }
 
+#[derive(Default)]
 pub struct SourceLoader {
     type_to_factory: HashMap<SourceType, Box<dyn SourceFactory>>,
-}
-
-impl Default for SourceLoader {
-    fn default() -> Self {
-        Self {
-            type_to_factory: HashMap::default(),
-        }
-    }
 }
 
 #[derive(Error, Debug)]

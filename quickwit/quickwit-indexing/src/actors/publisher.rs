@@ -103,6 +103,6 @@ impl Actor for Publisher {
     }
 
     fn queue_capacity(&self) -> QueueCapacity {
-        self.queue_capacity.clone()
+        self.queue_capacity
     }
 }

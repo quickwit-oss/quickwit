@@ -265,17 +265,17 @@ impl IndexingService {
 
         let params_fingerprint =
             indexing_pipeline_params_fingerprint(&index_config, &source_config);
-        if let Some(expected_params_fingerprint) = expected_params_fingerprint {
-            if params_fingerprint != expected_params_fingerprint {
-                info!(
-                    index_id = indexing_pipeline_id.index_uid.index_id,
-                    source_id = indexing_pipeline_id.source_id,
-                    expected = expected_params_fingerprint,
-                    actual = params_fingerprint,
-                    "pipeline fingerprint mismatch, postponing pipeline creation"
-                );
-                return Ok(());
-            }
+        if let Some(expected_params_fingerprint) = expected_params_fingerprint
+            && params_fingerprint != expected_params_fingerprint
+        {
+            info!(
+                index_id = indexing_pipeline_id.index_uid.index_id,
+                source_id = indexing_pipeline_id.source_id,
+                expected = expected_params_fingerprint,
+                actual = params_fingerprint,
+                "pipeline fingerprint mismatch, postponing pipeline creation"
+            );
+            return Ok(());
         }
 
         let pipeline_handle: BoxedPipelineHandle = self
