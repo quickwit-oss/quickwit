@@ -92,7 +92,7 @@ pub use source_sink::SourceSink;
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
 pub use queue_sources::sqs_queue;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, DeferableReplyHandler, Handler, Mailbox};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
@@ -118,7 +118,7 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
-use crate::models::{NewPublishLock, NewPublishToken, RawDocBatch};
+use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
@@ -318,15 +318,10 @@ pub struct SourceActor {
 }
 
 impl SourceActor {
-    pub fn new<A>(source: Box<dyn Source>, source_sink: Mailbox<A>) -> Self
-    where A: Actor
-            + DeferableReplyHandler<RawDocBatch>
-            + DeferableReplyHandler<NewPublishLock>
-            + DeferableReplyHandler<NewPublishToken>
-    {
+    pub fn new(source: Box<dyn Source>, source_sink: impl Into<SourceSink>) -> Self {
         SourceActor {
             source,
-            source_sink: SourceSink::new(source_sink),
+            source_sink: source_sink.into(),
         }
     }
 }
@@ -436,23 +431,6 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     &SOURCE_LOADER
 }
 
-/// Returns the source loader for parquet pipelines (ParquetDocProcessor).
-///
-/// Metrics pipelines currently only support IngestV2 sources, which is the
-/// production source type for metrics ingestion.
-pub fn quickwit_supported_parquet_sources() -> &'static ParquetSourceLoader {
-    static PARQUET_SOURCE_LOADER: LazyLock<ParquetSourceLoader> = LazyLock::new(|| {
-        let mut source_factory = ParquetSourceLoader::default();
-        // Only IngestV2 is currently used for metrics ingestion
-        source_factory.add_source(SourceType::IngestV2, IngestSourceFactory);
-        // Add other sources for testing/development
-        source_factory.add_source(SourceType::File, FileSourceFactory);
-        source_factory.add_source(SourceType::Vec, VecSourceFactory);
-        source_factory.add_source(SourceType::Void, VoidSourceFactory);
-        source_factory
-    });
-    &PARQUET_SOURCE_LOADER
-}
 
 pub async fn check_source_connectivity(
     storage_resolver: &StorageResolver,

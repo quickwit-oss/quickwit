@@ -343,9 +343,11 @@ impl MetricsPipeline {
 
         // ParquetPackager
         let writer_config = quickwit_parquet_engine::storage::ParquetWriterConfig::default();
+        let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
         let split_writer = quickwit_parquet_engine::storage::ParquetSplitWriter::new(
             writer_config,
             self.params.indexing_directory.path(),
+            &table_config,
         );
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = ctx

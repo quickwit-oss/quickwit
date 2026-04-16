@@ -71,19 +71,15 @@ pub struct SourceSink {
     inner: Arc<dyn SourceSinkTrait>,
 }
 
-impl SourceSink {
-    /// Create a `SourceSink` from any actor mailbox whose actor implements
-    /// the required message handlers.
-    pub fn new<A>(mailbox: Mailbox<A>) -> Self
-    where A: Actor
-            + DeferableReplyHandler<RawDocBatch>
-            + DeferableReplyHandler<NewPublishLock>
-            + DeferableReplyHandler<NewPublishToken> {
+impl<T: SourceSinkTrait> From<T> for SourceSink {
+    fn from(source_sink: T) -> Self {
         Self {
-            inner: Arc::new(mailbox),
+            inner: Arc::new(source_sink),
         }
     }
+}
 
+impl SourceSink {
     /// Send a `RawDocBatch` to the processor.
     ///
     /// The source context's protect zone is held while the send is in flight,
