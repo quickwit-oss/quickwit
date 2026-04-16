@@ -1547,15 +1547,20 @@ async fn schedule_search_tasks(
     mut splits: Vec<(SplitIdAndFooterOffsets, SearchRequest)>,
     searcher_context: &SearcherContext,
 ) -> ScheduleSearchTaskResult {
-    let permit_sizes: Vec<ByteSize> = splits
+    let task_metadata: Vec<crate::search_permit_provider::SplitSearchTaskMetadata> = splits
         .iter()
         .map(|(split, _)| {
-            compute_initial_memory_allocation(
+            let memory_allocation = compute_initial_memory_allocation(
                 split,
                 searcher_context
                     .searcher_config
                     .warmup_single_split_initial_allocation,
-            )
+            );
+            let job_cost = crate::root::compute_split_cost(split.num_docs);
+            crate::search_permit_provider::SplitSearchTaskMetadata {
+                memory_allocation,
+                job_cost,
+            }
         })
         .collect();
 
@@ -1569,7 +1574,7 @@ async fn schedule_search_tasks(
 
     let search_permit_futures = searcher_context
         .search_permit_provider
-        .get_permits_with_offload(permit_sizes, offload_threshold)
+        .get_permits_with_offload(task_metadata, offload_threshold)
         .await;
 
     let splits_to_run_on_lambda: Vec<(SplitIdAndFooterOffsets, SearchRequest)> =
