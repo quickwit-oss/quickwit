@@ -46,7 +46,9 @@ use quickwit_proto::search::{
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
 use quickwit_query::cloudprem::sanitize_metric_id_aggregations;
-use quickwit_query::query_ast::{BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst};
+use quickwit_query::query_ast::{
+    BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst, TermQuery,
+};
 use quickwit_search::{SearchError, SearchService};
 use serde_json::Value as JsonValue;
 use tokio::time::timeout;
@@ -109,12 +111,22 @@ fn doc_id_to_query_ast(doc_id: &str) -> QueryAst {
     };
     // Right now, the id field does not use a raw tokenizer, so we cannot
     // rely on the term query.
-    QueryAst::FullText(FullTextQuery {
+    FullTextQuery {
         field: "id".to_string(),
         text: doc_id.to_string(),
         params: full_text_params,
         lenient: false,
-    })
+    }
+    .into()
+}
+
+fn timestamp_to_query_ast(timestamp_ms: u64) -> QueryAst {
+    TermQuery {
+        field: "timestamp".to_string(),
+        // quickwit automatically detects this is ms
+        value: timestamp_ms.to_string(),
+    }
+    .into()
 }
 
 #[async_trait]
@@ -237,9 +249,10 @@ impl CloudPremService for CloudPremServiceImpl {
         };
 
         let fetch_id_query = doc_id_to_query_ast(&event_tracker.id);
+        let ts_filter = timestamp_to_query_ast(event_tracker.epoch_ms);
 
         let query_ast = QueryAst::Bool(BoolQuery {
-            must: vec![fetch_id_query, restriction_query],
+            must: vec![fetch_id_query, restriction_query, ts_filter],
             ..BoolQuery::default()
         });
 
@@ -960,9 +973,122 @@ impl HitMapper {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use prost::Message;
+    use prost_types::Any;
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_config::NodeConfig;
+    use quickwit_proto::cloudprem::{MatchNoneQueryNode, QueryNode, query_node};
     use quickwit_proto::ingest::ingester::IngesterStatus;
+    use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
+    use quickwit_proto::search::{Hit, SearchResponse};
+    use quickwit_search::MockSearchService;
 
     use super::*;
+
+    async fn make_service_with_mock_search(mock_search: MockSearchService) -> CloudPremServiceImpl {
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, true)
+            .await
+            .unwrap();
+        let metastore_client = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+        let node_config = Arc::new(NodeConfig::for_test());
+        CloudPremServiceImpl::new(
+            Arc::new(mock_search),
+            metastore_client,
+            cluster,
+            node_config,
+        )
+    }
+
+    fn make_fetch_one_request(doc_id: &str, epoch_ms: u64) -> FetchOneRequest {
+        FetchOneRequest {
+            event_tracker: Some(EventTracker {
+                id: doc_id.to_string(),
+                epoch_ms,
+                tiebreaker: 0,
+                fragment_id: None,
+                row_number: None,
+            }),
+            restriction_query: None,
+            org_id: 0,
+            scope: None,
+            index_id_patterns: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_one() {
+        const DOC_ID: &str = "test-doc-abc123";
+        let epoch_ms = 1704067200000u64;
+
+        let restriction_query = Any {
+            type_url: "type.googleapis.com/queryparser_proto.QueryNode".to_string(),
+            value: QueryNode {
+                node: Some(query_node::Node::None(MatchNoneQueryNode {})),
+            }
+            .encode_to_vec(),
+        };
+
+        let mut mock_search = MockSearchService::new();
+        mock_search
+            .expect_root_search()
+            .once()
+            .returning(move |request| {
+                let query_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
+                let QueryAst::Bool(bool_query) = query_ast else {
+                    panic!("expected a BoolQuery, got {query_ast:?}");
+                };
+                // doc_id filter
+                assert!(
+                    bool_query.must.iter().any(|clause| {
+                        matches!(clause, QueryAst::FullText(fq) if fq.field == "id" && fq.text == DOC_ID)
+                    }),
+                    "missing FullTextQuery filter on id={DOC_ID}"
+                );
+                // timestamp filter
+                assert!(
+                    bool_query.must.iter().any(|clause| {
+                        matches!(clause, QueryAst::Term(tq) if tq.field == "timestamp" && tq.value == epoch_ms.to_string())
+                    }),
+                    "missing TermQuery filter on timestamp={epoch_ms}"
+                );
+                // restriction query (MatchNone QueryNode -> QueryAst::MatchNone)
+                assert!(
+                    bool_query
+                        .must
+                        .iter()
+                        .any(|clause| matches!(clause, QueryAst::MatchNone)),
+                    "restriction query was not forwarded into the BoolQuery must clauses"
+                );
+                Ok(SearchResponse {
+                    hits: vec![Hit {
+                        json: serde_json::json!({
+                            "id": DOC_ID,
+                            "timestamp": "2024-01-01T00:00:00Z",
+                            "tiebreaker": 42,
+                        })
+                        .to_string(),
+                        partial_hit: None,
+                        snippet: None,
+                        index_id: "datadog-logs".to_string(),
+                    }],
+                    num_hits: 1,
+                    ..Default::default()
+                })
+            });
+
+        let service = make_service_with_mock_search(mock_search).await;
+        let mut request = make_fetch_one_request(DOC_ID, epoch_ms);
+        request.restriction_query = Some(restriction_query);
+        let response = service.fetch_one(request).await.unwrap();
+        let event = response.event.expect("expected an event in the response");
+        let tracker = event.tracker.expect("expected a tracker on the event");
+        assert_eq!(tracker.id, DOC_ID);
+        assert_eq!(tracker.epoch_ms, epoch_ms);
+        assert_eq!(tracker.tiebreaker, 42);
+    }
 
     #[tokio::test]
     async fn test_node_labels() {
