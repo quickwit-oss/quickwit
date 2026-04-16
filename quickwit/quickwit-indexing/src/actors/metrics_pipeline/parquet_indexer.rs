@@ -554,7 +554,7 @@ mod tests {
 
     use super::*;
     use crate::actors::metrics_pipeline::{ParquetPackager, ParquetUploader};
-    use crate::actors::{Publisher, SplitsUpdateMailbox, UploaderType};
+    use crate::actors::{Publisher, UploaderType};
 
     /// Create a test ParquetUploader and return its mailbox.
     fn create_test_uploader(
@@ -563,12 +563,13 @@ mod tests {
         let mock_metastore = MockMetastoreService::new();
         let ram_storage = Arc::new(RamStorage::default());
         let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox = super::super::spawn_sequencer_for_test(universe, publisher_mailbox);
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage,
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
         universe.spawn_builder().spawn(uploader)
@@ -587,12 +588,13 @@ mod tests {
 
         let ram_storage = Arc::new(RamStorage::default());
         let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox = super::super::spawn_sequencer_for_test(universe, publisher_mailbox);
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage,
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
         universe.spawn_builder().spawn(uploader)
@@ -916,11 +918,12 @@ mod tests {
 
         let ram_storage = Arc::new(RamStorage::default());
         let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox = super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage,
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);

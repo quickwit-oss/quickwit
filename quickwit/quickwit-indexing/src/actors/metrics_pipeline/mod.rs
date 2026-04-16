@@ -50,3 +50,14 @@ pub use parquet_uploader::ParquetUploader;
 pub use pipeline::{MetricsPipeline, MetricsPipelineParams};
 pub use processed_parquet_batch::ProcessedParquetBatch;
 pub(crate) use publisher_impl::METRICS_PUBLISHER_NAME;
+
+#[cfg(test)]
+/// Spawn a `Sequencer<Publisher>` in front of the given publisher mailbox.
+pub(crate) fn spawn_sequencer_for_test(
+    universe: &quickwit_actors::Universe,
+    publisher_mailbox: quickwit_actors::Mailbox<crate::actors::Publisher>,
+) -> quickwit_actors::Mailbox<crate::actors::Sequencer<crate::actors::Publisher>> {
+    let sequencer = crate::actors::Sequencer::new(publisher_mailbox);
+    let (sequencer_mailbox, _sequencer_handle) = universe.spawn_builder().spawn(sequencer);
+    sequencer_mailbox
+}

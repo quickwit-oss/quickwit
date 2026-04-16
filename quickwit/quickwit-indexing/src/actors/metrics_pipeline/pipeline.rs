@@ -48,7 +48,7 @@ use crate::actors::pipeline_shared::{
     SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry,
 };
 use crate::actors::sequencer::Sequencer;
-use crate::actors::{Publisher, SplitsUpdateMailbox, UploaderType};
+use crate::actors::{Publisher, UploaderType};
 use crate::models::IndexingStatistics;
 use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime,
@@ -333,7 +333,7 @@ impl MetricsPipeline {
             UploaderType::IndexUploader,
             self.params.metastore.clone(),
             self.params.storage.clone(),
-            SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
+            sequencer_mailbox,
             self.params.max_concurrent_split_uploads,
         );
         let (uploader_mailbox, uploader_handle) = ctx

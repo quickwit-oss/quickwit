@@ -37,8 +37,7 @@ use quickwit_proto::types::IndexUid;
 use quickwit_storage::RamStorage;
 
 use crate::actors::{
-    ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader, Publisher,
-    SplitsUpdateMailbox, UploaderType,
+    ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader, Publisher, UploaderType,
 };
 use crate::models::RawDocBatch;
 
@@ -162,11 +161,13 @@ async fn test_metrics_pipeline_e2e() {
     );
     let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
+    let sequencer_mailbox = super::spawn_sequencer_for_test(&universe, publisher_mailbox);
+
     let uploader = ParquetUploader::new(
         UploaderType::IndexUploader,
         metastore_client.clone(),
         ram_storage,
-        SplitsUpdateMailbox::Publisher(publisher_mailbox),
+        sequencer_mailbox,
         4,
     );
     let (uploader_mailbox, _uploader_handle) = universe.spawn_builder().spawn(uploader);

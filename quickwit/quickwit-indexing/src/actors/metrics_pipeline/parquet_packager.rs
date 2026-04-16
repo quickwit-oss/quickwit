@@ -244,7 +244,7 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::{Publisher, SplitsUpdateMailbox, UploaderType};
+    use crate::actors::{Publisher, UploaderType};
 
     fn create_test_uploader(
         universe: &Universe,
@@ -256,12 +256,13 @@ mod tests {
 
         let ram_storage = Arc::new(RamStorage::default());
         let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox = super::super::spawn_sequencer_for_test(universe, publisher_mailbox);
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage,
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
         universe.spawn_builder().spawn(uploader)
