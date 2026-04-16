@@ -218,6 +218,21 @@ impl SearchServiceClient {
         Ok(())
     }
 
+    /// Returns the current load of the targeted node, expressed as the sum of job costs
+    /// across all queued and active tasks in its SearchPermitProvider.
+    pub async fn get_load(&mut self) -> crate::Result<usize> {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Local(service) => Ok(service.get_load().await),
+            SearchServiceClientImpl::Grpc(grpc_client) => {
+                let response = grpc_client
+                    .get_load(quickwit_proto::search::GetLoadRequest {})
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+                Ok(response.into_inner().load_job_cost as usize)
+            }
+        }
+    }
+
     /// Indexers call report_splits to inform searchers node about the presence of a split, which
     /// would then be considered as a candidate for the searcher split cache.
     pub async fn report_splits(&mut self, report_splits_request: ReportSplitsRequest) {

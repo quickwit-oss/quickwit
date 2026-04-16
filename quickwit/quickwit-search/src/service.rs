@@ -133,6 +133,10 @@ pub trait SearchService: 'static + Send + Sync {
 
     /// Describe how a search would be processed.
     async fn search_plan(&self, request: SearchRequest) -> crate::Result<SearchPlanResponse>;
+
+    /// Returns the current load of this searcher node, expressed as the sum of job costs
+    /// across all queued and active tasks in the SearchPermitProvider.
+    async fn get_load(&self) -> usize;
 }
 
 impl SearchServiceImpl {
@@ -319,6 +323,13 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<SearchPlanResponse> {
         let search_plan = search_plan(search_request, self.metastore.clone()).await?;
         Ok(search_plan)
+    }
+
+    async fn get_load(&self) -> usize {
+        self.searcher_context
+            .search_permit_provider
+            .get_load()
+            .await
     }
 }
 
