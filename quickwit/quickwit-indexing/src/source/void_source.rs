@@ -72,7 +72,7 @@ mod tests {
     use super::*;
     use crate::actors::DocProcessor;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{ProcessorMailbox, SourceActor, SourceConfig, quickwit_supported_sources};
+    use crate::source::{SourceActor, SourceConfig, quickwit_supported_sources};
 
     #[tokio::test]
     async fn test_void_source_loading() {
@@ -109,10 +109,7 @@ mod tests {
         let void_source =
             VoidSourceFactory::typed_create_source(source_runtime, VoidSourceParams).await?;
         let (doc_processor_mailbox, _) = universe.create_test_mailbox::<DocProcessor>();
-        let void_source_actor = SourceActor {
-            source: Box::new(void_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let void_source_actor = SourceActor::new(Box::new(void_source), doc_processor_mailbox);
         let (_, void_source_handle) = universe.spawn_builder().spawn(void_source_actor);
         matches!(void_source_handle.check_health(true), Health::Healthy);
         let (actor_termination, observed_state) = void_source_handle.quit().await;

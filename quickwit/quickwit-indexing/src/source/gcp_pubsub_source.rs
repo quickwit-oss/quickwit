@@ -296,7 +296,7 @@ mod gcp_pubsub_emulator_tests {
     use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{ProcessorMailbox, SourceActor, quickwit_supported_sources};
+    use crate::source::{SourceActor, quickwit_supported_sources};
 
     static GCP_TEST_PROJECT: &str = "quickwit-emulator";
 
@@ -392,10 +392,7 @@ mod gcp_pubsub_emulator_tests {
 
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
-        let source_actor = SourceActor {
-            source,
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let source_actor = SourceActor::new(source, doc_processor_mailbox);
         let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
         let (exit_status, exit_state) = source_handle.join().await;
         assert!(exit_status.is_success());

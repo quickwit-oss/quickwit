@@ -51,7 +51,7 @@ use crate::actors::sequencer::Sequencer;
 use crate::actors::{Publisher, SplitsUpdateMailbox, UploaderType};
 use crate::models::IndexingStatistics;
 use crate::source::{
-    AssignShards, Assignment, ProcessorMailbox, SourceActor, SourceRuntime,
+    AssignShards, Assignment, SourceActor, SourceRuntime,
     quickwit_supported_sources,
 };
 
@@ -390,10 +390,7 @@ impl MetricsPipeline {
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
-        let actor_source = SourceActor {
-            source,
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let actor_source = SourceActor::new(source, doc_processor_mailbox);
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
             .set_mailboxes(source_mailbox, source_inbox)

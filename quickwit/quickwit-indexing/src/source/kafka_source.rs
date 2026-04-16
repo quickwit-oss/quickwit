@@ -1274,10 +1274,7 @@ mod kafka_broker_tests {
             let source = source_loader.load_source(source_runtime).await?;
             let (doc_processor_mailbox, doc_processor_inbox) =
                 universe.create_test_mailbox::<DocProcessor>();
-            let source_actor = SourceActor {
-                source,
-                processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-            };
+            let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
@@ -1327,10 +1324,7 @@ mod kafka_broker_tests {
             let (doc_processor_mailbox, doc_processor_inbox) =
                 universe.create_test_mailbox::<DocProcessor>();
             let source = source_loader.load_source(source_runtime).await?;
-            let source_actor = SourceActor {
-                source,
-                processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-            };
+            let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
@@ -1402,10 +1396,7 @@ mod kafka_broker_tests {
             let source = source_loader.load_source(source_runtime).await?;
             let (doc_processor_mailbox, doc_processor_inbox) =
                 universe.create_test_mailbox::<DocProcessor>();
-            let source_actor = SourceActor {
-                source,
-                processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-            };
+            let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
@@ -1456,10 +1447,7 @@ mod kafka_broker_tests {
             let source = source_loader.load_source(source_runtime).await?;
             let (doc_processor_mailbox, doc_processor_inbox) =
                 universe.create_test_mailbox::<DocProcessor>();
-            let source_actor = SourceActor {
-                source,
-                processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-            };
+            let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());

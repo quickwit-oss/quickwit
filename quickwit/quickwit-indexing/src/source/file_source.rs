@@ -214,7 +214,7 @@ mod tests {
         DUMMY_DOC, generate_dummy_doc_file, generate_index_doc_file,
     };
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{BATCH_NUM_BYTES_LIMIT, ProcessorMailbox, SourceActor};
+    use crate::source::{BATCH_NUM_BYTES_LIMIT, SourceActor};
 
     #[tokio::test]
     async fn test_file_source() {
@@ -243,10 +243,7 @@ mod tests {
         let file_source = FileSourceFactory::typed_create_source(source_runtime, params)
             .await
             .unwrap();
-        let file_source_actor = SourceActor {
-            source: Box::new(file_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let file_source_actor = SourceActor::new(Box::new(file_source), doc_processor_mailbox);
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
@@ -296,10 +293,7 @@ mod tests {
         let file_source = FileSourceFactory::typed_create_source(source_runtime, params)
             .await
             .unwrap();
-        let file_source_actor = SourceActor {
-            source: Box::new(file_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let file_source_actor = SourceActor::new(Box::new(file_source), doc_processor_mailbox);
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
@@ -373,10 +367,7 @@ mod tests {
         let file_source = FileSourceFactory::typed_create_source(source_runtime, params)
             .await
             .unwrap();
-        let file_source_actor = SourceActor {
-            source: Box::new(file_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let file_source_actor = SourceActor::new(Box::new(file_source), doc_processor_mailbox);
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
@@ -417,7 +408,7 @@ mod localstack_tests {
     };
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{ProcessorMailbox, SourceActor};
+    use crate::source::SourceActor;
 
     #[tokio::test]
     async fn test_file_source_sqs_notifications() {
@@ -456,10 +447,7 @@ mod localstack_tests {
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
         {
-            let actor = SourceActor {
-                source: Box::new(sqs_source),
-                processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox.clone()),
-            };
+            let actor = SourceActor::new(Box::new(sqs_source), doc_processor_mailbox.clone());
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
 
             // run the source actor for a while

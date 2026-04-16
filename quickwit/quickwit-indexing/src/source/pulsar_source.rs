@@ -458,7 +458,7 @@ mod pulsar_broker_tests {
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
     use crate::source::{
-        ProcessorMailbox, RawDocBatch, SourceActor, SuggestTruncate, quickwit_supported_sources,
+        RawDocBatch, SourceActor, SuggestTruncate, quickwit_supported_sources,
     };
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
@@ -651,10 +651,7 @@ mod pulsar_broker_tests {
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
         let source = source_loader.load_source(source_runtime).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        let source_actor = SourceActor {
-            source,
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let source_actor = SourceActor::new(source, doc_processor_mailbox);
         let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
 
         Ok((source_handle, doc_processor_inbox))

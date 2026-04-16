@@ -381,7 +381,7 @@ mod tests {
         make_shard_id, put_records_into_shards, setup, teardown,
     };
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{ProcessorMailbox, SourceActor};
+    use crate::source::SourceActor;
 
     // Sequence number
     type SeqNo = String;
@@ -443,10 +443,7 @@ mod tests {
             .await
             .unwrap();
 
-        let actor = SourceActor {
-            source: Box::new(kinesis_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox.clone()),
-        };
+        let actor = SourceActor::new(Box::new(kinesis_source), doc_processor_mailbox.clone());
         let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
         let (exit_status, _exit_state) = handle.join().await;
         assert!(exit_status.is_success());
@@ -478,10 +475,8 @@ mod tests {
                 KinesisSource::try_new(source_runtime.clone(), kinesis_params.clone())
                     .await
                     .unwrap();
-            let actor = SourceActor {
-                source: Box::new(kinesis_source),
-                processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox.clone()),
-            };
+            let actor =
+                SourceActor::new(Box::new(kinesis_source), doc_processor_mailbox.clone());
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
@@ -531,10 +526,8 @@ mod tests {
                 KinesisSource::try_new(source_runtime.clone(), kinesis_params.clone())
                     .await
                     .unwrap();
-            let actor = SourceActor {
-                source: Box::new(kinesis_source),
-                processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox.clone()),
-            };
+            let actor =
+                SourceActor::new(Box::new(kinesis_source), doc_processor_mailbox.clone());
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());
@@ -601,10 +594,8 @@ mod tests {
             let kinesis_source = KinesisSource::try_new(source_runtime, kinesis_params)
                 .await
                 .unwrap();
-            let actor = SourceActor {
-                source: Box::new(kinesis_source),
-                processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox.clone()),
-            };
+            let actor =
+                SourceActor::new(Box::new(kinesis_source), doc_processor_mailbox.clone());
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
             assert!(exit_status.is_success());

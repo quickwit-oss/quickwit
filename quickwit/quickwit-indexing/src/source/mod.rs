@@ -91,7 +91,7 @@ pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
 pub use queue_sources::sqs_queue;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, DeferableReplyHandler, Handler, Mailbox};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
@@ -117,7 +117,7 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
-use crate::models::RawDocBatch;
+use crate::models::{NewPublishLock, NewPublishToken, RawDocBatch};
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
@@ -312,8 +312,22 @@ pub trait Source: Send + 'static {
 ///
 /// It mostly takes care of running a loop calling `emit_batches(...)`.
 pub struct SourceActor {
-    pub source: Box<dyn Source>,
-    pub processor_mailbox: ProcessorMailbox,
+    source: Box<dyn Source>,
+    processor_mailbox: ProcessorMailbox,
+}
+
+impl SourceActor {
+    pub fn new<A>(source: Box<dyn Source>, processor_mailbox: Mailbox<A>) -> Self
+    where A: Actor
+            + DeferableReplyHandler<RawDocBatch>
+            + DeferableReplyHandler<NewPublishLock>
+            + DeferableReplyHandler<NewPublishToken>
+    {
+        SourceActor {
+            source,
+            processor_mailbox: ProcessorMailbox::new(processor_mailbox),
+        }
+    }
 }
 
 #[derive(Debug)]

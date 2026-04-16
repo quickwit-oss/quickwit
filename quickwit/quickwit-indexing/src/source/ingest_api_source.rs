@@ -265,7 +265,7 @@ mod tests {
     use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{ProcessorMailbox, SourceActor};
+    use crate::source::SourceActor;
 
     fn make_ingest_request(
         index_id: IndexId,
@@ -320,10 +320,8 @@ mod tests {
             .with_queues_dir(queues_dir_path)
             .build();
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
@@ -430,10 +428,8 @@ mod tests {
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
@@ -483,10 +479,8 @@ mod tests {
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
@@ -535,10 +529,8 @@ mod tests {
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 
@@ -600,10 +592,8 @@ mod tests {
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (_ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
         let ingest_req = make_ingest_request(index_id.clone(), 2, 20_000, CommitType::WaitFor);
@@ -697,10 +687,8 @@ mod tests {
             .build();
 
         let ingest_api_source = IngestApiSource::try_new(source_runtime).await?;
-        let ingest_api_source_actor = SourceActor {
-            source: Box::new(ingest_api_source),
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let ingest_api_source_actor =
+            SourceActor::new(Box::new(ingest_api_source), doc_processor_mailbox);
         let (ingest_api_source_mailbox, ingest_api_source_handle) =
             universe.spawn_builder().spawn(ingest_api_source_actor);
 

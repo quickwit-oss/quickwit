@@ -47,7 +47,7 @@ use crate::actors::{Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
 use crate::source::{
-    AssignShards, Assignment, ProcessorMailbox, SourceActor, SourceRuntime,
+    AssignShards, Assignment, SourceActor, SourceRuntime,
     quickwit_supported_sources,
 };
 use crate::split_store::IndexingSplitStore;
@@ -416,10 +416,7 @@ impl IndexingPipeline {
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
-        let actor_source = SourceActor {
-            source,
-            processor_mailbox: ProcessorMailbox::new(doc_processor_mailbox),
-        };
+        let actor_source = SourceActor::new(source, doc_processor_mailbox);
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
             .set_mailboxes(source_mailbox, source_inbox)
