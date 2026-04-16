@@ -2802,6 +2802,7 @@ impl PostgresqlMetastore {
         if split_ids.is_empty() {
             return Ok(EmptyResponse {});
         }
+        let index_uid: IndexUid = request.index_uid().clone();
 
         let table_name = kind.table_name();
         let label = kind.label();
@@ -2812,18 +2813,24 @@ impl PostgresqlMetastore {
             "deleting {label} splits"
         );
 
-        // Only delete splits that are marked for deletion.
-        // Match the non-metrics delete_splits pattern: distinguish
-        // "not found" (warn + succeed) from "not deletable" (FailedPrecondition).
-        // table_name is a &'static str from ParquetSplitKind, safe for SQL interpolation.
+        // Match the non-metrics delete_splits pattern: CTE with FOR UPDATE
+        // to lock rows before reading state, avoiding stale-state races under
+        // concurrent mark_metrics_splits_for_deletion. Distinguishes "not found"
+        // (warn + succeed) from "not deletable" (FailedPrecondition).
         let delete_query = format!(
             r#"
             WITH input_splits AS (
                 SELECT input_splits.split_id, {table_name}.split_state
                 FROM UNNEST($2::text[]) AS input_splits(split_id)
-                LEFT JOIN {table_name}
-                    ON {table_name}.index_uid = $1
-                    AND {table_name}.split_id = input_splits.split_id
+                LEFT JOIN (
+                    SELECT split_id, split_state
+                    FROM {table_name}
+                    WHERE
+                        index_uid = $1
+                        AND split_id = ANY($2)
+                    FOR UPDATE
+                ) AS {table_name}
+                USING (split_id)
             ),
             deleted AS (
                 DELETE FROM {table_name}
