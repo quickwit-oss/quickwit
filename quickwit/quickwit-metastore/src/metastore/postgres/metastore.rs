@@ -2699,46 +2699,55 @@ impl PostgresqlMetastore {
             .map_err(|sqlx_error| convert_sqlx_err(&query.index_uid.index_id, sqlx_error))?;
 
         // Convert rows to ParquetSplitRecord
-        let splits: Vec<ParquetSplitRecord> = rows
-            .into_iter()
-            .filter_map(|row| {
-                use sqlx::Row as _;
+        let mut splits: Vec<ParquetSplitRecord> = Vec::with_capacity(rows.len());
+        for row in rows {
+            use sqlx::Row as _;
 
-                let pg_split = PgParquetSplit {
-                    split_id: row.get("split_id"),
-                    split_state: row.get("split_state"),
-                    index_uid: row.get("index_uid"),
-                    time_range_start: row.get("time_range_start"),
-                    time_range_end: row.get("time_range_end"),
-                    metric_names: row.get("metric_names"),
-                    tag_service: row.get("tag_service"),
-                    tag_env: row.get("tag_env"),
-                    tag_datacenter: row.get("tag_datacenter"),
-                    tag_region: row.get("tag_region"),
-                    tag_host: row.get("tag_host"),
-                    high_cardinality_tag_keys: row.get("high_cardinality_tag_keys"),
-                    num_rows: row.get("num_rows"),
-                    size_bytes: row.get("size_bytes"),
-                    split_metadata_json: row.get("split_metadata_json"),
-                    update_timestamp: row.get("update_timestamp"),
-                    window_start: row.get("window_start"),
-                    window_duration_secs: row.get("window_duration_secs"),
-                    sort_fields: row.get("sort_fields"),
-                    num_merge_ops: row.get("num_merge_ops"),
-                    row_keys: row.get("row_keys"),
-                    zonemap_regexes: row.get("zonemap_regexes"),
-                };
+            let pg_split = PgParquetSplit {
+                split_id: row.get("split_id"),
+                split_state: row.get("split_state"),
+                index_uid: row.get("index_uid"),
+                time_range_start: row.get("time_range_start"),
+                time_range_end: row.get("time_range_end"),
+                metric_names: row.get("metric_names"),
+                tag_service: row.get("tag_service"),
+                tag_env: row.get("tag_env"),
+                tag_datacenter: row.get("tag_datacenter"),
+                tag_region: row.get("tag_region"),
+                tag_host: row.get("tag_host"),
+                high_cardinality_tag_keys: row.get("high_cardinality_tag_keys"),
+                num_rows: row.get("num_rows"),
+                size_bytes: row.get("size_bytes"),
+                split_metadata_json: row.get("split_metadata_json"),
+                update_timestamp: row.get("update_timestamp"),
+                window_start: row.get("window_start"),
+                window_duration_secs: row.get("window_duration_secs"),
+                sort_fields: row.get("sort_fields"),
+                num_merge_ops: row.get("num_merge_ops"),
+                row_keys: row.get("row_keys"),
+                zonemap_regexes: row.get("zonemap_regexes"),
+            };
 
-                let state = pg_split.split_state().unwrap_or(SplitState::Staged);
-                let metadata = pg_split.to_metadata().ok()?;
+            let state = pg_split.split_state().unwrap_or(SplitState::Staged);
+            let metadata = match pg_split.to_metadata() {
+                Ok(metadata) => metadata,
+                Err(error) => {
+                    return Err(MetastoreError::Internal {
+                        message: format!(
+                            "failed to deserialize {label} split '{}'",
+                            pg_split.split_id
+                        ),
+                        cause: error.to_string(),
+                    });
+                }
+            };
 
-                Some(ParquetSplitRecord {
-                    state,
-                    update_timestamp: pg_split.update_timestamp,
-                    metadata,
-                })
-            })
-            .collect();
+            splits.push(ParquetSplitRecord {
+                state,
+                update_timestamp: pg_split.update_timestamp,
+                metadata,
+            });
+        }
 
         Ok(splits)
     }
@@ -2802,7 +2811,6 @@ impl PostgresqlMetastore {
         if split_ids.is_empty() {
             return Ok(EmptyResponse {});
         }
-        let index_uid: IndexUid = request.index_uid().clone();
 
         let table_name = kind.table_name();
         let label = kind.label();
