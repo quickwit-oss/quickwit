@@ -67,6 +67,13 @@ transforms:
       - datadog_agent.metrics
       - otlp.metrics
 
+  metric_metadata:
+    type: metric_metadata
+    inputs:
+      - preprocess_metrics
+    org_id: "default"
+    metadata_svc_url: "http://localhost:9999"
+
   explode_dd_trace_spans:
     type: explode_trace_spans
     inputs:
@@ -93,7 +100,7 @@ sinks:
   metrics_out:
     type: arrow_ipc_metrics
     inputs:
-      - preprocess_metrics
+      - metric_metadata
     uri: "{metrics_endpoint}"
 
   traces_out:
