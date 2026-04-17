@@ -1066,9 +1066,7 @@ async fn test_extra_fts_indexing_and_search() {
         .await;
 
     // title should be queryable as an individual field
-    sandbox
-        .assert_hit_count("datadog", "title:crash", 1)
-        .await;
+    sandbox.assert_hit_count("datadog", "title:crash", 1).await;
     sandbox
         .assert_hit_count("datadog", "title:nonexistent", 0)
         .await;
