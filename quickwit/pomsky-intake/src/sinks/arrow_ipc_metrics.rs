@@ -15,18 +15,14 @@
 //! A Vector sink that batches metric events into Arrow IPC record batches
 //! and POSTs them to an HTTP endpoint.
 
-use std::sync::Arc;
+use std::collections::HashMap;
 
-use arrow::array::{
-    ArrayRef, Float64Builder, StringDictionaryBuilder, UInt8Builder, UInt64Builder,
-};
-use arrow::datatypes::{DataType, Field, Fields, Int32Type, Schema as ArrowSchema};
-use arrow::ipc::writer::StreamWriter;
-use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
-use parquet::variant::{VariantArrayBuilder, VariantBuilderExt, VariantType};
+use quickwit_opentelemetry::otlp::{
+    ArrowIpcError, ArrowMetricsBatchBuilder, MetricDataPoint, MetricType, record_batch_to_ipc,
+};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
 use vector::config::{AcknowledgementsConfig, GenerateConfig, Input, SinkConfig, SinkContext};
@@ -36,94 +32,8 @@ use vector::sinks::util::StreamSink;
 use vector_lib::configurable::NamedComponent;
 use vector_lib::sink::VectorSink;
 
-use crate::transforms::preprocess_metric::{
-    TAG_DATACENTER, TAG_ENV, TAG_HOST, TAG_REGION, TAG_SERVICE,
-};
-
 /// Maximum number of metrics to accumulate before flushing a batch.
 const DEFAULT_BATCH_SIZE: usize = 1_000;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[repr(u8)]
-pub enum MetricType {
-    /// Gauge metric - instantaneous value
-    Gauge = 0,
-    /// Sum metric - cumulative or delta sum
-    Sum = 1,
-    /// Histogram metric (not yet fully supported)
-    Histogram = 2,
-    /// Exponential histogram metric (not yet fully supported)
-    ExponentialHistogram = 3,
-    /// Summary metric (not yet fully supported)
-    Summary = 4,
-}
-
-// ---------------------------------------------------------------------------
-// Schema
-// ---------------------------------------------------------------------------
-
-pub fn metrics_arrow_schema() -> ArrowSchema {
-    ArrowSchema::new(vec![
-        Field::new(
-            "metric_name",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            false,
-        ),
-        Field::new("metric_type", DataType::UInt8, false),
-        Field::new("metric_unit", DataType::Utf8, true),
-        Field::new("timestamp_secs", DataType::UInt64, false),
-        Field::new("start_timestamp_secs", DataType::UInt64, true),
-        Field::new("value", DataType::Float64, false),
-        Field::new(
-            "tag_service",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        Field::new(
-            "tag_env",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        Field::new(
-            "tag_datacenter",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        Field::new(
-            "tag_region",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        Field::new(
-            "tag_host",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            true,
-        ),
-        Field::new(
-            "attributes",
-            DataType::Struct(Fields::from(vec![
-                Field::new("metadata", DataType::BinaryView, false),
-                Field::new("value", DataType::BinaryView, false),
-            ])),
-            true,
-        )
-        .with_extension_type(VariantType),
-        Field::new(
-            "service_name",
-            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-            false,
-        ),
-        Field::new(
-            "resource_attributes",
-            DataType::Struct(Fields::from(vec![
-                Field::new("metadata", DataType::BinaryView, false),
-                Field::new("value", DataType::BinaryView, false),
-            ])),
-            true,
-        )
-        .with_extension_type(VariantType),
-    ])
-}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -154,7 +64,7 @@ impl NamedComponent for ArrowIpcMetricsSinkConfig {
 
 impl GenerateConfig for ArrowIpcMetricsSinkConfig {
     fn generate_config() -> toml::Value {
-        toml::from_str(r#"uri = "http://localhost:7280/api/v1/datadog/byoc/metrics""#)
+        toml::from_str(r#"uri = "http://localhost:7280/api/datadog/v1/byoc/metrics""#)
             .expect("config should be valid")
     }
 }
@@ -194,7 +104,6 @@ struct ArrowIpcMetricsSink {
 #[async_trait]
 impl StreamSink<EventArray> for ArrowIpcMetricsSink {
     async fn run(mut self: Box<Self>, mut input: BoxStream<'_, EventArray>) -> Result<(), ()> {
-        let schema = Arc::new(metrics_arrow_schema());
         let mut pending_metrics: Vec<Metric> = Vec::with_capacity(self.batch_size);
         let mut pending_finalizers = Vec::new();
 
@@ -209,7 +118,7 @@ impl StreamSink<EventArray> for ArrowIpcMetricsSink {
             pending_finalizers.push(finalizers);
 
             if pending_metrics.len() >= self.batch_size {
-                let status = self.flush(&schema, &mut pending_metrics).await;
+                let status = self.flush(&mut pending_metrics).await;
                 for pending_finalizer in pending_finalizers.drain(..) {
                     pending_finalizer.update_status(status);
                 }
@@ -217,7 +126,7 @@ impl StreamSink<EventArray> for ArrowIpcMetricsSink {
         }
         // Flush remaining.
         if !pending_metrics.is_empty() {
-            let status = self.flush(&schema, &mut pending_metrics).await;
+            let status = self.flush(&mut pending_metrics).await;
             for pending_finalizer in pending_finalizers.drain(..) {
                 pending_finalizer.update_status(status);
             }
@@ -227,10 +136,10 @@ impl StreamSink<EventArray> for ArrowIpcMetricsSink {
 }
 
 impl ArrowIpcMetricsSink {
-    async fn flush(&self, schema: &Arc<ArrowSchema>, metrics: &mut Vec<Metric>) -> EventStatus {
+    async fn flush(&self, metrics: &mut Vec<Metric>) -> EventStatus {
         let batch_size = metrics.len();
 
-        match build_record_batch(schema, metrics) {
+        match build_ipc_bytes(metrics) {
             Ok(ipc_bytes) => match self
                 .client
                 .post(&self.uri)
@@ -257,7 +166,7 @@ impl ArrowIpcMetricsSink {
                 }
             },
             Err(error) => {
-                error!(batch_size, %error, "failed to build arrow record batch");
+                error!(batch_size, %error, "failed to build arrow ipc batch");
                 EventStatus::Errored
             }
         }
@@ -268,107 +177,39 @@ impl ArrowIpcMetricsSink {
 // Arrow conversion
 // ---------------------------------------------------------------------------
 
-/// Well-known tag keys that have dedicated dictionary columns.
-const KNOWN_TAGS: &[&str] = &[TAG_SERVICE, TAG_ENV, TAG_DATACENTER, TAG_REGION, TAG_HOST];
+fn vector_metric_to_data_point(metric: &Metric) -> MetricDataPoint {
+    let tags: HashMap<String, String> = match metric.tags() {
+        Some(tags) => tags
+            .iter_single()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect(),
+        None => HashMap::new(),
+    };
 
-fn build_record_batch(
-    schema: &Arc<ArrowSchema>,
-    metrics: &mut Vec<Metric>,
-) -> Result<Vec<u8>, arrow::error::ArrowError> {
-    let batch_size = metrics.len();
+    MetricDataPoint {
+        metric_name: metric.name().to_string(),
+        metric_type: encode_metric_type(metric),
+        timestamp_secs: metric
+            .timestamp()
+            .map(|ts| ts.timestamp() as u64)
+            .unwrap_or(0),
+        value: extract_scalar_value(metric),
+        tags,
+    }
+}
 
-    let mut metric_name = StringDictionaryBuilder::<Int32Type>::new();
-    let mut metric_type_col = UInt8Builder::with_capacity(batch_size);
-    let mut metric_unit = arrow::array::StringBuilder::with_capacity(batch_size, batch_size * 8);
-    let mut timestamp_secs = UInt64Builder::with_capacity(batch_size);
-    let mut start_timestamp_secs = UInt64Builder::with_capacity(batch_size);
-    let mut value_col = Float64Builder::with_capacity(batch_size);
-    let mut tag_service = StringDictionaryBuilder::<Int32Type>::new();
-    let mut tag_env = StringDictionaryBuilder::<Int32Type>::new();
-    let mut tag_datacenter = StringDictionaryBuilder::<Int32Type>::new();
-    let mut tag_region = StringDictionaryBuilder::<Int32Type>::new();
-    let mut tag_host = StringDictionaryBuilder::<Int32Type>::new();
-    let mut attributes = VariantArrayBuilder::new(batch_size);
-    let mut service_name = StringDictionaryBuilder::<Int32Type>::new();
-    let mut resource_attributes = VariantArrayBuilder::new(batch_size);
-
+fn build_ipc_bytes(metrics: &mut Vec<Metric>) -> Result<Vec<u8>, ArrowIpcError> {
+    let mut builder = ArrowMetricsBatchBuilder::with_capacity(metrics.len());
     for metric in metrics.drain(..) {
-        metric_name.append_value(metric.name());
-        metric_type_col.append_value(encode_metric_type(&metric));
-        // Vector metrics don't carry a unit field.
-        metric_unit.append_null();
-        timestamp_secs.append_value(
-            metric
-                .timestamp()
-                .map(|ts| ts.timestamp() as u64)
-                .unwrap_or(0),
-        );
-        // Vector doesn't expose a start timestamp on Metric.
-        start_timestamp_secs.append_null();
-        value_col.append_value(extract_scalar_value(&metric));
-
-        // Extract well-known tags.
-        let tags = metric.tags();
-        append_dict_tag(&mut tag_service, tags.and_then(|t| t.get(TAG_SERVICE)));
-        append_dict_tag(&mut tag_env, tags.and_then(|t| t.get(TAG_ENV)));
-        append_dict_tag(
-            &mut tag_datacenter,
-            tags.and_then(|t| t.get(TAG_DATACENTER)),
-        );
-        append_dict_tag(&mut tag_region, tags.and_then(|t| t.get(TAG_REGION)));
-        append_dict_tag(&mut tag_host, tags.and_then(|t| t.get(TAG_HOST)));
-
-        // service_name mirrors tag_service (non-nullable, defaults to "").
-        let svc = tags.and_then(|t| t.get(TAG_SERVICE)).unwrap_or("");
-        service_name.append_value(svc);
-
-        // Remaining tags → attributes variant (JSON object).
-        build_extra_tags_variant(&mut attributes, &metric);
-
-        // Resource attributes: OTel resource.* tags that weren't promoted
-        // to standard columns.
-        build_resource_attrs_variant(&mut resource_attributes, &metric);
+        builder.append(vector_metric_to_data_point(&metric));
     }
-
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![
-            Arc::new(metric_name.finish()) as ArrayRef,
-            Arc::new(metric_type_col.finish()),
-            Arc::new(metric_unit.finish()),
-            Arc::new(timestamp_secs.finish()),
-            Arc::new(start_timestamp_secs.finish()),
-            Arc::new(value_col.finish()),
-            Arc::new(tag_service.finish()),
-            Arc::new(tag_env.finish()),
-            Arc::new(tag_datacenter.finish()),
-            Arc::new(tag_region.finish()),
-            Arc::new(tag_host.finish()),
-            ArrayRef::from(attributes.build()),
-            Arc::new(service_name.finish()),
-            ArrayRef::from(resource_attributes.build()),
-        ],
-    )?;
-
-    let mut buf = Vec::with_capacity(4096);
-    {
-        let mut writer = StreamWriter::try_new(&mut buf, schema)?;
-        writer.write(&batch)?;
-        writer.finish()?;
-    }
-    Ok(buf)
+    let record_batch = builder.finish();
+    record_batch_to_ipc(&record_batch)
 }
 
-fn append_dict_tag(builder: &mut StringDictionaryBuilder<Int32Type>, value: Option<&str>) {
-    match value {
-        Some(v) => builder.append_value(v),
-        None => builder.append_null(),
-    }
-}
-
-fn encode_metric_type(metric: &Metric) -> u8 {
+fn encode_metric_type(metric: &Metric) -> MetricType {
     use vector::event::MetricValue;
-    let metric_type = match metric.value() {
+    match metric.value() {
         MetricValue::Counter { .. } => MetricType::Sum,
         MetricValue::Gauge { .. } => MetricType::Gauge,
         MetricValue::AggregatedHistogram { .. } => MetricType::Histogram,
@@ -376,8 +217,7 @@ fn encode_metric_type(metric: &Metric) -> u8 {
         MetricValue::Distribution { .. } => MetricType::Histogram,
         MetricValue::Sketch { .. } => MetricType::Histogram,
         MetricValue::Set { .. } => MetricType::Sum,
-    };
-    metric_type as u8
+    }
 }
 
 fn extract_scalar_value(metric: &Metric) -> f64 {
@@ -394,59 +234,15 @@ fn extract_scalar_value(metric: &Metric) -> f64 {
     }
 }
 
-/// Serializes non-well-known, non-resource tags into a Variant JSON object.
-fn build_extra_tags_variant(builder: &mut VariantArrayBuilder, metric: &Metric) {
-    let Some(tags) = metric.tags() else {
-        builder.append_null();
-        return;
-    };
-    let extras: Vec<(&str, &str)> = tags
-        .iter_single()
-        .filter(|(k, _)| !KNOWN_TAGS.contains(k) && !k.starts_with("resource."))
-        .collect();
-    if extras.is_empty() {
-        builder.append_null();
-        return;
-    }
-    let mut obj = builder.new_object();
-    for (key, value) in extras {
-        obj.insert(key, value);
-    }
-    obj.finish();
-}
-
-/// Serializes remaining `resource.*` tags into a Variant JSON object.
-fn build_resource_attrs_variant(builder: &mut VariantArrayBuilder, metric: &Metric) {
-    let Some(tags) = metric.tags() else {
-        builder.append_null();
-        return;
-    };
-    let resource_tags: Vec<(&str, &str)> = tags
-        .iter_single()
-        .filter(|(k, _)| k.starts_with("resource."))
-        .collect();
-    if resource_tags.is_empty() {
-        builder.append_null();
-        return;
-    }
-    let mut obj = builder.new_object();
-    for (key, value) in resource_tags {
-        obj.insert(key, value);
-    }
-    obj.finish();
-}
-
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
+    use arrow::ipc::reader::StreamReader;
     use vector::event::{Metric, MetricKind, MetricTags, MetricValue};
 
     use super::*;
 
     #[test]
-    fn test_build_record_batch_counters() {
-        let schema = Arc::new(metrics_arrow_schema());
+    fn test_build_ipc_bytes_round_trip() {
         let mut tags = MetricTags::default();
         tags.insert("service".to_string(), "web".to_string());
         tags.insert("env".to_string(), "prod".to_string());
@@ -466,17 +262,55 @@ mod tests {
                 MetricValue::Gauge { value: 0.85 },
             ),
         ];
-        let ipc_bytes = build_record_batch(&schema, &mut metrics).expect("should build batch");
+        let ipc_bytes = build_ipc_bytes(&mut metrics).expect("should build ipc bytes");
         assert!(metrics.is_empty());
         assert!(!ipc_bytes.is_empty());
 
         let cursor = std::io::Cursor::new(ipc_bytes);
-        let reader =
-            arrow::ipc::reader::StreamReader::try_new(cursor, None).expect("should parse IPC");
+        let reader = StreamReader::try_new(cursor, None).expect("should parse IPC");
         let batches: Vec<_> = reader.into_iter().collect::<Result<_, _>>().unwrap();
         assert_eq!(batches.len(), 1);
         assert_eq!(batches[0].num_rows(), 2);
-        assert_eq!(batches[0].num_columns(), 14);
+
+        // 4 required columns + 4 tag columns (env, extra_tag, host, service)
+        let schema = batches[0].schema();
+        assert_eq!(schema.fields().len(), 8);
+    }
+
+    #[test]
+    fn test_tag_columns_use_bare_names() {
+        let mut tags = MetricTags::default();
+        tags.insert("service".to_string(), "api".to_string());
+        tags.insert("env".to_string(), "staging".to_string());
+
+        let mut metrics = vec![
+            Metric::new(
+                "latency",
+                MetricKind::Absolute,
+                MetricValue::Gauge { value: 1.5 },
+            )
+            .with_tags(Some(tags)),
+        ];
+
+        let ipc_bytes = build_ipc_bytes(&mut metrics).expect("should build ipc bytes");
+        let cursor = std::io::Cursor::new(ipc_bytes);
+        let reader = StreamReader::try_new(cursor, None).expect("should parse IPC");
+        let batch = reader.into_iter().next().unwrap().unwrap();
+
+        let schema = batch.schema();
+        let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
+
+        // Bare names, not tag_service / tag_env.
+        assert!(field_names.contains(&"service"));
+        assert!(field_names.contains(&"env"));
+        assert!(!field_names.contains(&"tag_service"));
+        assert!(!field_names.contains(&"tag_env"));
+
+        // Required columns present.
+        assert!(field_names.contains(&"metric_name"));
+        assert!(field_names.contains(&"metric_type"));
+        assert!(field_names.contains(&"timestamp_secs"));
+        assert!(field_names.contains(&"value"));
     }
 
     #[test]
@@ -486,10 +320,10 @@ mod tests {
             MetricKind::Incremental,
             MetricValue::Counter { value: 1.0 },
         );
-        assert_eq!(encode_metric_type(&counter), MetricType::Sum as u8);
+        assert_eq!(encode_metric_type(&counter), MetricType::Sum);
 
         let gauge = Metric::new("g", MetricKind::Absolute, MetricValue::Gauge { value: 1.0 });
-        assert_eq!(encode_metric_type(&gauge), MetricType::Gauge as u8);
+        assert_eq!(encode_metric_type(&gauge), MetricType::Gauge);
 
         let set = Metric::new(
             "s",
@@ -498,7 +332,7 @@ mod tests {
                 values: ["a".into()].into(),
             },
         );
-        assert_eq!(encode_metric_type(&set), MetricType::Sum as u8);
+        assert_eq!(encode_metric_type(&set), MetricType::Sum);
     }
 
     #[test]
@@ -519,8 +353,24 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_matches_expected_column_count() {
-        let schema = metrics_arrow_schema();
-        assert_eq!(schema.fields().len(), 14);
+    fn test_vector_metric_to_data_point() {
+        let mut tags = MetricTags::default();
+        tags.insert("service".to_string(), "web".to_string());
+        tags.insert("env".to_string(), "prod".to_string());
+
+        let metric = Metric::new(
+            "http.requests",
+            MetricKind::Incremental,
+            MetricValue::Counter { value: 42.0 },
+        )
+        .with_tags(Some(tags));
+
+        let dp = vector_metric_to_data_point(&metric);
+        assert_eq!(dp.metric_name, "http.requests");
+        assert_eq!(dp.metric_type, MetricType::Sum);
+        assert_eq!(dp.value, 42.0);
+        assert_eq!(dp.tags.get("service").map(|s| s.as_str()), Some("web"));
+        assert_eq!(dp.tags.get("env").map(|s| s.as_str()), Some("prod"));
+        assert_eq!(dp.tags.len(), 2);
     }
 }

@@ -20,7 +20,7 @@ arrow = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
-parquet = { workspace = true }
+quickwit-opentelemetry = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
