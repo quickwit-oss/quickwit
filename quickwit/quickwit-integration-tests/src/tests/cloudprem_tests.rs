@@ -991,12 +991,12 @@ async fn test_extra_fts_indexing_and_search() {
     ]))
     .unwrap();
 
-    // Verify PomChi produces ExtraFts with individual fields
+    // Verify PomChi produces ExtraFts with error object and title
     let msg: DatadogLogMsg = serde_json::from_value(docs[0].clone()).unwrap();
     let processed = pomchi::ProcessedLog::from_datadog_log_msg(msg);
     assert!(!processed.extra_fts.is_empty());
     assert_eq!(
-        processed.extra_fts.error_message.as_deref(),
+        processed.extra_fts.error.message.as_deref(),
         Some("connection refused by remote host")
     );
     assert_eq!(
