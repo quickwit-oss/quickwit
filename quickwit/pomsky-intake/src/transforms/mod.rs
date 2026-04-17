@@ -13,6 +13,7 @@
 // limitations under the License.
 
 pub mod explode_trace_spans;
+pub mod metric_metadata;
 pub mod preprocess_log;
 pub mod preprocess_metric;
 pub mod preprocess_trace;
