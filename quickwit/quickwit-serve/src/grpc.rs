@@ -188,10 +188,11 @@ pub(crate) async fn start_grpc_server(
 
         let search_service = services.search_service.clone();
         let grpc_search_service = GrpcSearchAdapter::from(search_service);
+        let max_message_size_bytes = grpc_config.max_search_message_size.0 as usize;
         Some(
             SearchServiceServer::new(grpc_search_service)
-                .max_decoding_message_size(grpc_config.max_message_size.0 as usize)
-                .max_encoding_message_size(grpc_config.max_message_size.0 as usize),
+                .max_decoding_message_size(max_message_size_bytes)
+                .max_encoding_message_size(max_message_size_bytes),
         )
     } else {
         None

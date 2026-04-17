@@ -1026,7 +1026,7 @@ async fn setup_searcher(
     )
     .await?;
     let search_service_clone = search_service.clone();
-    let max_message_size = node_config.grpc_config.max_message_size;
+    let max_message_size = node_config.grpc_config.max_search_message_size;
     let searcher_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let search_service_clone = search_service_clone.clone();
         Box::pin(async move {

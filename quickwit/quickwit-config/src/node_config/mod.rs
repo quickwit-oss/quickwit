@@ -59,6 +59,9 @@ pub struct RestConfig {
 pub struct GrpcConfig {
     #[serde(default = "GrpcConfig::default_max_message_size")]
     pub max_message_size: ByteSize,
+    /// Search server responses can be larger when returning many hits.
+    #[serde(default = "GrpcConfig::default_max_search_message_size")]
+    pub max_search_message_size: ByteSize,
     #[serde(default)]
     pub tls: Option<TlsConfig>,
     // If set, keeps idle connection alive by periodically perform a
@@ -104,6 +107,10 @@ impl GrpcConfig {
         ByteSize::mib(20)
     }
 
+    fn default_max_search_message_size() -> ByteSize {
+        ByteSize::mib(60)
+    }
+
     pub fn validate(&self) -> anyhow::Result<()> {
         ensure!(
             self.max_message_size >= ByteSize::mb(1),
@@ -118,6 +125,7 @@ impl Default for GrpcConfig {
     fn default() -> Self {
         Self {
             max_message_size: Self::default_max_message_size(),
+            max_search_message_size: Self::default_max_search_message_size(),
             tls: None,
             keep_alive: None,
         }
@@ -846,6 +854,7 @@ mod tests {
     fn test_grpc_config_validate() {
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::mb(1),
+            max_search_message_size: ByteSize::mb(1),
             tls: None,
             keep_alive: None,
         };
@@ -853,6 +862,7 @@ mod tests {
 
         let grpc_config = GrpcConfig {
             max_message_size: ByteSize::kb(1),
+            max_search_message_size: ByteSize::kb(1),
             tls: None,
             keep_alive: None,
         };
