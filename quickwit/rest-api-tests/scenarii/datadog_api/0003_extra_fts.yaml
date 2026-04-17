@@ -1,7 +1,8 @@
-# Tests for extra_fts: FTS queries should find text inside
-# custom.error.message, custom.error.stack, and custom.title
-# via the extra_fts JSON field (PomChi populates sub-fields
-# error_message, error_stack, title) indexed with the datadog tokenizer.
+# Tests for extra_fts: FTS queries should find text inside error.message,
+# error.stack, and title via the extra_fts concatenate field.
+# Individual field queries (error.message:*, error.stack:*, title:*) should
+# also work via the explicit object/text field mappings.
+# This is a regression test for type:object + concatenate in Tantivy.
 
 # Step 1: Verify document was ingested
 endpoint: api/v1/datadog/search
@@ -10,30 +11,58 @@ params:
 expected:
   num_hits: 1
 ---
-# Step 2: FTS for a word from error.message
+# Step 2: FTS for a word from error.message via extra_fts (concatenate)
 endpoint: api/v1/datadog/search
 params:
   query: "refused"
 expected:
   num_hits: 1
 ---
-# Step 3: FTS for a word from title
+# Step 3: FTS for a word from title via extra_fts (concatenate)
 endpoint: api/v1/datadog/search
 params:
   query: "crash"
 expected:
   num_hits: 1
 ---
-# Step 4: FTS for a word from error.stack
+# Step 4: FTS for a word from error.stack via extra_fts (concatenate)
 endpoint: api/v1/datadog/search
 params:
   query: "RuntimeError"
 expected:
   num_hits: 1
 ---
-# Step 5: Negative — word not in any field
+# Step 5: Individual field query — error.message
+endpoint: api/v1/datadog/search
+params:
+  query: "error.message:refused"
+expected:
+  num_hits: 1
+---
+# Step 6: Individual field query — error.stack
+endpoint: api/v1/datadog/search
+params:
+  query: "error.stack:RuntimeError"
+expected:
+  num_hits: 1
+---
+# Step 7: Individual field query — title
+endpoint: api/v1/datadog/search
+params:
+  query: "title:crash"
+expected:
+  num_hits: 1
+---
+# Step 8: Negative — word not in any field
 endpoint: api/v1/datadog/search
 params:
   query: "nonexistentword12345"
+expected:
+  num_hits: 0
+---
+# Step 9: Negative — individual field query for nonexistent value
+endpoint: api/v1/datadog/search
+params:
+  query: "error.message:nonexistent"
 expected:
   num_hits: 0
