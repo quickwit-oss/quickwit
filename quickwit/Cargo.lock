@@ -7744,6 +7744,7 @@ dependencies = [
  "clap",
  "futures 0.3.32",
  "quickwit-opentelemetry",
+ "quickwit-parquet-engine",
  "reqwest 0.12.28",
  "serde",
  "serde_yaml",

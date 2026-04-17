@@ -23,6 +23,7 @@ use futures::{FutureExt, StreamExt};
 use quickwit_opentelemetry::otlp::{
     ArrowIpcError, ArrowMetricsBatchBuilder, MetricDataPoint, MetricType, record_batch_to_ipc,
 };
+use quickwit_parquet_engine::schema::REQUIRED_FIELDS;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error};
 use vector::config::{AcknowledgementsConfig, GenerateConfig, Input, SinkConfig, SinkContext};
@@ -178,9 +179,11 @@ impl ArrowIpcMetricsSink {
 // ---------------------------------------------------------------------------
 
 fn vector_metric_to_data_point(metric: &Metric) -> MetricDataPoint {
+    // TODO: this will silently drop tags sent by customers that are in REQUIRED_FIELDS.
     let tags: HashMap<String, String> = match metric.tags() {
         Some(tags) => tags
             .iter_single()
+            .filter(|(k, _)| !REQUIRED_FIELDS.contains(k))
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect(),
         None => HashMap::new(),

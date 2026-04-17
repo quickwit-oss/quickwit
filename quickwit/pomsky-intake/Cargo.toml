@@ -21,6 +21,7 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
+quickwit-parquet-engine = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
