@@ -17,7 +17,7 @@ use std::path::Path;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::io::IoControls;
-use quickwit_common::temp_dir::{self, TempDirectory};
+use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::SplitMetadata;
 use tantivy::Directory;
 use tracing::{debug, info, instrument};
@@ -62,14 +62,13 @@ impl Handler<MergeTask> for MergeSplitDownloader {
         merge_task: MergeTask,
         ctx: &ActorContext<Self>,
     ) -> Result<(), quickwit_actors::ActorExitStatus> {
-        let merge_scratch_directory = temp_dir::Builder::default()
-            .join("merge")
-            .tempdir_in(self.scratch_directory.path())
+        let merge_scratch_directory = self
+            .scratch_directory
+            .named_temp_child("merge")
             .map_err(|error| anyhow::anyhow!(error))?;
         info!(dir=%merge_scratch_directory.path().display(), "download-merge-splits");
-        let downloaded_splits_directory = temp_dir::Builder::default()
-            .join("downloaded-splits")
-            .tempdir_in(merge_scratch_directory.path())
+        let downloaded_splits_directory = merge_scratch_directory
+            .named_temp_child("downloaded-splits")
             .map_err(|error| anyhow::anyhow!(error))?;
         let tantivy_dirs = self
             .download_splits(

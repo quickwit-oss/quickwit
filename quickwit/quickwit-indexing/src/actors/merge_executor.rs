@@ -52,11 +52,28 @@ use crate::models::{
 };
 use crate::soft_delete_query::SoftDeletedDocIdsQuery;
 
+/// The mapping resolution assiated to the merge. To perform deletes a full doc
+/// mapper is required. For regular merges, we only need the tokenizer manager.
+#[derive(Clone)]
+enum MapperContext {
+    TokenizersOnly(quickwit_query::tokenizers::TokenizerManager),
+    DocMapper(Arc<DocMapper>),
+}
+
+impl MapperContext {
+    fn tokenizer_manager(&self) -> quickwit_query::tokenizers::TokenizerManager {
+        match self {
+            MapperContext::TokenizersOnly(tokenizer_manager) => tokenizer_manager.clone(),
+            MapperContext::DocMapper(doc_mapper) => doc_mapper.tokenizer_manager().clone(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct MergeExecutor {
     pipeline_id: MergePipelineId,
     metastore: MetastoreServiceClient,
-    doc_mapper: Arc<DocMapper>,
+    mapper_context: MapperContext,
     io_controls: IoControls,
     merge_packager_mailbox: Mailbox<Packager>,
 }
@@ -364,7 +381,24 @@ impl MergeExecutor {
         MergeExecutor {
             pipeline_id,
             metastore,
-            doc_mapper,
+            mapper_context: MapperContext::DocMapper(doc_mapper),
+            io_controls,
+            merge_packager_mailbox,
+        }
+    }
+
+    /// Creates a simpler MergeExecutor that doesn't support deletes.
+    pub fn new_with_tokenizers_only(
+        pipeline_id: MergePipelineId,
+        metastore: MetastoreServiceClient,
+        tokenizer_manager: quickwit_query::tokenizers::TokenizerManager,
+        io_controls: IoControls,
+        merge_packager_mailbox: Mailbox<Packager>,
+    ) -> Self {
+        MergeExecutor {
+            pipeline_id,
+            metastore,
+            mapper_context: MapperContext::TokenizersOnly(tokenizer_manager),
             io_controls,
             merge_packager_mailbox,
         }
@@ -380,7 +414,7 @@ impl MergeExecutor {
     ) -> anyhow::Result<IndexedSplit> {
         let (union_index_meta, split_directories, per_split_metas) = open_split_directories(
             &tantivy_dirs,
-            self.doc_mapper.tokenizer_manager().tantivy_manager(),
+            self.mapper_context.tokenizer_manager().tantivy_manager(),
         )?;
         // Build a mapping from each segment ID to the soft-deleted doc IDs of its parent split.
         let soft_deleted_docs: HashMap<SegmentId, Vec<DocId>> = per_split_metas
@@ -415,7 +449,7 @@ impl MergeExecutor {
         // splits.
         let merged_index = open_index(
             controlled_directory.clone(),
-            self.doc_mapper.tokenizer_manager().tantivy_manager(),
+            self.mapper_context.tokenizer_manager().tantivy_manager(),
         )?;
         ctx.record_progress();
 
@@ -437,6 +471,9 @@ impl MergeExecutor {
         merge_scratch_directory: TempDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<Option<IndexedSplit>> {
+        let MapperContext::DocMapper(doc_mapper) = &self.mapper_context else {
+            anyhow::bail!("DocMapper is required to process delete and merge operations");
+        };
         let list_delete_tasks_request =
             ListDeleteTasksRequest::new(split.index_uid.clone(), split.delete_opstamp);
         let delete_tasks = ctx
@@ -464,7 +501,7 @@ impl MergeExecutor {
 
         let (union_index_meta, split_directories, per_split_metas) = open_split_directories(
             &tantivy_dirs,
-            self.doc_mapper.tokenizer_manager().tantivy_manager(),
+            doc_mapper.tokenizer_manager().tantivy_manager(),
         )?;
         // Build a mapping from each segment ID to the soft-deleted doc IDs of the input split.
         let soft_deleted_docs: HashMap<SegmentId, Vec<DocId>> =
@@ -487,7 +524,7 @@ impl MergeExecutor {
                     union_index_meta,
                     split_directories,
                     delete_tasks,
-                    doc_mapper_opt: Some(self.doc_mapper.clone()),
+                    doc_mapper_opt: Some(doc_mapper.clone()),
                     soft_deleted_docs,
                 },
                 merge_scratch_directory.path(),
@@ -498,12 +535,7 @@ impl MergeExecutor {
         // This will have the side effect of deleting the directory containing the downloaded split.
         let mut merged_index = Index::open(controlled_directory.clone())?;
         ctx.record_progress();
-        merged_index.set_tokenizers(
-            self.doc_mapper
-                .tokenizer_manager()
-                .tantivy_manager()
-                .clone(),
-        );
+        merged_index.set_tokenizers(doc_mapper.tokenizer_manager().tantivy_manager().clone());
         merged_index.set_fast_field_tokenizers(
             get_quickwit_fastfield_normalizer_manager()
                 .tantivy_manager()
@@ -536,8 +568,7 @@ impl MergeExecutor {
         let uncompressed_docs_size_in_bytes = (num_docs as f32
             * split.uncompressed_docs_size_in_bytes as f32
             / split.num_docs as f32) as u64;
-        let time_range = if let Some(timestamp_field_name) = self.doc_mapper.timestamp_field_name()
-        {
+        let time_range = if let Some(timestamp_field_name) = doc_mapper.timestamp_field_name() {
             let reader = merged_segment_reader
                 .fast_fields()
                 .date(timestamp_field_name)?;
@@ -605,7 +636,7 @@ impl MergeExecutor {
         let union_directory = UnionDirectory::union_of(directory_stack);
         let union_index = open_index(
             union_directory,
-            self.doc_mapper.tokenizer_manager().tantivy_manager(),
+            self.mapper_context.tokenizer_manager().tantivy_manager(),
         )?;
 
         ctx.record_progress();

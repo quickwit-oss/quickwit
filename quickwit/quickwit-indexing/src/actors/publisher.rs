@@ -35,6 +35,7 @@ use crate::source::{SourceActor, SuggestTruncate};
 pub struct PublisherCounters {
     pub num_published_splits: u64,
     pub num_replace_operations: u64,
+    pub num_replaced_splits: u64,
     pub num_empty_splits: u64,
 }
 
@@ -218,6 +219,7 @@ impl Handler<SplitsUpdate> for Publisher {
                 self.counters.num_published_splits += 1;
             } else {
                 self.counters.num_replace_operations += 1;
+                self.counters.num_replaced_splits += replaced_splits.len() as u64;
             }
         } else {
             self.counters.num_empty_splits += 1;
@@ -365,6 +367,7 @@ mod tests {
 
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 1);
+        assert_eq!(publisher_observation.num_replaced_splits, 0);
 
         let suggest_truncate_checkpoints: Vec<SourceCheckpoint> = source_inbox
             .drain_for_test_typed::<SuggestTruncate>()
@@ -441,6 +444,7 @@ mod tests {
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 0);
         assert_eq!(publisher_observation.num_replace_operations, 0);
+        assert_eq!(publisher_observation.num_replaced_splits, 0);
         assert_eq!(publisher_observation.num_empty_splits, 1);
 
         let suggest_truncate_checkpoints: Vec<SourceCheckpoint> = source_inbox
@@ -528,6 +532,7 @@ mod tests {
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 0);
         assert_eq!(publisher_observation.num_replace_operations, 1);
+        assert_eq!(publisher_observation.num_replaced_splits, 2);
         let merge_planner_msgs = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
         assert_eq!(merge_planner_msgs.len(), 1);
         assert_eq!(merge_planner_msgs[0].new_splits.len(), 1);
@@ -568,6 +573,7 @@ mod tests {
 
         let publisher_observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(publisher_observation.num_published_splits, 0);
+        assert_eq!(publisher_observation.num_replaced_splits, 0);
 
         let merger_messages = merge_planner_inbox.drain_for_test();
         assert!(merger_messages.is_empty());
@@ -647,6 +653,7 @@ mod tests {
         // Publish must still succeed despite the race condition (warning is non-fatal).
         let observation = publisher_handle.process_pending_and_observe().await.state;
         assert_eq!(observation.num_replace_operations, 1);
+        assert_eq!(observation.num_replaced_splits, 1);
         universe.assert_quit().await;
     }
 }
