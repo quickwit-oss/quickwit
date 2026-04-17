@@ -29,6 +29,7 @@ pub const SORT_ORDER: &[&str] = &[
     "datacenter",
     "region",
     "host",
+    "timeseries_id",
     "timestamp_secs",
 ];
 
@@ -41,6 +42,7 @@ pub enum ParquetField {
     TimestampSecs,
     StartTimestampSecs,
     Value,
+    TimeseriesId,
     TagService,
     TagEnv,
     TagDatacenter,
@@ -61,6 +63,7 @@ impl ParquetField {
             Self::TimestampSecs => "timestamp_secs",
             Self::StartTimestampSecs => "start_timestamp_secs",
             Self::Value => "value",
+            Self::TimeseriesId => "timeseries_id",
             Self::TagService => "tag_service",
             Self::TagEnv => "tag_env",
             Self::TagDatacenter => "tag_datacenter",
@@ -110,6 +113,8 @@ impl ParquetField {
             Self::TimestampSecs | Self::StartTimestampSecs => DataType::UInt64,
             // Metric value
             Self::Value => DataType::Float64,
+            // Deterministic hash of timeseries identity columns
+            Self::TimeseriesId => DataType::Int64,
             // Plain string for metric unit
             Self::MetricUnit => DataType::Utf8,
             // VARIANT type for semi-structured attributes
@@ -145,6 +150,7 @@ impl ParquetField {
             Self::TimestampSecs,
             Self::StartTimestampSecs,
             Self::Value,
+            Self::TimeseriesId,
             Self::TagService,
             Self::TagEnv,
             Self::TagDatacenter,

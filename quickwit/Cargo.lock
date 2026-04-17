@@ -9212,6 +9212,7 @@ dependencies = [
  "sea-query",
  "serde",
  "serde_json",
+ "siphasher",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -9412,6 +9413,7 @@ dependencies = [
  "mockall",
  "openssl",
  "opentelemetry",
+ "opentelemetry_sdk",
  "pem",
  "percent-encoding",
  "pin-project",
@@ -9466,6 +9468,7 @@ dependencies = [
  "tower-http 0.6.8",
  "tracing 0.1.44",
  "tracing-opentelemetry",
+ "tracing-subscriber",
  "urlencoding",
  "utoipa",
  "warp 0.4.2",
@@ -12843,6 +12846,7 @@ dependencies = [
  "tower 0.5.3",
  "tower-layer",
  "tower-service",
+ "tracing 0.1.44",
 ]
 
 [[package]]

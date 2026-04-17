@@ -73,7 +73,7 @@ pub struct SearchBody {
     #[serde(default)]
     #[serde(deserialize_with = "deserialize_field_sorts")]
     pub sort: Option<Vec<SortField>>,
-    #[serde(default)]
+    #[serde(default, alias = "aggregations")]
     pub aggs: serde_json::Map<String, serde_json::Value>,
     #[serde(default)]
     pub track_total_hits: Option<TrackTotalHits>,
