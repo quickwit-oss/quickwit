@@ -18,6 +18,7 @@ use std::sync::Arc;
 use anyhow::{Context, Ok};
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
+use quickwit_common::pretty::PrettySample;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::search::{
     FetchDocsResponse, PartialHit, SnippetRequest, SplitIdAndFooterOffsets,
@@ -80,14 +81,14 @@ async fn fetch_docs_to_map(
     )
     .await
     .map_err(|error| {
-        let split_ids = splits
+        let split_ids: Vec<&str> = splits
             .iter()
-            .map(|split| split.split_id.clone())
-            .collect_vec();
-        error!(split_ids = ?split_ids, error = ?error, "error when fetching docs in splits");
+            .map(|split| split.split_id.as_str())
+            .collect();
+        error!(num_splits = split_ids.len(), split_ids = ?PrettySample::new(&split_ids, 5), error = ?error, "error when fetching docs in splits");
         anyhow::anyhow!(
             "error when fetching docs for splits {:?}: {:?}",
-            split_ids,
+            PrettySample::new(&split_ids, 5),
             error
         )
     })?;
