@@ -24,9 +24,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 # [0.9.0]
 
+### Breaking / Migration
+- **Ingest V2 is now the default ingest path.** The `/api/v1/{index}/ingest` endpoint transparently routes to V2.
+- The `rest_listen_port` top-level config field is deprecated; use `rest.listen_port` under the new `rest` block. The old field still works but emits a warning.
+- Stemming is now restricted to the `multilang` cargo feature (#6085); the previously bundled generic stemmer is no longer available by default.
+- The unused multilang tokenizer feature was removed (#6154).
+- Metastore format: new `maturity` field and compaction columns on splits; PostgreSQL metastore migrates automatically on first start.
+
 ### Added
-- Add Ingest V2 (#5600, #5566, #5463, #5375, #5350, #5252 #5202)
+- Add Ingest V2 — now the default (#5600, #5566, #5463, #5375, #5350, #5252, #5202, #6078, #6185, #6203, #6207, #6217, #6249)
+- Offload leaf-search work to AWS Lambda functions — searchers can farm out part of their workload to Lambda (#6157, #5c1e60f)
 - Add SQS source (#5374, #5335, #5148)
+- Add Jaeger v2 support (#6023)
+- Extract and propagate W3C `traceparent` header on incoming HTTP requests (#6224)
+- Support configurable OTLP exporter protocol for traces and logs (#6254)
+- Export internal logs via OTLP exporter (#6142)
+- Add `QW_LOG_FORMAT=DDG` JSON log formatter (#6215)
+- Add ES-compatible endpoints for Trino connector support (#6168)
+- Elasticsearch DSL: prefix and wildcard queries (#6000), `case_insensitive` parameter on supported queries (#6005), regexp shorthand, concatenate-fields exposure, and `text` → `keyword` mapping in `_mapping` (#6208), `index_filter` on field capabilities API (#6102), `ignore_unavailable` query parameter (#5971)
+- Make Elasticsearch `TermsQuery` use `TermSetQuery` internally for better performance (#6151)
+- Add composite aggregation (#6214) and aggregations alias (#6314)
+- Add `skip_aggregation_finalization` to `SearchRequest` (#6145)
+- Add `list_index_stats` endpoint (#6035)
+- Add `validate_docs` ingest setting (#5984); validate doc-mapping updates (#5988)
+- Support updating the doc mapper through the API (#5253)
+- Add CORS debug mode (#5955)
+- Add config to fail search when it targets too many splits (#6009)
+- Differentiate leaf- and root-level search timeouts (#6255)
+- Predicate cache in leaf search (#6024); skip CPU work when it cannot improve the result (#6001); propagate cancellation within leaf search (#6002)
+- Set `searcher.warmup_single_split_initial_allocation` default to 300 MB (#c34966c6)
+- Rebalance shards when ingester status changes (#6185) and improved rebalance algorithm (#6018)
+- Add object storage metrics for GCS (#5889)
+- Expose per-shard load configuration and disable the Tokio LIFO slot by default (#5898, #5899)
+- Redact sensitive information in developer API debug output (#6191)
 - Disable control plane check for searcher (#5599, #5360)
 - Partially implement `_elastic/_cluster/health` (#5595)
 - Make Jaeger span attribute-to-tag conversion exhaustive (#5574)
@@ -34,9 +64,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Limit and monitor warmup memory usage (#5568)
 - Add eviction metrics to caches (#5523)
 - Record object storage request latencies (#5521)
-- Add some kind of throttling on the janitor to prevent it from overloading (#5510)
+- Throttle the janitor to prevent overloading the metastore (#5510)
 - Prevent single split searches from different `leaf_search` from interleaving (#5509)
-- Retry on S3 internal error (#5504)
+- Retry on S3 internal error (#5504); make more S3 errors retryable (#5384)
 - Allow specifying OTEL index ID in header (#5503)
 - Add a metric to count storage errors and their error code (#5497)
 - Add support for concatenated fields (#4773, #5369, #5331)
@@ -47,14 +77,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add some additional search metrics (#5447)
 - Improve GC resilience and add metrics (#5420)
 - Enable force shutdown with 2nd Ctrl+C (#5414)
-- Add request_timeout_secs config to searcher config (#5402)
+- Add `request_timeout_secs` to searcher config (#5402)
 - Memoize S3 client (#5377)
 - Add more env var config for Postgres (#5365)
 - Enable str fast field range queries (#5324)
 - Allow querying non-existing fields (#5308)
-- Support updating doc mapper through api (#5253)
 - Add optional special handling for hex in code tokenizer (#5200)
 - Added a circuit breaker layer (#5134)
+- Follow AWS hints for Lambda retries (#6195)
+- Improve cluster sizing documentation for control plane, metastore and janitor (#6202)
 - Various performance optimizations in Tantivy (https://github.com/quickwit-oss/tantivy/blob/main/CHANGELOG.md)
 
 ### Changed
@@ -68,10 +99,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improve merge pipeline finalization (#5475)
 - Allow failed splits in root search (#5440)
 - Batch delete from GC (#5404, #5380)
-- Make some S3 errors retryable (#5384)
 - Change default timestamps in OTEL logs (#5366)
 - Only return root spans for Jaeger HTTP API (#5358)
 - Share aggregation limit on node (#5357)
+- Make regex lenient to start and end anchors (#6089) — *later reverted, see Fixed*
+- Use correct precision level for fastfield-based term queries on datetime (#6027)
+- Disable the Tokio LIFO slot and tune per-shard default load (#5898)
+- Improve control-plane logging (#6003)
+- Upgraded Tantivy to 9b61999 / 04beab3b29 with multiple search/aggregation perf improvements (see Tantivy CHANGELOG)
 
 ### Fixed
 - Fix existence queries for nested fields (#5581)
@@ -86,12 +121,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix configuration interpolation (#5403)
 - Fix jaeger duration parse error (#5518)
 - Fix unit conversion in jaeger http search endpoint (#5519)
+- Fix Kinesis source panic on resharding (#5912)
+- Fix Azure multipart upload data corruption (#5919)
+- Fix leaf list fields merging logic (#5908)
+- Fix empty intermediate aggregation results merge (#5930)
+- Fix error when running a scoring query with cache (#6025)
+- Fix `f64` not working properly with concatenated fields (#6074)
+- Fix wrong range result when datetime was inferred in JSON type (#6048)
+- Fix infinite-loop OOM bug caused by rebalancing shards from unavailable ingesters (#6078)
+- Fix index reincarnation routing bug (#6217)
+- Fix bug when deploying a new routing table (#6249)
+- Fix Chitchat gossip bug triggering excess gRPC traffic (#6082)
+- Revert over-eager anchor lenience in regex queries (#6089)
+- `skip_aggregation_finalization` fixes for composite aggregations
+- Jaeger: query resource attributes when the Jaeger request carries tags
 
 ### Removed
-- Remove support for 2-digit years in java datetime parser (#5596)
-- Remove DocMapper trait (#5508)
-- Remove support for AWS Lambda (#5884)
+- Remove support for 2-digit years in Java datetime parser (#5596)
+- Remove `DocMapper` trait (#5508)
+- Remove standalone AWS Lambda deployment mode — the previous dedicated search/indexing Lambda binaries are gone (#5884). *AWS Lambda is still supported for search offloading; see the Added section.*
 - Remove search stream endpoint (#5886)
+- Remove mentions of the stream API from the docs (#5958)
+- Remove the legacy `/api/v1/{index}/ingest-v2` REST endpoint (V2 is now served from `/ingest` — see Breaking / Migration)
+- Remove the unused multilang tokenizer feature (#6154)
+- Restrict stemming to the `multilang` feature (#6085)
 
 # [0.8.1]
 
