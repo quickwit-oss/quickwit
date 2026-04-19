@@ -13,6 +13,7 @@ members = [
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
+  "quickwit-dst",
   "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
@@ -28,6 +29,7 @@ members = [
   # We can reenable it when we need it.
   # "quickwit-metastore-utils",
   "quickwit-opentelemetry",
+  "quickwit-parquet-engine",
   "quickwit-proto",
   "quickwit-query",
   "quickwit-rest-client",
@@ -63,6 +65,7 @@ default-members = [
   "quickwit-macros",
   "quickwit-metastore",
   "quickwit-opentelemetry",
+  "quickwit-parquet-engine",
   "quickwit-proto",
   "quickwit-query",
   "quickwit-rest-client",
@@ -84,6 +87,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 anyhow = "1"
 arc-swap = "1.8"
+arrow = { version = "57", default-features = false, features = ["ipc"] }
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
@@ -152,6 +156,8 @@ libz-sys = "1.1"
 lru = "0.16"
 matches = "0.1"
 md5 = "0.8"
+metrics = "0.24"
+metrics-exporter-dogstatsd = "0.9"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
@@ -159,15 +165,15 @@ mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a
 new_string_template = "1.5"
 nom = "8.0"
 numfmt = "1.2"
-once_cell = "1"
 oneshot = "0.1"
 openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.1"
 opentelemetry = "0.31"
 opentelemetry-appender-tracing = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
 ouroboros = "0.18"
+parquet = { version = "57", default-features = false, features = ["arrow", "zstd", "snap", "variant_experimental"] }
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
@@ -229,6 +235,7 @@ serde_yaml = "0.9"
 serial_test = { version = "3.2", features = ["file_locks"] }
 sha2 = "0.10"
 siphasher = "1.0"
+stateright = "0.30"
 smallvec = "1"
 sqlx = { version = "0.8", features = [
   "migrate",
@@ -278,6 +285,7 @@ tower-http = { version = "0.6", features = [
   "compression-gzip",
   "compression-zstd",
   "cors",
+  "trace",
 ] }
 tracing = "0.1"
 tracing-opentelemetry = "0.32"
@@ -348,6 +356,7 @@ quickwit-control-plane = { path = "quickwit-control-plane" }
 quickwit-datetime = { path = "quickwit-datetime" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
+quickwit-dst = { path = "quickwit-dst" }
 quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }
@@ -359,6 +368,7 @@ quickwit-lambda-server = { path = "quickwit-lambda-server" }
 quickwit-macros = { path = "quickwit-macros" }
 quickwit-metastore = { path = "quickwit-metastore" }
 quickwit-opentelemetry = { path = "quickwit-opentelemetry" }
+quickwit-parquet-engine = { path = "quickwit-parquet-engine" }
 quickwit-proto = { path = "quickwit-proto" }
 quickwit-query = { path = "quickwit-query" }
 quickwit-rest-client = { path = "quickwit-rest-client" }
@@ -367,7 +377,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 quickwit-telemetry = { path = "quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "545169c0d8", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "58aa4b7", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

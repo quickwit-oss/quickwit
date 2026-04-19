@@ -103,7 +103,7 @@ impl ShardConsumer {
         }
     }
 
-    pub fn spawn(self, ctx: &SourceContext) -> ShardConsumerHandle {
+    pub fn spawn<P: crate::actors::Processor>(self, ctx: &SourceContext<P>) -> ShardConsumerHandle {
         let (_mailbox, _actor_handle) = ctx.spawn_actor().spawn(self);
         ShardConsumerHandle {
             _mailbox,

@@ -34,7 +34,6 @@ humantime = { workspace = true }
 indicatif = { workspace = true }
 itertools = { workspace = true }
 numfmt = { workspace = true }
-once_cell = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
 opentelemetry-appender-tracing = { workspace = true }
@@ -56,10 +55,14 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
 
+metrics = { workspace = true }
+metrics-exporter-dogstatsd = { workspace = true }
+
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
+quickwit-dst = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest = { workspace = true }
@@ -79,6 +82,7 @@ quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]

@@ -23,6 +23,7 @@ use quickwit_actors::{
 use serde_json::{Value as JsonValue, json};
 
 use super::Queue;
+use crate::actors::Processor;
 use crate::source::SourceContext;
 
 #[derive(Debug, Clone)]
@@ -80,8 +81,8 @@ pub(super) struct VisibilityTaskHandle {
 /// (represented by its ack_id) is extended when required. We prefer applying
 /// ample margins in the extension process to avoid missing deadlines while also
 /// keeping the number of extension requests (and associated cost) small.
-pub(super) fn spawn_visibility_task(
-    ctx: &SourceContext,
+pub(super) fn spawn_visibility_task<P: Processor>(
+    ctx: &SourceContext<P>,
     queue: Arc<dyn Queue>,
     ack_id: String,
     current_deadline: Instant,

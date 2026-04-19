@@ -35,7 +35,7 @@ use tracing::{info, warn};
 
 use super::api::list_shards;
 use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMessage};
-use crate::actors::DocProcessor;
+use crate::actors::Processor;
 use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
@@ -131,9 +131,9 @@ impl KinesisSource {
         Ok(kinesis_source)
     }
 
-    fn spawn_shard_consumer(
+    fn spawn_shard_consumer<Q: crate::actors::Processor>(
         &mut self,
-        ctx: &SourceContext,
+        ctx: &SourceContext<Q>,
         shard_id: ShardId,
         checkpoint: &SourceCheckpoint,
     ) {
@@ -185,11 +185,11 @@ impl KinesisSource {
 }
 
 #[async_trait]
-impl Source for KinesisSource {
+impl<P: Processor> Source<P> for KinesisSource {
     async fn initialize(
         &mut self,
-        _doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        _processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<(), ActorExitStatus> {
         let shards = ctx
             .protect_future(list_shards(
@@ -218,8 +218,8 @@ impl Source for KinesisSource {
 
     async fn emit_batches(
         &mut self,
-        indexer_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        indexer_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Kinesis);
         let deadline = time::sleep(*EMIT_BATCHES_TIMEOUT);
@@ -375,6 +375,7 @@ mod tests {
     use quickwit_proto::types::IndexUid;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
     use crate::source::kinesis::helpers::tests::{
@@ -404,7 +405,8 @@ mod tests {
         use crate::source::kinesis::helpers::tests::wait_for_active_stream;
 
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, _doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, _doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let (kinesis_client, stream_name) = setup("test-resharding-split", 1).await.unwrap();
         let index_id = "test-kinesis-resharding-index";
         let index_uid = IndexUid::new_with_random_ulid(index_id);
@@ -443,7 +445,7 @@ mod tests {
 
         let actor = SourceActor {
             source: Box::new(kinesis_source),
-            doc_processor_mailbox: doc_processor_mailbox.clone(),
+            processor_mailbox: doc_processor_mailbox.clone(),
         };
         let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
         let (exit_status, _exit_state) = handle.join().await;
@@ -456,7 +458,8 @@ mod tests {
     #[tokio::test]
     async fn test_kinesis_source() {
         let universe = Universe::with_accelerated_time();
-        let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+        let (doc_processor_mailbox, doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
         let (kinesis_client, stream_name) = setup("test-kinesis-source", 3).await.unwrap();
         let index_id = "test-kinesis-index";
         let index_uid = IndexUid::new_with_random_ulid(index_id);
@@ -477,7 +480,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
+                processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
@@ -530,7 +533,7 @@ mod tests {
                     .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
+                processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;
@@ -600,7 +603,7 @@ mod tests {
                 .unwrap();
             let actor = SourceActor {
                 source: Box::new(kinesis_source),
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
+                processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
             let (exit_status, exit_state) = handle.join().await;

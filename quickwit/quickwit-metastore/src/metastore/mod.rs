@@ -33,18 +33,134 @@ use quickwit_config::{
     SearchSettings, SourceConfig, SourceParams,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+use quickwit_parquet_engine::split::{MetricsSplitMetadata, MetricsSplitRecord};
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask, IndexMetadataFailure,
     IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
-    ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
-    PublishSplitsRequest, StageSplitsRequest, UpdateIndexRequest, UpdateSourceRequest, serde_utils,
+    ListIndexesMetadataResponse, ListMetricsSplitsRequest, ListMetricsSplitsResponse,
+    ListSplitsRequest, ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, MetastoreServiceStream, PublishMetricsSplitsRequest,
+    PublishSplitsRequest, StageMetricsSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
+    UpdateSourceRequest, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
+use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
+
+/// Query parameters for listing metrics splits.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListMetricsSplitsQuery {
+    /// Index UID to filter by (required).
+    pub index_uid: IndexUid,
+    /// Split states to include.
+    #[serde(default)]
+    pub split_states: Vec<SplitState>,
+    /// The time range to filter by.
+    pub time_range: FilterRange<i64>,
+    /// Metric names to filter by (any match).
+    #[serde(default)]
+    pub metric_names: Vec<String>,
+    /// Service tag filter.
+    pub tag_service: Option<String>,
+    /// Environment tag filter.
+    pub tag_env: Option<String>,
+    /// Datacenter tag filter.
+    pub tag_datacenter: Option<String>,
+    /// Region tag filter.
+    pub tag_region: Option<String>,
+    /// Host tag filter.
+    pub tag_host: Option<String>,
+    /// Sort fields filter for compaction scope queries.
+    pub sort_fields: Option<String>,
+    /// A specific node ID to filter by.
+    pub node_id: Option<NodeId>,
+    /// The delete opstamp range to filter by.
+    pub delete_opstamp: FilterRange<u64>,
+    /// The update timestamp range to filter by.
+    pub update_timestamp: FilterRange<i64>,
+    /// The create timestamp range to filter by.
+    pub create_timestamp: FilterRange<i64>,
+    /// The datetime at which you include or exclude mature splits.
+    pub mature: Bound<OffsetDateTime>,
+    /// Limit number of results.
+    pub limit: Option<usize>,
+}
+
+impl Default for ListMetricsSplitsQuery {
+    fn default() -> Self {
+        Self {
+            index_uid: IndexUid::default(),
+            split_states: Vec::new(),
+            time_range: Default::default(),
+            metric_names: Vec::new(),
+            tag_service: None,
+            tag_env: None,
+            tag_datacenter: None,
+            tag_region: None,
+            tag_host: None,
+            sort_fields: None,
+            node_id: None,
+            delete_opstamp: Default::default(),
+            update_timestamp: Default::default(),
+            create_timestamp: Default::default(),
+            mature: Bound::Unbounded,
+            limit: None,
+        }
+    }
+}
+
+impl ListMetricsSplitsQuery {
+    /// Creates a query for all splits in an index.
+    pub fn for_index(index_uid: impl Into<IndexUid>) -> Self {
+        Self {
+            index_uid: index_uid.into(),
+            split_states: vec![SplitState::Published],
+            ..Default::default()
+        }
+    }
+
+    /// Filter by split states.
+    pub fn with_split_states(mut self, states: impl AsRef<[SplitState]>) -> Self {
+        self.split_states = states.as_ref().to_vec();
+        self
+    }
+
+    /// Filter by time range (inclusive on both ends).
+    pub fn with_time_range_start_gte(mut self, v: i64) -> Self {
+        self.time_range.start = Bound::Included(v);
+        self
+    }
+
+    /// Filter by time range (inclusive on both ends).
+    pub fn with_time_range_end_lte(mut self, v: i64) -> Self {
+        self.time_range.end = Bound::Included(v);
+        self
+    }
+
+    /// Filter by metric names.
+    pub fn with_metric_names(mut self, names: Vec<String>) -> Self {
+        self.metric_names = names;
+        self
+    }
+
+    /// Filter by compaction scope: splits whose window intersects
+    /// `[window_start, window_start + window_duration_secs)` and whose
+    /// sort_fields match exactly.
+    pub fn with_compaction_scope(
+        mut self,
+        window_start: i64,
+        window_duration_secs: u32,
+        sort_fields: impl Into<String>,
+    ) -> Self {
+        self.time_range.start = Bound::Included(window_start);
+        self.time_range.end = Bound::Excluded(window_start + window_duration_secs as i64);
+        self.sort_fields = Some(sort_fields.into());
+        self
+    }
+}
 
 /// Splits batch size returned by the stream splits API
 pub(crate) const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
@@ -586,6 +702,22 @@ impl PublishSplitsRequestExt for PublishSplitsRequest {
     }
 }
 
+/// Helper trait for [`PublishMetricsSplitsRequest`] to deserialize its payload.
+pub trait PublishMetricsSplitsRequestExt {
+    /// Deserializes the `index_checkpoint_delta_json_opt` field of a
+    /// [`PublishMetricsSplitsRequest`] into an [`Option<IndexCheckpointDelta>`].
+    fn deserialize_index_checkpoint(&self) -> MetastoreResult<Option<IndexCheckpointDelta>>;
+}
+
+impl PublishMetricsSplitsRequestExt for PublishMetricsSplitsRequest {
+    fn deserialize_index_checkpoint(&self) -> MetastoreResult<Option<IndexCheckpointDelta>> {
+        self.index_checkpoint_delta_json_opt
+            .as_ref()
+            .map(|value| serde_utils::from_json_str(value))
+            .transpose()
+    }
+}
+
 #[async_trait]
 impl ListSplitsResponseExt for ListSplitsResponse {
     fn empty() -> Self {
@@ -627,6 +759,123 @@ impl ListSplitsResponseExt for ListSplitsResponse {
             .map(|split| split.split_metadata.split_id)
             .collect();
         Ok(split_ids)
+    }
+}
+
+// =====================================================
+// Metrics Splits Extension Traits
+// =====================================================
+
+/// Helper trait to build a [`StageMetricsSplitsRequest`].
+pub trait StageMetricsSplitsRequestExt {
+    /// Creates a new [`StageMetricsSplitsRequest`] from an index UID and split metadata.
+    fn try_from_splits_metadata(
+        index_uid: impl Into<IndexUid>,
+        splits_metadata: &[MetricsSplitMetadata],
+    ) -> MetastoreResult<StageMetricsSplitsRequest>;
+
+    /// Deserializes the splits metadata.
+    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<MetricsSplitMetadata>>;
+}
+
+impl StageMetricsSplitsRequestExt for StageMetricsSplitsRequest {
+    fn try_from_splits_metadata(
+        index_uid: impl Into<IndexUid>,
+        splits_metadata: &[MetricsSplitMetadata],
+    ) -> MetastoreResult<StageMetricsSplitsRequest> {
+        let splits_metadata_json = splits_metadata
+            .iter()
+            .map(serde_utils::to_json_str)
+            .collect::<MetastoreResult<Vec<String>>>()?;
+        Ok(StageMetricsSplitsRequest {
+            index_uid: Some(index_uid.into()),
+            splits_metadata_json,
+        })
+    }
+
+    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<MetricsSplitMetadata>> {
+        self.splits_metadata_json
+            .iter()
+            .map(|s| serde_utils::from_json_str(s))
+            .collect()
+    }
+}
+
+/// Helper trait to build a [`ListMetricsSplitsRequest`].
+pub trait ListMetricsSplitsRequestExt {
+    /// Creates a new [`ListMetricsSplitsRequest`] from an index UID.
+    fn for_index(index_uid: impl Into<IndexUid>) -> MetastoreResult<ListMetricsSplitsRequest>;
+
+    /// Creates a new [`ListMetricsSplitsRequest`] from an index UID and query.
+    fn try_from_query(
+        index_uid: impl Into<IndexUid>,
+        query: &ListMetricsSplitsQuery,
+    ) -> MetastoreResult<ListMetricsSplitsRequest>;
+
+    /// Deserializes the `query_json` field.
+    fn deserialize_query(&self) -> MetastoreResult<ListMetricsSplitsQuery>;
+}
+
+impl ListMetricsSplitsRequestExt for ListMetricsSplitsRequest {
+    fn for_index(index_uid: impl Into<IndexUid>) -> MetastoreResult<ListMetricsSplitsRequest> {
+        let index_uid = index_uid.into();
+        let query = ListMetricsSplitsQuery::for_index(index_uid.clone());
+        Self::try_from_query(index_uid, &query)
+    }
+
+    fn try_from_query(
+        index_uid: impl Into<IndexUid>,
+        query: &ListMetricsSplitsQuery,
+    ) -> MetastoreResult<ListMetricsSplitsRequest> {
+        let query_json = serde_utils::to_json_str(query)?;
+        Ok(ListMetricsSplitsRequest {
+            index_uid: Some(index_uid.into()),
+            query_json,
+        })
+    }
+
+    fn deserialize_query(&self) -> MetastoreResult<ListMetricsSplitsQuery> {
+        serde_utils::from_json_str(&self.query_json)
+    }
+}
+
+/// Helper trait to build and deserialize [`ListMetricsSplitsResponse`].
+pub trait ListMetricsSplitsResponseExt {
+    /// Creates an empty response.
+    fn empty() -> Self;
+
+    /// Creates a response from a list of splits.
+    fn try_from_splits(splits: &[MetricsSplitRecord])
+    -> MetastoreResult<ListMetricsSplitsResponse>;
+
+    /// Deserializes the splits in the response.
+    fn deserialize_splits(&self) -> MetastoreResult<Vec<MetricsSplitRecord>>;
+}
+
+impl ListMetricsSplitsResponseExt for ListMetricsSplitsResponse {
+    fn empty() -> Self {
+        Self {
+            splits_serialized_json: Vec::new(),
+        }
+    }
+
+    fn try_from_splits(
+        splits: &[MetricsSplitRecord],
+    ) -> MetastoreResult<ListMetricsSplitsResponse> {
+        let splits_serialized_json = splits
+            .iter()
+            .map(serde_utils::to_json_str)
+            .collect::<MetastoreResult<Vec<String>>>()?;
+        Ok(ListMetricsSplitsResponse {
+            splits_serialized_json,
+        })
+    }
+
+    fn deserialize_splits(&self) -> MetastoreResult<Vec<MetricsSplitRecord>> {
+        self.splits_serialized_json
+            .iter()
+            .map(|s| serde_utils::from_json_str(s))
+            .collect()
     }
 }
 

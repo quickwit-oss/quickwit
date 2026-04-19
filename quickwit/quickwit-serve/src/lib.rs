@@ -35,6 +35,7 @@ mod openapi;
 mod otlp_api;
 mod rate_modulator;
 mod rest;
+mod rest_api_request_span;
 mod rest_api_response;
 mod search_api;
 pub(crate) mod simple_list;
@@ -47,7 +48,7 @@ use std::convert::Infallible;
 use std::fs;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use anyhow::{Context, bail};
@@ -56,7 +57,6 @@ pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
     Cluster, ClusterChange, ClusterChangeStream, ClusterNode, ListenerHandle, start_cluster_service,
@@ -155,25 +155,25 @@ fn get_metastore_client_max_concurrency() -> usize {
     )
 }
 
-static CP_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "client"));
-static CP_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "server"));
+static CP_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "client"));
+static CP_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "server"));
 
-static INDEXING_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "client"));
-pub(crate) static INDEXING_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "server"));
+static INDEXING_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("indexing", "client"));
+pub(crate) static INDEXING_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("indexing", "server"));
 
-static INGEST_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "client"));
-static INGEST_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "server"));
+static INGEST_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("ingest", "client"));
+static INGEST_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("ingest", "server"));
 
-static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "client"));
-static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
+static METASTORE_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "client"));
+static METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "server"));
 
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -679,15 +679,13 @@ pub async fn serve_quickwit(
     .context("failed to start searcher service")?;
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
-    // throughput. Ingesters (routers) do so to update their shard table.
-    let local_shards_update_listener_handle_opt = if node_config
-        .is_service_enabled(QuickwitService::ControlPlane)
-        || node_config.is_service_enabled(QuickwitService::Indexer)
-    {
-        Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
-    } else {
-        None
-    };
+    // throughput.
+    let local_shards_update_listener_handle_opt =
+        if node_config.is_service_enabled(QuickwitService::ControlPlane) {
+            Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
+        } else {
+            None
+        };
 
     let report_splits_subscription_handle_opt =
         // DISCLAIMER: This is quirky here: We base our decision to forward the split report depending

@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::fmt::{self, Write};
+use std::ops::Bound;
 use std::str::FromStr;
 use std::time::Duration;
 
@@ -30,22 +31,25 @@ use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexStats, IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexStatsRequest, ListIndexStatsResponse,
-    ListIndexTemplatesRequest, ListIndexTemplatesResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListShardsSubresponse,
-    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
+    EntityKind, FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse,
+    GetClusterIdentityRequest, GetClusterIdentityResponse, GetIndexTemplateRequest,
+    GetIndexTemplateResponse, IndexMetadataFailure, IndexMetadataFailureReason,
+    IndexMetadataRequest, IndexMetadataResponse, IndexStats, IndexTemplateMatch,
+    IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
+    ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListMetricsSplitsRequest, ListMetricsSplitsResponse, ListShardsRequest, ListShardsResponse,
+    ListShardsSubresponse, ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest,
+    MarkMetricsSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
     OpenShardSubresponse, OpenShardsRequest, OpenShardsResponse, PruneShardsRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SplitStats, StageSplitsRequest,
-    ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse, serde_utils,
+    PublishMetricsSplitsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest, SplitStats,
+    StageMetricsSplitsRequest, StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest,
+    UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid, Position, PublishToken, ShardId, SourceId};
 use sea_query::{Alias, Asterisk, Expr, Func, PostgresQueryBuilder, Query, UnionType};
@@ -72,7 +76,8 @@ use crate::file_backed::MutationOccurred;
 use crate::metastore::postgres::model::Shards;
 use crate::metastore::postgres::utils::split_maturity_timestamp;
 use crate::metastore::{
-    IndexesMetadataResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    IndexesMetadataResponseExt, ListMetricsSplitsResponseExt, PublishMetricsSplitsRequestExt,
+    PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE, StageMetricsSplitsRequestExt,
     UpdateSourceRequestExt, use_shard_api,
 };
 use crate::{
@@ -1762,6 +1767,957 @@ impl MetastoreService for PostgresqlMetastore {
         .fetch_one(&self.connection_pool)
         .await?;
         Ok(GetClusterIdentityResponse { uuid })
+    }
+
+    // Metrics Splits API
+
+    async fn stage_metrics_splits(
+        &self,
+        request: StageMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        use quickwit_parquet_engine::split::{
+            InsertableMetricsSplit, MetricsSplitMetadata, MetricsSplitState,
+        };
+
+        let index_uid = request.index_uid().clone();
+
+        // Deserialize the splits metadata
+        let splits_metadata: Vec<MetricsSplitMetadata> = request.deserialize_splits_metadata()?;
+
+        if splits_metadata.is_empty() {
+            return Ok(EmptyResponse {});
+        }
+
+        // Convert to insertable rows - use JSON strings for array fields due to sqlx limitations
+        let mut split_ids = Vec::with_capacity(splits_metadata.len());
+        let mut split_states = Vec::with_capacity(splits_metadata.len());
+        let mut index_uids = Vec::with_capacity(splits_metadata.len());
+        let mut time_range_starts = Vec::with_capacity(splits_metadata.len());
+        let mut time_range_ends = Vec::with_capacity(splits_metadata.len());
+        let mut metric_names_json = Vec::with_capacity(splits_metadata.len());
+        let mut tag_service_json = Vec::with_capacity(splits_metadata.len());
+        let mut tag_env_json = Vec::with_capacity(splits_metadata.len());
+        let mut tag_datacenter_json = Vec::with_capacity(splits_metadata.len());
+        let mut tag_region_json = Vec::with_capacity(splits_metadata.len());
+        let mut tag_host_json = Vec::with_capacity(splits_metadata.len());
+        let mut high_card_tag_keys_json = Vec::with_capacity(splits_metadata.len());
+        let mut num_rows_list = Vec::with_capacity(splits_metadata.len());
+        let mut size_bytes_list = Vec::with_capacity(splits_metadata.len());
+        let mut split_metadata_jsons = Vec::with_capacity(splits_metadata.len());
+        let mut window_starts: Vec<Option<i64>> = Vec::with_capacity(splits_metadata.len());
+        let mut window_duration_secs_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
+        let mut sort_fields_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
+        let mut num_merge_ops_list: Vec<i32> = Vec::with_capacity(splits_metadata.len());
+        let mut row_keys_list: Vec<Option<Vec<u8>>> = Vec::with_capacity(splits_metadata.len());
+        let mut zonemap_regexes_json_list: Vec<String> = Vec::with_capacity(splits_metadata.len());
+
+        for metadata in &splits_metadata {
+            let insertable =
+                InsertableMetricsSplit::from_metadata(metadata, MetricsSplitState::Staged)
+                    .map_err(|e| MetastoreError::JsonSerializeError {
+                        struct_name: "MetricsSplitMetadata".to_string(),
+                        message: e.to_string(),
+                    })?;
+
+            split_ids.push(insertable.split_id);
+            split_states.push(insertable.split_state);
+            index_uids.push(insertable.index_uid);
+            time_range_starts.push(insertable.time_range_start);
+            time_range_ends.push(insertable.time_range_end);
+            // Convert array fields to JSON strings (owned)
+            let json_err = |e: serde_json::Error| MetastoreError::JsonSerializeError {
+                struct_name: "MetricsSplitMetadata".to_string(),
+                message: e.to_string(),
+            };
+            metric_names_json
+                .push(serde_json::to_string(&insertable.metric_names).map_err(json_err)?);
+            tag_service_json
+                .push(serde_json::to_string(&insertable.tag_service).map_err(json_err)?);
+            tag_env_json.push(serde_json::to_string(&insertable.tag_env).map_err(json_err)?);
+            tag_datacenter_json
+                .push(serde_json::to_string(&insertable.tag_datacenter).map_err(json_err)?);
+            tag_region_json.push(serde_json::to_string(&insertable.tag_region).map_err(json_err)?);
+            tag_host_json.push(serde_json::to_string(&insertable.tag_host).map_err(json_err)?);
+            high_card_tag_keys_json.push(
+                serde_json::to_string(&insertable.high_cardinality_tag_keys).map_err(json_err)?,
+            );
+            num_rows_list.push(insertable.num_rows);
+            size_bytes_list.push(insertable.size_bytes);
+            split_metadata_jsons.push(insertable.split_metadata_json);
+            window_starts.push(insertable.window_start);
+            window_duration_secs_list.push(insertable.window_duration_secs);
+            sort_fields_list.push(insertable.sort_fields);
+            num_merge_ops_list.push(insertable.num_merge_ops);
+            row_keys_list.push(insertable.row_keys);
+            zonemap_regexes_json_list.push(insertable.zonemap_regexes.to_string());
+        }
+
+        info!(
+            index_uid = %request.index_uid(),
+            num_splits = split_ids.len(),
+            "staging metrics splits"
+        );
+
+        // Insert into metrics_splits table using JSON for array fields
+        const STAGE_METRICS_SPLITS_QUERY: &str = r#"
+            INSERT INTO metrics_splits (
+                split_id,
+                split_state,
+                index_uid,
+                time_range_start,
+                time_range_end,
+                metric_names,
+                tag_service,
+                tag_env,
+                tag_datacenter,
+                tag_region,
+                tag_host,
+                high_cardinality_tag_keys,
+                num_rows,
+                size_bytes,
+                split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes,
+                create_timestamp,
+                update_timestamp
+            )
+            SELECT
+                split_id,
+                split_state,
+                index_uid,
+                time_range_start,
+                time_range_end,
+                ARRAY(SELECT json_array_elements_text(metric_names_json::json)),
+                CASE WHEN tag_service_json::text = 'null' THEN NULL
+                     ELSE ARRAY(SELECT json_array_elements_text(tag_service_json::json)) END,
+                CASE WHEN tag_env_json::text = 'null' THEN NULL
+                     ELSE ARRAY(SELECT json_array_elements_text(tag_env_json::json)) END,
+                CASE WHEN tag_datacenter_json::text = 'null' THEN NULL
+                     ELSE ARRAY(SELECT json_array_elements_text(tag_datacenter_json::json)) END,
+                CASE WHEN tag_region_json::text = 'null' THEN NULL
+                     ELSE ARRAY(SELECT json_array_elements_text(tag_region_json::json)) END,
+                CASE WHEN tag_host_json::text = 'null' THEN NULL
+                     ELSE ARRAY(SELECT json_array_elements_text(tag_host_json::json)) END,
+                ARRAY(SELECT json_array_elements_text(high_cardinality_tag_keys_json::json)),
+                num_rows,
+                size_bytes,
+                split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes_json::jsonb,
+                (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+                (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            FROM UNNEST(
+                $1::text[],
+                $2::text[],
+                $3::text[],
+                $4::bigint[],
+                $5::bigint[],
+                $6::text[],
+                $7::text[],
+                $8::text[],
+                $9::text[],
+                $10::text[],
+                $11::text[],
+                $12::text[],
+                $13::bigint[],
+                $14::bigint[],
+                $15::text[],
+                $16::bigint[],
+                $17::int[],
+                $18::text[],
+                $19::int[],
+                $20::bytea[],
+                $21::text[]
+            ) AS staged(
+                split_id,
+                split_state,
+                index_uid,
+                time_range_start,
+                time_range_end,
+                metric_names_json,
+                tag_service_json,
+                tag_env_json,
+                tag_datacenter_json,
+                tag_region_json,
+                tag_host_json,
+                high_cardinality_tag_keys_json,
+                num_rows,
+                size_bytes,
+                split_metadata_json,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes_json
+            )
+            ON CONFLICT (split_id) DO UPDATE
+                SET
+                    split_state = EXCLUDED.split_state,
+                    time_range_start = EXCLUDED.time_range_start,
+                    time_range_end = EXCLUDED.time_range_end,
+                    metric_names = EXCLUDED.metric_names,
+                    tag_service = EXCLUDED.tag_service,
+                    tag_env = EXCLUDED.tag_env,
+                    tag_datacenter = EXCLUDED.tag_datacenter,
+                    tag_region = EXCLUDED.tag_region,
+                    tag_host = EXCLUDED.tag_host,
+                    high_cardinality_tag_keys = EXCLUDED.high_cardinality_tag_keys,
+                    num_rows = EXCLUDED.num_rows,
+                    size_bytes = EXCLUDED.size_bytes,
+                    split_metadata_json = EXCLUDED.split_metadata_json,
+                    window_start = EXCLUDED.window_start,
+                    window_duration_secs = EXCLUDED.window_duration_secs,
+                    sort_fields = EXCLUDED.sort_fields,
+                    num_merge_ops = EXCLUDED.num_merge_ops,
+                    row_keys = EXCLUDED.row_keys,
+                    zonemap_regexes = EXCLUDED.zonemap_regexes,
+                    update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                WHERE metrics_splits.split_state = 'Staged'
+            RETURNING split_id
+        "#;
+
+        let split_ids_snapshot = split_ids.clone();
+        let index_id_for_err = index_uid.index_id.clone();
+        let upserted_split_ids: Vec<String> =
+            run_with_tx!(self.connection_pool, tx, "stage metrics splits", {
+                sqlx::query_scalar(STAGE_METRICS_SPLITS_QUERY)
+                    .bind(&split_ids)
+                    .bind(&split_states)
+                    .bind(&index_uids)
+                    .bind(&time_range_starts)
+                    .bind(&time_range_ends)
+                    .bind(&metric_names_json)
+                    .bind(&tag_service_json)
+                    .bind(&tag_env_json)
+                    .bind(&tag_datacenter_json)
+                    .bind(&tag_region_json)
+                    .bind(&tag_host_json)
+                    .bind(&high_card_tag_keys_json)
+                    .bind(&num_rows_list)
+                    .bind(&size_bytes_list)
+                    .bind(&split_metadata_jsons)
+                    .bind(&window_starts)
+                    .bind(&window_duration_secs_list)
+                    .bind(&sort_fields_list)
+                    .bind(&num_merge_ops_list)
+                    .bind(&row_keys_list)
+                    .bind(&zonemap_regexes_json_list)
+                    .fetch_all(tx.as_mut())
+                    .await
+                    .map_err(|sqlx_error| convert_sqlx_err(&index_id_for_err, sqlx_error))
+            })?;
+
+        if upserted_split_ids.len() != split_ids_snapshot.len() {
+            let failed_split_ids: Vec<String> = split_ids_snapshot
+                .into_iter()
+                .filter(|split_id| !upserted_split_ids.contains(split_id))
+                .collect();
+            let entity = EntityKind::Splits {
+                split_ids: failed_split_ids.clone(),
+            };
+            let message = "splits are not in the Staged state".to_string();
+            warn!(
+                %index_uid,
+                failed_split_ids = ?failed_split_ids,
+                "failed to stage some metrics splits"
+            );
+            return Err(MetastoreError::FailedPrecondition { entity, message });
+        }
+
+        info!(
+            %index_uid,
+            num_staged = upserted_split_ids.len(),
+            "staged metrics splits successfully"
+        );
+        Ok(EmptyResponse {})
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn publish_metrics_splits(
+        &self,
+        request: PublishMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let checkpoint_delta_opt: Option<IndexCheckpointDelta> =
+            request.deserialize_index_checkpoint()?;
+        let index_uid = request.index_uid().clone();
+        let staged_split_ids = request.staged_split_ids;
+        let replaced_split_ids = request.replaced_split_ids;
+
+        info!(
+            %index_uid,
+            staged_splits = staged_split_ids.len(),
+            replaced_splits = replaced_split_ids.len(),
+            "publishing metrics splits"
+        );
+
+        run_with_tx!(self.connection_pool, tx, "publish metrics splits", {
+            let mut index_metadata = index_metadata(tx, &index_uid.index_id, true).await?;
+            let index_uid = index_metadata.index_uid.clone();
+
+            if let Some(checkpoint_delta) = checkpoint_delta_opt {
+                let source_id = checkpoint_delta.source_id.clone();
+                let source = index_metadata.sources.get(&source_id).ok_or_else(|| {
+                    MetastoreError::NotFound(EntityKind::Source {
+                        index_id: index_uid.index_id.to_string(),
+                        source_id: source_id.to_string(),
+                    })
+                })?;
+
+                if use_shard_api(&source.source_params) {
+                    let publish_token = request.publish_token_opt.ok_or_else(|| {
+                        let message = format!(
+                            "publish token is required for publishing splits for source \
+                             `{source_id}`"
+                        );
+                        MetastoreError::InvalidArgument { message }
+                    })?;
+                    try_apply_delta_v2(
+                        tx,
+                        &index_uid,
+                        &source_id,
+                        checkpoint_delta.source_delta,
+                        publish_token,
+                    )
+                    .await?;
+                } else {
+                    index_metadata
+                        .checkpoint
+                        .try_apply_delta(checkpoint_delta)
+                        .map_err(|error| {
+                            let entity = EntityKind::CheckpointDelta {
+                                index_id: index_uid.index_id.to_string(),
+                                source_id,
+                            };
+                            let message = error.to_string();
+                            MetastoreError::FailedPrecondition { entity, message }
+                        })?;
+                }
+            }
+            let index_metadata_json = serde_utils::to_json_str(&index_metadata)?;
+
+            // Publish staged splits, mark replaced splits for deletion, and update
+            // index metadata (checkpoint) atomically.
+            const PUBLISH_METRICS_SPLITS_QUERY: &str = r#"
+                WITH publish AS (
+                    UPDATE metrics_splits
+                    SET
+                        split_state = 'Published',
+                        update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                    WHERE
+                        index_uid = $1
+                        AND split_id = ANY($3)
+                        AND split_state = 'Staged'
+                    RETURNING split_id
+                ),
+                mark_for_deletion AS (
+                    UPDATE metrics_splits
+                    SET
+                        split_state = 'MarkedForDeletion',
+                        update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+                    WHERE
+                        index_uid = $1
+                        AND split_id = ANY($4)
+                        AND split_state = 'Published'
+                    RETURNING split_id
+                ),
+                updated_index_metadata AS (
+                    UPDATE indexes
+                    SET
+                        index_metadata_json = $2
+                    WHERE
+                        index_uid = $1
+                )
+                SELECT
+                    (SELECT COUNT(*) FROM publish) as published_count,
+                    (SELECT COUNT(*) FROM mark_for_deletion) as marked_count
+            "#;
+
+            let (published_count, marked_count): (i64, i64) =
+                sqlx::query_as(PUBLISH_METRICS_SPLITS_QUERY)
+                    .bind(&index_uid)
+                    .bind(index_metadata_json)
+                    .bind(&staged_split_ids)
+                    .bind(&replaced_split_ids)
+                    .fetch_one(tx.as_mut())
+                    .await
+                    .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
+
+            // Verify all staged splits were published.
+            // If some splits are missing, it means they don't exist (NotFound),
+            // not that they're in the wrong state (FailedPrecondition).
+            if published_count as usize != staged_split_ids.len() {
+                return Err(MetastoreError::NotFound(EntityKind::Splits {
+                    split_ids: staged_split_ids.clone(),
+                }));
+            }
+
+            // Verify all replaced splits were marked for deletion.
+            if marked_count as usize != replaced_split_ids.len() {
+                let entity = EntityKind::Splits {
+                    split_ids: replaced_split_ids.clone(),
+                };
+                let message = format!(
+                    "expected to replace {} splits, but only {} were in Published state",
+                    replaced_split_ids.len(),
+                    marked_count
+                );
+                return Err(MetastoreError::FailedPrecondition { entity, message });
+            }
+
+            info!(
+                %index_uid,
+                published_count,
+                marked_count,
+                "published metrics splits successfully"
+            );
+            Ok(EmptyResponse {})
+        })
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn list_metrics_splits(
+        &self,
+        request: ListMetricsSplitsRequest,
+    ) -> MetastoreResult<ListMetricsSplitsResponse> {
+        use quickwit_parquet_engine::split::MetricsSplitRecord;
+
+        use crate::metastore::ListMetricsSplitsQuery;
+
+        // Deserialize the query
+        let query: ListMetricsSplitsQuery = serde_utils::from_json_str(&request.query_json)?;
+
+        // Build dynamic SQL query based on filters
+        let mut sql = String::from(
+            r#"
+            SELECT
+                split_id,
+                split_state,
+                index_uid,
+                time_range_start,
+                time_range_end,
+                metric_names,
+                tag_service,
+                tag_env,
+                tag_datacenter,
+                tag_region,
+                tag_host,
+                high_cardinality_tag_keys,
+                num_rows,
+                size_bytes,
+                split_metadata_json,
+                EXTRACT(EPOCH FROM update_timestamp)::bigint as update_timestamp,
+                window_start,
+                window_duration_secs,
+                sort_fields,
+                num_merge_ops,
+                row_keys,
+                zonemap_regexes
+            FROM metrics_splits
+            WHERE index_uid = $1
+        "#,
+        );
+
+        let mut param_idx = 2;
+
+        // Add state filter
+        if !query.split_states.is_empty() {
+            sql.push_str(&format!(" AND split_state = ANY(${}::text[])", param_idx));
+            param_idx += 1;
+        }
+
+        // Time range filter.
+        // When sort_fields is set this is a compaction query and time_range
+        // refers to the compaction window columns; otherwise it refers to the
+        // data time_range_start/time_range_end columns.
+        let is_compaction_query = query.sort_fields.is_some();
+        let (range_col_start, range_col_end) = if is_compaction_query {
+            ("window_start", "window_start + window_duration_secs")
+        } else {
+            ("time_range_start", "time_range_end")
+        };
+        // overlap: split_end > query_start AND split_start < query_end
+        // (using >= / <= for Included bounds, > / < for Excluded)
+        match &query.time_range.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND {} >= ${}", range_col_end, param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND {} > ${}", range_col_end, param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.time_range.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND {} <= ${}", range_col_start, param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND {} < ${}", range_col_start, param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // Add metric names filter (ANY overlap)
+        if !query.metric_names.is_empty() {
+            sql.push_str(&format!(" AND metric_names && ${}::text[]", param_idx));
+            param_idx += 1;
+        }
+
+        // Add tag filters
+        if query.tag_service.is_some() {
+            sql.push_str(&format!(" AND ${} = ANY(tag_service)", param_idx));
+            param_idx += 1;
+        }
+        if query.tag_env.is_some() {
+            sql.push_str(&format!(" AND ${} = ANY(tag_env)", param_idx));
+            param_idx += 1;
+        }
+        if query.tag_datacenter.is_some() {
+            sql.push_str(&format!(" AND ${} = ANY(tag_datacenter)", param_idx));
+            param_idx += 1;
+        }
+        if query.tag_region.is_some() {
+            sql.push_str(&format!(" AND ${} = ANY(tag_region)", param_idx));
+            param_idx += 1;
+        }
+        if query.tag_host.is_some() {
+            sql.push_str(&format!(" AND ${} = ANY(tag_host)", param_idx));
+            param_idx += 1;
+        }
+
+        if query.sort_fields.is_some() {
+            sql.push_str(&format!(" AND sort_fields = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        if query.node_id.is_some() {
+            sql.push_str(&format!(" AND node_id = ${}", param_idx));
+            param_idx += 1;
+        }
+
+        // delete_opstamp range filter
+        match &query.delete_opstamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND delete_opstamp >= ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND delete_opstamp > ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.delete_opstamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(" AND delete_opstamp <= ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(" AND delete_opstamp < ${}", param_idx));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // update_timestamp range filter
+        match &query.update_timestamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint >= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint > ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint <= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM update_timestamp)::bigint < ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // create_timestamp range filter
+        match &query.create_timestamp.start {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint >= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint > ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.end {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint <= ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND EXTRACT(EPOCH FROM create_timestamp)::bigint < ${}",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        // maturity filter
+        match &query.mature {
+            Bound::Included(_) => {
+                sql.push_str(&format!(
+                    " AND maturity_timestamp <= TO_TIMESTAMP(${})",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Excluded(_) => {
+                sql.push_str(&format!(
+                    " AND maturity_timestamp > TO_TIMESTAMP(${})",
+                    param_idx
+                ));
+                param_idx += 1;
+            }
+            Bound::Unbounded => {}
+        }
+
+        sql.push_str(" ORDER BY time_range_start ASC");
+
+        // Add limit
+        if query.limit.is_some() {
+            sql.push_str(&format!(" LIMIT ${}", param_idx));
+        }
+
+        // Execute query with bindings
+        let mut query_builder = sqlx::query(&sql);
+
+        query_builder = query_builder.bind(query.index_uid.to_string());
+
+        if !query.split_states.is_empty() {
+            let state_strings: Vec<String> = query
+                .split_states
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect();
+            query_builder = query_builder.bind(state_strings);
+        }
+        match &query.time_range.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.time_range.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        if !query.metric_names.is_empty() {
+            query_builder = query_builder.bind(&query.metric_names);
+        }
+        if let Some(ref service) = query.tag_service {
+            query_builder = query_builder.bind(service);
+        }
+        if let Some(ref env) = query.tag_env {
+            query_builder = query_builder.bind(env);
+        }
+        if let Some(ref dc) = query.tag_datacenter {
+            query_builder = query_builder.bind(dc);
+        }
+        if let Some(ref region) = query.tag_region {
+            query_builder = query_builder.bind(region);
+        }
+        if let Some(ref host) = query.tag_host {
+            query_builder = query_builder.bind(host);
+        }
+        if let Some(ref sort_fields) = query.sort_fields {
+            query_builder = query_builder.bind(sort_fields);
+        }
+        if let Some(ref node_id) = query.node_id {
+            query_builder = query_builder.bind(node_id.as_str());
+        }
+        match &query.delete_opstamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v as i64);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.delete_opstamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v as i64);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.update_timestamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.start {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.create_timestamp.end {
+            Bound::Included(v) | Bound::Excluded(v) => {
+                query_builder = query_builder.bind(*v);
+            }
+            Bound::Unbounded => {}
+        }
+        match &query.mature {
+            Bound::Included(evaluation_datetime) | Bound::Excluded(evaluation_datetime) => {
+                query_builder = query_builder.bind(evaluation_datetime.unix_timestamp() as f64);
+            }
+            Bound::Unbounded => {}
+        }
+        if let Some(limit) = query.limit {
+            query_builder = query_builder.bind(limit as i64);
+        }
+
+        let rows = query_builder
+            .fetch_all(&self.connection_pool)
+            .await
+            .map_err(|sqlx_error| convert_sqlx_err(&query.index_uid.index_id, sqlx_error))?;
+
+        // Convert rows to MetricsSplitRecord
+        let splits: Vec<MetricsSplitRecord> = rows
+            .into_iter()
+            .filter_map(|row| {
+                use quickwit_parquet_engine::split::{MetricsSplitState, PgMetricsSplit};
+                use sqlx::Row as _;
+
+                let pg_split = PgMetricsSplit {
+                    split_id: row.get("split_id"),
+                    split_state: row.get("split_state"),
+                    index_uid: row.get("index_uid"),
+                    time_range_start: row.get("time_range_start"),
+                    time_range_end: row.get("time_range_end"),
+                    metric_names: row.get("metric_names"),
+                    tag_service: row.get("tag_service"),
+                    tag_env: row.get("tag_env"),
+                    tag_datacenter: row.get("tag_datacenter"),
+                    tag_region: row.get("tag_region"),
+                    tag_host: row.get("tag_host"),
+                    high_cardinality_tag_keys: row.get("high_cardinality_tag_keys"),
+                    num_rows: row.get("num_rows"),
+                    size_bytes: row.get("size_bytes"),
+                    split_metadata_json: row.get("split_metadata_json"),
+                    update_timestamp: row.get("update_timestamp"),
+                    window_start: row.get("window_start"),
+                    window_duration_secs: row.get("window_duration_secs"),
+                    sort_fields: row.get("sort_fields"),
+                    num_merge_ops: row.get("num_merge_ops"),
+                    row_keys: row.get("row_keys"),
+                    zonemap_regexes: row.get("zonemap_regexes"),
+                };
+
+                let state = pg_split.split_state().unwrap_or(MetricsSplitState::Staged);
+                let metadata = pg_split.to_metadata().ok()?;
+
+                Some(MetricsSplitRecord {
+                    state,
+                    update_timestamp: pg_split.update_timestamp,
+                    metadata,
+                })
+            })
+            .collect();
+
+        ListMetricsSplitsResponse::try_from_splits(&splits)
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn mark_metrics_splits_for_deletion(
+        &self,
+        request: MarkMetricsSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        if request.split_ids.is_empty() {
+            return Ok(EmptyResponse {});
+        }
+
+        info!(
+            index_uid = %request.index_uid(),
+            split_ids = ?request.split_ids,
+            "marking metrics splits for deletion"
+        );
+
+        const MARK_FOR_DELETION_QUERY: &str = r#"
+            UPDATE metrics_splits
+            SET
+                split_state = 'MarkedForDeletion',
+                update_timestamp = (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            WHERE
+                index_uid = $1
+                AND split_id = ANY($2)
+                AND split_state IN ('Staged', 'Published')
+            RETURNING split_id
+        "#;
+
+        let marked_split_ids: Vec<String> = sqlx::query_scalar(MARK_FOR_DELETION_QUERY)
+            .bind(request.index_uid())
+            .bind(&request.split_ids)
+            .fetch_all(&self.connection_pool)
+            .await
+            .map_err(|sqlx_error| convert_sqlx_err(&request.index_uid().index_id, sqlx_error))?;
+
+        info!(
+            index_uid = %request.index_uid(),
+            marked_count = marked_split_ids.len(),
+            "marked metrics splits for deletion"
+        );
+        Ok(EmptyResponse {})
+    }
+
+    #[instrument(skip_all, fields(index_uid = %request.index_uid()))]
+    async fn delete_metrics_splits(
+        &self,
+        request: DeleteMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        if request.split_ids.is_empty() {
+            return Ok(EmptyResponse {});
+        }
+        let index_uid: IndexUid = request.index_uid().clone();
+
+        info!(
+            index_uid = %request.index_uid(),
+            split_ids = ?request.split_ids,
+            "deleting metrics splits"
+        );
+
+        // Match the non-metrics delete_splits pattern: CTE with FOR UPDATE
+        // to lock rows before reading state, avoiding stale-state races under
+        // concurrent mark_metrics_splits_for_deletion. Distinguishes "not found"
+        // (warn + succeed) from "not deletable" (FailedPrecondition).
+        const DELETE_SPLITS_QUERY: &str = r#"
+            WITH input_splits AS (
+                SELECT input_splits.split_id, metrics_splits.split_state
+                FROM UNNEST($2::text[]) AS input_splits(split_id)
+                LEFT JOIN (
+                    SELECT split_id, split_state
+                    FROM metrics_splits
+                    WHERE
+                        index_uid = $1
+                        AND split_id = ANY($2)
+                    FOR UPDATE
+                ) AS metrics_splits
+                USING (split_id)
+            ),
+            deleted AS (
+                DELETE FROM metrics_splits
+                USING input_splits
+                WHERE
+                    metrics_splits.index_uid = $1
+                    AND metrics_splits.split_id = input_splits.split_id
+                    AND NOT EXISTS (
+                        SELECT 1 FROM input_splits
+                        WHERE split_state IN ('Staged', 'Published')
+                    )
+                RETURNING metrics_splits.split_id
+            )
+            SELECT
+                (SELECT COUNT(*) FROM input_splits WHERE split_state IS NOT NULL) as num_found,
+                (SELECT COUNT(*) FROM deleted) as num_deleted,
+                COALESCE(
+                    (SELECT ARRAY_AGG(split_id) FROM input_splits
+                     WHERE split_state IN ('Staged', 'Published')),
+                    ARRAY[]::text[]
+                ) as not_deletable,
+                COALESCE(
+                    (SELECT ARRAY_AGG(split_id) FROM input_splits
+                     WHERE split_state IS NULL),
+                    ARRAY[]::text[]
+                ) as not_found
+        "#;
+
+        let (num_found, num_deleted, not_deletable_ids, not_found_ids): (
+            i64,
+            i64,
+            Vec<String>,
+            Vec<String>,
+        ) = sqlx::query_as(DELETE_SPLITS_QUERY)
+            .bind(request.index_uid())
+            .bind(&request.split_ids)
+            .fetch_one(&self.connection_pool)
+            .await
+            .map_err(|sqlx_error| convert_sqlx_err(&index_uid.index_id, sqlx_error))?;
+
+        if !not_deletable_ids.is_empty() {
+            let message = format!(
+                "splits `{}` are not deletable",
+                not_deletable_ids.join(", ")
+            );
+            let entity = EntityKind::Splits {
+                split_ids: not_deletable_ids,
+            };
+            return Err(MetastoreError::FailedPrecondition { entity, message });
+        }
+
+        if !not_found_ids.is_empty() {
+            warn!(
+                index_uid = %request.index_uid(),
+                not_found = ?not_found_ids,
+                "{} metrics splits were not found and could not be deleted",
+                not_found_ids.len()
+            );
+        }
+
+        let _ = (num_found, num_deleted); // used by the CTE logic
+
+        info!(
+            index_uid = %request.index_uid(),
+            num_deleted,
+            "deleted metrics splits successfully"
+        );
+        Ok(EmptyResponse {})
     }
 }
 

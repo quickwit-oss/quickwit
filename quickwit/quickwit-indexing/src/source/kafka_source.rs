@@ -40,7 +40,7 @@ use tokio::task::{JoinHandle, spawn_blocking};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use crate::actors::DocProcessor;
+use crate::actors::Processor;
 use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
@@ -333,9 +333,9 @@ impl KafkaSource {
         Ok(())
     }
 
-    async fn process_assign_partitions(
+    async fn process_assign_partitions<Q: crate::actors::Processor>(
         &mut self,
-        ctx: &SourceContext,
+        ctx: &crate::source::SourceContext<Q>,
         partitions: &[i32],
         assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
     ) -> anyhow::Result<()> {
@@ -391,10 +391,10 @@ impl KafkaSource {
         Ok(())
     }
 
-    async fn process_revoke_partitions(
+    async fn process_revoke_partitions<Q: crate::actors::Processor>(
         &mut self,
-        ctx: &SourceContext,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        ctx: &crate::source::SourceContext<Q>,
+        doc_processor_mailbox: &Mailbox<Q>,
         batch: &mut BatchBuilder,
         ack_tx: oneshot::Sender<()>,
     ) -> anyhow::Result<()> {
@@ -441,22 +441,22 @@ impl KafkaSource {
 }
 
 #[async_trait]
-impl Source for KafkaSource {
+impl<P: Processor> Source<P> for KafkaSource {
     async fn initialize(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<(), ActorExitStatus> {
         let publish_lock = self.publish_lock.clone();
-        ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
+        ctx.send_message(processor_mailbox, NewPublishLock(publish_lock))
             .await?;
         Ok(())
     }
 
     async fn emit_batches(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
-        ctx: &SourceContext,
+        processor_mailbox: &Mailbox<P>,
+        ctx: &SourceContext<P>,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch_builder = BatchBuilder::new(SourceType::Kafka);
@@ -470,7 +470,7 @@ impl Source for KafkaSource {
                     match event {
                         KafkaEvent::Message(message) => self.process_message(message, &mut batch_builder).await?,
                         KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
-                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, doc_processor_mailbox, &mut batch_builder, ack_tx).await?,
+                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, processor_mailbox, &mut batch_builder, ack_tx).await?,
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
@@ -492,11 +492,11 @@ impl Source for KafkaSource {
                 "sending doc batch to indexer"
             );
             let message = batch_builder.build();
-            ctx.send_message(doc_processor_mailbox, message).await?;
+            ctx.send_message(processor_mailbox, message).await?;
         }
         if self.should_exit() {
             info!(topic = %self.topic, "reached end of topic");
-            ctx.send_exit_with_success(doc_processor_mailbox).await?;
+            ctx.send_exit_with_success(processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -505,7 +505,7 @@ impl Source for KafkaSource {
     async fn suggest_truncate(
         &mut self,
         checkpoint: SourceCheckpoint,
-        _ctx: &SourceContext,
+        _ctx: &SourceContext<P>,
     ) -> anyhow::Result<()> {
         self.truncate(checkpoint)?;
         Ok(())
@@ -514,7 +514,7 @@ impl Source for KafkaSource {
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &SourceContext,
+        _ctx: &SourceContext<P>,
     ) -> anyhow::Result<()> {
         self.poll_loop_jh.abort();
         Ok(())
@@ -1275,7 +1275,7 @@ mod kafka_broker_tests {
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
+                processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
@@ -1327,7 +1327,7 @@ mod kafka_broker_tests {
             let source = source_loader.load_source(source_runtime).await?;
             let source_actor = SourceActor {
                 source,
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
+                processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
@@ -1401,7 +1401,7 @@ mod kafka_broker_tests {
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
+                processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
@@ -1454,7 +1454,7 @@ mod kafka_broker_tests {
             let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
             let source_actor = SourceActor {
                 source,
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
+                processor_mailbox: doc_processor_mailbox.clone(),
             };
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;

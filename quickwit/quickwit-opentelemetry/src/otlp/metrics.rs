@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{
     HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram_vec,
 };
@@ -23,6 +24,7 @@ pub struct OtlpServiceMetrics {
     pub request_duration_seconds: HistogramVec<5>,
     pub ingested_log_records_total: IntCounterVec<4>,
     pub ingested_spans_total: IntCounterVec<4>,
+    pub ingested_data_points_total: IntCounterVec<4>,
     pub ingested_bytes_total: IntCounterVec<4>,
 }
 
@@ -65,6 +67,13 @@ impl Default for OtlpServiceMetrics {
                 &[],
                 ["service", "index", "transport", "format"],
             ),
+            ingested_data_points_total: new_counter_vec(
+                "ingested_data_points_total",
+                "Number of metric data points ingested",
+                "otlp",
+                &[],
+                ["service", "index", "transport", "format"],
+            ),
             ingested_bytes_total: new_counter_vec(
                 "ingested_bytes_total",
                 "Number of bytes ingested",
@@ -77,4 +86,5 @@ impl Default for OtlpServiceMetrics {
 }
 
 /// `OTLP_SERVICE_METRICS` exposes metrics for each OTLP service.
-pub static OTLP_SERVICE_METRICS: Lazy<OtlpServiceMetrics> = Lazy::new(OtlpServiceMetrics::default);
+pub static OTLP_SERVICE_METRICS: LazyLock<OtlpServiceMetrics> =
+    LazyLock::new(OtlpServiceMetrics::default);

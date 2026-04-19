@@ -14,9 +14,8 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use once_cell::sync::Lazy;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{StorageBackend, StorageConfigs};
 
@@ -43,7 +42,7 @@ impl fmt::Debug for StorageResolver {
 }
 
 impl StorageResolver {
-    /// Creates an empty [`StorageResolverBuilder`].
+    /// Creates an empty `StorageResolverBuilder`.
     pub fn builder() -> StorageResolverBuilder {
         StorageResolverBuilder::default()
     }
@@ -77,7 +76,7 @@ impl StorageResolver {
     /// provide the necessary credentials, the default Azure or S3 storage returned by this
     /// resolver will not work.
     pub fn unconfigured() -> Self {
-        static STORAGE_RESOLVER: Lazy<StorageResolver> = Lazy::new(|| {
+        static STORAGE_RESOLVER: LazyLock<StorageResolver> = LazyLock::new(|| {
             let storage_configs = StorageConfigs::default();
             StorageResolver::configured(&storage_configs)
         });
