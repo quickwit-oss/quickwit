@@ -27,7 +27,7 @@ use quickwit_common::retry::RetryParams;
 use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePayload};
 use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest};
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
-use tracing::{debug, info, instrument, warn};
+use tracing::{debug, info, instrument};
 
 use crate::metrics::LAMBDA_METRICS;
 
@@ -203,7 +203,8 @@ impl AwsLambdaInvoker {
                 LambdaInvokeError::Permanent(_) => return Err(error.into_search_error()),
             };
 
-            warn!(
+            quickwit_common::rate_limited_warn!(
+                limit_per_min = 10,
                 num_attempts = num_attempts,
                 delay_ms = delay.as_millis(),
                 "lambda invocation failed, retrying"
