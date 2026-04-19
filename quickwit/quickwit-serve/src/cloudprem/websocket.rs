@@ -365,11 +365,7 @@ fn format_err(err: &TungsteniteError) -> String {
             // log status code and content-length only — the body is typically an HTML error
             // page (e.g. "Datadog is Down") that is unreadable when printed as raw bytes
             let status = resp.status();
-            let body_len = resp
-                .body()
-                .as_ref()
-                .map(|b| b.len())
-                .unwrap_or(0);
+            let body_len = resp.body().as_ref().map(|b| b.len()).unwrap_or(0);
             format!("{prefix} HTTP {status} (body: {body_len} bytes)")
         }
         _ => format!("{prefix} {err:?}"),
