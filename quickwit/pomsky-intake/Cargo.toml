@@ -18,8 +18,12 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true }
+bytes = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
+http = { workspace = true }
+pomsky-dd-protos = { workspace = true }
+prost = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
 quickwit-parquet-engine = { workspace = true }
 reqwest = { workspace = true }
@@ -32,6 +36,8 @@ tracing = { workspace = true }
 typetag = { workspace = true }
 vector = { workspace = true }
 vector-lib = { workspace = true }
+warp = { workspace = true }
+zstd = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }

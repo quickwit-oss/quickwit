@@ -20,6 +20,7 @@ mod intake_runner;
 // Custom Vector components — the `typetag` registration in each module
 // ensures Vector discovers them at link time.
 pub mod sinks;
+pub mod sources;
 pub mod transforms;
 
 pub use config::IntakeConfig;

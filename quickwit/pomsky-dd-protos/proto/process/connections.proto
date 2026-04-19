@@ -1,0 +1,466 @@
+syntax = "proto3";
+
+option go_package = "github.com/DataDog/agent-payload/v5/process";
+
+import "proto/process/agent.proto";
+
+package datadog.process_agent;
+
+message CollectorConnections {
+  reserved 1, 4, 7, 9, 13, 32, 33;
+  // Please update when adding fields
+  // next identifier:  49
+
+  // the detected hostname for the agent that collected these connections
+  string hostName = 2;
+
+  // this "ID" of the network. This is generally set to VPC ID in the major clouds.
+  string networkId = 12;
+
+  repeated Connection connections = 3;
+
+  // Message batching metadata
+  int32 groupId = 5;
+  int32 groupSize = 6;
+
+  // Mapping of resourceID to metadata. For containers, each `connection` has a containerId field which can be mapped here.
+  map<string, ResourceMetadata> resolvedResources = 8; // Post-resolution field
+
+  // Mapping of processes running in each container
+  map<int32, string> containerForPid = 10;
+
+  // encodedTags is an opaque byte format that stores several sets of tags in a way that
+  // is both Go GC friendly and handles duplicate tags well.
+  //
+  // Think of it as a write-once datastructure that maps a TagIndex (int)  -> []string. Types like ResourceMetadata
+  // and Host reference 'tagIndexes' that can be used with an `encodedTags` to get a list of actual tags (in the form of a []string)
+  //
+  // this tag buffer can be written with `NewV2TagEncoder` and read with the helpers `CollectorConnections#GetTags` and `CollectorConnections#UnsafeIterateTags`.
+  //
+  // see process/tags_v2.go for a detailed explanation of the format.
+  bytes encodedTags = 11;
+
+
+  // This uses the same encoding structure as `encodedTags` but specifically encodes tags for connection-level tags
+  // (e.g. Connection#TagIdx)
+  bytes encodedConnectionsTags = 38;
+
+  ContainerHostType containerHostType = 15;
+
+  // For now, we'll keep emitting telemetry from agents < 7.35
+  CollectorConnectionsTelemetry connTelemetry = 16;
+
+  map<string,int64> connTelemetryMap = 39;
+
+  // OS Telemetry
+  string architecture = 17;
+  string kernelVersion = 18;
+  string platform = 19;
+  string platformVersion = 20;
+
+  // Runtime compilation telemetry
+  map<string, RuntimeCompilationTelemetry> compilationTelemetryByAsset = 21;
+  KernelHeaderFetchResult kernelHeaderFetchResult = 41;
+
+  // CO-RE telemetry
+  map<string, COREResult> CORETelemetryByAsset = 42;
+
+  // Prebuilt EBPF assets in use
+  repeated string PrebuiltEBPFAssets = 44;
+
+  // the machine-local routes used for all connections in this payload. At the time of writing, this
+  // captures the subnet of the interface used to send traffic out of machine. This is also AWS only at the time
+  // of writing.
+  // see Connection#routeIdx
+  repeated Route routes = 31;
+
+  // the next l3 route for all connections in this payload, AWS only.
+  repeated RouteMetadata routeMetadata = 34; // backend use only
+
+  AgentConfiguration agentConfiguration = 35;
+  /////////////////
+  // V1 encodings
+
+  // encoded dns is a map of (string) ip-> list of domains (DNSEntry)
+  bytes encodedDNS = 14;
+
+  // All queried DNS domains for which we have collected stats
+  repeated string domains = 30;
+
+  //////////////////
+  // V2 encodings
+  // all domain strings are now indexes into a single array of strings
+  // hostname query information.  Encoded via V2DNSEncoder.EncodeDomainDatabase
+  // is a single buffer; varint number of strings, followed by each string.
+  bytes encodedDomainDatabase = 36;
+
+  // new representation of encoded DNS.  This is a map of the string representation
+  // of the IP --> DNSDatabaseEntry message. (was encodedDNS).  Encoded
+  // via V2DNSEncoder.EncodeMapped.  Full buffer description provided there.
+  bytes encodedDnsLookups = 37;
+
+  map<string, Host> resolvedHostsByName = 40; // Post-resolution field
+
+  string ecsTask = 45;
+
+  map<string, PublicIpMetadata> resolvedPublicIps = 46; // Post-resolution field
+
+  // hostTagsIndex is the index of the tags associated with the host that this connection was collected from.
+  // Meant to be used with CollectorConnections#encodedTags.
+  // Handled the built-in race for resolution of host tags in the backend.
+  int32 hostTagsIndex = 47;
+
+  // resolvConfs stores resolv.conf data corresponding to Connection.resolvConfIdx
+  repeated string resolvConfs = 48;
+}
+
+// Connections is only used to communicate between the process agent and system-probe.
+message Connections {
+  repeated Connection conns = 1;
+  map<string, DNSEntry> dns  = 2;
+  // For now, we'll keep emitting telemetry from agents < 7.35
+  ConnectionsTelemetry connTelemetry = 3;
+  repeated string domains = 4;
+  repeated Route routes = 5;
+  map<string, RuntimeCompilationTelemetry> compilationTelemetryByAsset = 6;
+  AgentConfiguration agentConfiguration = 7;
+  repeated string tags = 8;
+  map<string, int64> connTelemetryMap = 9;
+  KernelHeaderFetchResult kernelHeaderFetchResult = 10;
+  map<string, COREResult> CORETelemetryByAsset = 11;
+  repeated string PrebuiltEBPFAssets = 12;
+  repeated string resolvConfs = 13;
+}
+
+
+message Connection {
+  reserved 2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 35;
+  // Please update when adding fields
+  // next identifier: 57
+
+  int32 pid = 1;
+  Addr laddr = 5; // Local address
+  Addr raddr = 6; // Remote address
+  ConnectionFamily family = 10;
+  ConnectionType type = 11;
+  EphemeralPortState isLocalPortEphemeral = 41;
+
+  // Relative counters since last check
+  uint64 lastBytesSent = 16;
+  uint64 lastBytesReceived = 17;
+  uint32 lastRetransmits = 18;
+  ConnectionDirection direction = 19;
+  uint64 lastPacketsSent = 38;
+  uint64 lastPacketsReceived = 39;
+  ProtocolStack protocol = 48;
+
+
+  // Network namespace
+  uint32 netNS = 20;
+  // NetworkID of the remote address (post-resolution field)
+  string remoteNetworkId = 32;
+
+  // the conntrack entry associated with the connection. May be null on systems which don't support querying conntrack.
+  IPTranslation ipTranslation = 21;
+
+  // TCP-specific metrics
+  uint32 rtt = 22;
+  uint32 rttVar = 23;
+  // Indicates that this connection begins and ends on the same host
+  bool intraHost = 24;
+
+  // DNS-specific metrics
+  uint32 dnsSuccessfulResponses = 25;
+  uint32 dnsFailedResponses = 26;
+  uint32 dnsTimeouts = 27;
+  uint64 dnsSuccessLatencySum = 28;
+  uint64 dnsFailureLatencySum = 29;
+  map<uint32, uint32> dnsCountByRcode = 33;
+
+  // TCP state transition counters relative to last check
+  uint32 lastTcpEstablished = 30;
+  uint32 lastTcpClosed = 31;
+
+  // dns stats based on domain queried, the key corresponds to an index into the `domains` field
+  // dnsStatsByDomain is deprecated field, left in for handling old agent versions
+  map<int32, DNSStats> dnsStatsByDomain = 34;
+  // dnsStatsByDomainByQueryType is new field
+  map<int32, DNSStatsByQueryType> dnsStatsByDomainByQueryType = 42;
+
+  // int32 index into map is the offset into the CollectorConnections.encodedDomainDatabase
+  map<int32, DNSStatsByQueryType> dnsStatsByDomainOffsetByQueryType = 43;
+
+
+  // routeIdx is the index of the route used to exit the host that this connection was collected from. It is an index into
+  // the CollectorConnections#routes field.
+  int32 routeIdx = 36;
+
+  // the index of the resolved target of the route (post-resolution field)
+  int32 routeTargetIdx = 40;
+
+  // serialized HTTPAggregations object summarizing all http transactions recorded for this connection, organized by request path
+  bytes httpAggregations = 37;
+
+  // The stored values corresponds to an index into the `Connections.tags` field
+  repeated uint32 tags = 44 [packed = false];
+
+  // Pointer to tags for this connection, see CollectorConnections#encodedConnectionsTags.
+  int32 tagsIdx = 45;
+
+  // a checksum of all the tags in this connection. Populated by the agent, but used by the backend to know when tags have changed for a connection.
+  uint32 tagsChecksum = 47;
+
+  // Used for offset state management (backend)
+  uint32 stateIndex = 46;
+
+  // serialized DataStreamsAggregations object summarizing all data streams transactions (Kafka produce & Kafka fetch) recorded for this connection organized by topic
+  bytes dataStreamsAggregations = 49;
+
+  // serialized HTTP2Aggregations object summarizing all http2 transactions recorded for this connection, organized by request path
+  bytes http2Aggregations = 50;
+
+  // serialized DatabaseAggregations object summarizing all database transactions recorded for this connection.
+  bytes databaseAggregations = 51;
+
+  // serialized map of POSIX error codes to the number of times they have been encountered in the context of this connection (ex [110: 3] would mean that the connection has seen 3 ETIMEDOUT errors)
+  map<uint32, uint32> tcpFailuresByErrCode = 52;
+
+  string remoteEcsTask = 53;
+
+  // localContainerTagsIndex is the index of the tags associated with the container that this connection was collected from.
+  // Meant to be used with CollectorConnections#encodedTags.
+  // Handled the built-in race for resolution of container tags in the backend.
+  int32 localContainerTagsIndex = 54;
+
+  // Indicates that this connection is from system-probe
+  bool systemProbeConn = 55;
+
+  // resolvConfIdx is the index in resolvConfs corresponding to this connection's resolv.conf (if there is one)
+  int32 resolvConfIdx = 56;
+}
+
+// ResourceMetadata only holds enough information to identify a resource in connection data
+message ResourceMetadata {
+  string id = 1;
+  bytes byteKey = 3;
+
+  // backend use only, associates tags with a given ResourceMetadata.
+  // when this type is serialized, always use tagIndex to point to an entry
+  // in encodedTags.
+  repeated string tags = 4;
+
+  // points to an index in CollectorConnections#encodedTags. Use the helpers defined in process/connections.go to access
+  // the tags associated with this resource metadata.
+  // `CollectorConnections#GetTags`, `CollectorConnections#UnsafeIterateTags',
+  // `CollectorConnections#IterateResourceTags`, `CollectorConnections#GetResourceTags`
+  int32 tagIndex = 5;
+
+  // if set this is a unix timestamp of the last time the tags for a given resource changed.
+  // if tags have been decoded for a given (byteKey, tagsModified) tuple, that set of tags will not change.
+  int64 tagsModified = 6;
+
+  reserved 2;
+}
+
+message ConnectionsTelemetry {
+  int64 monotonicKprobesTriggered = 1;
+  int64 monotonicKprobesMissed = 2;
+  int64 monotonicConntrackRegisters = 3;
+  int64 monotonicConntrackRegistersDropped = 4;
+  int64 monotonicDnsPacketsProcessed = 5;
+  int64 monotonicConnsClosed = 6;
+  int64 connsBpfMapSize = 7;
+  int64 monotonicUdpSendsProcessed = 8;
+  int64 monotonicUdpSendsMissed = 9;
+  int64 conntrackSamplingPercent = 10;
+  int64 dnsStatsDropped = 11;
+}
+
+message CollectorConnectionsTelemetry {
+  int64 kprobesTriggered = 1;
+  int64 kprobesMissed = 2;
+  int64 conntrackRegisters = 3;
+  int64 conntrackRegistersDropped = 4;
+  int64 dnsPacketsProcessed = 5;
+  int64 connsClosed = 6;
+  int64 connsBpfMapSize = 7;
+  int64 udpSendsProcessed = 8;
+  int64 udpSendsMissed = 9;
+  int64 conntrackSamplingPercent = 10;
+  int64 dnsStatsDropped = 11;
+}
+
+enum RuntimeCompilationResult {
+  NotAttempted = 0;
+  CompilationSuccess = 1;
+  KernelVersionErr = 2;
+  VerificationError = 3;
+  OutputDirErr = 4;
+  OutputFileErr = 5;
+  NewCompilerErr = 6;
+  CompilationErr = 7;
+  ResultReadErr = 8;
+  HeaderFetchErr = 9;
+  CompiledOutputFound = 10;
+  InputHashError = 11;
+}
+
+enum KernelHeaderFetchResult {
+  FetchNotAttempted = 0;
+  CustomHeadersFound = 1;
+  DefaultHeadersFound = 2;
+  SysfsHeadersFound = 3;
+  DownloadedHeadersFound = 4;
+  DownloadSuccess = 5;
+  HostVersionErr = 6;
+  DownloadFailure = 7;
+  ValidationFailure = 8;
+  ReposDirAccessFailure = 9;
+  HeadersNotFoundDownloadDisabled = 10;
+}
+
+
+message RuntimeCompilationTelemetry {
+  bool runtimeCompilationEnabled = 1;
+  RuntimeCompilationResult runtimeCompilationResult = 2;
+  int64 runtimeCompilationDuration = 3;
+
+  // Field below was deprecated in agent 7.41
+  KernelHeaderFetchResult kernelHeaderFetchResult = 4;
+}
+
+enum COREResult {
+  SuccessCustomBTF = 0;
+  SuccessEmbeddedBTF = 1;
+  SuccessDefaultBTF = 2;
+  BtfNotFound = 3;
+  AssetReadError = 4;
+  VerifierError = 5;
+  LoaderError = 6;
+  SuccessRemoteConfigBTF = 7;
+}
+
+message AgentConfiguration {
+  bool npmEnabled = 1;
+  bool usmEnabled = 2;
+  bool dsmEnabled = 3;
+  bool ccmEnabled = 4;
+  bool csmEnabled = 5;
+}
+
+
+// Route refers to a route out of a host (think `ip route get`).
+// this is used primarily in AWS where we discover the subnet a
+// that a connection was associated with
+message Route {
+  Subnet subnet = 1;
+  Interface interface = 2;
+}
+
+message Interface {
+  string HardwareAddr = 1;
+}
+
+message Subnet {
+  string alias = 1;
+}
+
+
+// RouteMetadata
+message RouteMetadata {
+  string alias = 1;
+
+  // the tags for the inferred route target (see Connection#routeTargetIdx)
+  // whenever this type is encoded on the wire, use tagsIndex and tagsModified -- not tags.
+  int32 tagIndex = 2;
+  int64 tagsModified = 3;
+
+  repeated string tags = 4; // Used only on the backend
+}
+
+message IPTranslation {
+  string replSrcIP  = 1;
+  string replDstIP  = 2;
+  int32 replSrcPort = 3;
+  int32 replDstPort = 4;
+}
+
+message Addr {
+  reserved 1, 4, 6;
+
+  string ip = 2;
+  int32  port = 3;
+
+  // the containerID associated with the addr. This value can be used to look up a value in
+  // CollectorConnections#resolvedResources.
+  //
+  // Despite the name, this can be either a containerID or a cloud loadbalancer.
+  //
+  // this will usually be added during resolution, but if the container is on the same host
+  // where the connection was collected this will be set by the agent
+  string containerId = 5;
+
+  // the host associated with the addr. This value can be used to look up a value in
+  // CollectorConnections#resolvedHostsByName.
+  string hostName = 7; // post-resolution field
+}
+
+enum ConnectionFamily {
+  v4 = 0;
+  v6 = 1;
+}
+
+enum ConnectionDirection {
+  unspecified = 0;
+  incoming = 1;
+  outgoing = 2;
+  local = 3;
+  none = 4;
+}
+
+enum EphemeralPortState {
+  ephemeralUnspecified = 0;
+  ephemeralTrue = 1;
+  ephemeralFalse = 2;
+}
+
+enum ProtocolType {
+  protocolUnclassified = 0;
+  protocolUnknown = 1;
+  protocolHTTP = 2;
+  protocolHTTP2 = 3;
+  protocolTLS = 4;
+  protocolKafka = 5;
+  protocolMongo = 6;
+  protocolPostgres = 7;
+  protocolAMQP = 8;
+  protocolRedis = 9;
+  protocolMySQL= 10;
+  protocolGRPC = 11;
+}
+
+message ProtocolStack {
+  repeated ProtocolType stack = 1 [packed = false];
+}
+
+message DNSEntry {
+  repeated string names = 1;
+}
+
+message DNSStats {
+  uint32 dnsTimeouts = 1;
+  uint64 dnsSuccessLatencySum = 2;
+  uint64 dnsFailureLatencySum = 3;
+  map<uint32, uint32> dnsCountByRcode = 4;
+}
+
+message DNSStatsByQueryType {
+  map<int32, DNSStats> dnsStatsByQueryType = 1;
+}
+
+message PublicIpMetadata {
+  string ip = 1;
+  string cloudProvider = 2;
+  string region = 3;
+  repeated string tags = 4;
+}
