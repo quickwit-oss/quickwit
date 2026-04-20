@@ -36,11 +36,18 @@ use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Deserializer, Serialize};
 use tracing::{info, warn};
 
+use crate::config_value::ConfigValue;
+use crate::node_config::intake_config::IntakeConfig;
 use crate::node_config::serialize::load_node_config_with_env;
+use crate::qw_env_vars::{
+    CP_CREATE_DD_LOGS_INDEX, CP_CREATE_DD_METRICS_INDEX, CP_CREATE_DD_TRACES_INDEX,
+};
 use crate::serde_utils::DurationAsStr;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
+
+mod intake_config;
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 
@@ -296,6 +303,8 @@ pub struct SearcherConfig {
     pub split_cache: Option<SplitCacheLimits>,
     #[serde(default = "SearcherConfig::default_request_timeout_secs")]
     request_timeout_secs: NonZeroU64,
+    #[serde(default = "SearcherConfig::default_request_timeout_secs")]
+    leaf_request_timeout_secs: NonZeroU64,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
@@ -520,18 +529,23 @@ impl Default for SearcherConfig {
             aggregation_bucket_limit: 65000,
             split_cache: None,
             request_timeout_secs: Self::default_request_timeout_secs(),
+            leaf_request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
             warmup_memory_budget: ByteSize::gb(100),
-            warmup_single_split_initial_allocation: ByteSize::gb(1),
+            warmup_single_split_initial_allocation: ByteSize::mb(300),
             lambda: None,
         }
     }
 }
 
 impl SearcherConfig {
-    /// The timeout after which a search should be cancelled
+    /// The timeout applied at the gRPC layer for search requests
     pub fn request_timeout(&self) -> Duration {
         Duration::from_secs(self.request_timeout_secs.get())
+    }
+    /// The timeout applied at the leaf search layer
+    pub fn leaf_request_timeout(&self) -> Duration {
+        Duration::from_secs(self.leaf_request_timeout_secs.get())
     }
     fn default_request_timeout_secs() -> NonZeroU64 {
         NonZeroU64::new(30).unwrap()
@@ -784,14 +798,16 @@ impl WebsocketConfig {
         (this.site, this.dd_api_key, None)
     }
 
-    fn resolve(&self) -> Self {
-        let site = quickwit_common::get_from_env_opt::<String>("DD_SITE", false)
-            .or(self.site.clone())
-            .map(Self::normalize_site_url)
-            .unwrap_or("app.datadoghq.com".to_string());
+    fn resolve(&mut self) {
+        self.site = Some(
+            quickwit_common::get_from_env_opt::<String>("DD_SITE", false)
+                .or(self.site.take())
+                .map(Self::normalize_site_url)
+                .unwrap_or("app.datadoghq.com".to_string()),
+        );
 
         // Try DD_API_KEY env var first, then DD_API_KEY_FILE (read from file path)
-        let dd_api_key_opt = quickwit_common::get_from_env_opt::<String>("DD_API_KEY", true)
+        self.dd_api_key = quickwit_common::get_from_env_opt::<String>("DD_API_KEY", true)
             .or_else(|| {
                 // If DD_API_KEY_FILE is set, read the API key from that file
                 quickwit_common::get_from_env_opt::<String>("DD_API_KEY_FILE", false)
@@ -805,12 +821,7 @@ impl WebsocketConfig {
                     })
                     .map(|s| s.trim().to_string())
             })
-            .or(self.dd_api_key.clone());
-
-        Self {
-            site: Some(site),
-            dd_api_key: dd_api_key_opt,
-        }
+            .or(self.dd_api_key.take());
     }
 
     fn validate(
@@ -889,15 +900,36 @@ pub struct CloudPremConfig {
     #[serde(default = "CloudPremConfig::default_enable_reverse_connection")]
     pub enable_reverse_connection: bool,
     #[serde(
-        default = "CloudPremConfig::default_create_datadog_logs_index",
-        alias = "create_datadog_index"
+        alias = "create_datadog_index",
+        default = "CloudPremConfig::default_create_dd_logs_index"
     )]
-    pub create_datadog_logs_index: bool,
-    #[serde(default = "CloudPremConfig::default_create_datadog_metrics_index")]
-    pub create_datadog_metrics_index: bool,
+    pub create_dd_logs_index: bool,
+    #[serde(default)]
+    pub create_dd_metrics_index: bool,
+    #[serde(default)]
+    pub create_dd_traces_index: bool,
 }
 
 impl CloudPremConfig {
+    /// Resolves env var overrides. Env vars take precedence over config file values.
+    pub(crate) fn resolve(&mut self, env_vars: &HashMap<String, String>) -> anyhow::Result<()> {
+        self.datadog_config.resolve();
+
+        self.create_dd_logs_index =
+            ConfigValue::<bool, CP_CREATE_DD_LOGS_INDEX>::with_default(self.create_dd_logs_index)
+                .resolve(env_vars)?;
+        self.create_dd_metrics_index =
+            ConfigValue::<bool, CP_CREATE_DD_METRICS_INDEX>::with_default(
+                self.create_dd_metrics_index,
+            )
+            .resolve(env_vars)?;
+        self.create_dd_traces_index = ConfigValue::<bool, CP_CREATE_DD_TRACES_INDEX>::with_default(
+            self.create_dd_traces_index,
+        )
+        .resolve(env_vars)?;
+        Ok(())
+    }
+
     pub fn validate(&self, enabled_services: &HashSet<QuickwitService>) -> anyhow::Result<()> {
         self.grpc_config.validate()?;
         self.datadog_config
@@ -921,18 +953,7 @@ impl CloudPremConfig {
         }
     }
 
-    fn default_create_datadog_logs_index() -> bool {
-        #[cfg(any(test, feature = "testsuite"))]
-        {
-            false
-        }
-        #[cfg(not(any(test, feature = "testsuite")))]
-        {
-            true
-        }
-    }
-
-    fn default_create_datadog_metrics_index() -> bool {
+    fn default_create_dd_logs_index() -> bool {
         #[cfg(any(test, feature = "testsuite"))]
         {
             false
@@ -951,8 +972,9 @@ impl Default for CloudPremConfig {
             grpc_config: GrpcConfig::default(),
             datadog_config: WebsocketConfig::default(),
             enable_reverse_connection: Self::default_enable_reverse_connection(),
-            create_datadog_logs_index: Self::default_create_datadog_logs_index(),
-            create_datadog_metrics_index: Self::default_create_datadog_metrics_index(),
+            create_dd_logs_index: Self::default_create_dd_logs_index(),
+            create_dd_metrics_index: false,
+            create_dd_traces_index: false,
         }
     }
 }
@@ -979,6 +1001,7 @@ pub struct NodeConfig {
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,
+    pub intake_config: IntakeConfig,
     pub searcher_config: SearcherConfig,
     pub ingest_api_config: IngestApiConfig,
     pub jaeger_config: JaegerConfig,
@@ -1063,6 +1086,7 @@ mod tests {
 
     use super::*;
     use crate::IndexerConfig;
+    use crate::qw_env_vars::QW_ENV_VARS;
 
     #[test]
     fn test_indexer_config_serialization() {
@@ -1259,5 +1283,28 @@ mod tests {
 
         let site = WebsocketConfig::normalize_site_url("us5.datadoghq.com".to_string());
         assert_eq!(site, "us5.datadoghq.com");
+    }
+
+    #[test]
+    fn test_cloudprem_config_resolve_env_vars() {
+        let mut cloudprem_config = CloudPremConfig::default();
+        let env_vars = HashMap::from([
+            (
+                QW_ENV_VARS[&CP_CREATE_DD_LOGS_INDEX].to_string(),
+                "false".to_string(),
+            ),
+            (
+                QW_ENV_VARS[&CP_CREATE_DD_METRICS_INDEX].to_string(),
+                "true".to_string(),
+            ),
+            (
+                QW_ENV_VARS[&CP_CREATE_DD_TRACES_INDEX].to_string(),
+                "true".to_string(),
+            ),
+        ]);
+        cloudprem_config.resolve(&env_vars).unwrap();
+        assert!(!cloudprem_config.create_dd_logs_index);
+        assert!(cloudprem_config.create_dd_metrics_index);
+        assert!(cloudprem_config.create_dd_traces_index);
     }
 }

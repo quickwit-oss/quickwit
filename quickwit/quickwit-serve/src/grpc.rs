@@ -257,7 +257,7 @@ pub(crate) async fn start_grpc_server(
             search_service,
             services.metastore_client.clone(),
             services.cluster.clone(),
-            services.node_config.default_index_root_uri.clone(),
+            services.node_config.clone(),
         );
         Some(
             CloudPremServiceClient::tower()

@@ -186,6 +186,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut cloudprem_prost_config = prost_build::Config::default();
     cloudprem_prost_config.file_descriptor_set_path("src/codegen/cloudprem/descriptor.bin");
+    cloudprem_prost_config.bytes(["EsHttpRequest.body", "EsHttpResponse.body"]);
+    cloudprem_prost_config.type_attribute(
+        "NodeDiagnostics",
+        "#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]",
+    );
 
     Codegen::builder()
         .with_prost_config(cloudprem_prost_config)
@@ -277,6 +282,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::path::PathBuf::from("protos/third-party/jaeger"),
                 std::path::PathBuf::from("protos/third-party"),
             ],
+        )?;
+
+    // Event Store sort schema proto (vendored from dd-source).
+    let sortschema_prost_config = prost_build::Config::default();
+    tonic_prost_build::configure()
+        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
+        .out_dir("src/codegen/sortschema")
+        .compile_with_config(
+            sortschema_prost_config,
+            &[std::path::PathBuf::from(
+                "protos/event_store_sortschema/event_store_sortschema.proto",
+            )],
+            &[std::path::PathBuf::from("protos/event_store_sortschema")],
         )?;
 
     // OTEL proto

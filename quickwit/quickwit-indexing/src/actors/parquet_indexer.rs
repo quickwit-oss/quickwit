@@ -35,7 +35,6 @@ use tracing::{debug, info, info_span, warn};
 use ulid::Ulid;
 
 use crate::actors::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
-use crate::metrics::INDEXER_METRICS;
 use crate::models::{NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).
@@ -205,12 +204,8 @@ impl ParquetIndexer {
         debug!(
             num_rows = num_rows,
             force_commit = batch.force_commit,
-            total_batches = self
-                .counters
-                .batches_received,
-            total_rows = self
-                .counters
-                .rows_indexed,
+            total_batches = self.counters.batches_received,
+            total_rows = self.counters.rows_indexed,
             "received batch for accumulation"
         );
 
@@ -232,10 +227,6 @@ impl ParquetIndexer {
                         num_rows = combined.num_rows(),
                         "accumulator flushed from threshold"
                     );
-                    INDEXER_METRICS
-                        .dd_parquet_splits_produced
-                        .get("threshold")
-                        .increment(1);
                 }
                 threshold_batch
             }
@@ -260,15 +251,7 @@ impl ParquetIndexer {
         if force_commit && flushed.is_none() {
             debug!("force commit requested, flushing accumulator");
             flushed = self.flush_accumulator()?;
-            if flushed.is_some() {
-                INDEXER_METRICS
-                    .dd_parquet_splits_produced
-                    .get("force_commit")
-                    .increment(1);
-            }
         }
-
-        self.update_accumulator_gauges();
 
         if let Some(ref combined) = flushed {
             self.counters.record_flush();
@@ -307,16 +290,6 @@ impl ParquetIndexer {
     /// Take the current checkpoint delta and reset it.
     fn take_checkpoint_delta(&mut self) -> SourceCheckpointDelta {
         std::mem::take(&mut self.checkpoint_delta)
-    }
-
-    /// Update accumulator gauge DD metrics.
-    fn update_accumulator_gauges(&self) {
-        INDEXER_METRICS
-            .dd_parquet_accumulator_pending_rows
-            .set(self.accumulator.pending_rows() as f64);
-        INDEXER_METRICS
-            .dd_parquet_accumulator_pending_bytes
-            .set(self.accumulator.pending_bytes() as f64);
     }
 
     /// Create an IndexCheckpointDelta from the current source delta.
@@ -394,7 +367,6 @@ impl Actor for ParquetIndexer {
                         .send_message(&self.packager_mailbox, batch_for_packager)
                         .await;
                 }
-                self.update_accumulator_gauges();
             }
         }
         Ok(())
@@ -452,6 +424,10 @@ impl Handler<ProcessedParquetBatch> for ParquetIndexer {
                         anyhow::anyhow!("failed to send to packager: {}", e).into(),
                     )
                 })?;
+
+            // Reset so the next batch schedules a fresh timeout.
+            self.workbench_id = Ulid::new();
+            self.commit_timeout_scheduled = false;
         }
 
         Ok(())
@@ -479,7 +455,6 @@ impl Handler<NewPublishLock> for ParquetIndexer {
         self.checkpoint_delta = SourceCheckpointDelta::default();
         self.workbench_id = Ulid::new();
         self.commit_timeout_scheduled = false;
-        self.update_accumulator_gauges();
 
         Ok(())
     }
@@ -520,19 +495,21 @@ impl Handler<CommitTimeout> for ParquetIndexer {
         );
 
         // Flush the accumulator
-        if let Some(combined) = self.flush_accumulator()? {
+        let flushed_batch = self.flush_accumulator()?;
+        if let Some(ref combined) = flushed_batch {
             self.counters.record_flush();
-            INDEXER_METRICS
-                .dd_parquet_splits_produced
-                .get("commit_timeout")
-                .increment(1);
             info!(
                 num_rows = combined.num_rows(),
-                "Flushed batch on commit timeout"
+                "flushed batch on commit timeout"
             );
+        }
 
+        // Forward if we have data or a pending checkpoint delta.
+        let should_send = flushed_batch.is_some() || !self.checkpoint_delta.is_empty();
+
+        if should_send {
             let batch_for_packager = ParquetBatchForPackager {
-                batch: Some(combined),
+                batch: flushed_batch,
                 index_uid: self.index_uid.clone(),
                 checkpoint_delta: self.make_index_checkpoint_delta(),
                 publish_lock: self.publish_lock.clone(),
@@ -551,9 +528,11 @@ impl Handler<CommitTimeout> for ParquetIndexer {
                         .into(),
                     )
                 })?;
-        }
 
-        self.update_accumulator_gauges();
+            // Reset so the next batch schedules a fresh timeout.
+            self.workbench_id = Ulid::new();
+            self.commit_timeout_scheduled = false;
+        }
 
         Ok(())
     }
@@ -561,19 +540,20 @@ impl Handler<CommitTimeout> for ParquetIndexer {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering as AtomicOrdering;
+    use std::sync::Arc;
+    use std::sync::atomic::Ordering;
     use std::time::Duration;
 
     use quickwit_actors::{ActorHandle, Universe};
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_parquet_engine::storage::{ParquetSplitWriter, ParquetWriterConfig};
+    use quickwit_parquet_engine::test_helpers::create_test_batch;
     use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
     use quickwit_storage::RamStorage;
 
     use super::*;
     use crate::actors::{
         ParquetPackager, ParquetPublisher, ParquetUploader, SplitsUpdateMailbox, UploaderType,
-        parquet_test_helpers::create_test_batch,
     };
 
     /// Create a test ParquetUploader and return its mailbox.
@@ -627,7 +607,8 @@ mod tests {
         uploader_mailbox: Mailbox<ParquetUploader>,
     ) -> (Mailbox<ParquetPackager>, ActorHandle<ParquetPackager>) {
         let writer_config = ParquetWriterConfig::default();
-        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir);
+        let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
+        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir, &table_config);
 
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)
@@ -642,7 +623,7 @@ mod tests {
             || async {
                 uploader_handle.process_pending_and_observe().await;
                 let counters = uploader_handle.last_observation();
-                counters.num_staged_splits.load(AtomicOrdering::Relaxed) >= expected_splits
+                counters.num_staged_splits.load(Ordering::Relaxed) >= expected_splits
             },
             Duration::from_secs(15),
             Duration::from_millis(50),
@@ -650,7 +631,6 @@ mod tests {
         .await
         .map_err(|_| anyhow::anyhow!("Timeout waiting for {} staged splits", expected_splits))
     }
-
 
     #[tokio::test]
     async fn test_metrics_indexer_receives_batch() {
@@ -680,8 +660,8 @@ mod tests {
 
         let counters = indexer_handle.process_pending_and_observe().await.state;
 
-        assert_eq!(counters.batches_received.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.rows_indexed.load(Ordering::Relaxed), 10);
+        assert_eq!(counters.batches_received, 1);
+        assert_eq!(counters.rows_indexed, 10);
 
         universe.assert_quit().await;
     }
@@ -719,23 +699,13 @@ mod tests {
         let counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Should have flushed a batch due to force_commit
-        assert_eq!(counters.batches_received.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.batches_flushed.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.batches_received, 1);
+        assert_eq!(counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert_eq!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
-        assert!(
-            packager_counters
-                .bytes_written
-                .load(AtomicOrdering::Relaxed)
-                > 0
-        );
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 1);
+        assert!(packager_counters.bytes_written.load(Ordering::Relaxed) > 0);
 
         // Verify uploader received the split
         uploader_handle.process_pending_and_observe().await;
@@ -781,7 +751,7 @@ mod tests {
         let counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Should not process anything when publish lock is dead
-        assert_eq!(counters.batches_received.load(Ordering::Relaxed), 0);
+        assert_eq!(counters.batches_received, 0);
 
         universe.assert_quit().await;
     }
@@ -819,18 +789,13 @@ mod tests {
         let counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Should have flushed due to exceeding threshold
-        assert_eq!(counters.batches_received.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.rows_indexed.load(Ordering::Relaxed), 100);
-        assert!(counters.batches_flushed.load(Ordering::Relaxed) >= 1);
+        assert_eq!(counters.batches_received, 1);
+        assert_eq!(counters.rows_indexed, 100);
+        assert!(counters.batches_flushed >= 1);
 
         // Verify packager produced split(s)
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed)
-                >= 1
-        );
+        assert!(packager_counters.splits_produced.load(Ordering::Relaxed) >= 1);
 
         // Verify uploader received the splits
         uploader_handle.process_pending_and_observe().await;
@@ -875,16 +840,11 @@ mod tests {
 
         assert!(exit_status.is_success());
         // Should have flushed on shutdown
-        assert_eq!(counters.batches_flushed.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert_eq!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 1);
 
         universe.assert_quit().await;
     }
@@ -921,7 +881,7 @@ mod tests {
 
         // No flush yet (waiting for threshold or timeout)
         let counters = indexer_handle.observe().await;
-        assert_eq!(counters.batches_flushed.load(Ordering::Relaxed), 0);
+        assert_eq!(counters.batches_flushed, 0);
 
         // Wait for commit timeout to trigger
         universe
@@ -931,16 +891,11 @@ mod tests {
 
         // Should have flushed due to commit timeout
         let counters = indexer_handle.observe().await;
-        assert_eq!(counters.batches_flushed.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert_eq!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 1);
 
         // Verify uploader received the split
         uploader_handle.process_pending_and_observe().await;
@@ -1000,27 +955,12 @@ mod tests {
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Verify indexer flushed a batch
-        assert_eq!(
-            indexer_counters
-                .batches_received
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
-        assert_eq!(
-            indexer_counters
-                .batches_flushed
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
+        assert_eq!(indexer_counters.batches_received, 1);
+        assert_eq!(indexer_counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;
-        assert_eq!(
-            packager_counters
-                .splits_produced
-                .load(AtomicOrdering::Relaxed),
-            1
-        );
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 1);
 
         // Wait for the uploader to stage the split
         wait_for_staged_splits(&uploader_handle, 1)

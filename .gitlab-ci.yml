@@ -16,17 +16,48 @@ default:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
 
 stages:
+  - pre-build
   - build
   - publish
   - deploy
+
+fetch_github_token:
+  image: registry.ddbuild.io/images/dd-octo-sts-ci-base:v107310663-4dd9003-2026.04-2
+  stage: pre-build
+  tags:
+    - arch:arm64
+  rules:
+    - changes:
+        - .cargo/config.toml
+        - .dockerignore
+        - .gitlab-ci.yml
+        - Dockerfile
+        - quickwit/**/*
+    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_BRANCH == "pomsky/staging"
+  id_tokens:
+    DDOCTOSTS_ID_TOKEN:
+      aud: dd-octo-sts
+  script:
+    - dd-octo-sts version
+    - echo "POMCHI_TOKEN=$(dd-octo-sts token --disable-tracing --scope DataDog/PomChi --policy access_pomsky_gitlab)" >> build.env
+    - echo "EVENT_PERCOLATION_TOKEN=$(dd-octo-sts token --disable-tracing --scope DataDog/event-percolation --policy access_pomsky_gitlab)" >> build.env
+  artifacts:
+    reports:
+      dotenv: build.env
 
 build_image:
   image: $DOCKER_CI_IMAGE
   stage: build
   tags:
     - arch:arm64
+  needs:
+    - job: fetch_github_token
+      artifacts: true
   rules:
     - changes:
+        - .cargo/config.toml
+        - .dockerignore
         - .gitlab-ci.yml
         - Dockerfile
         - quickwit/**/*
@@ -45,6 +76,9 @@ build_image_staging:
   stage: build
   tags:
     - arch:arm64
+  needs:
+    - job: fetch_github_token
+      artifacts: true
   rules:
     - if: $CI_COMMIT_BRANCH == "pomsky/staging"
       changes:

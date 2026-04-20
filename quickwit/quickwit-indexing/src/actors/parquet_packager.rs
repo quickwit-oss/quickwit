@@ -37,7 +37,6 @@ use tracing::{info, warn};
 
 use crate::actors::ParquetUploader;
 use crate::actors::parquet_indexer::ParquetSplitBatch;
-use crate::metrics::INDEXER_METRICS;
 use crate::models::PublishLock;
 
 /// A concatenated RecordBatch ready to be written to a Parquet file.
@@ -188,18 +187,6 @@ impl Handler<ParquetBatchForPackager> for ParquetPackager {
                 Ok(split) => {
                     let size_bytes = split.metadata.size_bytes;
                     self.counters.record_split(size_bytes);
-                    INDEXER_METRICS
-                        .dd_parquet_splits_produced
-                        .get("packager")
-                        .increment(1);
-                    INDEXER_METRICS
-                        .dd_parquet_split_num_rows
-                        .get("packager")
-                        .record(split.metadata.num_rows as f64);
-                    INDEXER_METRICS
-                        .dd_parquet_split_size_bytes
-                        .get("packager")
-                        .record(size_bytes as f64);
 
                     info!(
                         split_id = %split.metadata.split_id,
@@ -252,14 +239,12 @@ mod tests {
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_parquet_engine::storage::ParquetWriterConfig;
+    use quickwit_parquet_engine::test_helpers::create_test_batch;
     use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::{
-        ParquetPublisher, SplitsUpdateMailbox, UploaderType,
-        parquet_test_helpers::create_test_batch,
-    };
+    use crate::actors::{ParquetPublisher, SplitsUpdateMailbox, UploaderType};
 
     fn create_test_uploader(
         universe: &Universe,
@@ -289,7 +274,8 @@ mod tests {
         uploader_mailbox: Mailbox<ParquetUploader>,
     ) -> (Mailbox<ParquetPackager>, ActorHandle<ParquetPackager>) {
         let writer_config = ParquetWriterConfig::default();
-        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir);
+        let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
+        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir, &table_config);
 
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)

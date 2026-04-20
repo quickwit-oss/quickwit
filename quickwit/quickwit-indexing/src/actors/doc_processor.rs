@@ -20,9 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
-use fnv::FnvBuildHasher;
-use hashbrown::hash_map::EntryRef;
-use hashbrown::{Equivalent, HashMap};
+use fnv::FnvHashMap;
 use metrics::Counter;
 use pomchi::{DatadogLogMsg, Pipeline, PipelineConfig, PipelineError, PipelineStep, ProcessedLog};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -58,36 +56,7 @@ const DEFAULT_MAX_LOG_PAST_AGE_HOURS: u64 = 18;
 const DEFAULT_MAX_LOG_FUTURE_AGE_HOURS: u64 = 12;
 const MAX_LOG_PAST_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_PAST_AGE_HOURS";
 const MAX_LOG_FUTURE_AGE_HOURS_ENV_KEY: &str = "QW_MAX_LOG_FUTURE_AGE_HOURS";
-const UNSET_PIPELINE_LABEL: &str = "unset";
-
-type PipelineCpuMicrosBySourceAndService = HashMap<PipelineCpuLabels, u64, FnvBuildHasher>;
-
-#[derive(Debug, Eq, Hash, PartialEq)]
-struct PipelineCpuLabels {
-    source: String,
-    service: String,
-}
-
-#[derive(Debug, Eq, Hash, PartialEq)]
-struct PipelineCpuLabelsRef<'a> {
-    source: &'a str,
-    service: &'a str,
-}
-
-impl Equivalent<PipelineCpuLabels> for PipelineCpuLabelsRef<'_> {
-    fn equivalent(&self, key: &PipelineCpuLabels) -> bool {
-        self.source == key.source && self.service == key.service
-    }
-}
-
-impl From<&PipelineCpuLabelsRef<'_>> for PipelineCpuLabels {
-    fn from(key: &PipelineCpuLabelsRef<'_>) -> Self {
-        Self {
-            source: key.source.to_string(),
-            service: key.service.to_string(),
-        }
-    }
-}
+const UNSET_PIPELINE_SOURCE_LABEL: &str = "unset";
 
 pub(super) struct JsonDoc {
     json_obj: JsonObject,
@@ -241,7 +210,7 @@ fn parse_raw_doc<'a>(
     raw_doc: Bytes,
     num_bytes: usize,
     pipeline_opt: Option<&'a Pipeline>,
-    pipeline_cpu_micros_by_source_and_service: &'a mut PipelineCpuMicrosBySourceAndService,
+    pipeline_cpu_micros_per_source: &'a mut FnvHashMap<String, u64>,
 ) -> impl Iterator<Item = Result<JsonDoc, DocProcessorError>> + 'a {
     let json_doc_iter = try_into_json_docs(input_format, raw_doc, num_bytes);
     let Some(pipeline) = pipeline_opt else {
@@ -265,21 +234,13 @@ fn parse_raw_doc<'a>(
             let source = processed_log
                 .source
                 .as_deref()
-                .unwrap_or(UNSET_PIPELINE_LABEL);
-            let service = processed_log
-                .service
-                .as_deref()
-                .unwrap_or(UNSET_PIPELINE_LABEL);
+                .unwrap_or(UNSET_PIPELINE_SOURCE_LABEL);
             if let Ok(cpu_delta) = start.and_then(|start| start.try_elapsed()) {
                 let cpu_micros = cpu_delta.as_micros() as u64;
-                let key = PipelineCpuLabelsRef { source, service };
-                match pipeline_cpu_micros_by_source_and_service.entry_ref(&key) {
-                    EntryRef::Occupied(entry) => {
-                        *entry.into_mut() += cpu_micros;
-                    }
-                    EntryRef::Vacant(entry) => {
-                        entry.insert(cpu_micros);
-                    }
+                if let Some(cpu_micros_total) = pipeline_cpu_micros_per_source.get_mut(source) {
+                    *cpu_micros_total += cpu_micros;
+                } else {
+                    pipeline_cpu_micros_per_source.insert(source.to_string(), cpu_micros);
                 }
             }
 
@@ -386,13 +347,9 @@ impl Serialize for DocProcessorCounter {
 }
 
 impl DocProcessorCounter {
-    fn for_index_and_doc_processor_outcome(
-        index: &str,
-        pipeline_uid: &str,
-        outcome: &str,
-    ) -> DocProcessorCounter {
+    fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
         let index_label = quickwit_common::metrics::index_label(index);
-        let labels = [index_label, pipeline_uid, outcome];
+        let labels = [index_label, outcome];
 
         DocProcessorCounter {
             num_docs: Default::default(),
@@ -431,7 +388,6 @@ impl DocProcessorCounter {
 pub struct DocProcessorCounters {
     index_id: IndexId,
     source_id: SourceId,
-    pipeline_uid: String,
 
     /// Overall number of documents received, partitioned
     /// into categories:
@@ -458,46 +414,28 @@ pub struct DocProcessorCounters {
 }
 
 impl DocProcessorCounters {
-    pub fn new(index_id: IndexId, source_id: SourceId, pipeline_uid: String) -> Self {
-        let valid_docs = DocProcessorCounter::for_index_and_doc_processor_outcome(
-            &index_id,
-            &pipeline_uid,
-            "valid",
-        );
-        let doc_mapper_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
-            &index_id,
-            &pipeline_uid,
-            "doc_mapper_error",
-        );
+    pub fn new(index_id: IndexId, source_id: SourceId) -> Self {
+        let valid_docs =
+            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "valid");
+        let doc_mapper_errors =
+            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "doc_mapper_error");
         let processing_pipeline_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
             &index_id,
-            &pipeline_uid,
             "processing_pipeline_error",
         );
-        let transform_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
-            &index_id,
-            &pipeline_uid,
-            "transform_error",
-        );
-        let json_parse_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
-            &index_id,
-            &pipeline_uid,
-            "json_parse_error",
-        );
-        let otlp_parse_errors = DocProcessorCounter::for_index_and_doc_processor_outcome(
-            &index_id,
-            &pipeline_uid,
-            "otlp_parse_error",
-        );
+        let transform_errors =
+            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "transform_error");
+        let json_parse_errors =
+            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "json_parse_error");
+        let otlp_parse_errors =
+            DocProcessorCounter::for_index_and_doc_processor_outcome(&index_id, "otlp_parse_error");
         let outside_time_range = DocProcessorCounter::for_index_and_doc_processor_outcome(
             &index_id,
-            &pipeline_uid,
             "outside_time_range",
         );
         DocProcessorCounters {
             index_id,
             source_id,
-            pipeline_uid,
 
             valid: valid_docs,
             doc_mapper_errors,
@@ -565,11 +503,11 @@ impl DocProcessorCounters {
         };
     }
 
-    pub fn record_processing_pipeline_cpu_micros(&self, source: &str, service: &str, micros: u64) {
+    pub fn record_processing_pipeline_cpu_micros(&self, source: &str, micros: u64) {
         let index_label = quickwit_common::metrics::index_label(&self.index_id);
         crate::metrics::INDEXER_METRICS
             .processing_pipeline_thread_cpu_micros_total
-            .with_label_values([index_label, &self.pipeline_uid, source, service])
+            .with_label_values([index_label, source])
             .inc_by(micros);
     }
 }
@@ -629,7 +567,6 @@ impl DocProcessor {
     pub fn try_new(
         index_id: IndexId,
         source_id: SourceId,
-        pipeline_uid: String,
         doc_mapper: Arc<DocMapper>,
         indexer_mailbox: Mailbox<Indexer>,
         transform_config_opt: Option<TransformConfig>,
@@ -643,7 +580,7 @@ impl DocProcessor {
         // Try to deserialize pipeline config into `PipelineConfig` from the path provided in the
         // environment variable QW_PIPELINE_CONFIG_PATH
         let pipeline_config_opt: Option<PipelineConfig> =
-            if index_id.as_str().starts_with("datadog") {
+            if !index_id.starts_with("datadog-spans") && index_id.starts_with("datadog") {
                 // Add Fallback to empty pipeline, so still have the preprocessing enabled
                 load_pipeline_config_from_env().or(Some(PipelineConfig::default()))
             } else {
@@ -672,7 +609,7 @@ impl DocProcessor {
             doc_mapper,
             indexer_mailbox,
             timestamp_field_opt,
-            counters: Arc::new(DocProcessorCounters::new(index_id, source_id, pipeline_uid)),
+            counters: Arc::new(DocProcessorCounters::new(index_id, source_id)),
             publish_lock: PublishLock::default(),
             #[cfg(feature = "vrl")]
             transform_opt: transform_config_opt
@@ -719,14 +656,14 @@ impl DocProcessor {
         // #[cfg(not(feature = "vrl"))]
         // let transform_opt: Option<&mut VrlProgram> = None;
 
-        let mut pipeline_cpu_micros_by_source_and_service =
-            HashMap::with_capacity_and_hasher(8, Default::default());
+        let mut pipeline_cpu_micros_per_source =
+            FnvHashMap::with_capacity_and_hasher(8, Default::default());
         for json_doc_result in parse_raw_doc(
             self.input_format,
             raw_doc,
             num_bytes,
             self.pipeline_opt.as_ref(),
-            &mut pipeline_cpu_micros_by_source_and_service,
+            &mut pipeline_cpu_micros_per_source,
         ) {
             let processed_doc_result =
                 json_doc_result.and_then(|json_doc| self.process_json_doc(json_doc));
@@ -752,12 +689,9 @@ impl DocProcessor {
                 }
             }
         }
-        for (labels, micros) in pipeline_cpu_micros_by_source_and_service {
-            self.counters.record_processing_pipeline_cpu_micros(
-                &labels.source,
-                &labels.service,
-                micros,
-            );
+        for (source, micros) in pipeline_cpu_micros_per_source {
+            self.counters
+                .record_processing_pipeline_cpu_micros(&source, micros);
         }
     }
 
@@ -943,7 +877,6 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
-            "pipeline1".to_string(),
             doc_mapper.clone(),
             indexer_mailbox,
             None,
@@ -1031,7 +964,6 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
-            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1080,7 +1012,6 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
-            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1113,7 +1044,6 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
-            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1160,7 +1090,6 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
-            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1238,7 +1167,6 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
-            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1314,7 +1242,6 @@ mod tests {
         let mut doc_processor = DocProcessor::try_new(
             "datadog-index".to_string(),
             "my-source".to_string(),
-            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1380,7 +1307,6 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
-            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,
@@ -1454,7 +1380,6 @@ mod tests {
         let doc_processor = DocProcessor::try_new(
             "my-index".to_string(),
             "my-source".to_string(),
-            "pipeline1".to_string(),
             doc_mapper,
             indexer_mailbox,
             None,

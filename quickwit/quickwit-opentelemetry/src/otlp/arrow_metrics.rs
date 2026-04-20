@@ -19,16 +19,18 @@
 //! The schema is discovered at `finish()` time by scanning all accumulated
 //! data points for the union of tag keys.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::io::Cursor;
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, Float64Builder, RecordBatch, StringDictionaryBuilder, UInt64Builder, UInt8Builder,
+    ArrayRef, Float64Builder, Int64Builder, RecordBatch, StringDictionaryBuilder, UInt8Builder,
+    UInt64Builder,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use arrow::ipc::reader::StreamReader;
 use arrow::ipc::writer::StreamWriter;
+use quickwit_parquet_engine::timeseries_id::compute_timeseries_id;
 use quickwit_proto::bytes::Bytes;
 use quickwit_proto::ingest::{DocBatchV2, DocFormat};
 use quickwit_proto::types::DocUid;
@@ -38,8 +40,7 @@ use super::otel_metrics::{MetricDataPoint, MetricType};
 /// Builder for creating Arrow RecordBatch from MetricDataPoints.
 ///
 /// Accumulates data points and discovers the schema dynamically at `finish()`
-/// time. Uses dictionary encoding for string columns (metric_name, all tags)
-/// to achieve significant compression for low cardinality values.
+/// time. Uses dictionary encoding for string columns (metric_name, all tags).
 pub struct ArrowMetricsBatchBuilder {
     data_points: Vec<MetricDataPoint>,
 }
@@ -53,8 +54,8 @@ impl ArrowMetricsBatchBuilder {
     }
 
     /// Appends a MetricDataPoint to the batch.
-    pub fn append(&mut self, data_point: &MetricDataPoint) {
-        self.data_points.push(data_point.clone());
+    pub fn append(&mut self, data_point: MetricDataPoint) {
+        self.data_points.push(data_point);
     }
 
     /// Finalizes and returns the RecordBatch.
@@ -72,10 +73,11 @@ impl ArrowMetricsBatchBuilder {
                 tag_keys.insert(key.as_str());
             }
         }
-        let sorted_tag_keys: Vec<String> = tag_keys.into_iter().map(str::to_owned).collect();
+        let sorted_tag_keys: Vec<&str> = tag_keys.into_iter().collect();
 
-        // Build the Arrow schema dynamically
-        let mut fields = Vec::with_capacity(4 + sorted_tag_keys.len());
+        // Build the Arrow schema dynamically.
+        // 5 fixed columns: metric_name, metric_type, timestamp_secs, value, timeseries_id
+        let mut fields = Vec::with_capacity(5 + sorted_tag_keys.len());
         fields.push(Field::new(
             "metric_name",
             DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
@@ -84,8 +86,11 @@ impl ArrowMetricsBatchBuilder {
         fields.push(Field::new("metric_type", DataType::UInt8, false));
         fields.push(Field::new("timestamp_secs", DataType::UInt64, false));
         fields.push(Field::new("value", DataType::Float64, false));
+        // TODO: customer could submit a timeseries_id tag, and I don't think we want to explicitly
+        // reserve it.
+        fields.push(Field::new("timeseries_id", DataType::Int64, false));
 
-        for tag_key in &sorted_tag_keys {
+        for &tag_key in &sorted_tag_keys {
             fields.push(Field::new(
                 tag_key,
                 DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
@@ -101,38 +106,72 @@ impl ArrowMetricsBatchBuilder {
         let mut metric_type_builder = UInt8Builder::with_capacity(num_rows);
         let mut timestamp_secs_builder = UInt64Builder::with_capacity(num_rows);
         let mut value_builder = Float64Builder::with_capacity(num_rows);
+        let mut timeseries_id_builder = Int64Builder::with_capacity(num_rows);
 
         let mut tag_builders: Vec<StringDictionaryBuilder<Int32Type>> = sorted_tag_keys
             .iter()
             .map(|_| StringDictionaryBuilder::new())
             .collect();
 
-        for dp in &self.data_points {
+        // Map tag key -> builder index for O(1) lookup.
+        let tag_key_to_idx: HashMap<&str, usize> = sorted_tag_keys
+            .iter()
+            .enumerate()
+            .map(|(i, k)| (*k, i))
+            .collect();
+
+        // Track how many rows each tag builder has been filled to.
+        // This lets us bulk-append nulls for rows where a tag was absent.
+        let mut builder_rows = vec![0usize; sorted_tag_keys.len()];
+
+        for (row_idx, dp) in self.data_points.iter().enumerate() {
             metric_name_builder.append_value(&dp.metric_name);
             metric_type_builder.append_value(dp.metric_type as u8);
             timestamp_secs_builder.append_value(dp.timestamp_secs);
             value_builder.append_value(dp.value);
+            // TODO: can we not have to compute the timeseries for every point? especially with
+            // compaction, there may be many points with the same tags, in the same
+            // batch.
+            timeseries_id_builder.append_value(compute_timeseries_id(
+                &dp.metric_name,
+                dp.metric_type as u8,
+                &dp.tags,
+            ));
 
-            for (tag_idx, tag_key) in sorted_tag_keys.iter().enumerate() {
-                match dp.tags.get(tag_key) {
-                    Some(tag_val) => tag_builders[tag_idx].append_value(tag_val),
-                    None => tag_builders[tag_idx].append_null(),
+            // Only touch builders for tags this data point has.
+            for (tag_key, tag_val) in &dp.tags {
+                if let Some(&idx) = tag_key_to_idx.get(tag_key.as_str()) {
+                    // Bulk append nulls if we need to.
+                    let nulls = row_idx - builder_rows[idx];
+                    if nulls > 0 {
+                        tag_builders[idx].append_nulls(nulls);
+                    }
+                    tag_builders[idx].append_value(tag_val);
+                    builder_rows[idx] = row_idx + 1;
                 }
             }
         }
 
-        let mut arrays: Vec<ArrayRef> = Vec::with_capacity(4 + sorted_tag_keys.len());
+        // Pad remaining nulls at the end of each tag column.
+        for (idx, builder) in tag_builders.iter_mut().enumerate() {
+            let nulls = num_rows - builder_rows[idx];
+            if nulls > 0 {
+                builder.append_nulls(nulls);
+            }
+        }
+
+        let mut arrays: Vec<ArrayRef> = Vec::with_capacity(5 + sorted_tag_keys.len());
         arrays.push(Arc::new(metric_name_builder.finish()));
         arrays.push(Arc::new(metric_type_builder.finish()));
         arrays.push(Arc::new(timestamp_secs_builder.finish()));
         arrays.push(Arc::new(value_builder.finish()));
+        arrays.push(Arc::new(timeseries_id_builder.finish()));
 
         for tag_builder in &mut tag_builders {
             arrays.push(Arc::new(tag_builder.finish()));
         }
 
-        RecordBatch::try_new(schema, arrays)
-            .expect("record batch should match Arrow schema")
+        RecordBatch::try_new(schema, arrays).expect("record batch should match Arrow schema")
     }
 
     /// Returns the number of rows appended so far.
@@ -241,6 +280,10 @@ pub fn ipc_to_json_values(
                     } else {
                         serde_json::Value::Number(val.into())
                     }
+                }
+                DataType::Int64 => {
+                    let arr = column.as_primitive::<arrow::datatypes::Int64Type>();
+                    serde_json::Value::Number(arr.value(row_idx).into())
                 }
                 DataType::UInt64 => {
                     let arr = column.as_primitive::<arrow::datatypes::UInt64Type>();
@@ -357,15 +400,15 @@ mod tests {
     fn test_arrow_batch_builder_single_row() {
         let dp = make_test_data_point();
         let mut builder = ArrowMetricsBatchBuilder::with_capacity(1);
-        builder.append(&dp);
+        builder.append(dp);
 
         assert_eq!(builder.len(), 1);
         assert!(!builder.is_empty());
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 1);
-        // 4 fixed columns + 9 tag columns
-        assert_eq!(batch.num_columns(), 13);
+        // 5 fixed columns + 9 tag columns
+        assert_eq!(batch.num_columns(), 14);
     }
 
     #[test]
@@ -386,7 +429,7 @@ mod tests {
                 value: idx as f64 * 0.1,
                 tags,
             };
-            builder.append(&dp);
+            builder.append(dp);
         }
 
         assert_eq!(builder.len(), 100);
@@ -413,7 +456,7 @@ mod tests {
                 value: idx as f64,
                 tags,
             };
-            builder.append(&dp);
+            builder.append(dp);
         }
 
         let batch = builder.finish();
@@ -444,12 +487,12 @@ mod tests {
         };
 
         let mut builder = ArrowMetricsBatchBuilder::with_capacity(1);
-        builder.append(&dp);
+        builder.append(dp);
         let batch = builder.finish();
 
         assert_eq!(batch.num_rows(), 1);
-        // 4 fixed columns + 1 tag column (service_name)
-        assert_eq!(batch.num_columns(), 5);
+        // 5 fixed columns + 1 tag column (service_name)
+        assert_eq!(batch.num_columns(), 6);
     }
 
     #[test]
@@ -461,7 +504,7 @@ mod tests {
         tags1.insert("env".to_string(), "prod".to_string());
         tags1.insert("host".to_string(), "server-1".to_string());
 
-        builder.append(&MetricDataPoint {
+        builder.append(MetricDataPoint {
             metric_name: "metric.a".to_string(),
             metric_type: MetricType::Gauge,
             timestamp_secs: 1704067200,
@@ -474,7 +517,7 @@ mod tests {
         tags2.insert("env".to_string(), "staging".to_string());
         tags2.insert("region".to_string(), "us-west".to_string());
 
-        builder.append(&MetricDataPoint {
+        builder.append(MetricDataPoint {
             metric_name: "metric.b".to_string(),
             metric_type: MetricType::Sum,
             timestamp_secs: 1704067201,
@@ -484,8 +527,8 @@ mod tests {
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 2);
-        // 4 fixed + 3 tag columns (env, host, region) - sorted alphabetically
-        assert_eq!(batch.num_columns(), 7);
+        // 5 fixed + 3 tag columns (env, host, region) - sorted alphabetically
+        assert_eq!(batch.num_columns(), 8);
 
         let schema = batch.schema();
         let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
@@ -496,11 +539,84 @@ mod tests {
                 "metric_type",
                 "timestamp_secs",
                 "value",
+                "timeseries_id",
                 "env",
                 "host",
                 "region",
             ]
         );
+    }
+
+    #[test]
+    fn test_sparse_tags_null_placement() {
+        use arrow::array::{Array, DictionaryArray};
+        use arrow::datatypes::Int32Type;
+
+        let mut builder = ArrowMetricsBatchBuilder::with_capacity(3);
+
+        // Row 0: only tag "a"
+        let mut tags0 = HashMap::new();
+        tags0.insert("a".to_string(), "a0".to_string());
+        builder.append(MetricDataPoint {
+            metric_name: "m".to_string(),
+            metric_type: MetricType::Gauge,
+            timestamp_secs: 1000,
+            value: 1.0,
+            tags: tags0,
+        });
+
+        // Row 1: only tag "b"
+        let mut tags1 = HashMap::new();
+        tags1.insert("b".to_string(), "b1".to_string());
+        builder.append(MetricDataPoint {
+            metric_name: "m".to_string(),
+            metric_type: MetricType::Gauge,
+            timestamp_secs: 1001,
+            value: 2.0,
+            tags: tags1,
+        });
+
+        // Row 2: both tags "a" and "b"
+        let mut tags2 = HashMap::new();
+        tags2.insert("a".to_string(), "a2".to_string());
+        tags2.insert("b".to_string(), "b2".to_string());
+        builder.append(MetricDataPoint {
+            metric_name: "m".to_string(),
+            metric_type: MetricType::Gauge,
+            timestamp_secs: 1002,
+            value: 3.0,
+            tags: tags2,
+        });
+
+        let batch = builder.finish();
+        assert_eq!(batch.num_rows(), 3);
+        // 5 fixed + 2 tags (a, b)
+        assert_eq!(batch.num_columns(), 7);
+
+        let schema = batch.schema();
+        let a_idx = schema.index_of("a").unwrap();
+        let b_idx = schema.index_of("b").unwrap();
+
+        let a_col = batch
+            .column(a_idx)
+            .as_any()
+            .downcast_ref::<DictionaryArray<Int32Type>>()
+            .unwrap();
+        let b_col = batch
+            .column(b_idx)
+            .as_any()
+            .downcast_ref::<DictionaryArray<Int32Type>>()
+            .unwrap();
+
+        // Column "a": value at row 0, null at row 1, value at row 2
+        assert!(!a_col.is_null(0));
+        assert!(a_col.is_null(1));
+        assert!(!a_col.is_null(2));
+
+        // Column "b": null at row 0, value at row 1, value at row 2
+        assert!(b_col.is_null(0));
+        assert!(!b_col.is_null(1));
+        assert!(!b_col.is_null(2));
     }
 
     #[test]
@@ -530,7 +646,7 @@ mod tests {
                 value: idx as f64 * 0.1,
                 tags,
             };
-            builder.append(&dp);
+            builder.append(dp);
         }
         let original_batch = builder.finish();
 
@@ -568,7 +684,7 @@ mod tests {
                 value: idx as f64,
                 tags,
             };
-            builder.append(&dp);
+            builder.append(dp);
             doc_uids.push(doc_uid_generator.next_doc_uid());
         }
         let batch = builder.finish();

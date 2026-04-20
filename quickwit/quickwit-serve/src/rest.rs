@@ -30,12 +30,14 @@ use tower::ServiceBuilder;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
 use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 use warp::filters::log::Info;
 use warp::hyper::http::HeaderValue;
 use warp::hyper::{Method, StatusCode, http};
 use warp::{Filter, Rejection, Reply, redirect};
 
+use crate::byoc_api::byoc_api_handlers;
 use crate::cloudprem_ui_api::cloudprem_ui_api_handlers;
 use crate::cloudprem_ui_handler::cloudprem_ui_handler;
 use crate::cluster_api::cluster_handler;
@@ -52,6 +54,7 @@ use crate::jaeger_api::jaeger_api_handlers;
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
+use crate::rest_api_request_span::{make_http_request_span, set_status_code_on_request_span};
 use crate::rest_api_response::{RestApiError, RestApiResponse};
 use crate::search_api::{
     search_get_handler, search_plan_get_handler, search_plan_post_handler, search_post_handler,
@@ -202,18 +205,21 @@ pub(crate) async fn start_rest_server(
     );
 
     // Combine all the routes together.
-    // datadog_api_handlers must come before api_v1_root_route so that
-    // /api/v1/datadog-metrics/ingest is matched by the BYOC metrics handler
-    // rather than the generic /{index_id}/ingest handler.
-    let rest_routes = datadog_api_handlers(
-        quickwit_services.ingest_router_service.clone(),
-        index_router,
-    )
-        .or(api_v1_root_route)
+    let api_routes = api_v1_root_route
+        .or(datadog_api_handlers(
+            quickwit_services.ingest_router_service.clone(),
+            index_router.clone(),
+        ))
+        .or(byoc_api_handlers(
+            quickwit_services.ingest_router_service.clone(),
+            index_router,
+        ))
         .or(cloudprem_ui_api_handlers(
             quickwit_services.search_service.clone(),
         ))
-        .boxed()
+        .boxed();
+
+    let rest_routes = api_routes
         .or(api_doc)
         .or(redirect_root_to_ui_route)
         .or(ui_handler())
@@ -230,7 +236,15 @@ pub(crate) async fn start_rest_server(
     let compression_predicate = CompressionPredicate::from_env().and(NotForContentType::IMAGES);
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(make_http_request_span as fn(&http::Request<_>) -> tracing::Span)
+        .on_response(
+            set_status_code_on_request_span
+                as fn(&http::Response<_>, std::time::Duration, &tracing::Span),
+        );
+
     let service = ServiceBuilder::new()
+        .layer(trace_layer)
         .layer(
             CompressionLayer::new()
                 .zstd(true)

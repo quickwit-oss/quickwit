@@ -525,7 +525,6 @@ impl IndexingPipeline {
         let doc_processor = DocProcessor::try_new(
             index_id.to_string(),
             source_id.to_string(),
-            self.params.pipeline_id.pipeline_uid.to_string(),
             self.params.doc_mapper.clone(),
             indexer_mailbox,
             self.params.source_config.transform_config.clone(),
@@ -609,18 +608,10 @@ impl IndexingPipeline {
             "spawning parquet indexing pipeline for metrics",
         );
 
-        let source_actor_name = format!(
-            "{}Source",
-            self.params
-                .source_config
-                .source_type()
-                .as_str()
-                .to_upper_camel_case()
-        );
         let (source_mailbox, source_inbox) = ctx
             .spawn_ctx()
             .create_mailbox::<SourceActor<ParquetDocProcessor>>(
-                source_actor_name,
+                "SourceActor",
                 QueueCapacity::Unbounded,
             );
 
@@ -658,9 +649,11 @@ impl IndexingPipeline {
 
         // ParquetPackager
         let writer_config = quickwit_parquet_engine::storage::ParquetWriterConfig::default();
+        let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
         let split_writer = quickwit_parquet_engine::storage::ParquetSplitWriter::new(
             writer_config,
             self.params.indexing_directory.path(),
+            &table_config,
         );
         let parquet_packager = ParquetPackager::new(split_writer, parquet_uploader_mailbox);
         let (parquet_packager_mailbox, parquet_packager_handle) = ctx

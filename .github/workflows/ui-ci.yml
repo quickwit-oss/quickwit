@@ -25,8 +25,8 @@ jobs:
     name: Lint, type check & unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: 24
           cache: "yarn"
@@ -72,7 +72,7 @@ jobs:
       RUSTDOCFLAGS: -Dwarnings -Arustdoc::private_intra_doc_links
       QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@postgres:5432/quickwit-metastore-dev
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Override ADMS registry for GitHub Actions
         run: |
@@ -86,31 +86,41 @@ jobs:
           rustdocflags = ["--cfg", "tokio_unstable"]
           EOF
 
-      - uses: DataDog/dd-octo-sts-action@acaa02eee7e3bb0839e4272dacb37b8f3b58ba80
-        id: octo-sts
+      - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a
+        id: octo-sts-pomchi
         with:
           scope: DataDog/PomChi
           policy: access
 
-      - name: Configure git rewrite (STS token)
-        env:
-          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
-        run: |
-          echo "::add-mask::${GH_TOKEN}"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com".insteadOf "ssh://git@github.com"
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "[email protected]:"
+      - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a
+        id: octo-sts-event-percolation
+        with:
+          scope: DataDog/event-percolation
+          policy: access_pomsky
 
-      - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+      - name: Configure git rewrite (STS tokens)
+        env:
+          POMCHI_TOKEN: ${{ steps.octo-sts-pomchi.outputs.token }}
+          EP_TOKEN: ${{ steps.octo-sts-event-percolation.outputs.token }}
+        run: |
+          echo "::add-mask::${POMCHI_TOKEN}"
+          echo "::add-mask::${EP_TOKEN}"
+          git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi"
+          git config --global --add url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "[email protected]:DataDog/PomChi"
+          git config --global url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"
+          git config --global --add url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "[email protected]:DataDog/event-percolation"
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version: 24
           cache: "yarn"
           cache-dependency-path: quickwit/quickwit-ui/yarn.lock
       - name: Setup stable Rust Toolchain
-        uses: dtolnay/rust-toolchain@f7ccc83f9ed1e5b9c81d8a67d7ad1a747e22a561 # master
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
           toolchain: stable
       - name: Setup Rust cache
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
         with:
           workspaces: "./quickwit -> target"
           shared-key: "quickwit-cargo"

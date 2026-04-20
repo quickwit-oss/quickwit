@@ -10,3 +10,15 @@
 "ring-0.17.8" = { license = "ISC AND Custom" }
 
 "pomchi" = { license = "Datadog" }
+
+"event-percolation" = { license = "Datadog" }
+
+# Vector subcrates don't set license metadata in their Cargo.toml.
+# Vector is licensed under MPL-2.0.
+"codecs-0.1.0" = { license = "MPL-2.0", origin = "https://github.com/vectordotdev/vector" }
+"enrichment-0.1.0" = { license = "MPL-2.0", origin = "https://github.com/vectordotdev/vector" }
+"opentelemetry-proto-0.1.0" = { license = "Apache-2.0", origin = "https://github.com/open-telemetry/opentelemetry-rust/tree/main/opentelemetry-proto" }
+"vector-buffers-0.1.0" = { license = "MPL-2.0", origin = "https://github.com/vectordotdev/vector" }
+"vector-core-0.1.0" = { license = "MPL-2.0", origin = "https://github.com/vectordotdev/vector" }
+"vector-lib-0.1.0" = { license = "MPL-2.0", origin = "https://github.com/vectordotdev/vector" }
+"vector-stream-0.1.0" = { license = "MPL-2.0", origin = "https://github.com/vectordotdev/vector" }

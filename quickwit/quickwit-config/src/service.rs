@@ -49,6 +49,8 @@ impl QuickwitService {
         }
     }
 
+    /// Returns the set of services that are enabled by default when no
+    /// `--service` flag is provided.
     pub fn supported_services() -> HashSet<QuickwitService> {
         all::<QuickwitService>().collect()
     }

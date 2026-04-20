@@ -310,7 +310,6 @@ impl MetastoreService for ControlPlaneMetastore {
         let response = self.control_plane.set_index_routing_table(request).await?;
         Ok(response)
     }
-
     // Metrics Splits API - Proxy to underlying metastore
 
     async fn stage_metrics_splits(

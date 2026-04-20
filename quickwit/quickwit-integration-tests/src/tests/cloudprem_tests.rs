@@ -1,10 +1,12 @@
 use std::time::Duration;
 
+use itertools::Itertools;
 use pomchi::DatadogLogMsg;
 use prost::Message;
 use prost_types::Any;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::cloudprem::*;
+use quickwit_proto::types::IndexId;
 use serde_json::Value;
 use tonic::Request;
 
@@ -177,7 +179,7 @@ async fn setup_env(docs: &mut [Value]) -> ClusterSandbox {
         .rest_client(QuickwitService::Indexer)
         .indexes()
         .create(
-            include_str!("../../../../config/cloudprem/datadog.yaml"),
+            include_str!("../../../../config/cloudprem/datadog-logs.yaml"),
             quickwit_config::ConfigFormat::Yaml,
             false,
         )
@@ -902,34 +904,31 @@ async fn test_create_managed_indexes_on_startup() {
         .await
         .unwrap();
 
-    assert_eq!(indexes.len(), 4);
+    let index_ids: Vec<IndexId> = indexes
+        .into_iter()
+        .map(|index_metadata| index_metadata.index_uid.index_id)
+        .sorted()
+        .collect();
 
-    let index_ids: Vec<&str> = indexes.iter().map(|idx| idx.index_id()).collect();
+    assert_eq!(
+        index_ids,
+        vec![
+            "datadog",
+            "datadog-metrics",
+            "datadog-spans",
+            "otel-logs-v0_9",
+            "otel-traces-v0_9"
+        ]
+    );
 
-    assert!(index_ids.contains(&"otel-logs-v0_9"));
-    assert!(index_ids.contains(&"otel-traces-v0_9"));
-    assert!(index_ids.contains(&"otel-metrics-v0_9"));
-    assert!(index_ids.contains(&"datadog"));
-
-    sandbox
-        .rest_client(QuickwitService::Indexer)
-        .indexes()
-        .delete(index_ids[0], false)
-        .await
-        .unwrap();
-    sandbox
-        .rest_client(QuickwitService::Indexer)
-        .indexes()
-        .delete(index_ids[1], false)
-        .await
-        .unwrap();
-    sandbox
-        .rest_client(QuickwitService::Indexer)
-        .indexes()
-        .delete(index_ids[2], false)
-        .await
-        .unwrap();
-
+    for index_id in index_ids {
+        sandbox
+            .rest_client(QuickwitService::Indexer)
+            .indexes()
+            .delete(&index_id, false)
+            .await
+            .unwrap();
+    }
     sandbox.shutdown().await.unwrap();
 }
 

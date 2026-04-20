@@ -14,9 +14,8 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 
-use once_cell::sync::OnceCell;
 use quickwit_common::rate_limited_error;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_config::{DocMapping, SearchSettings, build_doc_mapper};
@@ -136,10 +135,10 @@ fn validate_doc_batch_impl(
 }
 
 fn is_document_validation_enabled() -> bool {
-    static IS_DOCUMENT_VALIDATION_ENABLED: OnceCell<bool> = OnceCell::new();
-    *IS_DOCUMENT_VALIDATION_ENABLED.get_or_init(|| {
+    static IS_DOCUMENT_VALIDATION_ENABLED: LazyLock<bool> = LazyLock::new(|| {
         !quickwit_common::get_bool_from_env("QW_DISABLE_DOCUMENT_VALIDATION", false)
-    })
+    });
+    *IS_DOCUMENT_VALIDATION_ENABLED
 }
 
 /// Parses the JSON documents contained in the batch and applies the doc mapper. Returns the

@@ -20,11 +20,12 @@ use std::time::Duration;
 
 use quickwit_proto::types::SourceUid;
 
-pub(in crate::ingest_v2) const BROADCAST_INTERVAL_PERIOD: Duration = if cfg!(test) {
-    Duration::from_millis(50)
-} else {
-    Duration::from_secs(5)
-};
+pub(in crate::ingest_v2) const BROADCAST_INTERVAL_PERIOD: Duration =
+    if cfg!(any(test, feature = "testsuite")) {
+        Duration::from_millis(50)
+    } else {
+        Duration::from_secs(5)
+    };
 
 pub use capacity_score::{
     BroadcastIngesterCapacityScoreTask, IngesterCapacityScoreUpdate,

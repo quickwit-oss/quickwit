@@ -17,7 +17,6 @@ bytesize = { workspace = true }
 chitchat = { workspace = true }
 futures = { workspace = true }
 itertools = { workspace = true }
-once_cell = { workspace = true }
 pin-project = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }

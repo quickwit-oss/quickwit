@@ -13,10 +13,9 @@
 // limitations under the License.
 
 use std::hash::{DefaultHasher, Hash, Hasher};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
-use once_cell::sync::Lazy;
 use quickwit_proto::indexing::{CpuCapacity, PIPELINE_FULL_CAPACITY, PipelineMetrics};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
@@ -26,7 +25,7 @@ use tokio::time::Instant;
 const NUDGE_TOLERANCE: Duration = Duration::from_secs(5);
 
 // Origin of time. It is used to compute the phase of the pipeline.
-static ORIGIN_OF_TIME: Lazy<Instant> = Lazy::new(Instant::now);
+static ORIGIN_OF_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 /// Cooperative indexing is a mechanism to deal with a large amount of pipelines.
 ///

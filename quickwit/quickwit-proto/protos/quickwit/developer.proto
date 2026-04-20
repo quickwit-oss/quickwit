@@ -21,6 +21,7 @@ package quickwit.developer;
 service DeveloperService {
   rpc GetDebugInfo(GetDebugInfoRequest) returns (GetDebugInfoResponse);
   rpc PullMetrics(PullMetricsRequest) returns (PullMetricsResponse);
+  rpc GetNodeDiagnostics(GetNodeDiagnosticsRequest) returns (GetNodeDiagnosticsResponse);
 }
 
 message GetDebugInfoRequest {
@@ -36,4 +37,12 @@ message PullMetricsRequest {}
 
 message PullMetricsResponse {
     repeated cloudprem.metrics.MetricFamily metric_families = 1;
+}
+
+message GetNodeDiagnosticsRequest {}
+
+message GetNodeDiagnosticsResponse {
+    string build_info_json = 1;
+    string runtime_info_json = 2;
+    string node_config_json = 3;
 }

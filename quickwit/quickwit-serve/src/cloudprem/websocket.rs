@@ -200,6 +200,12 @@ async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest
                     .await
             ))
         }
+        Request::GetClusterDiagnostics(req) => {
+            Response::GetClusterDiagnostics(handle_err!(server.get_cluster_diagnostics(req).await))
+        }
+        Request::EsQuery(es_query) => {
+            Response::EsQuery(handle_err!(server.es_query(es_query).await))
+        }
 
         _ => return unimplemented("Unimplemented request"),
     };
@@ -354,6 +360,13 @@ fn format_err(err: &TungsteniteError) -> String {
     match err {
         TungsteniteError::Http(resp) if resp.status() == StatusCode::FORBIDDEN => {
             format!("{prefix} invalid authentication parameters")
+        }
+        TungsteniteError::Http(resp) => {
+            // log status code and content-length only — the body is typically an HTML error
+            // page (e.g. "Datadog is Down") that is unreadable when printed as raw bytes
+            let status = resp.status();
+            let body_len = resp.body().as_ref().map(|b| b.len()).unwrap_or(0);
+            format!("{prefix} HTTP {status} (body: {body_len} bytes)")
         }
         _ => format!("{prefix} {err:?}"),
     }

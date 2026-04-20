@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::LazyLock;
 use std::task::{Context, Poll};
 use std::{fmt, io};
 
@@ -32,7 +33,6 @@ use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
 use base64::prelude::{BASE64_STANDARD, Engine};
 use futures::{StreamExt, stream};
-use once_cell::sync::{Lazy, OnceCell};
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
@@ -54,7 +54,7 @@ use crate::{
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
 /// (R2, SeaweedFs...) return errors when too many concurrent requests are emitted.
-static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
+static REQUEST_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| {
     let num_permits: usize =
         quickwit_common::get_from_env("QW_S3_MAX_CONCURRENCY", 10_000usize, false);
     Semaphore::new(num_permits)
@@ -213,15 +213,13 @@ impl S3CompatibleObjectStorage {
 }
 
 pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
-    static S3_URI_PTN: OnceCell<Regex> = OnceCell::new();
+    static S3_URI_PTN: LazyLock<Regex> = LazyLock::new(|| {
+        // s3://bucket/path/to/object
+        Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.+))?")
+            .expect("The regular expression should compile.")
+    });
 
-    let captures = S3_URI_PTN
-        .get_or_init(|| {
-            // s3://bucket/path/to/object
-            Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.+))?")
-                .expect("The regular expression should compile.")
-        })
-        .captures(uri.as_str())?;
+    let captures = S3_URI_PTN.captures(uri.as_str())?;
 
     let bucket = captures.name("bucket")?.as_str().to_string();
     let prefix = captures

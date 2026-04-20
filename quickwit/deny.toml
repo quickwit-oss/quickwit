@@ -64,7 +64,6 @@ allow = [
     "MIT",
     "MIT-0",
     "MPL-2.0",
-    "OpenSSL",
     "Unicode-3.0",
     "Unlicense",
     "Zlib",
@@ -104,6 +103,45 @@ license-files = [
 name = "pomchi"
 version = "*"
 expression = "MIT"
+license-files = []
+
+# event-percolation does not have a license, so we arbitrarily declare it as MIT in order to allow it.
+[[licenses.clarify]]
+name = "event-percolation"
+version = "*"
+expression = "MIT"
+license-files = []
+
+# Vector internal crates have empty license fields in their Cargo.toml but the
+# Vector repository is licensed under MPL-2.0.
+[[licenses.clarify]]
+name = "codecs"
+version = "*"
+expression = "MPL-2.0"
+license-files = []
+
+[[licenses.clarify]]
+name = "opentelemetry-proto"
+version = "0.1.0"
+expression = "MPL-2.0"
+license-files = []
+
+[[licenses.clarify]]
+name = "vector-buffers"
+version = "*"
+expression = "MPL-2.0"
+license-files = []
+
+[[licenses.clarify]]
+name = "vector-lib"
+version = "*"
+expression = "MPL-2.0"
+license-files = []
+
+[[licenses.clarify]]
+name = "vector-stream"
+version = "*"
+expression = "MPL-2.0"
 license-files = []
 
 [licenses.private]
@@ -175,7 +213,7 @@ allow-git = []
 
 [sources.allow-org]
 # 1 or more github.com organizations to allow git sources for
-github = ["quickwit-oss"]
+github = ["quickwit-oss", "vectordotdev"]
 # 1 or more gitlab.com organizations to allow git sources for
 gitlab = []
 # 1 or more bitbucket.org organizations to allow git sources for

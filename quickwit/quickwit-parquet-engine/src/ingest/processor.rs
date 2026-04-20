@@ -57,11 +57,6 @@ pub enum IngestError {
 pub struct ParquetIngestProcessor;
 
 impl ParquetIngestProcessor {
-    /// Create a new ParquetIngestProcessor.
-    pub fn new() -> Self {
-        Self
-    }
-
     /// Convert Arrow IPC bytes to RecordBatch.
     ///
     /// Returns error if IPC is malformed or schema doesn't match.
@@ -101,7 +96,7 @@ impl ParquetIngestProcessor {
     /// Validate that the RecordBatch schema contains all required fields.
     fn validate_schema(&self, batch: &RecordBatch) -> Result<(), IngestError> {
         validate_required_fields(batch.schema().as_ref())
-            .map_err(|msg| IngestError::SchemaValidation(msg))
+            .map_err(|e| IngestError::SchemaValidation(e.to_string()))
     }
 }
 
@@ -116,7 +111,10 @@ fn ipc_to_record_batch(ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
         return Err(IngestError::UnexpectedBatchCount(batches.len()));
     }
 
-    Ok(batches.into_iter().next().expect("len verified to be 1 above"))
+    Ok(batches
+        .into_iter()
+        .next()
+        .expect("len verified to be 1 above"))
 }
 
 /// Serialize a RecordBatch to Arrow IPC stream format.
@@ -134,13 +132,12 @@ pub fn record_batch_to_ipc(batch: &RecordBatch) -> Result<Vec<u8>, IngestError> 
 
 #[cfg(test)]
 mod tests {
-    use crate::test_helpers::create_test_batch;
-
     use super::*;
+    use crate::test_helpers::create_test_batch;
 
     #[test]
     fn test_process_ipc() {
-        let processor = ParquetIngestProcessor::new();
+        let processor = ParquetIngestProcessor;
 
         // Create a valid batch
         let batch = create_test_batch(10);
@@ -157,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_process_ipc_invalid_bytes() {
-        let processor = ParquetIngestProcessor::new();
+        let processor = ParquetIngestProcessor;
 
         let result = processor.process_ipc(&[0u8; 10]);
         assert!(result.is_err());

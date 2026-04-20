@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -7,9 +8,8 @@ use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_common::ServiceStream;
-use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{RetentionPolicy, SourceConfig, validate_identifier};
+use quickwit_config::{NodeConfig, RetentionPolicy, SourceConfig, validate_identifier};
 use quickwit_metastore::{
     CreateIndexResponseExt, IndexMetadataResponseExt, ListIndexesMetadataResponseExt,
 };
@@ -18,18 +18,20 @@ use quickwit_proto::cloudprem::index::{
     IndexConfig as IndexConfigProto, IndexMetadata as IndexMetadataProto,
     RetentionPolicy as RetentionPolicyProto,
 };
-use quickwit_proto::cloudprem::metrics::{Label, MetricFamily};
+use quickwit_proto::cloudprem::metrics::{Label, MetricFamily, metric};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
-    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse, Event,
-    EventTracker, FetchOneRequest, FetchOneResponse, GetIndexRoutingTableRequest,
+    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse,
+    EsHttpRequest, EsHttpResponse, Event, EventTracker, FetchOneRequest, FetchOneResponse,
+    GetClusterDiagnosticsRequest, GetClusterDiagnosticsResponse, GetIndexRoutingTableRequest,
     GetIndexRoutingTableResponse, GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse,
-    NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
+    NodeDiagnostics, NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
     SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest,
     UpdateIndexResponse,
 };
 use quickwit_proto::developer::{
-    DeveloperService as _, DeveloperServiceClient, PullMetricsRequest, PullMetricsResponse,
+    DeveloperService as _, DeveloperServiceClient, GetNodeDiagnosticsRequest, PullMetricsRequest,
+    PullMetricsResponse,
 };
 use quickwit_proto::metastore::{
     CreateIndexRequest as MetastoreCreateIndexRequest,
@@ -44,9 +46,12 @@ use quickwit_proto::search::{
 use quickwit_proto::tonic::codec::CompressionEncoding;
 use quickwit_query::MatchAllOrNone;
 use quickwit_query::cloudprem::sanitize_metric_id_aggregations;
-use quickwit_query::query_ast::{BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst};
+use quickwit_query::query_ast::{
+    BoolQuery, FullTextMode, FullTextParams, FullTextQuery, QueryAst, TermQuery,
+};
 use quickwit_search::{SearchError, SearchService};
 use serde_json::Value as JsonValue;
+use tokio::time::timeout;
 use tokio_stream::StreamExt as _;
 use tracing::{debug, error, info, warn};
 
@@ -64,13 +69,14 @@ fn resolve_index_patterns(index_id_patterns: &[String]) -> Vec<String> {
 }
 
 const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
+const GET_NODE_DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[allow(dead_code)]
 pub struct CloudPremServiceImpl {
     search_service: Arc<dyn SearchService>,
     metastore_client: MetastoreServiceClient,
     cluster: Cluster,
-    default_index_root_uri: Uri,
+    node_config: Arc<NodeConfig>,
 }
 
 impl fmt::Debug for CloudPremServiceImpl {
@@ -84,13 +90,13 @@ impl CloudPremServiceImpl {
         search_service: Arc<dyn SearchService>,
         metastore_client: MetastoreServiceClient,
         cluster: Cluster,
-        default_index_root_uri: Uri,
+        node_config: Arc<NodeConfig>,
     ) -> Self {
         CloudPremServiceImpl {
             search_service,
             metastore_client,
             cluster,
-            default_index_root_uri,
+            node_config,
         }
     }
 }
@@ -105,12 +111,22 @@ fn doc_id_to_query_ast(doc_id: &str) -> QueryAst {
     };
     // Right now, the id field does not use a raw tokenizer, so we cannot
     // rely on the term query.
-    QueryAst::FullText(FullTextQuery {
+    FullTextQuery {
         field: "id".to_string(),
         text: doc_id.to_string(),
         params: full_text_params,
         lenient: false,
-    })
+    }
+    .into()
+}
+
+fn timestamp_to_query_ast(timestamp_ms: u64) -> QueryAst {
+    TermQuery {
+        field: "timestamp".to_string(),
+        // quickwit automatically detects this is ms
+        value: timestamp_ms.to_string(),
+    }
+    .into()
 }
 
 #[async_trait]
@@ -147,7 +163,7 @@ impl CloudPremService for CloudPremServiceImpl {
         let search_request = SearchRequest {
             index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
             query_ast: serde_json::to_string(&query_ast)
-                .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+                .map_err(|error| CloudPremError::Internal(error.to_string()))?,
             start_timestamp: None,
             end_timestamp: None,
             max_hits: request.num_events_to_fetch.into(),
@@ -233,14 +249,15 @@ impl CloudPremService for CloudPremServiceImpl {
         };
 
         let fetch_id_query = doc_id_to_query_ast(&event_tracker.id);
+        let ts_filter = timestamp_to_query_ast(event_tracker.epoch_ms);
 
         let query_ast = QueryAst::Bool(BoolQuery {
-            must: vec![fetch_id_query, restriction_query],
+            must: vec![fetch_id_query, restriction_query, ts_filter],
             ..BoolQuery::default()
         });
 
         let query_ast_json = serde_json::to_string(&query_ast)
-            .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+            .map_err(|error| CloudPremError::Internal(error.to_string()))?;
 
         debug!(query=%query_ast_json, "query ast for fetch one");
 
@@ -335,14 +352,14 @@ impl CloudPremService for CloudPremServiceImpl {
         let search_request = SearchRequest {
             index_id_patterns: resolve_index_patterns(&request.index_id_patterns),
             query_ast: serde_json::to_string(&query_ast)
-                .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+                .map_err(|error| CloudPremError::Internal(error.to_string()))?,
             start_timestamp: None,
             end_timestamp: None,
             max_hits: 0,
             start_offset: 0,
             aggregation_request: Some(
                 serde_json::to_string(&aggregation_ast)
-                    .map_err(|e| CloudPremError::Internal(e.to_string()))?,
+                    .map_err(|error| CloudPremError::Internal(error.to_string()))?,
             ),
             snippet_fields: Vec::new(),
             sort_fields: Vec::new(),
@@ -495,22 +512,22 @@ impl CloudPremService for CloudPremServiceImpl {
 
         // Validate index_id
         validate_identifier("index ID", &request.index_id)
-            .map_err(|e| CloudPremError::InvalidArgument(e.to_string()))?;
+            .map_err(|error| CloudPremError::InvalidArgument(error.to_string()))?;
 
         // Build index_uri from default root
-        let index_uri = self
-            .default_index_root_uri
+        let default_index_root_uri = &self.node_config.default_index_root_uri;
+        let index_uri = default_index_root_uri
             .join(&request.index_id)
-            .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+            .map_err(|error| CloudPremError::Internal(error.to_string()))?;
 
-        // Load the default datadog.yaml config
-        let default_config_bytes = include_bytes!("../../../../config/cloudprem/datadog.yaml");
+        // Load the default datadog-logs.yaml config
+        let default_config_bytes = include_bytes!("../../../../config/cloudprem/datadog-logs.yaml");
         let mut index_config = quickwit_config::load_index_config_from_user_config(
             quickwit_config::ConfigFormat::Yaml,
             default_config_bytes,
-            &self.default_index_root_uri,
+            default_index_root_uri,
         )
-        .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+        .map_err(|error| CloudPremError::Internal(error.to_string()))?;
 
         // Override the index_id and index_uri from the request
         index_config.index_id = request.index_id.clone();
@@ -523,8 +540,8 @@ impl CloudPremService for CloudPremServiceImpl {
                     retention_period: proto_rp.period,
                     evaluation_schedule: RetentionPolicy::default_schedule(),
                 };
-                retention_policy.retention_period().map_err(|e| {
-                    CloudPremError::InvalidArgument(format!("invalid retention period: {e}"))
+                retention_policy.retention_period().map_err(|error| {
+                    CloudPremError::InvalidArgument(format!("invalid retention period: {error}"))
                 })?;
                 index_config.retention_policy_opt = Some(retention_policy);
             } else {
@@ -596,8 +613,8 @@ impl CloudPremService for CloudPremServiceImpl {
                     retention_period: proto_rp.period,
                     evaluation_schedule: RetentionPolicy::default_schedule(),
                 };
-                retention_policy.retention_period().map_err(|e| {
-                    CloudPremError::InvalidArgument(format!("invalid retention period: {e}"))
+                retention_policy.retention_period().map_err(|error| {
+                    CloudPremError::InvalidArgument(format!("invalid retention period: {error}"))
                 })?;
                 updated_config.retention_policy_opt = Some(retention_policy);
             } else {
@@ -676,7 +693,7 @@ impl CloudPremService for CloudPremServiceImpl {
         let rules =
             crate::datadog_api::index_router::get_or_default_routing_rules(&self.metastore_client)
                 .await
-                .map_err(|e| CloudPremError::Internal(e.to_string()))?;
+                .map_err(|error| CloudPremError::Internal(error.to_string()))?;
 
         let routing_table = rules.into_iter().map(Into::into).collect();
 
@@ -698,6 +715,81 @@ impl CloudPremService for CloudPremServiceImpl {
             .await?;
 
         Ok(SetIndexRoutingTableResponse {})
+    }
+
+    async fn get_cluster_diagnostics(
+        &self,
+        _request: GetClusterDiagnosticsRequest,
+    ) -> CloudPremResult<GetClusterDiagnosticsResponse> {
+        info!("received GetClusterDiagnostics request");
+
+        let ready_nodes = self.cluster.ready_nodes().await;
+        let mut cluster_diagnostics: HashMap<String, NodeDiagnostics> =
+            HashMap::with_capacity(ready_nodes.len());
+
+        let mut get_node_diagnostics_futures = FuturesUnordered::new();
+
+        for ready_node in ready_nodes {
+            let node_id = ready_node.node_id().to_owned();
+            let client = DeveloperServiceClient::from_channel(
+                ready_node.grpc_advertise_addr(),
+                ready_node.channel(),
+                DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
+                Some(CompressionEncoding::Zstd),
+            );
+            let get_node_diagnostics_future = async move {
+                let get_node_diagnostics_res = timeout(
+                    GET_NODE_DIAGNOSTICS_TIMEOUT,
+                    client.get_node_diagnostics(GetNodeDiagnosticsRequest {}),
+                )
+                .await;
+                (node_id, get_node_diagnostics_res)
+            };
+            get_node_diagnostics_futures.push(get_node_diagnostics_future);
+        }
+
+        while let Some(future_res) = get_node_diagnostics_futures.next().await {
+            let (node_id, get_node_diagnostics_res) = future_res;
+            let node_diagnostics: NodeDiagnostics = match get_node_diagnostics_res {
+                Ok(Ok(resp)) => NodeDiagnostics {
+                    status_code: 200,
+                    build_info_json: resp.build_info_json,
+                    runtime_info_json: resp.runtime_info_json,
+                    node_config_json: resp.node_config_json,
+                },
+                Ok(Err(error)) => {
+                    error!(%node_id, %error, "failed to get diagnostics from node");
+                    NodeDiagnostics {
+                        status_code: error.error_code().http_status_code().as_u16() as u32,
+                        ..Default::default()
+                    }
+                }
+                Err(_elapsed) => {
+                    error!(%node_id, "GetNodeDiagnostics request timed out");
+                    NodeDiagnostics {
+                        status_code: http::StatusCode::REQUEST_TIMEOUT.as_u16() as u32,
+                        ..Default::default()
+                    }
+                }
+            };
+            cluster_diagnostics.insert(node_id.to_string(), node_diagnostics);
+        }
+
+        Ok(GetClusterDiagnosticsResponse {
+            cluster_diagnostics,
+        })
+    }
+
+    async fn es_query(&self, request: EsHttpRequest) -> CloudPremResult<EsHttpResponse> {
+        info!(%request.method, %request.path, "received EsQuery request");
+        super::es_query::handle_es_query(
+            request,
+            self.search_service.clone(),
+            self.metastore_client.clone(),
+            self.cluster.clone(),
+            self.node_config.clone(),
+        )
+        .await
     }
 }
 
@@ -748,7 +840,7 @@ async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
         DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE,
         Some(CompressionEncoding::Zstd),
     );
-    let pull_metrics_result = tokio::time::timeout(
+    let pull_metrics_result = timeout(
         PULL_METRICS_TIMEOUT,
         client.pull_metrics(PullMetricsRequest {}),
     )
@@ -764,7 +856,19 @@ async fn build_node_metric_future(ready_node: ClusterNode) -> NodeMetrics {
         .err()
         .cloned()
         .unwrap_or(http::StatusCode::OK);
-    let metric_families = metric_families_res.unwrap_or_default();
+    let mut metric_families = metric_families_res.unwrap_or_default();
+    for metric_family in &mut metric_families {
+        metric_family.metrics.retain(|metric| {
+            let has_pipeline_uid = metric.labels.iter().any(|l| l.name == "pipeline_uid");
+            if !has_pipeline_uid {
+                return true;
+            }
+            match metric.metric_value {
+                Some(metric::MetricValue::Counter(v)) => v != 0,
+                _ => true,
+            }
+        });
+    }
     NodeMetrics {
         node_id: node_id.to_string(),
         status_code: status_code.as_u16() as u32,
@@ -803,7 +907,7 @@ impl HitMapper {
     fn hit_to_event(&self, hit: Hit) -> CloudPremResult<Event> {
         // TODO use serde_json_borrowed ?
         let map: serde_json::Map<String, JsonValue> = serde_json::from_str(&hit.json)
-            .map_err(|e| CloudPremError::Internal(format!("failed to parse hit: {e}")))?;
+            .map_err(|error| CloudPremError::Internal(format!("failed to parse hit: {error}")))?;
 
         let event_id = if let Some(JsonValue::String(id_str)) = map.get(self.id_field) {
             id_str.clone()
@@ -869,9 +973,122 @@ impl HitMapper {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use prost::Message;
+    use prost_types::Any;
+    use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
+    use quickwit_config::NodeConfig;
+    use quickwit_proto::cloudprem::{MatchNoneQueryNode, QueryNode, query_node};
     use quickwit_proto::ingest::ingester::IngesterStatus;
+    use quickwit_proto::metastore::{MetastoreServiceClient, MockMetastoreService};
+    use quickwit_proto::search::{Hit, SearchResponse};
+    use quickwit_search::MockSearchService;
 
     use super::*;
+
+    async fn make_service_with_mock_search(mock_search: MockSearchService) -> CloudPremServiceImpl {
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, true)
+            .await
+            .unwrap();
+        let metastore_client = MetastoreServiceClient::from_mock(MockMetastoreService::new());
+        let node_config = Arc::new(NodeConfig::for_test());
+        CloudPremServiceImpl::new(
+            Arc::new(mock_search),
+            metastore_client,
+            cluster,
+            node_config,
+        )
+    }
+
+    fn make_fetch_one_request(doc_id: &str, epoch_ms: u64) -> FetchOneRequest {
+        FetchOneRequest {
+            event_tracker: Some(EventTracker {
+                id: doc_id.to_string(),
+                epoch_ms,
+                tiebreaker: 0,
+                fragment_id: None,
+                row_number: None,
+            }),
+            restriction_query: None,
+            org_id: 0,
+            scope: None,
+            index_id_patterns: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_one() {
+        const DOC_ID: &str = "test-doc-abc123";
+        let epoch_ms = 1704067200000u64;
+
+        let restriction_query = Any {
+            type_url: "type.googleapis.com/queryparser_proto.QueryNode".to_string(),
+            value: QueryNode {
+                node: Some(query_node::Node::None(MatchNoneQueryNode {})),
+            }
+            .encode_to_vec(),
+        };
+
+        let mut mock_search = MockSearchService::new();
+        mock_search
+            .expect_root_search()
+            .once()
+            .returning(move |request| {
+                let query_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
+                let QueryAst::Bool(bool_query) = query_ast else {
+                    panic!("expected a BoolQuery, got {query_ast:?}");
+                };
+                // doc_id filter
+                assert!(
+                    bool_query.must.iter().any(|clause| {
+                        matches!(clause, QueryAst::FullText(fq) if fq.field == "id" && fq.text == DOC_ID)
+                    }),
+                    "missing FullTextQuery filter on id={DOC_ID}"
+                );
+                // timestamp filter
+                assert!(
+                    bool_query.must.iter().any(|clause| {
+                        matches!(clause, QueryAst::Term(tq) if tq.field == "timestamp" && tq.value == epoch_ms.to_string())
+                    }),
+                    "missing TermQuery filter on timestamp={epoch_ms}"
+                );
+                // restriction query (MatchNone QueryNode -> QueryAst::MatchNone)
+                assert!(
+                    bool_query
+                        .must
+                        .iter()
+                        .any(|clause| matches!(clause, QueryAst::MatchNone)),
+                    "restriction query was not forwarded into the BoolQuery must clauses"
+                );
+                Ok(SearchResponse {
+                    hits: vec![Hit {
+                        json: serde_json::json!({
+                            "id": DOC_ID,
+                            "timestamp": "2024-01-01T00:00:00Z",
+                            "tiebreaker": 42,
+                        })
+                        .to_string(),
+                        partial_hit: None,
+                        snippet: None,
+                        index_id: "datadog-logs".to_string(),
+                    }],
+                    num_hits: 1,
+                    ..Default::default()
+                })
+            });
+
+        let service = make_service_with_mock_search(mock_search).await;
+        let mut request = make_fetch_one_request(DOC_ID, epoch_ms);
+        request.restriction_query = Some(restriction_query);
+        let response = service.fetch_one(request).await.unwrap();
+        let event = response.event.expect("expected an event in the response");
+        let tracker = event.tracker.expect("expected a tracker on the event");
+        assert_eq!(tracker.id, DOC_ID);
+        assert_eq!(tracker.epoch_ms, epoch_ms);
+        assert_eq!(tracker.tiebreaker, 42);
+    }
 
     #[tokio::test]
     async fn test_node_labels() {

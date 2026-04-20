@@ -17,8 +17,6 @@
 //! This actor processes RawDocBatch messages containing Arrow IPC data and routes
 //! them directly to the metrics engine, bypassing Tantivy document conversion.
 
-use std::time::Instant;
-
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -32,7 +30,6 @@ use tokio::runtime::Handle;
 use tracing::{debug, info, instrument};
 
 use super::ParquetIndexer;
-use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock, RawDocBatch,
 };
@@ -99,9 +96,7 @@ impl ParquetDocProcessorCounters {
 
     /// Get total number of batches processed (valid or not).
     pub fn num_processed_batches(&self) -> u64 {
-        self.valid_batches
-            + self.parse_errors
-            + self.format_errors
+        self.valid_batches + self.parse_errors + self.format_errors
     }
 
     /// Get total number of errors.
@@ -147,11 +142,8 @@ impl ParquetDocProcessor {
         source_id: SourceId,
         indexer_mailbox: Mailbox<ParquetIndexer>,
     ) -> Self {
-        let processor = ParquetIngestProcessor::new();
-        let counters = ParquetDocProcessorCounters::new(
-            index_id.clone(),
-            source_id.clone(),
-        );
+        let processor = ParquetIngestProcessor;
+        let counters = ParquetDocProcessorCounters::new(index_id.clone(), source_id.clone());
 
         info!(
             index_id = %index_id,
@@ -224,8 +216,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
         raw_doc_batch: RawDocBatch,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let start = Instant::now();
-
         if self.publish_lock.is_dead() {
             debug!("publish lock is dead, skipping batch");
             return Ok(());
@@ -263,14 +253,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                     "metrics pipeline only accepts Arrow IPC format (from OTLP gRPC)"
                 );
                 self.counters.record_format_error(num_bytes);
-                INDEXER_METRICS
-                    .dd_parquet_processed_events
-                    .get("format_error")
-                    .increment(1);
-                INDEXER_METRICS
-                    .dd_parquet_processed_events_bytes
-                    .get("format_error")
-                    .increment(num_bytes as u64);
                 continue;
             }
 
@@ -279,14 +261,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                 Ok(batch) => {
                     let num_rows = batch.num_rows();
                     self.counters.record_valid(num_rows, num_bytes);
-                    INDEXER_METRICS
-                        .dd_parquet_processed_events
-                        .get("valid")
-                        .increment(num_rows as u64);
-                    INDEXER_METRICS
-                        .dd_parquet_processed_events_bytes
-                        .get("valid")
-                        .increment(num_bytes as u64);
 
                     {
                         let should_force_commit = force_commit && is_last_doc;
@@ -318,14 +292,6 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                         "Arrow IPC processing failed: {error}"
                     );
                     self.counters.record_parse_error(num_bytes);
-                    INDEXER_METRICS
-                        .dd_parquet_processed_events
-                        .get("parse_error")
-                        .increment(1);
-                    INDEXER_METRICS
-                        .dd_parquet_processed_events_bytes
-                        .get("parse_error")
-                        .increment(num_bytes as u64);
                 }
             }
 
@@ -337,18 +303,13 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
         // Without this, a batch of consistently malformed data blocks offset progress
         // forever.
         if !checkpoint_forwarded && !checkpoint_delta.is_empty() {
-            let empty_batch = RecordBatch::new_empty(std::sync::Arc::new(
-                arrow::datatypes::Schema::empty(),
-            ));
+            let empty_batch =
+                RecordBatch::new_empty(std::sync::Arc::new(arrow::datatypes::Schema::empty()));
             let processed_batch =
                 ProcessedParquetBatch::new(empty_batch, checkpoint_delta, force_commit);
             ctx.send_message(&self.indexer_mailbox, processed_batch)
                 .await?;
         }
-
-        INDEXER_METRICS
-            .dd_parquet_doc_processor_batch_duration_seconds
-            .record(start.elapsed().as_secs_f64());
 
         Ok(())
     }
@@ -388,6 +349,8 @@ impl Handler<NewPublishToken> for ParquetDocProcessor {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::Ordering;
+
     use quickwit_actors::Universe;
     use quickwit_parquet_engine::ingest::record_batch_to_ipc;
     use quickwit_proto::types::IndexUid;
@@ -415,7 +378,7 @@ mod tests {
 
     #[test]
     fn test_counters() {
-        let counters =
+        let mut counters =
             ParquetDocProcessorCounters::new("test-index".to_string(), "test-source".to_string());
 
         counters.record_valid(100, 1024);
@@ -423,25 +386,19 @@ mod tests {
         counters.record_parse_error(256);
         counters.record_format_error(128);
 
-        assert_eq!(counters.valid_batches.load(Ordering::Relaxed), 2);
-        assert_eq!(counters.valid_rows.load(Ordering::Relaxed), 150);
-        assert_eq!(counters.parse_errors.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.format_errors.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.bytes_total.load(Ordering::Relaxed), 1920);
+        assert_eq!(counters.valid_batches, 2);
+        assert_eq!(counters.valid_rows, 150);
+        assert_eq!(counters.parse_errors, 1);
+        assert_eq!(counters.format_errors, 1);
+        assert_eq!(counters.bytes_total, 1920);
         assert_eq!(counters.num_processed_batches(), 4);
         assert_eq!(counters.num_errors(), 2);
     }
 
     #[tokio::test]
     async fn test_metrics_doc_processor_valid_arrow_ipc() {
-        use std::sync::Arc as StdArc;
+        use quickwit_parquet_engine::test_helpers::create_test_batch_with_tags;
 
-        use arrow::array::{
-            ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array,
-            UInt64Array,
-        };
-        use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
-        use arrow::record_batch::RecordBatch;
         let universe = Universe::with_accelerated_time();
 
         let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox::<ParquetIndexer>();
@@ -454,46 +411,7 @@ mod tests {
         let (metrics_doc_processor_mailbox, metrics_doc_processor_handle) =
             universe.spawn_builder().spawn(metrics_doc_processor);
 
-        // Create a test batch with the 4 required fields plus a tag column
-        let num_rows = 3;
-        let schema = StdArc::new(ArrowSchema::new(vec![
-            Field::new(
-                "metric_name",
-                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-                false,
-            ),
-            Field::new("metric_type", DataType::UInt8, false),
-            Field::new("timestamp_secs", DataType::UInt64, false),
-            Field::new("value", DataType::Float64, false),
-            Field::new(
-                "service",
-                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-                true,
-            ),
-        ]));
-
-        let metric_name: ArrayRef = {
-            let keys = Int32Array::from(vec![0i32; num_rows]);
-            let vals = StringArray::from(vec!["cpu.usage"]);
-            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
-        };
-        let metric_type: ArrayRef = StdArc::new(UInt8Array::from(vec![0u8; num_rows]));
-        let timestamp_secs: ArrayRef =
-            StdArc::new(UInt64Array::from(vec![100u64, 101u64, 102u64]));
-        let value: ArrayRef = StdArc::new(Float64Array::from(vec![42.0, 43.0, 44.0]));
-        let service: ArrayRef = {
-            let keys = Int32Array::from(vec![0i32; num_rows]);
-            let vals = StringArray::from(vec!["web"]);
-            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
-        };
-
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![metric_name, metric_type, timestamp_secs, value, service],
-        )
-        .unwrap();
-
-        // Serialize to Arrow IPC
+        let batch = create_test_batch_with_tags(3, &["service"]);
         let ipc_bytes = record_batch_to_ipc(&batch).unwrap();
 
         // Create RawDocBatch with the IPC bytes
@@ -512,10 +430,10 @@ mod tests {
             .state;
 
         // Verify counters
-        assert_eq!(counters.valid_batches.load(Ordering::Relaxed), 1);
-        assert_eq!(counters.valid_rows.load(Ordering::Relaxed), 3);
-        assert_eq!(counters.parse_errors.load(Ordering::Relaxed), 0);
-        assert_eq!(counters.format_errors.load(Ordering::Relaxed), 0);
+        assert_eq!(counters.valid_batches, 1);
+        assert_eq!(counters.valid_rows, 3);
+        assert_eq!(counters.parse_errors, 0);
+        assert_eq!(counters.format_errors, 0);
 
         universe.assert_quit().await;
     }
@@ -549,8 +467,8 @@ mod tests {
             .state;
 
         // JSON is rejected as format error (only Arrow IPC is accepted)
-        assert_eq!(counters.valid_batches.load(Ordering::Relaxed), 0);
-        assert_eq!(counters.format_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.valid_batches, 0);
+        assert_eq!(counters.format_errors, 1);
 
         universe.assert_quit().await;
     }
@@ -602,13 +520,8 @@ mod tests {
     async fn test_metrics_doc_processor_with_indexer() {
         use std::sync::Arc as StdArc;
 
-        use arrow::array::{
-            ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array,
-            UInt64Array,
-        };
-        use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
-        use arrow::record_batch::RecordBatch;
         use quickwit_parquet_engine::storage::{ParquetSplitWriter, ParquetWriterConfig};
+        use quickwit_parquet_engine::test_helpers::create_test_batch_with_tags;
         use quickwit_proto::metastore::MockMetastoreService;
         use quickwit_storage::RamStorage;
 
@@ -636,7 +549,8 @@ mod tests {
 
         // Create ParquetPackager
         let writer_config = ParquetWriterConfig::default();
-        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir.path());
+        let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
+        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir.path(), &table_config);
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
@@ -658,47 +572,7 @@ mod tests {
         let (metrics_doc_processor_mailbox, metrics_doc_processor_handle) =
             universe.spawn_builder().spawn(metrics_doc_processor);
 
-        // Create a test batch with the 4 required fields plus a tag column
-        let num_rows = 5;
-        let schema = StdArc::new(ArrowSchema::new(vec![
-            Field::new(
-                "metric_name",
-                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-                false,
-            ),
-            Field::new("metric_type", DataType::UInt8, false),
-            Field::new("timestamp_secs", DataType::UInt64, false),
-            Field::new("value", DataType::Float64, false),
-            Field::new(
-                "service",
-                DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
-                true,
-            ),
-        ]));
-
-        let metric_name: ArrayRef = {
-            let keys = Int32Array::from(vec![0i32; num_rows]);
-            let vals = StringArray::from(vec!["cpu.usage"]);
-            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
-        };
-        let metric_type: ArrayRef = StdArc::new(UInt8Array::from(vec![0u8; num_rows]));
-        let timestamps: Vec<u64> = (0..num_rows).map(|i| 100 + i as u64).collect();
-        let timestamp_secs: ArrayRef = StdArc::new(UInt64Array::from(timestamps));
-        let values: Vec<f64> = (0..num_rows).map(|i| 42.0 + i as f64).collect();
-        let value: ArrayRef = StdArc::new(Float64Array::from(values));
-        let service: ArrayRef = {
-            let keys = Int32Array::from(vec![0i32; num_rows]);
-            let vals = StringArray::from(vec!["web"]);
-            StdArc::new(DictionaryArray::<Int32Type>::try_new(keys, StdArc::new(vals)).unwrap())
-        };
-
-        let batch = RecordBatch::try_new(
-            schema,
-            vec![metric_name, metric_type, timestamp_secs, value, service],
-        )
-        .unwrap();
-
-        // Serialize to Arrow IPC
+        let batch = create_test_batch_with_tags(5, &["service"]);
         let ipc_bytes = record_batch_to_ipc(&batch).unwrap();
 
         // Create RawDocBatch with force_commit to trigger split production
@@ -718,17 +592,17 @@ mod tests {
             .state;
 
         // Verify doc processor counters
-        assert_eq!(doc_counters.valid_batches.load(Ordering::Relaxed), 1);
-        assert_eq!(doc_counters.valid_rows.load(Ordering::Relaxed), 5);
+        assert_eq!(doc_counters.valid_batches, 1);
+        assert_eq!(doc_counters.valid_rows, 5);
 
         // Process in indexer
         let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
 
         // Verify indexer received and processed the batch
-        assert_eq!(indexer_counters.batches_received.load(Ordering::Relaxed), 1);
-        assert_eq!(indexer_counters.rows_indexed.load(Ordering::Relaxed), 5);
+        assert_eq!(indexer_counters.batches_received, 1);
+        assert_eq!(indexer_counters.rows_indexed, 5);
         // Should have flushed a batch due to force_commit
-        assert_eq!(indexer_counters.batches_flushed.load(Ordering::Relaxed), 1);
+        assert_eq!(indexer_counters.batches_flushed, 1);
 
         // Verify packager produced a split
         let packager_counters = packager_handle.process_pending_and_observe().await.state;

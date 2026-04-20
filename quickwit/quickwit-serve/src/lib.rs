@@ -15,6 +15,7 @@
 #![recursion_limit = "256"]
 
 mod build_info;
+mod byoc_api;
 mod cloudprem;
 mod cloudprem_ui_api;
 pub mod cloudprem_ui_handler;
@@ -42,6 +43,7 @@ mod openapi;
 mod otlp_api;
 mod rate_modulator;
 pub mod rest;
+mod rest_api_request_span;
 mod rest_api_response;
 mod search_api;
 pub(crate) mod simple_list;
@@ -51,11 +53,11 @@ pub mod ui_handler;
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
-use std::fs;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
+use std::{fmt, fs};
 
 use anyhow::{Context, bail};
 use bytesize::ByteSize;
@@ -63,7 +65,6 @@ pub(crate) use decompression::Body;
 pub use format::BodyFormat;
 use futures::StreamExt;
 use itertools::Itertools;
-use once_cell::sync::Lazy;
 use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext, Universe};
 use quickwit_cluster::{
     Cluster, ClusterChange, ClusterChangeStream, ClusterNode, ListenerHandle, start_cluster_service,
@@ -101,9 +102,7 @@ use quickwit_janitor::{JanitorService, start_janitor_service};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
-use quickwit_opentelemetry::otlp::{
-    OtlpGrpcLogsService, OtlpGrpcMetricsService, OtlpGrpcTracesService,
-};
+use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::{
@@ -166,28 +165,28 @@ fn get_metastore_client_max_concurrency() -> usize {
     )
 }
 
-static CP_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "client"));
-static CP_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("control_plane", "server"));
+static CP_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "client"));
+static CP_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("control_plane", "server"));
 
-static INDEXING_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "client"));
-pub(crate) static INDEXING_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("indexing", "server"));
+static INDEXING_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("indexing", "client"));
+pub(crate) static INDEXING_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("indexing", "server"));
 
-static INGEST_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "client"));
-static INGEST_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("ingest", "server"));
+static INGEST_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("ingest", "client"));
+static INGEST_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("ingest", "server"));
 
-static METASTORE_GRPC_CLIENT_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "client"));
-static METASTORE_GRPC_SERVER_METRICS_LAYER: Lazy<GrpcMetricsLayer> =
-    Lazy::new(|| GrpcMetricsLayer::new("metastore", "server"));
+static METASTORE_GRPC_CLIENT_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "client"));
+static METASTORE_GRPC_SERVER_METRICS_LAYER: LazyLock<GrpcMetricsLayer> =
+    LazyLock::new(|| GrpcMetricsLayer::new("metastore", "server"));
 
-static METASTORE_DD_GRPC_SERVER_METRICS_LAYER: Lazy<DDGrpcMetricsLayer> =
-    Lazy::new(DDGrpcMetricsLayer::for_metastore);
+static METASTORE_DD_GRPC_SERVER_METRICS_LAYER: LazyLock<DDGrpcMetricsLayer> =
+    LazyLock::new(DDGrpcMetricsLayer::for_metastore);
 
 static GRPC_INGESTER_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
 static GRPC_INDEXING_SERVICE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -213,7 +212,6 @@ struct QuickwitServices {
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
     pub otlp_traces_service_opt: Option<OtlpGrpcTracesService>,
-    pub otlp_metrics_service_opt: Option<OtlpGrpcMetricsService>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -677,15 +675,13 @@ pub async fn serve_quickwit(
     .context("failed to start searcher service")?;
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
-    // throughput. Ingesters (routers) do so to update their shard table.
-    let local_shards_update_listener_handle_opt = if node_config
-        .is_service_enabled(QuickwitService::ControlPlane)
-        || node_config.is_service_enabled(QuickwitService::Indexer)
-    {
-        Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
-    } else {
-        None
-    };
+    // throughput.
+    let local_shards_update_listener_handle_opt =
+        if node_config.is_service_enabled(QuickwitService::ControlPlane) {
+            Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
+        } else {
+            None
+        };
 
     let report_splits_subscription_handle_opt =
         // DISCLAIMER: This is quirky here: We base our decision to forward the split report depending
@@ -745,14 +741,6 @@ pub async fn serve_quickwit(
         None
     };
 
-    let otlp_metrics_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
-        && node_config.indexer_config.enable_otlp_endpoint
-    {
-        Some(OtlpGrpcMetricsService::new(ingest_router_service.clone()))
-    } else {
-        None
-    };
-
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let cloudprem_listen_addr = node_config.cloudprem_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
@@ -775,7 +763,6 @@ pub async fn serve_quickwit(
         jaeger_service_opt,
         otlp_logs_service_opt,
         otlp_traces_service_opt,
-        otlp_metrics_service_opt,
         search_service,
         env_filter_reload_fn,
     });
@@ -1523,11 +1510,6 @@ async fn create_managed_indexes(
 
         indexes_to_create.push(("OTEL logs", otel_logs_index_config));
         indexes_to_create.push(("OTEL traces", otel_traces_index_config));
-
-        let otel_metrics_index_config =
-            OtlpGrpcMetricsService::index_config(&node_config.default_index_root_uri)
-                .context("failed to load OTEL metrics index config")?;
-        indexes_to_create.push(("OTEL metrics", otel_metrics_index_config));
     }
     for (index_name, index_config) in indexes_to_create {
         match index_manager.create_index(index_config, false).await {
@@ -1538,42 +1520,81 @@ async fn create_managed_indexes(
             Err(error) => bail!("failed to create {index_name} index: {error}"),
         };
     }
-    if node_config.cloudprem_config.create_datadog_logs_index {
-        create_or_update_managed_index(
-            include_bytes!("../../../config/cloudprem/datadog.yaml"),
-            "Datadog",
-            &node_config.default_index_root_uri,
-            &mut index_manager,
-        )
-        .await?;
+    create_or_update_datadog_indexes(node_config, &mut index_manager).await?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DatadogIndexType {
+    Logs,
+    Metrics,
+    Traces,
+}
+
+impl fmt::Display for DatadogIndexType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DatadogIndexType::Logs => write!(f, "logs"),
+            DatadogIndexType::Metrics => write!(f, "metrics"),
+            DatadogIndexType::Traces => write!(f, "traces"),
+        }
     }
-    if node_config.cloudprem_config.create_datadog_metrics_index {
-        create_or_update_managed_index(
-            include_bytes!("../../../config/cloudprem/datadog-metrics.yaml"),
-            "Datadog metrics",
-            &node_config.default_index_root_uri,
-            &mut index_manager,
-        )
-        .await?;
+}
+
+async fn create_or_update_datadog_indexes(
+    node_config: &NodeConfig,
+    index_manager: &mut IndexManager,
+) -> anyhow::Result<()> {
+    for (should_create_index, index_type) in [
+        (
+            node_config.cloudprem_config.create_dd_logs_index,
+            DatadogIndexType::Logs,
+        ),
+        (
+            node_config.cloudprem_config.create_dd_metrics_index,
+            DatadogIndexType::Metrics,
+        ),
+        (
+            node_config.cloudprem_config.create_dd_traces_index,
+            DatadogIndexType::Traces,
+        ),
+    ] {
+        if should_create_index {
+            create_or_update_datadog_index(
+                &node_config.default_index_root_uri,
+                index_manager,
+                index_type,
+            )
+            .await?;
+        }
     }
     Ok(())
 }
 
-/// Creates a managed index from the given config bytes if it doesn't exist, or updates it if
-/// necessary.
-async fn create_or_update_managed_index(
-    index_config_bytes: &[u8],
-    index_label: &str,
+/// Creates the Datadog index if it doesn't exist, or updates its retention policy if necessary.
+async fn create_or_update_datadog_index(
     default_index_root_uri: &Uri,
     index_manager: &mut IndexManager,
+    index_type: DatadogIndexType,
 ) -> anyhow::Result<()> {
+    let desired_index_config_bytes = match index_type {
+        DatadogIndexType::Logs => {
+            &include_bytes!("../../../config/cloudprem/datadog-logs.yaml")[..]
+        }
+        DatadogIndexType::Metrics => {
+            &include_bytes!("../../../config/cloudprem/datadog-metrics.yaml")[..]
+        }
+        DatadogIndexType::Traces => {
+            &include_bytes!("../../../config/cloudprem/datadog-spans.yaml")[..]
+        }
+    };
     let mut desired_index_config = quickwit_config::load_index_config_from_user_config(
         quickwit_config::ConfigFormat::Yaml,
-        index_config_bytes,
+        desired_index_config_bytes,
         default_index_root_uri,
     )?;
     let index_id = desired_index_config.index_id.clone();
-    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.clone());
 
     let mut current_index_metadata = match index_manager
         .index_metadata_opt(index_metadata_request)
@@ -1583,7 +1604,7 @@ async fn create_or_update_managed_index(
         None => {
             patch_index_config(&mut desired_index_config);
 
-            info!("creating {index_label} index");
+            info!("creating Datadog {index_type} index `{index_id}`");
             index_manager
                 .create_index(desired_index_config, false)
                 .await?;
@@ -1602,7 +1623,7 @@ async fn create_or_update_managed_index(
     if !mutation_occurred {
         return Ok(());
     }
-    info!("updating {index_label} index");
+    info!("updating Datadog {index_type} index `{index_id}`");
     index_manager
         .update_index(
             current_index_metadata.index_uid,

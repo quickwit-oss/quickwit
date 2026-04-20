@@ -19,13 +19,11 @@
 //! Parquet files to storage.
 
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Instant;
+use std::sync::{Arc, OnceLock};
 
 use anyhow::Context;
 use async_trait::async_trait;
-use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, QueueCapacity};
 use quickwit_common::spawn_named_task;
 use quickwit_metastore::StageMetricsSplitsRequestExt;
@@ -43,7 +41,7 @@ use crate::models::ParquetSplitsUpdate;
 
 /// Concurrent upload permits for metrics uploader.
 /// Uses same permit pool as indexer uploads.
-static CONCURRENT_UPLOAD_PERMITS_METRICS: OnceCell<Semaphore> = OnceCell::new();
+static CONCURRENT_UPLOAD_PERMITS_METRICS: OnceLock<Semaphore> = OnceLock::new();
 
 /// ParquetUploader actor for staging and uploading metrics splits.
 ///
@@ -211,8 +209,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
 
         spawn_named_task(
             async move {
-                let upload_start = Instant::now();
-
                 // Check publish lock before doing any work. Between the time
                 // the handler reserved the sequencer position and now, the lock
                 // may have died (e.g. source reassignment).
@@ -238,8 +234,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     Ok(req) => req,
                     Err(e) => {
                         warn!(error = %e, "failed to create stage metrics splits request");
-                        INDEXER_METRICS.dd_parquet_uploads.get("staging_error").increment(1);
-                        INDEXER_METRICS.dd_parquet_upload_duration_seconds.get("staging_error").record(upload_start.elapsed().as_secs_f64());
                         // Discard sequencer position on error
                         if let SplitsUpdateSender::Sequencer(tx) = sender {
                             let _ = tx.send(SequencerCommand::Discard);
@@ -251,8 +245,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
 
                 if let Err(e) = metastore.clone().stage_metrics_splits(stage_request).await {
                     warn!(error = %e, "failed to stage metrics splits");
-                    INDEXER_METRICS.dd_parquet_uploads.get("staging_error").increment(1);
-                    INDEXER_METRICS.dd_parquet_upload_duration_seconds.get("staging_error").record(upload_start.elapsed().as_secs_f64());
                     // Discard sequencer position on error
                     if let SplitsUpdateSender::Sequencer(tx) = sender {
                         let _ = tx.send(SequencerCommand::Discard);
@@ -283,8 +275,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                                 parquet_file = %parquet_file,
                                 "failed to read local parquet file"
                             );
-                            INDEXER_METRICS.dd_parquet_uploads.get("read_error").increment(1);
-                            INDEXER_METRICS.dd_parquet_upload_duration_seconds.get("read_error").record(upload_start.elapsed().as_secs_f64());
                             // Discard sequencer position on error
                             if let SplitsUpdateSender::Sequencer(tx) = sender {
                                 let _ = tx.send(SequencerCommand::Discard);
@@ -308,8 +298,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                             parquet_file = %parquet_file,
                             "failed to upload parquet file"
                         );
-                        INDEXER_METRICS.dd_parquet_uploads.get("upload_error").increment(1);
-                        INDEXER_METRICS.dd_parquet_upload_duration_seconds.get("upload_error").record(upload_start.elapsed().as_secs_f64());
                         // Discard sequencer position on error
                         if let SplitsUpdateSender::Sequencer(tx) = sender {
                             let _ = tx.send(SequencerCommand::Discard);
@@ -347,9 +335,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     publish_token_opt,
                     parent_span: Span::current(),
                 };
-
-                INDEXER_METRICS.dd_parquet_uploads.get("success").increment(1);
-                INDEXER_METRICS.dd_parquet_upload_duration_seconds.get("success").record(upload_start.elapsed().as_secs_f64());
 
                 // Send via the appropriate channel
                 match sender {

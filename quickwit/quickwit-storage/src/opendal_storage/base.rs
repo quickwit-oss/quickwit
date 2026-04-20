@@ -17,7 +17,6 @@ use std::ops::Range;
 use std::path::Path;
 
 use async_trait::async_trait;
-use futures::AsyncWriteExt as FuturesAsyncWriteExt;
 use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::uri::Uri;
 use tokio::io::{AsyncRead, AsyncWriteExt as TokioAsyncWriteExt};
@@ -91,7 +90,7 @@ impl Storage for OpendalStorage {
             .into_futures_async_write()
             .compat_write();
         tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
-        storage_writer.get_mut().close().await?;
+        futures::AsyncWriteExt::close(storage_writer.get_mut()).await?;
         crate::STORAGE_METRICS
             .object_storage_upload_num_bytes
             .inc_by(payload.len());

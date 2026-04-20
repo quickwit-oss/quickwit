@@ -14,6 +14,7 @@ members = [
   "quickwit-datetime",
   "quickwit-directories",
   "quickwit-doc-mapper",
+  "quickwit-dst",
   "quickwit-index-management",
   "quickwit-indexing",
   "quickwit-ingest",
@@ -28,6 +29,7 @@ members = [
   # Disabling metastore-utils from the quickwit projects to ease build/deps.
   # We can reenable it when we need it.
   # "quickwit-metastore-utils",
+  "pomsky-intake", # Fork: added (not present upstream)
   "quickwit-opentelemetry",
   "quickwit-parquet-engine",
   "quickwit-proto",
@@ -43,6 +45,9 @@ members = [
 # The following list excludes `quickwit-metastore-utils`
 # from the default member to ease build/deps.
 default-members = [
+  # pomsky-intake is excluded voluntarily: Vector enables serde_json/preserve_order
+  # which replaces BTreeMap with IndexMap for JSON objects. Quickwit avoids IndexMap
+  # for performance reasons. Build it separately with `cargo build -p pomsky-intake`.
   "quickwit-actors",
   "quickwit-aws",
   "quickwit-cli",
@@ -78,7 +83,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.22"
+version = "0.1.25-dev"
 edition = "2024"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
@@ -132,7 +137,6 @@ google-cloud-googleapis = { version = "0.16", features = ["pubsub"] }
 google-cloud-pubsub = "0.30"
 governor = "0.10.4"
 heck = "0.5"
-hashbrown = "0.15"
 hex = "0.4"
 home = "0.5"
 hostname = "0.4"
@@ -159,6 +163,8 @@ libz-sys = "1.1"
 lru = "0.16"
 matches = "0.1"
 md5 = "0.8"
+metrics = "0.24"
+metrics-exporter-dogstatsd = "0.9"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
@@ -166,14 +172,13 @@ mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a
 new_string_template = "1.5"
 nom = "8.0"
 numfmt = "1.2"
-once_cell = "1"
 oneshot = "0.1"
 openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.1"
 opentelemetry = "0.31"
 opentelemetry-appender-tracing = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
 ouroboros = "0.18"
 parquet = { version = "57", default-features = false, features = ["arrow", "zstd", "snap", "variant_experimental"] }
 percent-encoding = "2.3"
@@ -237,6 +242,7 @@ serde_yaml = "0.9"
 serial_test = { version = "3.2", features = ["file_locks"] }
 sha2 = "0.10"
 siphasher = "1.0"
+stateright = "0.30"
 smallvec = "1"
 sqlx = { version = "0.8", features = [
   "migrate",
@@ -254,7 +260,7 @@ thousands = "0.2"
 tikv-jemalloc-ctl = { version = "0.6", features = ["stats"] }
 tikv-jemallocator = "0.6"
 time = { version = "0.3", features = ["std", "formatting", "macros"] }
-tokio = { version = "1.48", features = ["full"] }
+tokio = { version = "1.48", features = ["full", "tracing"] }
 tokio-metrics = { version = "0.4", features = ["rt"] }
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", features = ["sync"] }
@@ -286,6 +292,7 @@ tower-http = { version = "0.6", features = [
   "compression-gzip",
   "compression-zstd",
   "cors",
+  "trace",
 ] }
 tracing = "0.1"
 tracing-opentelemetry = "0.32"
@@ -345,6 +352,7 @@ azure_storage_blobs = { version = "0.21", default-features = false, features = [
 opendal = { version = "0.55", default-features = false }
 reqsign = { version = "0.18", default-features = false, features = ["google", "default-context"] }
 
+pomsky-intake = { path = "pomsky-intake" }
 quickwit-actors = { path = "quickwit-actors" }
 quickwit-aws = { path = "quickwit-aws" }
 quickwit-cli = { path = "quickwit-cli" }
@@ -358,6 +366,7 @@ quickwit-datadog-log-router = { path = "quickwit-datadog-log-router" }
 quickwit-datetime = { path = "quickwit-datetime" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
+quickwit-dst = { path = "quickwit-dst" }
 quickwit-index-management = { path = "quickwit-index-management" }
 quickwit-indexing = { path = "quickwit-indexing" }
 quickwit-ingest = { path = "quickwit-ingest" }
@@ -378,7 +387,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 # Fork: removed quickwit-telemetry (present in upstream)
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "2dc4e9e", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "58aa4b7", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
@@ -396,15 +405,22 @@ encoding_rs = "=0.8.35"
 chrono-tz = "0.10"
 either = "1.13"
 httparse = "1.10"
-metrics = "0.24"
-metrics-exporter-dogstatsd = "0.9"
 pem = "3.0.5"
-pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "44a4ffb" }
+pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "bfd96dc" }
 ryu = "1.0.20"
 tokio-tungstenite = { version = "0.27.0", features = ["native-tls"] }
 uaparser = "0.6.4"
 unicode-segmentation = "1.12"
 urlencoding = "2"
+vector = { git = "https://github.com/vectordotdev/vector", rev = "fbb1e4b501d6081d72f864da891a98464e60d097", default-features = false, features = [
+  "sinks-blackhole",
+  "sinks-console",
+  "sinks-http",
+  "sources-datadog_agent",
+  "sources-http_server",
+  "sources-opentelemetry",
+] }
+vector-lib = { git = "https://github.com/vectordotdev/vector", rev = "fbb1e4b501d6081d72f864da891a98464e60d097", default-features = false, features = ["vrl"] }
 
 [patch.crates-io]
 sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "085a4c7" }

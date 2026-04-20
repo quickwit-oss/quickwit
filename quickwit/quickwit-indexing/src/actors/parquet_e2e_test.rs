@@ -172,7 +172,8 @@ async fn test_metrics_pipeline_e2e() {
 
     // ParquetPackager between indexer and uploader
     let writer_config = ParquetWriterConfig::default();
-    let split_writer = ParquetSplitWriter::new(writer_config, temp_dir.path());
+    let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
+    let split_writer = ParquetSplitWriter::new(writer_config, temp_dir.path(), &table_config);
     let packager = ParquetPackager::new(split_writer, uploader_mailbox);
     let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
@@ -209,11 +210,10 @@ async fn test_metrics_pipeline_e2e() {
     doc_processor_handle.process_pending_and_observe().await;
     let indexer_counters = indexer_handle.process_pending_and_observe().await.state;
 
-    assert_eq!(indexer_counters.batches_received.load(Ordering::Relaxed), 5);
-    assert_eq!(indexer_counters.rows_indexed.load(Ordering::Relaxed), 100);
+    assert_eq!(indexer_counters.batches_received, 5);
+    assert_eq!(indexer_counters.rows_indexed, 100);
     assert_eq!(
-        indexer_counters.batches_flushed.load(Ordering::Relaxed),
-        0,
+        indexer_counters.batches_flushed, 0,
         "No flushes without force_commit"
     );
 
@@ -233,21 +233,11 @@ async fn test_metrics_pipeline_e2e() {
         .await
         .expect("Publisher should have published 1 split");
 
+    assert_eq!(doc_processor_counters.valid_batches, 6);
+    assert_eq!(doc_processor_counters.valid_rows, 110);
+    assert_eq!(doc_processor_counters.parse_errors, 0);
     assert_eq!(
-        doc_processor_counters.valid_batches.load(Ordering::Relaxed),
-        6
-    );
-    assert_eq!(
-        doc_processor_counters.valid_rows.load(Ordering::Relaxed),
-        110
-    );
-    assert_eq!(
-        doc_processor_counters.parse_errors.load(Ordering::Relaxed),
-        0
-    );
-    assert_eq!(
-        indexer_counters.batches_flushed.load(Ordering::Relaxed),
-        1,
+        indexer_counters.batches_flushed, 1,
         "force_commit should flush 1 batch"
     );
     // Verify packager produced the split
@@ -271,7 +261,8 @@ async fn test_file_backed_metastore_metrics_operations() {
     use quickwit_config::IndexConfig;
     use quickwit_metastore::{
         CreateIndexRequestExt, FileBackedMetastore, ListMetricsSplitsQuery,
-        ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt, StageMetricsSplitsRequestExt,
+        ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt, SplitState,
+        StageMetricsSplitsRequestExt,
     };
     use quickwit_parquet_engine::split::{MetricsSplitMetadata, MetricsSplitRecord, TimeRange};
     use quickwit_proto::metastore::{
@@ -316,7 +307,7 @@ async fn test_file_backed_metastore_metrics_operations() {
 
     // Verify staged
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Staged".to_string()]);
+        .with_split_states([SplitState::Staged]);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let staged: Vec<MetricsSplitRecord> = list_response.deserialize_splits().unwrap();
@@ -337,7 +328,7 @@ async fn test_file_backed_metastore_metrics_operations() {
 
     // Verify published
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Published".to_string()]);
+        .with_split_states([SplitState::Published]);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let published: Vec<MetricsSplitRecord> = list_response.deserialize_splits().unwrap();
@@ -346,16 +337,18 @@ async fn test_file_backed_metastore_metrics_operations() {
 
     // Time range filtering
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Published".to_string()])
-        .with_time_range(1000, 1100);
+        .with_split_states([SplitState::Published])
+        .with_time_range_start_gte(1000)
+        .with_time_range_end_lte(1100);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let in_range: Vec<MetricsSplitRecord> = list_response.deserialize_splits().unwrap();
     assert_eq!(in_range.len(), 1);
 
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Published".to_string()])
-        .with_time_range(5000, 5100);
+        .with_split_states([SplitState::Published])
+        .with_time_range_start_gte(5000)
+        .with_time_range_end_lte(5100);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();
     let out_of_range: Vec<MetricsSplitRecord> = list_response.deserialize_splits().unwrap();
@@ -363,7 +356,7 @@ async fn test_file_backed_metastore_metrics_operations() {
 
     // Metric name filtering
     let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec!["Published".to_string()])
+        .with_split_states([SplitState::Published])
         .with_metric_names(vec!["cpu.usage".to_string()]);
     let list_request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query).unwrap();
     let list_response = metastore.list_metrics_splits(list_request).await.unwrap();

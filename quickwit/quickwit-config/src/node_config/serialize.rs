@@ -30,6 +30,7 @@ use tracing::{info, warn};
 
 use super::{CloudPremConfig, GrpcConfig, RestConfig};
 use crate::config_value::ConfigValue;
+use crate::node_config::intake_config::IntakeConfig;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
@@ -212,6 +213,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "indexer")]
     #[serde(default)]
     indexer_config: IndexerConfig,
+    #[serde(rename = "intake")]
+    #[serde(default)]
+    intake_config: IntakeConfig,
     #[serde(rename = "searcher")]
     #[serde(default)]
     searcher_config: SearcherConfig,
@@ -261,7 +265,7 @@ impl NodeConfigBuilder {
 
         self.grpc_config.validate()?;
 
-        self.cloudprem_config.datadog_config = self.cloudprem_config.datadog_config.resolve();
+        self.cloudprem_config.resolve(env_vars)?;
         self.cloudprem_config.validate(&enabled_services)?;
 
         let gossip_listen_port = self
@@ -344,6 +348,7 @@ impl NodeConfigBuilder {
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
             indexer_config: self.indexer_config,
+            intake_config: self.intake_config,
             searcher_config: self.searcher_config,
             ingest_api_config: self.ingest_api_config,
             jaeger_config: self.jaeger_config,
@@ -444,6 +449,7 @@ impl Default for NodeConfigBuilder {
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
             indexer_config: IndexerConfig::default(),
+            intake_config: IntakeConfig::default(),
             searcher_config: SearcherConfig::default(),
             ingest_api_config: IngestApiConfig::default(),
             jaeger_config: JaegerConfig::default(),
@@ -550,6 +556,7 @@ pub fn node_config_for_tests_from_ports(
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
         indexer_config: IndexerConfig::default(),
+        intake_config: IntakeConfig::default(),
         searcher_config: SearcherConfig::default(),
         ingest_api_config: IngestApiConfig::default(),
         jaeger_config: JaegerConfig::default(),
@@ -706,13 +713,14 @@ mod tests {
                 _max_num_concurrent_split_streams: Some(serde::de::IgnoredAny),
                 split_cache: None,
                 request_timeout_secs: NonZeroU64::new(30).unwrap(),
+                leaf_request_timeout_secs: NonZeroU64::new(30).unwrap(),
                 storage_timeout_policy: Some(crate::StorageTimeoutPolicy {
                     min_throughtput_bytes_per_secs: 100_000,
                     timeout_millis: 2_000,
                     max_num_retries: 2
                 }),
                 warmup_memory_budget: ByteSize::gb(100),
-                warmup_single_split_initial_allocation: ByteSize::gb(1),
+                warmup_single_split_initial_allocation: ByteSize::mb(300),
                 lambda: Some(LambdaConfig {
                     function_name: "quickwit-lambda-leaf-search".to_string(),
                     max_splits_per_invocation: NonZeroUsize::new(10).unwrap(),
@@ -1410,8 +1418,9 @@ mod tests {
                         dd_api_key: None,
                     },
                     enable_reverse_connection: false,
-                    create_datadog_logs_index: false,
-                    create_datadog_metrics_index: false,
+                    create_dd_logs_index: false,
+                    create_dd_metrics_index: false,
+                    create_dd_traces_index: false,
                 },
                 ..NodeConfigBuilder::default()
                     .build_and_validate(&HashMap::new())

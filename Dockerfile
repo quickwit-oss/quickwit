@@ -1,4 +1,4 @@
-FROM node:24@sha256:b2b2184ba9b78c022e1d6a7924ec6fba577adf28f15c9d9c457730cc4ad3807a AS ui-builder
+FROM registry.ddbuild.io/images/pomsky/node:24@sha256:b2b2184ba9b78c022e1d6a7924ec6fba577adf28f15c9d9c457730cc4ad3807a AS ui-builder
 
 COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 
@@ -7,7 +7,7 @@ WORKDIR /quickwit/quickwit-ui
 RUN touch .gitignore_for_build_directory \
     && NODE_ENV=production make install build
 
-FROM node:20@sha256:8cdc6b9b711af0711cc6139955cc1331fab5e0a995afd3260c52736fbc338059 AS cloudprem-ui-loader
+FROM registry.ddbuild.io/images/pomsky/node:20@sha256:8cdc6b9b711af0711cc6139955cc1331fab5e0a995afd3260c52736fbc338059 AS cloudprem-ui-loader
 COPY quickwit/cloudprem-ui /quickwit/cloudprem-ui
 WORKDIR /quickwit/cloudprem-ui
 
@@ -19,7 +19,7 @@ ENV CLOUDPREM_UI_VERSION=$CLOUDPREM_UI_VERSION
 RUN touch .gitignore_for_build_directory \
     && make load-cloudprem-ui
 
-FROM rust:bookworm@sha256:b5efaabfd787a695d2e46b37d3d9c54040e11f4c10bc2e714bbadbfcc0cd6c39 AS bin-builder
+FROM registry.ddbuild.io/images/pomsky/rust:bookworm@sha256:b5efaabfd787a695d2e46b37d3d9c54040e11f4c10bc2e714bbadbfcc0cd6c39 AS bin-builder
 
 ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
@@ -28,11 +28,21 @@ ARG QW_COMMIT_HASH
 ARG QW_COMMIT_TAGS
 # it's dangerous to expose tokens in ARGs like this, but this is an intermediate build container, so its arguments are not stored in the final image
 ARG CI_JOB_TOKEN
+ARG POMCHI_TOKEN
+ARG EVENT_PERCOLATION_TOKEN
 
 ENV QW_COMMIT_DATE=$QW_COMMIT_DATE
 ENV QW_COMMIT_HASH=$QW_COMMIT_HASH
 ENV QW_COMMIT_TAGS=$QW_COMMIT_TAGS
 
+# Use dd-octo-sts tokens for private GitHub repos (repo-specific, longest prefix wins)
+RUN if [ -n "$POMCHI_TOKEN" ]; then \
+      git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi"; \
+    fi
+RUN if [ -n "$EVENT_PERCOLATION_TOKEN" ]; then \
+      git config --global url."https://x-access-token:${EVENT_PERCOLATION_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"; \
+    fi
+# Fall back to CI_JOB_TOKEN via GitLab mirror for remaining DataDog repos
 RUN git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "ssh://git@github.com/DataDog/"
 
 RUN apt-get -y update \
@@ -46,9 +56,12 @@ RUN apt-get -y update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY quickwit /quickwit
-COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
-COPY config/cloudprem/datadog.yaml /config/cloudprem/datadog.yaml
+COPY .cargo/config.toml /quickwit/.cargo/config.toml
+
+COPY config/cloudprem/datadog-logs.yaml /config/cloudprem/datadog-logs.yaml
 COPY config/cloudprem/datadog-metrics.yaml /config/cloudprem/datadog-metrics.yaml
+COPY config/cloudprem/datadog-spans.yaml /config/cloudprem/datadog-spans.yaml
+COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
 COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 COPY --from=cloudprem-ui-loader /quickwit/cloudprem-ui/cloudprem_ui_build /quickwit/cloudprem-ui/cloudprem_ui_build
 

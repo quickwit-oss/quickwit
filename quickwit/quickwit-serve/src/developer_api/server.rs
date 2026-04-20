@@ -30,7 +30,7 @@ use quickwit_proto::cloudprem::metrics::metric::MetricValue;
 use quickwit_proto::cloudprem::metrics::*;
 use quickwit_proto::developer::{
     DeveloperError, DeveloperResult, DeveloperService, GetDebugInfoRequest, GetDebugInfoResponse,
-    PullMetricsResponse,
+    GetNodeDiagnosticsRequest, GetNodeDiagnosticsResponse, PullMetricsResponse,
 };
 use serde_json::json;
 
@@ -134,6 +134,30 @@ impl DeveloperService for DeveloperApiServer {
             .collect();
         Ok(PullMetricsResponse {
             metric_families: metric_families_proto,
+        })
+    }
+
+    async fn get_node_diagnostics(
+        &self,
+        _: GetNodeDiagnosticsRequest,
+    ) -> DeveloperResult<GetNodeDiagnosticsResponse> {
+        let build_info = crate::BuildInfo::get();
+        let build_info_json = serde_json::to_string(build_info)
+            .map_err(|e| DeveloperError::Internal(e.to_string()))?;
+
+        let runtime_info = crate::RuntimeInfo::get();
+        let runtime_info_json = serde_json::to_string(runtime_info)
+            .map_err(|e| DeveloperError::Internal(e.to_string()))?;
+
+        let mut node_config = (*self.node_config).clone();
+        node_config.redact();
+        let node_config_json = serde_json::to_string(&node_config)
+            .map_err(|e| DeveloperError::Internal(e.to_string()))?;
+
+        Ok(GetNodeDiagnosticsResponse {
+            build_info_json,
+            runtime_info_json,
+            node_config_json,
         })
     }
 }

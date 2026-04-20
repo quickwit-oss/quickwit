@@ -22,8 +22,7 @@ use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::DocBatchV2Builder;
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::ingest::router::{
-    IngestFailureReason, IngestRequestV2, IngestRouterService, IngestRouterServiceClient,
-    IngestSubrequest,
+    IngestRequestV2, IngestRouterService, IngestRouterServiceClient, IngestSubrequest,
 };
 use quickwit_proto::types::DocUidGenerator;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -41,6 +40,7 @@ use time::format_description::well_known::Iso8601;
 
 use super::index_router::IndexRouter;
 use super::log_msg_accessors::{custom_field_accessor, tag_accessor};
+use crate::datadog_api::get_error_code_and_message;
 use crate::decompression::get_body_bytes;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{Body, BodyFormat, with_arg};
@@ -373,8 +373,8 @@ async fn datadog_ingest_logs(
     }
     // Return the first failure reason (could be improved to aggregate errors).
     let failure_reason = response.failures[0].reason();
+    let (error_code, error_message) = get_error_code_and_message(failure_reason);
 
-    let (error_code, error_message) = map_ingest_failure(failure_reason);
     let status_code = error_code.http_status_code();
     DD_INGEST_METRICS
         .ingest_requests_total
@@ -605,8 +605,8 @@ fn try_parse_vector_metrics(body: &Body) -> Result<Vec<MetricDataPoint>, Datadog
 mod tests {
     use quickwit_proto::ingest::IngestV2Error;
     use quickwit_proto::ingest::router::{
-        IngestFailure, IngestResponseV2, IngestRouterServiceClient, IngestSuccess,
-        MockIngestRouterService,
+        IngestFailure, IngestFailureReason, IngestResponseV2, IngestRouterServiceClient,
+        IngestSuccess, MockIngestRouterService,
     };
     use quickwit_proto::metastore::IndexRoutingRule;
     use quickwit_proto::types::{IndexUid, Position, ShardId};

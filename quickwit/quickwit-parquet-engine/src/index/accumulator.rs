@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Instant;
 
-use arrow::array::{new_null_array, ArrayRef};
+use arrow::array::{ArrayRef, new_null_array};
 use arrow::compute::concat_batches;
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
 use arrow::record_batch::RecordBatch;
@@ -77,6 +77,13 @@ impl ParquetBatchAccumulator {
     /// If thresholds are exceeded after adding the batch, concatenates all pending batches
     /// and returns the combined batch. Returns None if the threshold has not been reached.
     pub fn add_batch(&mut self, batch: RecordBatch) -> Result<Option<RecordBatch>, IndexingError> {
+        // Skip 0-row batches (e.g. checkpoint-only forwarding from doc processor). We ultimately
+        // need to forward a None batch to the packager to skip the write, and just forward the
+        // checkpoint.
+        if batch.num_rows() == 0 {
+            return Ok(None);
+        }
+
         let start = Instant::now();
         let batch_rows = batch.num_rows();
         let batch_bytes = estimate_batch_bytes(&batch);
@@ -144,7 +151,13 @@ impl ParquetBatchAccumulator {
 
     /// Internal flush implementation.
     fn flush_internal(&mut self) -> Result<Option<RecordBatch>, IndexingError> {
-        if self.pending_batches.is_empty() {
+        if self.pending_batches.is_empty() || self.union_fields.is_empty() {
+            // Nothing to flush: either no batches at all, or only empty
+            // (zero-column) batches were accumulated.
+            self.pending_batches.clear();
+            self.union_fields.clear();
+            self.pending_rows = 0;
+            self.pending_bytes = 0;
             return Ok(None);
         }
 
@@ -233,9 +246,8 @@ fn estimate_batch_bytes(batch: &RecordBatch) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_helpers::{create_test_batch, create_test_batch_with_tags};
-
     use super::*;
+    use crate::test_helpers::{create_test_batch, create_test_batch_with_tags};
 
     #[test]
     fn test_accumulator_below_threshold() {
@@ -340,7 +352,10 @@ mod tests {
 
         // No duplicate column names — each name appears exactly once.
         let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
-        let unique_count = field_names.iter().collect::<std::collections::HashSet<_>>().len();
+        let unique_count = field_names
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len();
         assert_eq!(
             unique_count,
             field_names.len(),
@@ -365,7 +380,10 @@ mod tests {
 
         let schema = combined.schema();
         let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
-        let unique_count = field_names.iter().collect::<std::collections::HashSet<_>>().len();
+        let unique_count = field_names
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len();
         assert_eq!(
             unique_count,
             field_names.len(),

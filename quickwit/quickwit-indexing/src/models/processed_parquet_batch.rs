@@ -96,7 +96,7 @@ impl fmt::Debug for ProcessedParquetBatch {
 
 #[cfg(test)]
 mod tests {
-    use crate::actors::parquet_test_helpers::create_test_batch;
+    use quickwit_parquet_engine::test_helpers::create_test_batch;
 
     use super::*;
 

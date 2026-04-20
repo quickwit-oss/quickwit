@@ -3,4 +3,4 @@ endpoint: indexes/allowedtypes
 status_code: null
 ---
 method: DELETE
-endpoint: indexes/tag-simple
+endpoint: indexes/simple

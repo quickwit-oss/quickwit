@@ -71,6 +71,12 @@ pub struct PgMetricsSplit {
     pub size_bytes: i64,
     pub split_metadata_json: String,
     pub update_timestamp: i64,
+    pub window_start: Option<i64>,
+    pub window_duration_secs: Option<i32>,
+    pub sort_fields: String,
+    pub num_merge_ops: i32,
+    pub row_keys: Option<Vec<u8>>,
+    pub zonemap_regexes: serde_json::Value,
 }
 
 /// Insertable row for metrics_splits table.
@@ -92,6 +98,12 @@ pub struct InsertableMetricsSplit {
     pub num_rows: i64,
     pub size_bytes: i64,
     pub split_metadata_json: String,
+    pub window_start: Option<i64>,
+    pub window_duration_secs: i32,
+    pub sort_fields: String,
+    pub num_merge_ops: i32,
+    pub row_keys: Option<Vec<u8>>,
+    pub zonemap_regexes: serde_json::Value,
 }
 
 impl InsertableMetricsSplit {
@@ -118,6 +130,13 @@ impl InsertableMetricsSplit {
             num_rows: metadata.num_rows as i64,
             size_bytes: metadata.size_bytes as i64,
             split_metadata_json,
+            window_start: metadata.window_start(),
+            window_duration_secs: metadata.window_duration_secs() as i32,
+            sort_fields: metadata.sort_fields.clone(),
+            num_merge_ops: metadata.num_merge_ops as i32,
+            row_keys: metadata.row_keys_proto.clone(),
+            zonemap_regexes: serde_json::to_value(&metadata.zonemap_regexes)
+                .unwrap_or_else(|_| serde_json::json!({})),
         })
     }
 }
@@ -134,10 +153,48 @@ impl PgMetricsSplit {
         // Primary path: deserialize from JSON (authoritative)
         let metadata: MetricsSplitMetadata = serde_json::from_str(&self.split_metadata_json)?;
 
-        // Overlay database columns (for consistency verification in debug builds)
+        // SS-5: Verify consistency between JSON blob and SQL columns.
         debug_assert_eq!(metadata.split_id.as_str(), self.split_id);
         debug_assert_eq!(metadata.time_range.start_secs, self.time_range_start as u64);
         debug_assert_eq!(metadata.time_range.end_secs, self.time_range_end as u64);
+
+        // SS-5 (SortSchema.tla): sort_fields must be identical in JSON metadata
+        // and the dedicated SQL column. Inconsistency would cause the compaction
+        // planner to select wrong splits or miss eligible ones.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            metadata.sort_fields == self.sort_fields,
+            ": sort_fields mismatch between JSON ('{}') and SQL column ('{}')",
+            metadata.sort_fields,
+            self.sort_fields
+        );
+
+        // SS-5 continued: window_start must match between JSON and SQL column.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            metadata.window_start() == self.window_start,
+            ": window_start mismatch between JSON ({:?}) and SQL column ({:?})",
+            metadata.window_start(),
+            self.window_start
+        );
+
+        // SS-5 continued: window_duration_secs must match.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            metadata.window_duration_secs() == self.window_duration_secs.unwrap_or(0) as u32,
+            ": window_duration_secs mismatch between JSON ({}) and SQL column ({:?})",
+            metadata.window_duration_secs(),
+            self.window_duration_secs
+        );
+
+        // SS-4 (SortSchema.tla): sort_fields is immutable after write.
+        // We can't verify immutability at read time (no history available), but
+        // we verify the row_keys_proto round-trips consistently.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::SS5,
+            metadata.row_keys_proto == self.row_keys,
+            ": row_keys_proto mismatch between JSON and SQL column"
+        );
 
         Ok(metadata)
     }
@@ -227,6 +284,61 @@ mod tests {
     }
 
     #[test]
+    fn test_insertable_from_metadata_with_compaction_fields() {
+        let metadata = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("compaction-test"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .num_rows(100)
+            .size_bytes(500)
+            .window_start_secs(1700000000)
+            .window_duration_secs(3600)
+            .sort_fields("metric_name|host|timestamp/V2")
+            .num_merge_ops(2)
+            .row_keys_proto(vec![0x08, 0x01])
+            .add_zonemap_regex("metric_name", "cpu\\..*")
+            .build();
+
+        let insertable =
+            InsertableMetricsSplit::from_metadata(&metadata, MetricsSplitState::Published)
+                .expect("conversion should succeed");
+
+        assert_eq!(insertable.window_start, Some(1700000000));
+        assert_eq!(insertable.window_duration_secs, 3600);
+        assert_eq!(insertable.sort_fields, "metric_name|host|timestamp/V2");
+        assert_eq!(insertable.num_merge_ops, 2);
+        assert_eq!(insertable.row_keys, Some(vec![0x08, 0x01]));
+        assert!(insertable.zonemap_regexes.is_object());
+        assert_eq!(
+            insertable.zonemap_regexes["metric_name"],
+            serde_json::json!("cpu\\..*")
+        );
+    }
+
+    #[test]
+    fn test_insertable_from_metadata_pre_phase31_defaults() {
+        let metadata = MetricsSplitMetadata::builder()
+            .split_id(SplitId::new("pre-phase31"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .build();
+
+        let insertable =
+            InsertableMetricsSplit::from_metadata(&metadata, MetricsSplitState::Staged)
+                .expect("conversion should succeed");
+
+        assert!(insertable.window_start.is_none());
+        assert_eq!(
+            insertable.window_duration_secs, 0,
+            "pre-Phase-31 splits should have 0 window_duration_secs"
+        );
+        assert_eq!(insertable.sort_fields, "");
+        assert_eq!(insertable.num_merge_ops, 0);
+        assert!(insertable.row_keys.is_none());
+        assert_eq!(insertable.zonemap_regexes, serde_json::json!({}));
+    }
+
+    #[test]
     fn test_pg_split_to_metadata_roundtrip() {
         let original = MetricsSplitMetadata::builder()
             .split_id(SplitId::new("roundtrip-test"))
@@ -259,6 +371,12 @@ mod tests {
             size_bytes: insertable.size_bytes,
             split_metadata_json: insertable.split_metadata_json,
             update_timestamp: 1704067200,
+            window_start: insertable.window_start,
+            window_duration_secs: Some(insertable.window_duration_secs),
+            sort_fields: insertable.sort_fields,
+            num_merge_ops: insertable.num_merge_ops,
+            row_keys: insertable.row_keys,
+            zonemap_regexes: insertable.zonemap_regexes,
         };
 
         let recovered = pg_row.to_metadata().expect("should deserialize");

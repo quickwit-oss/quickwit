@@ -16,7 +16,7 @@
 
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use anyhow::Context;
 use clap::{Arg, ArgMatches, arg};
@@ -110,13 +110,13 @@ fn client_args() -> Vec<Arg> {
 }
 
 pub fn install_default_crypto_ring_provider() {
-    static CALL_ONLY_ONCE: OnceLock<Result<(), ()>> = OnceLock::new();
+    static CALL_ONLY_ONCE: LazyLock<Result<(), ()>> = LazyLock::new(|| {
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .map_err(|_| ())
+    });
     CALL_ONLY_ONCE
-        .get_or_init(|| {
-            rustls::crypto::ring::default_provider()
-                .install_default()
-                .map_err(|_| ())
-        })
+        .as_ref()
         .expect("rustls crypto ring default provider installation should not fail");
 }
 
@@ -234,7 +234,7 @@ pub fn start_actor_runtimes(
 }
 
 /// Loads a node config located at `config_uri` with the default storage configuration.
-async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
+pub async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
     let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
         .context("failed to load node config")?;
@@ -357,16 +357,16 @@ pub fn start_metrics_loops() {
 }
 
 pub mod busy_detector {
+    use std::sync::LazyLock;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::Instant;
 
-    use once_cell::sync::Lazy;
     use tracing::debug;
 
     use crate::metrics::CLI_METRICS;
 
     // we need that time reference to use an atomic and not a mutex for LAST_UNPARK
-    static TIME_REF: Lazy<Instant> = Lazy::new(Instant::now);
+    static TIME_REF: LazyLock<Instant> = LazyLock::new(Instant::now);
     static ENABLED: AtomicBool = AtomicBool::new(false);
 
     const ALLOWED_DELAY_MICROS: u64 = 5000;

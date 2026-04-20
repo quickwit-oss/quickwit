@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{
     HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram_vec,
 };
@@ -76,5 +77,5 @@ impl Default for JaegerServiceMetrics {
     }
 }
 
-pub static JAEGER_SERVICE_METRICS: Lazy<JaegerServiceMetrics> =
-    Lazy::new(JaegerServiceMetrics::default);
+pub static JAEGER_SERVICE_METRICS: LazyLock<JaegerServiceMetrics> =
+    LazyLock::new(JaegerServiceMetrics::default);

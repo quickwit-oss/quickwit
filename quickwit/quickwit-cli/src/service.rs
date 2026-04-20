@@ -37,7 +37,7 @@ pub fn build_run_command() -> Command {
         .long_about("Starts a Quickwit node with all services enabled by default: `indexer`, `searcher`, `metastore`, `control-plane`, and `janitor`.")
         .arg(config_cli_arg())
         .args(&[
-            arg!(--"service" <SERVICE> "Services (`indexer`, `searcher`, `metastore`, `control-plane`, or `janitor`) to run. If unspecified, all the supported services are started.")
+            arg!(--"service" <SERVICE> "Services (`indexer`, `searcher`, `metastore`, `control-plane`, or `janitor`) to run. If unspecified, all supported services are started.")
                 .action(ArgAction::Append)
                 .required(false),
         ])
@@ -106,7 +106,8 @@ impl RunCliCommand {
     pub async fn execute(&self, env_filter_reload_fn: EnvFilterReloadFn) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
         let version_text = BuildInfo::get_version_text();
-        info!("cloudprem version: {version_text}");
+        info!("Datadog BYOC version: {version_text}");
+
         let mut node_config = load_node_config(&self.config_uri).await?;
         let (storage_resolver, metastore_resolver) =
             get_resolvers(&node_config.storage_configs, &node_config.metastore_configs);
