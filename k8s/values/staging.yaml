@@ -7,7 +7,10 @@ cloudprem:
   index:
     minShards: 240 # number of indexers * number of * vCPUs * 2
   reverseConnection:
-    enabled: false
+    enabled: true
+
+datadog:
+  site: dd.datad0g.com
 
 environment:
   QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
@@ -159,6 +162,48 @@ searcher:
       cpu: 4
       memory: 16Gi
 
+  initContainers:
+    - name: consul-template-dd-api-key
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /quickwit
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /quickwit/dd-api-key
+      subPath: dd-api-key
+      readOnly: true
+
+  extraEnv:
+    DD_API_KEY_FILE: /quickwit/dd-api-key
+
 janitor:
   resources:
     limits:
@@ -174,6 +219,10 @@ extraConfigMaps:
     data:
       pgpass.tpl: |
         *:*:*:*:{% with secret "kv/orgstore/orgstore-logs-cloudprem-metastore/orgstore-logs-cloudprem-metastore-pg-proxy/k8s/logs-cloudprem/cloudprem/credentials" %}{% .Data.data.password %}{% end %}
+  - name: dd-api-key-template
+    data:
+      dd-api-key.tpl: |
+        {% with secret "kv/k8s/logs-cloudprem/cloudprem/dogfooding-cluster-reverse-connection-dd-api-key" %}{% .Data.data.value %}{% end %}
 
 
 config:
