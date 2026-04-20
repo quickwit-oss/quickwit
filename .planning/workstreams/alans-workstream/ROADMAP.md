@@ -47,7 +47,7 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Module split, types extraction, KnownMetrics with TTL and pruning
-- [ ] 02-02-PLAN.md — CSV persistence (atomic load/save), transform integration with pending list
+- [x] 02-02-PLAN.md — CSV persistence (atomic load/save), transform integration with pending list
 
 ### Phase 3: HTTP Submission
 **Goal**: The HTTP flush client correctly POSTs pending metrics to the SaaS endpoint with the required headers, updates the known set only from `succeeded_metrics`, and drops the pending list on any failure — testable against a mock HTTP server
@@ -78,7 +78,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/1 | Planning complete | - |
-| 2. State and Persistence | 1/2 | In progress | - |
+| 1. Foundation | 1/1 | Complete | 2026-04-17 |
+| 2. State and Persistence | 2/2 | Complete | 2026-04-20 |
 | 3. HTTP Submission | 0/? | Not started | - |
 | 4. Stream Integration | 0/? | Not started | - |

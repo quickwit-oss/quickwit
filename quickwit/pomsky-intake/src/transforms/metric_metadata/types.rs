@@ -98,9 +98,11 @@ mod tests {
 
     #[test]
     fn test_counter_without_interval_maps_to_count() {
-        let metric = Metric::new("req", MetricKind::Incremental, MetricValue::Counter {
-            value: 1.0,
-        });
+        let metric = Metric::new(
+            "req",
+            MetricKind::Incremental,
+            MetricValue::Counter { value: 1.0 },
+        );
         let info = map_metric_type(&metric);
         assert_eq!(info.metric_type, MetadataMetricType::Count);
         assert_eq!(info.interval, 10);
@@ -108,9 +110,12 @@ mod tests {
 
     #[test]
     fn test_counter_with_interval_ms_maps_to_rate() {
-        let metric =
-            Metric::new("req", MetricKind::Incremental, MetricValue::Counter { value: 1.0 })
-                .with_interval_ms(NonZeroU32::new(10_000)); // 10_000 ms = 10 s
+        let metric = Metric::new(
+            "req",
+            MetricKind::Incremental,
+            MetricValue::Counter { value: 1.0 },
+        )
+        .with_interval_ms(NonZeroU32::new(10_000)); // 10_000 ms = 10 s
         let info = map_metric_type(&metric);
         assert_eq!(info.metric_type, MetadataMetricType::Rate);
         assert_eq!(info.interval, 10);
@@ -118,7 +123,11 @@ mod tests {
 
     #[test]
     fn test_gauge_maps_to_gauge() {
-        let metric = Metric::new("cpu", MetricKind::Absolute, MetricValue::Gauge { value: 0.5 });
+        let metric = Metric::new(
+            "cpu",
+            MetricKind::Absolute,
+            MetricValue::Gauge { value: 0.5 },
+        );
         let info = map_metric_type(&metric);
         assert_eq!(info.metric_type, MetadataMetricType::Gauge);
         assert_eq!(info.interval, 0);
@@ -145,30 +154,45 @@ mod tests {
         let count: MetadataMetricType = serde_yaml::from_str("\"count\"").unwrap();
         assert_eq!(count, MetadataMetricType::Count);
         let serialized = serde_yaml::to_string(&MetadataMetricType::Count).unwrap();
-        assert!(serialized.contains("count"), "expected 'count', got: {serialized}");
+        assert!(
+            serialized.contains("count"),
+            "expected 'count', got: {serialized}"
+        );
 
         let rate: MetadataMetricType = serde_yaml::from_str("\"rate\"").unwrap();
         assert_eq!(rate, MetadataMetricType::Rate);
         let serialized = serde_yaml::to_string(&MetadataMetricType::Rate).unwrap();
-        assert!(serialized.contains("rate"), "expected 'rate', got: {serialized}");
+        assert!(
+            serialized.contains("rate"),
+            "expected 'rate', got: {serialized}"
+        );
 
         let gauge: MetadataMetricType = serde_yaml::from_str("\"gauge\"").unwrap();
         assert_eq!(gauge, MetadataMetricType::Gauge);
         let serialized = serde_yaml::to_string(&MetadataMetricType::Gauge).unwrap();
-        assert!(serialized.contains("gauge"), "expected 'gauge', got: {serialized}");
+        assert!(
+            serialized.contains("gauge"),
+            "expected 'gauge', got: {serialized}"
+        );
 
         let ddsketch: MetadataMetricType = serde_yaml::from_str("\"ddsketch\"").unwrap();
         assert_eq!(ddsketch, MetadataMetricType::DdSketch);
         let serialized = serde_yaml::to_string(&MetadataMetricType::DdSketch).unwrap();
-        assert!(serialized.contains("ddsketch"), "expected 'ddsketch', got: {serialized}");
+        assert!(
+            serialized.contains("ddsketch"),
+            "expected 'ddsketch', got: {serialized}"
+        );
     }
 
     #[test]
     fn test_counter_with_sub_second_interval() {
         // 500 ms / 1000 = 0 (integer division). Documents intentional behavior per D-04.
-        let metric =
-            Metric::new("req", MetricKind::Incremental, MetricValue::Counter { value: 1.0 })
-                .with_interval_ms(NonZeroU32::new(500));
+        let metric = Metric::new(
+            "req",
+            MetricKind::Incremental,
+            MetricValue::Counter { value: 1.0 },
+        )
+        .with_interval_ms(NonZeroU32::new(500));
         let info = map_metric_type(&metric);
         assert_eq!(info.metric_type, MetadataMetricType::Rate);
         assert_eq!(info.interval, 0, "sub-second interval rounds to 0 per D-04");

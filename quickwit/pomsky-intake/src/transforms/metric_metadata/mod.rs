@@ -30,7 +30,7 @@ mod known_metrics;
 pub mod types;
 
 pub use known_metrics::KnownMetrics;
-pub use types::{map_metric_type, MetadataMetricType, MetricTypeInfo};
+pub use types::{MetadataMetricType, MetricTypeInfo, map_metric_type};
 
 // ---------------------------------------------------------------------------
 // Serde default constants and functions (per D-01, CFG-03)
@@ -382,10 +382,7 @@ metadata_svc_url: "http://localhost:9999"
             pending.contains_key("new.metric"),
             "pending should contain 'new.metric'"
         );
-        assert_eq!(
-            pending["new.metric"].metric_type,
-            MetadataMetricType::Count
-        );
+        assert_eq!(pending["new.metric"].metric_type, MetadataMetricType::Count);
     }
 
     #[test]

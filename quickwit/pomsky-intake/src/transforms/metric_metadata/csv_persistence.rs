@@ -169,11 +169,7 @@ mod tests {
         drop(file);
 
         let loaded = load_from_csv(&path).unwrap();
-        assert_eq!(
-            loaded.len(),
-            2,
-            "expected 2 valid entries, got: {loaded:?}"
-        );
+        assert_eq!(loaded.len(), 2, "expected 2 valid entries, got: {loaded:?}");
         assert_eq!(loaded.get("cpu.user"), Some(&1_700_000_000u64));
         assert_eq!(loaded.get("mem.free"), Some(&1_700_100_000u64));
     }
@@ -187,11 +183,7 @@ mod tests {
 
         let content = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
-        assert_eq!(
-            lines.len(),
-            1,
-            "empty save should produce only header line"
-        );
+        assert_eq!(lines.len(), 1, "empty save should produce only header line");
         assert_eq!(lines[0], "metric_name,expiry_ts");
     }
 

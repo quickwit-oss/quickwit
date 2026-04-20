@@ -116,7 +116,10 @@ mod tests {
     fn test_insert_and_contains() {
         let mut known = KnownMetrics::new(12, 36);
         known.insert("cpu.user".to_string());
-        assert!(known.contains("cpu.user"), "inserted metric should be known");
+        assert!(
+            known.contains("cpu.user"),
+            "inserted metric should be known"
+        );
         assert!(
             !known.contains("mem.free"),
             "non-inserted metric should not be known"
