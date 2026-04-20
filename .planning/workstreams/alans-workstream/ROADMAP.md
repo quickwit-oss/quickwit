@@ -46,7 +46,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Module split, types extraction, KnownMetrics with TTL and pruning
+- [x] 02-01-PLAN.md — Module split, types extraction, KnownMetrics with TTL and pruning
 - [ ] 02-02-PLAN.md — CSV persistence (atomic load/save), transform integration with pending list
 
 ### Phase 3: HTTP Submission
@@ -79,6 +79,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 0/1 | Planning complete | - |
-| 2. State and Persistence | 0/2 | Planning complete | - |
+| 2. State and Persistence | 1/2 | In progress | - |
 | 3. HTTP Submission | 0/? | Not started | - |
 | 4. Stream Integration | 0/? | Not started | - |
