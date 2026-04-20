@@ -18,7 +18,9 @@
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{ActorContext, ActorExitStatus, Handler};
-use quickwit_proto::metastore::{MetastoreService, PublishMetricsSplitsRequest};
+use quickwit_proto::metastore::{
+    MetastoreService, PublishMetricsSplitsRequest, PublishSketchSplitsRequest,
+};
 use tracing::{info, instrument};
 
 use super::ParquetSplitsUpdate;
@@ -52,16 +54,29 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
             .map(|split| split.split_id.as_str().to_string())
             .collect();
         if let Some(_guard) = publish_lock.acquire().await {
-            let publish_request = PublishMetricsSplitsRequest {
-                index_uid: Some(index_uid.clone()),
-                staged_split_ids: split_ids.clone(),
-                replaced_split_ids: replaced_split_ids.clone(),
-                index_checkpoint_delta_json_opt,
-                publish_token_opt: publish_token_opt.clone(),
-            };
-            ctx.protect_future(self.metastore.publish_metrics_splits(publish_request))
-                .await
-                .context("failed to publish metrics splits")?;
+            if quickwit_common::is_sketches_index(&index_uid.index_id) {
+                let publish_request = PublishSketchSplitsRequest {
+                    index_uid: Some(index_uid.clone()),
+                    staged_split_ids: split_ids.clone(),
+                    replaced_split_ids: replaced_split_ids.clone(),
+                    index_checkpoint_delta_json_opt,
+                    publish_token_opt: publish_token_opt.clone(),
+                };
+                ctx.protect_future(self.metastore.publish_sketch_splits(publish_request))
+                    .await
+                    .context("failed to publish sketch splits")?;
+            } else {
+                let publish_request = PublishMetricsSplitsRequest {
+                    index_uid: Some(index_uid.clone()),
+                    staged_split_ids: split_ids.clone(),
+                    replaced_split_ids: replaced_split_ids.clone(),
+                    index_checkpoint_delta_json_opt,
+                    publish_token_opt: publish_token_opt.clone(),
+                };
+                ctx.protect_future(self.metastore.publish_metrics_splits(publish_request))
+                    .await
+                    .context("failed to publish metrics splits")?;
+            }
         } else {
             info!(
                 split_ids=?split_ids,
