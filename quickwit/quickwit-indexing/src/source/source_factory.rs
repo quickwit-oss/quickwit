@@ -21,20 +21,17 @@ use quickwit_proto::types::SourceId;
 use thiserror::Error;
 
 use super::Source;
-use crate::actors::{DocProcessor, ParquetDocProcessor, Processor};
 use crate::source::SourceRuntime;
 
 #[async_trait]
-pub trait SourceFactory<P: Processor = DocProcessor>: Send + Sync + 'static {
-    async fn create_source(
-        &self,
-        source_runtime: SourceRuntime,
-    ) -> anyhow::Result<Box<dyn Source<P>>>;
+pub trait SourceFactory: Send + Sync + 'static {
+    async fn create_source(&self, source_runtime: SourceRuntime)
+    -> anyhow::Result<Box<dyn Source>>;
 }
 
 #[async_trait]
 pub trait TypedSourceFactory: Send + Sync + 'static {
-    type Source: Source<DocProcessor> + Source<ParquetDocProcessor>;
+    type Source: Source;
     type Params: serde::de::DeserializeOwned + Send + Sync + 'static;
 
     async fn typed_create_source(
@@ -56,29 +53,9 @@ impl<T: TypedSourceFactory> SourceFactory for T {
     }
 }
 
-#[async_trait]
-impl<T: TypedSourceFactory> SourceFactory<ParquetDocProcessor> for T {
-    async fn create_source(
-        &self,
-        source_runtime: SourceRuntime,
-    ) -> anyhow::Result<Box<dyn Source<ParquetDocProcessor>>> {
-        let typed_params: T::Params =
-            serde_json::from_value(source_runtime.source_config.params())?;
-        let source = Self::typed_create_source(source_runtime, typed_params).await?;
-        Ok(Box::new(source))
-    }
-}
-
-pub struct SourceLoader<P: Processor = DocProcessor> {
-    type_to_factory: HashMap<SourceType, Box<dyn SourceFactory<P>>>,
-}
-
-impl<P: Processor> Default for SourceLoader<P> {
-    fn default() -> Self {
-        Self {
-            type_to_factory: HashMap::default(),
-        }
-    }
+#[derive(Default)]
+pub struct SourceLoader {
+    type_to_factory: HashMap<SourceType, Box<dyn SourceFactory>>,
 }
 
 #[derive(Error, Debug)]
@@ -100,8 +77,8 @@ pub enum SourceLoaderError {
     },
 }
 
-impl<P: Processor> SourceLoader<P> {
-    pub fn add_source<F: SourceFactory<P>>(&mut self, source_type: SourceType, source_factory: F) {
+impl SourceLoader {
+    pub fn add_source<F: SourceFactory>(&mut self, source_type: SourceType, source_factory: F) {
         self.type_to_factory
             .insert(source_type, Box::new(source_factory));
     }
@@ -109,7 +86,7 @@ impl<P: Processor> SourceLoader<P> {
     pub async fn load_source(
         &self,
         source_runtime: SourceRuntime,
-    ) -> Result<Box<dyn Source<P>>, SourceLoaderError> {
+    ) -> Result<Box<dyn Source>, SourceLoaderError> {
         let source_type = source_runtime.source_config.source_type();
         let source_id = source_runtime.source_id().to_string();
         let source_factory = self.type_to_factory.get(&source_type).ok_or_else(|| {

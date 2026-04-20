@@ -95,6 +95,9 @@ jemalloc-profiled = [
 ci-test = []
 pprof = ["quickwit-serve/pprof"]
 openssl-support = ["openssl-probe"]
+# metrics here refers to adding support for metrics ingestion within Quickwit.
+# (this is not about quickwit's metrics themselves)
+metrics = [ "quickwit-indexing/metrics" ]
 # Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
 tokio-console = ["console-subscriber", "quickwit-common/named_tasks"]
 release-feature-set = [
@@ -116,6 +119,7 @@ release-feature-vendored-set = [
   "openssl-support",
   "pprof",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/metrics",
   "quickwit-indexing/pulsar",
   "quickwit-indexing/sqs",
   "quickwit-indexing/vrl",
@@ -129,6 +133,7 @@ release-macos-feature-vendored-set = [
   "jemalloc",
   "openssl-support",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/metrics",
   "quickwit-indexing/pulsar",
   "quickwit-indexing/sqs",
   "quickwit-indexing/vrl",

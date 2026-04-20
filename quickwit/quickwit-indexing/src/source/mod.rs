@@ -67,6 +67,7 @@ mod pulsar_source;
 #[cfg(feature = "queue-sources")]
 mod queue_sources;
 mod source_factory;
+mod source_sink;
 mod stdin_source;
 mod vec_source;
 mod void_source;
@@ -90,7 +91,7 @@ pub use kinesis::kinesis_source::{KinesisSource, KinesisSourceFactory};
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
 pub use queue_sources::sqs_queue;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
@@ -109,6 +110,7 @@ use quickwit_proto::types::{IndexUid, NodeIdRef, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
+pub use source_sink::SourceSink;
 use tokio::runtime::Handle;
 use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
@@ -116,16 +118,9 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use self::doc_file_reader::dir_and_filename;
 use self::stdin_source::StdinSourceFactory;
-use crate::actors::{DocProcessor, ParquetDocProcessor, Processor};
 use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
-
-/// Type alias for SourceContext with ParquetDocProcessor (for metrics pipeline).
-pub type ParquetSourceContext = SourceContext<ParquetDocProcessor>;
-
-/// Type alias for SourceLoader with ParquetDocProcessor (for metrics pipeline).
-pub type ParquetSourceLoader = SourceLoader<ParquetDocProcessor>;
 
 /// Number of bytes after which we cut a new batch.
 ///
@@ -213,9 +208,7 @@ impl SourceRuntime {
     }
 }
 
-pub type SourceContext<P = DocProcessor> = ActorContext<SourceActor<P>>;
-
-pub type LogsSourceContext = SourceContext<DocProcessor>;
+pub type SourceContext = ActorContext<SourceActor>;
 
 /// A Source is a trait that is mounted in a light wrapping Actor called `SourceActor`.
 ///
@@ -241,12 +234,12 @@ pub type LogsSourceContext = SourceContext<DocProcessor>;
 /// }
 /// ```
 #[async_trait]
-pub trait Source<P: Processor = DocProcessor>: Send + 'static {
+pub trait Source: Send + 'static {
     /// This method will be called before any calls to `emit_batches`.
     async fn initialize(
         &mut self,
-        _processor_mailbox: &Mailbox<P>,
-        _ctx: &SourceContext<P>,
+        _source_sink: &SourceSink,
+        _ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         Ok(())
     }
@@ -260,8 +253,8 @@ pub trait Source<P: Processor = DocProcessor>: Send + 'static {
     /// should wait before polling again.
     async fn emit_batches(
         &mut self,
-        processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        source_sink: &SourceSink,
+        ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus>;
 
     /// Assign shards is called when the source is assigned a new set of shards by the control
@@ -269,8 +262,8 @@ pub trait Source<P: Processor = DocProcessor>: Send + 'static {
     async fn assign_shards(
         &mut self,
         _shard_ids: BTreeSet<ShardId>,
-        _processor_mailbox: &Mailbox<P>,
-        _ctx: &SourceContext<P>,
+        _source_sink: &SourceSink,
+        _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -292,7 +285,7 @@ pub trait Source<P: Processor = DocProcessor>: Send + 'static {
     async fn suggest_truncate(
         &mut self,
         _checkpoint: SourceCheckpoint,
-        _ctx: &SourceContext<P>,
+        _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -301,7 +294,7 @@ pub trait Source<P: Processor = DocProcessor>: Send + 'static {
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &SourceContext<P>,
+        _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -319,9 +312,18 @@ pub trait Source<P: Processor = DocProcessor>: Send + 'static {
 /// The SourceActor acts as a thin wrapper over a source trait object to execute.
 ///
 /// It mostly takes care of running a loop calling `emit_batches(...)`.
-pub struct SourceActor<P: Processor = DocProcessor> {
-    pub source: Box<dyn Source<P>>,
-    pub processor_mailbox: Mailbox<P>,
+pub struct SourceActor {
+    source: Box<dyn Source>,
+    source_sink: SourceSink,
+}
+
+impl SourceActor {
+    pub fn new(source: Box<dyn Source>, source_sink: impl Into<SourceSink>) -> Self {
+        SourceActor {
+            source,
+            source_sink: source_sink.into(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -336,7 +338,7 @@ pub struct Assignment {
 pub struct AssignShards(pub Assignment);
 
 #[async_trait]
-impl<P: Processor> Actor for SourceActor<P> {
+impl Actor for SourceActor {
     type ObservableState = JsonValue;
 
     fn name(&self) -> String {
@@ -355,8 +357,8 @@ impl<P: Processor> Actor for SourceActor<P> {
         false
     }
 
-    async fn initialize(&mut self, ctx: &SourceContext<P>) -> Result<(), ActorExitStatus> {
-        self.source.initialize(&self.processor_mailbox, ctx).await?;
+    async fn initialize(&mut self, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+        self.source.initialize(&self.source_sink, ctx).await?;
         self.handle(Loop, ctx).await?;
         Ok(())
     }
@@ -364,7 +366,7 @@ impl<P: Processor> Actor for SourceActor<P> {
     async fn finalize(
         &mut self,
         exit_status: &ActorExitStatus,
-        ctx: &SourceContext<P>,
+        ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         self.source.finalize(exit_status, ctx).await?;
         Ok(())
@@ -372,18 +374,11 @@ impl<P: Processor> Actor for SourceActor<P> {
 }
 
 #[async_trait]
-impl<P: Processor> Handler<Loop> for SourceActor<P> {
+impl Handler<Loop> for SourceActor {
     type Reply = ();
 
-    async fn handle(
-        &mut self,
-        _message: Loop,
-        ctx: &SourceContext<P>,
-    ) -> Result<(), ActorExitStatus> {
-        let wait_for = self
-            .source
-            .emit_batches(&self.processor_mailbox, ctx)
-            .await?;
+    async fn handle(&mut self, _message: Loop, ctx: &SourceContext) -> Result<(), ActorExitStatus> {
+        let wait_for = self.source.emit_batches(&self.source_sink, ctx).await?;
         if wait_for.is_zero() {
             ctx.send_self_message(Loop).await?;
             return Ok(());
@@ -394,17 +389,17 @@ impl<P: Processor> Handler<Loop> for SourceActor<P> {
 }
 
 #[async_trait]
-impl<P: Processor> Handler<AssignShards> for SourceActor<P> {
+impl Handler<AssignShards> for SourceActor {
     type Reply = ();
 
     async fn handle(
         &mut self,
         assign_shards_message: AssignShards,
-        ctx: &SourceContext<P>,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let AssignShards(Assignment { shard_ids }) = assign_shards_message;
         self.source
-            .assign_shards(shard_ids, &self.processor_mailbox, ctx)
+            .assign_shards(shard_ids, &self.source_sink, ctx)
             .await?;
         Ok(())
     }
@@ -431,24 +426,6 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory
     });
     &SOURCE_LOADER
-}
-
-/// Returns the source loader for parquet pipelines (ParquetDocProcessor).
-///
-/// Metrics pipelines currently only support IngestV2 sources, which is the
-/// production source type for metrics ingestion.
-pub fn quickwit_supported_parquet_sources() -> &'static ParquetSourceLoader {
-    static PARQUET_SOURCE_LOADER: LazyLock<ParquetSourceLoader> = LazyLock::new(|| {
-        let mut source_factory = ParquetSourceLoader::default();
-        // Only IngestV2 is currently used for metrics ingestion
-        source_factory.add_source(SourceType::IngestV2, IngestSourceFactory);
-        // Add other sources for testing/development
-        source_factory.add_source(SourceType::File, FileSourceFactory);
-        source_factory.add_source(SourceType::Vec, VecSourceFactory);
-        source_factory.add_source(SourceType::Void, VoidSourceFactory);
-        source_factory
-    });
-    &PARQUET_SOURCE_LOADER
 }
 
 pub async fn check_source_connectivity(
@@ -516,13 +493,13 @@ pub async fn check_source_connectivity(
 pub struct SuggestTruncate(pub SourceCheckpoint);
 
 #[async_trait]
-impl<P: Processor> Handler<SuggestTruncate> for SourceActor<P> {
+impl Handler<SuggestTruncate> for SourceActor {
     type Reply = ();
 
     async fn handle(
         &mut self,
         suggest_truncate: SuggestTruncate,
-        ctx: &SourceContext<P>,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let SuggestTruncate(checkpoint) = suggest_truncate;
 

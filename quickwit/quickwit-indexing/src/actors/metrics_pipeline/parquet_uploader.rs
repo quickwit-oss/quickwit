@@ -24,20 +24,19 @@ use std::sync::{Arc, OnceLock};
 
 use anyhow::Context;
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, QueueCapacity};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::spawn_named_task;
 use quickwit_metastore::StageParquetSplitsRequestExt;
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_storage::Storage;
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::sync::{Semaphore, SemaphorePermit, oneshot};
 use tracing::{Instrument, Span, debug, info, instrument, warn};
 
-use crate::actors::sequencer::SequencerCommand;
-use crate::actors::uploader::{SplitsUpdateMailbox, SplitsUpdateSender};
-use crate::actors::{ParquetPublisher, ParquetSplitBatch, UploaderCounters, UploaderType};
+use super::{ParquetSplitBatch, ParquetSplitsUpdate};
+use crate::actors::sequencer::{Sequencer, SequencerCommand};
+use crate::actors::{Publisher, UploaderCounters, UploaderType};
 use crate::metrics::INDEXER_METRICS;
-use crate::models::ParquetSplitsUpdate;
 
 /// Concurrent upload permits for metrics uploader.
 /// Uses same permit pool as indexer uploads.
@@ -84,13 +83,14 @@ async fn stage_splits(
 /// ParquetUploader actor for staging and uploading metrics splits.
 ///
 /// Receives ParquetSplitBatch from ParquetIndexer, stages splits to the metastore,
-/// uploads Parquet files to storage, and sends ParquetSplitsUpdate downstream.
+/// uploads Parquet files to storage, and sends ParquetSplitsUpdate downstream
+/// via a Sequencer to preserve ordering.
 #[derive(Clone)]
 pub struct ParquetUploader {
     uploader_type: UploaderType,
     metastore: MetastoreServiceClient,
     split_store: Arc<dyn Storage>,
-    split_update_mailbox: SplitsUpdateMailbox<ParquetPublisher>,
+    sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
     max_concurrent_uploads: usize,
     counters: UploaderCounters,
 }
@@ -101,14 +101,14 @@ impl ParquetUploader {
         uploader_type: UploaderType,
         metastore: MetastoreServiceClient,
         split_store: Arc<dyn Storage>,
-        split_update_mailbox: SplitsUpdateMailbox<ParquetPublisher>,
+        sequencer_mailbox: Mailbox<Sequencer<Publisher>>,
         max_concurrent_uploads: usize,
     ) -> Self {
         Self {
             uploader_type,
             metastore,
             split_store,
-            split_update_mailbox,
+            sequencer_mailbox,
             max_concurrent_uploads,
             counters: Default::default(),
         }
@@ -171,13 +171,11 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
             debug!("received empty ParquetSplitBatch, forwarding checkpoint only");
             // Even with no splits, the checkpoint delta may contain EOF positions
             // that must reach the publisher for graceful decommission.
-            let sender = match self.split_update_mailbox.get_sender(ctx).await {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!(error = %e, "failed to reserve sequencer position for empty batch");
-                    return Ok(());
-                }
-            };
+            let (tx, rx) = oneshot::channel::<SequencerCommand<ParquetSplitsUpdate>>();
+            if let Err(e) = ctx.send_message(&self.sequencer_mailbox, rx).await {
+                warn!(error = %e, "failed to reserve sequencer position for empty batch");
+                return Ok(());
+            }
 
             let update = ParquetSplitsUpdate {
                 index_uid: index_uid.clone(),
@@ -188,17 +186,8 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 publish_token_opt: batch.publish_token_opt,
                 parent_span: tracing::Span::current(),
             };
-            match sender {
-                SplitsUpdateSender::Publisher(mailbox) => {
-                    if let Err(e) = ctx.send_message(&mailbox, update).await {
-                        warn!(error = %e, "failed to send empty batch to publisher");
-                    }
-                }
-                SplitsUpdateSender::Sequencer(tx) => {
-                    if tx.send(SequencerCommand::Proceed(update)).is_err() {
-                        warn!("sequencer receiver dropped for empty batch");
-                    }
-                }
+            if tx.send(SequencerCommand::Proceed(update)).is_err() {
+                warn!("sequencer receiver dropped for empty batch");
             }
             return Ok(());
         }
@@ -206,13 +195,11 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         // Reserve position in sequencer BEFORE starting async work.
         // This ensures that even if uploads complete out of order, they will
         // be published in the order they were submitted.
-        let sender = match self.split_update_mailbox.get_sender(ctx).await {
-            Ok(s) => s,
-            Err(e) => {
-                warn!(error = %e, "failed to reserve sequencer position");
-                return Ok(());
-            }
-        };
+        let (tx, rx) = oneshot::channel::<SequencerCommand<ParquetSplitsUpdate>>();
+        if let Err(e) = ctx.send_message(&self.sequencer_mailbox, rx).await {
+            warn!(error = %e, "failed to reserve sequencer position");
+            return Ok(());
+        }
 
         // Acquire upload permit
         let permit_guard = self.acquire_semaphore(ctx).await?;
@@ -220,10 +207,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
 
         if kill_switch.is_dead() {
             warn!("kill switch was activated, cancelling metrics upload");
-            // Discard the sequencer position since we're not proceeding
-            if let SplitsUpdateSender::Sequencer(tx) = sender {
-                let _ = tx.send(SequencerCommand::Discard);
-            }
+            let _ = tx.send(SequencerCommand::Discard);
             return Err(ActorExitStatus::Killed);
         }
 
@@ -231,7 +215,6 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         let metastore = self.metastore.clone();
         let split_store = self.split_store.clone();
         let counters = self.counters.clone();
-        let ctx_clone = ctx.clone();
 
         let output_dir = batch.output_dir;
         let checkpoint_delta = batch.checkpoint_delta;
@@ -251,9 +234,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 // may have died (e.g. source reassignment).
                 if publish_lock.is_dead() {
                     info!("splits' publish lock is dead");
-                    if let SplitsUpdateSender::Sequencer(tx) = sender {
-                        let _ = tx.send(SequencerCommand::Discard);
-                    }
+                    let _ = tx.send(SequencerCommand::Discard);
                     return;
                 }
 
@@ -263,9 +244,8 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
 
                 if let Err(e) = stage_result {
                     warn!(error = %e, "failed to stage splits");
-                    if let SplitsUpdateSender::Sequencer(tx) = sender {
-                        let _ = tx.send(SequencerCommand::Discard);
-                    }
+                    // Discard sequencer position on error
+                    let _ = tx.send(SequencerCommand::Discard);
                     kill_switch.kill();
                     return;
                 }
@@ -295,9 +275,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                                 "failed to read local parquet file"
                             );
                             // Discard sequencer position on error
-                            if let SplitsUpdateSender::Sequencer(tx) = sender {
-                                let _ = tx.send(SequencerCommand::Discard);
-                            }
+                            let _ = tx.send(SequencerCommand::Discard);
                             kill_switch.kill();
                             return;
                         }
@@ -315,9 +293,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                             "failed to upload parquet file"
                         );
                         // Discard sequencer position on error
-                        if let SplitsUpdateSender::Sequencer(tx) = sender {
-                            let _ = tx.send(SequencerCommand::Discard);
-                        }
+                        let _ = tx.send(SequencerCommand::Discard);
                         kill_switch.kill();
                         return;
                     }
@@ -352,18 +328,8 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     parent_span: Span::current(),
                 };
 
-                // Send via the appropriate channel
-                match sender {
-                    SplitsUpdateSender::Publisher(mailbox) => {
-                        if let Err(e) = ctx_clone.send_message(&mailbox, update).await {
-                            warn!(error = %e, "failed to send to publisher");
-                        }
-                    }
-                    SplitsUpdateSender::Sequencer(tx) => {
-                        if tx.send(SequencerCommand::Proceed(update)).is_err() {
-                            warn!("sequencer receiver dropped");
-                        }
-                    }
+                if tx.send(SequencerCommand::Proceed(update)).is_err() {
+                    warn!("sequencer receiver dropped");
                 }
 
                 // Drop permit to allow next upload
@@ -388,7 +354,7 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::Sequencer;
+    use crate::actors::{Publisher, Sequencer};
     use crate::models::PublishLock;
 
     fn create_test_metrics_split(index_uid: &str, split_id: &str) -> ParquetSplitMetadata {
@@ -424,8 +390,9 @@ mod tests {
 
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox =
+            super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
 
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
@@ -439,7 +406,7 @@ mod tests {
             UploaderType::IndexUploader,
             MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage.clone(),
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
 
@@ -510,8 +477,9 @@ mod tests {
 
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox =
+            super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
 
         let mut mock_metastore = MockMetastoreService::new();
         mock_metastore
@@ -524,7 +492,7 @@ mod tests {
             UploaderType::IndexUploader,
             MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage.clone(),
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
 
@@ -595,8 +563,9 @@ mod tests {
 
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox =
+            super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
 
         let mut mock_metastore = MockMetastoreService::new();
         // Should NOT call stage_metrics_splits for empty batch
@@ -607,7 +576,7 @@ mod tests {
             UploaderType::IndexUploader,
             MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage.clone(),
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
 
@@ -652,9 +621,8 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
 
         // Create a simple receiver actor to collect ParquetSplitsUpdate messages
-        // We use a test mailbox for ParquetPublisher to capture what would be sent
-        let (publisher_mailbox, publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+        // We use a test mailbox for Publisher to capture what would be sent
+        let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
 
         // Create sequencer that forwards to publisher
         let sequencer = Sequencer::new(publisher_mailbox);
@@ -671,7 +639,7 @@ mod tests {
             UploaderType::IndexUploader,
             MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage.clone(),
-            SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
+            sequencer_mailbox,
             4,
         );
 

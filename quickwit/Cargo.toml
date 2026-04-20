@@ -99,7 +99,7 @@ bitpacking = "0.9.3"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.3.1", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.10.0"
+chitchat = "0.10.1"
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
