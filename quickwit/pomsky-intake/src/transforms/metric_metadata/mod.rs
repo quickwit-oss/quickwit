@@ -26,6 +26,7 @@ use vector::transforms::{TaskTransform, Transform};
 use vector_lib::config::clone_input_definitions;
 
 mod csv_persistence;
+mod flush_client;
 mod known_metrics;
 pub mod types;
 

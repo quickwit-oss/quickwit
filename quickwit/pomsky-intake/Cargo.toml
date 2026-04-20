@@ -24,8 +24,10 @@ parquet = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tempfile = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
@@ -35,6 +37,7 @@ vector-lib = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
+wiremock = { workspace = true }
 
 [package.metadata.cargo-machete]
 # tokio is a direct dep for the binary (main.rs) and its `tracing` feature is
