@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::metadata::{MetricsSplitMetadata, SplitId, TimeRange};
+use super::metadata::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
 
 /// A parquet split - the storage unit for metrics data.
 ///
@@ -25,7 +25,7 @@ use super::metadata::{MetricsSplitMetadata, SplitId, TimeRange};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ParquetSplit {
     /// Split metadata.
-    pub metadata: MetricsSplitMetadata,
+    pub metadata: ParquetSplitMetadata,
 
     /// Format version for forward compatibility.
     pub format_version: u32,
@@ -36,7 +36,7 @@ pub const CURRENT_FORMAT_VERSION: u32 = 1;
 
 impl ParquetSplit {
     /// Create a new ParquetSplit.
-    pub fn new(metadata: MetricsSplitMetadata) -> Self {
+    pub fn new(metadata: ParquetSplitMetadata) -> Self {
         Self {
             metadata,
             format_version: CURRENT_FORMAT_VERSION,
@@ -44,7 +44,7 @@ impl ParquetSplit {
     }
 
     /// Get the split ID.
-    pub fn id(&self) -> &SplitId {
+    pub fn id(&self) -> &ParquetSplitId {
         &self.metadata.split_id
     }
 
@@ -79,7 +79,7 @@ mod tests {
     use super::*;
 
     fn create_test_split() -> ParquetSplit {
-        let metadata = MetricsSplitMetadata::builder()
+        let metadata = ParquetSplitMetadata::metrics_builder()
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .num_rows(10000)
