@@ -1,0 +1,177 @@
+syntax = "proto3";
+option go_package = "github.com/DataDog/dd-go/process/conn";
+
+package conn;
+
+message Error {
+  string message = 1;
+  int32 code = 2;
+}
+
+enum MessageEncoding {
+  Protobuf = 0;
+  JSON = 1;
+  ZstdPB = 2;
+  ZlibPB = 3;
+  Zstd1xPB = 4;
+  ZstdPBxNoCgo = 5;
+}
+
+enum MessageType {
+  TypeReqInitAuth = 0;
+  TypeResAuthAck = 1;
+  TypeResInvalidAuth = 2;
+  TypeReqSubscribe = 3;
+  TypeReqUnsubscribe = 4;
+  InvalidMessageType = 5;
+  TypeAggrProcesses = 6;
+  TypeCollectorProc = 12; // [10, 11] are deprecated (SQL Queries)
+  TypeCollectorConnections = 22; // [16, 21] are deprecated (Saved Queries)
+  TypeResCollector = 23;
+  TypeCollectorReqStatus = 24;
+  TypeCollectorRealTime = 27;
+  TypeReqProcSummaryQuery = 28;
+  TypeResProcSummaryQuery = 29;
+  TypeReqContainerSummaryQuery = 36;
+  TypeResContainerSummaryQuery = 37;
+  TypeAggrContainers = 38;
+  TypeCollectorContainer = 39;
+  TypeCollectorContainerRealTime = 40;
+  TypeCollectorPod = 41;
+  TypeCollectorReplicaSet = 42;
+  TypeCollectorDeployment = 43;
+  TypeCollectorService = 44;
+  TypeCollectorNode = 45;
+  TypeCollectorCluster = 46;
+  TypeCollectorJob = 47;
+  TypeCollectorCronJob = 48;
+  TypeCollectorDaemonSet = 49;
+  TypeCollectorStatefulSet = 50;
+  TypeCollectorPersistentVolume = 51;
+  TypeCollectorPersistentVolumeClaim = 52;
+  TypeCollectorProcDiscovery = 53;
+  TypeCollectorRole = 54;
+  TypeCollectorRoleBinding = 55;
+  TypeCollectorClusterRole = 56;
+  TypeCollectorClusterRoleBinding = 57;
+  TypeCollectorServiceAccount = 58;
+  TypeCollectorIngress = 59;
+  reserved 60; // reserved for TypeCollectorProcEvent which is handled by the Event-Platform
+  TypeCollectorNamespace = 61;
+  TypeCollectorManifest = 80;
+  TypeCollectorManifestCRD = 81;
+  TypeCollectorManifestCR = 82;
+  TypeCollectorVerticalPodAutoscaler = 83;
+  TypeCollectorHorizontalPodAutoscaler = 84;
+  TypeCollectorNetworkPolicy = 85;
+  TypeCollectorLimitRange = 86;
+  TypeCollectorStorageClass = 87;
+  TypeCollectorPodDisruptionBudget = 88;
+  TypeCollectorKubeletConfiguration = 89;
+  TypeCollectorECSTask = 200;
+}
+
+message MessageHeader {
+  MessageType type = 1;
+  MessageEncoding encoding = 2;
+
+  // used by process-client, see https://datadoghq.atlassian.net/wiki/spaces/PROC/pages/2193294558/Process+Client
+  uint32 SubscriptionID = 3;
+
+  int32 OrgID = 4;
+
+  // The intake timestamp of the message
+  // This must be calculated as time.Now() at intake, the first time the message is seen.
+  int64 Timestamp = 5;
+
+  // an integer representation of the agent version. This is self reported via the agent via an HTTP header
+  // (X-Dd-Processagentversion) and encoded with VersionToUint32.
+  uint32 AgentVersion = 6;
+
+  // The kafka partition number -- [0, #partitioncount)  -- that the message was written to
+  // XXX it's not clear why this needs to be a header field and can't be inferred from the kafka message
+  uint32 PartitionID = 7;
+
+  // EventID is the Koutris event ID of the message, this will be set in process/network intake.
+  uint64 EventID = 8;
+
+  // this acts as a hint to downstream services that message in question has container data.
+  // this was added in https://github.com/DataDog/datadog-agent/pull/4180, and will thus always
+  // be false in agents version 7.15 and below
+  bool HasContainers = 9;
+
+  // The timestamp that the agent created the message
+  // this should theoretically be close to Timestamp, but can differ if the agent  has retried the message
+  // or the agent has NTP desync
+  int64 AgentTimestamp = 10;
+
+  // If this message was re-emitted from the agent due to a network or loadbalancer issue, this field captures which attempt
+  // the message succeeded with
+  uint32 AgentAttempts = 11;
+
+  // This is an opaque identifier that is used for tracing connection messages
+  // over multiple apps. See https://datadoghq.atlassian.net/wiki/spaces/NET/pages/2580448137/RFC+Message+tracing+in+Networks+USM
+  uint64 PipelineID = 14;
+
+  // These fields are set by network-resolver as hints to downstream consumers (network-stats-extractor, network-logger, network-dns-logger)
+  // that a message is safe to totally discard without any processing or decoding.
+  bool HasHttpProtocolType = 12;
+  bool HasDnsConnections = 13;
+  bool HasDataStreamsType = 15;
+
+  // see https://github.com/DataDog/dd-go/pull/79953
+  oneof ProcessesHints {int32 HintMask = 16;}
+
+  // the agent start time as a unix timestamp (in seconds)
+  int64 AgentStartTime = 17;
+
+  bytes KoutrisNGTraceID = 18;
+
+  // Slicer key used for sharding in the networks pipeline. Only set by network-intake
+  // see https://github.com/DataDog/dd-go/pull/188218
+  oneof SlicerMetadata {uint64 SlicerKey = 19;}
+
+  // As part of the Event Platform intake migration, we need to continue to forward messages to the process_raw topic for network-container-writer, which will be the only remaining consumer from this topic.
+  // On the other hand, during the migration, process-resolver needs to drop these messages to avoid duplicate processing.
+  // This field will be set by an upstream service so that process-resolver can skip processing messages that were forwarded to process_raw for this purpose.
+  // See: https://datadoghq.atlassian.net/wiki/spaces/CoMon/pages/5144576010/RFC+Processes+Pipeline+Intake+Deprecation#Network-Container-Writer
+  bool ForwardedToProcessRawForNetworks = 20;
+  // This field is set by the agent to indicate whether live processes are enabled for the message.
+  // Starting from agent version 7.72.0, the process check can be used for other features such as service discovery.
+  bool LiveProcessesEnabled = 21;
+  
+  // required by event platform processes worker to parse hostname for downstream weak locality + filtering without decoding entire payload
+  string Hostname = 22;
+}
+
+message Header {
+  Auth auth = 1;
+  int64 timestamp = 2;
+  string id = 3;
+  // 4 is deprecated
+  Error error = 5;
+  // 6 is deprecated
+}
+
+message Auth {
+  int32 permission = 1;
+
+  // Required to request Write-only permission
+  string apiKey = 2;
+
+  // Required to request Read/Write permission
+  int32 orgId = 3;
+  int32 userId = 4;
+  string sessionToken = 5;
+  int32 tokenVersion = 6;
+
+  // Validation tokens
+  string readToken = 7;
+  string orgToken = 8;
+
+  // Require to request Read-only permission
+  string applicationKey = 9;
+
+  // Client timestamp used when validation session tokens.
+  int32 clientTimestamp = 10;
+}

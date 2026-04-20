@@ -25,11 +25,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &[
                 "proto/process/connections.proto",
                 "proto/process/agent.proto",
+                "proto/process/header.proto",
+                "proto/ddsketch/ddsketch.proto",
             ],
             &["."],
         )?;
 
     println!("cargo:rerun-if-changed=proto/process/connections.proto");
     println!("cargo:rerun-if-changed=proto/process/agent.proto");
+    println!("cargo:rerun-if-changed=proto/process/header.proto");
+    println!("cargo:rerun-if-changed=proto/ddsketch/ddsketch.proto");
     Ok(())
 }

@@ -28,6 +28,10 @@
 //!
 //! * `process` — process-agent `CollectorConnections` and dependencies (from
 //!   `github.com/DataDog/agent-payload`).
+//! * `conn` — `MessageHeader` envelope wrapping each agent payload over the wire (from
+//!   `github.com/DataDog/dd-go/process/protobuf/conn/header.proto`).
+//! * `sketch` — `ddsketch_full` wire format used by the agent to embed DDSketch bin data inside
+//!   `bytes` fields (from `github.com/DataDog/sketches-go`, vendored via vector's copy).
 
 // Silence lints from generated code only. Matches the pattern used by
 // quickwit-proto. Specific lints rather than `clippy::all` so any new
@@ -37,4 +41,17 @@
 /// DD Agent process-agent payload types (CollectorConnections and friends).
 pub mod process {
     include!(concat!(env!("OUT_DIR"), "/datadog.process_agent.rs"));
+}
+
+/// DD Agent message envelope: `MessageHeader` carried at the front of each
+/// payload version (V1..=V8). Used by the `connections` source to drive
+/// timestamp + encoding selection.
+pub mod conn {
+    include!(concat!(env!("OUT_DIR"), "/conn.rs"));
+}
+
+/// `ddsketch_full` wire format embedded inside agent-payload `bytes`
+/// fields (e.g. `HTTPStats.Latencies`).
+pub mod sketch {
+    include!(concat!(env!("OUT_DIR"), "/ddsketch_full.rs"));
 }
