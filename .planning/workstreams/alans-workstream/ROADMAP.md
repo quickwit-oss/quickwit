@@ -12,8 +12,8 @@ Build a single custom `TaskTransform` in `pomsky-intake` that replaces the Go si
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation** - Architecture skeleton, type definitions, and config wiring — locks in TaskTransform
-- [ ] **Phase 2: State and Persistence** - In-memory known-metrics map with TTL expiry and atomic CSV persistence
+- [x] **Phase 1: Foundation** - Architecture skeleton, type definitions, and config wiring — locks in TaskTransform
+- [x] **Phase 2: State and Persistence** - In-memory known-metrics map with TTL expiry and atomic CSV persistence (completed 2026-04-20)
 - [ ] **Phase 3: HTTP Submission** - Async flush client, interval/size triggers, response-driven state updates
 - [ ] **Phase 4: Stream Integration** - Full select! loop wiring, graceful shutdown flush, end-to-end test
 
@@ -40,7 +40,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. A metric name inserted into `KnownMetrics` is recognized as known on subsequent lookup and not added to the pending list; the same name with an expired TTL is recognized as unknown and re-added
   2. Per-entry TTL is drawn uniformly from [12h, 36h]; no entry's TTL falls outside this range across 1000 generated entries
-  3. Expired entries are removed during either a periodic persist tick or a lookup — no expired entry survives into the CSV
+  3. Expired entries are removed during the periodic persist tick (eager pruning only per D-09) — no expired entry survives into the CSV
   4. Writing the known-metrics map produces a valid CSV that can be round-tripped back to identical state; a missing file on load is treated as empty; malformed rows are skipped with a warning log
   5. File writes use a tempfile-then-rename pattern so no partial writes are ever visible to readers
 **Plans:** 2 plans
@@ -58,8 +58,11 @@ Plans:
   2. A flush is triggered when either the configurable interval elapses or the pending list reaches the configured batch size, whichever occurs first
   3. Only metric names listed in the `succeeded_metrics` response field are added to the known set with a fresh TTL; names absent from the response are not added
   4. When the HTTP POST fails (network error, 4xx, 5xx, timeout), the pending list is silently dropped and the next batch starts fresh
-**Plans**: TBD
-**UI hint**: no
+**Plans:** 2 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — FlushClient TDD: serde wire types, flush_pending() method, wiremock tests
+- [ ] 03-02-PLAN.md — Wire FlushClient into MetricMetadataTransform struct and build()
 
 ### Phase 4: Stream Integration
 **Goal**: The full `stream!` + `select!` loop is wired — metric events pass through to the downstream sink unchanged, all timers fire correctly, and a graceful shutdown flushes pending metrics and persists state before the stream returns
@@ -74,11 +77,11 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 1/1 | Complete | 2026-04-17 |
 | 2. State and Persistence | 2/2 | Complete | 2026-04-20 |
-| 3. HTTP Submission | 0/? | Not started | - |
+| 3. HTTP Submission | 0/2 | Planning complete | - |
 | 4. Stream Integration | 0/? | Not started | - |
