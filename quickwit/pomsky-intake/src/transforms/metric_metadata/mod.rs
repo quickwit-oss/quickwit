@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
 use std::pin::Pin;
 
 use futures::{Stream, StreamExt};
@@ -131,14 +132,39 @@ impl TransformConfig for MetricMetadataConfig {
     /// fails to start with a descriptive error — there is no fallback or default
     /// key (T-01-01: spoofing mitigation).
     async fn build(&self, _context: &TransformContext) -> vector::Result<Transform> {
-        // config is cloned once at build time; not in the hot path
         let api_key = std::env::var("DD_API_KEY").map_err(|_| {
             "DD_API_KEY environment variable is not set; \
              metric metadata transform cannot start without an API key"
         })?;
+
+        // Fail-fast: validate persist_file_path parent directory exists and is
+        // accessible. Matches the DD_API_KEY fail-fast pattern -- misconfigured
+        // paths fail at startup, not silently at the first persist tick.
+        let persist_path = std::path::Path::new(&self.persist_file_path);
+        if let Some(parent) = persist_path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::metadata(parent).map_err(|err| {
+                format!(
+                    "persist_file_path parent directory '{}' is not accessible: {err}; \
+                     ensure the directory exists and is writable",
+                    parent.display()
+                )
+            })?;
+        }
+
+        // Load known metrics from CSV on startup (PERSIST-03, D-04).
+        let entries = csv_persistence::load_from_csv(persist_path)
+            .map_err(|err| format!("failed to load known metrics CSV: {err}"))?;
+
+        let mut known_metrics = KnownMetrics::new(self.ttl_min_hours, self.ttl_max_hours);
+        known_metrics.load_entries(entries);
+
         Ok(Transform::event_task(MetricMetadataTransform {
             config: self.clone(),
             api_key,
+            known_metrics,
+            pending: HashMap::new(),
         }))
     }
 
@@ -170,17 +196,19 @@ impl TransformConfig for MetricMetadataConfig {
 
 /// Metric metadata tracking transform.
 ///
-/// Phase 1 skeleton: pass-through + metric type mapping.
-/// Phase 2 will add in-memory state accumulation.
-/// Phase 3 will add HTTP submission to byoc-ingest-metadata-svc.
+/// Tracks which metric names have been submitted to the SaaS endpoint.
+/// Per-event: classifies metrics as known/unknown, accumulates unknowns in
+/// the pending list for later HTTP flush (Phase 3).
 ///
 /// NOTE: Debug is intentionally NOT derived — the `api_key` field must not
 /// appear in log output (T-01-02: information disclosure mitigation).
 pub struct MetricMetadataTransform {
-    #[allow(dead_code)]
+    #[allow(dead_code)] // config consumed by persist tick and HTTP flush (Phase 3/4)
     config: MetricMetadataConfig,
-    #[allow(dead_code)]
+    #[allow(dead_code)] // api_key consumed by HTTP flush (Phase 3)
     api_key: String,
+    known_metrics: KnownMetrics,
+    pending: HashMap<String, MetricTypeInfo>,
 }
 
 impl TaskTransform<Event> for MetricMetadataTransform {
@@ -188,10 +216,17 @@ impl TaskTransform<Event> for MetricMetadataTransform {
         self: Box<Self>,
         task: Pin<Box<dyn Stream<Item = Event> + Send>>,
     ) -> Pin<Box<dyn Stream<Item = Event> + Send>> {
+        let known_metrics = self.known_metrics;
+        let mut pending = self.pending;
+
         Box::pin(task.map(move |event| {
             if let Event::Metric(ref metric) = event {
-                let _type_info = map_metric_type(metric);
-                // Phase 2 will accumulate type_info into the known-metrics state.
+                let name = metric.name().to_string();
+                if !known_metrics.contains(&name) {
+                    let type_info = map_metric_type(metric);
+                    // D-06: HashMap dedup; D-07: last-seen-wins
+                    pending.insert(name, type_info);
+                }
             }
             event
         }))
@@ -204,6 +239,12 @@ impl TaskTransform<Event> for MetricMetadataTransform {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::num::NonZeroU32;
+
+    use futures::stream;
+    use vector::event::{Metric, MetricKind, MetricValue};
+
     use super::*;
 
     // ----- Config deserialization -----
@@ -312,6 +353,318 @@ metadata_svc_url: "http://localhost:9999"
                 assert!(
                     err.to_string().contains("DD_API_KEY"),
                     "expected error message to mention DD_API_KEY, got: {err}"
+                );
+            }
+        }
+    }
+
+    // ----- Known/unknown classification (XFRM-02) -----
+
+    #[test]
+    fn test_unknown_metric_added_to_pending() {
+        let known_metrics = KnownMetrics::new(12, 36);
+        let mut pending: HashMap<String, MetricTypeInfo> = HashMap::new();
+
+        // Simulate per-event logic for an unknown metric.
+        let metric = Metric::new(
+            "new.metric",
+            MetricKind::Incremental,
+            MetricValue::Counter { value: 1.0 },
+        );
+        let name = metric.name().to_string();
+        if !known_metrics.contains(&name) {
+            let type_info = map_metric_type(&metric);
+            pending.insert(name, type_info);
+        }
+
+        assert_eq!(pending.len(), 1, "unknown metric should be in pending");
+        assert!(
+            pending.contains_key("new.metric"),
+            "pending should contain 'new.metric'"
+        );
+        assert_eq!(
+            pending["new.metric"].metric_type,
+            MetadataMetricType::Count
+        );
+    }
+
+    #[test]
+    fn test_known_metric_not_added_to_pending() {
+        let mut known_metrics = KnownMetrics::new(12, 36);
+        known_metrics.insert("known.metric".to_string());
+        let mut pending: HashMap<String, MetricTypeInfo> = HashMap::new();
+
+        // Simulate per-event logic for a known metric.
+        let metric = Metric::new(
+            "known.metric",
+            MetricKind::Incremental,
+            MetricValue::Counter { value: 1.0 },
+        );
+        let name = metric.name().to_string();
+        if !known_metrics.contains(&name) {
+            let type_info = map_metric_type(&metric);
+            pending.insert(name, type_info);
+        }
+
+        assert!(
+            pending.is_empty(),
+            "known metric should NOT be added to pending"
+        );
+    }
+
+    #[test]
+    fn test_pending_dedup_last_seen_wins() {
+        let known_metrics = KnownMetrics::new(12, 36);
+        let mut pending: HashMap<String, MetricTypeInfo> = HashMap::new();
+
+        // First event: counter -> Count type
+        let counter = Metric::new(
+            "same.metric",
+            MetricKind::Incremental,
+            MetricValue::Counter { value: 1.0 },
+        );
+        let name = counter.name().to_string();
+        if !known_metrics.contains(&name) {
+            let type_info = map_metric_type(&counter);
+            pending.insert(name, type_info);
+        }
+
+        // Second event: gauge -> Gauge type (last-seen-wins per D-07)
+        let gauge = Metric::new(
+            "same.metric",
+            MetricKind::Absolute,
+            MetricValue::Gauge { value: 42.0 },
+        );
+        let name = gauge.name().to_string();
+        if !known_metrics.contains(&name) {
+            let type_info = map_metric_type(&gauge);
+            pending.insert(name, type_info);
+        }
+
+        assert_eq!(pending.len(), 1, "dedup should keep exactly one entry");
+        assert_eq!(
+            pending["same.metric"].metric_type,
+            MetadataMetricType::Gauge,
+            "last-seen-wins: gauge should overwrite count"
+        );
+    }
+
+    // ----- Transform pass-through -----
+
+    #[tokio::test]
+    async fn test_transform_passes_events_through() {
+        let transform = Box::new(MetricMetadataTransform {
+            config: MetricMetadataConfig {
+                org_id: "test-org".to_string(),
+                metadata_svc_url: "http://localhost:9999".to_string(),
+                flush_interval_secs: 15,
+                persist_interval_secs: 30,
+                batch_size: 200,
+                ttl_min_hours: 12,
+                ttl_max_hours: 36,
+                http_timeout_secs: 10,
+                persist_file_path: "/tmp/test.csv".to_string(),
+            },
+            api_key: "test-key".to_string(),
+            known_metrics: KnownMetrics::new(12, 36),
+            pending: HashMap::new(),
+        });
+
+        let events: Vec<Event> = vec![
+            Event::Metric(Metric::new(
+                "cpu.user",
+                MetricKind::Absolute,
+                MetricValue::Gauge { value: 0.5 },
+            )),
+            Event::Metric(Metric::new(
+                "mem.free",
+                MetricKind::Incremental,
+                MetricValue::Counter { value: 100.0 },
+            )),
+            Event::Metric(
+                Metric::new(
+                    "req.rate",
+                    MetricKind::Incremental,
+                    MetricValue::Counter { value: 42.0 },
+                )
+                .with_interval_ms(NonZeroU32::new(10_000)),
+            ),
+        ];
+
+        let input: Pin<Box<dyn Stream<Item = Event> + Send>> =
+            Box::pin(stream::iter(events.clone()));
+        let output: Vec<Event> = transform.transform(input).collect().await;
+
+        assert_eq!(output.len(), 3, "all events should pass through");
+        for (idx, (out, inp)) in output.iter().zip(events.iter()).enumerate() {
+            match (out, inp) {
+                (Event::Metric(out_m), Event::Metric(in_m)) => {
+                    assert_eq!(
+                        out_m.name(),
+                        in_m.name(),
+                        "event {idx}: metric name mismatch"
+                    );
+                }
+                _ => panic!("event {idx}: expected Metric variant"),
+            }
+        }
+    }
+
+    // ----- CSV loading on build (PERSIST-03) -----
+
+    #[tokio::test]
+    async fn test_build_loads_csv_on_startup() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let persist_path = dir.path().join("known.csv");
+
+        // Write a CSV with 2 entries using far-future expiry timestamps.
+        let future_ts = 9_999_999_999u64;
+        {
+            let mut file = std::fs::File::create(&persist_path).unwrap();
+            writeln!(file, "metric_name,expiry_ts").unwrap();
+            writeln!(file, "preloaded.metric,{future_ts}").unwrap();
+            writeln!(file, "another.metric,{future_ts}").unwrap();
+        }
+
+        // Load CSV and build KnownMetrics directly to verify startup loading.
+        let entries =
+            csv_persistence::load_from_csv(&persist_path).expect("CSV load should succeed");
+        assert_eq!(entries.len(), 2, "CSV should have 2 entries");
+
+        let mut known_metrics = KnownMetrics::new(12, 36);
+        known_metrics.load_entries(entries);
+
+        // Verify that preloaded metrics are "known" and a new metric is not.
+        assert!(
+            known_metrics.contains("preloaded.metric"),
+            "preloaded.metric should be known after CSV load"
+        );
+        assert!(
+            known_metrics.contains("another.metric"),
+            "another.metric should be known after CSV load"
+        );
+        assert!(
+            !known_metrics.contains("brand.new.metric"),
+            "brand.new.metric should NOT be known"
+        );
+
+        // Build a transform with the loaded known_metrics and verify the
+        // per-event classification: preloaded metric skipped, new metric pending.
+        let mut pending: HashMap<String, MetricTypeInfo> = HashMap::new();
+
+        let preloaded = Metric::new(
+            "preloaded.metric",
+            MetricKind::Absolute,
+            MetricValue::Gauge { value: 1.0 },
+        );
+        let name = preloaded.name().to_string();
+        if !known_metrics.contains(&name) {
+            pending.insert(name, map_metric_type(&preloaded));
+        }
+
+        let new_metric = Metric::new(
+            "brand.new.metric",
+            MetricKind::Absolute,
+            MetricValue::Gauge { value: 2.0 },
+        );
+        let name = new_metric.name().to_string();
+        if !known_metrics.contains(&name) {
+            pending.insert(name, map_metric_type(&new_metric));
+        }
+
+        assert!(
+            !pending.contains_key("preloaded.metric"),
+            "preloaded metric should NOT be in pending"
+        );
+        assert!(
+            pending.contains_key("brand.new.metric"),
+            "new metric should be in pending"
+        );
+    }
+
+    // ----- Build integration via TransformConfig (PERSIST-03) -----
+
+    #[tokio::test]
+    async fn test_build_succeeds_with_valid_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let persist_path = dir.path().join("known.csv");
+
+        let saved = std::env::var("DD_API_KEY").ok();
+        // SAFETY: test is single-threaded in nextest isolation; env mutation is safe.
+        unsafe {
+            std::env::set_var("DD_API_KEY", "test-key");
+        }
+
+        let cfg = MetricMetadataConfig {
+            org_id: "test-org".to_string(),
+            metadata_svc_url: "http://localhost:9999".to_string(),
+            flush_interval_secs: 15,
+            persist_interval_secs: 30,
+            batch_size: 200,
+            ttl_min_hours: 12,
+            ttl_max_hours: 36,
+            http_timeout_secs: 10,
+            persist_file_path: persist_path.to_string_lossy().to_string(),
+        };
+
+        let ctx = TransformContext::default();
+        let result = cfg.build(&ctx).await;
+
+        unsafe {
+            match saved {
+                Some(val) => std::env::set_var("DD_API_KEY", val),
+                None => std::env::remove_var("DD_API_KEY"),
+            }
+        }
+
+        assert!(result.is_ok(), "build() should succeed with valid config");
+    }
+
+    // ----- Parent directory validation -----
+
+    #[tokio::test]
+    async fn test_build_fails_with_missing_parent_directory() {
+        let saved = std::env::var("DD_API_KEY").ok();
+        // SAFETY: test is single-threaded in nextest isolation; env mutation is safe.
+        unsafe {
+            std::env::set_var("DD_API_KEY", "test-key");
+        }
+
+        let cfg = MetricMetadataConfig {
+            org_id: "test-org".to_string(),
+            metadata_svc_url: "http://localhost:9999".to_string(),
+            flush_interval_secs: 15,
+            persist_interval_secs: 30,
+            batch_size: 200,
+            ttl_min_hours: 12,
+            ttl_max_hours: 36,
+            http_timeout_secs: 10,
+            persist_file_path: "/nonexistent_dir_abc123/known.csv".to_string(),
+        };
+
+        let ctx = TransformContext::default();
+        let result = cfg.build(&ctx).await;
+
+        unsafe {
+            match saved {
+                Some(val) => std::env::set_var("DD_API_KEY", val),
+                None => std::env::remove_var("DD_API_KEY"),
+            }
+        }
+
+        match result {
+            Ok(_) => panic!("build() should fail with nonexistent parent directory"),
+            Err(err) => {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("persist_file_path parent directory"),
+                    "error should mention persist_file_path parent directory, got: {msg}"
+                );
+                assert!(
+                    msg.contains("not accessible"),
+                    "error should mention 'not accessible', got: {msg}"
                 );
             }
         }

@@ -82,6 +82,7 @@ pub fn load_from_csv(path: &Path) -> anyhow::Result<HashMap<String, u64>> {
 /// Uses tempfile-then-rename pattern (D-05) to ensure readers never see
 /// partial writes. The temp file is created in the same directory as `path`
 /// to avoid cross-filesystem rename failures.
+#[allow(dead_code)] // called by persist tick (Phase 3/4)
 pub fn save_to_csv<'a>(
     path: &Path,
     entries: impl Iterator<Item = (&'a str, u64)>,
