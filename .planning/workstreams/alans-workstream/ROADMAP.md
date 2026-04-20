@@ -14,8 +14,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation** - Architecture skeleton, type definitions, and config wiring — locks in TaskTransform
 - [x] **Phase 2: State and Persistence** - In-memory known-metrics map with TTL expiry and atomic CSV persistence (completed 2026-04-20)
-- [ ] **Phase 3: HTTP Submission** - Async flush client, interval/size triggers, response-driven state updates
-- [ ] **Phase 4: Stream Integration** - Full select! loop wiring, graceful shutdown flush, end-to-end test
+- [ ] **Phase 3: HTTP Submission** - Async flush client, response-driven state updates
+- [ ] **Phase 4: Stream Integration** - Full select! loop wiring, interval/size triggers, graceful shutdown flush, end-to-end test
 
 ## Phase Details
 
@@ -52,12 +52,11 @@ Plans:
 ### Phase 3: HTTP Submission
 **Goal**: The HTTP flush client correctly POSTs pending metrics to the SaaS endpoint with the required headers, updates the known set only from `succeeded_metrics`, and drops the pending list on any failure — testable against a mock HTTP server
 **Depends on**: Phase 2
-**Requirements**: HTTP-01, HTTP-02, HTTP-03, HTTP-04
+**Requirements**: HTTP-01, HTTP-03, HTTP-04
 **Success Criteria** (what must be TRUE):
   1. A flush POST includes the `DD-API-KEY` header (value from env) and `org_id` in the JSON body, targeting the configured `{metadata_svc_url}/api/unstable/byoc/ingest/metadata/metric-metadata` path
-  2. A flush is triggered when either the configurable interval elapses or the pending list reaches the configured batch size, whichever occurs first
-  3. Only metric names listed in the `succeeded_metrics` response field are added to the known set with a fresh TTL; names absent from the response are not added
-  4. When the HTTP POST fails (network error, 4xx, 5xx, timeout), the pending list is silently dropped and the next batch starts fresh
+  2. Only metric names listed in the `succeeded_metrics` response field are added to the known set with a fresh TTL; names absent from the response are not added
+  3. When the HTTP POST fails (network error, 4xx, 5xx, timeout), the pending list is silently dropped and the next batch starts fresh
 **Plans:** 2 plans
 
 Plans:
@@ -67,11 +66,12 @@ Plans:
 ### Phase 4: Stream Integration
 **Goal**: The full `stream!` + `select!` loop is wired — metric events pass through to the downstream sink unchanged, all timers fire correctly, and a graceful shutdown flushes pending metrics and persists state before the stream returns
 **Depends on**: Phase 3
-**Requirements**: XFRM-01
+**Requirements**: XFRM-01, HTTP-02
 **Success Criteria** (what must be TRUE):
   1. Every metric event received by the transform is emitted to the downstream output unchanged (no fields added, removed, or modified)
-  2. When the input stream closes, any pending metrics are flushed to the SaaS endpoint and the known-metrics map is persisted to CSV before the transform exits
-  3. An integration test drives the transform through a real `TaskTransform` call chain, verifying pass-through and state persistence without mocking the transform internals
+  2. A flush is triggered when either the configurable interval elapses or the pending list reaches the configured batch size, whichever occurs first
+  3. When the input stream closes, any pending metrics are flushed to the SaaS endpoint and the known-metrics map is persisted to CSV before the transform exits
+  4. An integration test drives the transform through a real `TaskTransform` call chain, verifying pass-through and state persistence without mocking the transform internals
 **Plans**: TBD
 
 ## Progress
