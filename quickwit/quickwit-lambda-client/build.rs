@@ -20,6 +20,7 @@
 //! The Lambda binary is built separately in CI and published as a GitHub release.
 
 use std::env;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -95,7 +96,12 @@ fn fetch_lambda_zip(local_cache_path: &Path) {
 }
 
 fn sha256_hex(data: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(data))
+    let hash = Sha256::digest(data);
+    let mut hex = String::with_capacity(64);
+    for byte in hash {
+        write!(hex, "{byte:02x}").unwrap();
+    }
+    hex
 }
 
 fn download_lambda_zip(url: &str) -> Result<Vec<u8>, String> {

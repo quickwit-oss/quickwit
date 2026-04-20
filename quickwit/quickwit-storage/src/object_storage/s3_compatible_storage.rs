@@ -24,7 +24,9 @@ use anyhow::{Context as AnyhhowContext, anyhow};
 use async_trait::async_trait;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_sdk_s3::Client as S3Client;
-use aws_sdk_s3::config::{Credentials, Region};
+use aws_sdk_s3::config::{
+    Credentials, Region, RequestChecksumCalculation, ResponseChecksumValidation,
+};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
@@ -143,6 +145,11 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_sleep_impl(aws_config.sleep_impl());
     s3_config.set_stalled_stream_protection(aws_config.stalled_stream_protection());
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
+
+    if s3_storage_config.disable_checksums {
+        s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
+        s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
+    }
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
         info!(endpoint=%endpoint, "using S3 endpoint defined in storage config or environment variable");

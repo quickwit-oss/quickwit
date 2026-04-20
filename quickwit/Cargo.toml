@@ -87,7 +87,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 anyhow = "1"
 arc-swap = "1.8"
-arrow = { version = "57", default-features = false, features = ["ipc"] }
+arrow = { version = "58", default-features = false, features = ["ipc"] }
 assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
@@ -109,7 +109,7 @@ coarsetime = "0.1"
 colored = "3.0"
 console-subscriber = "0.5"
 criterion = { version = "0.8", features = ["async_tokio"] }
-cron = "0.15"
+cron = "0.16"
 dialoguer = { version = "0.12", default-features = false }
 dotenvy = "0.15"
 dyn-clone = "1.0"
@@ -165,7 +165,7 @@ mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a
 new_string_template = "1.5"
 nom = "8.0"
 numfmt = "1.2"
-oneshot = "0.1"
+oneshot = { version = "0.2", features = ["async", "std"] }
 openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.1"
 opentelemetry = "0.31"
@@ -173,7 +173,7 @@ opentelemetry-appender-tracing = "0.31"
 opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
 ouroboros = "0.18"
-parquet = { version = "57", default-features = false, features = ["arrow", "zstd", "snap", "variant_experimental"] }
+parquet = { version = "58", default-features = false, features = ["arrow", "snap", "variant_experimental", "zstd"] }
 percent-encoding = "2.3"
 pin-project = "1.1"
 pnet = { version = "0.35", features = ["std"] }
@@ -198,10 +198,10 @@ pulsar = { version = "6.6", default-features = false, features = [
 ] }
 quick_cache = "0.6.18"
 quote = "1.0"
-rand = "0.9"
-rand_distr = "0.5"
+rand = "0.10"
+rand_distr = "0.6"
 rayon = "1.11"
-rdkafka = { version = "0.38", default-features = false, features = [
+rdkafka = { version = "0.39", default-features = false, features = [
   "cmake-build",
   "libz",
   "ssl",
@@ -233,9 +233,9 @@ serde_qs = { version = "0.15" }
 serde_with = "3.16"
 serde_yaml = "0.9"
 serial_test = { version = "3.2", features = ["file_locks"] }
-sha2 = "0.10"
+sha2 = "0.11"
 siphasher = "1.0"
-stateright = "0.30"
+stateright = "0.31"
 smallvec = "1"
 sqlx = { version = "0.8", features = [
   "migrate",
@@ -245,7 +245,7 @@ sqlx = { version = "0.8", features = [
 ] }
 syn = { version = "2.0", features = ["extra-traits", "full", "parsing"] }
 sync_wrapper = "1"
-sysinfo = { version = "0.37", default-features = false, features = ["disk"] }
+sysinfo = { version = "0.38", default-features = false, features = ["disk"] }
 tabled = { version = "0.20", features = ["ansi"] }
 tempfile = "3"
 thiserror = "2"
@@ -305,7 +305,7 @@ username = "0.2"
 # in `quickwit-serve`. This code is fundamentally incompatible with version 5.x.
 utoipa = { version = "4.2", features = ["time", "ulid"] }
 uuid = { version = "1.19", features = ["v4", "serde"] }
-vrl = { version = "0.29", default-features = false, features = [
+vrl = { version = "0.31", default-features = false, features = [
   "compiler",
   "diagnostic",
   "stdlib",
@@ -319,7 +319,7 @@ aws-config = "1.8"
 aws-credential-types = { version = "1.2", features = ["hardcoded-credentials"] }
 aws-runtime = "1.5"
 aws-sdk-kinesis = "1.97"
-aws-sdk-s3 = "=1.62"
+aws-sdk-s3 = "1.129"
 aws-sdk-lambda = "1"
 aws-sdk-sqs = "1.91"
 aws-smithy-async = "1.2"
