@@ -241,11 +241,17 @@ impl TaskTransform<Event> for MetricMetadataTransform {
 mod tests {
     use std::collections::HashMap;
     use std::num::NonZeroU32;
+    use std::sync::Mutex;
 
     use futures::stream;
     use vector::event::{Metric, MetricKind, MetricValue};
 
     use super::*;
+
+    /// Guards tests that mutate environment variables. `cargo test` runs tests
+    /// in parallel within a single process, so concurrent set_var/remove_var
+    /// calls race. Acquiring this lock serializes env-mutating tests.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     // ----- Config deserialization -----
 
@@ -315,6 +321,7 @@ metadata_svc_url: "http://localhost:9999"
 
     #[tokio::test]
     async fn test_build_fails_without_api_key() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let saved = std::env::var("DD_API_KEY").ok();
         // SAFETY: test is single-threaded in nextest isolation; env mutation is safe.
         unsafe {
@@ -585,6 +592,7 @@ metadata_svc_url: "http://localhost:9999"
 
     #[tokio::test]
     async fn test_build_succeeds_with_valid_config() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let persist_path = dir.path().join("known.csv");
 
@@ -623,6 +631,7 @@ metadata_svc_url: "http://localhost:9999"
 
     #[tokio::test]
     async fn test_build_fails_with_missing_parent_directory() {
+        let _guard = ENV_LOCK.lock().unwrap();
         let saved = std::env::var("DD_API_KEY").ok();
         // SAFETY: test is single-threaded in nextest isolation; env mutation is safe.
         unsafe {
