@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing::warn;
 
 use super::types::{MetadataMetricType, MetricTypeInfo};
 
@@ -52,8 +53,19 @@ fn is_zero(val: &i64) -> bool {
 #[derive(Deserialize)]
 struct UpsertResponse {
     /// Names of metrics successfully upserted. May be null, empty, or a subset.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
     succeeded_metrics: Vec<String>,
+}
+
+/// Deserializes a JSON value as `Vec<String>`, treating `null` as an empty vec.
+/// `#[serde(default)]` handles the missing-field case; this function handles
+/// an explicitly-present `null` value.
+fn deserialize_null_as_empty_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let opt: Option<Vec<String>> = Option::deserialize(deserializer)?;
+    Ok(opt.unwrap_or_default())
 }
 
 // ---------------------------------------------------------------------------
@@ -105,9 +117,64 @@ impl FlushClient {
 
     pub async fn flush_pending(
         &self,
-        _pending: &HashMap<String, MetricTypeInfo>,
+        pending: &HashMap<String, MetricTypeInfo>,
     ) -> Result<Vec<String>, FlushError> {
-        todo!("GREEN phase: implement flush_pending")
+        let body = build_request_body(&self.org_id, pending);
+        let url = format!(
+            "{}/api/unstable/byoc/ingest/metadata/metric-metadata",
+            self.metadata_svc_url
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .header("DD-API-KEY", &self.api_key)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|err| {
+                if err.is_timeout() {
+                    FlushError::Timeout
+                } else {
+                    FlushError::Network(err.to_string())
+                }
+            })?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let body_text = response.text().await.unwrap_or_default();
+            warn!(
+                status = status.as_u16(),
+                body = %body_text,
+                "metadata flush failed"
+            );
+            return Err(FlushError::HttpStatus {
+                status: status.as_u16(),
+                body: body_text,
+            });
+        }
+
+        let api_response: UpsertResponse = response
+            .json()
+            .await
+            .map_err(|err| FlushError::ResponseParse(err.to_string()))?;
+
+        Ok(api_response.succeeded_metrics)
+    }
+}
+
+fn build_request_body(org_id: &str, pending: &HashMap<String, MetricTypeInfo>) -> UpsertRequest {
+    let records = pending
+        .iter()
+        .map(|(name, info)| UpsertRecord {
+            metric_name: name.clone(),
+            metric_type: info.metric_type,
+            interval: i64::from(info.interval),
+        })
+        .collect();
+    UpsertRequest {
+        org_id: org_id.to_string(),
+        records,
     }
 }
 
@@ -137,7 +204,9 @@ mod tests {
     }
 
     /// Helper: build a pending map with the given metric entries.
-    fn pending_with(entries: &[(&str, MetadataMetricType, u32)]) -> HashMap<String, MetricTypeInfo> {
+    fn pending_with(
+        entries: &[(&str, MetadataMetricType, u32)],
+    ) -> HashMap<String, MetricTypeInfo> {
         let mut map = HashMap::new();
         for (name, metric_type, interval) in entries {
             map.insert(
@@ -158,9 +227,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "succeeded_metrics": ["cpu.user", "mem.free"]
             })))
@@ -189,9 +256,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "succeeded_metrics": ["cpu.user"]
             })))
@@ -223,9 +288,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(serde_json::json!({"succeeded_metrics": []})),
@@ -251,9 +314,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(serde_json::json!({"succeeded_metrics": null})),
@@ -282,12 +343,8 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({})),
-            )
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
             .mount(&mock_server)
             .await;
 
@@ -312,9 +369,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .respond_with(
                 ResponseTemplate::new(500)
                     .set_body_json(serde_json::json!({"message": "internal error"})),
@@ -345,9 +400,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .respond_with(
                 ResponseTemplate::new(401)
                     .set_body_json(serde_json::json!({"message": "unauthorized"})),
@@ -378,9 +431,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .and(header("DD-API-KEY", "test-key"))
             .and(header("Content-Type", "application/json"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
@@ -410,9 +461,7 @@ mod tests {
 
         // Use a single metric for deterministic body assertion.
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .and(wiremock::matchers::body_json(serde_json::json!({
                 "org_id": "org-123",
                 "records": [
@@ -448,9 +497,7 @@ mod tests {
 
         // body_json matcher: interval field must NOT be present for gauge (interval=0).
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .and(wiremock::matchers::body_json(serde_json::json!({
                 "org_id": "org-123",
                 "records": [
@@ -484,9 +531,7 @@ mod tests {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path(
-                "/api/unstable/byoc/ingest/metadata/metric-metadata",
-            ))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_json(serde_json::json!({"succeeded_metrics": []}))

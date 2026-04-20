@@ -7744,16 +7744,20 @@ dependencies = [
  "clap",
  "futures 0.3.32",
  "parquet",
+ "rand 0.9.4",
  "reqwest 0.12.28",
  "serde",
+ "serde_json",
  "serde_yaml",
  "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "toml",
  "tracing 0.1.44",
  "typetag",
  "vector",
  "vector-lib",
+ "wiremock",
 ]
 
 [[package]]
