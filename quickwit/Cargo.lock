@@ -7739,6 +7739,7 @@ version = "0.1.25-dev"
 dependencies = [
  "anyhow",
  "arrow",
+ "async-stream",
  "async-trait",
  "chrono",
  "clap",

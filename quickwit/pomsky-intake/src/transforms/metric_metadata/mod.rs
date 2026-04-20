@@ -13,10 +13,12 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::pin::Pin;
 use std::time::Duration;
 
 use futures::{Stream, StreamExt};
+use tracing::warn;
 use serde::{Deserialize, Serialize};
 use vector::config::{
     DataType, GenerateConfig, Input, OutputId, TransformConfig, TransformContext, TransformOutput,
@@ -165,7 +167,7 @@ impl TransformConfig for MetricMetadataConfig {
         known_metrics.load_entries(entries);
 
         let flush_client = FlushClient::new(
-            api_key.clone(),
+            api_key,
             self.metadata_svc_url.clone(),
             self.org_id.clone(),
             Duration::from_secs(self.http_timeout_secs),
@@ -174,7 +176,6 @@ impl TransformConfig for MetricMetadataConfig {
 
         Ok(Transform::event_task(MetricMetadataTransform {
             config: self.clone(),
-            api_key,
             known_metrics,
             pending: HashMap::new(),
             flush_client,
@@ -216,10 +217,7 @@ impl TransformConfig for MetricMetadataConfig {
 /// NOTE: Debug is intentionally NOT derived — the `api_key` field must not
 /// appear in log output (T-01-02: information disclosure mitigation).
 pub struct MetricMetadataTransform {
-    #[allow(dead_code)] // config consumed by persist tick (Phase 4)
     config: MetricMetadataConfig,
-    #[allow(dead_code)] // api_key stored for reference; FlushClient owns a clone
-    api_key: String,
     known_metrics: KnownMetrics,
     pending: HashMap<String, MetricTypeInfo>,
     flush_client: FlushClient,
@@ -486,7 +484,6 @@ metadata_svc_url: "http://localhost:9999"
                 http_timeout_secs: 10,
                 persist_file_path: "/tmp/test.csv".to_string(),
             },
-            api_key: "test-key".to_string(),
             known_metrics: KnownMetrics::new(12, 36),
             pending: HashMap::new(),
             flush_client: FlushClient::new(
