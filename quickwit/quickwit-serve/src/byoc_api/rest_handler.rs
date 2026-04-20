@@ -23,6 +23,7 @@ use quickwit_ingest::DocBatchV2Builder;
 use quickwit_opentelemetry::otlp::{
     ArrowDocBatchV2Builder, ArrowMetricsBatchBuilder, MetricDataPoint, MetricType,
 };
+use quickwit_parquet_engine::schema::REQUIRED_FIELDS;
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
     IngestRouterServiceClient, IngestSubrequest,
@@ -434,12 +435,19 @@ fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, Byo
         }
     };
 
+    // TODO: Will drop customer tags that are in REQUIRED_FIELDS. Fine for now. 
+    let tags: HashMap<String, String> = msg
+        .tags
+        .into_iter()
+        .filter(|(k, _)| !REQUIRED_FIELDS.contains(&k.as_str()))
+        .collect();
+
     Ok(MetricDataPoint {
         metric_name: msg.name,
         metric_type,
         timestamp_secs,
         value,
-        tags: msg.tags,
+        tags,
     })
 }
 
