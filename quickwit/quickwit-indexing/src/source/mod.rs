@@ -451,24 +451,6 @@ pub fn quickwit_supported_parquet_sources() -> &'static ParquetSourceLoader {
     &PARQUET_SOURCE_LOADER
 }
 
-/// Returns the source loader for parquet pipelines (ParquetDocProcessor).
-///
-/// Metrics pipelines currently only support IngestV2 sources, which is the
-/// production source type for metrics ingestion.
-pub fn quickwit_supported_parquet_sources() -> &'static ParquetSourceLoader {
-    static PARQUET_SOURCE_LOADER: OnceCell<ParquetSourceLoader> = OnceCell::new();
-    PARQUET_SOURCE_LOADER.get_or_init(|| {
-        let mut source_factory = ParquetSourceLoader::default();
-        // Only IngestV2 is currently used for metrics ingestion
-        source_factory.add_source(SourceType::IngestV2, IngestSourceFactory);
-        // Add other sources for testing/development
-        source_factory.add_source(SourceType::File, FileSourceFactory);
-        source_factory.add_source(SourceType::Vec, VecSourceFactory);
-        source_factory.add_source(SourceType::Void, VoidSourceFactory);
-        source_factory
-    })
-}
-
 pub async fn check_source_connectivity(
     storage_resolver: &StorageResolver,
     source_config: &SourceConfig,

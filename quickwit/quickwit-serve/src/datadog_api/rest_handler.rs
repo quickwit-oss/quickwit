@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::HashMap;
 use std::time::Instant;
 
 use pomchi::{DatadogLogMsg, MessageValue};
@@ -26,17 +25,10 @@ use quickwit_proto::ingest::router::{
 };
 use quickwit_proto::types::DocUidGenerator;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
-use serde::Deserialize;
 use serde_with::formats::CommaSeparator;
 use serde_with::{StringWithSeparator, serde_as};
 use tracing::debug;
 use warp::{Filter, Rejection};
-
-use quickwit_opentelemetry::otlp::{
-    ArrowDocBatchV2Builder, ArrowMetricsBatchBuilder, MetricDataPoint, MetricType,
-};
-use time::OffsetDateTime;
-use time::format_description::well_known::Iso8601;
 
 use super::index_router::IndexRouter;
 use super::log_msg_accessors::{custom_field_accessor, tag_accessor};
@@ -44,8 +36,6 @@ use crate::datadog_api::get_error_code_and_message;
 use crate::decompression::get_body_bytes;
 use crate::rest_api_response::into_rest_api_response;
 use crate::{Body, BodyFormat, with_arg};
-
-const DATADOG_METRICS_INDEX_ID: &str = "datadog-metrics";
 
 #[derive(utoipa::OpenApi)]
 #[openapi(paths(datadog_logs,))]
@@ -56,8 +46,7 @@ pub(crate) fn datadog_api_handlers(
     index_router: IndexRouter,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     datadog_healthcheck()
-        .or(datadog_logs(ingest_router.clone(), index_router))
-        .or(byoc_metrics(ingest_router))
+        .or(datadog_logs(ingest_router, index_router))
         .boxed()
 }
 
@@ -130,30 +119,6 @@ pub(crate) fn datadog_logs(
         .and(with_arg(BodyFormat::default()))
         .map(into_rest_api_response)
         .boxed()
-}
-
-fn map_ingest_failure(reason: IngestFailureReason) -> (ServiceErrorCode, &'static str) {
-    match reason {
-        IngestFailureReason::Unspecified => (ServiceErrorCode::Internal, "unknown error"),
-        IngestFailureReason::IndexNotFound => (ServiceErrorCode::NotFound, "index not found"),
-        IngestFailureReason::SourceNotFound => (ServiceErrorCode::NotFound, "source not found"),
-        IngestFailureReason::Internal => (ServiceErrorCode::Internal, "internal error"),
-        IngestFailureReason::NoShardsAvailable => (
-            ServiceErrorCode::TooManyRequests,
-            "too many requests (no shards available)",
-        ),
-        IngestFailureReason::ShardRateLimited => (
-            ServiceErrorCode::TooManyRequests,
-            "too many requests (rate limiting)",
-        ),
-        IngestFailureReason::WalFull => (ServiceErrorCode::Internal, "WAL full"),
-        IngestFailureReason::Timeout => (ServiceErrorCode::Timeout, "request timed out"),
-        IngestFailureReason::RouterLoadShedding => {
-            (ServiceErrorCode::Internal, "router load shedding")
-        }
-        IngestFailureReason::LoadShedding => (ServiceErrorCode::Internal, "load shedding"),
-        IngestFailureReason::CircuitBreaker => (ServiceErrorCode::Internal, "circuit breaker"),
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -391,216 +356,6 @@ async fn datadog_ingest_logs(
     ))
 }
 
-// BYOC metrics endpoint: POST /api/v1/datadog-metrics/ingest
-fn byoc_metrics_filter() -> impl Filter<Extract = (Body,), Error = Rejection> + Clone {
-    warp::post()
-        .and(warp::path("api"))
-        .and(warp::path("v1"))
-        .and(warp::path(DATADOG_METRICS_INDEX_ID))
-        .and(warp::path("ingest"))
-        .and(warp::path::end())
-        .and(get_body_bytes())
-}
-
-pub(crate) fn byoc_metrics(
-    ingest_router: IngestRouterServiceClient,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    byoc_metrics_filter()
-        .and(with_arg(ingest_router))
-        .then(
-            |body: Body, ingest_router: IngestRouterServiceClient| async move {
-                byoc_ingest_metrics(ingest_router, body).await
-            },
-        )
-        .and(with_arg(BodyFormat::default()))
-        .map(into_rest_api_response)
-        .boxed()
-}
-
-async fn byoc_ingest_metrics(
-    ingest_router: IngestRouterServiceClient,
-    body: Body,
-) -> Result<(), DatadogApiError> {
-    let start = Instant::now();
-
-    if body.content.is_empty() {
-        return Ok(());
-    }
-
-    // The managed metrics index in BYOC will receive payloads from vector. There will be only one
-    // ingest subrequest, since we're only routing to the datadog-metrics index.
-    let subrequest = quickwit_common::thread_pool::run_cpu_intensive(move || {
-        let data_points = try_parse_vector_metrics(&body)?;
-        if data_points.is_empty() {
-            return Ok(None);
-        }
-
-        let mut arrow_builder = ArrowMetricsBatchBuilder::with_capacity(data_points.len());
-        let mut doc_uid_generator = DocUidGenerator::default();
-        let mut doc_uids = Vec::with_capacity(data_points.len());
-
-        for dp in data_points {
-            arrow_builder.append(dp);
-            doc_uids.push(doc_uid_generator.next_doc_uid());
-        }
-
-        let record_batch = arrow_builder.finish();
-        let doc_batch = ArrowDocBatchV2Builder::from_record_batch(&record_batch, doc_uids)
-            .map_err(|e| DatadogApiError::Internal(format!("failed to serialize Arrow IPC: {e}")))?
-            .build();
-
-        Ok(Some(IngestSubrequest {
-            subrequest_id: 0,
-            index_id: DATADOG_METRICS_INDEX_ID.to_string(),
-            source_id: INGEST_V2_SOURCE_ID.to_string(),
-            doc_batch: Some(doc_batch),
-        }))
-    })
-    .await
-    .map_err(|_| {
-        DatadogApiError::Internal("task panicked while parsing metrics payload".to_string())
-    })??;
-
-    let Some(subrequest) = subrequest else {
-        return Ok(());
-    };
-
-    let request = IngestRequestV2 {
-        commit_type: CommitTypeV2::Auto as i32,
-        subrequests: vec![subrequest],
-    };
-    let response = ingest_router
-        .ingest(request)
-        .await
-        .map_err(|e| DatadogApiError::Ingest(e.error_code(), e.to_string()))?;
-
-    // There's only one subrequest, so if failures is 0, this means the ingest request succeeded.
-    if response.failures.is_empty() {
-        DD_INGEST_METRICS
-            .metrics_ingest_requests_total
-            .get("200")
-            .increment(1);
-        DD_INGEST_METRICS
-            .metrics_ingest_request_duration_seconds
-            .get("200")
-            .record(start.elapsed().as_secs_f64());
-        return Ok(());
-    }
-
-    let (error_code, error_message) = map_ingest_failure(response.failures[0].reason());
-    let status_code = error_code.http_status_code();
-    DD_INGEST_METRICS
-        .metrics_ingest_requests_total
-        .get(status_code.as_str())
-        .increment(1);
-    DD_INGEST_METRICS
-        .metrics_ingest_request_duration_seconds
-        .get(status_code.as_str())
-        .record(start.elapsed().as_secs_f64());
-    Err(DatadogApiError::Ingest(
-        error_code,
-        error_message.to_string(),
-    ))
-}
-
-#[derive(Debug, Deserialize)]
-struct VectorNumericValue {
-    value: f64,
-}
-
-/// A single metric as emitted by Vector's native metric format.
-#[derive(Debug, Deserialize)]
-struct VectorMetricMsg {
-    name: String,
-    #[serde(default)]
-    tags: HashMap<String, String>,
-    timestamp: Option<String>,
-    #[serde(default)]
-    counter: Option<VectorNumericValue>,
-    #[serde(default)]
-    gauge: Option<VectorNumericValue>,
-}
-
-fn parse_iso8601_to_secs(ts: &str) -> Option<u64> {
-    let dt = OffsetDateTime::parse(ts, &Iso8601::DEFAULT).ok()?;
-    u64::try_from(dt.unix_timestamp()).ok()
-}
-
-fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, DatadogApiError> {
-    if msg.name.is_empty() {
-        return Err(DatadogApiError::BadRequest(
-            "metric has empty name".to_string(),
-        ));
-    }
-
-    let (metric_type, value) = if let Some(counter) = msg.counter {
-        (MetricType::Sum, counter.value)
-    } else if let Some(gauge) = msg.gauge {
-        (MetricType::Gauge, gauge.value)
-    } else {
-        return Err(DatadogApiError::BadRequest(format!(
-            "metric '{}' has no counter or gauge value",
-            msg.name
-        )));
-    };
-
-    let timestamp_secs = match &msg.timestamp {
-        Some(ts) => parse_iso8601_to_secs(ts).ok_or_else(|| {
-            DatadogApiError::BadRequest(format!("failed to parse timestamp '{ts}'"))
-        })?,
-        None => {
-            return Err(DatadogApiError::BadRequest(format!(
-                "metric '{}' is missing timestamp",
-                msg.name
-            )));
-        }
-    };
-
-    Ok(MetricDataPoint {
-        metric_name: msg.name,
-        metric_type,
-        timestamp_secs,
-        value,
-        tags: msg.tags,
-    })
-}
-
-/// Parse a Vector metrics payload into metric data points.
-fn try_parse_vector_metrics(body: &Body) -> Result<Vec<MetricDataPoint>, DatadogApiError> {
-    // Try JSON array
-    if let Ok(messages) = serde_json::from_slice::<Vec<VectorMetricMsg>>(&body.content) {
-        let mut data_points = Vec::with_capacity(messages.len());
-        for msg in messages {
-            data_points.push(vector_msg_to_data_point(msg)?);
-        }
-        return Ok(data_points);
-    }
-
-    // Try newline-delimited JSON
-    {
-        let content = std::str::from_utf8(&body.content).unwrap_or("");
-        let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
-        if lines.len() > 1 {
-            let mut data_points = Vec::with_capacity(lines.len());
-            for line in &lines {
-                let msg: VectorMetricMsg = serde_json::from_str(line)
-                    .map_err(DatadogApiError::InvalidPayload)?;
-                data_points.push(vector_msg_to_data_point(msg)?);
-            }
-            return Ok(data_points);
-        }
-    }
-
-    // Try single JSON object
-    if let Ok(msg) = serde_json::from_slice::<VectorMetricMsg>(&body.content) {
-        return Ok(vec![vector_msg_to_data_point(msg)?]);
-    }
-
-    Err(DatadogApiError::BadRequest(
-        "failed to parse metrics payload as JSON array, NDJSON, or single object".to_string(),
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use quickwit_proto::ingest::IngestV2Error;
@@ -610,8 +365,6 @@ mod tests {
     };
     use quickwit_proto::metastore::IndexRoutingRule;
     use quickwit_proto::types::{IndexUid, Position, ShardId};
-    use serde_json::json;
-
     use super::*;
 
     const DATADOG_INDEX_ID: &str = "datadog";
@@ -875,197 +628,4 @@ mod tests {
         assert_eq!(response.status(), 200);
     }
 
-    #[tokio::test]
-    async fn test_byoc_ingest_metrics() {
-        let mut mock = MockIngestRouterService::new();
-        mock.expect_ingest()
-            .once()
-            .returning(|ingest_request| {
-                assert_eq!(ingest_request.subrequests.len(), 1);
-                assert_eq!(ingest_request.subrequests[0].index_id, "datadog-metrics");
-                assert_eq!(ingest_request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
-                assert!(ingest_request.subrequests[0].doc_batch.is_some());
-                Ok(IngestResponseV2 {
-                    successes: vec![IngestSuccess {
-                        num_ingested_docs: 2,
-                        ..Default::default()
-                    }],
-                    failures: Vec::new(),
-                })
-            });
-        let ingest_router = IngestRouterServiceClient::from_mock(mock);
-        let handler = byoc_metrics(ingest_router);
-
-        let body = json!([
-            {"name": "cpu.usage", "tags": {"env": "prod"}, "timestamp": "2026-03-11T14:19:55Z", "gauge": {"value": 85.5}},
-            {"name": "http.requests", "tags": {"service": "api"}, "timestamp": "2026-03-11T14:19:55Z", "counter": {"value": 42}}
-        ]);
-
-        let resp = warp::test::request()
-            .path("/api/v1/datadog-metrics/ingest")
-            .method("POST")
-            .json(&body)
-            .reply(&handler)
-            .await;
-
-        assert_eq!(resp.status(), 200);
-    }
-
-    #[tokio::test]
-    async fn test_vector_ingest_metrics_timeout() {
-        let mut mock = MockIngestRouterService::new();
-        mock.expect_ingest().once().returning(|ingest_request| {
-            assert_eq!(ingest_request.subrequests.len(), 1);
-            assert_eq!(ingest_request.subrequests[0].index_id, "datadog-metrics");
-            assert_eq!(ingest_request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
-            assert!(ingest_request.subrequests[0].doc_batch.is_some());
-            Err(IngestV2Error::Timeout("timed out".to_string()))
-        });
-        let ingest_router = IngestRouterServiceClient::from_mock(mock);
-        let handler = byoc_metrics(ingest_router);
-
-        let body = json!([
-            {"name": "cpu.usage", "tags": {"env": "prod"}, "timestamp": "2026-03-11T14:19:55Z", "gauge": {"value": 1.0}}
-        ]);
-
-        let resp = warp::test::request()
-            .path("/api/v1/datadog-metrics/ingest")
-            .method("POST")
-            .json(&body)
-            .reply(&handler)
-            .await;
-
-        assert_eq!(resp.status(), 408);
-    }
-
-    #[tokio::test]
-    async fn test_vector_ingest_metrics_ingest_failure() {
-        let mut mock = MockIngestRouterService::new();
-        mock.expect_ingest().once().returning(|ingest_request| {
-            assert_eq!(ingest_request.subrequests.len(), 1);
-            assert_eq!(ingest_request.subrequests[0].index_id, "datadog-metrics");
-            assert_eq!(ingest_request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
-            assert!(ingest_request.subrequests[0].doc_batch.is_some());
-            Ok(IngestResponseV2 {
-                successes: Vec::new(),
-                failures: vec![IngestFailure {
-                    subrequest_id: 0,
-                    index_id: "datadog-metrics".to_string(),
-                    source_id: INGEST_V2_SOURCE_ID.to_string(),
-                    reason: IngestFailureReason::ShardRateLimited as i32,
-                }],
-            })
-        });
-        let ingest_router = IngestRouterServiceClient::from_mock(mock);
-        let handler = byoc_metrics(ingest_router);
-
-        let body = json!([
-            {"name": "cpu.usage", "tags": {"env": "prod"}, "timestamp": "2026-03-11T14:19:55Z", "gauge": {"value": 1.0}}
-        ]);
-
-        let resp = warp::test::request()
-            .path("/api/v1/datadog-metrics/ingest")
-            .method("POST")
-            .json(&body)
-            .reply(&handler)
-            .await;
-
-        assert_eq!(resp.status(), 429);
-    }
-
-    #[test]
-    fn test_counter_maps_to_sum() {
-        let msg = VectorMetricMsg {
-            name: "http.requests".to_string(),
-            tags: HashMap::new(),
-            timestamp: Some("2026-03-11T14:19:55Z".to_string()),
-            counter: Some(VectorNumericValue { value: 42.0 }),
-            gauge: None,
-        };
-        let dp = vector_msg_to_data_point(msg).unwrap();
-        assert_eq!(dp.metric_type, MetricType::Sum);
-        assert_eq!(dp.value, 42.0);
-    }
-
-    #[test]
-    fn test_gauge_maps_to_gauge() {
-        let msg = VectorMetricMsg {
-            name: "cpu.usage".to_string(),
-            tags: HashMap::new(),
-            timestamp: Some("2026-03-11T14:19:55Z".to_string()),
-            counter: None,
-            gauge: Some(VectorNumericValue { value: 85.5 }),
-        };
-        let dp = vector_msg_to_data_point(msg).unwrap();
-        assert_eq!(dp.metric_type, MetricType::Gauge);
-        assert_eq!(dp.value, 85.5);
-    }
-
-    #[test]
-    fn test_empty_name_returns_error() {
-        let msg = VectorMetricMsg {
-            name: "".to_string(),
-            tags: HashMap::new(),
-            timestamp: None,
-            counter: Some(VectorNumericValue { value: 1.0 }),
-            gauge: None,
-        };
-        assert!(vector_msg_to_data_point(msg).is_err());
-    }
-
-    #[test]
-    fn test_no_counter_or_gauge_returns_error() {
-        let msg = VectorMetricMsg {
-            name: "m".to_string(),
-            tags: HashMap::new(),
-            timestamp: None,
-            counter: None,
-            gauge: None,
-        };
-        assert!(vector_msg_to_data_point(msg).is_err());
-    }
-
-    #[test]
-    fn test_tags_pass_through() {
-        let tags = HashMap::from([
-            ("service".to_string(), "api".to_string()),
-            ("env".to_string(), "prod".to_string()),
-            ("host".to_string(), "srv-1".to_string()),
-            ("custom".to_string(), "value".to_string()),
-        ]);
-        let msg = VectorMetricMsg {
-            name: "m".to_string(),
-            tags: tags.clone(),
-            timestamp: Some("2026-03-11T14:19:55Z".to_string()),
-            counter: Some(VectorNumericValue { value: 1.0 }),
-            gauge: None,
-        };
-        let dp = vector_msg_to_data_point(msg).unwrap();
-        assert_eq!(dp.tags, tags);
-    }
-
-    #[test]
-    fn test_iso8601_timestamp_parsing() {
-        let msg = VectorMetricMsg {
-            name: "m".to_string(),
-            tags: HashMap::new(),
-            timestamp: Some("2026-03-11T14:19:55Z".to_string()),
-            counter: Some(VectorNumericValue { value: 1.0 }),
-            gauge: None,
-        };
-        let dp = vector_msg_to_data_point(msg).unwrap();
-        assert_eq!(dp.timestamp_secs, 1773505195);
-    }
-
-    #[test]
-    fn test_missing_timestamp_returns_error() {
-        let msg = VectorMetricMsg {
-            name: "m".to_string(),
-            tags: HashMap::new(),
-            timestamp: None,
-            counter: Some(VectorNumericValue { value: 1.0 }),
-            gauge: None,
-        };
-        assert!(vector_msg_to_data_point(msg).is_err());
-    }
 }

@@ -62,6 +62,7 @@ COPY config/cloudprem/datadog-logs.yaml /config/cloudprem/datadog-logs.yaml
 COPY config/cloudprem/datadog-metrics.yaml /config/cloudprem/datadog-metrics.yaml
 COPY config/cloudprem/datadog-spans.yaml /config/cloudprem/datadog-spans.yaml
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
+
 COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 COPY --from=cloudprem-ui-loader /quickwit/cloudprem-ui/cloudprem_ui_build /quickwit/cloudprem-ui/cloudprem_ui_build
 
