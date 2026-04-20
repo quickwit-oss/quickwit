@@ -43,6 +43,7 @@ mod openapi;
 mod otlp_api;
 mod rate_modulator;
 pub mod rest;
+mod rest_api_request_span;
 mod rest_api_response;
 mod search_api;
 pub(crate) mod simple_list;
