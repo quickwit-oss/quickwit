@@ -14,6 +14,7 @@
 
 use std::collections::HashMap;
 use std::pin::Pin;
+use std::time::Duration;
 
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -32,6 +33,8 @@ pub mod types;
 
 pub use known_metrics::KnownMetrics;
 pub use types::{MetadataMetricType, MetricTypeInfo, map_metric_type};
+
+use flush_client::FlushClient;
 
 // ---------------------------------------------------------------------------
 // Serde default constants and functions (per D-01, CFG-03)
@@ -161,11 +164,20 @@ impl TransformConfig for MetricMetadataConfig {
         let mut known_metrics = KnownMetrics::new(self.ttl_min_hours, self.ttl_max_hours);
         known_metrics.load_entries(entries);
 
+        let flush_client = FlushClient::new(
+            api_key.clone(),
+            self.metadata_svc_url.clone(),
+            self.org_id.clone(),
+            Duration::from_secs(self.http_timeout_secs),
+        )
+        .map_err(|err| format!("failed to build HTTP client: {err}"))?;
+
         Ok(Transform::event_task(MetricMetadataTransform {
             config: self.clone(),
             api_key,
             known_metrics,
             pending: HashMap::new(),
+            flush_client,
         }))
     }
 
@@ -204,12 +216,13 @@ impl TransformConfig for MetricMetadataConfig {
 /// NOTE: Debug is intentionally NOT derived — the `api_key` field must not
 /// appear in log output (T-01-02: information disclosure mitigation).
 pub struct MetricMetadataTransform {
-    #[allow(dead_code)] // config consumed by persist tick and HTTP flush (Phase 3/4)
+    #[allow(dead_code)] // config consumed by persist tick (Phase 4)
     config: MetricMetadataConfig,
-    #[allow(dead_code)] // api_key consumed by HTTP flush (Phase 3)
+    #[allow(dead_code)] // api_key stored for reference; FlushClient owns a clone
     api_key: String,
     known_metrics: KnownMetrics,
     pending: HashMap<String, MetricTypeInfo>,
+    flush_client: FlushClient,
 }
 
 impl TaskTransform<Event> for MetricMetadataTransform {
@@ -243,6 +256,9 @@ mod tests {
     use std::collections::HashMap;
     use std::num::NonZeroU32;
     use std::sync::Mutex;
+    use std::time::Duration;
+
+    use super::flush_client::FlushClient;
 
     use futures::stream;
     use vector::event::{Metric, MetricKind, MetricValue};
@@ -473,6 +489,13 @@ metadata_svc_url: "http://localhost:9999"
             api_key: "test-key".to_string(),
             known_metrics: KnownMetrics::new(12, 36),
             pending: HashMap::new(),
+            flush_client: FlushClient::new(
+                "test-key".to_string(),
+                "http://localhost:9999".to_string(),
+                "test-org".to_string(),
+                Duration::from_secs(10),
+            )
+            .expect("test client build should succeed"),
         });
 
         let events: Vec<Event> = vec![
