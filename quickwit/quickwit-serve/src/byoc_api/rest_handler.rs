@@ -435,7 +435,7 @@ fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, Byo
         }
     };
 
-    // TODO: Will drop customer tags that are in REQUIRED_FIELDS. Fine for now. 
+    // TODO: Will drop customer tags that are in REQUIRED_FIELDS. Fine for now.
     let tags: HashMap<String, String> = msg
         .tags
         .into_iter()
