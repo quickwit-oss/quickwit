@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation** - Architecture skeleton, type definitions, and config wiring — locks in TaskTransform
 - [x] **Phase 2: State and Persistence** - In-memory known-metrics map with TTL expiry and atomic CSV persistence (completed 2026-04-20)
-- [ ] **Phase 3: HTTP Submission** - Async flush client, response-driven state updates
+- [x] **Phase 3: HTTP Submission** - Async flush client, response-driven state updates (completed 2026-04-20)
 - [ ] **Phase 4: Stream Integration** - Full select! loop wiring, interval/size triggers, graceful shutdown flush, end-to-end test
 
 ## Phase Details
@@ -60,8 +60,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — FlushClient TDD: serde wire types, flush_pending() method, wiremock tests
-- [ ] 03-02-PLAN.md — Wire FlushClient into MetricMetadataTransform struct and build()
+- [x] 03-01-PLAN.md — FlushClient TDD: serde wire types, flush_pending() method, wiremock tests
+- [x] 03-02-PLAN.md — Wire FlushClient into MetricMetadataTransform struct and build()
 
 ### Phase 4: Stream Integration
 **Goal**: The full `stream!` + `select!` loop is wired — metric events pass through to the downstream sink unchanged, all timers fire correctly, and a graceful shutdown flushes pending metrics and persists state before the stream returns
@@ -72,7 +72,11 @@ Plans:
   2. A flush is triggered when either the configurable interval elapses or the pending list reaches the configured batch size, whichever occurs first
   3. When the input stream closes, any pending metrics are flushed to the SaaS endpoint and the known-metrics map is persisted to CSV before the transform exits
   4. An integration test drives the transform through a real `TaskTransform` call chain, verifying pass-through and state persistence without mocking the transform internals
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Wire select! loop into TaskTransform (async-stream dep, dead_code cleanup, stream!/select! implementation)
+- [ ] 04-02-PLAN.md — Integration test for full transform lifecycle (wiremock, CSV assertions, pass-through validation)
 
 ## Progress
 
@@ -83,5 +87,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 |-------|----------------|--------|-----------|
 | 1. Foundation | 1/1 | Complete | 2026-04-17 |
 | 2. State and Persistence | 2/2 | Complete | 2026-04-20 |
-| 3. HTTP Submission | 0/2 | Planning complete | - |
-| 4. Stream Integration | 0/? | Not started | - |
+| 3. HTTP Submission | 2/2 | Complete | 2026-04-20 |
+| 4. Stream Integration | 0/2 | Not started | - |
