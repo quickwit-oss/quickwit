@@ -14,17 +14,17 @@
 
 //! Adapter from `quickwit_storage::Storage` to `object_store::ObjectStore`.
 //!
-//! ## Why this adapter exists
+//! The adapter is **lazy**: it holds a `StorageResolver` + target `Uri` and
+//! resolves the underlying `Storage` inside its own async methods the first
+//! time DataFusion asks for data. Construction is cheap and synchronous, which
+//! lets the sibling [`crate::object_store_registry::QuickwitObjectStoreRegistry`]
+//! build wrappers directly from its sync `ObjectStoreRegistry::get_store` hook
+//! without needing to pre-resolve storages. Subsequent calls reuse the cached
+//! handle; resolution errors are not memoised so a transient metastore blip
+//! does not poison the store.
 //!
-//! `quickwit_storage::Storage` and `object_store::ObjectStore` are both
-//! object-storage interfaces but have incompatible method signatures, error
-//! types, and path representations.  DataFusion's `ParquetSource` requires
-//! `ObjectStore`; Quickwit's split pipeline produces `Arc<dyn Storage>`.
-//!
-//! The long-term fix is for `quickwit-storage` types to implement `ObjectStore`
-//! directly.  Until then, `QuickwitObjectStore` is the bridge.
-//!
-//! ## What is and is not implemented
+//! This mirrors how `quickwit-search` uses the resolver:
+//! `storage_resolver.resolve(&uri).await` per request, no global registry.
 //!
 //! Only read operations (`get_opts`, `get_range`, `head`) are implemented.
 //! All write and list operations return `NotSupported` — DataFusion only
@@ -41,26 +41,59 @@ use object_store::{
     ObjectStore, PutMultipartOptions, PutOptions, PutPayload, PutResult,
     Result as ObjectStoreResult,
 };
-use quickwit_storage::Storage;
+use quickwit_common::uri::Uri;
+use quickwit_storage::{Storage, StorageResolver};
+use tokio::sync::OnceCell;
 
 /// Adapts Quickwit's `Storage` trait to DataFusion's `ObjectStore` interface.
 ///
-/// Only read operations are implemented since DataFusion only needs to read
-/// parquet files.
-#[derive(Debug)]
+/// Construction is sync and cheap: a `Uri` plus a `StorageResolver` handle
+/// (resolver is `Clone`). The underlying `Arc<dyn Storage>` is materialised
+/// on the first async method call and cached for the wrapper's lifetime.
 pub struct QuickwitObjectStore {
-    storage: Arc<dyn Storage>,
+    index_uri: Uri,
+    storage_resolver: StorageResolver,
+    storage: OnceCell<Arc<dyn Storage>>,
 }
 
 impl QuickwitObjectStore {
-    pub fn new(storage: Arc<dyn Storage>) -> Self {
-        Self { storage }
+    pub fn new(index_uri: Uri, storage_resolver: StorageResolver) -> Self {
+        Self {
+            index_uri,
+            storage_resolver,
+            storage: OnceCell::new(),
+        }
+    }
+
+    /// Returns the handle to the underlying `Storage`, resolving it via the
+    /// `StorageResolver` if this is the first call.
+    async fn storage(&self) -> ObjectStoreResult<&Arc<dyn Storage>> {
+        self.storage
+            .get_or_try_init(|| async {
+                self.storage_resolver
+                    .resolve(&self.index_uri)
+                    .await
+                    .map_err(|err| object_store::Error::Generic {
+                        store: "QuickwitObjectStore",
+                        source: Box::new(err),
+                    })
+            })
+            .await
+    }
+}
+
+impl std::fmt::Debug for QuickwitObjectStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QuickwitObjectStore")
+            .field("index_uri", &self.index_uri.as_str())
+            .field("resolved", &self.storage.initialized())
+            .finish()
     }
 }
 
 impl std::fmt::Display for QuickwitObjectStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "QuickwitObjectStore({})", self.storage.uri())
+        write!(f, "QuickwitObjectStore({})", self.index_uri.as_str())
     }
 }
 
@@ -89,6 +122,7 @@ impl ObjectStore for QuickwitObjectStore {
         location: &ObjectPath,
         options: GetOptions,
     ) -> ObjectStoreResult<GetResult> {
+        let storage = self.storage().await?;
         let path = object_path_to_std(location);
         let location_str = location.as_ref();
         let map_err = |err| to_object_store_error(err, location_str);
@@ -96,11 +130,7 @@ impl ObjectStore for QuickwitObjectStore {
         let (bytes, byte_range) = match options.range {
             Some(GetRange::Bounded(r)) => {
                 let usize_range = r.start as usize..r.end as usize;
-                let data = self
-                    .storage
-                    .get_slice(&path, usize_range)
-                    .await
-                    .map_err(map_err)?;
+                let data = storage.get_slice(&path, usize_range).await.map_err(map_err)?;
                 let b = Bytes::copy_from_slice(data.as_ref());
                 let len = b.len() as u64;
                 // The storage may return fewer bytes than requested if the range
@@ -109,32 +139,24 @@ impl ObjectStore for QuickwitObjectStore {
                 (b, r.start..r.start + len)
             }
             Some(GetRange::Suffix(n)) => {
-                let file_size = self.storage.file_num_bytes(&path).await.map_err(map_err)?;
+                let file_size = storage.file_num_bytes(&path).await.map_err(map_err)?;
                 let start = file_size.saturating_sub(n);
                 let usize_range = start as usize..file_size as usize;
-                let data = self
-                    .storage
-                    .get_slice(&path, usize_range)
-                    .await
-                    .map_err(map_err)?;
+                let data = storage.get_slice(&path, usize_range).await.map_err(map_err)?;
                 let b = Bytes::copy_from_slice(data.as_ref());
                 let len = b.len() as u64;
                 (b, start..start + len)
             }
             Some(GetRange::Offset(start)) => {
-                let file_size = self.storage.file_num_bytes(&path).await.map_err(map_err)?;
+                let file_size = storage.file_num_bytes(&path).await.map_err(map_err)?;
                 let usize_range = start as usize..file_size as usize;
-                let data = self
-                    .storage
-                    .get_slice(&path, usize_range)
-                    .await
-                    .map_err(map_err)?;
+                let data = storage.get_slice(&path, usize_range).await.map_err(map_err)?;
                 let b = Bytes::copy_from_slice(data.as_ref());
                 let len = b.len() as u64;
                 (b, start..start + len)
             }
             None => {
-                let data = self.storage.get_all(&path).await.map_err(map_err)?;
+                let data = storage.get_all(&path).await.map_err(map_err)?;
                 let b = Bytes::copy_from_slice(data.as_ref());
                 let len = b.len() as u64;
                 (b, 0..len)
@@ -162,10 +184,10 @@ impl ObjectStore for QuickwitObjectStore {
         location: &ObjectPath,
         range: std::ops::Range<u64>,
     ) -> ObjectStoreResult<Bytes> {
+        let storage = self.storage().await?;
         let path = object_path_to_std(location);
         let usize_range = range.start as usize..range.end as usize;
-        let data = self
-            .storage
+        let data = storage
             .get_slice(&path, usize_range)
             .await
             .map_err(|err| to_object_store_error(err, location.as_ref()))?;
@@ -173,9 +195,9 @@ impl ObjectStore for QuickwitObjectStore {
     }
 
     async fn head(&self, location: &ObjectPath) -> ObjectStoreResult<ObjectMeta> {
+        let storage = self.storage().await?;
         let path = object_path_to_std(location);
-        let size = self
-            .storage
+        let size = storage
             .file_num_bytes(&path)
             .await
             .map_err(|err| to_object_store_error(err, location.as_ref()))?;

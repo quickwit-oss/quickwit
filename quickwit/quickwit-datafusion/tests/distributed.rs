@@ -29,7 +29,9 @@ use std::sync::Arc;
 use arrow::array::{Float64Array, Int64Array};
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch;
-use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitWorkerResolver};
+use quickwit_datafusion::{
+    DataFusionSessionBuilder, QuickwitObjectStoreRegistry, QuickwitWorkerResolver,
+};
 use quickwit_search::{SearcherPool, create_search_client_from_grpc_addr};
 
 mod common;
@@ -71,25 +73,26 @@ async fn test_distributed_tasks_not_shuffles() {
     // reads pool keys lazily at query time, so this ordering is safe.
     let pool = SearcherPool::default();
 
-    // Each builder gets its own `RuntimeEnv`, so each one needs its object
-    // stores preregistered before a query touches it — mirrors what
-    // `build_datafusion_session_builder` does once per serve process.
-    async fn make_builder(
-        source: &Arc<MetricsDataSource>,
-        pool: &SearcherPool,
-    ) -> Arc<DataFusionSessionBuilder> {
-        let builder = DataFusionSessionBuilder::new()
-            .with_source(Arc::clone(source) as Arc<_>)
-            .with_worker_resolver(QuickwitWorkerResolver::new(pool.clone()));
-        source
-            .preregister_object_stores(builder.runtime())
-            .await
-            .expect("preregister object stores");
-        Arc::new(builder)
-    }
+    // Each builder gets its own `RuntimeEnv` wired with a custom
+    // `QuickwitObjectStoreRegistry` — the registry lazily resolves any
+    // URL `StorageResolver` understands the first time DataFusion reads
+    // from it, so no startup registration is needed. Mirrors what
+    // `build_datafusion_session_builder` does inside `quickwit-serve`.
+    let make_builder = || -> Arc<DataFusionSessionBuilder> {
+        let registry = Arc::new(QuickwitObjectStoreRegistry::new(
+            sandbox.storage_resolver.clone(),
+        ));
+        Arc::new(
+            DataFusionSessionBuilder::new()
+                .with_object_store_registry(registry)
+                .expect("install object store registry")
+                .with_source(Arc::clone(&source) as Arc<_>)
+                .with_worker_resolver(QuickwitWorkerResolver::new(pool.clone())),
+        )
+    };
 
-    let worker_a = spawn_df_worker(make_builder(&source, &pool).await).await;
-    let worker_b = spawn_df_worker(make_builder(&source, &pool).await).await;
+    let worker_a = spawn_df_worker(make_builder()).await;
+    let worker_b = spawn_df_worker(make_builder()).await;
 
     // Populate the pool with the real worker gRPC addresses.
     // Pool value is a SearchServiceClient — only the key (addr) matters for
@@ -101,7 +104,7 @@ async fn test_distributed_tasks_not_shuffles() {
         );
     }
 
-    let builder = make_builder(&source, &pool).await;
+    let builder = make_builder();
 
     let ddl = r#"CREATE OR REPLACE EXTERNAL TABLE "dist-test" (
           metric_name VARCHAR NOT NULL, metric_type TINYINT,

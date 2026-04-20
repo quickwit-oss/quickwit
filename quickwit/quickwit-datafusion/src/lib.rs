@@ -19,10 +19,12 @@
 //! lives in [`quickwit_df_core`]. This crate wires that framework to Quickwit's
 //! domain types (metastore, storage, search).
 
+pub mod object_store_registry;
 pub mod sources;
 pub(crate) mod storage_bridge;
 pub mod worker_resolver;
 
+pub use object_store_registry::QuickwitObjectStoreRegistry;
 pub use quickwit_df_core::proto;
 // Re-export the framework so consumers (serve, integration tests) can keep
 // using `quickwit_datafusion::…` paths.

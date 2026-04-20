@@ -32,7 +32,9 @@ use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use quickwit_config::service::QuickwitService;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::{make_batch, make_batch_with_tags};
-use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitWorkerResolver};
+use quickwit_datafusion::{
+    DataFusionSessionBuilder, QuickwitObjectStoreRegistry, QuickwitWorkerResolver,
+};
 use quickwit_metastore::CreateIndexRequestExt;
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::IndexUid;
@@ -140,19 +142,14 @@ async fn test_distributed_tasks_not_shuffles() {
             pool.insert(addr, create_search_client_from_grpc_addr(addr, bytesize::ByteSize::mib(20)));        }
     }
 
-    let source = Arc::new(MetricsDataSource::new(
-        metastore,
-        quickwit_storage::StorageResolver::unconfigured(),
-    ));
+    let storage_resolver = quickwit_storage::StorageResolver::unconfigured();
+    let source = Arc::new(MetricsDataSource::new(metastore, storage_resolver.clone()));
+    let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
     let builder = DataFusionSessionBuilder::new()
-        .with_source(Arc::clone(&source) as Arc<_>)
+        .with_object_store_registry(registry)
+        .expect("install object store registry")
+        .with_source(source)
         .with_worker_resolver(QuickwitWorkerResolver::new(pool));
-    // Preregister object stores on the coordinator builder's `RuntimeEnv`;
-    // each sandbox node did the same at its own startup via serve.
-    source
-        .preregister_object_stores(builder.runtime())
-        .await
-        .expect("preregister object stores");
 
     let ddl = r#"CREATE OR REPLACE EXTERNAL TABLE "dist-test" (
           metric_name VARCHAR NOT NULL, metric_type TINYINT,
@@ -229,15 +226,13 @@ async fn test_null_columns_for_missing_parquet_fields() {
         Some("web"), Some("prod"), None, None, None);
     publish_split(&metastore, &index_uid, data_dir.path(), "wide", &batch_b).await;
 
-    let source = Arc::new(MetricsDataSource::new(
-        metastore,
-        quickwit_storage::StorageResolver::unconfigured(),
-    ));
-    let builder = DataFusionSessionBuilder::new().with_source(Arc::clone(&source) as Arc<_>);
-    source
-        .preregister_object_stores(builder.runtime())
-        .await
-        .expect("preregister object stores");
+    let storage_resolver = quickwit_storage::StorageResolver::unconfigured();
+    let source = Arc::new(MetricsDataSource::new(metastore, storage_resolver.clone()));
+    let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
+    let builder = DataFusionSessionBuilder::new()
+        .with_object_store_registry(registry)
+        .expect("install object store registry")
+        .with_source(source);
 
     // COUNT(col) counts non-NULL values — tests the NULL-fill behavior
     let sql_str = r#"

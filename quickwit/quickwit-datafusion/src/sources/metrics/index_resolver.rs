@@ -14,21 +14,17 @@
 
 //! Index resolution for the metrics data source.
 //!
-//! `MetastoreIndexResolver::resolve()` performs two RPCs per call:
-//! 1. `index_metadata` — cheap primary-key lookup, always fresh.
-//! 2. `storage_resolver.resolve(uri)` — constructs a `Storage` handle.
-//!
-//! Caching of the `Storage` handle (to amortise repeated resolve calls for the
-//! same index) is intentionally deferred to a follow-up. The quickwit search
-//! path also resolves storage on every leaf request without caching and
-//! relies on the split-byte cache (`SplitCache`) instead.
+//! `MetastoreIndexResolver::resolve()` performs a single `index_metadata`
+//! metastore RPC and returns the split provider plus the index's storage
+//! `Uri`. The actual `Storage` (and its `ObjectStore` wrapper) is built
+//! lazily by [`crate::object_store_registry::QuickwitObjectStoreRegistry`]
+//! on the first read — see the docstring there for the overall flow.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
-use datafusion::execution::object_store::ObjectStoreUrl;
-use object_store::ObjectStore;
+use quickwit_common::uri::Uri;
 use quickwit_metastore::{IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
@@ -38,97 +34,39 @@ use tracing::debug;
 
 use super::metastore_provider::MetastoreSplitProvider;
 use super::table_provider::MetricsSplitProvider;
-use crate::storage_bridge::QuickwitObjectStore;
 
 /// Resolves per-index resources needed to scan a metrics index.
 #[async_trait]
 pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
-    async fn resolve(
-        &self,
-        index_name: &str,
-    ) -> DFResult<(
-        Arc<dyn MetricsSplitProvider>,
-        Arc<dyn ObjectStore>,
-        ObjectStoreUrl,
-    )>;
+    /// Returns the split provider and storage URI for `index_name`. The
+    /// `ObjectStore` for that URI is built on demand by the registry the
+    /// first time DataFusion reads from it.
+    async fn resolve(&self, index_name: &str) -> DFResult<(Arc<dyn MetricsSplitProvider>, Uri)>;
 
     async fn list_index_names(&self) -> DFResult<Vec<String>>;
-}
-
-// ── Test helper ──────────────────────────────────────────────────────
-
-/// Single-store resolver — returns the same resources for every index name.
-#[cfg(any(test, feature = "testsuite"))]
-#[derive(Debug)]
-pub struct SimpleIndexResolver {
-    split_provider: Arc<dyn MetricsSplitProvider>,
-    object_store: Arc<dyn ObjectStore>,
-    object_store_url: ObjectStoreUrl,
-    index_names: Vec<String>,
-}
-
-#[cfg(any(test, feature = "testsuite"))]
-impl SimpleIndexResolver {
-    pub fn new(
-        split_provider: Arc<dyn MetricsSplitProvider>,
-        object_store: Arc<dyn ObjectStore>,
-        object_store_url: ObjectStoreUrl,
-    ) -> Self {
-        Self {
-            split_provider,
-            object_store,
-            object_store_url,
-            index_names: vec!["metrics".to_string()],
-        }
-    }
-
-    pub fn with_index_names(mut self, names: Vec<String>) -> Self {
-        self.index_names = names;
-        self
-    }
-}
-
-#[cfg(any(test, feature = "testsuite"))]
-#[async_trait]
-impl MetricsIndexResolver for SimpleIndexResolver {
-    async fn resolve(
-        &self,
-        _index_name: &str,
-    ) -> DFResult<(
-        Arc<dyn MetricsSplitProvider>,
-        Arc<dyn ObjectStore>,
-        ObjectStoreUrl,
-    )> {
-        Ok((
-            Arc::clone(&self.split_provider),
-            Arc::clone(&self.object_store),
-            self.object_store_url.clone(),
-        ))
-    }
-
-    async fn list_index_names(&self) -> DFResult<Vec<String>> {
-        Ok(self.index_names.clone())
-    }
 }
 
 // ── Production implementation ─────────────────────────────────────────
 
 /// Production `MetricsIndexResolver` backed by the Quickwit metastore.
 ///
-/// Each `resolve()` call:
-/// 1. Fetches `IndexMetadata` (cheap primary-key RPC) for a fresh `index_uid`.
-/// 2. Calls `storage_resolver.resolve(uri)` to obtain a `Storage` handle.
+/// `resolve()` fetches `IndexMetadata` and returns the URI. The
+/// `StorageResolver` itself is not consulted here — the object store
+/// registry does that lazily on first read.
 #[derive(Clone)]
 pub struct MetastoreIndexResolver {
     metastore: MetastoreServiceClient,
-    storage_resolver: StorageResolver,
+    /// Retained so tests and other consumers that want a standalone
+    /// resolver instance don't need to rewire everything. The registry is
+    /// constructed with its own clone of the resolver.
+    _storage_resolver: StorageResolver,
 }
 
 impl MetastoreIndexResolver {
     pub fn new(metastore: MetastoreServiceClient, storage_resolver: StorageResolver) -> Self {
         Self {
             metastore,
-            storage_resolver,
+            _storage_resolver: storage_resolver,
         }
     }
 }
@@ -141,14 +79,7 @@ impl std::fmt::Debug for MetastoreIndexResolver {
 
 #[async_trait]
 impl MetricsIndexResolver for MetastoreIndexResolver {
-    async fn resolve(
-        &self,
-        index_name: &str,
-    ) -> DFResult<(
-        Arc<dyn MetricsSplitProvider>,
-        Arc<dyn ObjectStore>,
-        ObjectStoreUrl,
-    )> {
+    async fn resolve(&self, index_name: &str) -> DFResult<(Arc<dyn MetricsSplitProvider>, Uri)> {
         debug!(index_name, "resolving metrics index");
 
         let response = self
@@ -163,30 +94,16 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
             .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
         let index_uid = index_metadata.index_uid.clone();
-        let index_uri = &index_metadata.index_config.index_uri;
+        let index_uri = index_metadata.index_config.index_uri.clone();
 
         debug!(%index_uid, %index_uri, "resolved index metadata");
 
-        let storage = self
-            .storage_resolver
-            .resolve(index_uri)
-            .await
-            .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
-
-        let object_store_url =
-            ObjectStoreUrl::parse(format!("quickwit://{index_name}/")).map_err(|err| {
-                datafusion::error::DataFusionError::Internal(format!(
-                    "failed to build object store url: {err}"
-                ))
-            })?;
-
-        let object_store: Arc<dyn ObjectStore> = Arc::new(QuickwitObjectStore::new(storage));
         let split_provider: Arc<dyn MetricsSplitProvider> = Arc::new(MetastoreSplitProvider::new(
             self.metastore.clone(),
             index_uid,
         ));
 
-        Ok((split_provider, object_store, object_store_url))
+        Ok((split_provider, index_uri))
     }
 
     async fn list_index_names(&self) -> DFResult<Vec<String>> {

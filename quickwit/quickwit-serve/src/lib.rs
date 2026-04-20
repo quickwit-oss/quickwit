@@ -688,15 +688,17 @@ pub async fn serve_quickwit(
 
     // Build the generic DataFusion session builder if this node is a searcher
     // and the DataFusion endpoint is enabled. The whole code path is absent
-    // when the `datafusion` feature is off.
+    // when the `datafusion` feature is off. A runtime setup failure (e.g.
+    // failing to install the object store registry) propagates — DataFusion
+    // should fail the node startup loudly rather than silently disabling
+    // itself.
     #[cfg(feature = "datafusion")]
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
         &searcher_pool,
         metastore_through_control_plane.clone(),
         storage_resolver.clone(),
-    )
-    .await?;
+    )?;
     // `searcher_pool` is only consumed by the DataFusion wiring above; without
     // the feature, drop it here so the unused-binding warning does not fire.
     #[cfg(not(feature = "datafusion"))]

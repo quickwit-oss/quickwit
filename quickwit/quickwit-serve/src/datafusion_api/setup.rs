@@ -28,7 +28,8 @@ use quickwit_datafusion::grpc::DataFusionServiceGrpcImpl;
 use quickwit_datafusion::proto::data_fusion_service_server::DataFusionServiceServer;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::{
-    DataFusionService, DataFusionSessionBuilder, QuickwitWorkerResolver, build_worker,
+    DataFusionService, DataFusionSessionBuilder, QuickwitObjectStoreRegistry,
+    QuickwitWorkerResolver, build_worker,
 };
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::SearcherPool;
@@ -44,7 +45,12 @@ use crate::QuickwitServices;
 /// separate from the Cargo feature flag: the feature gates _whether the code
 /// exists_; the env var gates _whether it runs at startup_. This lets a single
 /// binary be deployed and have DataFusion toggled per-node.
-pub(crate) async fn build_datafusion_session_builder(
+///
+/// Installs a [`QuickwitObjectStoreRegistry`] on the shared `RuntimeEnv` so
+/// that any `quickwit://…`, `s3://…`, `file://…`, etc. URL produced by a
+/// source resolves to an `ObjectStore` on first read — no startup warmup, no
+/// per-query registry refresh.
+pub(crate) fn build_datafusion_session_builder(
     node_config: &NodeConfig,
     searcher_pool: &SearcherPool,
     metastore: MetastoreServiceClient,
@@ -57,22 +63,18 @@ pub(crate) async fn build_datafusion_session_builder(
         return Ok(None);
     }
 
-    let metrics_source = Arc::new(MetricsDataSource::new(metastore, storage_resolver));
-    let resolver = QuickwitWorkerResolver::new(searcher_pool.clone())
+    let metrics_source = Arc::new(MetricsDataSource::new(
+        metastore,
+        storage_resolver.clone(),
+    ));
+    let worker_resolver = QuickwitWorkerResolver::new(searcher_pool.clone())
         .with_tls(node_config.grpc_config.tls.is_some());
+    let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
     let builder = DataFusionSessionBuilder::new()
-        .with_source(Arc::clone(&metrics_source) as Arc<_>)
-        .with_worker_resolver(resolver);
-
-    // One-shot: resolve every known metrics index and register its object
-    // store on the shared `RuntimeEnv`. Worker-side query dispatch relies on
-    // the stores being already registered because the `scan()` lazy path does
-    // not fire on deserialized `DataSourceExec` fragments.
-    metrics_source
-        .preregister_object_stores(builder.runtime())
-        .await
-        .context("failed to preregister DataFusion metrics object stores")?;
-
+        .with_object_store_registry(registry)
+        .context("failed to install DataFusion object store registry")?
+        .with_source(metrics_source)
+        .with_worker_resolver(worker_resolver);
     Ok(Some(Arc::new(builder)))
 }
 

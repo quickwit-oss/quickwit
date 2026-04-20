@@ -29,7 +29,6 @@ use arrow::array::{
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema, SchemaRef};
 use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
-use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion::prelude::SessionContext;
 use object_store::memory::InMemory;
@@ -38,9 +37,8 @@ use object_store::{ObjectStore, PutPayload};
 use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
 use quickwit_parquet_engine::storage::{ParquetWriter, ParquetWriterConfig};
 
-use super::index_resolver::SimpleIndexResolver;
 use super::predicate::MetricsSplitQuery;
-use super::table_provider::{MetricsSplitProvider, MetricsTableProvider};
+use super::table_provider::MetricsSplitProvider;
 
 // ── Schema helpers ──────────────────────────────────────────────────
 
@@ -242,28 +240,6 @@ impl MetricsTestbed {
 
     pub fn split_provider(&self) -> Arc<TestSplitProvider> {
         Arc::new(TestSplitProvider::new(self.splits.clone()))
-    }
-
-    pub fn table_provider(&self) -> MetricsTableProvider {
-        MetricsTableProvider::new(
-            oss_schema_with_service(),
-            self.split_provider(),
-            self.object_store.clone(),
-            ObjectStoreUrl::parse("memory://").unwrap(),
-        )
-    }
-
-    /// Build a `SessionContext` with the metrics catalog registered.
-    pub fn session(&self) -> SessionContext {
-        let resolver = Arc::new(SimpleIndexResolver::new(
-            self.split_provider(),
-            self.object_store.clone(),
-            ObjectStoreUrl::parse("memory://").unwrap(),
-        ));
-        let source = crate::sources::metrics::MetricsDataSource::with_resolver(resolver);
-        let builder = quickwit_df_core::DataFusionSessionBuilder::new()
-            .with_source(Arc::new(source) as Arc<dyn quickwit_df_core::QuickwitDataSource>);
-        builder.build_session().unwrap()
     }
 }
 

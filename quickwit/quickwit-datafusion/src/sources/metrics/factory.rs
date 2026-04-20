@@ -65,8 +65,7 @@ impl TableProviderFactory for MetricsTableProviderFactory {
             cmd.location.clone()
         };
 
-        let (split_provider, object_store, object_store_url) =
-            self.index_resolver.resolve(&index_name).await?;
+        let (split_provider, index_uri) = self.index_resolver.resolve(&index_name).await?;
 
         let arrow_schema: SchemaRef = Arc::new(cmd.schema.as_arrow().clone());
 
@@ -76,8 +75,7 @@ impl TableProviderFactory for MetricsTableProviderFactory {
             )));
         }
 
-        let provider =
-            MetricsTableProvider::new(arrow_schema, split_provider, object_store, object_store_url);
+        let provider = MetricsTableProvider::new(arrow_schema, split_provider, index_uri)?;
 
         Ok(Arc::new(provider))
     }

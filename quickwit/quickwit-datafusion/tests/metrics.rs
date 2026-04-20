@@ -21,9 +21,9 @@
 use std::sync::Arc;
 
 use arrow::array::{Array, Float64Array, RecordBatch};
-use quickwit_datafusion::DataFusionSessionBuilder;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch;
+use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry};
 
 mod common;
 
@@ -42,7 +42,13 @@ fn session_builder(sandbox: &TestSandbox) -> DataFusionSessionBuilder {
         sandbox.metastore.clone(),
         sandbox.storage_resolver.clone(),
     ));
-    DataFusionSessionBuilder::new().with_source(source)
+    let registry = Arc::new(QuickwitObjectStoreRegistry::new(
+        sandbox.storage_resolver.clone(),
+    ));
+    DataFusionSessionBuilder::new()
+        .with_object_store_registry(registry)
+        .expect("install object store registry")
+        .with_source(source)
 }
 
 /// Execute SQL in-process and return batches.

@@ -46,6 +46,7 @@ use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
 use datafusion::error::Result as DFResult;
 use datafusion::execution::SessionStateBuilder;
 use datafusion::execution::memory_pool::GreedyMemoryPool;
+use datafusion::execution::object_store::ObjectStoreRegistry;
 use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_distributed::{
@@ -109,6 +110,24 @@ impl DataFusionSessionBuilder {
             .with_memory_pool(Arc::new(GreedyMemoryPool::new(bytes)))
             .build_arc()?;
         self.runtime = runtime;
+        Ok(self)
+    }
+
+    /// Install a custom `ObjectStoreRegistry` on the shared `RuntimeEnv`.
+    ///
+    /// Use this when the glue layer wants to resolve object stores on
+    /// demand — for example, `quickwit_datafusion::QuickwitObjectStoreRegistry`
+    /// builds lazy wrappers over a `StorageResolver` on miss.
+    ///
+    /// Must be called before `with_source()` so that any source-side
+    /// registration through the `init` hook uses the intended registry.
+    pub fn with_object_store_registry(
+        mut self,
+        registry: Arc<dyn ObjectStoreRegistry>,
+    ) -> DFResult<Self> {
+        self.runtime = RuntimeEnvBuilder::new()
+            .with_object_store_registry(registry)
+            .build_arc()?;
         Ok(self)
     }
 

@@ -25,9 +25,9 @@ use arrow::array::{
     UInt8Array, UInt64Array,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
-use quickwit_datafusion::DataFusionSessionBuilder;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch_with_tags;
+use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry};
 
 mod common;
 
@@ -108,7 +108,13 @@ async fn test_null_columns_for_missing_parquet_fields() {
         metastore,
         sandbox.storage_resolver.clone(),
     ));
-    let builder = DataFusionSessionBuilder::new().with_source(source);
+    let registry = Arc::new(QuickwitObjectStoreRegistry::new(
+        sandbox.storage_resolver.clone(),
+    ));
+    let builder = DataFusionSessionBuilder::new()
+        .with_object_store_registry(registry)
+        .expect("install object store registry")
+        .with_source(source);
 
     // COUNT(col) counts non-NULL values — tests the NULL-fill behavior.
     let sql_str = r#"

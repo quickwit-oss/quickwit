@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use datafusion::catalog::Session;
 use datafusion::datasource::TableProvider;
 use datafusion::datasource::source::DataSourceExec;
-use datafusion::error::Result as DFResult;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
 use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
@@ -36,7 +36,7 @@ use datafusion_datasource::PartitionedFile;
 use datafusion_datasource::file_scan_config::FileScanConfigBuilder;
 use datafusion_datasource_parquet::source::ParquetSource;
 use datafusion_physical_plan::expressions::Column;
-use object_store::ObjectStore;
+use quickwit_common::uri::Uri;
 use quickwit_parquet_engine::schema::SORT_ORDER;
 use quickwit_parquet_engine::split::MetricsSplitMetadata;
 use tracing::debug;
@@ -57,29 +57,75 @@ pub trait MetricsSplitProvider: Send + Sync + fmt::Debug {
 /// On `scan()`, queries the metastore for published splits matching the
 /// pushed-down predicates, then returns a standard `ParquetSource`-backed
 /// `DataSourceExec` with one file group per split.
+///
+/// `ObjectStoreUrl` only accepts a scheme + authority, so the full index
+/// URI is split:
+/// - `scheme://authority` goes into the `ObjectStoreUrl`.
+/// - The path component (e.g. the `my-index/` part of
+///   `s3://bucket/my-index/`) is prepended to each split's filename in the
+///   emitted `PartitionedFile`s.
+///
+/// Neither this type nor `scan()` constructs an `Arc<dyn ObjectStore>` —
+/// the session's custom
+/// [`crate::object_store_registry::QuickwitObjectStoreRegistry`] builds a
+/// lazy wrapper the first time DataFusion reads from the URL.
 #[derive(Debug)]
 pub struct MetricsTableProvider {
     schema: SchemaRef,
     split_provider: Arc<dyn MetricsSplitProvider>,
-    object_store: Arc<dyn ObjectStore>,
-    /// URL scheme for the object store (e.g. "file:///tmp/data" or "memory://").
+    /// `scheme://authority` portion of the index URI, used as the
+    /// `ObjectStoreUrl`. All splits of this index route to the same
+    /// `ObjectStore` (the registry returns one lazy wrapper per authority).
     object_store_url: ObjectStoreUrl,
+    /// Path component of the index URI (e.g. `my-index/` for
+    /// `s3://bucket/my-index/`). Prepended to each split's filename when
+    /// building `PartitionedFile`s so DataFusion reads the correct key.
+    /// Never starts with `/`; always ends with `/` (or is empty).
+    path_prefix: String,
 }
 
 impl MetricsTableProvider {
     pub fn new(
         schema: SchemaRef,
         split_provider: Arc<dyn MetricsSplitProvider>,
-        object_store: Arc<dyn ObjectStore>,
-        object_store_url: ObjectStoreUrl,
-    ) -> Self {
-        Self {
+        index_uri: Uri,
+    ) -> DFResult<Self> {
+        let (object_store_url, path_prefix) = split_uri(&index_uri)?;
+        Ok(Self {
             schema,
             split_provider,
-            object_store,
             object_store_url,
-        }
+            path_prefix,
+        })
     }
+}
+
+/// Split an index URI into the `scheme://authority` portion (for
+/// `ObjectStoreUrl`) and the path portion (prefix for split filenames).
+///
+/// The path prefix is normalised: no leading `/`, trailing `/` if non-empty.
+/// An empty prefix means splits live directly at the authority root.
+fn split_uri(index_uri: &Uri) -> DFResult<(ObjectStoreUrl, String)> {
+    let parsed = url::Url::parse(index_uri.as_str()).map_err(|err| {
+        DataFusionError::Internal(format!(
+            "failed to parse index URI `{}` as URL: {err}",
+            index_uri.as_str()
+        ))
+    })?;
+    let authority = match parsed.host_str() {
+        Some(host) => format!("{}://{host}", parsed.scheme()),
+        None => format!("{}://", parsed.scheme()),
+    };
+    let object_store_url = ObjectStoreUrl::parse(&authority).map_err(|err| {
+        DataFusionError::Internal(format!(
+            "failed to build ObjectStoreUrl from `{authority}`: {err}"
+        ))
+    })?;
+    let mut path_prefix = parsed.path().trim_start_matches('/').to_string();
+    if !path_prefix.is_empty() && !path_prefix.ends_with('/') {
+        path_prefix.push('/');
+    }
+    Ok((object_store_url, path_prefix))
 }
 
 #[async_trait]
@@ -105,7 +151,7 @@ impl TableProvider for MetricsTableProvider {
 
     async fn scan(
         &self,
-        state: &dyn Session,
+        _state: &dyn Session,
         projection: Option<&Vec<usize>>,
         filters: &[Expr],
         limit: Option<usize>,
@@ -124,28 +170,19 @@ impl TableProvider for MetricsTableProvider {
 
         debug!(num_splits = splits.len(), "found matching splits");
 
-        // Lazy registration safety net on the coordinator side. In the
-        // normal flow the node's `RuntimeEnv` has already been populated by
-        // `MetricsDataSource::preregister_object_stores` (startup warmup) or
-        // `register_for_worker` (per-worker-query refresh), so this branch
-        // is a no-op. It remains here so that a coordinator-only query
-        // against a brand-new index still works even before any worker
-        // session for that index has run on the same process.
-        if state
-            .runtime_env()
-            .object_store(&self.object_store_url)
-            .is_err()
-        {
-            state.runtime_env().register_object_store(
-                self.object_store_url.as_ref(),
-                Arc::clone(&self.object_store),
-            );
-        }
+        // The `ObjectStore` for this URL is lazily built by
+        // `QuickwitObjectStoreRegistry` on first read — see
+        // `crate::object_store_registry`. No registration needed here.
 
-        // Build file groups — one PartitionedFile per split
+        // Build file groups — one PartitionedFile per split. The path
+        // prepends the index URI's path component so the `ObjectStore`
+        // (which is scoped to `scheme://authority`) finds the right file.
         let file_groups: Vec<PartitionedFile> = splits
             .iter()
-            .map(|split| PartitionedFile::new(split.parquet_filename(), split.size_bytes))
+            .map(|split| {
+                let path = format!("{}{}", self.path_prefix, split.parquet_filename());
+                PartitionedFile::new(path, split.size_bytes)
+            })
             .collect();
 
         // Configure ParquetSource with bloom filters + pushdown enabled
