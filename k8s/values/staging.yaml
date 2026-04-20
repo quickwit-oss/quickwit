@@ -127,7 +127,7 @@ control_plane:
       memory: 4Gi
 
 indexer:
-  replicaCount: 40
+  replicaCount: 50
 
   resources:
     limits:
