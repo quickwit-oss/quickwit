@@ -25,23 +25,22 @@
 //!
 //! Advantages over a builder-mutation chain (`configure_session(builder) -> builder`):
 //! - **No silent overwrite**: two sources registering different codecs both win.
-//! - **Inspectable**: the `DataSourceContributions` struct is a plain value — easy
-//!   to test and introspect without constructing a full `SessionStateBuilder`.
-//! - **Conflict detection**: the session builder can validate (e.g., no two sources
-//!   register the same UDF name) before building the session.
+//! - **Inspectable**: the `DataSourceContributions` struct is a plain value — easy to test and
+//!   introspect without constructing a full `SessionStateBuilder`.
+//! - **Conflict detection**: the session builder can validate (e.g., no two sources register the
+//!   same UDF name) before building the session.
 //!
 //! ## Lifecycle
 //!
 //! For each session (coordinator or worker):
 //!
-//! 1. **`contributions()`** — called once. Returns optimizer rules, codecs, and UDFs
-//!    to register.  Applied before `SessionStateBuilder::build()`.
+//! 1. **`contributions()`** — called once. Returns optimizer rules, codecs, and UDFs to register.
+//!    Applied before `SessionStateBuilder::build()`.
 //!
 //! 2. `SessionStateBuilder::build()` — called by the framework.
 //!
-//! 3. **`register_for_worker(&SessionState)`** — called after `build()` for
-//!    runtime state that requires the session to already exist (rare; prefer
-//!    `contributions()` for most things).
+//! 3. **`register_for_worker(&SessionState)`** — called after `build()` for runtime state that
+//!    requires the session to already exist (rare; prefer `contributions()` for most things).
 //!
 //! ## Protocol compatibility note
 //!
@@ -127,6 +126,39 @@ impl DataSourceContributions {
         self
     }
 
+    /// Add a physical optimizer rule (e.g. source-specific pushdown rules
+    /// like `TantivyAggPushdown`).
+    ///
+    /// Rules contributed by all sources run *before* the distributed
+    /// optimizer so they see an already source-optimized plan.
+    pub fn with_physical_optimizer_rule(
+        mut self,
+        rule: Arc<dyn PhysicalOptimizerRule + Send + Sync>,
+    ) -> Self {
+        self.physical_optimizer_rules.push(rule);
+        self
+    }
+
+    /// Add a callback that extends the `SessionStateBuilder` with values that
+    /// cannot be expressed as plain rules or UDFs — typically
+    /// `datafusion-distributed` user codecs:
+    ///
+    /// ```ignore
+    /// DataSourceContributions::default().with_codec_applier(|builder| {
+    ///     builder.with_distributed_user_codec(TantivyCodec)
+    /// })
+    /// ```
+    ///
+    /// Appliers are `FnOnce` (the builder is consumed and returned on each
+    /// call) and run after rules and UDFs are installed.
+    pub fn with_codec_applier(
+        mut self,
+        applier: impl FnOnce(SessionStateBuilder) -> SessionStateBuilder + Send + Sync + 'static,
+    ) -> Self {
+        self.codec_appliers.push(Box::new(applier));
+        self
+    }
+
     pub(crate) fn udf_names(&self) -> Vec<String> {
         self.udfs.iter().map(|udf| udf.name().to_string()).collect()
     }
@@ -196,6 +228,31 @@ pub trait QuickwitDataSource: Send + Sync + Debug {
     /// Default: no-op.
     fn init(&self, _env: &datafusion::execution::runtime_env::RuntimeEnv) {}
 
+    // ── Per-session config mutation ──────────────────────────────────
+
+    /// Mutate the `SessionConfig` before `SessionStateBuilder::new()` is called.
+    ///
+    /// Called once per `build_session()` / worker `build_session_state()`, on
+    /// every registered source, before any contributions are applied. Use this
+    /// when a source needs to install a config extension that must be present
+    /// at builder construction time — typical examples from
+    /// `tantivy-datafusion`:
+    ///
+    /// ```ignore
+    /// fn configure_session(&self, config: &mut SessionConfig) {
+    ///     config.set_split_runtime_factory(Arc::new(MyFactory::new()));
+    ///     config.set_sync_execution_pool(Arc::clone(&self.sync_pool));
+    /// }
+    /// ```
+    ///
+    /// If all you need is a UDF, optimizer rule, or codec, prefer
+    /// [`contributions()`][Self::contributions] — this hook exists specifically
+    /// for config-extension registrations that `DataSourceContributions` cannot
+    /// express.
+    ///
+    /// Default: no-op.
+    fn configure_session(&self, _config: &mut datafusion::prelude::SessionConfig) {}
+
     // ── Additive session contributions ──────────────────────────────
 
     /// Return this source's additive contributions to every session.
@@ -258,10 +315,10 @@ pub trait QuickwitDataSource: Send + Sync + Debug {
     ///
     /// ## Return value
     ///
-    /// - `Ok(Some((table_name, provider)))` — this source claims the rel.
-    ///   `table_name` is the effective table identifier used for the scan.
-    ///   The caller converts any `ExtensionTable` rel to a `NamedTable` rel
-    ///   with this name so that `from_read_rel` can apply filters/projections.
+    /// - `Ok(Some((table_name, provider)))` — this source claims the rel. `table_name` is the
+    ///   effective table identifier used for the scan. The caller converts any `ExtensionTable` rel
+    ///   to a `NamedTable` rel with this name so that `from_read_rel` can apply
+    ///   filters/projections.
     /// - `Ok(None)` — this source does not claim the rel; try the next source.
     ///
     /// Default: `Ok(None)` — does not participate in Substrait consumption.
@@ -299,7 +356,10 @@ pub trait QuickwitDataSource: Send + Sync + Debug {
     /// the session builder (analogous to `BlobStoreConnector::init(env)`).
     ///
     /// Default: no-op.
-    async fn register_for_worker(&self, _state: &datafusion::execution::SessionState) -> DFResult<()> {
+    async fn register_for_worker(
+        &self,
+        _state: &datafusion::execution::SessionState,
+    ) -> DFResult<()> {
         Ok(())
     }
 

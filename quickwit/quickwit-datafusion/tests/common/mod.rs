@@ -12,7 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-mod cluster_sandbox;
-mod shutdown;
+//! Shared helpers for quickwit-datafusion integration tests.
 
-pub(crate) use cluster_sandbox::{ClusterSandbox, ClusterSandboxBuilder, ingest};
+#![allow(dead_code)]
+
+pub mod sandbox;
+pub mod splits;
+
+pub use sandbox::TestSandbox;
+pub use splits::{create_metrics_index, publish_split};

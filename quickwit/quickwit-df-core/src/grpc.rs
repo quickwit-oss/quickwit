@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! gRPC handler that bridges [`quickwit_datafusion::DataFusionService`] to the
+//! gRPC handler that bridges [`crate::service::DataFusionService`] to the
 //! tonic-generated `DataFusionService` server trait.
 //!
 //! Each streaming response batch is encoded as Arrow IPC (stream format) using
@@ -33,25 +33,23 @@ use std::sync::Arc;
 
 use arrow::array::RecordBatch;
 use arrow::ipc::writer::StreamWriter;
+use datafusion::execution::SendableRecordBatchStream;
 use futures::{Stream, StreamExt};
-use quickwit_datafusion::{DataFusionService, SendableRecordBatchStream};
-use quickwit_proto::datafusion::{
+use tracing::warn;
+
+use crate::proto::{
     ExecuteSqlRequest, ExecuteSqlResponse, ExecuteSubstraitRequest, ExecuteSubstraitResponse,
     data_fusion_service_server,
 };
-use quickwit_proto::tonic;
-use tracing::warn;
+use crate::service::DataFusionService;
 
 /// Converts a DataFusion error (represented as any `std::error::Error`) to an
 /// appropriate `tonic::Status`.
 ///
 /// Plan / schema errors are surfaced as `InvalidArgument`; everything else as
-/// `Internal`.  The distinction is made by inspecting the `Display` output
-/// since we avoid a hard dependency on the `datafusion` crate in quickwit-serve.
+/// `Internal`.
 fn df_error_to_status(err: impl std::fmt::Display) -> tonic::Status {
     let msg = err.to_string();
-    // DataFusion plan/schema errors start with "Error during planning:" or
-    // "Schema error:".  Map those to invalid argument; everything else is internal.
     if msg.starts_with("Error during planning") || msg.starts_with("Schema error") {
         tonic::Status::invalid_argument(msg)
     } else {
@@ -62,8 +60,8 @@ fn df_error_to_status(err: impl std::fmt::Display) -> tonic::Status {
 /// Map a `SendableRecordBatchStream` into a pinned `Stream` of gRPC responses.
 ///
 /// Each batch is encoded as Arrow IPC bytes via [`batch_to_ipc_bytes`] and
-/// wrapped with `wrap`.  Errors from the upstream stream are propagated as
-/// `tonic::Status::internal`.  No background task is spawned — the stream is
+/// wrapped with `wrap`. Errors from the upstream stream are propagated as
+/// `tonic::Status::internal`. No background task is spawned — the stream is
 /// driven directly by tonic, so client disconnection cancels the future naturally
 /// and panics in encoding are surfaced immediately to the caller.
 fn map_batch_stream<R>(
@@ -125,7 +123,7 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         let service = Arc::clone(&self.service);
 
         // Route to the appropriate DataFusionService method:
-        // - substrait_plan_bytes: production path (pre-encoded protobuf, for callers that already hold an encoded plan)
+        // - substrait_plan_bytes: production path (pre-encoded protobuf)
         // - substrait_plan_json:  dev/tooling path (grpcurl, rollup JSON files)
         let stream = if !req.substrait_plan_bytes.is_empty() {
             service
@@ -156,16 +154,14 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         let req = request.into_inner();
         let service = Arc::clone(&self.service);
 
-        let stream = service
-            .execute_sql(&req.sql)
-            .await
-            .map_err(|err| {
-                warn!(error = %err, "DataFusion SQL execution error");
-                df_error_to_status(err)
-            })?;
+        let stream = service.execute_sql(&req.sql).await.map_err(|err| {
+            warn!(error = %err, "DataFusion SQL execution error");
+            df_error_to_status(err)
+        })?;
 
-        let response_stream =
-            map_batch_stream(stream, |ipc_bytes| ExecuteSqlResponse { arrow_ipc_bytes: ipc_bytes });
+        let response_stream = map_batch_stream(stream, |ipc_bytes| ExecuteSqlResponse {
+            arrow_ipc_bytes: ipc_bytes,
+        });
         Ok(tonic::Response::new(response_stream))
     }
 }

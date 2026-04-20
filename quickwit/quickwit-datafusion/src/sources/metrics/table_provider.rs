@@ -30,11 +30,11 @@ use datafusion::datasource::source::DataSourceExec;
 use datafusion::error::Result as DFResult;
 use datafusion::execution::object_store::ObjectStoreUrl;
 use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
+use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion_datasource::PartitionedFile;
 use datafusion_datasource::file_scan_config::FileScanConfigBuilder;
 use datafusion_datasource_parquet::source::ParquetSource;
-use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
 use datafusion_physical_plan::expressions::Column;
 use object_store::ObjectStore;
 use quickwit_parquet_engine::schema::SORT_ORDER;
@@ -128,10 +128,15 @@ impl TableProvider for MetricsTableProvider {
         // Check under a read-lock first to avoid acquiring the write-lock on every
         // scan in the common case where the store is already registered
         // (distributed path pre-registers via register_for_worker).
-        if state.runtime_env().object_store(&self.object_store_url).is_err() {
-            state
-                .runtime_env()
-                .register_object_store(self.object_store_url.as_ref(), Arc::clone(&self.object_store));
+        if state
+            .runtime_env()
+            .object_store(&self.object_store_url)
+            .is_err()
+        {
+            state.runtime_env().register_object_store(
+                self.object_store_url.as_ref(),
+                Arc::clone(&self.object_store),
+            );
         }
 
         // Build file groups — one PartitionedFile per split
@@ -149,10 +154,8 @@ impl TableProvider for MetricsTableProvider {
             .with_enable_page_index(true);
 
         // Build the FileScanConfig
-        let mut builder = FileScanConfigBuilder::new(
-            self.object_store_url.clone(),
-            Arc::new(parquet_source),
-        );
+        let mut builder =
+            FileScanConfigBuilder::new(self.object_store_url.clone(), Arc::new(parquet_source));
 
         // Add each split as its own file group (one file per partition)
         for file in file_groups {
@@ -172,15 +175,15 @@ impl TableProvider for MetricsTableProvider {
         // [metric_name, service, env, datacenter, region, host, timestamp_secs].
         // Columns absent from the projected schema are skipped; nulls_first=false
         // matches the writer's SortOptions.
-        let sort_options = SortOptions { descending: false, nulls_first: false };
+        let sort_options = SortOptions {
+            descending: false,
+            nulls_first: false,
+        };
         let sort_exprs: Vec<PhysicalSortExpr> = SORT_ORDER
             .iter()
             .filter_map(|col_name| {
                 self.schema.index_of(col_name).ok().map(|idx| {
-                    PhysicalSortExpr::new(
-                        Arc::new(Column::new(col_name, idx)),
-                        sort_options,
-                    )
+                    PhysicalSortExpr::new(Arc::new(Column::new(col_name, idx)), sort_options)
                 })
             })
             .collect();
@@ -196,8 +199,8 @@ impl TableProvider for MetricsTableProvider {
 fn classify_filter(expr: &Expr) -> TableProviderFilterPushDown {
     match expr {
         Expr::BinaryExpr(binary) => {
-            if let Some(col_name) = column_name_from_expr(&binary.left)
-                .or_else(|| column_name_from_expr(&binary.right))
+            if let Some(col_name) =
+                column_name_from_expr(&binary.left).or_else(|| column_name_from_expr(&binary.right))
             {
                 // OSS uses bare column names (no tag_ prefix)
                 match col_name.as_str() {

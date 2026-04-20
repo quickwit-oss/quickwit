@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-include!("../codegen/quickwit/quickwit.datafusion.rs");
+//! Generated Substrait / SQL execution gRPC service protobuf types.
+
+include!("codegen/quickwit.datafusion.rs");
 
 pub const DATAFUSION_FILE_DESCRIPTOR_SET: &[u8] =
-    include_bytes!("../codegen/quickwit/datafusion_descriptor.bin");
+    include_bytes!("codegen/datafusion_descriptor.bin");

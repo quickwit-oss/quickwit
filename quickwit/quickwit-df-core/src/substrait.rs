@@ -64,10 +64,10 @@ use datafusion_substrait::logical_plan::consumer::{
     SubstraitConsumer, from_read_rel, from_substrait_named_struct,
     from_substrait_plan_with_consumer,
 };
-use datafusion_substrait::substrait::proto::{
-    Plan, ReadRel,
-    read_rel::{ReadType, NamedTable as SubstraitNamedTable},
+use datafusion_substrait::substrait::proto::read_rel::{
+    NamedTable as SubstraitNamedTable, ReadType,
 };
+use datafusion_substrait::substrait::proto::{Plan, ReadRel};
 
 use crate::data_source::QuickwitDataSource;
 
@@ -87,7 +87,11 @@ impl<'a> QuickwitSubstraitConsumer<'a> {
         state: &'a SessionState,
         sources: &'a [Arc<dyn QuickwitDataSource>],
     ) -> Self {
-        Self { extensions, state, sources }
+        Self {
+            extensions,
+            state,
+            sources,
+        }
     }
 }
 
@@ -117,17 +121,16 @@ impl SubstraitConsumer for QuickwitSubstraitConsumer<'_> {
 
     /// Intercept `ReadRel` nodes and offer them to each registered source.
     ///
-    /// 1. Convert `ReadRel.base_schema` → Arrow `SchemaRef` (the schema hint
-    ///    the producer declared; sources use this for schema injection rather
-    ///    than the minimal default).
-    /// 2. Call each source's `try_consume_read_rel`.  The first source that
-    ///    returns `Some((table_name, provider))` wins.
-    /// 3. If a source claims the rel, build a temporary resolver that returns
-    ///    the provider when `from_read_rel` performs its catalog lookup.
-    ///    If the original rel used `ExtensionTable`, rewrite it to `NamedTable`
-    ///    so `from_read_rel` can apply the standard filter/projection handling.
-    /// 4. If no source claims the rel, fall through to the default path which
-    ///    uses `resolve_table_ref` → quickwit catalog → `QuickwitSchemaProvider`.
+    /// 1. Convert `ReadRel.base_schema` → Arrow `SchemaRef` (the schema hint the producer declared;
+    ///    sources use this for schema injection rather than the minimal default).
+    /// 2. Call each source's `try_consume_read_rel`.  The first source that returns
+    ///    `Some((table_name, provider))` wins.
+    /// 3. If a source claims the rel, build a temporary resolver that returns the provider when
+    ///    `from_read_rel` performs its catalog lookup. If the original rel used `ExtensionTable`,
+    ///    rewrite it to `NamedTable` so `from_read_rel` can apply the standard filter/projection
+    ///    handling.
+    /// 4. If no source claims the rel, fall through to the default path which uses
+    ///    `resolve_table_ref` → quickwit catalog → `QuickwitSchemaProvider`.
     async fn consume_read(&self, rel: &ReadRel) -> DFResult<LogicalPlan> {
         // Convert base_schema to Arrow once so every source can use it without
         // re-parsing the Substrait types.
@@ -138,8 +141,9 @@ impl SubstraitConsumer for QuickwitSubstraitConsumer<'_> {
         };
 
         for source in self.sources {
-            if let Some((table_name, provider)) =
-                source.try_consume_read_rel(rel, schema_hint.clone()).await?
+            if let Some((table_name, provider)) = source
+                .try_consume_read_rel(rel, schema_hint.clone())
+                .await?
             {
                 // Build a short-lived resolver that returns our provider for
                 // this table name.  Everything else (filters, projections,

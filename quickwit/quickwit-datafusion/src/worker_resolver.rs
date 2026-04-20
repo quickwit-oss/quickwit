@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Generic worker resolver — maps `SearcherPool` → Flight URLs.
+//! `SearcherPool`-backed `WorkerResolver` implementation.
 //!
-//! No data-source-specific code here.
+//! Every searcher node runs both the Quickwit gRPC `SearchService` and the
+//! DataFusion `WorkerService` on the same port, so the addresses in
+//! [`SearcherPool`] double as DataFusion worker URLs.
 
 use std::net::SocketAddr;
 
@@ -23,10 +25,7 @@ use datafusion_distributed::WorkerResolver;
 use quickwit_search::SearcherPool;
 use url::Url;
 
-/// Resolves worker Flight URLs from the cluster's searcher pool.
-///
-/// Every searcher node runs both the Quickwit gRPC `SearchService` and the
-/// Arrow Flight service on the same port.
+/// Resolves worker URLs from the cluster's `SearcherPool`.
 #[derive(Clone)]
 pub struct QuickwitWorkerResolver {
     searcher_pool: SearcherPool,
@@ -52,7 +51,7 @@ impl WorkerResolver for QuickwitWorkerResolver {
         let addrs: Vec<SocketAddr> = self.searcher_pool.keys();
         if addrs.is_empty() {
             // Empty pool means no searcher workers are registered (e.g. single-node
-            // local execution).  Return an empty list so the distributed optimizer
+            // local execution). Return an empty list so the distributed optimizer
             // sees zero workers and falls back to local execution rather than
             // treating it as a hard error.
             return Ok(vec![]);

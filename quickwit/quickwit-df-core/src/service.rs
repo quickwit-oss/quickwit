@@ -82,7 +82,10 @@ impl DataFusionService {
         &self,
         plan_bytes: &[u8],
     ) -> DFResult<SendableRecordBatchStream> {
-        tracing::info!(plan_bytes_len = plan_bytes.len(), "executing substrait plan");
+        tracing::info!(
+            plan_bytes_len = plan_bytes.len(),
+            "executing substrait plan"
+        );
         use datafusion_substrait::substrait::proto::Plan;
         use prost::Message;
 
@@ -107,9 +110,7 @@ impl DataFusionService {
         use datafusion_substrait::substrait::proto::Plan;
 
         let plan: Plan = serde_json::from_str(plan_json).map_err(|e| {
-            datafusion::error::DataFusionError::Plan(format!(
-                "invalid Substrait plan JSON: {e}"
-            ))
+            datafusion::error::DataFusionError::Plan(format!("invalid Substrait plan JSON: {e}"))
         })?;
 
         self.execute_substrait_plan(&plan).await

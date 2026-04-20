@@ -12,9 +12,7 @@ license.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-arrow = { workspace = true }
 async-trait = { workspace = true }
-datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed" }
 base64 = { workspace = true }
 bytes = { workspace = true }
 hyper = { workspace = true }
@@ -66,7 +64,7 @@ quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
-quickwit-datafusion = { workspace = true }
+quickwit-datafusion = { workspace = true, optional = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
@@ -75,7 +73,6 @@ quickwit-jaeger = { workspace = true }
 quickwit-janitor = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-opentelemetry = { workspace = true }
-quickwit-parquet-engine = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-search = { workspace = true }
@@ -115,6 +112,7 @@ quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
+datafusion = ["dep:quickwit-datafusion"]
 pprof = [
   "dep:pprof"
 ]

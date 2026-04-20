@@ -12,5 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub mod grpc_handler;
-pub use grpc_handler::DataFusionServiceGrpcImpl;
+//! DataFusion wiring for `quickwit-serve`.
+//!
+//! The whole module is gated behind the `datafusion` feature (see `lib.rs`).
+//! [`setup`] builds the session at startup and mounts the gRPC services;
+//! `lib.rs` and `grpc.rs` each have a single `#[cfg(feature = "datafusion")]`
+//! call site into this module.
+
+pub(crate) mod setup;

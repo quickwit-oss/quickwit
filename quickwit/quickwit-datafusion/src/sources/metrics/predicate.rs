@@ -278,10 +278,8 @@ mod tests {
 
     #[test]
     fn test_in_list_extraction() {
-        let filters = vec![col("metric_name").in_list(
-            vec![lit("cpu.usage"), lit("memory.used")],
-            false,
-        )];
+        let filters =
+            vec![col("metric_name").in_list(vec![lit("cpu.usage"), lit("memory.used")], false)];
         let (query, remaining) = extract_split_filters(&filters);
         assert_eq!(
             query.metric_names,
@@ -445,7 +443,10 @@ mod tests {
 
         let filters = vec![col("metric_name").eq(lit("cpu.usage"))];
         let (query, remaining) = extract_split_filters(&filters);
-        assert!(remaining.is_empty(), "metric_name = 'cpu.usage' must be fully extracted");
+        assert!(
+            remaining.is_empty(),
+            "metric_name = 'cpu.usage' must be fully extracted"
+        );
 
         let matching = provider.count_matching(&query);
         assert_eq!(
@@ -490,10 +491,8 @@ mod tests {
 
         let provider = TestSplitProvider::new(vec![cpu_split, mem_split, disk_split]);
 
-        let filters = vec![col("metric_name").in_list(
-            vec![lit("cpu.usage"), lit("memory.used")],
-            false,
-        )];
+        let filters =
+            vec![col("metric_name").in_list(vec![lit("cpu.usage"), lit("memory.used")], false)];
         let (query, remaining) = extract_split_filters(&filters);
         assert!(remaining.is_empty());
         assert_eq!(provider.count_matching(&query), 2);

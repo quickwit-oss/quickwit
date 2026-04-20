@@ -46,7 +46,11 @@ pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
     async fn resolve(
         &self,
         index_name: &str,
-    ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Arc<dyn ObjectStore>, ObjectStoreUrl)>;
+    ) -> DFResult<(
+        Arc<dyn MetricsSplitProvider>,
+        Arc<dyn ObjectStore>,
+        ObjectStoreUrl,
+    )>;
 
     async fn list_index_names(&self) -> DFResult<Vec<String>>;
 }
@@ -90,7 +94,11 @@ impl MetricsIndexResolver for SimpleIndexResolver {
     async fn resolve(
         &self,
         _index_name: &str,
-    ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Arc<dyn ObjectStore>, ObjectStoreUrl)> {
+    ) -> DFResult<(
+        Arc<dyn MetricsSplitProvider>,
+        Arc<dyn ObjectStore>,
+        ObjectStoreUrl,
+    )> {
         Ok((
             Arc::clone(&self.split_provider),
             Arc::clone(&self.object_store),
@@ -118,7 +126,10 @@ pub struct MetastoreIndexResolver {
 
 impl MetastoreIndexResolver {
     pub fn new(metastore: MetastoreServiceClient, storage_resolver: StorageResolver) -> Self {
-        Self { metastore, storage_resolver }
+        Self {
+            metastore,
+            storage_resolver,
+        }
     }
 }
 
@@ -133,7 +144,11 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
     async fn resolve(
         &self,
         index_name: &str,
-    ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Arc<dyn ObjectStore>, ObjectStoreUrl)> {
+    ) -> DFResult<(
+        Arc<dyn MetricsSplitProvider>,
+        Arc<dyn ObjectStore>,
+        ObjectStoreUrl,
+    )> {
         debug!(index_name, "resolving metrics index");
 
         let response = self
@@ -166,8 +181,10 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
             })?;
 
         let object_store: Arc<dyn ObjectStore> = Arc::new(QuickwitObjectStore::new(storage));
-        let split_provider: Arc<dyn MetricsSplitProvider> =
-            Arc::new(MetastoreSplitProvider::new(self.metastore.clone(), index_uid));
+        let split_provider: Arc<dyn MetricsSplitProvider> = Arc::new(MetastoreSplitProvider::new(
+            self.metastore.clone(),
+            index_uid,
+        ));
 
         Ok((split_provider, object_store, object_store_url))
     }

@@ -21,86 +21,48 @@
 use std::sync::Arc;
 
 use arrow::array::{Array, Float64Array, RecordBatch};
-use quickwit_config::service::QuickwitService;
 use quickwit_datafusion::DataFusionSessionBuilder;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch;
-use quickwit_metastore::CreateIndexRequestExt;
-use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::IndexUid;
 
-use crate::test_utils::{ClusterSandbox, ClusterSandboxBuilder, publish_split};
+mod common;
+
+use common::{TestSandbox, create_metrics_index, publish_split};
 
 // ── Setup ──────────────────────────────────────────────────────────
 
-async fn start_sandbox() -> (ClusterSandbox, tempfile::TempDir) {
-    unsafe { std::env::set_var("QW_DISABLE_TELEMETRY", "1"); std::env::set_var("QW_ENABLE_DATAFUSION_ENDPOINT", "true"); }
+async fn start_sandbox() -> TestSandbox {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandboxBuilder::build_and_start_standalone().await;
-    let data_dir = tempfile::tempdir().unwrap();
-    (sandbox, data_dir)
+    TestSandbox::start().await
 }
 
-fn metastore_client(sandbox: &ClusterSandbox) -> MetastoreServiceClient {
-    let (config, _) = sandbox
-        .node_configs
-        .iter()
-        .find(|(_, svc)| svc.contains(&QuickwitService::Metastore))
-        .unwrap();
-    let addr = config.grpc_listen_addr;
-    let channel = tonic::transport::Channel::from_shared(format!("http://{addr}"))
-        .unwrap()
-        .connect_lazy();
-    MetastoreServiceClient::from_channel(addr, channel, bytesize::ByteSize::mib(20), None)
-}
-
-/// Build a `DataFusionSessionBuilder` wired to the sandbox's real metastore + storage.
-fn session_builder(
-    sandbox: &ClusterSandbox,
-    metastore: MetastoreServiceClient,
-) -> DataFusionSessionBuilder {
+/// Build a `DataFusionSessionBuilder` wired to the sandbox's metastore + storage.
+fn session_builder(sandbox: &TestSandbox) -> DataFusionSessionBuilder {
     let source = Arc::new(MetricsDataSource::new(
-        metastore,
-        sandbox.storage_resolver().clone(),
+        sandbox.metastore.clone(),
+        sandbox.storage_resolver.clone(),
     ));
     DataFusionSessionBuilder::new().with_source(source)
 }
 
-// ── Data helpers ───────────────────────────────────────────────────
-
-async fn create_metrics_index(
-    metastore: &MetastoreServiceClient,
-    index_id: &str,
-    data_dir: &std::path::Path,
-) -> IndexUid {
-    let index_uri = format!("file://{}", data_dir.display());
-    let index_config: quickwit_config::IndexConfig =
-        serde_json::from_value(serde_json::json!({
-            "version": "0.8", "index_id": index_id, "index_uri": index_uri,
-            "doc_mapping": { "field_mappings": [] },
-            "indexing_settings": {}, "search_settings": {}
-        }))
-        .unwrap();
-    let resp = metastore
-        .clone()
-        .create_index(CreateIndexRequest::try_from_index_config(&index_config).unwrap())
-        .await
-        .unwrap();
-    resp.index_uid().clone()
-}
-
 /// Execute SQL in-process and return batches.
-async fn run_sql(
-    builder: &DataFusionSessionBuilder,
-    sql: &str,
-) -> Vec<RecordBatch> {
+async fn run_sql(builder: &DataFusionSessionBuilder, sql: &str) -> Vec<RecordBatch> {
     let ctx = builder.build_session().unwrap();
     // Split on ';' — DFParser consumes trailing ';' which breaks multi-stmt parse
-    let fragments: Vec<&str> = sql.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
+    let fragments: Vec<&str> = sql
+        .split(';')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
     for fragment in &fragments[..fragments.len().saturating_sub(1)] {
         ctx.sql(fragment).await.unwrap().collect().await.unwrap();
     }
-    ctx.sql(fragments.last().unwrap()).await.unwrap().collect().await.unwrap()
+    ctx.sql(fragments.last().unwrap())
+        .await
+        .unwrap()
+        .collect()
+        .await
+        .unwrap()
 }
 
 fn total_rows(batches: &[RecordBatch]) -> usize {
@@ -113,9 +75,10 @@ fn total_rows(batches: &[RecordBatch]) -> usize {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_select_all() {
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "test-select", data_dir.path()).await;
     let batch = make_batch("cpu.usage", &[100, 200, 300], &[0.5, 0.8, 0.3], Some("web"));
@@ -134,16 +97,28 @@ async fn test_select_all() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_metric_name_pruning() {
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "test-prune", data_dir.path()).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "cpu",
-        &make_batch("cpu.usage", &[100, 200], &[0.5, 0.8], Some("web"))).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "mem",
-        &make_batch("memory.used", &[100, 200], &[1024.0, 2048.0], Some("web"))).await;
-
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "cpu",
+        &make_batch("cpu.usage", &[100, 200], &[0.5, 0.8], Some("web")),
+    )
+    .await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "mem",
+        &make_batch("memory.used", &[100, 200], &[1024.0, 2048.0], Some("web")),
+    )
+    .await;
 
     let sql = r#"
         CREATE OR REPLACE EXTERNAL TABLE "test-prune" (
@@ -156,15 +131,28 @@ async fn test_metric_name_pruning() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_aggregation() {
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "test-agg", data_dir.path()).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "agg1",
-        &make_batch("cpu.usage", &[100, 200], &[10.0, 20.0], Some("web"))).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "agg2",
-        &make_batch("cpu.usage", &[300, 400], &[30.0, 40.0], Some("api"))).await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "agg1",
+        &make_batch("cpu.usage", &[100, 200], &[10.0, 20.0], Some("web")),
+    )
+    .await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "agg2",
+        &make_batch("cpu.usage", &[300, 400], &[30.0, 40.0], Some("api")),
+    )
+    .await;
 
     let sql = r#"
         CREATE OR REPLACE EXTERNAL TABLE "test-agg" (
@@ -174,22 +162,45 @@ async fn test_aggregation() {
         SELECT SUM(value) as total FROM "test-agg""#;
     let batches = run_sql(&builder, sql).await;
     assert_eq!(total_rows(&batches), 1);
-    let total = batches[0].column(0).as_any().downcast_ref::<Float64Array>().unwrap().value(0);
+    let total = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .unwrap()
+        .value(0);
     assert!((total - 100.0).abs() < 0.01, "expected 100.0, got {total}");
 }
 
 /// Time range pruning — exercises the CAST unwrapping fix in predicate.rs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_time_range_pruning() {
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "test-time", data_dir.path()).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "early",
-        &make_batch("cpu.usage", &[100, 200, 300], &[0.1, 0.2, 0.3], Some("web"))).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "late",
-        &make_batch("cpu.usage", &[1000, 1100, 1200], &[0.4, 0.5, 0.6], Some("web"))).await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "early",
+        &make_batch("cpu.usage", &[100, 200, 300], &[0.1, 0.2, 0.3], Some("web")),
+    )
+    .await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "late",
+        &make_batch(
+            "cpu.usage",
+            &[1000, 1100, 1200],
+            &[0.4, 0.5, 0.6],
+            Some("web"),
+        ),
+    )
+    .await;
 
     let sql = r#"
         CREATE OR REPLACE EXTERNAL TABLE "test-time" (
@@ -199,21 +210,39 @@ async fn test_time_range_pruning() {
         SELECT AVG(value) as avg_val FROM "test-time" WHERE timestamp_secs >= 1000"#;
     let batches = run_sql(&builder, sql).await;
     assert_eq!(total_rows(&batches), 1);
-    let avg = batches[0].column(0).as_any().downcast_ref::<Float64Array>().unwrap().value(0);
+    let avg = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .unwrap()
+        .value(0);
     let expected = (0.4 + 0.5 + 0.6) / 3.0;
-    assert!((avg - expected).abs() < 0.01, "expected ~{expected}, got {avg}");
+    assert!(
+        (avg - expected).abs() < 0.01,
+        "expected ~{expected}, got {avg}"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_group_by() {
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "test-group", data_dir.path()).await;
-    for (name, svc, ts) in [("g1", "web", [100u64, 200, 300]), ("g2", "api", [400u64, 500, 600])] {
-        publish_split(&metastore, &index_uid, data_dir.path(), name,
-            &make_batch("cpu.usage", &ts, &[0.1, 0.2, 0.3], Some(svc))).await;
+    for (name, svc, ts) in [
+        ("g1", "web", [100u64, 200, 300]),
+        ("g2", "api", [400u64, 500, 600]),
+    ] {
+        publish_split(
+            &metastore,
+            &index_uid,
+            data_dir.path(),
+            name,
+            &make_batch("cpu.usage", &ts, &[0.1, 0.2, 0.3], Some(svc)),
+        )
+        .await;
     }
 
     let sql = r#"
@@ -224,7 +253,6 @@ async fn test_group_by() {
         SELECT service, COUNT(*) as cnt FROM "test-group" GROUP BY service ORDER BY service"#;
     assert_eq!(total_rows(&run_sql(&builder, sql).await), 2);
 }
-
 
 /// Verifies that CAST-unwrapping in `predicate.rs` causes fewer splits to be scanned
 /// when a time filter is applied through the full SQL pipeline.
@@ -240,9 +268,10 @@ async fn test_group_by() {
 /// pruning is wrong, early-split values (0.1, 0.2, 0.3) leak into the aggregate.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_cast_unwrapping_prunes_to_late_split_only() {
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "test-cast-prune", data_dir.path()).await;
     // Early split: timestamps 100–300, values 0.1–0.3
@@ -260,7 +289,12 @@ async fn test_cast_unwrapping_prunes_to_late_split_only() {
         &index_uid,
         data_dir.path(),
         "late",
-        &make_batch("cpu.usage", &[1000, 1100, 1200], &[0.4, 0.5, 0.6], Some("web")),
+        &make_batch(
+            "cpu.usage",
+            &[1000, 1100, 1200],
+            &[0.4, 0.5, 0.6],
+            Some("web"),
+        ),
     )
     .await;
 
@@ -309,9 +343,10 @@ async fn test_cast_unwrapping_prunes_to_late_split_only() {
 /// not panic. This tests that DataFusion handles an empty `FileScanConfig` correctly.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_query_empty_index_returns_zero_rows() {
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     // Create the index but publish NO splits.
     create_metrics_index(&metastore, "test-empty", data_dir.path()).await;
@@ -339,9 +374,10 @@ async fn test_query_empty_index_returns_zero_rows() {
 /// `service IN ('web', 'api')` must return rows from both the web and api splits.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_in_list_tag_filter_returns_all_matching_rows() {
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "test-inlist", data_dir.path()).await;
     publish_split(
@@ -398,7 +434,10 @@ async fn test_in_list_tag_filter_returns_all_matching_rows() {
                 .sum::<i64>()
         })
         .sum();
-    assert_eq!(total_data_rows, 4, "web (2) + api (2) = 4 rows; db must be excluded");
+    assert_eq!(
+        total_data_rows, 4,
+        "web (2) + api (2) = 4 rows; db must be excluded"
+    );
 }
 
 /// Demonstrates the `sum:metric{filter} by {groups}.rollup(agg, interval)` pattern
@@ -431,31 +470,88 @@ async fn test_in_list_tag_filter_returns_all_matching_rows() {
 async fn test_rollup_nested_aggregation() {
     use quickwit_datafusion::test_utils::make_batch_with_tags;
 
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "rollup-test", data_dir.path()).await;
 
     // Timestamps span 3 full 30-second bins (0–29, 30–59, 60–89).
     let ts: &[u64] = &[0, 15, 30, 45, 60, 75];
 
-    publish_split(&metastore, &index_uid, data_dir.path(), "web-01-prod",
-        &make_batch_with_tags("cpu.usage", ts, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            Some("web"), Some("prod"), None, None, Some("web-01"))).await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "web-01-prod",
+        &make_batch_with_tags(
+            "cpu.usage",
+            ts,
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            Some("web"),
+            Some("prod"),
+            None,
+            None,
+            Some("web-01"),
+        ),
+    )
+    .await;
 
-    publish_split(&metastore, &index_uid, data_dir.path(), "web-02-prod",
-        &make_batch_with_tags("cpu.usage", ts, &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
-            Some("web"), Some("prod"), None, None, Some("web-02"))).await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "web-02-prod",
+        &make_batch_with_tags(
+            "cpu.usage",
+            ts,
+            &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            Some("web"),
+            Some("prod"),
+            None,
+            None,
+            Some("web-02"),
+        ),
+    )
+    .await;
 
-    publish_split(&metastore, &index_uid, data_dir.path(), "api-01-prod",
-        &make_batch_with_tags("cpu.usage", ts, &[100.0, 200.0, 300.0, 400.0, 500.0, 600.0],
-            Some("api"), Some("prod"), None, None, Some("api-01"))).await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "api-01-prod",
+        &make_batch_with_tags(
+            "cpu.usage",
+            ts,
+            &[100.0, 200.0, 300.0, 400.0, 500.0, 600.0],
+            Some("api"),
+            Some("prod"),
+            None,
+            None,
+            Some("api-01"),
+        ),
+    )
+    .await;
 
     // Staging split — env filter must exclude all rows from this split.
-    publish_split(&metastore, &index_uid, data_dir.path(), "web-01-staging",
-        &make_batch_with_tags("cpu.usage", &[0, 30, 60], &[999.0, 999.0, 999.0],
-            Some("web"), Some("staging"), None, None, Some("web-01"))).await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "web-01-staging",
+        &make_batch_with_tags(
+            "cpu.usage",
+            &[0, 30, 60],
+            &[999.0, 999.0, 999.0],
+            Some("web"),
+            Some("staging"),
+            None,
+            None,
+            Some("web-01"),
+        ),
+    )
+    .await;
 
     // The query mirrors the Datadog rollup pattern without a context/points join:
     //   avg:cpu.usage{env:prod} by {service}.rollup(max, 30)
@@ -501,8 +597,11 @@ async fn test_rollup_nested_aggregation() {
     let batches = run_sql(&builder, sql).await;
 
     // 3 bins × 2 services (web, api) = 6 result rows.
-    assert_eq!(total_rows(&batches), 6,
-        "expected 6 rows (3 bins × 2 services); staging rows must be excluded");
+    assert_eq!(
+        total_rows(&batches),
+        6,
+        "expected 6 rows (3 bins × 2 services); staging rows must be excluded"
+    );
 
     // Collect (service, avg_val) pairs in ORDER BY time_bin, service order.
     // After GROUP BY, DataFusion casts dict-encoded strings to plain Utf8.
@@ -533,12 +632,12 @@ async fn test_rollup_nested_aggregation() {
 
     // Expected: [(api,200), (web,11), (api,400), (web,22), (api,600), (web,33)]
     let expected = [
-        ("api",  200.0_f64),
-        ("web",   11.0),
-        ("api",  400.0),
-        ("web",   22.0),
-        ("api",  600.0),
-        ("web",   33.0),
+        ("api", 200.0_f64),
+        ("web", 11.0),
+        ("api", 400.0),
+        ("web", 22.0),
+        ("api", 600.0),
+        ("web", 33.0),
     ];
 
     assert_eq!(results.len(), expected.len());
@@ -569,15 +668,33 @@ async fn test_substrait_named_table_query() {
     use datafusion_substrait::logical_plan::producer::to_substrait_plan;
     use prost::Message;
 
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "substrait-test", data_dir.path()).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "s1",
-        &make_batch("cpu.usage", &[100, 200, 300], &[1.0, 2.0, 3.0], Some("web"))).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "s2",
-        &make_batch("memory.used", &[100, 200, 300], &[10.0, 20.0, 30.0], Some("api"))).await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "s1",
+        &make_batch("cpu.usage", &[100, 200, 300], &[1.0, 2.0, 3.0], Some("web")),
+    )
+    .await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "s2",
+        &make_batch(
+            "memory.used",
+            &[100, 200, 300],
+            &[10.0, 20.0, 30.0],
+            Some("api"),
+        ),
+    )
+    .await;
 
     // Build the Substrait plan from SQL via DataFusion's producer.
     // The plan tree will have a NamedTable ReadRel for "substrait-test".
@@ -586,18 +703,27 @@ async fn test_substrait_named_table_query() {
     // Register a minimal table so the SQL planner can build the plan
     // (the actual schema will come from base_schema when the substrait consumer
     // resolves it at execution time).
-    ctx.sql(r#"CREATE OR REPLACE EXTERNAL TABLE "substrait-test" (
+    ctx.sql(
+        r#"CREATE OR REPLACE EXTERNAL TABLE "substrait-test" (
         metric_name VARCHAR NOT NULL, metric_type TINYINT,
         timestamp_secs BIGINT NOT NULL, value DOUBLE NOT NULL, service VARCHAR
-    ) STORED AS metrics LOCATION 'substrait-test'"#)
-        .await.unwrap().collect().await.unwrap();
+    ) STORED AS metrics LOCATION 'substrait-test'"#,
+    )
+    .await
+    .unwrap()
+    .collect()
+    .await
+    .unwrap();
 
-    let df = ctx.sql(
-        r#"SELECT metric_name, SUM(value) as total
+    let df = ctx
+        .sql(
+            r#"SELECT metric_name, SUM(value) as total
            FROM "substrait-test"
            GROUP BY metric_name
-           ORDER BY metric_name"#
-    ).await.unwrap();
+           ORDER BY metric_name"#,
+        )
+        .await
+        .unwrap();
 
     let plan = df.into_optimized_plan().unwrap();
     let substrait_plan = to_substrait_plan(&plan, &ctx.state()).unwrap();
@@ -606,31 +732,56 @@ async fn test_substrait_named_table_query() {
     // Execute via the Substrait path — DataFusionSessionBuilder decodes the plan,
     // QuickwitSubstraitConsumer routes the NamedTable ReadRel to MetricsDataSource,
     // and the query executes against the real parquet files.
-    let batches = builder.execute_substrait(&plan_bytes).await.unwrap();
+    let stream = builder.execute_substrait(&plan_bytes).await.unwrap();
+    let batches = datafusion::physical_plan::common::collect(stream)
+        .await
+        .unwrap();
 
     let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
-    assert_eq!(total_rows, 2, "expected 2 metric names (cpu.usage, memory.used)");
+    assert_eq!(
+        total_rows, 2,
+        "expected 2 metric names (cpu.usage, memory.used)"
+    );
 
     // Verify SUM values: cpu.usage = 1+2+3 = 6, memory.used = 10+20+30 = 60
     let metric_col = batches[0].column_by_name("metric_name").unwrap();
-    let total_col = batches[0].column_by_name("total").unwrap()
-        .as_any().downcast_ref::<Float64Array>().unwrap();
+    let total_col = batches[0]
+        .column_by_name("total")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .unwrap();
 
     // metric_name may come back as StringViewArray or StringArray after aggregation
-    let names: Vec<String> = (0..batches[0].num_rows()).map(|i| {
-        if let Some(sv) = metric_col.as_any().downcast_ref::<arrow::array::StringViewArray>() {
-            sv.value(i).to_string()
-        } else {
-            metric_col.as_any().downcast_ref::<arrow::array::StringArray>()
-                .unwrap().value(i).to_string()
-        }
-    }).collect();
+    let names: Vec<String> = (0..batches[0].num_rows())
+        .map(|i| {
+            if let Some(sv) = metric_col
+                .as_any()
+                .downcast_ref::<arrow::array::StringViewArray>()
+            {
+                sv.value(i).to_string()
+            } else {
+                metric_col
+                    .as_any()
+                    .downcast_ref::<arrow::array::StringArray>()
+                    .unwrap()
+                    .value(i)
+                    .to_string()
+            }
+        })
+        .collect();
 
     assert_eq!(names, vec!["cpu.usage", "memory.used"]);
-    assert!((total_col.value(0) - 6.0).abs() < 0.01,
-        "cpu.usage SUM expected 6.0, got {}", total_col.value(0));
-    assert!((total_col.value(1) - 60.0).abs() < 0.01,
-        "memory.used SUM expected 60.0, got {}", total_col.value(1));
+    assert!(
+        (total_col.value(0) - 6.0).abs() < 0.01,
+        "cpu.usage SUM expected 6.0, got {}",
+        total_col.value(0)
+    );
+    assert!(
+        (total_col.value(1) - 60.0).abs() < 0.01,
+        "memory.used SUM expected 60.0, got {}",
+        total_col.value(1)
+    );
 }
 
 /// Executes the user-provided Substrait rollup plan directly against real
@@ -668,48 +819,113 @@ async fn test_rollup_substrait_from_file() {
     use prost::Message;
     use quickwit_datafusion::test_utils::make_batch_with_tags;
 
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     // Create index named exactly as the Substrait plan references it.
     let index_uid = create_metrics_index(&metastore, "otel-metrics-v0_9", data_dir.path()).await;
 
     let ts: &[u64] = &[0, 15, 30, 45, 60, 75];
-    publish_split(&metastore, &index_uid, data_dir.path(), "web-01-prod",
-        &make_batch_with_tags("cpu.usage", ts, &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-            Some("web"), Some("prod"), None, None, Some("web-01"))).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "web-02-prod",
-        &make_batch_with_tags("cpu.usage", ts, &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
-            Some("web"), Some("prod"), None, None, Some("web-02"))).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "api-01-prod",
-        &make_batch_with_tags("cpu.usage", ts, &[100.0, 200.0, 300.0, 400.0, 500.0, 600.0],
-            Some("api"), Some("prod"), None, None, Some("api-01"))).await;
-    publish_split(&metastore, &index_uid, data_dir.path(), "web-01-staging",
-        &make_batch_with_tags("cpu.usage", &[0, 30, 60], &[999.0, 999.0, 999.0],
-            Some("web"), Some("staging"), None, None, Some("web-01"))).await;
-
-
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "web-01-prod",
+        &make_batch_with_tags(
+            "cpu.usage",
+            ts,
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            Some("web"),
+            Some("prod"),
+            None,
+            None,
+            Some("web-01"),
+        ),
+    )
+    .await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "web-02-prod",
+        &make_batch_with_tags(
+            "cpu.usage",
+            ts,
+            &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+            Some("web"),
+            Some("prod"),
+            None,
+            None,
+            Some("web-02"),
+        ),
+    )
+    .await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "api-01-prod",
+        &make_batch_with_tags(
+            "cpu.usage",
+            ts,
+            &[100.0, 200.0, 300.0, 400.0, 500.0, 600.0],
+            Some("api"),
+            Some("prod"),
+            None,
+            None,
+            Some("api-01"),
+        ),
+    )
+    .await;
+    publish_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "web-01-staging",
+        &make_batch_with_tags(
+            "cpu.usage",
+            &[0, 30, 60],
+            &[999.0, 999.0, 999.0],
+            Some("web"),
+            Some("staging"),
+            None,
+            None,
+            Some("web-01"),
+        ),
+    )
+    .await;
 
     // Load the Substrait plan JSON from the file next to this test.
-    let plan_json = include_str!("rollup_substrait.json");
+    let plan_json = include_str!("fixtures/rollup_substrait.json");
     let substrait_plan: Plan = serde_json::from_str(plan_json)
         .expect("rollup_substrait.json must be valid Substrait JSON");
     let mut plan_bytes = Vec::new();
-    substrait_plan.encode(&mut plan_bytes).expect("Substrait plan encode failed");
+    substrait_plan
+        .encode(&mut plan_bytes)
+        .expect("Substrait plan encode failed");
 
     // Execute via the Substrait path — no SQL, no DDL, just the plan.
-    let batches = builder
+    let stream = builder
         .execute_substrait(&plan_bytes)
         .await
         .expect("Substrait rollup query failed");
+    let batches = datafusion::physical_plan::common::collect(stream)
+        .await
+        .expect("collect substrait stream");
 
     // Print the plan and results so you can see what ran.
-    println!("\n=== Substrait rollup results ({} batches, {} rows total) ===",
+    println!(
+        "\n=== Substrait rollup results ({} batches, {} rows total) ===",
         batches.len(),
-        batches.iter().map(|b| b.num_rows()).sum::<usize>());
+        batches.iter().map(|b| b.num_rows()).sum::<usize>()
+    );
     for batch in &batches {
-        println!("{}", arrow::util::pretty::pretty_format_batches(&[batch.clone()]).unwrap());
+        println!(
+            "{}",
+            arrow::util::pretty::pretty_format_batches(&[batch.clone()]).unwrap()
+        );
     }
 
     // 3 bins × 2 services (api, web) = 6 rows.
@@ -723,12 +939,19 @@ async fn test_rollup_substrait_from_file() {
     //   web/bin=0s: MAX(web-01:1,2, web-02:10,20) = 20 → AVG(20) = 20
     //   api/bin=0s: MAX(api-01:100,200)            = 200 → AVG(200) = 200
     let expected_values = [200.0f64, 20.0, 400.0, 40.0, 600.0, 60.0];
-    let all_values: Vec<f64> = batches.iter().flat_map(|b| {
-        b.column_by_name("value").unwrap()
-            .as_any().downcast_ref::<Float64Array>().unwrap()
-            .iter().flatten()
-            .collect::<Vec<_>>()
-    }).collect();
+    let all_values: Vec<f64> = batches
+        .iter()
+        .flat_map(|b| {
+            b.column_by_name("value")
+                .unwrap()
+                .as_any()
+                .downcast_ref::<Float64Array>()
+                .unwrap()
+                .iter()
+                .flatten()
+                .collect::<Vec<_>>()
+        })
+        .collect();
 
     for (i, (got, exp)) in all_values.iter().zip(expected_values.iter()).enumerate() {
         assert!(
@@ -766,26 +989,31 @@ async fn test_rollup_substrait_from_file() {
 async fn test_query_with_partial_schema_declaration() {
     use quickwit_datafusion::test_utils::make_batch_with_tags;
 
-    let (sandbox, data_dir) = start_sandbox().await;
-    let metastore = metastore_client(&sandbox);
-    let builder = session_builder(&sandbox, metastore.clone());
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
 
     let index_uid = create_metrics_index(&metastore, "partial-schema", data_dir.path()).await;
 
     // Write a wide split with ALL tag columns populated.
     publish_split(
-        &metastore, &index_uid, data_dir.path(), "wide",
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "wide",
         &make_batch_with_tags(
             "cpu.usage",
             &[100, 200, 300],
             &[1.0, 2.0, 3.0],
-            Some("web"),         // service
-            Some("prod"),        // env
-            Some("us-east"),     // datacenter
-            Some("us-east-1"),   // region
-            Some("web-01"),      // host
+            Some("web"),       // service
+            Some("prod"),      // env
+            Some("us-east"),   // datacenter
+            Some("us-east-1"), // region
+            Some("web-01"),    // host
         ),
-    ).await;
+    )
+    .await;
 
     // DDL declares only 4 columns — service, env, and host are intentionally
     // omitted from the columns the query will project.
@@ -826,10 +1054,16 @@ async fn test_query_with_partial_schema_declaration() {
     // Verify the schema of the result contains only the declared columns
     // (the undeclared ones — host, datacenter, region — are absent, not NULL).
     let schema = batches[0].schema();
-    assert!(schema.index_of("host").is_err(),
-        "host was not declared in DDL — it must not appear in the result schema");
-    assert!(schema.index_of("datacenter").is_err(),
-        "datacenter was not declared in DDL — it must not appear in the result schema");
-    assert!(schema.index_of("region").is_err(),
-        "region was not declared in DDL — it must not appear in the result schema");
+    assert!(
+        schema.index_of("host").is_err(),
+        "host was not declared in DDL — it must not appear in the result schema"
+    );
+    assert!(
+        schema.index_of("datacenter").is_err(),
+        "datacenter was not declared in DDL — it must not appear in the result schema"
+    );
+    assert!(
+        schema.index_of("region").is_err(),
+        "region was not declared in DDL — it must not appear in the result schema"
+    );
 }

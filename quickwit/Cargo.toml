@@ -12,6 +12,7 @@ members = [
   "quickwit-control-plane",
   "quickwit-datafusion",
   "quickwit-datetime",
+  "quickwit-df-core",
   "quickwit-directories",
   "quickwit-doc-mapper",
   "quickwit-dst",
@@ -54,6 +55,7 @@ default-members = [
   "quickwit-control-plane",
   "quickwit-datafusion",
   "quickwit-datetime",
+  "quickwit-df-core",
   "quickwit-directories",
   "quickwit-doc-mapper",
   "quickwit-index-management",
@@ -358,6 +360,7 @@ quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
 quickwit-datafusion = { path = "quickwit-datafusion" }
 quickwit-datetime = { path = "quickwit-datetime" }
+quickwit-df-core = { path = "quickwit-df-core" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
 quickwit-dst = { path = "quickwit-dst" }

@@ -14,7 +14,6 @@
 
 //! Real `MetricsSplitProvider` backed by the Quickwit metastore.
 
-
 use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
 use quickwit_metastore::{
@@ -58,17 +57,12 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
             num_splits,
         )
     )]
-    async fn list_splits(
-        &self,
-        query: &MetricsSplitQuery,
-    ) -> DFResult<Vec<MetricsSplitMetadata>> {
+    async fn list_splits(&self, query: &MetricsSplitQuery) -> DFResult<Vec<MetricsSplitMetadata>> {
         let metastore_query = to_metastore_query(&self.index_uid, query);
 
         let request =
             ListMetricsSplitsRequest::try_from_query(self.index_uid.clone(), &metastore_query)
-                .map_err(|err| {
-                    datafusion::error::DataFusionError::External(Box::new(err))
-                })?;
+                .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
         let response = self
             .metastore
@@ -84,10 +78,8 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
         // The metastore guarantees only Published splits are returned because
         // `to_metastore_query` sets `split_states = vec![Published]`. No
         // client-side re-filter is needed here.
-        let splits: Vec<MetricsSplitMetadata> = records
-            .into_iter()
-            .map(|record| record.metadata)
-            .collect();
+        let splits: Vec<MetricsSplitMetadata> =
+            records.into_iter().map(|record| record.metadata).collect();
 
         tracing::Span::current().record("num_splits", splits.len());
         debug!(num_splits = splits.len(), "metastore returned splits");
@@ -116,8 +108,5 @@ fn to_metastore_query(index_uid: &IndexUid, query: &MetricsSplitQuery) -> ListMe
         metastore_query.time_range_end = Some(end as i64);
     }
 
-
     metastore_query
 }
-
-

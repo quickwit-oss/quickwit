@@ -38,11 +38,11 @@ use datafusion::catalog::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;
 use datafusion::execution::SessionState;
+use quickwit_df_core::{DataSourceContributions, QuickwitDataSource};
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_storage::StorageResolver;
 
-use crate::data_source::{DataSourceContributions, QuickwitDataSource};
-use self::factory::{MetricsTableProviderFactory, METRICS_FILE_TYPE};
+use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
 use self::table_provider::MetricsTableProvider;
 
@@ -73,10 +73,7 @@ pub struct MetricsDataSource {
 
 impl MetricsDataSource {
     /// Create a production `MetricsDataSource` backed by the metastore.
-    pub fn new(
-        metastore: MetastoreServiceClient,
-        storage_resolver: StorageResolver,
-    ) -> Self {
+    pub fn new(metastore: MetastoreServiceClient, storage_resolver: StorageResolver) -> Self {
         let resolver = MetastoreIndexResolver::new(metastore, storage_resolver);
         Self {
             index_resolver: Arc::new(resolver),
@@ -155,7 +152,11 @@ impl QuickwitDataSource for MetricsDataSource {
             }
             Err(err) => {
                 // Not-found means this source doesn't own the index; let others try.
-                if is_index_not_found(&err) { Ok(None) } else { Err(err) }
+                if is_index_not_found(&err) {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
             }
         }
     }
@@ -184,7 +185,11 @@ impl QuickwitDataSource for MetricsDataSource {
             Err(err) => {
                 // Only swallow "index not found" — propagate everything else so the
                 // caller gets an actionable error (e.g. metastore unavailable).
-                if is_index_not_found(&err) { Ok(None) } else { Err(err) }
+                if is_index_not_found(&err) {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
             }
         }
     }

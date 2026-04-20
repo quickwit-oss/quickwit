@@ -30,8 +30,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::SchemaRef;
 use async_trait::async_trait;
-use datafusion::catalog::Session;
-use datafusion::catalog::TableProviderFactory;
+use datafusion::catalog::{Session, TableProviderFactory};
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::CreateExternalTable;
 
@@ -77,12 +76,8 @@ impl TableProviderFactory for MetricsTableProviderFactory {
             )));
         }
 
-        let provider = MetricsTableProvider::new(
-            arrow_schema,
-            split_provider,
-            object_store,
-            object_store_url,
-        );
+        let provider =
+            MetricsTableProvider::new(arrow_schema, split_provider, object_store, object_store_url);
 
         Ok(Arc::new(provider))
     }

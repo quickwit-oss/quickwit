@@ -38,7 +38,8 @@ use futures::stream::BoxStream;
 use object_store::path::Path as ObjectPath;
 use object_store::{
     GetOptions, GetRange, GetResult, GetResultPayload, ListResult, MultipartUpload, ObjectMeta,
-    ObjectStore, PutMultipartOptions, PutOptions, PutPayload, PutResult, Result as ObjectStoreResult,
+    ObjectStore, PutMultipartOptions, PutOptions, PutPayload, PutResult,
+    Result as ObjectStoreResult,
 };
 use quickwit_storage::Storage;
 
@@ -108,11 +109,7 @@ impl ObjectStore for QuickwitObjectStore {
                 (b, r.start..r.start + len)
             }
             Some(GetRange::Suffix(n)) => {
-                let file_size = self
-                    .storage
-                    .file_num_bytes(&path)
-                    .await
-                    .map_err(map_err)?;
+                let file_size = self.storage.file_num_bytes(&path).await.map_err(map_err)?;
                 let start = file_size.saturating_sub(n);
                 let usize_range = start as usize..file_size as usize;
                 let data = self
@@ -125,11 +122,7 @@ impl ObjectStore for QuickwitObjectStore {
                 (b, start..start + len)
             }
             Some(GetRange::Offset(start)) => {
-                let file_size = self
-                    .storage
-                    .file_num_bytes(&path)
-                    .await
-                    .map_err(map_err)?;
+                let file_size = self.storage.file_num_bytes(&path).await.map_err(map_err)?;
                 let usize_range = start as usize..file_size as usize;
                 let data = self
                     .storage
@@ -141,11 +134,7 @@ impl ObjectStore for QuickwitObjectStore {
                 (b, start..start + len)
             }
             None => {
-                let data = self
-                    .storage
-                    .get_all(&path)
-                    .await
-                    .map_err(map_err)?;
+                let data = self.storage.get_all(&path).await.map_err(map_err)?;
                 let b = Bytes::copy_from_slice(data.as_ref());
                 let len = b.len() as u64;
                 (b, 0..len)
@@ -161,9 +150,7 @@ impl ObjectStore for QuickwitObjectStore {
             version: None,
         };
         Ok(GetResult {
-            payload: GetResultPayload::Stream(Box::pin(futures::stream::once(async {
-                Ok(bytes)
-            }))),
+            payload: GetResultPayload::Stream(Box::pin(futures::stream::once(async { Ok(bytes) }))),
             meta,
             range: byte_range,
             attributes: Default::default(),

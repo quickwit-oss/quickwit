@@ -16,6 +16,7 @@
 
 mod build_info;
 mod cluster_api;
+#[cfg(feature = "datafusion")]
 mod datafusion_api;
 mod decompression;
 mod delete_task_api;
@@ -208,8 +209,10 @@ struct QuickwitServices {
 
     pub env_filter_reload_fn: EnvFilterReloadFn,
 
-    /// Generic DataFusion session builder (present if searcher role is active).
-    /// Data sources registered at startup; downstream callers can wrap build_session() in their own handler.
+    /// Generic DataFusion session builder (present if searcher role is active
+    /// and the `datafusion` feature + `QW_ENABLE_DATAFUSION_ENDPOINT` env var
+    /// are both enabled).
+    #[cfg(feature = "datafusion")]
     pub datafusion_session_builder: Option<Arc<quickwit_datafusion::DataFusionSessionBuilder>>,
 
     /// The control plane listens to various events.
@@ -683,37 +686,27 @@ pub async fn serve_quickwit(
     .await
     .context("failed to start searcher service")?;
 
-    // Build the generic DataFusion session builder if this node is a searcher.
-    // Data sources are registered here; downstream callers wrap build_session() in their own
-    // gRPC handler. No downstream-specific code needed here.
-    let datafusion_session_builder = if node_config
-        .is_service_enabled(QuickwitService::Searcher)
-        && quickwit_common::get_bool_from_env("QW_ENABLE_DATAFUSION_ENDPOINT", false)
-    {
-        let metrics_source = Arc::new(
-            quickwit_datafusion::sources::metrics::MetricsDataSource::new(
-                metastore_through_control_plane.clone(),
-                storage_resolver.clone(),
-            ),
-        );
-        let resolver = quickwit_datafusion::QuickwitWorkerResolver::new(searcher_pool)
-            .with_tls(node_config.grpc_config.tls.is_some());
-        let builder = quickwit_datafusion::DataFusionSessionBuilder::new()
-            .with_source(metrics_source)
-            .with_worker_resolver(resolver);
-        Some(Arc::new(builder))
-    } else {
-        None
-    };
+    // Build the generic DataFusion session builder if this node is a searcher
+    // and the DataFusion endpoint is enabled. The whole code path is absent
+    // when the `datafusion` feature is off.
+    #[cfg(feature = "datafusion")]
+    let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
+        &node_config,
+        &searcher_pool,
+        metastore_through_control_plane.clone(),
+        storage_resolver.clone(),
+    );
+    #[cfg(not(feature = "datafusion"))]
+    let _ = &searcher_pool;
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
     // throughput. Ingesters (routers) do so to update their shard table.
     let local_shards_update_listener_handle_opt =
         if node_config.is_service_enabled(QuickwitService::ControlPlane) {
-        Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
-    } else {
-        None
-    };
+            Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
+        } else {
+            None
+        };
 
     let report_splits_subscription_handle_opt =
         // DISCLAIMER: This is quirky here: We base our decision to forward the split report depending
@@ -762,7 +755,6 @@ pub async fn serve_quickwit(
         None
     };
 
-
     let otlp_traces_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
         && node_config.indexer_config.enable_otlp_endpoint
     {
@@ -797,6 +789,7 @@ pub async fn serve_quickwit(
         otlp_traces_service_opt,
         search_service,
         env_filter_reload_fn,
+        #[cfg(feature = "datafusion")]
         datafusion_session_builder,
     });
     // Setup and start gRPC server.

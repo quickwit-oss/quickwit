@@ -32,9 +32,9 @@ use crate::data_source::QuickwitDataSource;
 /// registered `QuickwitDataSource` implementations.
 ///
 /// Resolution order for `table(name)`:
-/// 1. Explicitly registered tables (from `CREATE EXTERNAL TABLE` DDL) — backed
-///    by DataFusion's own [`MemorySchemaProvider`] which uses a lock-free
-///    `DashMap` internally, the idiomatic choice for this role.
+/// 1. Explicitly registered tables (from `CREATE EXTERNAL TABLE` DDL) — backed by DataFusion's own
+///    [`MemorySchemaProvider`] which uses a lock-free `DashMap` internally, the idiomatic choice
+///    for this role.
 /// 2. Each source's `create_default_table_provider`, first non-None wins.
 ///
 /// `register_table` / `deregister_table` delegate directly to the inner
@@ -101,9 +101,9 @@ impl SchemaProvider for QuickwitSchemaProvider {
     async fn table(&self, name: &str) -> DFResult<Option<Arc<dyn TableProvider>>> {
         // Resolution order:
         // 1. DDL-registered tables (CREATE OR REPLACE EXTERNAL TABLE)
-        // 2. Each source's create_default_table_provider — first non-None wins.
-        //    We do not pre-validate via table_names(); sources return None for
-        //    unknown names and DataFusion emits "table not found". Avoids N+1.
+        // 2. Each source's create_default_table_provider — first non-None wins. We do not
+        //    pre-validate via table_names(); sources return None for unknown names and DataFusion
+        //    emits "table not found". Avoids N+1.
         if let Some(provider) = self.ddl_tables.table(name).await? {
             return Ok(Some(provider));
         }

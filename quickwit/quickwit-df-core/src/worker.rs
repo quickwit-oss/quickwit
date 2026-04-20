@@ -19,13 +19,13 @@
 //! Arrow Flight.  The name `flight` would be misleading.
 //!
 //! `QuickwitWorkerSessionBuilder` prepares each worker session:
-//! 1. Applies source contributions (optimizer rules, extension planners, UDFs,
-//!    UDAFs, codecs) before `SessionStateBuilder::build()`.
-//! 2. Injects the shared `RuntimeEnv` from the coordinator's
-//!    `DataFusionSessionBuilder` so that object stores registered at startup
-//!    are visible on workers without any per-session re-registration.
-//! 3. Registers the `QuickwitSchemaProvider` so table references in
-//!    deserialized plan fragments resolve correctly.
+//! 1. Applies source contributions (optimizer rules, extension planners, UDFs, UDAFs, codecs)
+//!    before `SessionStateBuilder::build()`.
+//! 2. Injects the shared `RuntimeEnv` from the coordinator's `DataFusionSessionBuilder` so that
+//!    object stores registered at startup are visible on workers without any per-session
+//!    re-registration.
+//! 3. Registers the `QuickwitSchemaProvider` so table references in deserialized plan fragments
+//!    resolve correctly.
 //! 4. Calls `register_for_worker()` for any post-build runtime state.
 
 use std::sync::Arc;
@@ -36,7 +36,6 @@ use datafusion::error::DataFusionError;
 use datafusion::execution::SessionState;
 use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion_distributed::{Worker, WorkerQueryContext, WorkerSessionBuilder};
-use tracing::debug;
 
 use crate::catalog::QuickwitSchemaProvider;
 use crate::data_source::QuickwitDataSource;
@@ -62,8 +61,17 @@ impl QuickwitWorkerSessionBuilder {
 impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
     async fn build_session_state(
         &self,
-        ctx: WorkerQueryContext,
+        mut ctx: WorkerQueryContext,
     ) -> Result<SessionState, DataFusionError> {
+        // Phase 0: let sources install config extensions on the builder's
+        // `SessionConfig` before anything else runs. Matches the ordering on
+        // the coordinator side (`DataFusionSessionBuilder::build_session`).
+        if let Some(config) = ctx.builder.config() {
+            for source in &self.sources {
+                source.configure_session(config);
+            }
+        }
+
         // Phase 1: contributions (rules, planners, UDFs, UDAFs, codecs) + shared env.
         let mut combined = crate::data_source::DataSourceContributions::default();
         for source in &self.sources {
@@ -90,15 +98,12 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
             .catalog_list()
             .register_catalog("quickwit".to_string(), catalog);
 
-        // Phase 3: post-build runtime registration (rare — most stores are already
-        // in the shared RuntimeEnv from startup or lazy scan registration).
+        // Phase 3: post-build runtime registration. Errors here are fatal —
+        // swallowing them produces late, hard-to-diagnose execution failures
+        // when a connector relies on this hook for runtime state it cannot
+        // express in `contributions()` (e.g. worker-side index openers).
         for source in &self.sources {
-            if let Err(err) = source.register_for_worker(&state).await {
-                debug!(
-                    error = %err,
-                    "data source register_for_worker failed (non-fatal)"
-                );
-            }
+            source.register_for_worker(&state).await?;
         }
 
         Ok(state)
@@ -110,10 +115,7 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
 /// Pass `session_builder.runtime()` from the coordinator's
 /// `DataFusionSessionBuilder` so that object stores registered at service
 /// startup are available to workers without re-registration.
-pub fn build_quickwit_worker(
-    sources: &[Arc<dyn QuickwitDataSource>],
-    runtime: Arc<RuntimeEnv>,
-) -> Worker {
+pub fn build_worker(sources: &[Arc<dyn QuickwitDataSource>], runtime: Arc<RuntimeEnv>) -> Worker {
     let session_builder = QuickwitWorkerSessionBuilder::new(sources.to_vec(), runtime);
     Worker::from_session_builder(session_builder)
 }

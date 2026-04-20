@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use arrow::array::{
     Array, ArrayRef, DictionaryArray, Float64Array, Int32Array, RecordBatch, StringArray,
-    UInt64Array, UInt8Array,
+    UInt8Array, UInt64Array,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema, SchemaRef};
 use async_trait::async_trait;
@@ -261,7 +261,8 @@ impl MetricsTestbed {
             ObjectStoreUrl::parse("memory://").unwrap(),
         ));
         let source = crate::sources::metrics::MetricsDataSource::with_resolver(resolver);
-    let builder = crate::session::DataFusionSessionBuilder::new().with_source(Arc::new(source) as Arc<dyn crate::data_source::QuickwitDataSource>);
+        let builder = quickwit_df_core::DataFusionSessionBuilder::new()
+            .with_source(Arc::new(source) as Arc<dyn quickwit_df_core::QuickwitDataSource>);
         builder.build_session().unwrap()
     }
 }

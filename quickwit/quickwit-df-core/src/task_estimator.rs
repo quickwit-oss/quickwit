@@ -12,37 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Generic task estimator for distributed execution of parquet-backed queries.
+//! Generic task estimator based on `DataSourceExec` output partitioning.
 //!
-//! Uses the number of file groups in a `DataSourceExec` (one per split) to
-//! determine how many distributed tasks to create.  No data-source-specific code.
+//! Works for any source that produces a `DataSourceExec` with accurate output
+//! partitioning (parquet, tantivy, custom). For parquet sources the partition
+//! count equals the file-group count; for tantivy sources it equals the total
+//! segment count across splits.
 
 use std::sync::Arc;
 
 use datafusion::config::ConfigOptions;
 use datafusion::datasource::source::DataSourceExec;
 use datafusion::physical_plan::ExecutionPlan;
-use datafusion_datasource_parquet::source::ParquetSource;
 use datafusion_distributed::{PartitionIsolatorExec, TaskEstimation, TaskEstimator};
 
-/// Estimates the desired task count for distributed execution by counting
-/// the number of parquet file groups (= number of splits) in the plan.
+/// Estimates distributed task count from the partition count of a
+/// `DataSourceExec` leaf. Returns `None` for any other plan node, letting the
+/// distributed optimizer fall back to its default heuristics.
 #[derive(Debug)]
-pub struct QuickwitTaskEstimator;
+pub struct DataSourceExecPartitionEstimator;
 
-impl TaskEstimator for QuickwitTaskEstimator {
+impl TaskEstimator for DataSourceExecPartitionEstimator {
     fn task_estimation(
         &self,
         plan: &Arc<dyn ExecutionPlan>,
         _cfg: &ConfigOptions,
     ) -> Option<TaskEstimation> {
         let dse: &DataSourceExec = plan.as_any().downcast_ref()?;
-        let (file_config, _parquet_source) = dse.downcast_to_file_source::<ParquetSource>()?;
-        let num_file_groups = file_config.file_groups.len();
-        if num_file_groups == 0 {
+        let partitions = dse.properties().output_partitioning().partition_count();
+        if partitions <= 1 {
             return Some(TaskEstimation::maximum(1));
         }
-        Some(TaskEstimation::desired(num_file_groups))
+        Some(TaskEstimation::desired(partitions))
     }
 
     fn scale_up_leaf_node(
@@ -51,8 +52,7 @@ impl TaskEstimator for QuickwitTaskEstimator {
         task_count: usize,
         _cfg: &ConfigOptions,
     ) -> Option<Arc<dyn ExecutionPlan>> {
-        let dse: &DataSourceExec = plan.as_any().downcast_ref()?;
-        let (_file_config, _parquet_source) = dse.downcast_to_file_source::<ParquetSource>()?;
+        let _dse: &DataSourceExec = plan.as_any().downcast_ref()?;
         if task_count <= 1 {
             return Some(Arc::clone(plan));
         }
