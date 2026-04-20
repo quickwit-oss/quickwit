@@ -18,7 +18,7 @@
 // In that case, metrics index will be started as a metrics pipeline.
 
 use quickwit_actors::ActorContext;
-use quickwit_common::{is_metrics_index, is_parquet_pipeline_index, is_sketches_index, temp_dir};
+use quickwit_common::{is_parquet_pipeline_index, is_sketches_index, temp_dir};
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::{IndexingError, IndexingPipelineId};

@@ -29,7 +29,7 @@ use arrow::buffer::OffsetBuffer;
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use arrow::record_batch::RecordBatch;
 use bytes::Bytes;
-use quickwit_actors::{ActorHandle, Universe};
+use quickwit_actors::{ActorHandle, QueueCapacity, Universe};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 use quickwit_parquet_engine::ingest::record_batch_to_ipc;
@@ -39,6 +39,7 @@ use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::RamStorage;
 
+use crate::actors::sequencer::Sequencer;
 use crate::actors::{
     ParquetDocProcessor, ParquetIndexer, ParquetPackager, ParquetUploader, Publisher, UploaderType,
 };
@@ -196,7 +197,7 @@ async fn test_metrics_pipeline_e2e() {
     let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
     let doc_processor = ParquetDocProcessor::new(
-        crate::actors::parquet_doc_processor::IngestProcessor::Metrics(
+        super::parquet_doc_processor::IngestProcessor::Metrics(
             quickwit_parquet_engine::ingest::ParquetIngestProcessor,
         ),
         "test-metrics-index".to_string(),
@@ -479,7 +480,7 @@ fn create_sketch_test_batch(
 
 #[tokio::test]
 async fn test_sketch_pipeline_e2e() {
-    use crate::actors::parquet_doc_processor::IngestProcessor;
+    use super::parquet_doc_processor::IngestProcessor;
 
     let universe = Universe::with_accelerated_time();
     let temp_dir = tempfile::tempdir().unwrap();
@@ -496,19 +497,23 @@ async fn test_sketch_pipeline_e2e() {
         quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore);
     let ram_storage = Arc::new(RamStorage::default());
 
-    let publisher = ParquetPublisher::new(
-        PublisherType::ParquetPublisher,
+    let publisher = Publisher::new(
+        super::METRICS_PUBLISHER_NAME,
+        QueueCapacity::Bounded(1),
         metastore_client.clone(),
         None,
         None,
     );
     let (publisher_mailbox, publisher_handle) = universe.spawn_builder().spawn(publisher);
 
+    let sequencer = Sequencer::new(publisher_mailbox);
+    let (sequencer_mailbox, _sequencer_handle) = universe.spawn_builder().spawn(sequencer);
+
     let uploader = ParquetUploader::new(
         UploaderType::IndexUploader,
         metastore_client.clone(),
         ram_storage.clone(),
-        SplitsUpdateMailbox::Publisher(publisher_mailbox),
+        sequencer_mailbox,
         4,
     );
     let (uploader_mailbox, _uploader_handle) = universe.spawn_builder().spawn(uploader);

@@ -87,7 +87,7 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
 mod tests {
     use quickwit_actors::{QueueCapacity, Universe};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-    use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
+    use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
     use quickwit_proto::metastore::{EmptyResponse, MetastoreServiceClient, MockMetastoreService};
     use quickwit_proto::types::IndexUid;
     use tracing::Span;
@@ -96,10 +96,10 @@ mod tests {
     use crate::actors::publisher::Publisher;
     use crate::models::PublishLock;
 
-    fn create_test_metrics_split_metadata(index_uid: &str, split_id: &str) -> MetricsSplitMetadata {
-        MetricsSplitMetadata::builder()
+    fn create_test_metrics_split_metadata(index_uid: &str, split_id: &str) -> ParquetSplitMetadata {
+        ParquetSplitMetadata::metrics_builder()
             .index_uid(index_uid)
-            .split_id(SplitId::new(split_id))
+            .split_id(ParquetSplitId::new(split_id))
             .time_range(TimeRange::new(1000, 2000))
             .num_rows(100)
             .size_bytes(1024)
