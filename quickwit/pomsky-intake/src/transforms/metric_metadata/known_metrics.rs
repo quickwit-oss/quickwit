@@ -14,6 +14,8 @@
 
 use std::collections::HashMap;
 
+use rand::Rng;
+
 /// Returns the current time as Unix seconds since the epoch.
 fn now_unix_secs() -> u64 {
     std::time::SystemTime::now()
@@ -49,17 +51,16 @@ impl KnownMetrics {
     /// Per D-09: expired entries are still treated as "known" between prune
     /// ticks. This method does NOT check expiry timestamps.
     pub fn contains(&self, name: &str) -> bool {
-        // RED: stub -- always returns false
-        let _ = name;
-        false
+        self.entries.contains_key(name)
     }
 
     /// Inserts a metric with a fresh randomized TTL.
     ///
     /// The expiry timestamp is computed as `now + uniform_random(ttl_min_secs, ttl_max_secs)`.
     pub fn insert(&mut self, name: String) {
-        // RED: stub -- does nothing
-        let _ = name;
+        let ttl_secs = rand::rng().random_range(self.ttl_min_secs..=self.ttl_max_secs);
+        let expiry_ts = now_unix_secs() + ttl_secs;
+        self.entries.insert(name, expiry_ts);
     }
 
     /// Removes all entries whose expiry timestamp is in the past.
@@ -67,7 +68,8 @@ impl KnownMetrics {
     /// Called during persist tick per D-08. Between prune calls, expired
     /// entries are still visible to `contains()` per D-09.
     pub fn prune_expired(&mut self) {
-        // RED: stub -- does nothing
+        let now = now_unix_secs();
+        self.entries.retain(|_name, expiry| *expiry > now);
     }
 
     /// Returns an iterator over (name, expiry_ts) pairs for CSV serialization.
@@ -89,8 +91,7 @@ impl KnownMetrics {
     ///
     /// Used by `build()` to load CSV data at startup.
     pub fn load_entries(&mut self, entries: HashMap<String, u64>) {
-        // RED: stub -- does nothing
-        let _ = entries;
+        self.entries = entries;
     }
 }
 
