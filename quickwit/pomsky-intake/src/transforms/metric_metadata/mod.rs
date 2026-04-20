@@ -742,6 +742,232 @@ metadata_svc_url: "http://localhost:9999"
         assert!(result.is_ok(), "build() should succeed with valid config");
     }
 
+    // ----- Full lifecycle integration test (D-09, D-10) -----
+
+    #[tokio::test]
+    async fn test_full_transform_lifecycle() {
+        use wiremock::matchers::{header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let persist_path = dir.path().join("known.csv");
+
+        // Mount wiremock: always responds with cpu.user and mem.free as succeeded.
+        // The batch-size trigger (first 2 events) and the shutdown flush (3rd event)
+        // both hit this mock. "req.rate" is submitted in the shutdown flush but is NOT
+        // in the succeeded_metrics response, so it must NOT appear in the known set.
+        Mock::given(method("POST"))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
+            .and(header("DD-API-KEY", "test-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "succeeded_metrics": ["cpu.user", "mem.free"]
+            })))
+            .expect(2) // batch-size flush + shutdown flush
+            .mount(&mock_server)
+            .await;
+
+        let transform = Box::new(MetricMetadataTransform {
+            config: MetricMetadataConfig {
+                org_id: "test-org".to_string(),
+                metadata_svc_url: mock_server.uri(),
+                flush_interval_secs: 60, // long -- batch_size trigger fires, not timer
+                persist_interval_secs: 60, // long -- only shutdown path persists
+                batch_size: 2,           // triggers flush after 2 unknown metrics
+                ttl_min_hours: 12,
+                ttl_max_hours: 36,
+                http_timeout_secs: 5,
+                persist_file_path: persist_path.to_string_lossy().to_string(),
+            },
+            known_metrics: KnownMetrics::new(12, 36),
+            pending: HashMap::new(),
+            flush_client: FlushClient::new(
+                "test-key".to_string(),
+                mock_server.uri(),
+                "test-org".to_string(),
+                Duration::from_secs(5),
+            )
+            .expect("test client build should succeed"),
+        });
+
+        let events: Vec<Event> = vec![
+            Event::Metric(Metric::new(
+                "cpu.user",
+                MetricKind::Absolute,
+                MetricValue::Gauge { value: 0.5 },
+            )),
+            Event::Metric(Metric::new(
+                "mem.free",
+                MetricKind::Incremental,
+                MetricValue::Counter { value: 100.0 },
+            )),
+            Event::Metric(
+                Metric::new(
+                    "req.rate",
+                    MetricKind::Incremental,
+                    MetricValue::Counter { value: 42.0 },
+                )
+                .with_interval_ms(NonZeroU32::new(10_000)),
+            ),
+        ];
+
+        // Drive the transform through the real TaskTransform::transform() call (D-09).
+        let input: Pin<Box<dyn Stream<Item = Event> + Send>> =
+            Box::pin(stream::iter(events.clone()));
+        let output: Vec<Event> = transform.transform(input).collect().await;
+
+        // ---- Assertion (a): all events pass through unchanged (XFRM-01) ----
+        assert_eq!(output.len(), 3, "all events should pass through");
+        for (idx, (out, inp)) in output.iter().zip(events.iter()).enumerate() {
+            match (out, inp) {
+                (Event::Metric(out_m), Event::Metric(in_m)) => {
+                    assert_eq!(
+                        out_m.name(),
+                        in_m.name(),
+                        "event {idx}: metric name mismatch"
+                    );
+                }
+                _ => panic!("event {idx}: expected Metric variant"),
+            }
+        }
+
+        // ---- Assertion (b): wiremock received flush POST with correct headers ----
+        let received = mock_server.received_requests().await.unwrap();
+        assert!(
+            !received.is_empty(),
+            "expected at least 1 flush request, got 0"
+        );
+        for req in &received {
+            assert_eq!(req.method.as_str(), "POST", "flush should be a POST");
+            let api_key_header = req
+                .headers
+                .get("DD-API-KEY")
+                .expect("request should have DD-API-KEY header");
+            assert_eq!(
+                api_key_header
+                    .to_str()
+                    .expect("header should be valid UTF-8"),
+                "test-key",
+                "DD-API-KEY header mismatch"
+            );
+            // Verify the request body contains org_id and records
+            let body: serde_json::Value =
+                serde_json::from_slice(&req.body).expect("body should be valid JSON");
+            assert_eq!(body["org_id"], "test-org", "body org_id mismatch: {body}");
+            assert!(
+                body["records"].is_array(),
+                "body should have records array: {body}"
+            );
+        }
+
+        // ---- Assertion (c): CSV file contains succeeded metrics ----
+        let csv_entries = csv_persistence::load_from_csv(&persist_path)
+            .expect("CSV load should succeed after shutdown");
+        assert!(
+            csv_entries.contains_key("cpu.user"),
+            "CSV should contain cpu.user (succeeded)"
+        );
+        assert!(
+            csv_entries.contains_key("mem.free"),
+            "CSV should contain mem.free (succeeded)"
+        );
+
+        // Verify TTL: each entry's expiry should be in the future (fresh TTL)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        for (name, expiry) in &csv_entries {
+            assert!(
+                *expiry > now,
+                "metric '{name}' expiry {expiry} should be > current time {now}"
+            );
+        }
+
+        // ---- Assertion (d): known-set only has succeeded metrics ----
+        // "req.rate" was submitted in the shutdown flush but was NOT in
+        // succeeded_metrics, so it must NOT appear in the CSV.
+        assert!(
+            !csv_entries.contains_key("req.rate"),
+            "req.rate should NOT be in CSV (not in succeeded_metrics)"
+        );
+    }
+
+    // ----- Shutdown persistence test (D-06, D-08) -----
+
+    #[tokio::test]
+    async fn test_shutdown_persists_csv_even_without_flush() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let mock_server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let persist_path = dir.path().join("known.csv");
+
+        // Mock responds with the single metric as succeeded
+        Mock::given(method("POST"))
+            .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "succeeded_metrics": ["solo.metric"]
+            })))
+            .expect(1) // only the shutdown flush
+            .mount(&mock_server)
+            .await;
+
+        let transform = Box::new(MetricMetadataTransform {
+            config: MetricMetadataConfig {
+                org_id: "test-org".to_string(),
+                metadata_svc_url: mock_server.uri(),
+                flush_interval_secs: 60, // long -- below batch_size, no timer trigger
+                persist_interval_secs: 60, // long -- only shutdown path persists
+                batch_size: 200,         // high -- single event won't trigger batch flush
+                ttl_min_hours: 12,
+                ttl_max_hours: 36,
+                http_timeout_secs: 5,
+                persist_file_path: persist_path.to_string_lossy().to_string(),
+            },
+            known_metrics: KnownMetrics::new(12, 36),
+            pending: HashMap::new(),
+            flush_client: FlushClient::new(
+                "test-key".to_string(),
+                mock_server.uri(),
+                "test-org".to_string(),
+                Duration::from_secs(5),
+            )
+            .expect("test client build should succeed"),
+        });
+
+        let events: Vec<Event> = vec![Event::Metric(Metric::new(
+            "solo.metric",
+            MetricKind::Absolute,
+            MetricValue::Gauge { value: 7.0 },
+        ))];
+
+        // Single event below batch_size -- flush happens only at shutdown (D-06)
+        let input: Pin<Box<dyn Stream<Item = Event> + Send>> =
+            Box::pin(stream::iter(events.clone()));
+        let output: Vec<Event> = transform.transform(input).collect().await;
+
+        // Event should pass through unchanged
+        assert_eq!(output.len(), 1, "single event should pass through");
+
+        // CSV should have been persisted on shutdown (D-08)
+        let csv_entries = csv_persistence::load_from_csv(&persist_path)
+            .expect("CSV load should succeed after shutdown");
+        assert!(
+            csv_entries.contains_key("solo.metric"),
+            "CSV should contain solo.metric after shutdown flush"
+        );
+
+        // Wiremock received exactly 1 request (the shutdown flush)
+        let received = mock_server.received_requests().await.unwrap();
+        assert_eq!(
+            received.len(),
+            1,
+            "expected exactly 1 shutdown flush request"
+        );
+    }
+
     // ----- Parent directory validation -----
 
     #[tokio::test]
