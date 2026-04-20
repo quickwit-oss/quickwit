@@ -71,16 +71,25 @@ async fn test_distributed_tasks_not_shuffles() {
     // reads pool keys lazily at query time, so this ordering is safe.
     let pool = SearcherPool::default();
 
-    let make_builder = || -> Arc<DataFusionSessionBuilder> {
-        Arc::new(
-            DataFusionSessionBuilder::new()
-                .with_source(Arc::clone(&source) as Arc<_>)
-                .with_worker_resolver(QuickwitWorkerResolver::new(pool.clone())),
-        )
-    };
+    // Each builder gets its own `RuntimeEnv`, so each one needs its object
+    // stores preregistered before a query touches it — mirrors what
+    // `build_datafusion_session_builder` does once per serve process.
+    async fn make_builder(
+        source: &Arc<MetricsDataSource>,
+        pool: &SearcherPool,
+    ) -> Arc<DataFusionSessionBuilder> {
+        let builder = DataFusionSessionBuilder::new()
+            .with_source(Arc::clone(source) as Arc<_>)
+            .with_worker_resolver(QuickwitWorkerResolver::new(pool.clone()));
+        source
+            .preregister_object_stores(builder.runtime())
+            .await
+            .expect("preregister object stores");
+        Arc::new(builder)
+    }
 
-    let worker_a = spawn_df_worker(make_builder()).await;
-    let worker_b = spawn_df_worker(make_builder()).await;
+    let worker_a = spawn_df_worker(make_builder(&source, &pool).await).await;
+    let worker_b = spawn_df_worker(make_builder(&source, &pool).await).await;
 
     // Populate the pool with the real worker gRPC addresses.
     // Pool value is a SearchServiceClient — only the key (addr) matters for
@@ -92,7 +101,7 @@ async fn test_distributed_tasks_not_shuffles() {
         );
     }
 
-    let builder = make_builder();
+    let builder = make_builder(&source, &pool).await;
 
     let ddl = r#"CREATE OR REPLACE EXTERNAL TABLE "dist-test" (
           metric_name VARCHAR NOT NULL, metric_type TINYINT,

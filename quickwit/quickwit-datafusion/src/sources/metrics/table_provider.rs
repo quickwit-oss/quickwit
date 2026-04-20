@@ -124,10 +124,13 @@ impl TableProvider for MetricsTableProvider {
 
         debug!(num_splits = splits.len(), "found matching splits");
 
-        // Register our object store with the runtime so ParquetSource can use it.
-        // Check under a read-lock first to avoid acquiring the write-lock on every
-        // scan in the common case where the store is already registered
-        // (distributed path pre-registers via register_for_worker).
+        // Lazy registration safety net on the coordinator side. In the
+        // normal flow the node's `RuntimeEnv` has already been populated by
+        // `MetricsDataSource::preregister_object_stores` (startup warmup) or
+        // `register_for_worker` (per-worker-query refresh), so this branch
+        // is a no-op. It remains here so that a coordinator-only query
+        // against a brand-new index still works even before any worker
+        // session for that index has run on the same process.
         if state
             .runtime_env()
             .object_store(&self.object_store_url)

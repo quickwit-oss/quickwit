@@ -695,9 +695,12 @@ pub async fn serve_quickwit(
         &searcher_pool,
         metastore_through_control_plane.clone(),
         storage_resolver.clone(),
-    );
+    )
+    .await?;
+    // `searcher_pool` is only consumed by the DataFusion wiring above; without
+    // the feature, drop it here so the unused-binding warning does not fire.
     #[cfg(not(feature = "datafusion"))]
-    let _ = &searcher_pool;
+    drop(searcher_pool);
 
     // The control plane listens for local shards updates to learn about each shard's ingestion
     // throughput. Ingesters (routers) do so to update their shard table.

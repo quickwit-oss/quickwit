@@ -21,6 +21,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use anyhow::Context;
 use quickwit_config::NodeConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_datafusion::grpc::DataFusionServiceGrpcImpl;
@@ -43,26 +44,36 @@ use crate::QuickwitServices;
 /// separate from the Cargo feature flag: the feature gates _whether the code
 /// exists_; the env var gates _whether it runs at startup_. This lets a single
 /// binary be deployed and have DataFusion toggled per-node.
-pub(crate) fn build_datafusion_session_builder(
+pub(crate) async fn build_datafusion_session_builder(
     node_config: &NodeConfig,
     searcher_pool: &SearcherPool,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
-) -> Option<Arc<DataFusionSessionBuilder>> {
+) -> anyhow::Result<Option<Arc<DataFusionSessionBuilder>>> {
     if !node_config.is_service_enabled(QuickwitService::Searcher) {
-        return None;
+        return Ok(None);
     }
     if !quickwit_common::get_bool_from_env("QW_ENABLE_DATAFUSION_ENDPOINT", false) {
-        return None;
+        return Ok(None);
     }
 
     let metrics_source = Arc::new(MetricsDataSource::new(metastore, storage_resolver));
     let resolver = QuickwitWorkerResolver::new(searcher_pool.clone())
         .with_tls(node_config.grpc_config.tls.is_some());
     let builder = DataFusionSessionBuilder::new()
-        .with_source(metrics_source)
+        .with_source(Arc::clone(&metrics_source) as Arc<_>)
         .with_worker_resolver(resolver);
-    Some(Arc::new(builder))
+
+    // One-shot: resolve every known metrics index and register its object
+    // store on the shared `RuntimeEnv`. Worker-side query dispatch relies on
+    // the stores being already registered because the `scan()` lazy path does
+    // not fire on deserialized `DataSourceExec` fragments.
+    metrics_source
+        .preregister_object_stores(builder.runtime())
+        .await
+        .context("failed to preregister DataFusion metrics object stores")?;
+
+    Ok(Some(Arc::new(builder)))
 }
 
 /// Adapter that appends the DataFusion query and worker gRPC services to the
