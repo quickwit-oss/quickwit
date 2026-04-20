@@ -18,8 +18,8 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use futures::{Stream, StreamExt};
-use tracing::warn;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 use vector::config::{
     DataType, GenerateConfig, Input, OutputId, TransformConfig, TransformContext, TransformOutput,
 };
@@ -228,20 +228,114 @@ impl TaskTransform<Event> for MetricMetadataTransform {
         self: Box<Self>,
         task: Pin<Box<dyn Stream<Item = Event> + Send>>,
     ) -> Pin<Box<dyn Stream<Item = Event> + Send>> {
-        let known_metrics = self.known_metrics;
+        let mut input = task;
+        let mut known_metrics = self.known_metrics;
         let mut pending = self.pending;
+        let flush_client = self.flush_client;
+        let config = self.config;
+        let persist_path = config.persist_file_path.clone();
 
-        Box::pin(task.map(move |event| {
-            if let Event::Metric(ref metric) = event {
-                let name = metric.name().to_string();
-                if !known_metrics.contains(&name) {
-                    let type_info = map_metric_type(metric);
-                    // D-06: HashMap dedup; D-07: last-seen-wins
-                    pending.insert(name, type_info);
+        let mut flush_timer =
+            tokio::time::interval(Duration::from_secs(config.flush_interval_secs));
+        let mut persist_timer =
+            tokio::time::interval(Duration::from_secs(config.persist_interval_secs));
+
+        Box::pin(async_stream::stream! {
+            loop {
+                tokio::select! {
+                    biased;
+
+                    maybe_event = input.next() => {
+                        let Some(event) = maybe_event else {
+                            // D-06: shutdown sequence
+                            break;
+                        };
+
+                        // Per-event: classify metric and accumulate unknowns
+                        if let Event::Metric(ref metric) = event {
+                            let name = metric.name().to_string();
+                            if !known_metrics.contains(&name) {
+                                let type_info = map_metric_type(metric);
+                                // HashMap dedup; last-seen-wins
+                                pending.insert(name, type_info);
+                            }
+                        }
+
+                        // D-04: batch_size trigger -- flush before yield
+                        if pending.len() >= config.batch_size {
+                            match flush_client.flush_pending(&pending).await {
+                                Ok(succeeded) => {
+                                    for name in succeeded {
+                                        known_metrics.insert(name);
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!(error = %err, "batch-size flush failed, pending metrics dropped");
+                                }
+                            }
+                            pending.clear();
+                            flush_timer.reset(); // D-05: avoid double-flush
+                        }
+
+                        yield event; // XFRM-01: pass-through unchanged
+                    }
+
+                    _ = flush_timer.tick() => {
+                        if !pending.is_empty() {
+                            match flush_client.flush_pending(&pending).await {
+                                Ok(succeeded) => {
+                                    for name in succeeded {
+                                        known_metrics.insert(name);
+                                    }
+                                }
+                                Err(err) => {
+                                    warn!(error = %err, "interval flush failed, pending metrics dropped");
+                                }
+                            }
+                            pending.clear();
+                        }
+                    }
+
+                    _ = persist_timer.tick() => {
+                        known_metrics.prune_expired();
+                        if let Err(err) = csv_persistence::save_to_csv(
+                            Path::new(&persist_path),
+                            known_metrics.iter(),
+                        ) {
+                            warn!(error = %err, "failed to persist known metrics");
+                        }
+                    }
                 }
             }
-            event
-        }))
+
+            // D-06: post-loop shutdown sequence
+            // Step 1: flush remaining pending metrics
+            if !pending.is_empty() {
+                match flush_client.flush_pending(&pending).await {
+                    Ok(succeeded) => {
+                        for name in succeeded {
+                            known_metrics.insert(name);
+                        }
+                    }
+                    Err(err) => {
+                        // D-07: log and proceed; metrics re-detected after restart
+                        warn!(error = %err, "shutdown flush failed, pending metrics dropped");
+                    }
+                }
+                pending.clear();
+            }
+
+            // Step 2: prune expired entries
+            known_metrics.prune_expired();
+
+            // Step 3: D-08: always persist CSV on shutdown
+            if let Err(err) = csv_persistence::save_to_csv(
+                Path::new(&persist_path),
+                known_metrics.iter(),
+            ) {
+                warn!(error = %err, "failed to persist known metrics on shutdown");
+            }
+        })
     }
 }
 
