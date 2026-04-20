@@ -21,6 +21,7 @@ async-trait = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 parquet = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
