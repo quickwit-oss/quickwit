@@ -297,10 +297,7 @@ async fn byoc_ingest_temp_metrics(
     let start = Instant::now();
 
     if body.content.is_empty() {
-        rate_limited_warn!(
-            limit_per_min = 6,
-            "received empty metrics request"
-        );
+        rate_limited_warn!(limit_per_min = 6, "received empty metrics request");
         record_metrics(
             &BYOC_METRICS.metric_requests_total,
             &BYOC_METRICS.metric_request_duration_seconds,
@@ -417,9 +414,10 @@ fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, Byo
     } else if let Some(gauge) = msg.gauge {
         (MetricType::Gauge, gauge.value)
     } else {
-        return Err(ByocApiError::IngestError(IngestV2Error::Internal(
-            format!("metric '{}' has no counter or gauge value", msg.name),
-        )));
+        return Err(ByocApiError::IngestError(IngestV2Error::Internal(format!(
+            "metric '{}' has no counter or gauge value",
+            msg.name
+        ))));
     };
 
     let timestamp_secs = match &msg.timestamp {
@@ -429,9 +427,10 @@ fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, Byo
             )))
         })?,
         None => {
-            return Err(ByocApiError::IngestError(IngestV2Error::Internal(
-                format!("metric '{}' is missing timestamp", msg.name),
-            )));
+            return Err(ByocApiError::IngestError(IngestV2Error::Internal(format!(
+                "metric '{}' is missing timestamp",
+                msg.name
+            ))));
         }
     };
 

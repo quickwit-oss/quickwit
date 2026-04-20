@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::collections::HashMap;
 use std::time::Instant;
 
 use pomchi::{DatadogLogMsg, MessageValue};
@@ -25,6 +26,7 @@ use quickwit_proto::ingest::router::{
 };
 use quickwit_proto::types::DocUidGenerator;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
+use serde::Deserialize;
 use serde_with::formats::CommaSeparator;
 use serde_with::{StringWithSeparator, serde_as};
 use tracing::debug;
@@ -123,8 +125,6 @@ pub(crate) fn datadog_logs(
 
 #[derive(Debug, thiserror::Error)]
 pub enum DatadogApiError {
-    #[error("bad request: {0}")]
-    BadRequest(String),
     #[error("failed to ingest payload: {1}")]
     Ingest(ServiceErrorCode, String),
     #[error("internal error: {0}")]
@@ -138,7 +138,6 @@ impl ServiceError for DatadogApiError {
         rate_limited_error!(limit_per_min = 6, error = %self);
 
         match self {
-            Self::BadRequest(_) => ServiceErrorCode::BadRequest,
             Self::InvalidPayload(_) => ServiceErrorCode::BadRequest,
             Self::Internal(_) => ServiceErrorCode::Internal,
             Self::Ingest(error_code, _) => *error_code,
@@ -365,6 +364,7 @@ mod tests {
     };
     use quickwit_proto::metastore::IndexRoutingRule;
     use quickwit_proto::types::{IndexUid, Position, ShardId};
+
     use super::*;
 
     const DATADOG_INDEX_ID: &str = "datadog";
@@ -627,5 +627,4 @@ mod tests {
 
         assert_eq!(response.status(), 200);
     }
-
 }
