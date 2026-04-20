@@ -13,7 +13,11 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
+
+use tempfile::NamedTempFile;
+use tracing::warn;
 
 const CSV_HEADER: &str = "metric_name,expiry_ts";
 
@@ -22,10 +26,55 @@ const CSV_HEADER: &str = "metric_name,expiry_ts";
 /// Returns a `HashMap<metric_name, expiry_timestamp>`. If the file does not
 /// exist, returns an empty map (per D-04). Malformed rows are skipped with
 /// a warning log; the header row is recognized and skipped.
-pub fn load_from_csv(_path: &Path) -> anyhow::Result<HashMap<String, u64>> {
-    // Stub: always returns empty map
-    let _ = CSV_HEADER;
-    Ok(HashMap::new())
+pub fn load_from_csv(path: &Path) -> anyhow::Result<HashMap<String, u64>> {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            // D-04: missing file = empty known set
+            return Ok(HashMap::new());
+        }
+        Err(err) => return Err(err.into()),
+    };
+
+    let reader = BufReader::new(file);
+    let mut entries = HashMap::new();
+
+    for (line_number, line_result) in reader.lines().enumerate() {
+        let line = match line_result {
+            Ok(l) => l,
+            Err(err) => {
+                warn!(line_number, error = %err, "skipping unreadable CSV line");
+                continue;
+            }
+        };
+
+        // D-03: skip header row
+        if line_number == 0 && line.trim() == CSV_HEADER {
+            continue;
+        }
+
+        let Some((name, ts_str)) = line.split_once(',') else {
+            warn!(line_number, line = %line, "skipping malformed CSV line: no comma");
+            continue;
+        };
+
+        let expiry_ts: u64 = match ts_str.trim().parse() {
+            Ok(ts) => ts,
+            Err(err) => {
+                warn!(
+                    line_number,
+                    value = %ts_str.trim(),
+                    error = %err,
+                    "skipping malformed CSV line: invalid timestamp"
+                );
+                continue;
+            }
+        };
+
+        entries.insert(name.trim().to_string(), expiry_ts);
+    }
+
+    Ok(entries)
 }
 
 /// Atomically writes known-metrics entries to a CSV file.
@@ -34,10 +83,24 @@ pub fn load_from_csv(_path: &Path) -> anyhow::Result<HashMap<String, u64>> {
 /// partial writes. The temp file is created in the same directory as `path`
 /// to avoid cross-filesystem rename failures.
 pub fn save_to_csv<'a>(
-    _path: &Path,
-    _entries: impl Iterator<Item = (&'a str, u64)>,
+    path: &Path,
+    entries: impl Iterator<Item = (&'a str, u64)>,
 ) -> anyhow::Result<()> {
-    // Stub: does nothing
+    // D-05: create temp file in same directory for atomic rename
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let mut temp_file = NamedTempFile::new_in(parent)?;
+
+    // D-03: header row
+    writeln!(temp_file, "{}", CSV_HEADER)?;
+
+    // D-02: metric_name,expiry_ts
+    for (name, expiry_ts) in entries {
+        writeln!(temp_file, "{},{}", name, expiry_ts)?;
+    }
+
+    temp_file.flush()?;
+    // D-05: atomic rename
+    temp_file.persist(path)?;
     Ok(())
 }
 
