@@ -37,7 +37,11 @@ pub const SKETCH_REQUIRED_FIELDS: &[&str] = &[
 ];
 
 /// All fields in the parquet schema.
+///
+/// Used by downstream crates (row_keys, zonemap) to map column names to
+/// physical types and schema positions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 pub enum ParquetField {
     MetricName,
     MetricType,
@@ -57,6 +61,7 @@ pub enum ParquetField {
     ResourceAttributes,
 }
 
+#[allow(dead_code)]
 impl ParquetField {
     /// Field name as stored in Parquet.
     pub fn name(&self) -> &'static str {
