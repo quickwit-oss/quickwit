@@ -79,7 +79,7 @@ pub fn compute_sorted_series_column(
     let ResolvedKeySchema {
         tag_columns,
         ts_id_column,
-    } = resolve_key_columns(&schema, &batch_schema);
+    } = resolve_key_columns(&schema, &batch_schema)?;
 
     let num_rows = batch.num_rows();
     // Estimate ~48 bytes per key: a few ordinal+string pairs + 8-byte i64.
@@ -88,13 +88,7 @@ pub fn compute_sorted_series_column(
 
     for row_idx in 0..num_rows {
         buf.clear();
-        encode_row_key(
-            &tag_columns,
-            ts_id_column.as_ref(),
-            batch,
-            row_idx,
-            &mut buf,
-        )?;
+        encode_row_key(&tag_columns, &ts_id_column, batch, row_idx, &mut buf)?;
         builder.append_value(&buf);
     }
 
@@ -152,10 +146,10 @@ struct KeyColumn {
     batch_idx: usize,
 }
 
-/// The resolved key schema: tag columns plus optional timeseries_id.
+/// The resolved key schema: tag columns plus mandatory timeseries_id.
 struct ResolvedKeySchema {
     tag_columns: Vec<KeyColumn>,
-    ts_id_column: Option<KeyColumn>,
+    ts_id_column: KeyColumn,
 }
 
 /// Walk the sort schema and resolve columns present in the batch.
@@ -163,21 +157,32 @@ struct ResolvedKeySchema {
 /// Tag columns are collected up to (but not including) `timeseries_id`.
 /// The `timeseries_id` column is resolved separately with its own ordinal
 /// so the key encoding is consistent: every component gets an ordinal prefix.
+///
+/// # Errors
+///
+/// Returns an error if `timeseries_id` is not present in both the sort
+/// schema and the batch. It is the only guaranteed discriminator for series
+/// identity — without it, different series sharing the same tags would
+/// collapse onto the same sorted_series key.
 fn resolve_key_columns(
     sort_schema: &quickwit_proto::sortschema::SortSchema,
     batch_schema: &Schema,
-) -> ResolvedKeySchema {
+) -> Result<ResolvedKeySchema> {
     let mut tag_columns = Vec::new();
     let mut ts_id_column = None;
 
     for (ordinal, col) in sort_schema.column.iter().enumerate() {
         if col.name == "timeseries_id" {
-            if let Ok(idx) = batch_schema.index_of("timeseries_id") {
-                ts_id_column = Some(KeyColumn {
-                    ordinal: ordinal as u8,
-                    batch_idx: idx,
-                });
-            }
+            let idx = batch_schema.index_of("timeseries_id").map_err(|_| {
+                anyhow!(
+                    "timeseries_id column is required in the batch for sorted_series key \
+                     encoding — it is the only guaranteed discriminator for series identity"
+                )
+            })?;
+            ts_id_column = Some(KeyColumn {
+                ordinal: ordinal as u8,
+                batch_idx: idx,
+            });
             break;
         }
         if col.name == "timestamp_secs" || col.name == "timestamp" {
@@ -191,16 +196,23 @@ fn resolve_key_columns(
         }
     }
 
-    ResolvedKeySchema {
+    let ts_id_column = ts_id_column.ok_or_else(|| {
+        anyhow!(
+            "sort schema does not contain timeseries_id — sorted_series key requires it as the \
+             guaranteed discriminator for series identity"
+        )
+    })?;
+
+    Ok(ResolvedKeySchema {
         tag_columns,
         ts_id_column,
-    }
+    })
 }
 
 /// Encode a single row's sorted series key into `buf`.
 fn encode_row_key(
     tag_columns: &[KeyColumn],
-    ts_id_column: Option<&KeyColumn>,
+    ts_id_column: &KeyColumn,
     batch: &RecordBatch,
     row_idx: usize,
     buf: &mut Vec<u8>,
@@ -218,16 +230,20 @@ fn encode_row_key(
     }
 
     // Append timeseries_id with its ordinal as the final discriminator.
-    if let Some(kc) = ts_id_column {
-        let col = batch.column(kc.batch_idx);
-        if !col.is_null(row_idx) {
-            let ts_id = extract_i64_value(col.as_ref(), row_idx);
-            storekey::encode(&mut *buf, &kc.ordinal)
-                .map_err(|e| anyhow!("storekey encode timeseries_id ordinal: {}", e))?;
-            storekey::encode(&mut *buf, &ts_id)
-                .map_err(|e| anyhow!("storekey encode timeseries_id: {}", e))?;
-        }
-    }
+    // timeseries_id is mandatory (validated by resolve_key_columns) and
+    // non-nullable (computed deterministically at ingest), so we assert
+    // rather than silently skip.
+    let col = batch.column(ts_id_column.batch_idx);
+    debug_assert!(
+        !col.is_null(row_idx),
+        "timeseries_id must not be null at row {}",
+        row_idx
+    );
+    let ts_id = extract_i64_value(col.as_ref(), row_idx);
+    storekey::encode(&mut *buf, &ts_id_column.ordinal)
+        .map_err(|e| anyhow!("storekey encode timeseries_id ordinal: {}", e))?;
+    storekey::encode(&mut *buf, &ts_id)
+        .map_err(|e| anyhow!("storekey encode timeseries_id: {}", e))?;
 
     Ok(())
 }

@@ -413,7 +413,7 @@ fn test_append_sorted_series_rejects_duplicate() {
 // -----------------------------------------------------------------------
 
 #[test]
-fn test_no_timeseries_id_column() {
+fn test_no_timeseries_id_column_errors() {
     let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
     let schema = Arc::new(Schema::new(vec![
         Field::new("metric_name", dict_type.clone(), false),
@@ -435,9 +435,15 @@ fn test_no_timeseries_id_column() {
     )
     .unwrap();
 
-    // Should succeed even without timeseries_id.
-    let keys = compute_sorted_series_column(METRICS_SORT_FIELDS, &batch).unwrap();
-    assert!(!keys.value(0).is_empty());
+    // Must error — timeseries_id is the only guaranteed discriminator
+    // for series identity. Without it, different series sharing the same
+    // tags would collapse onto the same sorted_series key.
+    let err = compute_sorted_series_column(METRICS_SORT_FIELDS, &batch).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("timeseries_id"),
+        "error should mention timeseries_id: {msg}"
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -751,9 +757,9 @@ fn test_key_structure_timeseries_id_ordinal() {
 }
 
 #[test]
-fn test_key_without_timeseries_id_has_no_trailing_ordinal() {
-    // When timeseries_id is absent from the batch, the key should
-    // contain only tag ordinals — no dangling ordinal 6.
+fn test_key_without_timeseries_id_errors() {
+    // When timeseries_id is absent from the batch, sorted_series
+    // computation must error — it is the only guaranteed discriminator.
     let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
     let schema = Arc::new(Schema::new(vec![
         Field::new("metric_name", dict_type.clone(), false),
@@ -773,12 +779,12 @@ fn test_key_without_timeseries_id_has_no_trailing_ordinal() {
     )
     .unwrap();
 
-    let keys = compute_sorted_series_column(METRICS_SORT_FIELDS, &batch).unwrap();
-    let key_bytes = keys.value(0);
-
-    // Only ordinal(0) + "m" + terminator = 3 bytes, no timeseries_id.
-    assert_eq!(key_bytes.len(), 3);
-    assert_eq!(key_bytes[0], 0x00);
+    let err = compute_sorted_series_column(METRICS_SORT_FIELDS, &batch).unwrap_err();
+    assert!(
+        err.to_string().contains("timeseries_id"),
+        "error should mention timeseries_id: {}",
+        err
+    );
 }
 
 // -----------------------------------------------------------------------

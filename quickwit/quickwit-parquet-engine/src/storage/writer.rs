@@ -480,7 +480,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::array::{
-        ArrayRef, DictionaryArray, Float64Array, StringArray, UInt8Array, UInt64Array,
+        ArrayRef, DictionaryArray, Float64Array, Int64Array, StringArray, UInt8Array, UInt64Array,
     };
     use arrow::datatypes::{DataType, Field, Int32Type, Schema};
 
@@ -583,6 +583,7 @@ mod tests {
             Field::new("metric_type", DataType::UInt8, false),
             Field::new("timestamp_secs", DataType::UInt64, false),
             Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
             Field::new(
                 "service",
                 DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
@@ -606,6 +607,7 @@ mod tests {
         let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8, 0, 0]));
         let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(vec![300u64, 100u64, 200u64]));
         let value: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0]));
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(vec![1i64, 2, 1]));
 
         let service: ArrayRef = {
             let keys = arrow::array::Int32Array::from(vec![Some(0i32), Some(1), Some(0)]);
@@ -615,7 +617,14 @@ mod tests {
 
         let batch = RecordBatch::try_new(
             schema,
-            vec![metric_name, metric_type, timestamp_secs, value, service],
+            vec![
+                metric_name,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+                service,
+            ],
         )
         .unwrap();
 
@@ -1028,8 +1037,8 @@ mod tests {
         let names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
 
         // Sort schema columns that are present should come first, in sort order.
-        // From the default: metric_name, service, env, region, host, timestamp_secs
-        // (datacenter and timeseries_id are not in the batch).
+        // From the default: metric_name, service, env, region, host, timeseries_id,
+        // timestamp_secs (datacenter is not in the batch).
         // metric_type and value are required fields but NOT sort columns.
         let expected_prefix = [
             "metric_name",
@@ -1037,6 +1046,7 @@ mod tests {
             "env",
             "region",
             "host",
+            "timeseries_id",
             "timestamp_secs",
         ];
         let sort_prefix: Vec<&str> = names
@@ -1094,17 +1104,19 @@ mod tests {
             .map(|i| parquet_schema.column(i).name().to_string())
             .collect();
 
-        // Sort columns first: metric_name, service, env, host, timestamp_secs
+        // Sort columns first: metric_name, service, env, host, timeseries_id,
+        // timestamp_secs
         // Then sorted_series (computed column, placed after sort columns)
         // Then remaining alphabetically: metric_type, value, zzz_extra
         assert_eq!(col_names[0], "metric_name");
         assert_eq!(col_names[1], "service");
         assert_eq!(col_names[2], "env");
         assert_eq!(col_names[3], "host");
-        assert_eq!(col_names[4], "timestamp_secs");
-        assert_eq!(col_names[5], "sorted_series");
+        assert_eq!(col_names[4], "timeseries_id");
+        assert_eq!(col_names[5], "timestamp_secs");
+        assert_eq!(col_names[6], "sorted_series");
 
-        let remaining = &col_names[6..];
+        let remaining = &col_names[7..];
         let mut sorted = remaining.to_vec();
         sorted.sort();
         assert_eq!(remaining, &sorted, "data columns should be alphabetical");

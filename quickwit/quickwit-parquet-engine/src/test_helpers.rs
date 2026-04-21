@@ -17,7 +17,8 @@
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, DictionaryArray, Float64Array, Int32Array, StringArray, UInt8Array, UInt64Array,
+    ArrayRef, DictionaryArray, Float64Array, Int32Array, Int64Array, StringArray, UInt8Array,
+    UInt64Array,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use arrow::record_batch::RecordBatch;
@@ -75,6 +76,7 @@ pub fn create_test_batch_with_tags(num_rows: usize, tags: &[&str]) -> RecordBatc
         Field::new("metric_type", DataType::UInt8, false),
         Field::new("timestamp_secs", DataType::UInt64, false),
         Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
     ];
     for tag in tags {
         fields.push(Field::new(*tag, dict_type.clone(), true));
@@ -88,8 +90,16 @@ pub fn create_test_batch_with_tags(num_rows: usize, tags: &[&str]) -> RecordBatc
     let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
     let values: Vec<f64> = (0..num_rows).map(|i| 42.0 + i as f64).collect();
     let value: ArrayRef = Arc::new(Float64Array::from(values));
+    let timeseries_ids: Vec<i64> = (0..num_rows).map(|i| 1000 + i as i64).collect();
+    let timeseries_id: ArrayRef = Arc::new(Int64Array::from(timeseries_ids));
 
-    let mut columns: Vec<ArrayRef> = vec![metric_name, metric_type, timestamp_secs, value];
+    let mut columns: Vec<ArrayRef> = vec![
+        metric_name,
+        metric_type,
+        timestamp_secs,
+        value,
+        timeseries_id,
+    ];
     for tag in tags {
         let tag_values: Vec<Option<&str>> = vec![Some(tag); num_rows];
         columns.push(create_nullable_dict_array(&tag_values));

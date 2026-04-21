@@ -259,7 +259,7 @@ fn extract_service_names(batch: &RecordBatch) -> Result<HashSet<String>, Parquet
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::{ArrayRef, Float64Array, UInt8Array, UInt64Array};
+    use arrow::array::{ArrayRef, Float64Array, Int64Array, UInt8Array, UInt64Array};
     use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 
     use super::*;
@@ -281,6 +281,7 @@ mod tests {
             Field::new("metric_type", DataType::UInt8, false),
             Field::new("timestamp_secs", DataType::UInt64, false),
             Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
         ];
         if service_names.is_some() {
             fields.push(Field::new("service", dict_type.clone(), true));
@@ -295,8 +296,16 @@ mod tests {
         let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps.to_vec()));
         let values: Vec<f64> = (0..num_rows).map(|i| 42.0 + i as f64).collect();
         let value: ArrayRef = Arc::new(Float64Array::from(values));
+        let timeseries_ids: Vec<i64> = (0..num_rows).map(|i| 1000 + i as i64).collect();
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(timeseries_ids));
 
-        let mut columns: Vec<ArrayRef> = vec![metric_name, metric_type, timestamp_secs, value];
+        let mut columns: Vec<ArrayRef> = vec![
+            metric_name,
+            metric_type,
+            timestamp_secs,
+            value,
+            timeseries_id,
+        ];
 
         if let Some(svc_names) = service_names {
             columns.push(create_dict_array(svc_names));
