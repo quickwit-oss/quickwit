@@ -19,6 +19,9 @@
 //! language accepted is a superset of the original — pruned states accept any
 //! suffix (`.+` or `.*`).
 //!
+//! States are stored in an arena (`Vec<State>`) and referenced by index,
+//! avoiding raw pointers and `unsafe` during mutable tree traversal.
+//!
 //! Ported from Go: `logs-event-store/zonemap/automaton.go`.
 
 use std::cmp::Ordering;
@@ -32,7 +35,7 @@ use std::collections::BinaryHeap;
 struct PruneEntry {
     weight: u32,
     seq: u32,
-    state: *mut State,
+    state_idx: usize,
 }
 
 impl Eq for PruneEntry {}
@@ -59,8 +62,11 @@ impl PartialOrd for PruneEntry {
 }
 
 /// A deterministic finite automaton for zonemap regex generation.
+///
+/// States are stored in an arena and referenced by index.
 pub(crate) struct Automaton {
-    initial: Box<State>,
+    states: Vec<State>,
+    initial: usize,
     /// Maximum depth for state transitions (pruning optimization).
     /// 0 means no depth limit.
     max_depth: usize,
@@ -71,9 +77,10 @@ pub(crate) struct Automaton {
 
 /// A state in the automaton.
 struct State {
-    /// Transitions to next states. `None` means this state was pruned — it
-    /// accepts any suffix (`.+` if non-terminal, `.*` if terminal).
-    transitions: Option<Vec<(char, Box<State>)>>,
+    /// Transitions to next states (by arena index). `None` means this state
+    /// was pruned — it accepts any suffix (`.+` if non-terminal, `.*` if
+    /// terminal).
+    transitions: Option<Vec<(char, usize)>>,
     terminal: bool,
     /// Weight is used for pruning priority (higher = keep longer).
     weight: u32,
@@ -112,52 +119,60 @@ impl State {
 impl Automaton {
     /// Create a new automaton with the given max depth (0 = no limit).
     pub(crate) fn new(max_depth: usize) -> Self {
+        let states = vec![State::new()];
         Automaton {
-            initial: Box::new(State::new()),
+            states,
+            initial: 0,
             max_depth,
             is_strict_superset: true,
         }
     }
 
+    /// Allocate a new state in the arena and return its index.
+    fn alloc_state(&mut self) -> usize {
+        let idx = self.states.len();
+        self.states.push(State::new());
+        idx
+    }
+
     /// Add a string so the automaton accepts it, in addition to previously
     /// accepted strings. States along the path have their weights incremented.
     pub(crate) fn add(&mut self, value: &str) {
-        let mut st = &mut *self.initial;
+        let mut st_idx = self.initial;
         let mut depth = 0;
 
         let mut chars = value.chars();
         loop {
-            st.weight += 1;
+            self.states[st_idx].weight += 1;
 
             let ch = match chars.next() {
                 Some(c) => c,
                 None => {
-                    st.terminal = true;
+                    self.states[st_idx].terminal = true;
                     return;
                 }
             };
             depth += 1;
 
-            if st.transitions.is_none() {
+            if self.states[st_idx].transitions.is_none() {
                 // This state was pruned. We cannot make it more specific.
                 return;
             }
 
-            let idx = st.find_transition(ch);
-            match idx {
+            let transition_idx = self.states[st_idx].find_transition(ch);
+            match transition_idx {
                 Some(i) => {
-                    st = &mut st.transitions.as_mut().unwrap()[i].1;
+                    st_idx = self.states[st_idx].transitions.as_ref().unwrap()[i].1;
                 }
                 None => {
-                    let mut new_state = Box::new(State::new());
+                    let new_idx = self.alloc_state();
                     if self.max_depth > 0 && depth >= self.max_depth {
-                        new_state.transitions = None;
+                        self.states[new_idx].transitions = None;
                         self.is_strict_superset = false;
                     }
-                    let transitions = st.transitions.as_mut().unwrap();
-                    transitions.push((ch, new_state));
-                    let last = transitions.len() - 1;
-                    st = &mut transitions[last].1;
+                    let transitions = self.states[st_idx].transitions.as_mut().unwrap();
+                    transitions.push((ch, new_idx));
+                    st_idx = new_idx;
                 }
             }
         }
@@ -179,44 +194,43 @@ impl Automaton {
         // Max-heap by (weight, insertion_order). Higher weight is popped first;
         // for equal weights, lower sequence number (earlier BFS visit) is popped
         // first, matching Go's heap traversal order.
-        //
-        // We use raw pointers because we need mutable access to states while
-        // they're referenced in the heap. This is safe because:
-        // 1. All pointers come from our owned tree
-        // 2. We only mutate `transitions` on states we pop (removing from heap)
-        // 3. The tree structure is never modified during iteration
         let mut heap: BinaryHeap<PruneEntry> = BinaryHeap::new();
         let mut seq: u32 = 0;
         heap.push(PruneEntry {
-            weight: self.initial.weight,
+            weight: self.states[self.initial].weight,
             seq,
-            state: &mut *self.initial as *mut State,
+            state_idx: self.initial,
         });
         seq += 1;
 
         let mut num_transitions = 0;
 
         while let Some(entry) = heap.pop() {
-            // SAFETY: pointer is valid and uniquely accessed (popped from heap).
-            let state = unsafe { &mut *entry.state };
-
-            let state_transitions = state.num_transitions();
+            let state_transitions = self.states[entry.state_idx].num_transitions();
             if num_transitions + state_transitions > max_num_transitions {
-                state.transitions = None;
+                self.states[entry.state_idx].transitions = None;
                 self.is_strict_superset = false;
                 continue;
             }
 
             num_transitions += state_transitions;
 
-            if let Some(ref mut transitions) = state.transitions {
-                // Sort transitions for deterministic pruning order.
+            // Sort transitions for deterministic pruning order, then collect
+            // child indices. The sort requires &mut, so we do it first, then
+            // release the mutable borrow before reading child weights.
+            if let Some(ref mut transitions) = self.states[entry.state_idx].transitions {
                 transitions.sort_by_key(|(ch, _)| *ch);
-                for (_, child) in transitions.iter_mut() {
+            }
+            if let Some(ref transitions) = self.states[entry.state_idx].transitions {
+                let children: Vec<(u32, usize)> = transitions
+                    .iter()
+                    .map(|(_, child_idx)| (self.states[*child_idx].weight, *child_idx))
+                    .collect();
+                for (weight, child_idx) in children {
                     heap.push(PruneEntry {
-                        weight: child.weight,
+                        weight,
                         seq,
-                        state: &mut **child as *mut State,
+                        state_idx: child_idx,
                     });
                     seq += 1;
                 }
@@ -231,21 +245,22 @@ impl Automaton {
     pub(crate) fn regex(&self) -> String {
         let mut sb = String::new();
         sb.push('^');
-        write_regex(&self.initial, &mut sb);
+        write_regex(&self.states, self.initial, &mut sb);
         sb.push('$');
         sb
     }
 }
 
 /// Generate the regex for a state and its descendants.
-fn state_regex(state: &State) -> String {
+fn state_regex(states: &[State], idx: usize) -> String {
     let mut sb = String::new();
-    write_regex(state, &mut sb);
+    write_regex(states, idx, &mut sb);
     sb
 }
 
 /// Write the regex for a state into the string builder.
-fn write_regex(state: &State, sb: &mut String) {
+fn write_regex(states: &[State], idx: usize, sb: &mut String) {
+    let state = &states[idx];
     if state.transitions.is_none() {
         // Pruned state: accept any suffix.
         sb.push('.');
@@ -263,11 +278,14 @@ fn write_regex(state: &State, sb: &mut String) {
     }
 
     // Sort transitions for deterministic output.
-    let mut sorted: Vec<(char, &State)> = transitions.iter().map(|(c, s)| (*c, &**s)).collect();
+    let mut sorted: Vec<(char, usize)> = transitions.clone();
     sorted.sort_by_key(|(c, _)| *c);
 
     // Generate regex for each transition's destination.
-    let transition_regexes: Vec<String> = sorted.iter().map(|(_, s)| state_regex(s)).collect();
+    let transition_regexes: Vec<String> = sorted
+        .iter()
+        .map(|(_, s_idx)| state_regex(states, *s_idx))
+        .collect();
 
     // Deduplicate transition regexes: group transitions with the same
     // destination regex into character classes.
