@@ -15,7 +15,7 @@
 //! Pipeline integration tests: ParquetWriter → KV metadata → SplitWriter.
 //!
 //! Verifies that zonemap regexes are correctly extracted, stored in Parquet
-//! KV metadata, and propagated to MetricsSplitMetadata.
+//! KV metadata, and propagated to ParquetSplitMetadata.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -25,6 +25,7 @@ use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 use arrow::record_batch::RecordBatch;
 use parquet::file::reader::{FileReader, SerializedFileReader};
 
+use crate::split::ParquetSplitKind;
 use crate::storage::{
     PARQUET_META_ZONEMAP_REGEXES, ParquetSplitWriter, ParquetWriter, ParquetWriterConfig,
 };
@@ -157,18 +158,23 @@ fn test_zonemap_in_split_writer() {
     let config = ParquetWriterConfig::default();
     let temp_dir = tempfile::tempdir().unwrap();
 
-    let split_writer = ParquetSplitWriter::new(config, temp_dir.path(), &TableConfig::default());
+    let split_writer = ParquetSplitWriter::new(
+        ParquetSplitKind::Metrics,
+        config,
+        temp_dir.path(),
+        &TableConfig::default(),
+    );
 
     let batch = create_pipeline_test_batch();
     let split = split_writer.write_split(&batch, "test-index").unwrap();
 
-    // Verify zonemap regexes are stored in MetricsSplitMetadata.
-    assert!(!split.metadata.zonemap_regexes.is_empty());
-    assert!(split.metadata.zonemap_regexes.contains_key("metric_name"));
-    assert!(split.metadata.zonemap_regexes.contains_key("service"));
-    assert!(split.metadata.zonemap_regexes.contains_key("env"));
+    // Verify zonemap regexes are stored in ParquetSplitMetadata.
+    assert!(!split.zonemap_regexes.is_empty());
+    assert!(split.zonemap_regexes.contains_key("metric_name"));
+    assert!(split.zonemap_regexes.contains_key("service"));
+    assert!(split.zonemap_regexes.contains_key("env"));
 
-    let metric_regex = &split.metadata.zonemap_regexes["metric_name"];
+    let metric_regex = &split.zonemap_regexes["metric_name"];
     assert!(
         metric_regex.contains("cpu") || metric_regex.contains(".+"),
         "metric_name regex should reference cpu values: {}",
@@ -176,7 +182,7 @@ fn test_zonemap_in_split_writer() {
     );
 
     // Verify the Parquet file itself also has the KV metadata.
-    let parquet_path = temp_dir.path().join(split.metadata.parquet_filename());
+    let parquet_path = temp_dir.path().join(split.parquet_filename());
     let file = std::fs::File::open(&parquet_path).unwrap();
     let reader = SerializedFileReader::new(file).unwrap();
     let file_metadata = reader.metadata().file_metadata();
@@ -198,17 +204,22 @@ fn test_zonemap_metadata_json_roundtrip() {
     let config = ParquetWriterConfig::default();
     let temp_dir = tempfile::tempdir().unwrap();
 
-    let split_writer = ParquetSplitWriter::new(config, temp_dir.path(), &TableConfig::default());
+    let split_writer = ParquetSplitWriter::new(
+        ParquetSplitKind::Metrics,
+        config,
+        temp_dir.path(),
+        &TableConfig::default(),
+    );
 
     let batch = create_pipeline_test_batch();
     let split = split_writer.write_split(&batch, "test-index").unwrap();
 
     // Serialize metadata to JSON and back.
-    let json = serde_json::to_string(&split.metadata).unwrap();
-    let recovered: crate::split::MetricsSplitMetadata = serde_json::from_str(&json).unwrap();
+    let json = serde_json::to_string(&split).unwrap();
+    let recovered: crate::split::ParquetSplitMetadata = serde_json::from_str(&json).unwrap();
 
     assert_eq!(
-        recovered.zonemap_regexes, split.metadata.zonemap_regexes,
+        recovered.zonemap_regexes, split.zonemap_regexes,
         "zonemap_regexes should survive JSON round-trip"
     );
 }
