@@ -387,7 +387,6 @@ impl ParquetWriter {
 
         let sorted_batch = self.reorder_columns(&self.sort_batch(&batch)?);
 
-
         let kv_metadata = split_metadata.map(build_compaction_key_value_metadata);
 
         // SS-5: verify kv_metadata sort_fields matches source.

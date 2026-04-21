@@ -22,7 +22,6 @@ quickwit-dst = { workspace = true }
 quickwit-proto = { workspace = true }
 siphasher = { workspace = true }
 storekey = { workspace = true }
-sea-query = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -32,7 +31,6 @@ ulid = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true }
 
 [features]
 postgres = []
