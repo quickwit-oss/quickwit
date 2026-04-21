@@ -18,7 +18,11 @@
 
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, Float64Array, Int64Array, UInt8Array, UInt64Array};
+use arrow::array::{
+    ArrayRef, DictionaryArray, Float64Array, Int32Array, Int64Array, LargeStringArray, StringArray,
+    UInt8Array, UInt64Array,
+};
+use arrow::datatypes::Int32Type;
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 use arrow::record_batch::RecordBatch;
 
@@ -953,5 +957,131 @@ fn test_minmax_for_int_columns() {
     assert!(
         !regexes.contains_key("duration"),
         "int column should not have regex"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// String column type coverage: Utf8, LargeUtf8, Dict(Int32, Utf8),
+// Dict(Int32, LargeUtf8) all produce the same regex.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_extract_zonemap_all_string_column_types() {
+    let values = &["prod", "staging", "production"];
+    let n = values.len();
+
+    // With 64 max transitions and 3 short values, no pruning occurs.
+    // The exact regex is deterministic: prod and production share a prefix.
+    let expected = "^(prod(|uction)|staging)$";
+
+    // Verify the regex encodes all input values:
+    // - "prod" matches via the `prod` prefix with empty alternation `(|uction)`
+    // - "production" matches via `prod` + `uction`
+    // - "staging" matches via the `staging` branch
+    // No `.+` or `.*` means no pruning occurred (exact match, not superset).
+    assert!(
+        !expected.contains(".+"),
+        "no pruning should occur with 64 max transitions"
+    );
+    assert!(
+        !expected.contains(".*"),
+        "no pruning should occur with 64 max transitions"
+    );
+
+    let sort_fields = "col|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions::default();
+
+    // --- Utf8 ---
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("col", DataType::Utf8, false),
+        Field::new("timeseries_id", DataType::Int64, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(StringArray::from(values.to_vec())) as ArrayRef,
+            Arc::new(Int64Array::from(vec![1i64; n])) as ArrayRef,
+            Arc::new(UInt64Array::from(vec![100u64; n])) as ArrayRef,
+            Arc::new(Float64Array::from(vec![1.0; n])) as ArrayRef,
+        ],
+    )
+    .unwrap();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+    assert_eq!(regexes["col"], expected, "Utf8 column should produce regex");
+
+    // --- LargeUtf8 ---
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("col", DataType::LargeUtf8, false),
+        Field::new("timeseries_id", DataType::Int64, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(LargeStringArray::from(values.to_vec())) as ArrayRef,
+            Arc::new(Int64Array::from(vec![1i64; n])) as ArrayRef,
+            Arc::new(UInt64Array::from(vec![100u64; n])) as ArrayRef,
+            Arc::new(Float64Array::from(vec![1.0; n])) as ArrayRef,
+        ],
+    )
+    .unwrap();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+    assert_eq!(
+        regexes["col"], expected,
+        "LargeUtf8 column should produce regex"
+    );
+
+    // --- Dictionary(Int32, Utf8) ---
+    let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("col", dict_type, false),
+        Field::new("timeseries_id", DataType::Int64, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            create_dict_array(values) as ArrayRef,
+            Arc::new(Int64Array::from(vec![1i64; n])) as ArrayRef,
+            Arc::new(UInt64Array::from(vec![100u64; n])) as ArrayRef,
+            Arc::new(Float64Array::from(vec![1.0; n])) as ArrayRef,
+        ],
+    )
+    .unwrap();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+    assert_eq!(
+        regexes["col"], expected,
+        "Dictionary(Int32, Utf8) column should produce regex"
+    );
+
+    // --- Dictionary(Int32, LargeUtf8) ---
+    let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::LargeUtf8));
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("col", dict_type, false),
+        Field::new("timeseries_id", DataType::Int64, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+    ]));
+    let large_values = Arc::new(LargeStringArray::from(values.to_vec()));
+    let keys = Int32Array::from(vec![0i32, 1, 2]);
+    let dict_array = Arc::new(DictionaryArray::<Int32Type>::try_new(keys, large_values).unwrap());
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            dict_array as ArrayRef,
+            Arc::new(Int64Array::from(vec![1i64; n])) as ArrayRef,
+            Arc::new(UInt64Array::from(vec![100u64; n])) as ArrayRef,
+            Arc::new(Float64Array::from(vec![1.0; n])) as ArrayRef,
+        ],
+    )
+    .unwrap();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+    assert_eq!(
+        regexes["col"], expected,
+        "Dictionary(Int32, LargeUtf8) column should produce regex"
     );
 }
