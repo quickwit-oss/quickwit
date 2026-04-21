@@ -1,367 +1,279 @@
-# Domain Pitfalls: Parquet Compaction Pipeline
+# Pitfalls Research
 
-**Domain:** Time-windowed sorted Parquet compaction for metrics time-series storage
-**System:** Pomsky Metrics Engine (Quickwit fork, DataFusion 52.1.0, Arrow 57.2.0, Parquet 57.2.0, PostgreSQL metastore, S3 storage)
-**Researched:** 2026-02-23
+**Domain:** Stateful Vector custom transform with background I/O and HTTP egress
+**Researched:** 2026-04-16
+**Confidence:** HIGH — findings grounded in the actual Vector source at rev `fbb1e4b`, the existing pomsky-intake code, and CLAUDE.md invariants
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause data loss, corruption, rewrites, or production outages.
+### Pitfall 1: Using `FunctionTransform` for a Stateful Transform
 
----
-
-### Pitfall 1: Memory Exhaustion During K-Way Merge Sort Phase
-
-**What goes wrong:** The sorted merge algorithm requires reading sort columns from all input splits to compute the global sort order. With default StableLogMergePolicy parameters (merge_factor=10, max_merge_factor=12) and target split sizes of 256+ MiB, the sort phase can require significant memory. For 12 inputs x 500K rows x 5 sort columns (metric_name as dictionary string, tag_service, tag_env, tag_host as strings, timestamp as i64), this can reach several GiB of Arrow arrays. If the merge executor shares memory with ingestion and query actors, an OOM kills the entire process.
-
-**Why it happens:** The merge must hold sort column data from multiple input splits simultaneously. The total memory is proportional to O(N_inputs x rows_per_input x sort_column_bytes), and sort columns include string columns (metric_name, tag_host) that do not compress well in memory even if dictionary-encoded in Parquet.
-
-**Mitigation from stack choice:** DataFusion's `StreamingMergeBuilder` provides partial mitigation. It operates in a streaming fashion: each input is a `SendableRecordBatchStream` that yields `RecordBatch`es on demand. The merge does NOT require loading all sort columns from all inputs simultaneously -- it only needs the current `RecordBatch` from each input stream (controlled by `with_batch_size`). However, it does need one active batch from each input stream, so memory scales as O(N_inputs x batch_size x sort_column_bytes). With 12 inputs and 8192-row batches, this is manageable (~100 MB), much less than the full-materialization approach.
-
-**Remaining risk:** The `RowConverter` used internally by `StreamingMergeBuilder` accumulates dictionary mappings in its `OrderPreservingInterner`. For high-cardinality dictionary columns, this can grow unboundedly over the course of a merge (DataFusion issue #7200). For our sort columns (low-to-medium cardinality), this is unlikely to be a problem, but should be monitored.
-
-**Consequences:** Process OOM kill. All in-flight actors die. WAL data not yet published is lost (unless on persistent volume). Partial S3 uploads become orphans.
-
-**Prevention:**
-1. **Use `StreamingMergeBuilder` (not full materialization).** The streaming merge bounds memory to O(N_inputs x batch_size) rather than O(N_inputs x total_rows).
-2. **Separate memory pool for compaction.** Use DataFusion's `MemoryPool` to create an isolated budget. When exhausted, merge fails gracefully rather than killing the process.
-3. **Memory budget check before merge.** Estimate memory from Parquet footer metadata. Refuse large merges; reduce fanin by cascading sub-merges.
-4. **Monitor `RowConverter` memory.** Track the memory reservation reported by `StreamingMergeBuilder`'s `BaselineMetrics`.
-
-**Detection:**
-- Monitor RSS and DataFusion memory pool usage during merges
-- Alert when memory reservation exceeds 70% of pool
-- Track OOM kills correlated with compaction activity
-
-**Phase:** Phase 1. A compaction pipeline that can OOM the process is worse than no compaction.
-
-**Confidence:** HIGH. Partially mitigated by `StreamingMergeBuilder` streaming property, but `RowConverter` memory growth for dictionaries is a documented issue.
-
----
-
-### Pitfall 2: Non-Atomic Metadata Update Leaves Queries Seeing Duplicated or Missing Data
-
-**What goes wrong:** Compaction must atomically replace N input splits with 1 output split in PostgreSQL. If this operation is not truly atomic, queries can see either (a) both old and new splits (duplicated data, inflating SUM/COUNT aggregations) or (b) neither (data temporarily invisible). The existing `publish_splits` code in the PostgreSQL metastore uses `staged_split_ids` and `replaced_split_ids` within a single transaction (via `run_with_tx!`), which provides atomicity at the SQL level. But if the compaction actor crashes between uploading the merged split to S3 and committing the PostgreSQL transaction, the merged split becomes an orphan file in S3.
-
-**Why it happens:** Steps 3 (S3 upload) and 4 (PostgreSQL publish) cannot be made atomic across S3 and PostgreSQL -- no distributed transaction exists between them.
-
-**Consequences:**
-- **Orphan S3 files:** Merged splits uploaded but never published accumulate, consuming storage.
-- **No data loss or duplication from a crash:** PostgreSQL transaction is all-or-nothing. Safe but wasteful.
-- **Subtle duplication if atomicity is broken:** If publish is implemented incorrectly (two separate transactions), queries see duplicated data.
-
-**Prevention:**
-1. **Single-transaction publish.** Use existing `publish_metrics_splits` with both `staged_split_ids` and `replaced_split_ids` in one transaction.
-2. **Orphan file garbage collection.** Extend `quickwit-janitor` for Parquet splits.
-3. **Upload-then-publish ordering.** Always upload to S3 first. Orphan files are harmless (cleaned by janitor). Never publish before upload.
-4. **Idempotent compaction.** Deterministic split ID from input split IDs so retries produce the same output path.
-
-**Detection:**
-- Monitor S3 object count vs PostgreSQL split count
-- Alert on `publish_metrics_splits` transaction failures
-- Track orphan file count in janitor
-
-**Phase:** Phase 1. Most fundamental correctness property.
-
-**Confidence:** HIGH. Pattern already implemented for Tantivy splits.
-
----
-
-### Pitfall 3: Compaction Actor Cancellation Violates Invariants (GAP-002 Constraints)
-
-**What goes wrong:** CLAUDE.md and GAP-002 FORBID `tokio::sync::Mutex` (data corruption on cancel) and `JoinHandle::abort()` (arbitrary cancellation violates invariants). Compaction actors must use `CancellationToken` for cooperative shutdown. If a merge is cancelled mid-operation, in-progress state must be safely abandoned.
-
-**Why it happens:** Compaction operations are long-running (seconds to minutes). The system may need to shut down, rebalance, or cancel during this time.
-
-**Consequences:**
-- Corrupted partial output files on disk
-- Leaked S3 multipart uploads
-- Permanently held locks (if tokio::sync::Mutex used across await points)
-
-**Prevention:**
-1. **Use the actor mailbox model.** Mutable state lives inside the actor. No shared mutable state.
-2. **Check CancellationToken at yield points.** After each input split processed, check for cancellation.
-3. **Explicit S3 multipart abort on cancellation.** Set lifecycle policy for incomplete uploads as safety net.
-4. **No tokio::sync::Mutex.** Use message passing.
-5. **Scratch directory cleanup on startup.** Remove all temp files before starting compaction.
-
-**Detection:**
-- Grep for `tokio::sync::Mutex` in compaction code (should find zero)
-- Monitor S3 incomplete multipart uploads
-- Track scratch directory disk usage
-
-**Phase:** Phase 1. System-wide invariants from GAP-002.
-
-**Confidence:** HIGH. Project policy, not speculative.
-
----
-
-### Pitfall 4: Read-Write Conflict -- Queries See Inconsistent Split State During Compaction
-
-**What goes wrong:** During the window between when input splits are marked for deletion and when they are actually deleted from S3, a query that resolved split IDs before the publish transaction but fetches data after S3 deletion will fail with `ObjectNotFound`.
-
-**Why it happens:** MarkedForDeletion splits are not immediately deleted -- the janitor deletes them after a grace period. If the grace period is shorter than maximum query execution time, queries fail.
-
-**Prevention:**
-1. **Generous grace period.** Wait at least 2x maximum query timeout before S3 deletion.
-2. **Rely on existing Quickwit pattern.** Same MarkedForDeletion -> GC grace period -> deletion flow used for Tantivy splits.
-3. **Retry on ObjectNotFound.** Search executor re-resolves split list from PostgreSQL.
-
-**Detection:**
-- Monitor ObjectNotFound errors correlated with compaction
-- Track duration between MarkedForDeletion and actual S3 deletion
-
-**Phase:** Phase 1. Existing patterns handle this; must be extended to metrics splits.
-
-**Confidence:** HIGH.
-
----
-
-### Pitfall 5: PostgreSQL Metadata Scalability Collapse
-
-**What goes wrong:** At 10 GiB/s ingestion with ~600 KiB splits, the system produces ~1,024 splits per second, accumulating ~921,600 splits per 15-minute window before compaction. PostgreSQL becomes the bottleneck: merge planner queries slow, query planning degrades, compaction cannot keep up.
-
-**Why it happens:** The merge planner scans eligible splits. As split count grows, queries become expensive. PostgreSQL is OLTP, not built for scanning millions of metadata rows.
-
-**Consequences:**
-- Compaction falls behind ingestion
-- Query planning degrades
-- Cascading failure: more splits -> slower compaction -> more splits
-
-**Prevention:**
-1. **Index `metrics_splits` aggressively.** Composite indexes on `(index_id, split_state, window_start)`.
-2. **Partition planner queries by window.** Process one window at a time, starting with most recent.
-3. **Batch metadata reads.** Use pagination.
-4. **Monitor planner query latency.** Alert if > 1 second.
-5. **Design metadata for portability.** Simple typed fields for future migration.
-
-**Detection:**
-- Monitor `metrics_splits` row count and growth rate
-- Monitor merge planner query latency
-- Alert on uncompacted split count per window exceeding threshold
-
-**Phase:** Phase 1 (indexing and monitoring). Full solution may need Phase 2 metadata service.
-
-**Confidence:** MEDIUM. Absolute numbers assume current split sizes. Larger splits or faster compaction reduce pressure.
-
----
-
-### Pitfall 6: Compaction Falls Behind Due to StreamingMergeBuilder Overhead
-
-**What goes wrong:** `StreamingMergeBuilder` is designed for query-time merge of sorted streams, not bulk compaction. Its per-row overhead (loser tree adjustment + row format encoding + batch building) may be slower than a bulk stable sort approach for the compaction use case where all data is available upfront and inputs are already sorted with long runs.
-
-**Why it happens:** ADR-003 notes that Husky's Go implementation found stable sort faster than k-way merge due to cache locality on presorted runs. The Go comparison was between a binary heap k-way merge and Go's Timsort. DataFusion's loser tree is faster than a binary heap, but the fundamental tradeoff (streaming with per-row overhead vs batch sort exploiting cache locality) still applies.
-
-**Consequences:**
-- Compaction throughput insufficient to keep up with ingestion rate
-- Split count grows unboundedly despite compaction being active
-- Resource waste: compaction consumes CPU/IO without reducing split count fast enough
-
-**Prevention:**
-1. **Benchmark early.** In Phase 1b, benchmark `StreamingMergeBuilder` against `concat_batches + lexsort_to_indices` on representative data (8-16 pre-sorted splits of 500K rows). If stable sort is 2x+ faster, implement a hybrid approach.
-2. **The streaming approach has a memory advantage.** `StreamingMergeBuilder` uses O(N x batch_size) memory; stable sort uses O(total_rows x sort_columns). If memory is the constraint, streaming wins regardless of CPU.
-3. **Tune batch sizes.** Larger input batch sizes improve cache locality in `StreamingMergeBuilder` at the cost of more memory per input stream. Experiment with 8K, 64K, 128K row batches.
-4. **Profile the bottleneck.** If compaction is slow, determine whether it is I/O bound (S3 download/upload) or CPU bound (merge). If I/O bound, the merge algorithm does not matter.
-
-**Detection:**
-- Track compaction throughput (rows merged per second, bytes per second)
-- Compare to ingestion rate; alert if compaction throughput < ingestion rate for sustained period
-
-**Phase:** Phase 1b. Benchmark during merge executor development.
-
-**Confidence:** MEDIUM. DataFusion's loser tree + arrow row format may have eliminated the advantage Husky saw with Go's Timsort. Needs empirical validation.
-
----
-
-### Pitfall 7: Resource Contention -- Compaction Starves Ingestion or Queries
-
-**What goes wrong:** Compaction, ingestion, and queries compete for CPU, memory, disk I/O, network, and S3 API calls. Without resource isolation, a large merge can saturate S3 bandwidth and CPU, causing ingestion to fall behind and queries to slow down.
-
-**Why it happens:** Quickwit runs all three workloads on the same nodes. The Tantivy merge pipeline uses `IoControls` for throttling; Parquet compaction must implement similar controls.
-
-**Consequences:**
-- Ingestion backpressure (WAL backlog, data loss risk)
-- Query latency spikes
-- Compaction starvation if queries/ingestion are prioritized
-
-**Prevention:**
-1. **IO rate limiting.** Use existing `IoControls` for compaction downloads/uploads.
-2. **CPU scheduling.** Use `tokio::task::spawn_blocking` for compute-intensive merge phases.
-3. **Concurrent merge limit.** At most 2-3 concurrent merges per node.
-4. **Leading-edge priority.** When leading edge split count is high, divert all compaction resources there.
-5. **Independent auto-scaling (long-term).** Dedicated compaction nodes (GAP-006).
-
-**Detection:**
-- Monitor ingestion latency during compaction
-- Monitor query latency during compaction
-- Track compaction throughput vs accumulation rate
-
-**Phase:** Phase 1 (IO controls and concurrent limits). Independent scaling is separate milestone.
-
-**Confidence:** HIGH. Universal in storage systems.
-
----
-
-## Moderate Pitfalls
-
----
-
-### Pitfall 8: Sort Instability Causes Non-Deterministic Merge Output
-
-**What goes wrong:** Arrow's `lexsort_to_indices` is not guaranteed stable. GAP-002 notes this. Rows with equal sort keys may be reordered, causing non-deterministic output, harder debugging, and potentially degraded page-level statistics.
-
-**Why it happens:** `lexsort_to_indices` uses `sort_unstable_by` (pdqsort) internally. The documentation is ambiguous about stability.
-
-**Mitigation from stack choice:** `StreamingMergeBuilder` uses a loser tree for the k-way merge, which IS naturally stable: when two keys are equal, the loser tree preserves the relative order of inputs (by input stream index). Within each input stream, rows are already sorted. So the merge output is deterministic given deterministic input ordering. The instability concern applies primarily to the ingestion-time sort, not the merge.
-
-**Prevention:**
-1. **Add `timeseries_id` tiebreaker** in sort schema (ADR-002) to reduce equal-key frequency.
-2. **For ingestion-time sort:** Consider using `RowConverter` + `sort_unstable_by` on row bytes (effectively stable for all practical purposes since row encoding disambiguates more aggressively than column-at-a-time).
-3. **Verify empirically** on Arrow 57.2.0.
-
-**Phase:** Phase 1 (sort schema implementation).
-
-**Confidence:** MEDIUM. `StreamingMergeBuilder` mitigates for merge; ingestion sort remains a concern.
-
----
-
-### Pitfall 9: Window Boundary Edge Cases -- Exactly-Once Window Assignment
-
-**What goes wrong:** When a timestamp falls exactly on a window boundary, different code paths may compute different window assignments due to: timestamp unit mismatch (seconds vs nanoseconds), integer overflow, floating-point contamination, or off-by-one in range checks.
+**What goes wrong:**
+The existing transforms (`preprocess_metric`, `preprocess_log`, etc.) implement `FunctionTransform`, which requires `Clone + Send + Sync`. Vector may run multiple clones concurrently when `enable_concurrency() -> bool` returns `true` (see `preprocess_metric.rs` line 71). A HashMap with TTL and a pending flush list is not safely clonable — each clone would have a divergent, independent view of state. Metrics would be re-reported as "new" on every concurrent invocation.
 
 **Why it happens:**
-- Rust `%` operator preserves dividend sign for negative values: `-1 % 900 == -1`, not `899`
-- Timestamp unit inconsistency across pipeline stages
-- Half-open interval `[start, end)` requires `<` not `<=` for upper bound
+`FunctionTransform` is the happy path for simple stateless transforms. Developers copy the existing pattern without recognizing that statefulness requires `TaskTransform`.
 
-**Consequences:** Data in wrong window. Silent correctness violation. TW-1 invariant broken.
+**How to avoid:**
+Use `Transform::event_task(impl TaskTransform<Event>)` or `Transform::task(impl TaskTransform<EventArray>)`. The `TaskTransform` trait receives the entire `Stream<Item = Event>` and owns it, so it is the single sequential owner of all state. Vector's topology builder routes all events through it single-file. Do NOT set `enable_concurrency() -> true` on a stateful transform's config — that flag only applies to `FunctionTransform` and `SyncTransform`.
 
-**Prevention:**
-1. **Single canonical function:** `window_start(t: i64, duration: u32) -> i64` using `div_euclid`/`rem_euclid`.
-2. **Timestamp normalization:** Convert to seconds before window assignment.
-3. **Property-based tests** with `proptest`.
-4. **`debug_assert` in split writer** checking all rows are within declared window.
+**Warning signs:**
+- Transform struct derives `Clone`
+- `TransformConfig::enable_concurrency` returns `true`
+- State diverges in integration tests under load (metrics rediscovered every flush cycle)
 
-**Phase:** Phase 1 (day-one infrastructure).
-
-**Confidence:** HIGH. Concrete mathematical issue.
+**Phase to address:** Phase 1 (initial skeleton) — pick the correct trait before writing any state management logic.
 
 ---
 
-### Pitfall 10: Late Data Re-Compaction Churn
+### Pitfall 2: Spawning a Detached Background Task for Timers
 
-**What goes wrong:** Late-arriving data in already-compacted windows creates small splits that trigger re-merges with large existing splits. At 10 GiB/s with 0.1% late data, each of the 4 most recent windows gets steady small splits, causing repeated rewrites of large compacted files.
+**What goes wrong:**
+Spawning a `tokio::spawn` background task to drive the persist-to-file timer or the HTTP flush timer, then communicating with the main stream loop via `tokio::sync::Mutex`-protected shared state. This creates two independent problems:
 
-**Consequences:** Write amplification approaching infinity for small late splits. CPU waste. Resource contention.
+1. `tokio::sync::Mutex` is **forbidden** in this codebase (CLAUDE.md, GAP-002). If the future holding the lock is cancelled while awaiting, the mutex is poisoned or the critical section is abandoned mid-update — the HashMap or pending list ends up in an inconsistent state.
+2. The background task is detached from Vector's shutdown signal. Vector calls `topology.stop()` by closing the input stream. The `TaskTransform::transform` future resolves, but the orphaned background `JoinHandle` is either aborted mid-flush (data loss) or left running against a defunct runtime (panic).
 
-**Prevention:**
-1. **Minimum merge size threshold.** Don't re-compact unless accumulated late data exceeds 10% of existing split.
-2. **Late data batching.** Accumulate late splits per window; merge on schedule, not immediately.
-3. **Monitor late data sources.** Alert on sustained high late data rate.
+**Why it happens:**
+The two-timer pattern (persist every 30s, flush HTTP every 15s) looks naturally like two concurrent tasks. Developers reach for `tokio::spawn` + `Mutex` because it mirrors how they would write this in Go or a typical Tokio tutorial.
 
-**Phase:** Phase 1 for acceptance window cutoff. Batching optimization can be deferred.
+**How to avoid:**
+Drive both timers inside the single `async_stream::stream!` loop of the `TaskTransform`, using `tokio::select!`. The `map_with_expiration` helper in `vector-stream` (`lib/vector-stream/src/expiration_map.rs`) shows the canonical pattern: one `tokio::time::interval` for the expiration tick, with `input.next()` and the timer arm in the same `select!`. For two independent intervals (15s HTTP flush, 30s file persist), add a second `tokio::time::interval` as a third arm of the same `select!`. All state lives on the `TaskTransform` struct — no separate task, no mutex.
 
-**Confidence:** HIGH. ADR-003 identifies this risk explicitly.
+When the input stream ends (Vector shutdown), the `None` branch of `input.next()` fires. This is the correct graceful shutdown hook. The stream body must perform the final file-persist write and the final HTTP POST before the generator returns.
 
----
+**Warning signs:**
+- `tokio::spawn(async move { ... })` anywhere in transform code
+- `tokio::sync::Mutex<HashMap<...>>`
+- `JoinHandle` stored on the transform struct
+- `Arc<Mutex<...>>` passed between a task and the stream loop
 
-### Pitfall 11: Compaction Scope Mismatch Between Planner and Publisher
-
-**What goes wrong:** The 6-component scope key must be computed identically in planner and publisher. If sort_schema string normalization, window_duration encoding, or doc_mapping_uid differs between the two, published splits end up in wrong scopes.
-
-**Prevention:**
-1. **Pass full scope from planner through pipeline.** Publisher records scope from planner, not re-derived from data.
-2. **Canonical sort schema normalization.** One parser, one canonical form.
-3. **`debug_assert` comparing planner scope vs published metadata.**
-
-**Phase:** Phase 1.
-
-**Confidence:** MEDIUM. Subtle integration bug.
+**Phase to address:** Phase 1 (architecture decision) — the event-loop structure must be settled before any timer or I/O code is written.
 
 ---
 
-## Minor Pitfalls
+### Pitfall 3: Performing Blocking I/O Inside the Async Stream Loop
+
+**What goes wrong:**
+Reading or writing the persistence CSV file with synchronous `std::fs` calls inside the `async_stream::stream!` body. This blocks the Tokio worker thread servicing the transform, which stalls the entire metric pipeline for the duration of the disk write. Under backpressure, upstream sources time out or buffer overflow.
+
+**Why it happens:**
+File I/O looks trivial. The persist path fires only every 30 seconds. Developers write `std::fs::write(...)` inline because `tokio::fs` requires `.await` which feels heavyweight for a small file.
+
+**How to avoid:**
+Use `tokio::fs` for the persistence write, or `quickwit_common::run_cpu_intensive` if the CSV serialisation is non-trivial. CLAUDE.md explicitly documents `run_cpu_intensive` as the correct hook for CPU-bound work inside Tokio tasks. Keep the async path unblocked. The file is written at most every 30s so the overhead of `spawn_blocking` is negligible.
+
+**Warning signs:**
+- `std::fs::write` or `std::fs::File::open` inside an `async fn` or `async_stream::stream!`
+- No `.await` between timer tick and file operation completing
+- Pipeline latency spikes visible in Vector's internal metrics every 30s
+
+**Phase to address:** Phase 1 (I/O strategy) — established before writing the persistence layer.
 
 ---
 
-### Pitfall 12: Column Set Union Causes Schema Explosion
+### Pitfall 4: Losing the Pending Flush List on Graceful Shutdown
 
-**What goes wrong:** MC-4 (union of columns across inputs) can produce merged splits with far more columns than any input, inflating Parquet footer and wasting space on null-heavy columns.
+**What goes wrong:**
+The pending HTTP flush list (metrics waiting to be POSTed to `byoc-ingest-metadata-svc`) is discarded when Vector's topology shuts down because the flush-on-stream-end logic is absent or unreachable. Metrics collected in the seconds before shutdown are silently dropped without being submitted.
 
-**Prevention:** Track column cardinality. Warn if union exceeds 2x expected count. Consider pruning in future phases.
+**Why it happens:**
+The stream-end code path is only exercised during shutdown. Unit tests typically drive a finite stream and check output events — they never exercise the "input closed, flush remaining state" branch. The `flush_fn` callback in `map_with_expiration` is the only canonical hook; if it only flushes known-metrics to file but not the pending HTTP list, the data is lost.
 
-**Phase:** Phase 2.
+The PROJECT.md explicitly says "drop pending list on flush failure" — that is fine for HTTP errors during normal operation. But at shutdown, a best-effort POST should still be attempted.
 
----
+**How to avoid:**
+The stream-end branch of the `select!` loop must:
+1. Attempt one final HTTP POST of any non-empty pending list (using `tokio::time::timeout` to avoid blocking shutdown indefinitely).
+2. Persist the current known-metrics HashMap to file.
+Both must happen before the stream generator returns. Write a dedicated integration test that sends a batch of events, drops the input channel (`drop(tx)`), waits for `topology.stop()`, then asserts the HTTP mock received the expected POST.
 
-### Pitfall 13: Parquet Writer Config Mismatch Between Ingestion and Compaction
+**Warning signs:**
+- No stream-end handler that calls the HTTP client
+- Tests that only check the pass-through output events, never the HTTP mock
+- Integration tests that skip `topology.stop()` after `drop(tx)`
 
-**What goes wrong:** Different `WriterProperties` between ingestion and compaction output causes inconsistent file characteristics.
-
-**Prevention:** Share a single `ParquetWriterConfig` instance. The existing `to_writer_properties()` method produces correct config. For compaction, potentially upgrade `EnabledStatistics` from `Chunk` to `Page`.
-
-**Phase:** Phase 1.
-
----
-
-### Pitfall 14: `StreamingMergeBuilder` API Stability Risk
-
-**What goes wrong:** `StreamingMergeBuilder` is `pub` in DataFusion 52.1.0 but lives in `sorts::streaming_merge` which is an implementation detail of `SortPreservingMergeExec`. It could become `pub(crate)` in a future DataFusion version.
-
-**Prevention:**
-1. Pin DataFusion to `52.x`.
-2. The builder is ~260 lines. If it becomes private, fork the implementation or wrap `SortPreservingMergeExec`.
-3. Track DataFusion releases for breaking changes in the `sorts` module.
-
-**Phase:** Ongoing maintenance concern.
-
-**Confidence:** MEDIUM. The API is public today. DataFusion generally maintains backward compatibility within major versions.
+**Phase to address:** Phase 2 (flush logic) — verify with a test that explicitly exercises shutdown.
 
 ---
 
-## Phase-Specific Warnings
+### Pitfall 5: Using `tokio::sync::Mutex` on the HashMap
 
-| Phase Topic | Likely Pitfall | Mitigation | Severity |
-|-------------|---------------|------------|----------|
-| Sort schema parser | Window boundary computation with negative timestamps (Pitfall 9) | Use `div_euclid`/`rem_euclid`, single canonical function, property-based tests | Critical |
-| Sort schema parser | Sort instability at ingestion (Pitfall 8) | Add tiebreaker, verify Arrow 57.2.0 stability empirically | Moderate |
-| Metadata extensions | PostgreSQL migration breaks existing queries (Pitfall 5) | Add columns with defaults, add indexes, test migration on production-scale data | Critical |
-| Merge executor | `StreamingMergeBuilder` throughput insufficient (Pitfall 6) | Benchmark early, tune batch sizes, compare to stable sort | Moderate |
-| Merge executor | Memory from `RowConverter` dictionary growth (Pitfall 1) | Monitor memory pool, low-cardinality sort columns mitigate | Moderate |
-| Merge executor | Cancellation violates GAP-002 (Pitfall 3) | Actor model, CancellationToken, temp file cleanup | Critical |
-| Merge publisher | Non-atomic publish (Pitfall 2) | Single-transaction publish, orphan GC, upload-then-publish | Critical |
-| Merge publisher | Scope mismatch (Pitfall 11) | Pass scope from planner, canonical normalization, debug_assert | Moderate |
-| Read-write conflicts | Query failures during compaction (Pitfall 4) | Generous GC grace period, retry on ObjectNotFound | Critical |
-| Compaction policy | Late data churn (Pitfall 10) | Minimum merge threshold, batching, tighter acceptance window | Moderate |
-| Resource management | Compaction starves ingestion/queries (Pitfall 7) | IO controls, spawn_blocking, concurrent merge limits | Critical |
-| Stack maintenance | `StreamingMergeBuilder` API changes (Pitfall 14) | Pin version, ~260 lines to fork if needed | Minor |
-| Parquet writer | Inconsistent WriterProperties (Pitfall 13) | Shared config | Minor |
-| Column evolution | Schema explosion from column union (Pitfall 12) | Monitor, warn, prune in Phase 2 | Minor |
+**What goes wrong:**
+`tokio::sync::Mutex` is explicitly forbidden by CLAUDE.md (GAP-002). If a future holding the lock is cancelled at an await point — for example during a `tokio::select!` when the other arm resolves first — the critical section is abandoned with the HashMap in a partially-updated state. For a HashMap of known metric names with TTL values, a partial update means a corrupt expiry time, a missing entry, or a leftover entry that should have been removed. This is a silent data corruption, not a panic.
+
+**Why it happens:**
+Developers who want shared access between the stream loop and a timer callback reach for `Mutex` because it is the obvious Rust synchronisation primitive. The difference between `std::sync::Mutex` (safe, non-async) and `tokio::sync::Mutex` (unsafe under cancel) is subtle.
+
+**How to avoid:**
+No mutex of any kind is needed if the architecture follows Pitfall 2's guidance: the HashMap lives exclusively on the `TaskTransform` struct, accessed only from the single `async_stream::stream!` coroutine. All mutations happen synchronously inside one arm of the `select!` — no concurrent access is possible, so no lock is needed.
+
+If a mutex is genuinely required, use `std::sync::Mutex` with exclusively synchronous critical sections (no `.await` inside the lock guard's scope).
+
+**Warning signs:**
+- `tokio::sync::Mutex` imported or used anywhere in the transform
+- `Arc<tokio::sync::Mutex<HashMap<...>>>` passed through `Clone` bounds
+
+**Phase to address:** Phase 1 — architectural choice that eliminates the need for the mutex.
+
+---
+
+### Pitfall 6: Recreating the HTTP Client on Every Flush
+
+**What goes wrong:**
+Constructing a new `reqwest::Client` on every HTTP flush call (every 15s, or on every size-threshold trigger). `reqwest::Client` maintains a connection pool. Reconstructing it abandons existing connections, prevents HTTP keep-alive reuse to `byoc-ingest-metadata-svc`, and adds TLS handshake overhead to every flush. Under high metric novelty rates, this degrades flush latency.
+
+**Why it happens:**
+The flush function receives a `&self` reference or a plain closure without the client in scope, so developers construct it inline as the simplest approach.
+
+**How to avoid:**
+Construct `reqwest::Client::new()` once in `TransformConfig::build` and store it on the transform struct. The existing sink pattern in `arrow_ipc_metrics.rs` (line 169) shows the correct approach: client is built at construction, stored in the sink, reused on every `flush()` call.
+
+**Warning signs:**
+- `reqwest::Client::new()` inside a `flush` method or a closure that is called on a timer
+- No `reqwest::Client` field on the transform struct
+
+**Phase to address:** Phase 1 (construction) — a one-line fix at struct creation time.
+
+---
+
+### Pitfall 7: Writing the Persistence File Non-Atomically
+
+**What goes wrong:**
+Writing the known-metrics CSV to the target path directly with `File::create(path)` followed by `write_all(...)`. If the process is killed between truncation and the final `flush()`, the file is left empty or partially written. On the next startup, the transform loads zero known metrics — all metrics are treated as new and a massive flush is sent to `byoc-ingest-metadata-svc` on the first interval.
+
+**Why it happens:**
+Direct file writes are the obvious pattern. The failure window (truncate → write → flush) is milliseconds, so it is rarely hit in development.
+
+**How to avoid:**
+Write to a `.tmp` sibling file first, then `std::fs::rename` to the target path. On POSIX systems, rename is atomic within the same filesystem. The `tempfile` crate (already in `pomsky-intake`'s dependencies) provides `NamedTempFile::persist` which does exactly this. On startup, if the main file is absent but a `.tmp` exists, attempt to recover it.
+
+**Warning signs:**
+- `File::create(final_path)` followed by `write_all` without a rename step
+- No test that kills the process between writes and verifies startup recovery
+
+**Phase to address:** Phase 2 (persistence layer) — design atomicity upfront before writing the first persistence integration test.
+
+---
+
+### Pitfall 8: Storing the API Key in the Serialised `TransformConfig`
+
+**What goes wrong:**
+Embedding `DD_API_KEY` as a field in the YAML-serialised `TransformConfig`. This means the API key is written to the Vector config file, which is a temporary file generated in `run_intake` from `IntakeConfig`. The key ends up in the process's `/tmp` — potentially world-readable, logged by Vector on config load, or leaked in crash dumps.
+
+**Why it happens:**
+Other Vector transform configs store all parameters in TOML/YAML. It is the natural path of least resistance when building a new `TransformConfig`.
+
+**How to avoid:**
+Per PROJECT.md's decision: `DD_API_KEY` must come from the environment variable (never from config). Read it in `TransformConfig::build` via `std::env::var("DD_API_KEY")` and return an error if absent. Store the resolved key on the built transform struct (not the config struct). `org_id` is not a secret and can live in the config file.
+
+**Warning signs:**
+- `api_key: String` field on the `TransformConfig` struct
+- `api_key` visible in Vector's `--config-yaml` dump
+- `tracing::info!` that logs the full config struct
+
+**Phase to address:** Phase 1 (config design) — before any serialisation code is written.
+
+---
+
+## Technical Debt Patterns
+
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Hardcode flush thresholds as constants instead of config | Simpler struct, no validation | Cannot tune without recompile; ops cannot adapt to traffic spikes | Never — thresholds are explicitly configurable per PROJECT.md |
+| Skip atomic file write (direct `File::create`) | 5 lines instead of 10 | Corrupt persistence file on crash; cold-start surge to SaaS API | Never in production path |
+| `std::sync::Mutex` to coordinate timer callbacks | Avoids restructuring stream loop | Deadlock if a lock guard leaks into an async context | Only if critical section is guaranteed sync and short; prefer the `select!` pattern |
+| One `reqwest::Client` per flush | No lifecycle management needed | TLS handshake on every flush, connection pool never warms up | Never |
+| Skip the flush-on-shutdown HTTP POST | Simpler end-of-stream handling | Metrics in the last flush window are silently dropped | Only if the requirement is formally removed from PROJECT.md |
+
+---
+
+## Integration Gotchas
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| `byoc-ingest-metadata-svc` HTTP POST | Retry on failure with exponential backoff, holding the pending list | Per PROJECT.md: drop the pending list on failure; metrics will be re-detected. No retry, no queue growth |
+| `byoc-ingest-metadata-svc` auth | Pass `DD_API_KEY` in query string or body | Always use `DD-API-Key` header; the key must not appear in access logs or URLs |
+| Persistence CSV on startup | Skip loading if file is absent — silently cold-start | On absent file: log at `info` level, start with empty HashMap. On parse error: log `warn` and start empty; do not panic |
+| Vector topology shutdown | Assume `TaskTransform::transform` future lives until process exit | Vector closes the input stream to signal shutdown; the `None` branch of `input.next()` is the only graceful shutdown hook available to a transform |
+| `enable_concurrency()` flag | Inherit `true` from a copied `FunctionTransform` config | Must return `false` for the stateful transform; `true` on a `TaskTransform` config is a no-op in Vector but signals intent incorrectly |
+
+---
+
+## Performance Traps
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| HashMap unbounded growth — no TTL enforcement on insert | Memory grows proportionally to unique metric count | Enforce TTL on every event insert; also scan for expired entries on the flush-timer arm | When unique metric count exceeds ~100k over a 12-36h TTL window |
+| Scanning the full HashMap for expired entries on every event | CPU spike proportional to HashMap size at high event throughput | Separate TTL from the per-event hot path; only scan on the interval tick (every 30s is fine) | At ~10k known metrics with high event throughput |
+| Blocking file write on flush timer tick | Pipeline stalls every 30s; upstream source buffers fill | Use `tokio::fs::write` or `spawn_blocking` for the sync write | First production deployment under any load |
+| Large pending list flushed synchronously before yielding events | Downstream sink starves during a large HTTP POST | The HTTP POST is `.await`-ed but must not block event pass-through — pass events downstream immediately, issue POST as a side effect | First time pending list hits size threshold 200 under load |
+
+---
+
+## Security Mistakes
+
+| Mistake | Risk | Prevention |
+|---------|------|------------|
+| Log the `DD_API_KEY` value (even at `debug` level) | Key leaked to log aggregator | Never format the key into any log message; read with `std::env::var` and treat as opaque bytes immediately |
+| Store `DD_API_KEY` in the serialised `TransformConfig` | Key written to tmpfile on disk, logged by Vector at startup | Read from env in `build()`, not from the config struct |
+| Use `http://` to `byoc-ingest-metadata-svc` | API key transmitted in plaintext | Require `https://` in the URL; validate at config build time |
+| Parse the persistence CSV without bounding input size | Malformed or unexpectedly large file causes OOM on startup | Cap the number of rows read; return an error (not a panic) if the limit is exceeded |
+
+---
+
+## "Looks Done But Isn't" Checklist
+
+- [ ] **Graceful shutdown flush:** Integration test drops the tx channel, calls `topology.stop()`, asserts the HTTP mock received the final POST — not just that events passed through.
+- [ ] **Persistence round-trip:** Test writes a known-metrics CSV, starts a fresh transform instance, sends a metric from the CSV, verifies it is NOT reported as new.
+- [ ] **TTL expiry:** Test advances time past the 36h TTL maximum, verifies the metric IS reported as new again.
+- [ ] **Atomic file write:** Test verifies a `.tmp` file written before a simulated crash is recovered on the next startup.
+- [ ] **DD_API_KEY absent:** `TransformConfig::build` returns a clear `Err` when the env var is missing — not a panic, not a silent empty string.
+- [ ] **Pass-through semantics:** Every input event appears in the output stream regardless of whether it is new, known, or causes a flush — the transform is side-effect only, not a filter.
+- [ ] **`enable_concurrency()` not `true`:** Confirm the stateful transform's config does not return `true` for this flag.
+
+---
+
+## Recovery Strategies
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| `FunctionTransform` chosen instead of `TaskTransform` | HIGH | Restructure the entire stream loop; state management must be rewritten; tests likely invalid |
+| Detached background task with `tokio::sync::Mutex` | HIGH | Remove background task; move timer arms into `select!` loop; remove all `Mutex` usage; retest shutdown |
+| Non-atomic file write causing corrupt persistence | LOW | Delete the corrupt file; process restarts with empty state; metrics re-detected on next arrival |
+| Pending list lost on shutdown | LOW | Metrics will reappear on next arrival and be flushed in the next cycle; acceptable per PROJECT.md design |
+| HTTP client recreated per flush | MEDIUM | Add client as struct field; rebuild the binary |
+| API key in config | HIGH | Rotate the key immediately; patch config design; audit any log sinks for leaked values |
+
+---
+
+## Pitfall-to-Phase Mapping
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| `FunctionTransform` for stateful transform | Phase 1: architecture skeleton | Code review confirms `TaskTransform` impl; no `enable_concurrency: true` |
+| Detached background task + `tokio::sync::Mutex` | Phase 1: architecture skeleton | No `tokio::spawn` in transform code; no `tokio::sync::Mutex` anywhere |
+| Blocking I/O in async stream | Phase 1: I/O strategy decision | Code review; integration test shows no 30s latency spikes |
+| Pending list lost on shutdown | Phase 2: flush logic | Shutdown integration test with HTTP mock assertion |
+| `tokio::sync::Mutex` on HashMap | Phase 1: architecture skeleton | CLAUDE.md review; grep for `tokio::sync::Mutex` in CI |
+| HTTP client recreated per flush | Phase 1: struct construction | Code review confirms single `reqwest::Client` field |
+| Non-atomic file write | Phase 2: persistence layer | Test simulating truncation-before-flush verifies recovery |
+| API key in config struct | Phase 1: config design | `DD_API_KEY` field absent from `TransformConfig`; present only on built transform |
 
 ---
 
 ## Sources
 
-### Internal (Codebase and ADRs)
-- GAP-001: No Parquet Split Compaction (`docs/internals/adr/gaps/001-no-parquet-compaction.md`)
-- GAP-002: Fixed Hardcoded Sort Schema (`docs/internals/adr/gaps/002-fixed-sort-schema.md`) -- notes sort instability
-- GAP-003: No Time-Window Partitioning (`docs/internals/adr/gaps/003-no-time-window-partitioning.md`)
-- GAP-004: Incomplete Split Metadata (`docs/internals/adr/gaps/004-incomplete-split-metadata.md`)
-- GAP-005: No Per-Point Deduplication (`docs/internals/adr/gaps/005-no-per-point-deduplication.md`)
-- GAP-009: No Leading Edge Prioritization (`docs/internals/adr/gaps/009-no-leading-edge-prioritization.md`)
-- ADR-002: Sort Schema for Parquet Splits (`docs/internals/adr/002-sort-schema-parquet-splits.md`)
-- ADR-003: Time-Windowed Sorted Compaction (`docs/internals/adr/003-time-windowed-sorted-compaction.md`)
-- Verified: `datafusion-physical-plan-52.1.0/src/sorts/streaming_merge.rs` -- `StreamingMergeBuilder` API
-- Verified: `datafusion-physical-plan-52.1.0/src/sorts/merge.rs` -- loser tree implementation
-- Verified: `arrow-row-57.2.0/src/lib.rs` -- `RowConverter` API and dictionary handling
-- [DataFusion RowConverter memory growth issue #7200](https://github.com/apache/datafusion/issues/7200)
+- Vector source at `fbb1e4b` — `lib/vector-core/src/transform/mod.rs` (Transform, FunctionTransform, TaskTransform, enable_concurrency semantics), `lib/vector-stream/src/expiration_map.rs` (map_with_expiration canonical pattern), `src/transforms/reduce/transform.rs` (stateful TaskTransform reference implementation), `src/transforms/throttle/transform.rs` (async_stream! + select! pattern)
+- `pomsky-intake/src/sinks/arrow_ipc_metrics.rs` — canonical pattern for single `reqwest::Client` construction and stateful sink loop (lines 169, 196–227)
+- `pomsky-intake/src/transforms/preprocess_metric.rs` — canonical `FunctionTransform` pattern (correct for stateless; must NOT be the model for stateful transforms)
+- `pomsky-intake/src/intake_runner.rs` — Vector topology lifecycle: `started.main().await` → `finished.shutdown().await`; transform input stream is closed at this boundary
+- CLAUDE.md GAP-002 — `tokio::sync::Mutex` and `JoinHandle::abort()` forbidden; actor model / message passing required for async coordination
+- CLAUDE.md reliability rules — `debug_assert` vs `Result`, no `unwrap()` in library code
+- `.planning/workstreams/alans-workstream/PROJECT.md` — explicit decisions: drop-on-failure, env-var for API key, CSV persistence format, 15s HTTP flush, 30s file persist, 12-36h TTL
 
-### External
-- [Handling Commit Conflicts in Apache Iceberg](https://www.ryft.io/blog/handling-commit-conflicts-in-apache-iceberg-patterns-and-fixes)
-- [ClickHouse S3 Orphan Files Issue #54912](https://github.com/ClickHouse/ClickHouse/issues/54912)
-- [WarpStream GC at Scale](https://www.warpstream.com/blog/taking-out-the-trash-garbage-collection-of-object-storage-at-massive-scale)
-- [DataFusion loser tree PR #4301](https://github.com/apache/datafusion/pull/4301) -- 50% merge speedup
-- [DataFusion tournament tree issue #4300](https://github.com/apache/datafusion/issues/4300)
-- [Husky Storage Compaction Blog Post](https://www.datadoghq.com/blog/engineering/husky-storage-compaction/)
+---
+*Pitfalls research for: stateful Vector custom transform (metric metadata tracker)*
+*Researched: 2026-04-16*

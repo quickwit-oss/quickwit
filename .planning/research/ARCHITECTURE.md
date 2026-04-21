@@ -1,570 +1,504 @@
-# Architecture Patterns: Parquet Compaction Pipeline
+# Architecture: Stateful Vector Transform for Metric Metadata
 
-**Domain:** Parquet split compaction for Quickhouse-Pomsky metrics engine
-**Researched:** 2026-02-23
-**Overall Confidence:** HIGH (based on direct codebase analysis of existing Tantivy merge actors, existing Parquet pipeline actors, metastore integration, and actor framework patterns)
-
----
-
-## Recommended Architecture
-
-### Overview
-
-The Parquet compaction pipeline introduces 5 new actors that mirror the existing Tantivy merge pipeline but replace Tantivy-specific operations with Parquet/Arrow k-way sorted merge. These actors are supervised by a new `ParquetMergePipeline` actor that follows the exact same supervision pattern as the existing `MergePipeline`.
-
-The key architectural decision is: **follow the Tantivy merge pipeline structure exactly, replacing only the format-specific internals.** This means:
-
-- Same supervision model (pipeline actor with health checks and restart logic)
-- Same scheduling model (shared `MergeSchedulerService` with priority queue)
-- Same planner loop (planner -> publisher -> planner feedback)
-- New merge policy (`WindowedSortMergePolicy`) instead of `StableLogMergePolicy`
-- New merge executor (k-way sorted merge via DataFusion instead of Tantivy `UnionDirectory`)
-- New message types operating on `MetricsSplitMetadata` instead of `SplitMetadata`
-
-### High-Level Architecture
-
-```
-EXISTING INGESTION PIPELINE (no changes except MetricsIndexer window enforcement)
-====================================================================================
-
-Source -> ParquetDocProcessor -> MetricsIndexer -> ParquetUploader -> Sequencer -> ParquetPublisher
-                                    |
-                                    | (NEW: partition rows by time window before writing)
-                                    | (produces one split per window boundary crossing)
-                                    v
-                           Parquet files in S3 + metadata in PostgreSQL
-
-
-NEW COMPACTION PIPELINE
-====================================================================================
-
-ParquetMergePipeline (supervisor)
-  |
-  |-- ParquetMergePlanner  ----+
-  |      |                     |
-  |      | MergeTask           | NewMetricsSplits (feedback loop from publisher)
-  |      v                     |
-  |-- MergeSchedulerService    |  (SHARED with Tantivy merge -- uses existing actor)
-  |      |                     |
-  |      | MergeTask           |
-  |      v                     |
-  |-- ParquetMergeSplitDownloader
-  |      |
-  |      | ParquetMergeScratch
-  |      v
-  |-- ParquetMergeExecutor
-  |      |
-  |      | ParquetSplitBatch (reuses existing message type)
-  |      v
-  |-- ParquetMergeUploader  (reuses ParquetUploader with MergeUploader type)
-  |      |
-  |      | ParquetSplitsUpdate (with replaced_split_ids populated)
-  |      v
-  |-- ParquetMergePublisher ----+  (calls publish_metrics_splits with replace semantics)
-```
-
-### Component Boundaries
-
-| Component | Responsibility | Communicates With | New vs Existing |
-|-----------|---------------|-------------------|-----------------|
-| `ParquetMergePipeline` | Supervises all merge actors, handles spawn/restart/shutdown | All merge actors (owns handles) | **NEW** |
-| `ParquetMergePlanner` | Decides when to merge splits within a window/sort-schema scope | Receives `NewMetricsSplits` from publisher; sends `ParquetMergeTask` to scheduler | **NEW** |
-| `MergeSchedulerService` | Priority-queues merge operations across all indexes | Receives scheduled merges; dispatches to downloaders | **EXISTING** (shared) |
-| `ParquetMergeSplitDownloader` | Downloads Parquet files from S3 to scratch directory | Receives `ParquetMergeTask`; sends `ParquetMergeScratch` to executor | **NEW** |
-| `ParquetMergeExecutor` | Performs k-way sorted merge using DataFusion | Receives `ParquetMergeScratch`; sends `ParquetSplitBatch` to uploader | **NEW** |
-| `ParquetMergeUploader` | Stages and uploads merged Parquet file to S3 | Receives `ParquetSplitBatch`; sends `ParquetSplitsUpdate` to publisher | **REUSE** `ParquetUploader` with `UploaderType::MergeUploader` |
-| `ParquetMergePublisher` | Atomically publishes merged split + marks old splits for deletion | Receives `ParquetSplitsUpdate`; sends `NewMetricsSplits` back to planner | **NEW** (variant of `ParquetPublisher`) |
-| `WindowedSortMergePolicy` | Determines which splits within a window should be merged | Called by `ParquetMergePlanner` | **NEW** |
-| `MetricsIndexer` (modified) | Enforces window boundaries at ingestion time | Existing actor, modified to partition rows | **MODIFIED** |
+**Domain:** Stateful in-process Vector transform with background tasks, shared state, and graceful shutdown
+**Researched:** 2026-04-16
+**Confidence:** HIGH (based on direct source analysis of vector-core transform traits, aggregate.rs, aws_ec2_metadata.rs, expiration_map.rs, and the existing pomsky-intake transform patterns)
 
 ---
 
-## Data Flow for a Complete Compaction Cycle
-
-### Step-by-step flow
-
-**1. Planner queries metastore for merge candidates**
+## System Overview
 
 ```
-ParquetMergePlanner::fetch_immature_splits()
-  -> metastore.list_metrics_splits(
-       index_id,
-       state = Published,
-       window_start = <specific window>,
-       sort_schema = <specific schema>,
-     )
-  -> Returns Vec<MetricsSplitMetadata>
+pomsky-intake process (single binary)
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  Vector Topology (built by intake_runner.rs)                                    │
+│                                                                                 │
+│  Sources                  Transforms                       Sinks                │
+│  ┌──────────────┐         ┌──────────────────┐                                  │
+│  │datadog_agent │─metrics─▶ preprocess_metric │──────────────────────────────┐  │
+│  │   .metrics   │         └──────────────────┘                              │  │
+│  └──────────────┘                  │                                        │  │
+│  ┌──────────────┐                  │ (same events, pass-through)            │  │
+│  │     otlp     │─metrics─────────▶│                                        │  │
+│  │   .metrics   │         ┌────────▼──────────────────────┐                │  │
+│  └──────────────┘         │ metric_metadata (NEW)         │                │  │
+│                           │                               │                │  │
+│                           │  ┌─────────────────────────┐ │                │  │
+│                           │  │ KnownMetrics HashMap     │ │                │  │
+│                           │  │  name → expiry_instant   │ │                │  │
+│                           │  └─────────────────────────┘ │                │  │
+│                           │  ┌─────────────────────────┐ │                │  │
+│                           │  │ PendingList Vec          │ │                │  │
+│                           │  │  (new metrics to POST)   │ │                │  │
+│                           │  └─────────────────────────┘ │                │  │
+│                           │              │                │                │  │
+│                           │   timer tick │  stream end    │                │  │
+│                           │     flush    │  flush+persist │                │  │
+│                           └─────────────┼────────────────┘                │  │
+│                                         │                                  │  │
+│                           side-channel  │                                  │  │
+│                           ┌─────────────▼──────────────┐                  │  │
+│                           │ HTTP POST                   │                  │  │
+│                           │ byoc-ingest-metadata-svc    │                  │  │
+│                           └────────────────────────────┘                  │  │
+│                                                                            │  │
+│                           ┌────────────────────────────┐                  │  │
+│                           │ File I/O                    │                  │  │
+│                           │ known_metrics.csv (persist) │                  │  │
+│                           └────────────────────────────┘                  │  │
+│                                                                            ▼  │
+│                                                           ┌────────────────┐  │
+│                                                           │ arrow_ipc_     │  │
+│                                                           │ metrics sink   │  │
+│                                                           └────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
-
-The planner groups splits by `(index_id, window_start, sort_schema)` -- this is the Parquet compaction scope, replacing the Tantivy 5-part key. Unlike the Tantivy merge pipeline which is scoped by `(node_id, index_uid, source_id, partition_id, doc_mapping_uid)`, the Parquet pipeline deliberately drops `node_id` scoping to enable cross-node compaction (as described in GAP-001 and the compaction architecture doc).
-
-**2. Merge policy selects merge candidates**
-
-```
-WindowedSortMergePolicy::operations(&mut splits_in_scope) -> Vec<ParquetMergeOperation>
-```
-
-The policy adapts `StableLogMergePolicy` for Parquet: levels are based on file size (bytes) rather than document count, since Parquet compression ratios vary widely. Maturity is based on file size reaching a target (e.g., 256 MiB) or age (e.g., 48 hours).
-
-**3. Merge operation is scheduled**
-
-```
-ParquetMergePlanner::send_merge_ops()
-  -> schedule_parquet_merge(&merge_scheduler_service, tracked_operation, downloader_mailbox)
-```
-
-This reuses the existing `MergeSchedulerService` priority queue. The score function is adapted: `(delta_num_splits << 48) / total_bytes` -- same formula, applied to Parquet file sizes. The merge scheduler does not need modification because it operates on generic `MergeOperation`/`MergeTask` types (or we introduce a parallel `ParquetMergeTask` type that works with the same scheduling pattern).
-
-**4. Split downloader fetches Parquet files**
-
-```
-ParquetMergeSplitDownloader::handle(ParquetMergeTask)
-  -> For each split in merge_task.splits:
-       storage.copy_to_file(
-         Path::new(&split.parquet_files[0]),  // e.g., "metrics_xxx.parquet"
-         &local_scratch_dir.join(&split.parquet_files[0])
-       )
-  -> Send ParquetMergeScratch { merge_task, downloaded_files, scratch_directory }
-     to ParquetMergeExecutor
-```
-
-Key difference from Tantivy downloader: downloads Parquet files (not `.split` bundles) and does not call `fetch_and_open_split` from `IndexingSplitStore`. Instead, uses raw `Storage::copy_to_file`.
-
-**5. Merge executor performs k-way sorted merge**
-
-```
-ParquetMergeExecutor::handle(ParquetMergeScratch)
-  -> Open each downloaded Parquet file as a DataFusion table
-  -> UNION ALL + ORDER BY sort_schema columns
-  -> Write output to new Parquet file with:
-     - Column index enabled (page-level statistics)
-     - Offset index enabled
-     - sorting_columns metadata set
-     - key_value_metadata with sort_schema, min/max values
-  -> Compute merged MetricsSplitMetadata:
-     - Union of metric_names from all input splits
-     - Union of tag values
-     - Combined time_range (same window_start)
-     - size_bytes from new file
-     - num_rows = sum(input num_rows)
-     - num_merge_ops = max(input num_merge_ops) + 1
-  -> Send ParquetSplitBatch to uploader
-```
-
-The executor runs on `RuntimeType::Blocking` (same as the Tantivy `MergeExecutor`). The k-way merge uses DataFusion's sort-preserving merge, not an in-memory sort of all data.
-
-**6. Upload merged split**
-
-```
-ParquetMergeUploader::handle(ParquetSplitBatch)
-  -> stage_metrics_splits(new merged split metadata)
-  -> storage.put(new_split.parquet_files[0], file_content)
-  -> Send ParquetSplitsUpdate {
-       index_id,
-       new_splits: vec![merged_split_metadata],
-       replaced_split_ids: vec![input_split_id_1, input_split_id_2, ...],
-       checkpoint_delta_opt: None,  // Merges don't update checkpoints
-       ...
-     }
-```
-
-This reuses the existing `ParquetUploader` actor. The key difference for merge is: `replaced_split_ids` is populated (during ingestion it is always empty), and `checkpoint_delta_opt` is `None`.
-
-**7. Publish merged split atomically**
-
-```
-ParquetMergePublisher::handle(ParquetSplitsUpdate)
-  -> metastore.publish_metrics_splits(PublishMetricsSplitsRequest {
-       index_id,
-       staged_split_ids: vec![merged_split_id],
-       replaced_split_ids: vec![old_split_1, old_split_2, ...],
-       index_checkpoint_delta_json_opt: None,  // No checkpoint for merges
-       publish_token_opt: None,
-     })
-  -> Send NewMetricsSplits { new_splits: vec![merged_metadata] }
-     to ParquetMergePlanner  (feedback loop)
-```
-
-The publisher closes the loop by notifying the planner of the new merged split, which may trigger further merge operations (cascading merges up levels).
-
-**8. Garbage collection**
-
-Old splits in `MarkedForDeletion` state are cleaned up by the existing `quickwit-janitor` GC process. The janitor needs to be extended to handle `metrics_splits` table entries alongside the existing `splits` table cleanup. The Parquet files in S3 are deleted based on the `parquet_files` field in `MetricsSplitMetadata`.
 
 ---
 
-## Window Boundary Enforcement at Ingestion Time
+## Vector Transform Trait Selection
 
-### Where: MetricsIndexer (ParquetIndexer)
+Vector provides three transform variants. The right choice for this milestone is `TaskTransform`.
 
-The `ParquetIndexer` must be modified to enforce time-window boundaries. Currently, it writes all accumulated rows into a single split regardless of timestamp distribution. The modification adds a row-partitioning step before writing.
+### Why Not FunctionTransform
 
-### How
+`FunctionTransform` is stateless and clonable — Vector may run multiple instances concurrently when `enable_concurrency() -> true`. A metric metadata tracker requires shared state: a single `HashMap` of known metrics that all processing must see. Cloning it per-event would give every event its own isolated state.
+
+`PreprocessMetricConfig` uses `FunctionTransform` because it is truly stateless (tag renaming with no cross-event memory). Metric metadata tracking is the opposite.
+
+### Why TaskTransform
+
+`TaskTransform` owns the stream directly. It receives a `Pin<Box<dyn Stream<Item = EventArray> + Send>>` and returns a transformed stream. This is fundamentally `async fn(Stream) -> Stream` expressed as a trait. The implementation struct holds state directly as owned fields — no `Arc`, no `Mutex`, no synchronization required because only one task ever touches the state.
+
+The key property: Vector calls `TaskTransform::transform()` exactly once per component instance. The returned stream is driven by a single tokio task. This means the state is effectively single-threaded from the perspective of the transform's event loop, despite running inside an async runtime.
 
 ```
-ParquetIndexer::process_batch(batch):
-  1. Group rows by window assignment:
-     window_start = timestamp_secs - (timestamp_secs % window_duration_secs)
-
-  2. For each distinct window in the batch:
-     a. Filter rows belonging to this window
-     b. Add to window-specific accumulator
-
-  3. For any window accumulator that exceeds threshold:
-     a. Sort rows by sort_schema columns
-     b. Write Parquet file with window_start in metadata
-     c. Emit ParquetSplit with window_start and sort_schema in MetricsSplitMetadata
-
-  4. On force_commit or commit_timeout:
-     a. Flush ALL window accumulators
-     b. Each produces its own split with proper window_start
+TransformConfig::build() -> Transform::event_task(MetricMetadata { state... })
+                                  │
+                                  └─ Vector topology builder calls:
+                                       MetricMetadata::transform(input_stream)
+                                       └─ returns output stream (single ownership)
+                                          └─ driven by single tokio task in builder.rs
 ```
 
-### Design Decisions
+### The `aggregate.rs` Pattern (Canonical Reference)
 
-**One accumulator per active window** -- The indexer maintains a `HashMap<u64, ParquetBatchAccumulator>` keyed by `window_start`. With 15-minute windows and 60-second commit timeouts, at most 2-3 windows are active at any time (current window + 1-2 late windows). Memory overhead is negligible.
-
-**Late data acceptance** -- Points older than `late_data_acceptance_window` (configurable, e.g., 1 hour) are dropped at ingestion. This bounds the number of active window accumulators and prevents compaction of already-sealed windows from being disrupted.
-
-**Sort at write time** -- Each window's split is sorted by the configured `sort_schema` (e.g., `metric_name, tag_service, tag_env, timestamp_secs`). This means every split enters the compaction pipeline pre-sorted, enabling efficient k-way merge without full re-sort.
-
----
-
-## Supervision Model
-
-### Pattern: Follows MergePipeline exactly
-
-The `ParquetMergePipeline` actor follows the exact same supervision pattern as `MergePipeline` in `merge_pipeline.rs`:
+`aggregate.rs` is the closest existing example to what we need: a stateful metric transform with timer-based flushing. Its `TaskTransform` implementation is the template to follow:
 
 ```rust
-pub struct ParquetMergePipeline {
-    params: ParquetMergePipelineParams,
-    merge_planner_mailbox: Mailbox<ParquetMergePlanner>,
-    merge_planner_inbox: Inbox<ParquetMergePlanner>,
-    previous_generations_statistics: ParquetMergeStatistics,
-    statistics: ParquetMergeStatistics,
-    handles_opt: Option<ParquetMergePipelineHandles>,
-    kill_switch: KillSwitch,
-    initial_immature_splits_opt: Option<Vec<MetricsSplitMetadata>>,
-    shutdown_initiated: bool,
+impl TaskTransform<Event> for Aggregate {
+    fn transform(
+        mut self: Box<Self>,
+        mut input_rx: Pin<Box<dyn Stream<Item = Event> + Send>>,
+    ) -> Pin<Box<dyn Stream<Item = Event> + Send>> {
+        let mut flush_stream = tokio::time::interval(self.interval);
+
+        Box::pin(stream! {
+            let mut output = Vec::new();
+            let mut done = false;
+            while !done {
+                tokio::select! {
+                    _ = flush_stream.tick() => {
+                        self.flush_into(&mut output);
+                    },
+                    maybe_event = input_rx.next() => {
+                        match maybe_event {
+                            None => {
+                                self.flush_into(&mut output);
+                                done = true;
+                            }
+                            Some(event) => self.record(event),
+                        }
+                    }
+                };
+                for event in output.drain(..) {
+                    yield event;
+                }
+            }
+        })
+    }
 }
 ```
 
-**Key supervision behaviors (all copied from MergePipeline):**
-
-1. **Initialize** -- spawns all actors via `Spawn` message, starts `SuperviseLoop`
-2. **SuperviseLoop** (1-second interval) -- calls `healthcheck()` on all actor handles
-3. **FailureOrUnhealthy** -- terminates all actors via `kill_switch`, schedules retry with `Spawn { retry_count }`
-4. **Success** -- all actors terminated normally, pipeline exits successfully
-5. **FinishPendingMergesAndShutdownPipeline** -- disconnects planner loop, runs finalize merge policy, lets in-flight merges drain
-6. **Mailbox recycling** -- planner mailbox is created once and reused across pipeline restarts (same as Tantivy merge pipeline, lines 147-151 of `merge_pipeline.rs`)
-7. **Spawn semaphore** -- limits concurrent pipeline spawns (same `SPAWN_PIPELINE_SEMAPHORE` pattern)
-
-### Actor spawn order (bottom-up, following merge_pipeline.rs:265-363)
-
-```
-1. ParquetMergePublisher   (no downstream)
-2. ParquetMergeUploader    (-> publisher)
-3. ParquetMergeExecutor    (-> uploader)  [RuntimeType::Blocking]
-4. ParquetMergeSplitDownloader (-> executor)
-5. ParquetMergePlanner     (-> scheduler -> downloader, recycled mailbox)
-```
-
-Each actor gets the pipeline's `kill_switch.child()` and backpressure metrics.
-
-### Lifecycle
-
-```
-IndexingService
-  |
-  |-- spawns IndexingPipeline (for each index/source)
-  |     |-- spawns ParquetIndexingPipeline (if is_metrics_index)
-  |
-  |-- spawns MergePipeline (for logs/traces, existing)
-  |
-  |-- spawns ParquetMergePipeline (for metrics, NEW)
-        |-- watches for is_metrics_index
-        |-- shares MergeSchedulerService with MergePipeline
-```
-
-The `IndexingService` needs modification to spawn `ParquetMergePipeline` for metrics indexes, similar to how it spawns `MergePipeline` for log/trace indexes.
+The `MetricMetadata` transform follows this exact structure with two intervals (flush-to-HTTP and persist-to-file) instead of one, and the flush produces no output events (side-channel HTTP only), while all input events pass through unchanged.
 
 ---
 
-## Merge Planner Interaction with Metastore
+## Component Boundaries
 
-### Fetching merge candidates
+### MetricMetadataConfig (TransformConfig)
 
-The planner queries the metastore for published, immature metrics splits:
+**Responsibility:** Configuration parsing and transform construction. Instantiated once at topology build time. Reads config from YAML (org_id, flush_interval, persist_interval, persist_path, metadata_svc_url, size_threshold).
 
-```sql
--- Conceptual query the planner triggers via metastore RPC
-SELECT * FROM metrics_splits
-WHERE index_id = $1
-  AND split_state = 'Published'
-  AND window_start = $2          -- Scope to specific time window
-  AND sort_schema = $3           -- Only merge compatible sort schemas
-  AND num_merge_ops < $4         -- Maturity check
-  AND created_at < $5            -- Not too recent (give ingestion time to settle)
-ORDER BY size_bytes ASC;
+**Boundary:** Calls `TransformConfig::build()` which performs startup I/O (load CSV, construct reqwest client) and returns `Transform::event_task(MetricMetadata { ... })`. After `build()` returns, `MetricMetadataConfig` is not referenced again.
+
+### MetricMetadata (TaskTransform state)
+
+**Responsibility:** All runtime logic. Lives entirely inside the stream returned by `transform()`. Fields:
+
+- `known_metrics: HashMap<String, Instant>` — tracks seen metric names with expiry deadline
+- `pending: Vec<MetricEntry>` — new metrics awaiting flush to HTTP
+- `http_client: reqwest::Client` — for POST to byoc-ingest-metadata-svc
+- `metadata_svc_url: String` — target URL
+- `api_key: String` — from env var DD_API_KEY
+- `org_id: String` — from config
+- `persist_path: PathBuf` — CSV file for known_metrics persistence
+- `flush_interval: Duration` — how often to POST pending list (default 15s)
+- `persist_interval: Duration` — how often to persist known_metrics CSV (default 30s)
+- `size_threshold: usize` — flush pending list when it reaches this size (default 200)
+
+**Boundary:** All state is private to the `stream!` block. No `Arc`, no shared references. The stream is the only way to interact with this state.
+
+### Timer Channels (within the stream)
+
+There are no background tasks. Both the HTTP flush timer and the persistence timer live as `tokio::time::Interval` values inside the `stream!` block, selected alongside `input_rx.next()`. This is the same mechanism `aggregate.rs` uses for its flush timer.
+
+Using `tokio::spawn` for side effects (as `aws_ec2_metadata.rs` does for its refresh loop) is an option but is not necessary here because the HTTP POST and file write are not concurrent with event processing — they happen during the `select!` arm that wins. This is simpler and avoids the pitfalls in GAP-002 (no `JoinHandle::abort()`, no cross-task state sharing).
+
+---
+
+## Data Flow
+
+### Per-Event Processing
+
+```
+Input metric event arrives via input_rx.next()
+        │
+        ▼
+Extract metric name, kind, and interval_ms tag
+        │
+        ├─ Is name in known_metrics AND not expired?
+        │      YES → pass event through unchanged (no side effects)
+        │      NO  → record in known_metrics with new expiry
+        │             add MetricEntry to pending list
+        │             if pending.len() >= size_threshold: trigger HTTP flush
+        │
+        ▼
+Yield event downstream (always — all events pass through)
 ```
 
-This requires a new metastore RPC: `list_metrics_splits_for_compaction(request)` that accepts the compaction scope parameters. The existing `list_metrics_splits` may be extended or a new method added.
-
-### Publishing merged splits
-
-The planner loop:
+### Timer-Triggered HTTP Flush (flush_interval tick)
 
 ```
-1. list_metrics_splits_for_compaction() -> immature splits grouped by (index_id, window_start, sort_schema)
-2. For each group: WindowedSortMergePolicy::operations() -> merge operations
-3. Schedule merge operations via MergeSchedulerService
-4. ... merge pipeline executes ...
-5. publish_metrics_splits() with staged_split_ids + replaced_split_ids
-6. ParquetMergePublisher sends NewMetricsSplits back to planner
-7. Planner re-evaluates with the new merged split
+flush_interval.tick() fires
+        │
+        ▼
+Is pending list non-empty?
+        │
+        ├─ YES → HTTP POST to byoc-ingest-metadata-svc
+        │          Body: JSON array of MetricEntry
+        │          Headers: DD-API-KEY, Content-Type: application/json
+        │          Response 2xx → clear pending list
+        │          Response error → drop pending list (drop-on-failure policy)
+        │
+        └─ NO  → no-op
+        │
+No events yielded (HTTP flush is side-channel only)
 ```
 
-### New metastore methods needed
+### Timer-Triggered Persistence (persist_interval tick)
 
-| Method | Purpose |
-|--------|---------|
-| `list_metrics_splits_for_compaction` | Fetch immature published splits grouped by compaction scope |
-| `publish_metrics_splits` (extended) | Already exists, but `replaced_split_ids` handling needs to atomically mark old splits for deletion |
+```
+persist_interval.tick() fires
+        │
+        ▼
+Write known_metrics HashMap to CSV file at persist_path
+        format: name,expiry_unix_secs
+        Write atomically (write to tempfile, rename over target)
+        Error → log warning, continue (persistence failure is non-fatal)
+        │
+No events yielded
+```
 
-The existing `publish_metrics_splits` in the metastore already accepts `replaced_split_ids` in the `PublishMetricsSplitsRequest`. The PostgreSQL implementation needs to handle the replace atomically: insert new split, update old splits to `MarkedForDeletion` state, in one transaction.
+### Stream End (graceful shutdown)
+
+```
+input_rx.next() returns None (upstream sources shut down)
+        │
+        ▼
+Final HTTP flush of pending list (best-effort)
+        │
+        ▼
+Final CSV persist of known_metrics
+        │
+        ▼
+set done = true → stream! block exits → output stream closes
+        │
+        ▼
+Vector topology builder sees closed stream → marks transform as finished
+```
+
+This is how Vector achieves graceful shutdown for task transforms: it closes sources first, which propagates stream termination downstream. The `None` arm in `select!` is the shutdown hook. No `CancellationToken`, no `JoinHandle::abort()` needed.
+
+---
+
+## Multiple Timer Selection
+
+The transform needs two independent timer intervals. `aggregate.rs` uses one. `map_with_expiration` in vector-stream supports exactly one expiration interval. For two timers, use the `aggregate.rs` pattern directly with two intervals in `select!`:
+
+```rust
+Box::pin(stream! {
+    let mut flush_timer = tokio::time::interval(state.flush_interval);
+    let mut persist_timer = tokio::time::interval(state.persist_interval);
+    let mut done = false;
+    while !done {
+        tokio::select! {
+            _ = flush_timer.tick() => {
+                state.flush_pending().await;
+            }
+            _ = persist_timer.tick() => {
+                state.persist_known_metrics().await;
+            }
+            maybe_event = input_rx.next() => {
+                match maybe_event {
+                    None => {
+                        state.flush_pending().await;
+                        state.persist_known_metrics().await;
+                        done = true;
+                    }
+                    Some(event) => {
+                        state.process_event(event, &mut output);
+                        if state.pending.len() >= state.size_threshold {
+                            state.flush_pending().await;
+                        }
+                    }
+                }
+            }
+        }
+        for event in output.drain(..) {
+            yield event;
+        }
+    }
+})
+```
+
+The `tokio::select!` macro handles arbitrary numbers of futures. Priority between the two timers is non-deterministic when both fire simultaneously, which is acceptable — the exact ordering of HTTP flush and CSV persist does not matter.
+
+---
+
+## HTTP Client Architecture
+
+Do not spawn a background task for HTTP. The POST is blocking-by-network but non-blocking-by-code (reqwest is async). The `.await` inside the `select!` arm is fine because it is the winning arm of a single `select!` call — no other events can arrive while the POST is in flight, which is the intended behavior (backpressure through the transform during flush).
+
+Use `reqwest::Client` (not `reqwest::blocking::Client`). Construct it once in `TransformConfig::build()` and move it into the `MetricMetadata` struct. `reqwest::Client` is cheaply clonable (`Arc` internally) and reuses connection pools.
+
+The `reqwest` crate is already a dependency in `pomsky-intake/Cargo.toml`.
+
+---
+
+## Config Wiring
+
+The transform config references `org_id` from YAML and `DD_API_KEY` from an environment variable. The topology YAML in `intake_runner.rs` is a Rust format string — config values can be interpolated at template-build time. The `MetricMetadataConfig` struct reads env vars in `build()`, not at deserialization time (following the pattern of `aws_ec2_metadata.rs` which reads proxy config from environment in `build()`).
+
+Adding the new transform to the topology requires two changes in `intake_runner.rs`:
+
+1. Add a new transform block in `build_vector_config()`:
+
+```yaml
+transforms:
+  metric_metadata:
+    type: metric_metadata
+    inputs:
+      - preprocess_metrics
+    org_id: "{org_id}"
+    metadata_svc_url: "{metadata_svc_url}"
+    persist_path: "{data_dir}/known_metrics.csv"
+```
+
+2. Update `metrics_out` sink inputs from `preprocess_metrics` to `metric_metadata`.
+
+The `IntakeConfig` struct in `config.rs` needs new fields for `org_id`, `metadata_svc_url`, and optionally the interval/threshold overrides.
+
+---
+
+## File Layout
+
+```
+pomsky-intake/src/
+├── transforms/
+│   ├── mod.rs                        # Add: pub mod metric_metadata;
+│   ├── preprocess_metric.rs          # Existing — unchanged
+│   └── metric_metadata/
+│       ├── mod.rs                    # MetricMetadataConfig, TransformConfig impl
+│       ├── transform.rs              # MetricMetadata struct, TaskTransform impl
+│       ├── state.rs                  # KnownMetrics, PendingList, TTL logic
+│       ├── http.rs                   # HTTP flush logic (POST + response handling)
+│       ├── persist.rs                # CSV read/write for known_metrics
+│       └── types.rs                  # MetricEntry, MetricKind mapping
+├── config.rs                         # Add: org_id, metadata_svc_url fields
+└── intake_runner.rs                  # Update: topology YAML template
+```
+
+Each file stays well under 500 lines. Splitting by responsibility (state, HTTP, persist, types) makes each unit independently testable without the full Vector topology.
+
+---
+
+## Suggested Build Order
+
+The build order is driven by testability: each layer is independently testable before the next layer is built on top.
+
+### Step 1: Types and State Logic
+
+**Build:** `types.rs`, `state.rs`
+
+`MetricEntry` (name, kind, interval), metric kind mapping (Counter/Rate/Gauge/DDSketch), `KnownMetrics` with TTL expiry (randomized 12-36h range), `PendingList` with size-threshold check.
+
+This is pure Rust with no async, no I/O. Unit-testable in isolation. The TTL randomization logic and expiry checking belong here.
+
+### Step 2: Persistence
+
+**Build:** `persist.rs`
+
+CSV read (startup load) and write (periodic persist). Atomic write via `tempfile` rename. No async needed — file I/O is small enough to run synchronously in the async context (CSV of metric names, not large files).
+
+Unit-testable with `tempfile::TempDir`.
+
+### Step 3: HTTP Client
+
+**Build:** `http.rs`
+
+Construct the POST body (JSON array of `MetricEntry`), set headers (DD-API-KEY, Content-Type), send, handle response. Drop-on-failure policy. Integration-testable with `wiremock` or `httpmock`.
+
+### Step 4: Transform Core (TaskTransform)
+
+**Build:** `transform.rs`, `mod.rs`
+
+Wire the `stream!` loop using `aggregate.rs` as the structural template. Two intervals, event passthrough, size-threshold flush. Call `http.rs` and `persist.rs` from within the stream.
+
+Unit-testable via `Transform::into_task().transform_events()` (same pattern as throttle tests and reduce tests) with a synthetic event stream and mock HTTP server.
+
+### Step 5: Config and Topology Wiring
+
+**Build:** `MetricMetadataConfig::build()`, `intake_runner.rs` topology update, `config.rs` extensions.
+
+Integration-testable: start the full Vector topology with `run_intake()`, send metrics, verify HTTP POST via a test server, verify CSV written to disk.
 
 ---
 
 ## Patterns to Follow
 
-### Pattern 1: Mailbox Recycling for Planner
+### Pattern 1: stream! + select! for Stateful Timed Transforms
 
-**What:** Create the planner mailbox once in the pipeline constructor; reuse it across pipeline restarts.
+**What:** The `stream!` macro from `async_stream` combined with `tokio::select!` is how Vector's internal stateful transforms implement timer-triggered flushing. State is held in mutable local variables inside the stream closure.
 
-**When:** Always. This is how the Tantivy merge pipeline prevents message loss on restart.
+**When:** Any transform that needs periodic side-effects (HTTP calls, file writes) alongside event processing.
 
-**Why:** When the pipeline crashes and restarts, in-flight `NewMetricsSplits` messages from the publisher need somewhere to go. The recycled mailbox catches them. On the new incarnation, the planner drains stale messages using an incarnation timestamp (see `PlanMerge.incarnation_started_at` in `merge_planner.rs:152`).
+**Reference:** `aggregate.rs` lines 384-417.
 
-```rust
-// In ParquetMergePipeline::new()
-let (merge_planner_mailbox, merge_planner_inbox) = spawn_ctx
-    .create_mailbox::<ParquetMergePlanner>(
-        "ParquetMergePlanner",
-        ParquetMergePlanner::queue_capacity(),
-    );
-```
+### Pattern 2: Build-Time I/O in TransformConfig::build()
 
-### Pattern 2: Inventory Tracking for Ongoing Merges
+**What:** Startup I/O (load CSV, read env vars, construct HTTP client) happens in the async `build()` method of `TransformConfig`, not in the stream itself. The stream receives a fully-initialized struct.
 
-**What:** Use `tantivy::Inventory<ParquetMergeOperation>` to track in-flight merge operations.
+**When:** Any transform with startup dependencies.
 
-**When:** In the planner, to prevent scheduling duplicate merges for the same splits.
+**Reference:** `aws_ec2_metadata.rs` lines 206-248 (HTTP client construction, initial metadata fetch).
 
-**Why:** The planner needs to know which splits are currently being merged so it does not schedule them again. The inventory provides weak-reference tracking: when a merge operation completes (the `TrackedObject` is dropped in the publisher), the inventory automatically forgets it. This is the exact same pattern used in `merge_planner.rs:86` (`ongoing_merge_operations_inventory`).
+### Pattern 3: Event Passthrough with Side-Channel Effects
 
-### Pattern 3: Kill Switch Hierarchy
+**What:** All events yield downstream unchanged. The transform's value is the side effects it produces (HTTP POSTs) based on what it observes. The event stream carries metrics to the Arrow sink; the metadata channel carries names to byoc-ingest-metadata-svc.
 
-**What:** Each pipeline creates a child kill switch; all actors share the same child.
+**When:** Monitoring/tracking transforms that must not modify the primary data path.
 
-**When:** On every pipeline spawn.
+**Trade-offs:** Clean separation of concerns. The downstream sink (arrow_ipc_metrics) sees an unmodified stream. The only risk is that a slow HTTP flush delays event processing — acceptable given the drop-on-failure policy and the rarity of flush operations relative to event throughput.
 
-**Why:** When the supervisor detects failure, `kill_switch.kill()` propagates to all actors simultaneously. Each actor checks `ctx.kill_switch().is_dead()` before expensive operations (e.g., download, merge, upload). This prevents wasted work after a pipeline failure.
+### Pattern 4: Drop-on-Failure for Pending State
 
-### Pattern 4: Protect Zone for Async Operations
+**What:** If the HTTP POST fails (network error, 5xx, timeout), the pending list is cleared rather than retried. Metrics will be re-detected as "new" on their next arrival after their TTL expires.
 
-**What:** Use `ctx.protect_zone()` around operations that must not be interrupted by liveness checks.
+**When:** When retry complexity is not justified and the SaaS side is tolerant of re-detection.
 
-**When:** During S3 downloads, S3 uploads, metastore RPCs.
-
-**Why:** The supervisor checks actor progress every `HEARTBEAT` interval. Without a protect zone, a long S3 download would look like the actor is stuck, triggering a false restart.
+**Trade-offs:** Simple code path, no retry queue, no memory growth on sustained failure. Cost: a gap in metadata submissions during SaaS downtime. Accepted per PROJECT.md Key Decisions.
 
 ---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Cross-window merging
+### Anti-Pattern 1: FunctionTransform with Arc<Mutex<State>>
 
-**What:** Merging splits from different time windows into a single output split.
+**What:** Implement `FunctionTransform` (instead of `TaskTransform`) and share state behind `Arc<Mutex<...>>`.
 
-**Why bad:** Destroys time-window isolation. Queries can no longer prune entire windows. Retention becomes per-split instead of per-window. Window boundaries are architectural invariants.
+**Why bad:** `tokio::sync::Mutex` is forbidden per GAP-002 and CLAUDE.md. `std::sync::Mutex` held across `.await` points (HTTP calls) is deadlock-prone. `FunctionTransform` is designed for stateless transforms; forcing stateful behavior requires concurrency primitives that create correctness risks.
 
-**Instead:** Each merge operation operates strictly within a single `(index_id, window_start, sort_schema)` scope.
+**Instead:** Use `TaskTransform`. State is owned by the stream, no synchronization needed.
 
-### Anti-Pattern 2: tokio::sync::Mutex in merge executor
+### Anti-Pattern 2: tokio::spawn for Background Timer Tasks
 
-**What:** Using `tokio::sync::Mutex` to protect shared state during the k-way merge.
+**What:** Spawn a separate tokio task in `build()` that runs the flush timer loop, sharing state with the transform via `Arc<Mutex<...>>`.
 
-**Why bad:** Per GAP-002 and CLAUDE.md, `tokio::sync::Mutex` causes data corruption on cancellation. The merge executor runs CPU-intensive work.
+**Why bad:** This is the `aws_ec2_metadata.rs` pattern for the metadata refresh, but that transform's background task only reads from the network and writes to an `ArcSwap` — it does not share mutable state with the event-processing path. For metric metadata, the timer needs to mutate `pending` and `known_metrics` — the same data the event path mutates. Sharing via `Arc<Mutex>` is forbidden.
 
-**Instead:** The merge executor runs on `RuntimeType::Blocking` (same as the Tantivy `MergeExecutor`). Use message passing between actors, not shared mutable state.
+**Instead:** Keep both timers inside the `stream!` loop as `tokio::time::Interval` values selected alongside `input_rx.next()`. Single ownership, no synchronization.
 
-### Anti-Pattern 3: Restarting merges after failure
+### Anti-Pattern 3: Blocking File I/O in the Async Stream
 
-**What:** Restarting a failed merge from the beginning without checking if intermediate state was leaked.
+**What:** Call `std::fs::write()` synchronously inside the `stream!` loop for CSV persistence.
 
-**Why bad:** A merge that failed after uploading the new split but before publishing could leave orphan splits in storage.
+**Why bad:** Blocks the tokio runtime thread. The CSV will be small (metric names only, not metric data), so in practice it may not be measurable — but it violates the runtime contract. CLAUDE.md mandates `run_cpu_intensive` for CPU-intensive work and the same principle applies to blocking I/O.
 
-**Instead:** Follow the Tantivy `MergeExecutor` pattern (lines 106-119): on merge failure, log the error and return `Ok(())` without propagating the error. The splits remain in their pre-merge state and will be retried on the next planner cycle. The orphan uploaded-but-unpublished split will be cleaned up by the janitor's GC.
+**Instead:** Use `tokio::fs::write()` for the async variant, or if the CSV is small enough (< 1MB), use `tokio::task::spawn_blocking`. The persist operation happens at most every 30 seconds; spawn_blocking overhead is negligible.
 
-### Anti-Pattern 4: Blocking the merge planner with metastore queries
+### Anti-Pattern 4: Parsing DD_API_KEY in the Stream
 
-**What:** Making synchronous metastore queries in the planner's message handler.
+**What:** Read `std::env::var("DD_API_KEY")` inside the `stream!` loop on every event.
 
-**Why bad:** The planner has `QueueCapacity::Bounded(1)`. Blocking on a metastore query while holding the message slot prevents `NewMetricsSplits` feedback from being processed.
+**Why bad:** `env::var` acquires a lock. It also means the transform silently fails if the env var is absent — failure appears as HTTP 401s rather than a startup error.
 
-**Instead:** Fetch immature splits during pipeline spawn (via `fetch_immature_splits()` pattern from `merge_pipeline.rs:441-472`), not in the `NewMetricsSplits` handler. The planner operates on its in-memory set of known splits.
-
----
-
-## Integration Points with Existing Code
-
-### Existing code that needs modification
-
-| File | Change | Reason |
-|------|--------|--------|
-| `quickwit-indexing/src/actors/parquet_indexer.rs` | Add window partitioning to `process_batch()` | Enforce window boundaries at ingestion |
-| `quickwit-indexing/src/actors/indexing_pipeline.rs` | Route `ParquetMergePipeline` spawn for metrics indexes | Pipeline lifecycle |
-| `quickwit-indexing/src/actors/indexing_service.rs` | Spawn `ParquetMergePipeline` alongside `IndexingPipeline` | Service-level lifecycle |
-| `quickwit-indexing/src/actors/mod.rs` | Export new actor types | Module structure |
-| `quickwit-parquet-engine/src/split/metadata.rs` | Add `window_start`, `window_duration_secs`, `sort_schema`, `num_merge_ops` fields | Compaction metadata |
-| `quickwit-metastore` (PostgreSQL) | Add new columns to `metrics_splits` table; add `list_metrics_splits_for_compaction` RPC | Merge planner queries |
-| `quickwit-metastore` (PostgreSQL) | Implement replace semantics in `publish_metrics_splits` | Atomic replace-on-merge |
-
-### Existing code that is reused unchanged
-
-| Component | Reuse Pattern |
-|-----------|---------------|
-| `MergeSchedulerService` | Shared singleton, schedules both Tantivy and Parquet merges |
-| `ParquetUploader` | Reused directly for merge uploads (already supports `UploaderType`) |
-| `Sequencer` | Not needed for merge pipeline (ordering not required for merge publishes) |
-| `KillSwitch` / `ActorContext` | Standard actor framework |
-| `TempDirectory` / scratch management | Standard pattern for local file staging |
-
-### New files to create
-
-| File | Purpose |
-|------|---------|
-| `quickwit-indexing/src/actors/parquet_merge_pipeline.rs` | Supervisor for Parquet merge actors |
-| `quickwit-indexing/src/actors/parquet_merge_planner.rs` | Merge planning for metrics splits |
-| `quickwit-indexing/src/actors/parquet_merge_split_downloader.rs` | Downloads Parquet files for merge |
-| `quickwit-indexing/src/actors/parquet_merge_executor.rs` | K-way sorted merge via DataFusion |
-| `quickwit-indexing/src/actors/parquet_merge_publisher.rs` | Publishes merged splits with replace semantics |
-| `quickwit-indexing/src/merge_policy/windowed_sort_merge_policy.rs` | Merge policy for time-windowed Parquet splits |
-| `quickwit-indexing/src/models/parquet_merge_scratch.rs` | Message type for downloaded Parquet files |
-| `quickwit-indexing/src/models/new_metrics_splits.rs` | Planner feedback message type |
+**Instead:** Read and validate `DD_API_KEY` in `TransformConfig::build()`. Return an error if absent. Store the value in `MetricMetadata` fields.
 
 ---
 
-## Suggested Build Order (Dependency-Driven)
+## Integration Points
 
-The build order is driven by data dependencies: each phase produces artifacts the next phase consumes.
+### External Service
 
-### Phase 1: Metadata Foundation (no actor changes)
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| byoc-ingest-metadata-svc | `reqwest::Client` HTTP POST | URL from config, API key from env. Drop-on-failure. No retry. |
 
-**Build:** `MetricsSplitMetadata` extensions, PostgreSQL migration, metastore RPCs
+### Internal Boundaries
 
-**Rationale:** Everything else depends on having `window_start`, `sort_schema`, and `num_merge_ops` in the metadata. Without these fields, the planner cannot scope merges and the executor cannot determine sort order.
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| `preprocess_metrics` → `metric_metadata` | Vector event stream (EventArray) | Same event type (Metric), same format, no schema change |
+| `metric_metadata` → `arrow_ipc_metrics` | Vector event stream (EventArray) | Events pass through unmodified |
+| `metric_metadata` → filesystem | Direct file I/O in stream | known_metrics.csv, atomic write via rename |
+| `intake_runner.rs` → `MetricMetadataConfig` | YAML topology string interpolation | org_id, metadata_svc_url, persist_path injected at topology build time |
 
-**Deliverables:**
-- Extended `MetricsSplitMetadata` with `window_start`, `window_duration_secs`, `sort_schema`, `num_merge_ops`
-- PostgreSQL migration adding columns to `metrics_splits`
-- `list_metrics_splits_for_compaction` metastore RPC
-- Replace semantics in `publish_metrics_splits`
+### Topology Change in intake_runner.rs
 
-### Phase 2: Ingestion-Time Window Enforcement
+Current topology path for metrics:
+```
+datadog_agent.metrics → preprocess_metrics → metrics_out
+otlp.metrics         → preprocess_metrics → metrics_out
+```
 
-**Build:** Modify `ParquetIndexer` to partition by window and sort within windows
+New topology path:
+```
+datadog_agent.metrics → preprocess_metrics → metric_metadata → metrics_out
+otlp.metrics         → preprocess_metrics → metric_metadata → metrics_out
+```
 
-**Rationale:** The compaction pipeline needs window-scoped, pre-sorted input splits. Without this, the merge executor would need to do a full sort instead of a merge sort, and window scoping would be impossible.
-
-**Deliverables:**
-- Window-aware accumulator in `ParquetIndexer`
-- Sort-at-write in the Parquet writer
-- Late data rejection
-- Parquet column index enablement
-
-### Phase 3: Merge Policy
-
-**Build:** `WindowedSortMergePolicy`
-
-**Rationale:** The planner needs a policy before it can generate merge operations. The policy is pure logic with no actor dependencies.
-
-**Deliverables:**
-- `WindowedSortMergePolicy` (adapts `StableLogMergePolicy` for size-based levels on Parquet)
-- Maturity model (size + age)
-- Unit tests with proptest
-
-### Phase 4: Merge Executor (Core Algorithm)
-
-**Build:** `ParquetMergeExecutor` with k-way sorted merge
-
-**Rationale:** This is the most complex new component. It can be developed and tested in isolation before wiring into the actor pipeline.
-
-**Deliverables:**
-- K-way sorted merge using DataFusion's `SortPreservingMergeExec`
-- Merged metadata computation (union of metric names, tags, time ranges)
-- Column index and sort metadata in output files
-- Unit tests with known input/output pairs
-
-### Phase 5: Actor Pipeline (Planner, Downloader, Publisher)
-
-**Build:** All remaining actors and the supervisor
-
-**Rationale:** With the executor and policy tested, wire them into the full actor pipeline.
-
-**Deliverables:**
-- `ParquetMergePlanner` (with inventory tracking, incarnation handling)
-- `ParquetMergeSplitDownloader` (simple S3 download)
-- `ParquetMergePublisher` (publish with replace + planner feedback)
-- `ParquetMergePipeline` (supervisor with health checks)
-- Integration with `IndexingService` for lifecycle management
-
-### Phase 6: Integration Testing
-
-**Build:** End-to-end tests through the full pipeline
-
-**Rationale:** All components exist; verify they work together.
-
-**Deliverables:**
-- E2E test: ingest -> compact -> query correctness
-- DST test: crash recovery during merge
-- Metrics: compaction throughput, split count reduction
-
----
-
-## Scalability Considerations
-
-| Concern | At 100 splits/window | At 10K splits/window | At 100K splits/window |
-|---------|---------------------|---------------------|----------------------|
-| Planner memory | Negligible (in-memory set of metadata) | ~10 MB (metadata per split ~1 KB) | ~100 MB, may need pagination |
-| Merge executor I/O | Bottlenecked by S3 download | Need parallel downloads | Need parallel downloads + IO throttling |
-| Merge concurrency | Default 3 concurrent merges shared with Tantivy | May need separate semaphore for Parquet | Separate semaphore, configurable |
-| Window accumulator memory | 2-3 active accumulators | Same (bounded by late data window) | Same (bounded by late data window) |
-
-### Key scaling knob
-
-The `MergeSchedulerService` has a configurable `merge_concurrency` (default: 3). For high-throughput metrics deployments, this should be tunable separately for Parquet merges vs Tantivy merges. Consider a separate `ParquetMergeSchedulerService` if contention becomes an issue.
+The transform is inserted after `preprocess_metrics` (tag normalization must happen first so metric names and tags are in canonical form before metadata tracking).
 
 ---
 
 ## Sources
 
-All findings are based on direct codebase analysis:
+All findings are based on direct source analysis:
 
-- `quickwit-indexing/src/actors/merge_planner.rs` -- MergePlanner actor, `belongs_to_pipeline()`, incarnation handling, inventory tracking
-- `quickwit-indexing/src/actors/merge_split_downloader.rs` -- MergeSplitDownloader actor, download pattern
-- `quickwit-indexing/src/actors/merge_executor.rs` -- MergeExecutor actor, Tantivy merge logic, error handling pattern
-- `quickwit-indexing/src/actors/merge_pipeline.rs` -- MergePipeline supervisor, spawn order, health check, shutdown
-- `quickwit-indexing/src/actors/publisher.rs` -- Publisher with merge planner feedback loop
-- `quickwit-indexing/src/actors/merge_scheduler_service.rs` -- Shared scheduler, priority queue, semaphore permits
-- `quickwit-indexing/src/merge_policy/stable_log_merge_policy.rs` -- Level-based merge policy, maturity model
-- `quickwit-indexing/src/actors/indexing_pipeline.rs` -- ParquetIndexingPipeline spawn, `PipelineHandles` enum
-- `quickwit-indexing/src/actors/parquet_indexer.rs` -- ParquetIndexer actor, accumulator, commit timeout
-- `quickwit-indexing/src/actors/parquet_uploader.rs` -- ParquetUploader, staging, S3 upload, sequencer integration
-- `quickwit-indexing/src/actors/parquet_publisher.rs` -- ParquetPublisher, publish_metrics_splits, SuggestTruncate
-- `quickwit-parquet-engine/src/split/metadata.rs` -- MetricsSplitMetadata, current fields
-- `docs/internals/compaction-architecture.md` -- Merge scope, node_id constraint analysis
-- `docs/internals/adr/gaps/001-no-parquet-compaction.md` -- GAP analysis confirming no Parquet merge exists
-- `docs/internals/adr/gaps/003-no-time-window-partitioning.md` -- GAP analysis for window partitioning
-- `docs/internals/adr/gaps/004-incomplete-split-metadata.md` -- GAP analysis for metadata fields
+- `vector-core/src/transform/mod.rs` — `Transform` enum, `FunctionTransform`, `TaskTransform`, `SyncTransform` trait definitions and concurrency semantics
+- `vector/src/transforms/aggregate.rs` — canonical `TaskTransform` with timer-based flushing (structural template)
+- `vector/src/transforms/aws_ec2_metadata.rs` — `tokio::spawn` background task pattern and `TransformConfig::build()` I/O pattern
+- `vector/src/transforms/reduce/transform.rs` — `map_with_expiration` usage; `flush_all_into` at stream end
+- `vector-stream/src/expiration_map.rs` — `map_with_expiration` implementation showing `tokio::select!` + `flush_fn` on stream end
+- `vector/src/topology/builder.rs` — how `build_task_transform` drives the returned stream in a single tokio task; shutdown via stream closure
+- `pomsky-intake/src/transforms/preprocess_metric.rs` — existing `FunctionTransform` pattern for comparison
+- `pomsky-intake/src/intake_runner.rs` — topology construction via format string; `ExtraContext` and Application lifecycle
+- `pomsky-intake/src/transforms/mod.rs` — transform registration via `typetag`
+- `pomsky-intake/Cargo.toml` — existing dependencies (`reqwest`, `tokio`, `serde`, `typetag`)
+- `docs/internals/adr/gaps/002-cancellation-safety.md` (GAP-002) — prohibition on `tokio::sync::Mutex` and `JoinHandle::abort()`
+
+---
+
+*Architecture research for: stateful Vector transform (metric metadata tracking)*
+*Researched: 2026-04-16*
