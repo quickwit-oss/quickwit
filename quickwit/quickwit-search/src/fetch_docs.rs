@@ -79,14 +79,13 @@ async fn fetch_docs_to_map(
         );
     }
 
-    let split_fetch_docs: Vec<Vec<(GlobalDocAddress, Document)>> = futures::future::try_join_all(
-        split_fetch_docs_futures,
-    )
-    .await
-    .map_err(|error| {
-        error!(error = ?error, "error when fetching docs in a split");
-        error
-    })?;
+    let split_fetch_docs: Vec<Vec<(GlobalDocAddress, Document)>> =
+        futures::future::try_join_all(split_fetch_docs_futures)
+            .await
+            .map_err(|error| {
+                error!(error = ?error, "error when fetching docs in a split");
+                error
+            })?;
 
     let global_doc_addr_to_doc_json: HashMap<GlobalDocAddress, Document> = split_fetch_docs
         .into_iter()
