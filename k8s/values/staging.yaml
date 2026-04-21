@@ -7,7 +7,7 @@ cloudprem:
   index:
     minShards: 240 # number of indexers * number of * vCPUs * 2
   reverseConnection:
-    enabled: true
+    enabled: false
 
 datadog:
   site: dd.datad0g.com
@@ -203,6 +203,7 @@ searcher:
 
   extraEnv:
     DD_API_KEY_FILE: /quickwit/dd-api-key
+    CP_ENABLE_REVERSE_CONNECTION: "true"
 
 janitor:
   resources:
