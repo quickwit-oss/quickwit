@@ -17,7 +17,8 @@
 use std::sync::Arc;
 
 use anyhow::{Result, bail};
-use arrow::datatypes::{DataType, Field};
+use arrow::datatypes::{DataType, Field, Fields};
+use parquet::variant::VariantType;
 
 /// Required field names that must exist in every metrics batch.
 pub const REQUIRED_FIELDS: &[&str] = &["metric_name", "metric_type", "timestamp_secs", "value"];
@@ -137,7 +138,7 @@ impl ParquetField {
     }
 
     /// Convert to Arrow Field.
-    pub fn to_arrow_field(&self) -> Field {
+    pub fn to_arrow_field(self) -> Field {
         let field = Field::new(self.name(), self.arrow_type(), self.nullable());
 
         // Add VARIANT extension type metadata for attributes fields
