@@ -184,12 +184,12 @@ impl Automaton {
     /// automaton still accepts everything it accepted before, but may accept
     /// additional strings (superset language).
     pub(crate) fn prune(&mut self, max_num_transitions: usize) {
-        if self.max_depth > 0 && max_num_transitions > self.max_depth {
-            panic!(
-                "bug: max_num_transitions({}) > max_depth({})",
-                max_num_transitions, self.max_depth
-            );
-        }
+        debug_assert!(
+            self.max_depth == 0 || max_num_transitions <= self.max_depth,
+            "bug: max_num_transitions({}) > max_depth({})",
+            max_num_transitions,
+            self.max_depth
+        );
 
         // Max-heap by (weight, insertion_order). Higher weight is popped first;
         // for equal weights, lower sequence number (earlier BFS visit) is popped

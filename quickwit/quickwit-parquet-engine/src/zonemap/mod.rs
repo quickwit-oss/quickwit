@@ -178,6 +178,9 @@ fn is_string_dict(dt: &DataType) -> bool {
 }
 
 /// Register all non-null string values from an Arrow column into the builder.
+///
+/// Handles `Utf8`, `LargeUtf8`, and `Dictionary(Int32, Utf8|LargeUtf8)`.
+/// Dictionary columns iterate distinct values (not all rows) for efficiency.
 fn register_string_values(
     array: &dyn Array,
     builder: &mut regex_builder::PrefixPreservingRegexBuilder,
@@ -186,7 +189,6 @@ fn register_string_values(
         DataType::Dictionary(_, _) => {
             if let Some(dict) = array.as_any().downcast_ref::<DictionaryArray<Int32Type>>() {
                 let values = dict.values();
-                // Dictionary values may be Utf8 or LargeUtf8.
                 if let Some(str_values) = values.as_any().downcast_ref::<StringArray>() {
                     for i in 0..str_values.len() {
                         if !str_values.is_null(i) {
