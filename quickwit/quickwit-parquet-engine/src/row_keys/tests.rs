@@ -20,6 +20,7 @@ use arrow::record_batch::RecordBatch;
 use quickwit_proto::sortschema::column_value;
 
 use super::*;
+use crate::split::ParquetSplitKind;
 use crate::test_helpers::{create_dict_array, create_nullable_dict_array};
 
 /// Default metrics sort fields string.
@@ -475,7 +476,12 @@ fn test_split_writer_populates_row_keys_proto() {
     let config = ParquetWriterConfig::default();
     let temp_dir = tempfile::tempdir().unwrap();
     let split_writer =
-        crate::storage::ParquetSplitWriter::new(config, temp_dir.path(), &TableConfig::default());
+        crate::storage::ParquetSplitWriter::new(
+            ParquetSplitKind::Metrics,
+            config,
+            temp_dir.path(),
+            &TableConfig::default(),
+        );
 
     let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
     let schema = Arc::new(Schema::new(vec![
@@ -504,7 +510,6 @@ fn test_split_writer_populates_row_keys_proto() {
 
     // The metadata must have row_keys_proto populated.
     let proto_bytes = split
-        .metadata
         .row_keys_proto
         .as_ref()
         .expect("row_keys_proto must be set by split writer");
@@ -530,9 +535,8 @@ fn test_row_keys_consistent_across_all_storage_paths() {
     // and a wide timestamp range. Verifies that the RowKeys proto is
     // identical in all three places it appears:
     //
-    //   1. MetricsSplitMetadata.row_keys_proto (feeds Postgres)
+    //   1. ParquetSplitMetadata.row_keys_proto (feeds Postgres)
     //   2. Parquet file KV metadata (qh.row_keys)
-    //   3. InsertableMetricsSplit.row_keys (Postgres column)
     //
     // And that the actual min/max column values are correct given the
     // sort order: metric_name|service|env|datacenter|region|host|
@@ -540,15 +544,18 @@ fn test_row_keys_consistent_across_all_storage_paths() {
     use base64::Engine as _;
     use parquet::file::reader::{FileReader, SerializedFileReader};
 
-    use crate::split::MetricsSplitState;
-    use crate::split::postgres::InsertableMetricsSplit;
     use crate::storage::ParquetWriterConfig;
     use crate::table_config::TableConfig;
 
     let config = ParquetWriterConfig::default();
     let temp_dir = tempfile::tempdir().unwrap();
     let split_writer =
-        crate::storage::ParquetSplitWriter::new(config, temp_dir.path(), &TableConfig::default());
+        crate::storage::ParquetSplitWriter::new(
+            ParquetSplitKind::Metrics,
+            config,
+            temp_dir.path(),
+            &TableConfig::default(),
+        );
 
     // Build a batch with rich test data. Rows are UNSORTED — the writer
     // will sort them. After sorting by sort schema, the expected order is:
@@ -625,19 +632,18 @@ fn test_row_keys_consistent_across_all_storage_paths() {
     )
     .unwrap();
 
-    // ---- Path 1: Write through split_writer, get MetricsSplitMetadata ----
+    // ---- Path 1: Write through split_writer, get ParquetSplitMetadata ----
 
     let split = split_writer.write_split(&batch, "test-index").unwrap();
 
     let metadata_row_keys_bytes = split
-        .metadata
         .row_keys_proto
         .as_ref()
-        .expect("row_keys_proto must be populated on MetricsSplitMetadata");
+        .expect("row_keys_proto must be populated on ParquetSplitMetadata");
 
     // ---- Path 2: Read Parquet file, extract qh.row_keys from KV metadata ----
 
-    let parquet_path = temp_dir.path().join(split.metadata.parquet_filename());
+    let parquet_path = temp_dir.path().join(split.parquet_filename());
     let file = std::fs::File::open(&parquet_path).unwrap();
     let reader = SerializedFileReader::new(file).unwrap();
     let file_meta = reader.metadata().file_metadata();
@@ -654,27 +660,12 @@ fn test_row_keys_consistent_across_all_storage_paths() {
         .decode(b64_value)
         .unwrap();
 
-    // ---- Path 3: Build InsertableMetricsSplit (Postgres path) ----
-
-    let insertable =
-        InsertableMetricsSplit::from_metadata(&split.metadata, MetricsSplitState::Staged).unwrap();
-    let postgres_row_keys_bytes = insertable
-        .row_keys
-        .as_ref()
-        .expect("InsertableMetricsSplit.row_keys must be populated");
-
-    // ---- Verify all three paths have identical bytes ----
+    // ---- Verify both paths have identical bytes ----
 
     assert_eq!(
         metadata_row_keys_bytes.as_slice(),
         parquet_row_keys_bytes.as_slice(),
-        "MetricsSplitMetadata and Parquet KV metadata must have identical row_keys bytes"
-    );
-    assert_eq!(
-        metadata_row_keys_bytes.as_slice(),
-        postgres_row_keys_bytes.as_slice(),
-        "MetricsSplitMetadata and Postgres InsertableMetricsSplit must have identical row_keys \
-         bytes"
+        "ParquetSplitMetadata and Parquet KV metadata must have identical row_keys bytes"
     );
 
     // ---- Decode and verify the actual min/max column values ----
