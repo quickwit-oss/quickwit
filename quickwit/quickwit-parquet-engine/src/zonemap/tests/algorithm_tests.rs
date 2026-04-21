@@ -22,8 +22,7 @@ use arrow::array::{
     ArrayRef, DictionaryArray, Float64Array, Int32Array, Int64Array, LargeStringArray, StringArray,
     UInt8Array, UInt64Array,
 };
-use arrow::datatypes::Int32Type;
-use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
+use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use arrow::record_batch::RecordBatch;
 
 use crate::test_helpers::{create_dict_array, create_nullable_dict_array};
