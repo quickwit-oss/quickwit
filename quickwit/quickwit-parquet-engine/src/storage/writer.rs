@@ -210,7 +210,7 @@ impl ParquetWriter {
                     .map(|idx| SortingColumn {
                         column_idx: idx as i32,
                         descending: sf.descending,
-                        nulls_first: true,
+                        nulls_first: false,
                     })
             })
             .collect()
@@ -233,7 +233,7 @@ impl ParquetWriter {
                         values: Arc::clone(batch.column(idx)),
                         options: Some(SortOptions {
                             descending: sf.descending,
-                            nulls_first: true,
+                            nulls_first: false,
                         }),
                     })
             })
@@ -277,7 +277,7 @@ impl ParquetWriter {
                                 values: Arc::clone(sorted_batch.column(idx)),
                                 options: Some(SortOptions {
                                     descending: sf.descending,
-                                    nulls_first: true,
+                                    nulls_first: false,
                                 }),
                             })
                     })

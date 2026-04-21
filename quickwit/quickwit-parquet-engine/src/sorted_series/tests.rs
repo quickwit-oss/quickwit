@@ -675,6 +675,30 @@ fn test_split_round_trip_verifies_key_correctness_with_nulls() {
         );
     }
 
+    // Monotonicity check: sorted_series keys must be non-decreasing in the
+    // writer's physical output. This is the critical invariant for DataFusion
+    // streaming aggregation — the partition key must be monotonic relative to
+    // the file's sort order. This holds because:
+    // - The writer sorts with nulls_first=false (nulls sort last).
+    // - encode_row_key skips null columns (producing a shorter key).
+    // - Shorter keys compare before longer keys with the same prefix.
+    // If nulls_first were true, a null-service row would sort before a
+    // service="api" row, but its key would compare after (missing ordinal
+    // vs. present ordinal), breaking monotonicity.
+    for i in 1..ss_col.len() {
+        let prev = ss_col.value(i - 1);
+        let cur = ss_col.value(i);
+        assert!(
+            prev <= cur,
+            "sorted_series must be monotonically non-decreasing: \
+             row {} ({:?}) > row {} ({:?})",
+            i - 1,
+            prev,
+            i,
+            cur,
+        );
+    }
+
     std::fs::remove_file(&path).ok();
 }
 
