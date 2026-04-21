@@ -922,7 +922,7 @@ mod tests {
 
         let temp_dir = std::env::temp_dir();
         let path = temp_dir.join("test_self_describing_roundtrip.parquet");
-        let (_, computed_row_keys) = writer
+        let (_, (computed_row_keys, _zonemap_regexes)) = writer
             .write_to_file_with_metadata(&batch, &path, Some(&original))
             .unwrap();
         let computed_row_keys =
@@ -1274,7 +1274,7 @@ mod tests {
             sort_fields: Some("metric_name|service|timeseries_id|timestamp_secs/V2".to_string()),
             ..TableConfig::default()
         };
-        let writer = ParquetWriter::new(ParquetWriterConfig::default(), &asc_config);
+        let writer = ParquetWriter::new(ParquetWriterConfig::default(), &asc_config).unwrap();
 
         let temp_dir = std::env::temp_dir();
         let path = temp_dir.join("test_nulls_last_asc.parquet");
@@ -1323,7 +1323,7 @@ mod tests {
             sort_fields: Some("metric_name|-service|timeseries_id|timestamp_secs/V2".to_string()),
             ..TableConfig::default()
         };
-        let writer = ParquetWriter::new(ParquetWriterConfig::default(), &desc_config);
+        let writer = ParquetWriter::new(ParquetWriterConfig::default(), &desc_config).unwrap();
 
         let path = temp_dir.join("test_nulls_last_desc.parquet");
         writer

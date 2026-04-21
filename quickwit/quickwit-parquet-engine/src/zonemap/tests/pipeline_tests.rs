@@ -72,7 +72,7 @@ fn create_pipeline_test_batch() -> RecordBatch {
 #[test]
 fn test_zonemap_in_parquet_kv_metadata() {
     let config = ParquetWriterConfig::default();
-    let writer = ParquetWriter::new(config, &TableConfig::default());
+    let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
     let batch = create_pipeline_test_batch();
     let temp_dir = std::env::temp_dir();
@@ -141,7 +141,7 @@ fn test_zonemap_in_parquet_kv_metadata() {
 #[test]
 fn test_zonemap_in_write_to_bytes() {
     let config = ParquetWriterConfig::default();
-    let writer = ParquetWriter::new(config, &TableConfig::default());
+    let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
     let batch = create_pipeline_test_batch();
     let (bytes, write_meta) = writer.write_to_bytes(&batch, None).unwrap();
@@ -166,7 +166,8 @@ fn test_zonemap_in_split_writer() {
         config,
         temp_dir.path(),
         &TableConfig::default(),
-    );
+    )
+    .unwrap();
 
     let batch = create_pipeline_test_batch();
     let split = split_writer.write_split(&batch, "test-index").unwrap();
@@ -212,7 +213,8 @@ fn test_zonemap_metadata_json_roundtrip() {
         config,
         temp_dir.path(),
         &TableConfig::default(),
-    );
+    )
+    .unwrap();
 
     let batch = create_pipeline_test_batch();
     let split = split_writer.write_split(&batch, "test-index").unwrap();
@@ -230,7 +232,7 @@ fn test_zonemap_metadata_json_roundtrip() {
 #[test]
 fn test_zonemap_consistency_across_write_paths() {
     let config = ParquetWriterConfig::default();
-    let writer = ParquetWriter::new(config.clone(), &TableConfig::default());
+    let writer = ParquetWriter::new(config.clone(), &TableConfig::default()).unwrap();
 
     let batch = create_pipeline_test_batch();
 
