@@ -57,6 +57,9 @@ tracing-subscriber = { workspace = true }
 
 metrics = { workspace = true }
 metrics-exporter-dogstatsd = { workspace = true }
+metrics-exporter-otel = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
+metrics-util = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }

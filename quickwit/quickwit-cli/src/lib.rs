@@ -395,7 +395,6 @@ pub mod busy_detector {
             let delta = now - time.load(Ordering::Relaxed);
             CLI_METRICS
                 .thread_unpark_duration_microseconds
-                .with_label_values([])
                 .observe(delta as f64);
             if delta > ALLOWED_DELAY_MICROS {
                 emit_debug(delta, now);

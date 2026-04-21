@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use tracing::error;
 use warp::hyper::StatusCode;
 use warp::reply::with_status;
 
@@ -31,18 +30,14 @@ pub struct MetricsApi;
     path = "/",
     responses(
         (status = 200, description = "Successfully fetched metrics.", body = String),
-        (status = 500, description = "Metrics not available.", body = String),
     ),
 )]
 /// Get Node Metrics
 ///
 /// These are in the form of prometheus metrics.
 pub fn metrics_handler() -> impl warp::Reply {
-    match quickwit_common::metrics::metrics_text_payload() {
-        Ok(metrics) => with_status(metrics, StatusCode::OK),
-        Err(e) => {
-            error!("failed to encode prometheus metrics: {e}");
-            with_status(String::new(), StatusCode::INTERNAL_SERVER_ERROR)
-        }
-    }
+    with_status(
+        quickwit_common::metrics::render_prometheus_text(),
+        StatusCode::OK,
+    )
 }

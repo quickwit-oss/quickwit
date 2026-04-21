@@ -20,6 +20,8 @@ use anyhow::Context;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{KeyValue, global};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
+#[cfg(not(test))]
+use opentelemetry_otlp::MetricExporter;
 use opentelemetry_otlp::{
     LogExporter, Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig,
 };
@@ -80,6 +82,22 @@ impl OtlpProtocol {
                 .build(),
         }
         .context("failed to initialize OTLP traces exporter")
+    }
+
+    #[cfg(not(test))]
+    fn metric_exporter(&self) -> anyhow::Result<MetricExporter> {
+        match self {
+            OtlpProtocol::Grpc => MetricExporter::builder().with_tonic().build(),
+            OtlpProtocol::HttpProtobuf => MetricExporter::builder()
+                .with_http()
+                .with_protocol(OtlpWireProtocol::HttpBinary)
+                .build(),
+            OtlpProtocol::HttpJson => MetricExporter::builder()
+                .with_http()
+                .with_protocol(OtlpWireProtocol::HttpJson)
+                .build(),
+        }
+        .context("failed to initialize OTLP metrics exporter")
     }
 }
 
@@ -238,11 +256,65 @@ pub fn setup_logging_and_tracing(
     ))
 }
 
-/// Set up DogStatsD metrics exporter and invariant recorder.
+/// Set up metrics recorders: Prometheus (always), OTLP (opt-in), DogStatsD.
+///
+/// Routes metrics by prefix:
+/// - `quickwit_*` → Prometheus + OTLP
+/// - `pomsky.*`   → DogStatsD
 #[cfg(not(test))]
 pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
-    // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
-    // deprecated and can be removed after 2026-04-01.
+    use quickwit_common::metrics::HistogramConfig;
+
+    let mut prom_builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+    for config in quickwit_common::inventory::iter::<HistogramConfig>() {
+        prom_builder = prom_builder
+            .set_buckets_for_metric(
+                metrics_exporter_prometheus::Matcher::Full(config.full_name()),
+                &(config.buckets_fn)(),
+            )
+            .context("failed to set histogram buckets")?;
+    }
+    let prom_recorder = prom_builder.build_recorder();
+    let prom_handle = prom_recorder.handle();
+
+    quickwit_common::metrics::set_prom_handle(prom_handle);
+
+    let mut quickwit_fanout =
+        metrics_util::layers::FanoutBuilder::default().add_recorder(prom_recorder);
+
+    if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
+        let global_protocol_str =
+            get_from_env("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc".to_string(), false);
+        let global_protocol = OtlpProtocol::from_str(&global_protocol_str)?;
+
+        let metrics_protocol_str =
+            get_from_env_opt::<String>("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", false);
+        let metrics_protocol = metrics_protocol_str
+            .as_deref()
+            .map(OtlpProtocol::from_str)
+            .transpose()?
+            .unwrap_or(global_protocol);
+
+        let metric_exporter = metrics_protocol.metric_exporter()?;
+        let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(metric_exporter).build();
+        let resource = opentelemetry_sdk::Resource::builder()
+            .with_service_name("quickwit")
+            .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
+            .build();
+        let meter_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+            .with_reader(reader)
+            .with_resource(resource)
+            .build();
+        let meter = opentelemetry::metrics::MeterProvider::meter(&meter_provider, "quickwit");
+        let otel_recorder = metrics_exporter_otel::OpenTelemetryRecorder::new(meter);
+        for config in quickwit_common::inventory::iter::<HistogramConfig>() {
+            let key_name = metrics::KeyName::from(config.full_name());
+            otel_recorder.set_histogram_bounds(&key_name, (config.buckets_fn)());
+        }
+
+        quickwit_fanout = quickwit_fanout.add_recorder(otel_recorder);
+    }
+
     let host: String = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_HOST", false)
         .unwrap_or_else(|| {
             quickwit_common::get_from_env(
@@ -270,13 +342,36 @@ pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
             global_labels.push(::metrics::Label::new(label_key, label_val));
         }
     }
-    metrics_exporter_dogstatsd::DogStatsDBuilder::default()
+    let dogstatsd_recorder = metrics_exporter_dogstatsd::DogStatsDBuilder::default()
         .set_global_prefix("cloudprem")
         .with_global_labels(global_labels)
         .with_remote_address(addr)
         .context("failed to parse DogStatsD server address")?
-        .install()
-        .context("failed to register DogStatsD exporter")?;
+        .build()
+        .context("failed to build DogStatsD recorder")?;
+
+    let quickwit_recorder = quickwit_fanout.build();
+
+    let mut router = metrics_util::layers::RouterBuilder::from_recorder(metrics::NoopRecorder);
+    router
+        .add_route(
+            metrics_util::MetricKindMask::ALL,
+            "quickwit_",
+            quickwit_recorder,
+        )
+        .add_route(
+            metrics_util::MetricKindMask::ALL,
+            "pomsky.",
+            dogstatsd_recorder,
+        );
+
+    let recorder = router.build();
+    metrics::set_global_recorder(recorder)
+        .map_err(|_| anyhow::anyhow!("failed to set global metrics recorder"))?;
+    for config in quickwit_common::inventory::iter::<HistogramConfig>() {
+        metrics::describe_histogram!(config.full_name(), config.help);
+    }
+
     quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
     Ok(())
 }

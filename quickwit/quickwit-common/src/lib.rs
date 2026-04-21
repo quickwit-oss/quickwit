@@ -62,6 +62,8 @@ use std::str::FromStr;
 
 pub use coolid::new_coolid;
 pub use cpus::num_cpus;
+#[doc(hidden)]
+pub use inventory;
 pub use kill_switch::KillSwitch;
 pub use path_hasher::PathHasher;
 pub use progress::{Progress, ProtectedZoneGuard};

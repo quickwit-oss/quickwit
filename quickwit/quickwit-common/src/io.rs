@@ -34,10 +34,9 @@ use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
 use bytesize::ByteSize;
 use pin_project::pin_project;
-use prometheus::IntCounter;
 use tokio::io::AsyncWrite;
 
-use crate::metrics::{IntCounterVec, new_counter_vec};
+use crate::metrics::{IntCounter, IntCounterVec, new_counter_vec};
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
 // Max 1MB at a time.

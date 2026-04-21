@@ -14,9 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{
-    HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram_vec,
-};
+use quickwit_common::metrics::{HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec};
 
 pub struct JaegerServiceMetrics {
     pub requests_total: IntCounterVec<2>,
@@ -25,6 +23,16 @@ pub struct JaegerServiceMetrics {
     pub fetched_traces_total: IntCounterVec<2>,
     pub fetched_spans_total: IntCounterVec<2>,
     pub transferred_bytes_total: IntCounterVec<2>,
+}
+
+quickwit_common::define_histogram_vec! {
+    REQUEST_DURATION_SECONDS,
+    name: "request_duration_seconds",
+    help: "Duration of requests",
+    subsystem: "jaeger",
+    const_labels: [],
+    labels: ["operation", "index", "error"],
+    buckets: exponential_buckets(0.02, 2.0, 8).unwrap(),
 }
 
 impl Default for JaegerServiceMetrics {
@@ -44,14 +52,7 @@ impl Default for JaegerServiceMetrics {
                 &[],
                 ["operation", "index"],
             ),
-            request_duration_seconds: new_histogram_vec(
-                "request_duration_seconds",
-                "Duration of requests",
-                "jaeger",
-                &[],
-                ["operation", "index", "error"],
-                exponential_buckets(0.02, 2.0, 8).unwrap(),
-            ),
+            request_duration_seconds: REQUEST_DURATION_SECONDS.clone(),
             fetched_traces_total: new_counter_vec(
                 "fetched_traces_total",
                 "Number of traces retrieved from storage",

@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 
 use quickwit_common::metrics::{
     HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec,
-    new_gauge_vec, new_histogram_vec,
+    new_gauge_vec,
 };
 
 pub struct ServeMetrics {
@@ -25,6 +25,17 @@ pub struct ServeMetrics {
     pub ongoing_requests: IntGaugeVec<1>,
     pub pending_requests: IntGaugeVec<1>,
     pub circuit_break_total: IntCounter,
+}
+
+quickwit_common::define_histogram_vec! {
+    REQUEST_DURATION_SECS,
+    name: "request_duration_secs",
+    help: "Response time in seconds",
+    subsystem: "",
+    const_labels: [],
+    labels: ["method", "status_code"],
+    // last bucket is 163.84s
+    buckets: quickwit_common::metrics::exponential_buckets(0.02, 2.0, 14).unwrap(),
 }
 
 impl Default for ServeMetrics {
@@ -43,15 +54,7 @@ impl Default for ServeMetrics {
                 &[],
                 ["method", "status_code"],
             ),
-            request_duration_secs: new_histogram_vec(
-                "request_duration_secs",
-                "Response time in seconds",
-                "",
-                &[],
-                ["method", "status_code"],
-                // last bucket is 163.84s
-                quickwit_common::metrics::exponential_buckets(0.02, 2.0, 14).unwrap(),
-            ),
+            request_duration_secs: REQUEST_DURATION_SECS.clone(),
             ongoing_requests: new_gauge_vec(
                 "ongoing_requests",
                 "Number of ongoing requests.",

@@ -110,6 +110,7 @@ colored = "3.0"
 console-subscriber = "0.5"
 criterion = { version = "0.8", features = ["async_tokio"] }
 cron = "0.16"
+dashmap = "6"
 dialoguer = { version = "0.12", default-features = false }
 dotenvy = "0.15"
 dyn-clone = "1.0"
@@ -149,6 +150,7 @@ hyper-util = { version = "0.1", default-features = false, features = [
 ] }
 indexmap = { version = "2.12", features = ["serde"] }
 indicatif = "0.18"
+inventory = "0.3"
 itertools = "0.14"
 lambda_runtime = "0.13"
 json_comments = "0.2"
@@ -158,6 +160,9 @@ matches = "0.1"
 md5 = "0.8"
 metrics = "0.24"
 metrics-exporter-dogstatsd = "0.9"
+metrics-exporter-otel = "0.3"
+metrics-exporter-prometheus = { version = "0.18.1", default-features = false }
+metrics-util = "0.20"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
@@ -170,7 +175,7 @@ openssl = { version = "0.10", default-features = false }
 openssl-probe = "0.1"
 opentelemetry = "0.31"
 opentelemetry-appender-tracing = "0.31"
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio", "metrics"] }
 opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic", "http-json"] }
 ouroboros = "0.18"
 parquet = { version = "58", default-features = false, features = ["arrow", "snap", "variant_experimental", "zstd"] }

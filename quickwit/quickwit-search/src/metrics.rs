@@ -20,8 +20,7 @@ use std::sync::LazyLock;
 use bytesize::ByteSize;
 use quickwit_common::metrics::{
     Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, exponential_buckets,
-    linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
-    new_histogram_vec,
+    linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec,
 };
 
 fn print_if_not_null(
@@ -126,31 +125,92 @@ fn duration_buckets() -> Vec<f64> {
     exponential_buckets(0.008, 2.0, 15).unwrap()
 }
 
+fn targeted_splits_buckets() -> Vec<f64> {
+    [
+        linear_buckets(0.0, 10.0, 10).unwrap(),
+        linear_buckets(100.0, 100.0, 9).unwrap(),
+        linear_buckets(1000.0, 1000.0, 9).unwrap(),
+        linear_buckets(10000.0, 10000.0, 10).unwrap(),
+    ]
+    .iter()
+    .flatten()
+    .copied()
+    .collect()
+}
+
+fn warmup_num_bytes_buckets() -> Vec<f64> {
+    vec![
+        ByteSize::mb(10).as_u64() as f64,
+        ByteSize::mb(20).as_u64() as f64,
+        ByteSize::mb(50).as_u64() as f64,
+        ByteSize::mb(100).as_u64() as f64,
+        ByteSize::mb(200).as_u64() as f64,
+        ByteSize::mb(500).as_u64() as f64,
+        ByteSize::gb(1).as_u64() as f64,
+        ByteSize::gb(2).as_u64() as f64,
+        ByteSize::gb(5).as_u64() as f64,
+    ]
+}
+
+quickwit_common::define_histogram_vec! {
+    ROOT_SEARCH_REQUEST_DURATION_SECONDS,
+    name: "root_search_request_duration_seconds",
+    help: "Duration of root search gRPC requests in seconds.",
+    subsystem: "search",
+    const_labels: [("kind", "server")],
+    labels: ["status"],
+    buckets: duration_buckets(),
+}
+
+quickwit_common::define_histogram_vec! {
+    ROOT_SEARCH_TARGETED_SPLITS,
+    name: "root_search_targeted_splits",
+    help: "Number of splits targeted per root search GRPC request.",
+    subsystem: "search",
+    const_labels: [],
+    labels: ["status"],
+    buckets: targeted_splits_buckets(),
+}
+
+quickwit_common::define_histogram_vec! {
+    LEAF_SEARCH_REQUEST_DURATION_SECONDS,
+    name: "leaf_search_request_duration_seconds",
+    help: "Duration of leaf search gRPC requests in seconds.",
+    subsystem: "search",
+    const_labels: [("kind", "server")],
+    labels: ["status"],
+    buckets: duration_buckets(),
+}
+
+quickwit_common::define_histogram_vec! {
+    LEAF_SEARCH_TARGETED_SPLITS,
+    name: "leaf_search_targeted_splits",
+    help: "Number of splits targeted per leaf search GRPC request.",
+    subsystem: "search",
+    const_labels: [],
+    labels: ["status"],
+    buckets: targeted_splits_buckets(),
+}
+
+quickwit_common::define_histogram! {
+    LEAF_SEARCH_SPLIT_DURATION_SECS,
+    name: "leaf_search_split_duration_secs",
+    help: "Number of seconds required to run a leaf search over a single split. The timer starts \
+           after the semaphore is obtained.",
+    subsystem: "search",
+    buckets: duration_buckets(),
+}
+
+quickwit_common::define_histogram! {
+    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES,
+    name: "leaf_search_single_split_warmup_num_bytes",
+    help: "Size of the short lived cache for a single split once the warmup is done.",
+    subsystem: "search",
+    buckets: warmup_num_bytes_buckets(),
+}
+
 impl Default for SearchMetrics {
     fn default() -> Self {
-        let targeted_splits_buckets: Vec<f64> = [
-            linear_buckets(0.0, 10.0, 10).unwrap(),
-            linear_buckets(100.0, 100.0, 9).unwrap(),
-            linear_buckets(1000.0, 1000.0, 9).unwrap(),
-            linear_buckets(10000.0, 10000.0, 10).unwrap(),
-        ]
-        .iter()
-        .flatten()
-        .copied()
-        .collect();
-
-        let pseudo_exponential_bytes_buckets = vec![
-            ByteSize::mb(10).as_u64() as f64,
-            ByteSize::mb(20).as_u64() as f64,
-            ByteSize::mb(50).as_u64() as f64,
-            ByteSize::mb(100).as_u64() as f64,
-            ByteSize::mb(200).as_u64() as f64,
-            ByteSize::mb(500).as_u64() as f64,
-            ByteSize::gb(1).as_u64() as f64,
-            ByteSize::gb(2).as_u64() as f64,
-            ByteSize::gb(5).as_u64() as f64,
-        ];
-
         let leaf_search_single_split_tasks = new_gauge_vec::<1>(
             "leaf_search_single_split_tasks",
             "Number of single split search tasks pending or ongoing",
@@ -167,22 +227,8 @@ impl Default for SearchMetrics {
                 &[("kind", "server")],
                 ["status"],
             ),
-            root_search_request_duration_seconds: new_histogram_vec(
-                "root_search_request_duration_seconds",
-                "Duration of root search gRPC requests in seconds.",
-                "search",
-                &[("kind", "server")],
-                ["status"],
-                duration_buckets(),
-            ),
-            root_search_targeted_splits: new_histogram_vec(
-                "root_search_targeted_splits",
-                "Number of splits targeted per root search GRPC request.",
-                "search",
-                &[],
-                ["status"],
-                targeted_splits_buckets.clone(),
-            ),
+            root_search_request_duration_seconds: ROOT_SEARCH_REQUEST_DURATION_SECONDS.clone(),
+            root_search_targeted_splits: ROOT_SEARCH_TARGETED_SPLITS.clone(),
             leaf_search_requests_total: new_counter_vec(
                 "leaf_search_requests_total",
                 "Total number of leaf search gRPC requests processed.",
@@ -190,23 +236,8 @@ impl Default for SearchMetrics {
                 &[("kind", "server")],
                 ["status"],
             ),
-            leaf_search_request_duration_seconds: new_histogram_vec(
-                "leaf_search_request_duration_seconds",
-                "Duration of leaf search gRPC requests in seconds.",
-                "search",
-                &[("kind", "server")],
-                ["status"],
-                duration_buckets(),
-            ),
-            leaf_search_targeted_splits: new_histogram_vec(
-                "leaf_search_targeted_splits",
-                "Number of splits targeted per leaf search GRPC request.",
-                "search",
-                &[],
-                ["status"],
-                targeted_splits_buckets,
-            ),
-
+            leaf_search_request_duration_seconds: LEAF_SEARCH_REQUEST_DURATION_SECONDS.clone(),
+            leaf_search_targeted_splits: LEAF_SEARCH_TARGETED_SPLITS.clone(),
             leaf_list_terms_splits_total: new_counter(
                 "leaf_list_terms_splits_total",
                 "Number of list terms splits total",
@@ -214,24 +245,13 @@ impl Default for SearchMetrics {
                 &[],
             ),
             split_search_outcome_total: SplitSearchOutcomeCounters::new_registered(),
-
-            leaf_search_split_duration_secs: new_histogram(
-                "leaf_search_split_duration_secs",
-                "Number of seconds required to run a leaf search over a single split. The timer \
-                 starts after the semaphore is obtained.",
-                "search",
-                duration_buckets(),
-            ),
+            leaf_search_split_duration_secs: LEAF_SEARCH_SPLIT_DURATION_SECS.clone(),
             leaf_search_single_split_tasks_ongoing: leaf_search_single_split_tasks
                 .with_label_values(["ongoing"]),
             leaf_search_single_split_tasks_pending: leaf_search_single_split_tasks
                 .with_label_values(["pending"]),
-            leaf_search_single_split_warmup_num_bytes: new_histogram(
-                "leaf_search_single_split_warmup_num_bytes",
-                "Size of the short lived cache for a single split once the warmup is done.",
-                "search",
-                pseudo_exponential_bytes_buckets,
-            ),
+            leaf_search_single_split_warmup_num_bytes: LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES
+                .clone(),
             job_assigned_total: new_counter_vec(
                 "job_assigned_total",
                 "Number of job assigned to searchers, per affinity rank.",

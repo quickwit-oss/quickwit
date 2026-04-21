@@ -17,7 +17,7 @@ use std::sync::LazyLock;
 use mrecordlog::ResourceUsage;
 use quickwit_common::metrics::{
     Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, exponential_buckets,
-    linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram, new_histogram_vec,
+    linear_buckets, new_counter_vec, new_gauge, new_gauge_vec,
 };
 
 // Counter vec counting the different outcomes of ingest requests as
@@ -86,6 +86,32 @@ pub(super) struct IngestV2Metrics {
     pub ingest_attempts: IntCounterVec<1>,
 }
 
+quickwit_common::define_histogram! {
+    SHARD_LT_THROUGHPUT_MIB,
+    name: "shard_lt_throughput_mib",
+    help: "Shard long term throughput as reported through chitchat",
+    subsystem: "ingest",
+    buckets: linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
+}
+
+quickwit_common::define_histogram! {
+    SHARD_ST_THROUGHPUT_MIB,
+    name: "shard_st_throughput_mib",
+    help: "Shard short term throughput as reported through chitchat",
+    subsystem: "ingest",
+    buckets: linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
+}
+
+quickwit_common::define_histogram_vec! {
+    WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS,
+    name: "wal_acquire_lock_request_duration_secs",
+    help: "Duration of acquire lock requests in seconds.",
+    subsystem: "ingest",
+    const_labels: [],
+    labels: ["operation", "type"],
+    buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
+}
+
 impl Default for IngestV2Metrics {
     fn default() -> Self {
         Self {
@@ -116,18 +142,8 @@ impl Default for IngestV2Metrics {
                 "ingest",
                 &[("state", "closed")],
             ),
-            shard_lt_throughput_mib: new_histogram(
-                "shard_lt_throughput_mib",
-                "Shard long term throughput as reported through chitchat",
-                "ingest",
-                linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
-            ),
-            shard_st_throughput_mib: new_histogram(
-                "shard_st_throughput_mib",
-                "Shard short term throughput as reported through chitchat",
-                "ingest",
-                linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
-            ),
+            shard_lt_throughput_mib: SHARD_LT_THROUGHPUT_MIB.clone(),
+            shard_st_throughput_mib: SHARD_ST_THROUGHPUT_MIB.clone(),
             wal_acquire_lock_requests_in_flight: new_gauge_vec(
                 "wal_acquire_lock_requests_in_flight",
                 "Number of acquire lock requests in-flight.",
@@ -135,14 +151,7 @@ impl Default for IngestV2Metrics {
                 &[],
                 ["operation", "type"],
             ),
-            wal_acquire_lock_request_duration_secs: new_histogram_vec(
-                "wal_acquire_lock_request_duration_secs",
-                "Duration of acquire lock requests in seconds.",
-                "ingest",
-                &[],
-                ["operation", "type"],
-                exponential_buckets(0.001, 2.0, 12).unwrap(),
-            ),
+            wal_acquire_lock_request_duration_secs: WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS.clone(),
             wal_disk_used_bytes: new_gauge(
                 "wal_disk_used_bytes",
                 "WAL disk space used in bytes.",

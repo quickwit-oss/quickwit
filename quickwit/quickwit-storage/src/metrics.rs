@@ -19,7 +19,7 @@ use std::sync::{LazyLock, RwLock};
 
 use quickwit_common::metrics::{
     GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
-    new_gauge, new_histogram_vec,
+    new_gauge,
 };
 use quickwit_config::CacheConfig;
 
@@ -47,6 +47,16 @@ pub struct StorageMetrics {
     pub object_storage_bulk_delete_requests_total: IntCounter,
     pub object_storage_delete_request_duration: Histogram,
     pub object_storage_bulk_delete_request_duration: Histogram,
+}
+
+quickwit_common::define_histogram_vec! {
+    OBJECT_STORAGE_REQUEST_DURATION_SECONDS,
+    name: "object_storage_request_duration_seconds",
+    help: "Duration of object storage requests in seconds.",
+    subsystem: "storage",
+    const_labels: [],
+    labels: ["action"],
+    buckets: vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
 }
 
 impl Default for StorageMetrics {
@@ -79,18 +89,10 @@ impl Default for StorageMetrics {
         let object_storage_bulk_delete_requests_total =
             object_storage_requests_total.with_label_values(["delete_objects"]);
 
-        let object_storage_request_duration = new_histogram_vec(
-            "object_storage_request_duration_seconds",
-            "Duration of object storage requests in seconds.",
-            "storage",
-            &[],
-            ["action"],
-            vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
-        );
         let object_storage_delete_request_duration =
-            object_storage_request_duration.with_label_values(["delete_object"]);
+            OBJECT_STORAGE_REQUEST_DURATION_SECONDS.with_label_values(["delete_object"]);
         let object_storage_bulk_delete_request_duration =
-            object_storage_request_duration.with_label_values(["delete_objects"]);
+            OBJECT_STORAGE_REQUEST_DURATION_SECONDS.with_label_values(["delete_objects"]);
 
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),

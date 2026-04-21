@@ -17,6 +17,7 @@ async-trait = { workspace = true }
 backtrace = { workspace = true, optional = true }
 bytesize = { workspace = true }
 coarsetime = { workspace = true }
+dashmap = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
 fnv = { workspace = true }
@@ -27,7 +28,10 @@ hostname = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true, optional = true }
+inventory = { workspace = true }
 itertools = { workspace = true }
+metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
@@ -62,6 +66,7 @@ jemalloc-profiled = [
 
 [dev-dependencies]
 hyper-util = { workspace = true }
+metrics-util = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
 serial_test = { workspace = true }

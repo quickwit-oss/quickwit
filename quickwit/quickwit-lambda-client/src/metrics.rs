@@ -17,8 +17,7 @@
 use std::sync::LazyLock;
 
 use quickwit_common::metrics::{
-    Histogram, HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram,
-    new_histogram_vec,
+    Histogram, HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec,
 };
 
 /// From 100ms to 73s seconds
@@ -38,6 +37,32 @@ pub struct LambdaMetrics {
     pub leaf_search_response_payload_size_bytes: Histogram,
 }
 
+quickwit_common::define_histogram_vec! {
+    LEAF_SEARCH_DURATION_SECONDS,
+    name: "leaf_search_duration_seconds",
+    help: "Duration of Lambda leaf search invocations in seconds.",
+    subsystem: "lambda",
+    const_labels: [],
+    labels: ["status"],
+    buckets: duration_buckets(),
+}
+
+quickwit_common::define_histogram! {
+    LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES,
+    name: "leaf_search_request_payload_size_bytes",
+    help: "Size of the request payload sent to Lambda in bytes.",
+    subsystem: "lambda",
+    buckets: payload_size_buckets(),
+}
+
+quickwit_common::define_histogram! {
+    LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES,
+    name: "leaf_search_response_payload_size_bytes",
+    help: "Size of the response payload received from Lambda in bytes.",
+    subsystem: "lambda",
+    buckets: payload_size_buckets(),
+}
+
 impl Default for LambdaMetrics {
     fn default() -> Self {
         LambdaMetrics {
@@ -48,26 +73,10 @@ impl Default for LambdaMetrics {
                 &[],
                 ["status"],
             ),
-            leaf_search_duration_seconds: new_histogram_vec(
-                "leaf_search_duration_seconds",
-                "Duration of Lambda leaf search invocations in seconds.",
-                "lambda",
-                &[],
-                ["status"],
-                duration_buckets(),
-            ),
-            leaf_search_request_payload_size_bytes: new_histogram(
-                "leaf_search_request_payload_size_bytes",
-                "Size of the request payload sent to Lambda in bytes.",
-                "lambda",
-                payload_size_buckets(),
-            ),
-            leaf_search_response_payload_size_bytes: new_histogram(
-                "leaf_search_response_payload_size_bytes",
-                "Size of the response payload received from Lambda in bytes.",
-                "lambda",
-                payload_size_buckets(),
-            ),
+            leaf_search_duration_seconds: LEAF_SEARCH_DURATION_SECONDS.clone(),
+            leaf_search_request_payload_size_bytes: LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES.clone(),
+            leaf_search_response_payload_size_bytes: LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES
+                .clone(),
         }
     }
 }

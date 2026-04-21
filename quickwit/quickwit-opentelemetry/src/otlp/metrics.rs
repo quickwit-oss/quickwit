@@ -14,9 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{
-    HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram_vec,
-};
+use quickwit_common::metrics::{HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec};
 
 pub struct OtlpServiceMetrics {
     pub requests_total: IntCounterVec<4>,
@@ -26,6 +24,16 @@ pub struct OtlpServiceMetrics {
     pub ingested_spans_total: IntCounterVec<4>,
     pub ingested_data_points_total: IntCounterVec<4>,
     pub ingested_bytes_total: IntCounterVec<4>,
+}
+
+quickwit_common::define_histogram_vec! {
+    REQUEST_DURATION_SECONDS,
+    name: "request_duration_seconds",
+    help: "Duration of requests",
+    subsystem: "otlp",
+    const_labels: [],
+    labels: ["service", "index", "transport", "format", "error"],
+    buckets: exponential_buckets(0.02, 2.0, 8).unwrap(),
 }
 
 impl Default for OtlpServiceMetrics {
@@ -45,14 +53,7 @@ impl Default for OtlpServiceMetrics {
                 &[],
                 ["service", "index", "transport", "format"],
             ),
-            request_duration_seconds: new_histogram_vec(
-                "request_duration_seconds",
-                "Duration of requests",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format", "error"],
-                exponential_buckets(0.02, 2.0, 8).unwrap(),
-            ),
+            request_duration_seconds: REQUEST_DURATION_SECONDS.clone(),
             ingested_log_records_total: new_counter_vec(
                 "ingested_log_records_total",
                 "Number of log records ingested",

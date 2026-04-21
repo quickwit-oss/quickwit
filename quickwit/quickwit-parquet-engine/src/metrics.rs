@@ -20,7 +20,7 @@
 use std::sync::LazyLock;
 
 use quickwit_common::metrics::{
-    Histogram, IntCounter, IntCounterVec, new_counter, new_counter_vec, new_histogram,
+    Histogram, IntCounter, IntCounterVec, new_counter, new_counter_vec,
 };
 
 /// Subsystem name for all metrics engine metrics.
@@ -58,6 +58,22 @@ pub struct ParquetEngineMetrics {
     pub errors_total: IntCounterVec<2>,
 }
 
+quickwit_common::define_histogram! {
+    INDEX_BATCH_DURATION_SECONDS,
+    name: "index_batch_duration_seconds",
+    help: "Histogram of add_batch durations in seconds, including any triggered flush.",
+    subsystem: "metrics_engine",
+    buckets: duration_buckets(),
+}
+
+quickwit_common::define_histogram! {
+    QUERY_DURATION_SECONDS,
+    name: "query_duration_seconds",
+    help: "Histogram of query execution durations in seconds.",
+    subsystem: "metrics_engine",
+    buckets: duration_buckets(),
+}
+
 impl Default for ParquetEngineMetrics {
     fn default() -> Self {
         Self {
@@ -80,12 +96,7 @@ impl Default for ParquetEngineMetrics {
                 &[],
                 ["kind"],
             ),
-            index_batch_duration_seconds: new_histogram(
-                "index_batch_duration_seconds",
-                "Histogram of add_batch durations in seconds, including any triggered flush.",
-                SUBSYSTEM,
-                duration_buckets(),
-            ),
+            index_batch_duration_seconds: INDEX_BATCH_DURATION_SECONDS.clone(),
             splits_written_total: new_counter(
                 "splits_written_total",
                 "Total number of splits written to storage.",
@@ -98,12 +109,7 @@ impl Default for ParquetEngineMetrics {
                 SUBSYSTEM,
                 &[],
             ),
-            query_duration_seconds: new_histogram(
-                "query_duration_seconds",
-                "Histogram of query execution durations in seconds.",
-                SUBSYSTEM,
-                duration_buckets(),
-            ),
+            query_duration_seconds: QUERY_DURATION_SECONDS.clone(),
             query_rows_returned: new_counter(
                 "query_rows_returned",
                 "Total number of rows returned from queries.",

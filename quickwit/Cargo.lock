@@ -2256,6 +2256,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "critical-section"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
+
+[[package]]
 name = "cron"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5010,6 +5016,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "metrics-exporter-otel"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54e5a5d54deb1941f7f47d8b9370ab9d7c11827c93dc4eec8310013a4c0d86db"
+dependencies = [
+ "metrics",
+ "metrics-util",
+ "opentelemetry",
+ "portable-atomic",
+ "scc",
+]
+
+[[package]]
+name = "metrics-exporter-prometheus"
+version = "0.18.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3589659543c04c7dc5526ec858591015b87cd8746583b51b48ef4353f99dbcda"
+dependencies = [
+ "base64 0.22.1",
+ "indexmap 2.14.0",
+ "metrics",
+ "metrics-util",
+ "quanta",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "metrics-util"
 version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6539,6 +6572,9 @@ name = "portable-atomic"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
+dependencies = [
+ "critical-section",
+]
 
 [[package]]
 name = "portable-atomic-util"
@@ -7130,6 +7166,9 @@ dependencies = [
  "itertools 0.14.0",
  "metrics",
  "metrics-exporter-dogstatsd",
+ "metrics-exporter-otel",
+ "metrics-exporter-prometheus",
+ "metrics-util",
  "numfmt",
  "openssl-probe 0.1.6",
  "opentelemetry",
@@ -7245,6 +7284,7 @@ dependencies = [
  "backtrace",
  "bytesize",
  "coarsetime",
+ "dashmap 6.1.0",
  "dyn-clone",
  "env_logger",
  "fnv",
@@ -7255,7 +7295,11 @@ dependencies = [
  "http 1.4.0",
  "hyper 1.9.0",
  "hyper-util",
+ "inventory",
  "itertools 0.14.0",
+ "metrics",
+ "metrics-exporter-prometheus",
+ "metrics-util",
  "pin-project",
  "pnet",
  "prometheus",
