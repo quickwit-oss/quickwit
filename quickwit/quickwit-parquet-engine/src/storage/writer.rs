@@ -1243,6 +1243,7 @@ mod tests {
             Field::new("metric_type", DataType::UInt8, false),
             Field::new("timestamp_secs", DataType::UInt64, false),
             Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
         ]));
 
         // Three rows: service = "beta", null, "alpha".
@@ -1252,17 +1253,25 @@ mod tests {
         let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; 3]));
         let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(vec![100u64, 200, 300]));
         let value: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0]));
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(vec![10i64, 20, 30]));
 
         let batch = RecordBatch::try_new(
             schema,
-            vec![metric_name, service, metric_type, timestamp_secs, value],
+            vec![
+                metric_name,
+                service,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+            ],
         )
         .unwrap();
 
         // Test ascending: service sorted ascending, nulls last.
         // Expected order: alpha(300), beta(100), null(200).
         let asc_config = TableConfig {
-            sort_fields: Some("metric_name|service|timestamp_secs/V2".to_string()),
+            sort_fields: Some("metric_name|service|timeseries_id|timestamp_secs/V2".to_string()),
             ..TableConfig::default()
         };
         let writer = ParquetWriter::new(ParquetWriterConfig::default(), &asc_config);
@@ -1311,7 +1320,7 @@ mod tests {
         // Test descending: service sorted descending, nulls STILL last.
         // Expected order: beta(100), alpha(300), null(200).
         let desc_config = TableConfig {
-            sort_fields: Some("metric_name|-service|timestamp_secs/V2".to_string()),
+            sort_fields: Some("metric_name|-service|timeseries_id|timestamp_secs/V2".to_string()),
             ..TableConfig::default()
         };
         let writer = ParquetWriter::new(ParquetWriterConfig::default(), &desc_config);

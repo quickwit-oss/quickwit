@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, Float64Array, UInt8Array, UInt64Array};
+use arrow::array::{ArrayRef, Float64Array, Int64Array, UInt8Array, UInt64Array};
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 use arrow::record_batch::RecordBatch;
 use parquet::file::reader::{FileReader, SerializedFileReader};
@@ -42,6 +42,7 @@ fn create_pipeline_test_batch() -> RecordBatch {
         Field::new("metric_type", DataType::UInt8, false),
         Field::new("timestamp_secs", DataType::UInt64, false),
         Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
     ];
     let schema = Arc::new(ArrowSchema::new(fields));
 
@@ -51,6 +52,7 @@ fn create_pipeline_test_batch() -> RecordBatch {
     let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; 3]));
     let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(vec![100u64, 200, 300]));
     let value: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0]));
+    let timeseries_id: ArrayRef = Arc::new(Int64Array::from(vec![10i64, 20, 30]));
 
     RecordBatch::try_new(
         schema,
@@ -61,6 +63,7 @@ fn create_pipeline_test_batch() -> RecordBatch {
             metric_type,
             timestamp_secs,
             value,
+            timeseries_id,
         ],
     )
     .unwrap()
