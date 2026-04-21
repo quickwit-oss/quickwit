@@ -1,0 +1,29 @@
+# Index config for the default `datadog-sketches` BYOC index.
+#
+# Because the write and read paths for sketches completely differ from those for logs/traces,
+# most of those settings are actually ignored.
+
+version: 0.9
+
+index_id: datadog-sketches
+
+ingest_settings:
+  validate_docs: false
+
+indexing_settings:
+  commit_timeout_secs: 30
+
+search_settings:
+  default_search_fields: []
+
+retention:
+  period: 30 days
+  schedule: hourly
+
+doc_mapping:
+  mode: dynamic
+  field_mappings:
+    - name: timestamp_secs
+      type: datetime
+      fast: true
+  timestamp_field: timestamp_secs

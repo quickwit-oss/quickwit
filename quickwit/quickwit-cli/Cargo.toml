@@ -109,6 +109,10 @@ release-feature-set = [
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
 ]
+release-feature-set-metrics = [
+  "release-feature-set",
+  "metrics",
+]
 release-feature-vendored-set = [
   "jemalloc",
   "openssl-support",

@@ -1,0 +1,100 @@
+image:
+  repository: 024654466236.dkr.ecr.us-east-2.amazonaws.com/pomsky
+  tag: byoc-metrics-dev
+  pullPolicy: Always
+
+aws:
+  accountId: "024654466236"
+
+datadog:
+   # The Datadog [site](https://docs.datadoghq.com/getting_started/site/) to connect to. Defaults to `datadoghq.com`.
+   site: datad0g.com
+   # The name of the existing Secret containing the Datadog API key. The secret key name must be `api-key`.
+   apiKeyExistingSecret: datadog-secret
+  
+serviceAccount:
+  create: true
+  name: parquet-cloudprem
+  # The name of the IAM role to use for the service account. If set, the following annotations will be added to the service account:
+  # - eks.amazonaws.com/role-arn: arn:aws:iam::<aws.accountId>:role/<serviceAccount.eksRoleName>
+  # - eks.amazonaws.com/sts-regional-endpoints: "true"
+  eksRoleName: parquet-cloudprem
+  extraAnnotations: {}
+
+environment:
+  CP_CREATE_DD_METRICS_INDEX: "true"
+  CP_CREATE_DD_SKETCHES_INDEX: "true"
+  QW_METRICS_MAX_ROWS: "5000000"
+  # 512 MiB
+  QW_METRICS_MAX_BYTES: "536870912"
+
+config:
+  default_index_root_uri: s3://parquet-cloudprem/indexes
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/arch
+              operator: In
+              values: ["arm64"]
+
+metastore:
+  extraEnvFrom:
+    - secretRef:
+        name: parquet-cloudprem-metastore-uri
+
+  replicaCount: 2
+
+  resources:
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+
+indexer:
+  replicaCount: 3
+
+  resources:
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+
+searcher:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: "1"
+      memory: "1Gi"
+    requests:
+      cpu: "1"
+      memory: "1Gi"
+
+control_plane:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+
+janitor:
+  replicaCount: 1
+
+  resources:
+    limits:
+      cpu: "1"
+      memory: "2Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"

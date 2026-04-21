@@ -60,6 +60,7 @@ COPY .cargo/config.toml /quickwit/.cargo/config.toml
 
 COPY config/cloudprem/datadog-logs.yaml /config/cloudprem/datadog-logs.yaml
 COPY config/cloudprem/datadog-metrics.yaml /config/cloudprem/datadog-metrics.yaml
+COPY config/cloudprem/datadog-sketches.yaml /config/cloudprem/datadog-sketches.yaml
 COPY config/cloudprem/datadog-spans.yaml /config/cloudprem/datadog-spans.yaml
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
 

@@ -40,7 +40,8 @@ use crate::config_value::ConfigValue;
 use crate::node_config::intake_config::IntakeConfig;
 use crate::node_config::serialize::load_node_config_with_env;
 use crate::qw_env_vars::{
-    CP_CREATE_DD_LOGS_INDEX, CP_CREATE_DD_METRICS_INDEX, CP_CREATE_DD_TRACES_INDEX,
+    CP_CREATE_DD_LOGS_INDEX, CP_CREATE_DD_METRICS_INDEX, CP_CREATE_DD_SKETCHES_INDEX,
+    CP_CREATE_DD_TRACES_INDEX,
 };
 use crate::serde_utils::DurationAsStr;
 use crate::service::QuickwitService;
@@ -907,6 +908,8 @@ pub struct CloudPremConfig {
     #[serde(default)]
     pub create_dd_metrics_index: bool,
     #[serde(default)]
+    pub create_dd_sketches_index: bool,
+    #[serde(default)]
     pub create_dd_traces_index: bool,
 }
 
@@ -921,6 +924,12 @@ impl CloudPremConfig {
         self.create_dd_metrics_index =
             ConfigValue::<bool, CP_CREATE_DD_METRICS_INDEX>::with_default(
                 self.create_dd_metrics_index,
+            )
+            .resolve(env_vars)?;
+        // Sketches index follows metrics index unless explicitly overridden via env var.
+        self.create_dd_sketches_index =
+            ConfigValue::<bool, CP_CREATE_DD_SKETCHES_INDEX>::with_default(
+                self.create_dd_sketches_index,
             )
             .resolve(env_vars)?;
         self.create_dd_traces_index = ConfigValue::<bool, CP_CREATE_DD_TRACES_INDEX>::with_default(
@@ -974,6 +983,7 @@ impl Default for CloudPremConfig {
             enable_reverse_connection: Self::default_enable_reverse_connection(),
             create_dd_logs_index: Self::default_create_dd_logs_index(),
             create_dd_metrics_index: false,
+            create_dd_sketches_index: false,
             create_dd_traces_index: false,
         }
     }
