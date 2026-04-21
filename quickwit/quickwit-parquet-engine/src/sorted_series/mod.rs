@@ -175,8 +175,8 @@ fn resolve_key_columns(
         if col.name == "timeseries_id" {
             let idx = batch_schema.index_of("timeseries_id").map_err(|_| {
                 anyhow!(
-                    "timeseries_id column is required in the batch for sorted_series key \
-                     encoding — it is the only guaranteed discriminator for series identity"
+                    "timeseries_id column is required in the batch for sorted_series key encoding \
+                     — it is the only guaranteed discriminator for series identity"
                 )
             })?;
             ts_id_column = Some(KeyColumn {
