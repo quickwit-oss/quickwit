@@ -317,7 +317,11 @@ impl IngestRouter {
 
                     if !no_shards_entries.is_empty() || persist_response.routing_update.is_some() {
                         // Since we just talked to the node, we take advantage and use the
-                        // opportunity to get a fresh routing update.
+                        // opportunity to get a fresh routing update. Both the zero-out and the
+                        // piggybacked update run under the same lock so the rate-limited
+                        // subcase of NoShardsAvailable — where the shard still exists — is
+                        // immediately restored by the routing update that follows (the ingester
+                        // only returns routing_update=None on the NodeUnavailable fast path).
                         let mut state_guard = self.state.lock().await;
 
                         for (index_uid, source_id) in no_shards_entries {
