@@ -23,7 +23,9 @@ use quickwit_ingest::DocBatchV2Builder;
 use quickwit_opentelemetry::otlp::{
     ArrowDocBatchV2Builder, ArrowMetricsBatchBuilder, MetricDataPoint, MetricType,
 };
+use quickwit_parquet_engine::ingest::{ArrowSketchBatchBuilder, SketchDataPoint};
 use quickwit_parquet_engine::schema::REQUIRED_FIELDS;
+use quickwit_parquet_engine::schema::sketch_fields::SketchParquetField;
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
     IngestRouterServiceClient, IngestSubrequest,
@@ -45,6 +47,7 @@ use crate::rest_api_response::into_rest_api_response;
 use crate::{Body, BodyFormat, with_arg};
 
 const BYOC_METRICS_INDEX: &str = "datadog-metrics";
+const BYOC_SKETCHES_INDEX: &str = "datadog-sketches";
 const BYOC_TRACES_INDEX: &str = "datadog-spans";
 
 #[derive(Debug, thiserror::Error)]
@@ -311,36 +314,66 @@ async fn byoc_ingest_temp_metrics(
     }
     let num_bytes = body.content.len() as u64;
 
-    let subrequest = quickwit_common::thread_pool::run_cpu_intensive(move || {
-        let data_points = try_parse_vector_metrics(&body)?;
-        if data_points.is_empty() {
-            return Ok(None);
-        }
-
-        let mut arrow_builder = ArrowMetricsBatchBuilder::with_capacity(data_points.len());
+    let subrequests = quickwit_common::thread_pool::run_cpu_intensive(move || {
+        let parsed = try_parse_vector_payload(&body)?;
+        let mut subrequests = Vec::with_capacity(2);
         let mut doc_uid_generator = DocUidGenerator::default();
-        let mut doc_uids = Vec::with_capacity(data_points.len());
+        let mut subrequest_id = 0u32;
 
-        for dp in data_points {
-            arrow_builder.append(dp);
-            doc_uids.push(doc_uid_generator.next_doc_uid());
+        // Build metrics subrequest.
+        if !parsed.metrics.is_empty() {
+            let mut arrow_builder =
+                ArrowMetricsBatchBuilder::with_capacity(parsed.metrics.len());
+            let mut doc_uids = Vec::with_capacity(parsed.metrics.len());
+            for dp in parsed.metrics {
+                arrow_builder.append(dp);
+                doc_uids.push(doc_uid_generator.next_doc_uid());
+            }
+            let record_batch = arrow_builder.finish();
+            let doc_batch =
+                ArrowDocBatchV2Builder::from_record_batch(&record_batch, doc_uids)
+                    .map_err(|error| {
+                        ByocApiError::IngestError(IngestV2Error::Internal(format!(
+                            "failed to serialize metrics Arrow IPC: {error}"
+                        )))
+                    })?
+                    .build();
+            subrequests.push(IngestSubrequest {
+                subrequest_id,
+                index_id: BYOC_METRICS_INDEX.to_string(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+                doc_batch: Some(doc_batch),
+            });
+            subrequest_id += 1;
         }
 
-        let record_batch = arrow_builder.finish();
-        let doc_batch = ArrowDocBatchV2Builder::from_record_batch(&record_batch, doc_uids)
-            .map_err(|error| {
-                ByocApiError::IngestError(IngestV2Error::Internal(format!(
-                    "failed to serialize Arrow IPC: {error}"
-                )))
-            })?
-            .build();
+        // Build sketches subrequest.
+        if !parsed.sketches.is_empty() {
+            let mut sketch_builder =
+                ArrowSketchBatchBuilder::with_capacity(parsed.sketches.len());
+            let mut sketch_doc_uids = Vec::with_capacity(parsed.sketches.len());
+            for dp in parsed.sketches {
+                sketch_builder.append(dp);
+                sketch_doc_uids.push(doc_uid_generator.next_doc_uid());
+            }
+            let record_batch = sketch_builder.finish();
+            let doc_batch =
+                ArrowDocBatchV2Builder::from_record_batch(&record_batch, sketch_doc_uids)
+                    .map_err(|error| {
+                        ByocApiError::IngestError(IngestV2Error::Internal(format!(
+                            "failed to serialize sketches Arrow IPC: {error}"
+                        )))
+                    })?
+                    .build();
+            subrequests.push(IngestSubrequest {
+                subrequest_id,
+                index_id: BYOC_SKETCHES_INDEX.to_string(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
+                doc_batch: Some(doc_batch),
+            });
+        }
 
-        Ok(Some(IngestSubrequest {
-            subrequest_id: 0,
-            index_id: BYOC_METRICS_INDEX.to_string(),
-            source_id: INGEST_V2_SOURCE_ID.to_string(),
-            doc_batch: Some(doc_batch),
-        }))
+        Ok(subrequests)
     })
     .await
     .map_err(|_| {
@@ -349,7 +382,7 @@ async fn byoc_ingest_temp_metrics(
         ))
     })??;
 
-    let Some(subrequest) = subrequest else {
+    if subrequests.is_empty() {
         record_metrics(
             &BYOC_METRICS.metric_requests_total,
             &BYOC_METRICS.metric_request_duration_seconds,
@@ -359,11 +392,11 @@ async fn byoc_ingest_temp_metrics(
             0,
         );
         return Ok(());
-    };
+    }
 
     let request = IngestRequestV2 {
         commit_type: CommitTypeV2::Auto as i32,
-        subrequests: vec![subrequest],
+        subrequests,
     };
     let result = match ingest_router.ingest(request).await {
         Ok(response) => process_ingest_response(response),
@@ -385,7 +418,35 @@ struct VectorNumericValue {
     value: f64,
 }
 
+#[derive(Debug, Deserialize)]
+struct VectorSketchBins {
+    k: Vec<i16>,
+    n: Vec<u16>,
+}
+
+#[derive(Debug, Deserialize)]
+struct VectorAgentDDSketch {
+    bins: VectorSketchBins,
+    count: u32,
+    sum: f64,
+    min: f64,
+    max: f64,
+}
+
+/// Vector's `MetricSketch` enum has no `rename_all`, so the variant is PascalCase.
+#[derive(Debug, Deserialize)]
+enum VectorMetricSketch {
+    AgentDDSketch(VectorAgentDDSketch),
+}
+
+/// Matches `MetricValue::Sketch { sketch: MetricSketch }` — the variant has a field named `sketch`.
+#[derive(Debug, Deserialize)]
+struct VectorSketchValue {
+    sketch: VectorMetricSketch,
+}
+
 /// A single metric as emitted by Vector's native metric format.
+/// May contain a counter, gauge, or sketch value.
 #[derive(Debug, Deserialize)]
 struct VectorMetricMsg {
     name: String,
@@ -396,6 +457,13 @@ struct VectorMetricMsg {
     counter: Option<VectorNumericValue>,
     #[serde(default)]
     gauge: Option<VectorNumericValue>,
+    #[serde(default)]
+    sketch: Option<VectorSketchValue>,
+}
+
+struct ParsedVectorPayload {
+    metrics: Vec<MetricDataPoint>,
+    sketches: Vec<SketchDataPoint>,
 }
 
 fn parse_iso8601_to_secs(ts: &str) -> Option<u64> {
@@ -403,13 +471,20 @@ fn parse_iso8601_to_secs(ts: &str) -> Option<u64> {
     u64::try_from(dt.unix_timestamp()).ok()
 }
 
-fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, ByocApiError> {
-    if msg.name.is_empty() {
-        return Err(ByocApiError::IngestError(IngestV2Error::Internal(
-            "metric has empty name".to_string(),
-        )));
+fn parse_timestamp(name: &str, ts: &Option<String>) -> Result<u64, ByocApiError> {
+    match ts {
+        Some(ts) => parse_iso8601_to_secs(ts).ok_or_else(|| {
+            ByocApiError::IngestError(IngestV2Error::Internal(format!(
+                "failed to parse timestamp '{ts}'"
+            )))
+        }),
+        None => Err(ByocApiError::IngestError(IngestV2Error::Internal(
+            format!("metric '{}' is missing timestamp", name),
+        ))),
     }
+}
 
+fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, ByocApiError> {
     let (metric_type, value) = if let Some(counter) = msg.counter {
         (MetricType::Sum, counter.value)
     } else if let Some(gauge) = msg.gauge {
@@ -421,19 +496,7 @@ fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, Byo
         ))));
     };
 
-    let timestamp_secs = match &msg.timestamp {
-        Some(ts) => parse_iso8601_to_secs(ts).ok_or_else(|| {
-            ByocApiError::IngestError(IngestV2Error::Internal(format!(
-                "failed to parse timestamp '{ts}'"
-            )))
-        })?,
-        None => {
-            return Err(ByocApiError::IngestError(IngestV2Error::Internal(format!(
-                "metric '{}' is missing timestamp",
-                msg.name
-            ))));
-        }
-    };
+    let timestamp_secs = parse_timestamp(&msg.name, &msg.timestamp)?;
 
     // TODO: Will drop customer tags that are in REQUIRED_FIELDS. Fine for now.
     let tags: HashMap<String, String> = msg
@@ -451,15 +514,76 @@ fn vector_msg_to_data_point(msg: VectorMetricMsg) -> Result<MetricDataPoint, Byo
     })
 }
 
-/// Parse a Vector metrics payload into metric data points.
-fn try_parse_vector_metrics(body: &Body) -> Result<Vec<MetricDataPoint>, ByocApiError> {
+fn vector_msg_to_sketch_data_point(
+    msg: VectorMetricMsg,
+    sketch: VectorSketchValue,
+) -> Result<SketchDataPoint, ByocApiError> {
+    let timestamp_secs = parse_timestamp(&msg.name, &msg.timestamp)?;
+    let VectorMetricSketch::AgentDDSketch(dd) = sketch.sketch;
+
+    let sketch_reserved: Vec<&str> = SketchParquetField::all()
+        .iter()
+        .map(|f| f.name())
+        .collect();
+    let tags: HashMap<String, String> = msg
+        .tags
+        .into_iter()
+        .filter(|(k, _)| !sketch_reserved.contains(&k.as_str()))
+        .collect();
+
+    Ok(SketchDataPoint {
+        metric_name: msg.name,
+        timestamp_secs,
+        count: u64::from(dd.count),
+        sum: dd.sum,
+        min: dd.min,
+        max: dd.max,
+        flags: 0,
+        keys: dd.bins.k,
+        counts: dd.bins.n.into_iter().map(u64::from).collect(),
+        tags,
+    })
+}
+
+fn classify_vector_msg(
+    mut msg: VectorMetricMsg,
+    payload: &mut ParsedVectorPayload,
+) -> Result<(), ByocApiError> {
+    if msg.name.is_empty() {
+        return Err(ByocApiError::IngestError(IngestV2Error::Internal(
+            "metric has empty name".to_string(),
+        )));
+    }
+
+    if let Some(sketch) = msg.sketch.take() {
+        payload
+            .sketches
+            .push(vector_msg_to_sketch_data_point(msg, sketch)?);
+    } else if msg.counter.is_some() || msg.gauge.is_some() {
+        payload.metrics.push(vector_msg_to_data_point(msg)?);
+    } else {
+        quickwit_common::rate_limited_warn!(
+            limit_per_min = 6,
+            name = msg.name,
+            "skipping metric with no counter, gauge, or sketch value"
+        );
+    }
+    Ok(())
+}
+
+/// Parse a Vector payload into metric and sketch data points.
+fn try_parse_vector_payload(body: &Body) -> Result<ParsedVectorPayload, ByocApiError> {
+    let mut payload = ParsedVectorPayload {
+        metrics: Vec::new(),
+        sketches: Vec::new(),
+    };
+
     // Try JSON array
     if let Ok(messages) = serde_json::from_slice::<Vec<VectorMetricMsg>>(&body.content) {
-        let mut data_points = Vec::with_capacity(messages.len());
         for msg in messages {
-            data_points.push(vector_msg_to_data_point(msg)?);
+            classify_vector_msg(msg, &mut payload)?;
         }
-        return Ok(data_points);
+        return Ok(payload);
     }
 
     // Try newline-delimited JSON
@@ -467,22 +591,22 @@ fn try_parse_vector_metrics(body: &Body) -> Result<Vec<MetricDataPoint>, ByocApi
         let content = std::str::from_utf8(&body.content).unwrap_or("");
         let lines: Vec<&str> = content.lines().filter(|l| !l.trim().is_empty()).collect();
         if lines.len() > 1 {
-            let mut data_points = Vec::with_capacity(lines.len());
             for line in &lines {
                 let msg: VectorMetricMsg = serde_json::from_str(line).map_err(|error| {
                     ByocApiError::IngestError(IngestV2Error::Internal(format!(
                         "failed to parse NDJSON line: {error}"
                     )))
                 })?;
-                data_points.push(vector_msg_to_data_point(msg)?);
+                classify_vector_msg(msg, &mut payload)?;
             }
-            return Ok(data_points);
+            return Ok(payload);
         }
     }
 
     // Try single JSON object
     if let Ok(msg) = serde_json::from_slice::<VectorMetricMsg>(&body.content) {
-        return Ok(vec![vector_msg_to_data_point(msg)?]);
+        classify_vector_msg(msg, &mut payload)?;
+        return Ok(payload);
     }
 
     Err(ByocApiError::IngestError(IngestV2Error::Internal(
@@ -490,10 +614,8 @@ fn try_parse_vector_metrics(body: &Body) -> Result<Vec<MetricDataPoint>, ByocApi
     )))
 }
 
-/// Processes the response of an ingest request with exactly one subrequest.
+/// Processes the response of an ingest request. Returns the first failure if any.
 fn process_ingest_response(response: IngestResponseV2) -> Result<(), ByocApiError> {
-    assert_eq!(response.successes.len() + response.failures.len(), 1);
-
     if response.failures.is_empty() {
         return Ok(());
     }
