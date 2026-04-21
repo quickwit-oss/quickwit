@@ -1,9 +1,11 @@
 [files]
 extend-exclude = [
     "**/*.json",
-    # Vendored Datadog agent-payload protobuf definitions — keep as-is so
-    # they diff cleanly against upstream github.com/DataDog/agent-payload.
-    "quickwit/pomsky-dd-protos/proto/**",
+    # Vendored Datadog-defined protobuf definitions — keep as-is so they
+    # diff cleanly against their upstream sources.
+    "quickwit/pomsky-intake/proto/**",
+    # Checked-in prost codegen output.
+    "quickwit/pomsky-intake/src/codegen/**",
 ]
 
 [default.extend-words]

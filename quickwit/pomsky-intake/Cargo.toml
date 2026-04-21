@@ -22,8 +22,8 @@ bytes = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
-pomsky-dd-protos = { workspace = true }
-prost = { workspace = true }
+# `std` is required for protobuf map<> field support (generated code uses HashMap).
+prost = { workspace = true, features = ["std"] }
 quickwit-opentelemetry = { workspace = true }
 quickwit-parquet-engine = { workspace = true }
 reqwest = { workspace = true }
@@ -42,9 +42,15 @@ zstd = { workspace = true }
 [dev-dependencies]
 chrono = { workspace = true }
 
+[build-dependencies]
+glob = { workspace = true }
+prost-build = { workspace = true }
+
 [package.metadata.cargo-machete]
 # tokio is a direct dep for the binary (main.rs) and its `tracing` feature is
 # required by vector-buffers (tokio::task::Builder needs tokio_unstable + tracing).
-ignored = ["tokio"]
+# prost is used by the generated code in src/codegen/ (see build.rs + src/protos.rs
+# `include!`), which cargo-machete can't analyze.
+ignored = ["tokio", "prost"]
 
 [features]

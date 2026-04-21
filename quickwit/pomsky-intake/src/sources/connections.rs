@@ -160,13 +160,25 @@ async fn handle_connections(
     body: Bytes,
     mut out: vector_lib::source_sender::SourceSender,
 ) -> Result<Response, Rejection> {
-    let proto_bytes = match decode_envelope(&body) {
-        Ok(b) => b,
-        Err(err) => {
-            warn!(%err, body_len = body.len(), "failed to decode connections envelope");
+    let body_len = body.len();
+    // Zstd decompression can take 100s of µs to ~1 ms on the largest agent
+    // payloads; offload from the tokio worker thread to the blocking pool.
+    let decoded = tokio::task::spawn_blocking(move || decode_envelope(&body)).await;
+    let proto_bytes = match decoded {
+        Ok(Ok(b)) => b,
+        Ok(Err(err)) => {
+            warn!(%err, body_len, "failed to decode connections envelope");
             return Ok(warp::reply::with_status(
                 format!("envelope decode error: {err}"),
                 StatusCode::BAD_REQUEST,
+            )
+            .into_response());
+        }
+        Err(join_err) => {
+            error!(%join_err, body_len, "envelope decode task panicked");
+            return Ok(warp::reply::with_status(
+                "internal error",
+                StatusCode::INTERNAL_SERVER_ERROR,
             )
             .into_response());
         }
@@ -175,7 +187,7 @@ async fn handle_connections(
     debug!(bytes = proto_bytes.len(), "received connections payload");
 
     let mut log = LogEvent::default();
-    log.insert(CONNECTIONS_PROTO_FIELD, Bytes::from(proto_bytes));
+    log.insert(CONNECTIONS_PROTO_FIELD, proto_bytes);
 
     if let Err(err) = out.send_event(Event::Log(log)).await {
         error!(%err, "failed to forward connections event");
@@ -213,11 +225,15 @@ const V8_PREFIX_LEN: usize = 1 + 2;
 ///
 /// Supports V3-V7 (fixed-size headers) and V8 (protobuf-encoded variable
 /// header). On success returns the decompressed body bytes — for
-/// CollectorConnections payloads this is a serialized protobuf the downstream
-/// transform will parse.
+/// CollectorConnections payloads this is a serialized protobuf the
+/// downstream transform will parse.
+///
+/// Takes `Bytes` (cheap refcount clone) and returns `Bytes` so the
+/// raw-passthrough branch can zero-copy-slice the input rather than
+/// allocating.
 ///
 /// Reference: dd-go `process/conn/message.go` `ReadHeader` / `readHeaderV8`.
-fn decode_envelope(data: &[u8]) -> Result<Vec<u8>, String> {
+fn decode_envelope(data: &Bytes) -> Result<Bytes, String> {
     if data.len() < V8_PREFIX_LEN {
         return Err("payload too short".into());
     }
@@ -245,39 +261,40 @@ fn decode_envelope(data: &[u8]) -> Result<Vec<u8>, String> {
         return Err("payload too short for header".into());
     }
 
-    let compressed = &data[body_start..];
-    match zstd::decode_all(compressed) {
-        Ok(decompressed) => Ok(decompressed),
+    let compressed = data.slice(body_start..);
+    match zstd::decode_all(compressed.as_ref()) {
+        Ok(decompressed) => Ok(Bytes::from(decompressed)),
         Err(_) => {
-            // Some agent versions send raw uncompressed protobuf — pass through.
-            Ok(compressed.to_vec())
+            // Some agent versions send raw uncompressed protobuf — pass
+            // through the original slice zero-copy.
+            Ok(compressed)
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use pomsky_dd_protos::process::CollectorConnections;
     use prost::Message;
 
     use super::*;
+    use crate::protos::process::CollectorConnections;
 
-    fn make_v8_envelope(body: &[u8]) -> Vec<u8> {
+    fn make_v8_envelope(body: &[u8]) -> Bytes {
         let compressed = zstd::encode_all(body, 3).unwrap();
         // V8 prefix: version byte + 2-byte LE header length (0 here).
         let mut envelope = vec![V8_VERSION_BYTE, 0x00, 0x00];
         envelope.extend_from_slice(&compressed);
-        envelope
+        Bytes::from(envelope)
     }
 
     #[test]
     fn test_decode_envelope_too_short() {
-        assert!(decode_envelope(b"ab").is_err());
+        assert!(decode_envelope(&Bytes::from_static(b"ab")).is_err());
     }
 
     #[test]
     fn test_decode_envelope_unknown_version() {
-        assert!(decode_envelope(&[0x09, 0x00, 0x00]).is_err());
+        assert!(decode_envelope(&Bytes::from_static(&[0x09, 0x00, 0x00])).is_err());
     }
 
     #[test]
@@ -285,7 +302,7 @@ mod tests {
         let payload = b"hello world";
         let envelope = make_v8_envelope(payload);
         let decoded = decode_envelope(&envelope).unwrap();
-        assert_eq!(decoded, payload);
+        assert_eq!(decoded.as_ref(), payload);
     }
 
     #[test]
@@ -305,7 +322,7 @@ mod tests {
         let envelope = make_v8_envelope(&proto_bytes);
 
         let decoded_bytes = decode_envelope(&envelope).unwrap();
-        let decoded = CollectorConnections::decode(&decoded_bytes[..]).unwrap();
+        let decoded = CollectorConnections::decode(decoded_bytes.as_ref()).unwrap();
         assert_eq!(decoded.host_name, "test-host");
     }
 

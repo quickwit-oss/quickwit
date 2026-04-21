@@ -7734,14 +7734,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pomsky-dd-protos"
-version = "0.1.25-dev"
-dependencies = [
- "prost 0.14.3",
- "prost-build 0.14.3",
-]
-
-[[package]]
 name = "pomsky-intake"
 version = "0.1.25-dev"
 dependencies = [
@@ -7752,9 +7744,10 @@ dependencies = [
  "chrono",
  "clap",
  "futures 0.3.32",
+ "glob",
  "http 1.4.0",
- "pomsky-dd-protos",
  "prost 0.14.3",
+ "prost-build 0.14.3",
  "quickwit-opentelemetry",
  "quickwit-parquet-engine",
  "reqwest 0.12.28",

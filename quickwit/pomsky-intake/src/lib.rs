@@ -17,6 +17,10 @@
 mod config;
 mod intake_runner;
 
+// Vendored agent-side protobuf types; generated code lives under
+// `src/codegen/` (checked in) and is reexported through `protos::*`.
+pub mod protos;
+
 // Custom Vector components — the `typetag` registration in each module
 // ensures Vector discovers them at link time.
 pub mod sinks;

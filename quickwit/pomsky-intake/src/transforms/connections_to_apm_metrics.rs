@@ -99,10 +99,7 @@ impl FunctionTransform for ConnectionsToApmMetrics {
             // Vector's config validator routes only Log events here (see
             // `input() -> Input::log()` above), so anything else is a bug.
             debug_assert!(false, "non-log event reached connections_to_apm_metrics");
-            warn!(
-                kind = ?event_kind(&event),
-                "dropping non-log event; input validator should have filtered it",
-            );
+            warn!("dropping non-log event; input validator should have filtered it");
             return;
         };
 
@@ -114,8 +111,8 @@ impl FunctionTransform for ConnectionsToApmMetrics {
         //
         // 1. Read the proto bytes from the log event's CONNECTIONS_PROTO_FIELD (see
         //    `sources::connections::CONNECTIONS_PROTO_FIELD`).
-        // 2. Decode CollectorConnections via `prost::Message::decode` using the types from the
-        //    `pomsky-dd-protos` crate.
+        // 2. Decode CollectorConnections via `prost::Message::decode` using the types from
+        //    `crate::protos::process`.
         // 3. For each connection: a. Direction fixup (listening port inference, DNS
         //    reclassification). b. Resolve service name from EncodedTags (process → container →
         //    host tag precedence). c. Resolve env from tags. d. For each protocol aggregation
@@ -132,39 +129,4 @@ impl FunctionTransform for ConnectionsToApmMetrics {
         // Additional Rust deps to add (follow-up PR):
         //   - A DDSketch crate for sketch decoding (sketches-ddsketch or datasketches-rust).
     }
-}
-
-/// Returns the event variant as a static string for diagnostics.
-fn event_kind(event: &Event) -> &'static str {
-    match event {
-        Event::Log(_) => "log",
-        Event::Metric(_) => "metric",
-        Event::Trace(_) => "trace",
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use vector::event::{LogEvent, Metric, MetricKind, MetricValue};
-
-    use super::*;
-
-    #[test]
-    fn test_event_kind_classifies_variants() {
-        let log = Event::Log(LogEvent::default());
-        let metric = Event::Metric(Metric::new(
-            "test",
-            MetricKind::Absolute,
-            MetricValue::Gauge { value: 1.0 },
-        ));
-        assert_eq!(event_kind(&log), "log");
-        assert_eq!(event_kind(&metric), "metric");
-    }
-
-    // Non-log events are a type-system invariant from `input() -> Input::log()`:
-    // Vector's config validator refuses to route anything but Log events into
-    // this transform. If the invariant is ever violated we panic loudly via
-    // `debug_assert!` in debug builds and warn+drop in release builds. That
-    // behavior is not test-exercisable without hitting the assert, so it is
-    // covered by inspection (see the guard in `transform`) rather than a test.
 }
