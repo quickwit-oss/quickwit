@@ -406,6 +406,13 @@ impl ParquetWriter {
             .unwrap_or_default();
 
         if let Some(ref rk_bytes) = row_keys_proto {
+            // Remove any pre-existing row_keys entries from split metadata
+            // to avoid duplicate KV keys — the freshly computed values from
+            // the sorted batch are authoritative.
+            kv_entries.retain(|kv| {
+                kv.key != PARQUET_META_ROW_KEYS && kv.key != PARQUET_META_ROW_KEYS_JSON
+            });
+
             kv_entries.push(KeyValue::new(
                 PARQUET_META_ROW_KEYS.to_string(),
                 BASE64.encode(rk_bytes),
@@ -872,9 +879,11 @@ mod tests {
 
         let temp_dir = std::env::temp_dir();
         let path = temp_dir.join("test_self_describing_roundtrip.parquet");
-        writer
+        let (_, computed_row_keys) = writer
             .write_to_file_with_metadata(&batch, &path, Some(&original))
             .unwrap();
+        let computed_row_keys =
+            computed_row_keys.expect("non-empty batch must produce row_keys_proto");
 
         // Read phase: open a cold file and reconstruct fields from kv_metadata.
         let file = File::open(&path).unwrap();
@@ -915,7 +924,18 @@ mod tests {
         assert_eq!(recovered_window_start, window_start_secs);
         assert_eq!(recovered_window_duration, window_duration);
         assert_eq!(recovered_merge_ops, merge_ops);
-        assert_eq!(recovered_row_keys, row_keys_bytes);
+        // Row keys in Parquet KV metadata must match the freshly computed
+        // values (not the synthetic input), since prepare_write replaces
+        // any pre-existing row_keys with authoritative values from the
+        // sorted batch.
+        assert_eq!(recovered_row_keys, computed_row_keys);
+
+        // Verify there's exactly one qh.row_keys entry (no duplicates).
+        let rk_count = kv_metadata
+            .iter()
+            .filter(|kv| kv.key == PARQUET_META_ROW_KEYS)
+            .count();
+        assert_eq!(rk_count, 1, "must have exactly one qh.row_keys entry");
 
         std::fs::remove_file(&path).ok();
     }
