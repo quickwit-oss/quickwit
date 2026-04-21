@@ -791,7 +791,7 @@ mod tests {
     use quickwit_config::service::QuickwitService;
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::types::IndexUid;
-    use rand::Rng;
+    use rand::RngExt;
 
     use super::*;
 

@@ -16,7 +16,7 @@ use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::ActorExitStatus;
 use quickwit_config::VecSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpointDelta};
 use quickwit_proto::metastore::SourceType;
@@ -25,8 +25,7 @@ use serde_json::Value as JsonValue;
 use tracing::info;
 
 use super::BatchBuilder;
-use crate::actors::Processor;
-use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory};
 
 pub struct VecSource {
     source_id: SourceId,
@@ -81,11 +80,11 @@ fn position_from_offset(offset: usize) -> Position {
 }
 
 #[async_trait]
-impl<P: Processor> Source<P> for VecSource {
+impl Source for VecSource {
     async fn emit_batches(
         &mut self,
-        batch_sink: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        batch_sink: &SourceSink,
+        ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let mut batch_builder = BatchBuilder::new(SourceType::Vec);
 
@@ -98,7 +97,7 @@ impl<P: Processor> Source<P> for VecSource {
         }
         if batch_builder.docs.is_empty() {
             info!("reached end of source");
-            ctx.send_exit_with_success(batch_sink).await?;
+            batch_sink.send_exit_with_success(ctx).await?;
             return Err(ActorExitStatus::Success);
         }
         let from_item_idx = self.next_item_idx;
@@ -111,7 +110,9 @@ impl<P: Processor> Source<P> for VecSource {
             position_from_offset(to_item_idx),
         )
         .unwrap();
-        ctx.send_message(batch_sink, batch_builder.build()).await?;
+        batch_sink
+            .send_raw_doc_batch(batch_builder.build(), ctx)
+            .await?;
 
         Ok(Duration::default())
     }
@@ -167,10 +168,7 @@ mod tests {
         };
         let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config).build();
         let vec_source = VecSourceFactory::typed_create_source(source_runtime, params).await?;
-        let vec_source_actor = SourceActor {
-            source: Box::new(vec_source),
-            processor_mailbox: doc_processor_mailbox,
-        };
+        let vec_source_actor = SourceActor::new(Box::new(vec_source), doc_processor_mailbox);
         assert_eq!(
             vec_source_actor.name(),
             r#"VecSource { source_id: "test-vec-source" }"#
@@ -219,10 +217,7 @@ mod tests {
             .with_mock_metastore(Some(source_delta))
             .build();
         let vec_source = VecSourceFactory::typed_create_source(source_runtime, params).await?;
-        let vec_source_actor = SourceActor {
-            source: Box::new(vec_source),
-            processor_mailbox: doc_processor_mailbox,
-        };
+        let vec_source_actor = SourceActor::new(Box::new(vec_source), doc_processor_mailbox);
         let (_vec_source_mailbox, vec_source_handle) =
             universe.spawn_builder().spawn(vec_source_actor);
         let (actor_termination, last_observation) = vec_source_handle.join().await;

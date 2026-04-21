@@ -2096,7 +2096,7 @@ mod tests {
     use quickwit_query::query_ast::{
         FieldPresenceQuery, FullTextMode, FullTextParams, FullTextQuery,
     };
-    use rand::Rng;
+    use rand::RngExt;
     use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
     use tantivy::schema::{

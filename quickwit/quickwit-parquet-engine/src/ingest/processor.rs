@@ -65,6 +65,7 @@ impl ParquetIngestProcessor {
         // Record bytes ingested
         PARQUET_ENGINE_METRICS
             .ingest_bytes_total
+            .with_label_values(["points"])
             .inc_by(ipc_bytes.len() as u64);
 
         let batch = match ipc_to_record_batch(ipc_bytes) {
@@ -72,7 +73,7 @@ impl ParquetIngestProcessor {
             Err(e) => {
                 PARQUET_ENGINE_METRICS
                     .errors_total
-                    .with_label_values(["ingest"])
+                    .with_label_values(["ingest", "points"])
                     .inc();
                 return Err(e);
             }
@@ -81,7 +82,7 @@ impl ParquetIngestProcessor {
         if let Err(e) = self.validate_schema(&batch) {
             PARQUET_ENGINE_METRICS
                 .errors_total
-                .with_label_values(["ingest"])
+                .with_label_values(["ingest", "points"])
                 .inc();
             return Err(e);
         }
@@ -101,7 +102,7 @@ impl ParquetIngestProcessor {
 }
 
 /// Deserialize Arrow IPC stream format to a RecordBatch.
-fn ipc_to_record_batch(ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
+pub(crate) fn ipc_to_record_batch(ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
     let cursor = Cursor::new(ipc_bytes);
     let reader = StreamReader::try_new(cursor, None)?;
 

@@ -18,7 +18,7 @@ use std::fmt;
 
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_parquet_engine::split::MetricsSplitMetadata;
+use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_proto::types::{IndexUid, PublishToken};
 use tracing::Span;
 
@@ -26,13 +26,13 @@ use crate::models::PublishLock;
 
 /// Message sent by ParquetUploader to downstream actors after staging and uploading.
 ///
-/// This is analogous to `SplitsUpdate` but uses `MetricsSplitMetadata` instead of
-/// `SplitMetadata`.
+/// This is analogous to `SplitsUpdate` but uses `ParquetSplitMetadata` to support
+/// both metrics and sketch splits (distinguished by the `kind` field).
 pub struct ParquetSplitsUpdate {
     /// Index unique identifier.
     pub index_uid: IndexUid,
-    /// The staged and uploaded splits.
-    pub new_splits: Vec<MetricsSplitMetadata>,
+    /// The staged and uploaded splits (metrics or sketches).
+    pub new_splits: Vec<ParquetSplitMetadata>,
     /// Split IDs being replaced (for merges, typically empty for ingest).
     pub replaced_split_ids: Vec<String>,
     /// Checkpoint delta covering the data in these splits.
@@ -50,7 +50,7 @@ impl fmt::Debug for ParquetSplitsUpdate {
         let new_split_ids: String = self
             .new_splits
             .iter()
-            .map(|split| split.split_id.as_str())
+            .map(|split| split.split_id_str())
             .join(",");
         f.debug_struct("ParquetSplitsUpdate")
             .field("index_uid", &self.index_uid)
