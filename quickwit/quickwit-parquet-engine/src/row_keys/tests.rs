@@ -384,7 +384,7 @@ fn test_row_keys_in_parquet_kv_metadata() {
     use crate::table_config::TableConfig;
 
     let config = ParquetWriterConfig::default();
-    let writer = ParquetWriter::new(config, &TableConfig::default());
+    let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
     let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
     let schema = Arc::new(Schema::new(vec![
@@ -480,7 +480,8 @@ fn test_split_writer_populates_row_keys_proto() {
         config,
         temp_dir.path(),
         &TableConfig::default(),
-    );
+    )
+    .unwrap();
 
     let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
     let schema = Arc::new(Schema::new(vec![
@@ -553,7 +554,8 @@ fn test_row_keys_consistent_across_all_storage_paths() {
         config,
         temp_dir.path(),
         &TableConfig::default(),
-    );
+    )
+    .unwrap();
 
     // Build a batch with rich test data. Rows are UNSORTED — the writer
     // will sort them. After sorting by sort schema, the expected order is:
