@@ -475,13 +475,12 @@ fn test_split_writer_populates_row_keys_proto() {
 
     let config = ParquetWriterConfig::default();
     let temp_dir = tempfile::tempdir().unwrap();
-    let split_writer =
-        crate::storage::ParquetSplitWriter::new(
-            ParquetSplitKind::Metrics,
-            config,
-            temp_dir.path(),
-            &TableConfig::default(),
-        );
+    let split_writer = crate::storage::ParquetSplitWriter::new(
+        ParquetSplitKind::Metrics,
+        config,
+        temp_dir.path(),
+        &TableConfig::default(),
+    );
 
     let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
     let schema = Arc::new(Schema::new(vec![
@@ -549,13 +548,12 @@ fn test_row_keys_consistent_across_all_storage_paths() {
 
     let config = ParquetWriterConfig::default();
     let temp_dir = tempfile::tempdir().unwrap();
-    let split_writer =
-        crate::storage::ParquetSplitWriter::new(
-            ParquetSplitKind::Metrics,
-            config,
-            temp_dir.path(),
-            &TableConfig::default(),
-        );
+    let split_writer = crate::storage::ParquetSplitWriter::new(
+        ParquetSplitKind::Metrics,
+        config,
+        temp_dir.path(),
+        &TableConfig::default(),
+    );
 
     // Build a batch with rich test data. Rows are UNSORTED — the writer
     // will sort them. After sorting by sort schema, the expected order is:
