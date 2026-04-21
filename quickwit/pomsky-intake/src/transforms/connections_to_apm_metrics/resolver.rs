@@ -141,28 +141,141 @@ pub(super) fn find_tag(buffer: &[u8], tag_index: i32, key: &str) -> Option<Strin
     found
 }
 
-/// Resolves the service name for a connection using the Go sidecar's
-/// precedence chain: process tags → container tags → host tags →
-/// container-id fallback → hostname fallback.
+/// Tag source, mirrors NSX's `usm.TagSource`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum TagSource {
+    Process,
+    Container,
+    Host,
+}
+
+/// `(source, tag_name)` candidate in the service-naming priority list.
+/// Order in [`SERVICE_CANDIDATES`] is significant — lowest index wins.
+struct PrioritizedTag {
+    source: TagSource,
+    tag_name: &'static str,
+}
+
+/// Default service-naming priority list mirroring the Consul-configured
+/// default in SaaS (`dd.usm.service_tags.tags_prioritization`). Ported from
+/// the internal USM service-naming doc and `dd-go trace/usm`.
+///
+/// First non-empty match wins; lower index = higher priority.
+///
+/// Since BYOC has no Consul, this is the single default. If per-org
+/// overrides ever become a requirement, this can grow into a configurable
+/// list loaded from the pipeline config.
+const SERVICE_CANDIDATES: &[PrioritizedTag] = &[
+    PrioritizedTag {
+        source: TagSource::Process,
+        tag_name: "service",
+    }, // DD_SERVICE env var
+    PrioritizedTag {
+        source: TagSource::Container,
+        tag_name: "service",
+    }, // container `service:` label
+    PrioritizedTag {
+        source: TagSource::Process,
+        tag_name: "http.iis.subsite",
+    }, // IIS (Windows)
+    PrioritizedTag {
+        source: TagSource::Process,
+        tag_name: "http.iis.app_pool",
+    }, // IIS (Windows)
+    PrioritizedTag {
+        source: TagSource::Container,
+        tag_name: "app",
+    },
+    PrioritizedTag {
+        source: TagSource::Container,
+        tag_name: "short_image",
+    },
+    PrioritizedTag {
+        source: TagSource::Container,
+        tag_name: "kube_container_name",
+    },
+    PrioritizedTag {
+        source: TagSource::Container,
+        tag_name: "container_name",
+    },
+    PrioritizedTag {
+        source: TagSource::Container,
+        tag_name: "kube_deployment",
+    },
+    PrioritizedTag {
+        source: TagSource::Container,
+        tag_name: "kube_service",
+    },
+    PrioritizedTag {
+        source: TagSource::Host,
+        tag_name: "service",
+    },
+    PrioritizedTag {
+        source: TagSource::Host,
+        tag_name: "app",
+    },
+    PrioritizedTag {
+        source: TagSource::Process,
+        tag_name: "process_context",
+    },
+];
+
+/// Resolves the service name for a connection using NSX's priority-list
+/// algorithm: walk every tag in each source, check against
+/// [`SERVICE_CANDIDATES`], keep the lowest-priority-index match. Falls back
+/// to `container:<id prefix>` then to `cc.host_name` if no candidate matches
+/// — matches the shape the agent-side sidecar produces in the empty case.
 pub(super) fn resolve_service(cc: &CollectorConnections, conn: &Connection) -> String {
-    // Priority 1: process-level connection tags (Go: `if c.TagsIdx > 0`).
-    if conn.tags_idx > 0
-        && let Some(v) = find_tag(&cc.encoded_connections_tags, conn.tags_idx, "service")
-    {
-        return v;
+    let mut best: Option<(usize, String)> = None;
+
+    let mut consider = |source: TagSource, buffer: &[u8], tag_index: i32| {
+        iterate_tags(buffer, tag_index, |tag| {
+            let Some((name, value)) = split_tag(tag) else {
+                return true;
+            };
+            if value.is_empty() {
+                return true;
+            }
+            for (idx, candidate) in SERVICE_CANDIDATES.iter().enumerate() {
+                if candidate.source != source || candidate.tag_name != name {
+                    continue;
+                }
+                match best {
+                    Some((best_idx, _)) if best_idx <= idx => {}
+                    _ => best = Some((idx, value.to_string())),
+                }
+                break;
+            }
+            // Top priority (idx == 0) wins immediately; short-circuit.
+            !matches!(best, Some((0, _)))
+        });
+    };
+
+    // Process tags live in `encoded_connections_tags` at `conn.tags_idx`;
+    // container + host tags live in `encoded_tags` at their respective
+    // indices. (Cf. agent-payload `GetConnectionsTags` vs `GetTags`.)
+    if conn.tags_idx > 0 {
+        consider(
+            TagSource::Process,
+            &cc.encoded_connections_tags,
+            conn.tags_idx,
+        );
     }
-    // Priority 2: container tags (Go: `if c.LocalContainerTagsIndex >= 0`).
-    if conn.local_container_tags_index >= 0
-        && let Some(v) = find_tag(&cc.encoded_tags, conn.local_container_tags_index, "service")
-    {
-        return v;
+    if conn.local_container_tags_index >= 0 {
+        consider(
+            TagSource::Container,
+            &cc.encoded_tags,
+            conn.local_container_tags_index,
+        );
     }
-    // Priority 3: host tags (Go: `if cc.HostTagsIndex > 0`).
-    if cc.host_tags_index > 0
-        && let Some(v) = find_tag(&cc.encoded_tags, cc.host_tags_index, "service")
-    {
-        return v;
+    if cc.host_tags_index > 0 {
+        consider(TagSource::Host, &cc.encoded_tags, cc.host_tags_index);
     }
+
+    if let Some((_, value)) = best {
+        return value;
+    }
+
     // Fallback: container ID (from laddr, else container_for_pid) → hostname.
     let container_id = conn
         .laddr
@@ -178,6 +291,14 @@ pub(super) fn resolve_service(cc: &CollectorConnections, conn: &Connection) -> S
         return format!("container:{}", &cid[..take]);
     }
     cc.host_name.clone()
+}
+
+/// Splits `key:value` on the first colon. Returns `None` if no colon.
+fn split_tag(tag: &[u8]) -> Option<(&str, &str)> {
+    let sep = tag.iter().position(|&b| b == b':')?;
+    let name = std::str::from_utf8(&tag[..sep]).ok()?;
+    let value = std::str::from_utf8(&tag[sep + 1..]).ok()?;
+    Some((name, value))
 }
 
 /// Resolves the env tag for a connection with the same precedence chain
@@ -308,6 +429,106 @@ mod tests {
         let mut buf = v1_buffer(&["service:foo"]);
         buf.truncate(3); // drops most of the payload
         assert_eq!(find_tag(&buf, 1, "service"), None);
+    }
+
+    #[test]
+    fn resolve_service_picks_kube_deployment_over_nothing_else() {
+        // Only orchestrator tags present — no `service:` anywhere.
+        let cc = CollectorConnections {
+            encoded_tags: v1_buffer(&["kube_deployment:my-app", "pod_name:my-app-abc"]),
+            ..Default::default()
+        };
+        let conn = Connection {
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_service(&cc, &conn), "my-app");
+    }
+
+    #[test]
+    fn resolve_service_prefers_service_over_kube_deployment() {
+        let cc = CollectorConnections {
+            encoded_tags: v1_buffer(&["service:real-svc", "kube_deployment:my-deploy"]),
+            ..Default::default()
+        };
+        let conn = Connection {
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_service(&cc, &conn), "real-svc");
+    }
+
+    #[test]
+    fn resolve_service_prefers_process_service_over_container_kube_deployment() {
+        // process:service (priority 0) beats container:kube_deployment (priority 8).
+        let cc = CollectorConnections {
+            encoded_connections_tags: v1_buffer(&["service:from-env"]),
+            encoded_tags: v1_buffer(&["kube_deployment:from-k8s"]),
+            ..Default::default()
+        };
+        let conn = Connection {
+            tags_idx: 1,
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_service(&cc, &conn), "from-env");
+    }
+
+    #[test]
+    fn resolve_service_container_app_beats_kube_deployment() {
+        // Priority order: container:app (5) < container:kube_deployment (8).
+        let cc = CollectorConnections {
+            encoded_tags: v1_buffer(&["app:from-app", "kube_deployment:from-deploy"]),
+            ..Default::default()
+        };
+        let conn = Connection {
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_service(&cc, &conn), "from-app");
+    }
+
+    #[test]
+    fn resolve_service_container_short_image_used_when_nothing_better() {
+        let cc = CollectorConnections {
+            encoded_tags: v1_buffer(&["short_image:nginx", "image_name:docker.io/nginx"]),
+            ..Default::default()
+        };
+        let conn = Connection {
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        // image_name is not in the priority list; short_image is.
+        assert_eq!(resolve_service(&cc, &conn), "nginx");
+    }
+
+    #[test]
+    fn resolve_service_kube_service_lowest_container_priority() {
+        // Only kube_service — last of the container entries in the list.
+        let cc = CollectorConnections {
+            encoded_tags: v1_buffer(&["kube_service:backend-svc"]),
+            ..Default::default()
+        };
+        let conn = Connection {
+            local_container_tags_index: 1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_service(&cc, &conn), "backend-svc");
+    }
+
+    #[test]
+    fn resolve_service_host_tags_only_used_when_no_process_or_container_match() {
+        let cc = CollectorConnections {
+            encoded_tags: v1_buffer(&["service:from-host"]),
+            host_tags_index: 1,
+            ..Default::default()
+        };
+        let conn = Connection {
+            tags_idx: -1,
+            local_container_tags_index: -1,
+            ..Default::default()
+        };
+        assert_eq!(resolve_service(&cc, &conn), "from-host");
     }
 
     #[test]
