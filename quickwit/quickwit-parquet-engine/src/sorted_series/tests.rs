@@ -690,8 +690,7 @@ fn test_split_round_trip_verifies_key_correctness_with_nulls() {
         let cur = ss_col.value(i);
         assert!(
             prev <= cur,
-            "sorted_series must be monotonically non-decreasing: \
-             row {} ({:?}) > row {} ({:?})",
+            "sorted_series must be monotonically non-decreasing: row {} ({:?}) > row {} ({:?})",
             i - 1,
             prev,
             i,

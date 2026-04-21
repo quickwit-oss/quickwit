@@ -214,8 +214,7 @@ fn encode_row_key(
         let value = extract_string_value(col.as_ref(), row_idx)?;
         storekey::encode(&mut *buf, &kc.ordinal)
             .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
-        storekey::encode(&mut *buf, value)
-            .map_err(|e| anyhow!("storekey encode value: {}", e))?;
+        storekey::encode(&mut *buf, value).map_err(|e| anyhow!("storekey encode value: {}", e))?;
     }
 
     // Append timeseries_id with its ordinal as the final discriminator.
@@ -266,8 +265,8 @@ fn extract_string_value(array: &dyn Array, row: usize) -> Result<&str> {
             Ok(arr.value(row))
         }
         other => Err(anyhow!(
-            "unsupported data type {:?} in sort schema tag column — only \
-             Dictionary(Int32, Utf8) and Utf8 are supported",
+            "unsupported data type {:?} in sort schema tag column — only Dictionary(Int32, Utf8) \
+             and Utf8 are supported",
             other
         )),
     }
