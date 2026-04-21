@@ -354,7 +354,7 @@ impl MetricsPipeline {
             writer_config,
             self.params.indexing_directory.path(),
             &table_config,
-        );
+        )?;
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = ctx
             .spawn_actor()

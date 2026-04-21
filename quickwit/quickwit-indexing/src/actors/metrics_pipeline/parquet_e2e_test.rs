@@ -187,7 +187,8 @@ async fn test_metrics_pipeline_e2e() {
         writer_config,
         temp_dir.path(),
         &table_config,
-    );
+    )
+    .unwrap();
     let packager = ParquetPackager::new(split_writer, uploader_mailbox);
     let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
@@ -533,7 +534,8 @@ async fn test_sketch_pipeline_e2e() {
         writer_config,
         temp_dir.path(),
         &quickwit_parquet_engine::table_config::TableConfig::default(),
-    );
+    )
+    .unwrap();
     let packager = ParquetPackager::new(split_writer, uploader_mailbox);
     let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 

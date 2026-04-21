@@ -280,7 +280,8 @@ mod tests {
             writer_config,
             temp_dir,
             &table_config,
-        );
+        )
+        .unwrap();
 
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)

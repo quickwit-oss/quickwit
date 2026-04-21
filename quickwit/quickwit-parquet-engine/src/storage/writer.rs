@@ -177,14 +177,17 @@ impl ParquetWriter {
     /// are skipped for sorting but recorded in the metadata string.
     ///
     /// The writer validates and sorts dynamically from the batch at write time.
-    pub fn new(config: ParquetWriterConfig, table_config: &TableConfig) -> Self {
+    pub fn new(
+        config: ParquetWriterConfig,
+        table_config: &TableConfig,
+    ) -> Result<Self, ParquetWriteError> {
         let sort_fields_string = table_config.effective_sort_fields().to_string();
-        let resolved_sort_fields = resolve_sort_fields(&sort_fields_string);
-        Self {
+        let resolved_sort_fields = resolve_sort_fields(&sort_fields_string)?;
+        Ok(Self {
             config,
             resolved_sort_fields,
             sort_fields_string,
-        }
+        })
     }
 
     /// Get the writer configuration.
@@ -452,16 +455,11 @@ impl ParquetWriter {
 ///
 /// Columns not present in the current schema (e.g., `timeseries_id`) are silently
 /// skipped — they are recorded in the metadata string but do not affect physical sort.
-fn resolve_sort_fields(sort_fields_str: &str) -> Vec<ResolvedSortField> {
-    let schema = match parse_sort_fields(sort_fields_str) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!(sort_fields = sort_fields_str, error = %e, "failed to parse sort fields, using empty sort order");
-            return Vec::new();
-        }
-    };
+fn resolve_sort_fields(sort_fields_str: &str) -> Result<Vec<ResolvedSortField>, ParquetWriteError> {
+    let schema = parse_sort_fields(sort_fields_str)
+        .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?;
 
-    schema
+    Ok(schema
         .column
         .iter()
         .map(|col| {
@@ -472,7 +470,7 @@ fn resolve_sort_fields(sort_fields_str: &str) -> Vec<ResolvedSortField> {
                 descending,
             }
         })
-        .collect()
+        .collect())
 }
 
 #[cfg(test)]
@@ -494,13 +492,13 @@ mod tests {
     #[test]
     fn test_writer_creation() {
         let config = ParquetWriterConfig::default();
-        let _writer = ParquetWriter::new(config, &TableConfig::default());
+        let _writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
     }
 
     #[test]
     fn test_write_to_bytes() {
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         let batch = create_test_batch();
         let bytes = writer.write_to_bytes(&batch, None).unwrap();
@@ -512,7 +510,7 @@ mod tests {
     #[test]
     fn test_write_to_file() {
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         let batch = create_test_batch();
         let temp_dir = std::env::temp_dir();
@@ -529,7 +527,7 @@ mod tests {
     #[test]
     fn test_schema_validation_missing_field() {
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         // Create a batch missing required fields
         let wrong_schema = Arc::new(Schema::new(vec![Field::new(
@@ -555,7 +553,7 @@ mod tests {
         use super::super::config::Compression;
 
         let config = ParquetWriterConfig::new().with_compression(Compression::Snappy);
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         let batch = create_test_batch();
         let bytes = writer.write_to_bytes(&batch, None).unwrap();
@@ -571,7 +569,7 @@ mod tests {
         use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         // Create a schema with required fields + service tag for sort verification
         let schema = Arc::new(Schema::new(vec![
@@ -716,7 +714,7 @@ mod tests {
         use crate::split::{ParquetSplitId, TimeRange};
 
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         let batch = create_test_batch();
 
@@ -769,7 +767,7 @@ mod tests {
         use parquet::file::reader::{FileReader, SerializedFileReader};
 
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         let batch = create_test_batch();
         let temp_dir = std::env::temp_dir();
@@ -828,7 +826,7 @@ mod tests {
             .build();
 
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
         let batch = create_test_batch();
 
         let temp_dir = std::env::temp_dir();
@@ -1007,7 +1005,7 @@ mod tests {
         // Default metrics sort fields: metric_name|service|env|datacenter|region|host|
         //                               timeseries_id|timestamp_secs
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         // Create a batch with columns in a deliberately scrambled order.
         // The tag columns (service, env, region, host) plus two extra data
@@ -1086,7 +1084,7 @@ mod tests {
         use parquet::file::reader::{FileReader, SerializedFileReader};
 
         let config = ParquetWriterConfig::default();
-        let writer = ParquetWriter::new(config, &TableConfig::default());
+        let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
         let batch = create_test_batch_with_tags(3, &["host", "zzz_extra", "env", "service"]);
 

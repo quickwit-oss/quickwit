@@ -54,13 +54,13 @@ impl ParquetSplitWriter {
         config: ParquetWriterConfig,
         base_path: impl Into<PathBuf>,
         table_config: &TableConfig,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, super::ParquetWriteError> {
+        Ok(Self {
             kind,
-            writer: ParquetWriter::new(config, table_config),
+            writer: ParquetWriter::new(config, table_config)?,
             base_path: base_path.into(),
             table_config: table_config.clone(),
-        }
+        })
     }
 
     /// Get the base path for split files.
@@ -352,7 +352,8 @@ mod tests {
             config,
             temp_dir.path(),
             &TableConfig::default(),
-        );
+        )
+        .unwrap();
 
         let batch = create_test_batch(10);
         let metadata = writer.write_split(&batch, "test-index").unwrap();
@@ -379,7 +380,8 @@ mod tests {
             config,
             temp_dir.path(),
             &TableConfig::default(),
-        );
+        )
+        .unwrap();
 
         // Create batch with timestamps [100, 150, 200]
         let batch = create_test_batch_with_options(
@@ -405,7 +407,8 @@ mod tests {
             config,
             temp_dir.path(),
             &TableConfig::default(),
-        );
+        )
+        .unwrap();
 
         // Create batch with specific metric names
         let batch = create_test_batch_with_options(

@@ -459,7 +459,7 @@ fn test_sorted_series_in_parquet_round_trip() {
     use crate::table_config::TableConfig;
 
     let config = ParquetWriterConfig::default();
-    let writer = ParquetWriter::new(config, &TableConfig::default());
+    let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
     let batch = build_test_batch(&[
         TestRow::new("cpu.usage", Some("api"), Some("node-1"), 100),
@@ -522,7 +522,7 @@ fn test_split_round_trip_verifies_key_correctness_with_nulls() {
     use crate::table_config::TableConfig;
 
     let config = ParquetWriterConfig::default();
-    let writer = ParquetWriter::new(config, &TableConfig::default());
+    let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
     // Build a batch with 6 rows covering 4 distinct series:
     //
