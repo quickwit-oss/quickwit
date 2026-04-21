@@ -31,7 +31,7 @@ mod tests;
 use std::collections::HashMap;
 
 use anyhow::Result;
-use arrow::array::{Array, DictionaryArray, StringArray};
+use arrow::array::{Array, DictionaryArray, LargeStringArray, StringArray};
 use arrow::datatypes::{DataType, Int32Type};
 use arrow::record_batch::RecordBatch;
 pub use minmax::{MinMax, MinMaxBuilder};
@@ -186,10 +186,15 @@ fn register_string_values(
         DataType::Dictionary(_, _) => {
             if let Some(dict) = array.as_any().downcast_ref::<DictionaryArray<Int32Type>>() {
                 let values = dict.values();
+                // Dictionary values may be Utf8 or LargeUtf8.
                 if let Some(str_values) = values.as_any().downcast_ref::<StringArray>() {
-                    // Register each distinct non-null value from the dictionary.
-                    // Dictionary encoding means we iterate distinct values, not
-                    // all rows — much more efficient for low-cardinality columns.
+                    for i in 0..str_values.len() {
+                        if !str_values.is_null(i) {
+                            builder.register(str_values.value(i));
+                        }
+                    }
+                } else if let Some(str_values) = values.as_any().downcast_ref::<LargeStringArray>()
+                {
                     for i in 0..str_values.len() {
                         if !str_values.is_null(i) {
                             builder.register(str_values.value(i));
@@ -200,6 +205,15 @@ fn register_string_values(
         }
         DataType::Utf8 => {
             if let Some(str_array) = array.as_any().downcast_ref::<StringArray>() {
+                for i in 0..str_array.len() {
+                    if !str_array.is_null(i) {
+                        builder.register(str_array.value(i));
+                    }
+                }
+            }
+        }
+        DataType::LargeUtf8 => {
+            if let Some(str_array) = array.as_any().downcast_ref::<LargeStringArray>() {
                 for i in 0..str_array.len() {
                     if !str_array.is_null(i) {
                         builder.register(str_array.value(i));
