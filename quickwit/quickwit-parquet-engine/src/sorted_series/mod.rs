@@ -211,12 +211,11 @@ fn encode_row_key(
         if col.is_null(row_idx) {
             continue;
         }
-        if let Some(value) = extract_string_value(col.as_ref(), row_idx) {
-            storekey::encode(&mut *buf, &kc.ordinal)
-                .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
-            storekey::encode(&mut *buf, value)
-                .map_err(|e| anyhow!("storekey encode value: {}", e))?;
-        }
+        let value = extract_string_value(col.as_ref(), row_idx)?;
+        storekey::encode(&mut *buf, &kc.ordinal)
+            .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
+        storekey::encode(&mut *buf, value)
+            .map_err(|e| anyhow!("storekey encode value: {}", e))?;
     }
 
     // Append timeseries_id with its ordinal as the final discriminator.
@@ -237,8 +236,9 @@ fn encode_row_key(
 /// Extract a string value from a column at the given row.
 ///
 /// Supports `Dictionary(Int32, Utf8)` (the common tag encoding) and
-/// plain `Utf8` columns.
-fn extract_string_value(array: &dyn Array, row: usize) -> Option<&str> {
+/// plain `Utf8` columns. Returns an error for unsupported types — tag
+/// columns in the sort schema must be string-typed.
+fn extract_string_value(array: &dyn Array, row: usize) -> Result<&str> {
     debug_assert!(
         !array.is_null(row),
         "caller must check is_null before extract_string_value"
@@ -248,21 +248,28 @@ fn extract_string_value(array: &dyn Array, row: usize) -> Option<&str> {
         DataType::Dictionary(_, _) => {
             let dict = array
                 .as_any()
-                .downcast_ref::<DictionaryArray<Int32Type>>()?;
+                .downcast_ref::<DictionaryArray<Int32Type>>()
+                .ok_or_else(|| anyhow!("dictionary downcast failed for {:?}", array.data_type()))?;
             let key_idx = dict.keys().value(row) as usize;
             let values = dict.values();
-            let str_values = values.as_any().downcast_ref::<StringArray>()?;
-            Some(str_values.value(key_idx))
+            let str_values = values
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow!("dictionary values are not Utf8"))?;
+            Ok(str_values.value(key_idx))
         }
         DataType::Utf8 => {
-            let arr = array.as_any().downcast_ref::<StringArray>()?;
-            Some(arr.value(row))
+            let arr = array
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .ok_or_else(|| anyhow!("Utf8 downcast failed"))?;
+            Ok(arr.value(row))
         }
-        // UInt8 columns (e.g., metric_type) are encoded as their string
-        // representation. This is rare in the sort schema but handled for
-        // completeness.
-        DataType::UInt8 => None,
-        _ => None,
+        other => Err(anyhow!(
+            "unsupported data type {:?} in sort schema tag column — only \
+             Dictionary(Int32, Utf8) and Utf8 are supported",
+            other
+        )),
     }
 }
 
