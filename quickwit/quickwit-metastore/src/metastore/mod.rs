@@ -33,15 +33,15 @@ use quickwit_config::{
     SearchSettings, SourceConfig, SourceParams,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use quickwit_parquet_engine::split::{MetricsSplitMetadata, MetricsSplitRecord};
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteTask, IndexMetadataFailure,
     IndexMetadataRequest, IndexMetadataResponse, IndexesMetadataResponse,
     ListIndexesMetadataResponse, ListMetricsSplitsRequest, ListMetricsSplitsResponse,
-    ListSplitsRequest, ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService,
-    MetastoreServiceClient, MetastoreServiceStream, PublishMetricsSplitsRequest,
-    PublishSplitsRequest, StageMetricsSplitsRequest, StageSplitsRequest, UpdateIndexRequest,
-    UpdateSourceRequest, serde_utils,
+    ListSketchSplitsRequest, ListSketchSplitsResponse, ListSplitsRequest, ListSplitsResponse,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    MetastoreServiceStream, PublishMetricsSplitsRequest, PublishSketchSplitsRequest,
+    PublishSplitsRequest, StageMetricsSplitsRequest, StageSketchSplitsRequest, StageSplitsRequest,
+    UpdateIndexRequest, UpdateSourceRequest, serde_utils,
 };
 use quickwit_proto::types::{IndexUid, NodeId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -50,9 +50,9 @@ use time::OffsetDateTime;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
 
-/// Query parameters for listing metrics splits.
+/// Query parameters for listing parquet splits (metrics or sketches).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListMetricsSplitsQuery {
+pub struct ListParquetSplitsQuery {
     /// Index UID to filter by (required).
     pub index_uid: IndexUid,
     /// Split states to include.
@@ -89,7 +89,7 @@ pub struct ListMetricsSplitsQuery {
     pub limit: Option<usize>,
 }
 
-impl Default for ListMetricsSplitsQuery {
+impl Default for ListParquetSplitsQuery {
     fn default() -> Self {
         Self {
             index_uid: IndexUid::default(),
@@ -112,7 +112,7 @@ impl Default for ListMetricsSplitsQuery {
     }
 }
 
-impl ListMetricsSplitsQuery {
+impl ListParquetSplitsQuery {
     /// Creates a query for all splits in an index.
     pub fn for_index(index_uid: impl Into<IndexUid>) -> Self {
         Self {
@@ -702,22 +702,6 @@ impl PublishSplitsRequestExt for PublishSplitsRequest {
     }
 }
 
-/// Helper trait for [`PublishMetricsSplitsRequest`] to deserialize its payload.
-pub trait PublishMetricsSplitsRequestExt {
-    /// Deserializes the `index_checkpoint_delta_json_opt` field of a
-    /// [`PublishMetricsSplitsRequest`] into an [`Option<IndexCheckpointDelta>`].
-    fn deserialize_index_checkpoint(&self) -> MetastoreResult<Option<IndexCheckpointDelta>>;
-}
-
-impl PublishMetricsSplitsRequestExt for PublishMetricsSplitsRequest {
-    fn deserialize_index_checkpoint(&self) -> MetastoreResult<Option<IndexCheckpointDelta>> {
-        self.index_checkpoint_delta_json_opt
-            .as_ref()
-            .map(|value| serde_utils::from_json_str(value))
-            .transpose()
-    }
-}
-
 #[async_trait]
 impl ListSplitsResponseExt for ListSplitsResponse {
     fn empty() -> Self {
@@ -763,121 +747,173 @@ impl ListSplitsResponseExt for ListSplitsResponse {
 }
 
 // =====================================================
-// Metrics Splits Extension Traits
+// Parquet Splits Extension Traits (unified via macros)
 // =====================================================
 
-/// Helper trait to build a [`StageMetricsSplitsRequest`].
-pub trait StageMetricsSplitsRequestExt {
-    /// Creates a new [`StageMetricsSplitsRequest`] from an index UID and split metadata.
+use quickwit_parquet_engine::split::ParquetSplitMetadata;
+
+/// A complete parquet split record from the database.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ParquetSplitRecord {
+    /// The split's state.
+    pub state: SplitState,
+    /// Timestamp when the split was last updated.
+    pub update_timestamp: i64,
+    /// The split's immutable metadata.
+    pub metadata: ParquetSplitMetadata,
+}
+
+/// Helper trait to build stage requests for parquet splits.
+pub trait StageParquetSplitsRequestExt: Sized {
+    /// Creates a new stage request from an index UID and split metadata.
     fn try_from_splits_metadata(
         index_uid: impl Into<IndexUid>,
-        splits_metadata: &[MetricsSplitMetadata],
-    ) -> MetastoreResult<StageMetricsSplitsRequest>;
+        splits_metadata: &[ParquetSplitMetadata],
+    ) -> MetastoreResult<Self>;
 
     /// Deserializes the splits metadata.
-    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<MetricsSplitMetadata>>;
+    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<ParquetSplitMetadata>>;
 }
 
-impl StageMetricsSplitsRequestExt for StageMetricsSplitsRequest {
-    fn try_from_splits_metadata(
-        index_uid: impl Into<IndexUid>,
-        splits_metadata: &[MetricsSplitMetadata],
-    ) -> MetastoreResult<StageMetricsSplitsRequest> {
-        let splits_metadata_json = splits_metadata
-            .iter()
-            .map(serde_utils::to_json_str)
-            .collect::<MetastoreResult<Vec<String>>>()?;
-        Ok(StageMetricsSplitsRequest {
-            index_uid: Some(index_uid.into()),
-            splits_metadata_json,
-        })
-    }
+macro_rules! impl_stage_parquet_splits_ext {
+    ($request_type:ty) => {
+        impl StageParquetSplitsRequestExt for $request_type {
+            fn try_from_splits_metadata(
+                index_uid: impl Into<IndexUid>,
+                splits_metadata: &[ParquetSplitMetadata],
+            ) -> MetastoreResult<Self> {
+                let splits_metadata_json = splits_metadata
+                    .iter()
+                    .map(serde_utils::to_json_str)
+                    .collect::<MetastoreResult<Vec<String>>>()?;
+                Ok(Self {
+                    index_uid: Some(index_uid.into()),
+                    splits_metadata_json,
+                })
+            }
 
-    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<MetricsSplitMetadata>> {
-        self.splits_metadata_json
-            .iter()
-            .map(|s| serde_utils::from_json_str(s))
-            .collect()
-    }
+            fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<ParquetSplitMetadata>> {
+                self.splits_metadata_json
+                    .iter()
+                    .map(|s| serde_utils::from_json_str(s))
+                    .collect()
+            }
+        }
+    };
+}
+impl_stage_parquet_splits_ext!(StageMetricsSplitsRequest);
+impl_stage_parquet_splits_ext!(StageSketchSplitsRequest);
+
+/// Helper trait to deserialize publish requests for parquet splits.
+pub trait PublishParquetSplitsRequestExt {
+    /// Deserializes the `index_checkpoint_delta_json_opt` field into an
+    /// [`Option<IndexCheckpointDelta>`].
+    fn deserialize_index_checkpoint(&self) -> MetastoreResult<Option<IndexCheckpointDelta>>;
 }
 
-/// Helper trait to build a [`ListMetricsSplitsRequest`].
-pub trait ListMetricsSplitsRequestExt {
-    /// Creates a new [`ListMetricsSplitsRequest`] from an index UID.
-    fn for_index(index_uid: impl Into<IndexUid>) -> MetastoreResult<ListMetricsSplitsRequest>;
+macro_rules! impl_publish_parquet_splits_ext {
+    ($request_type:ty) => {
+        impl PublishParquetSplitsRequestExt for $request_type {
+            fn deserialize_index_checkpoint(
+                &self,
+            ) -> MetastoreResult<Option<IndexCheckpointDelta>> {
+                self.index_checkpoint_delta_json_opt
+                    .as_ref()
+                    .map(|value| serde_utils::from_json_str(value))
+                    .transpose()
+            }
+        }
+    };
+}
+impl_publish_parquet_splits_ext!(PublishMetricsSplitsRequest);
+impl_publish_parquet_splits_ext!(PublishSketchSplitsRequest);
 
-    /// Creates a new [`ListMetricsSplitsRequest`] from an index UID and query.
+/// Helper trait to build list requests for parquet splits.
+pub trait ListParquetSplitsRequestExt: Sized {
+    /// Creates a new list request from an index UID.
+    fn for_index(index_uid: impl Into<IndexUid>) -> MetastoreResult<Self>;
+
+    /// Creates a new list request from an index UID and query.
     fn try_from_query(
         index_uid: impl Into<IndexUid>,
-        query: &ListMetricsSplitsQuery,
-    ) -> MetastoreResult<ListMetricsSplitsRequest>;
+        query: &ListParquetSplitsQuery,
+    ) -> MetastoreResult<Self>;
 
     /// Deserializes the `query_json` field.
-    fn deserialize_query(&self) -> MetastoreResult<ListMetricsSplitsQuery>;
+    fn deserialize_query(&self) -> MetastoreResult<ListParquetSplitsQuery>;
 }
 
-impl ListMetricsSplitsRequestExt for ListMetricsSplitsRequest {
-    fn for_index(index_uid: impl Into<IndexUid>) -> MetastoreResult<ListMetricsSplitsRequest> {
-        let index_uid = index_uid.into();
-        let query = ListMetricsSplitsQuery::for_index(index_uid.clone());
-        Self::try_from_query(index_uid, &query)
-    }
+macro_rules! impl_list_parquet_splits_request_ext {
+    ($request_type:ty) => {
+        impl ListParquetSplitsRequestExt for $request_type {
+            fn for_index(index_uid: impl Into<IndexUid>) -> MetastoreResult<Self> {
+                let index_uid = index_uid.into();
+                let query = ListParquetSplitsQuery::for_index(index_uid.clone());
+                Self::try_from_query(index_uid, &query)
+            }
 
-    fn try_from_query(
-        index_uid: impl Into<IndexUid>,
-        query: &ListMetricsSplitsQuery,
-    ) -> MetastoreResult<ListMetricsSplitsRequest> {
-        let query_json = serde_utils::to_json_str(query)?;
-        Ok(ListMetricsSplitsRequest {
-            index_uid: Some(index_uid.into()),
-            query_json,
-        })
-    }
+            fn try_from_query(
+                index_uid: impl Into<IndexUid>,
+                query: &ListParquetSplitsQuery,
+            ) -> MetastoreResult<Self> {
+                let query_json = serde_utils::to_json_str(query)?;
+                Ok(Self {
+                    index_uid: Some(index_uid.into()),
+                    query_json,
+                })
+            }
 
-    fn deserialize_query(&self) -> MetastoreResult<ListMetricsSplitsQuery> {
-        serde_utils::from_json_str(&self.query_json)
-    }
+            fn deserialize_query(&self) -> MetastoreResult<ListParquetSplitsQuery> {
+                serde_utils::from_json_str(&self.query_json)
+            }
+        }
+    };
 }
+impl_list_parquet_splits_request_ext!(ListMetricsSplitsRequest);
+impl_list_parquet_splits_request_ext!(ListSketchSplitsRequest);
 
-/// Helper trait to build and deserialize [`ListMetricsSplitsResponse`].
-pub trait ListMetricsSplitsResponseExt {
+/// Helper trait to build and deserialize list responses for parquet splits.
+pub trait ListParquetSplitsResponseExt: Sized {
     /// Creates an empty response.
     fn empty() -> Self;
 
     /// Creates a response from a list of splits.
-    fn try_from_splits(splits: &[MetricsSplitRecord])
-    -> MetastoreResult<ListMetricsSplitsResponse>;
+    fn try_from_splits(splits: &[ParquetSplitRecord]) -> MetastoreResult<Self>;
 
     /// Deserializes the splits in the response.
-    fn deserialize_splits(&self) -> MetastoreResult<Vec<MetricsSplitRecord>>;
+    fn deserialize_splits(&self) -> MetastoreResult<Vec<ParquetSplitRecord>>;
 }
 
-impl ListMetricsSplitsResponseExt for ListMetricsSplitsResponse {
-    fn empty() -> Self {
-        Self {
-            splits_serialized_json: Vec::new(),
+macro_rules! impl_list_parquet_splits_response_ext {
+    ($response_type:ty) => {
+        impl ListParquetSplitsResponseExt for $response_type {
+            fn empty() -> Self {
+                Self {
+                    splits_serialized_json: Vec::new(),
+                }
+            }
+
+            fn try_from_splits(splits: &[ParquetSplitRecord]) -> MetastoreResult<Self> {
+                let splits_serialized_json = splits
+                    .iter()
+                    .map(serde_utils::to_json_str)
+                    .collect::<MetastoreResult<Vec<String>>>()?;
+                Ok(Self {
+                    splits_serialized_json,
+                })
+            }
+
+            fn deserialize_splits(&self) -> MetastoreResult<Vec<ParquetSplitRecord>> {
+                self.splits_serialized_json
+                    .iter()
+                    .map(|s| serde_utils::from_json_str(s))
+                    .collect()
+            }
         }
-    }
-
-    fn try_from_splits(
-        splits: &[MetricsSplitRecord],
-    ) -> MetastoreResult<ListMetricsSplitsResponse> {
-        let splits_serialized_json = splits
-            .iter()
-            .map(serde_utils::to_json_str)
-            .collect::<MetastoreResult<Vec<String>>>()?;
-        Ok(ListMetricsSplitsResponse {
-            splits_serialized_json,
-        })
-    }
-
-    fn deserialize_splits(&self) -> MetastoreResult<Vec<MetricsSplitRecord>> {
-        self.splits_serialized_json
-            .iter()
-            .map(|s| serde_utils::from_json_str(s))
-            .collect()
-    }
+    };
 }
+impl_list_parquet_splits_response_ext!(ListMetricsSplitsResponse);
+impl_list_parquet_splits_response_ext!(ListSketchSplitsResponse);
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 /// A query builder for listing splits within the metastore.

@@ -102,13 +102,17 @@ jobs:
         uses: taiki-e/install-action@aba36d755ec7ca22d38b12111787c26115943952
         with:
           tool: cargo-nextest
-      - name: cargo build
+      - name: cargo check without metrics
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo build --features=postgres --tests --bin quickwit
+        run: cargo check --features=postgres --tests --bin quickwit
+        working-directory: ./quickwit
+      - name: cargo check with metrics
+        if: always() && steps.modified.outputs.rust_src == 'true'
+        run: cargo check --features=postgres,metrics --tests --bin quickwit
         working-directory: ./quickwit
       - name: cargo nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo nextest run --features=postgres --retries 1
+        run: cargo nextest run --features=postgres,metrics --retries 1
         working-directory: ./quickwit
       - name: Install python packages
         if: always() && steps.modified.outputs.rust_src == 'true'

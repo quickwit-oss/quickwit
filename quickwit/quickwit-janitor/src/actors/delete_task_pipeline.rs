@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Supervisor,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, QueueCapacity, Supervisor,
     SupervisorState,
 };
 use quickwit_common::io::IoControls;
@@ -31,7 +31,7 @@ use quickwit_indexing::actors::{
     PublisherCounters, Uploader, UploaderCounters, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
-use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
+use quickwit_indexing::{IndexingSplitStore, SplitsUpdateMailbox};
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
@@ -162,7 +162,8 @@ impl DeleteTaskPipeline {
             .deserialize_index_metadata()?
             .into_index_config();
         let publisher = Publisher::new(
-            PublisherType::MergePublisher,
+            "MergePublisher",
+            QueueCapacity::Unbounded,
             self.metastore.clone(),
             None,
             None,
