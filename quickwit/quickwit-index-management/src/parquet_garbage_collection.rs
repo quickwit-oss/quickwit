@@ -18,14 +18,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use quickwit_common::Progress;
+use quickwit_common::{Progress, is_sketches_index};
 use quickwit_metastore::{
-    ListMetricsSplitsQuery, ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt, SplitState,
+    ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
+    ParquetSplitRecord, SplitState,
 };
-use quickwit_parquet_engine::split::MetricsSplitRecord;
 use quickwit_proto::metastore::{
-    DeleteMetricsSplitsRequest, ListMetricsSplitsRequest, MarkMetricsSplitsForDeletionRequest,
-    MetastoreService, MetastoreServiceClient,
+    DeleteMetricsSplitsRequest, DeleteSketchSplitsRequest, ListMetricsSplitsRequest,
+    ListSketchSplitsRequest, MarkMetricsSplitsForDeletionRequest,
+    MarkSketchSplitsForDeletionRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
@@ -91,7 +92,7 @@ pub async fn run_parquet_garbage_collect(
     let mut deletable_staged_splits = Vec::new();
     for index_uid in indexes.keys() {
         let splits =
-            list_stale_staged_splits(&metastore, index_uid, staged_cutoff, progress_opt).await?;
+            list_parquet_splits(&metastore, index_uid, vec![SplitState::Staged], staged_cutoff, progress_opt).await?;
         deletable_staged_splits.extend(splits);
     }
 
@@ -102,7 +103,7 @@ pub async fn run_parquet_garbage_collect(
         let mut splits_marked_for_deletion = Vec::new();
         for index_uid in indexes.keys() {
             let splits =
-                list_marked_splits(&metastore, index_uid, deletion_cutoff, progress_opt).await?;
+                list_parquet_splits(&metastore, index_uid, vec![SplitState::MarkedForDeletion], deletion_cutoff, progress_opt).await?;
             splits_marked_for_deletion.extend(splits);
         }
         splits_marked_for_deletion.extend(deletable_staged_splits);
@@ -153,50 +154,39 @@ pub async fn run_parquet_garbage_collect(
     Ok(removal_info)
 }
 
-/// Lists Staged parquet splits older than the cutoff.
-async fn list_stale_staged_splits(
+/// Lists parquet splits in the given states older than the cutoff.
+async fn list_parquet_splits(
     metastore: &MetastoreServiceClient,
     index_uid: &IndexUid,
-    staged_cutoff: i64,
+    states: Vec<SplitState>,
+    cutoff: i64,
     progress_opt: Option<&Progress>,
-) -> anyhow::Result<Vec<MetricsSplitRecord>> {
-    let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec![SplitState::Staged])
-        .with_update_timestamp_lte(staged_cutoff);
+) -> anyhow::Result<Vec<ParquetSplitRecord>> {
+    let query = ListParquetSplitsQuery::for_index(index_uid.clone())
+        .with_split_states(states)
+        .with_update_timestamp_lte(cutoff);
 
-    let request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)
-        .context("failed to build list metrics splits request")?;
-
-    let response = protect_future(progress_opt, metastore.list_metrics_splits(request)).await?;
-    response
-        .deserialize_splits()
-        .context("failed to deserialize metrics splits")
-}
-
-/// Lists MarkedForDeletion parquet splits older than the cutoff.
-async fn list_marked_splits(
-    metastore: &MetastoreServiceClient,
-    index_uid: &IndexUid,
-    deletion_cutoff: i64,
-    progress_opt: Option<&Progress>,
-) -> anyhow::Result<Vec<MetricsSplitRecord>> {
-    let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
-        .with_split_states(vec![SplitState::MarkedForDeletion])
-        .with_update_timestamp_lte(deletion_cutoff);
-
-    let request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)
-        .context("failed to build list metrics splits request")?;
-
-    let response = protect_future(progress_opt, metastore.list_metrics_splits(request)).await?;
-    response
-        .deserialize_splits()
-        .context("failed to deserialize metrics splits")
+    if is_sketches_index(&index_uid.index_id) {
+        let request = ListSketchSplitsRequest::try_from_query(index_uid.clone(), &query)
+            .context("failed to build list sketch splits request")?;
+        protect_future(progress_opt, metastore.list_sketch_splits(request))
+            .await?
+            .deserialize_splits()
+            .context("failed to deserialize sketch splits")
+    } else {
+        let request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)
+            .context("failed to build list metrics splits request")?;
+        protect_future(progress_opt, metastore.list_metrics_splits(request))
+            .await?
+            .deserialize_splits()
+            .context("failed to deserialize metrics splits")
+    }
 }
 
 /// Marks the given splits for deletion in the metastore, grouped by index.
 async fn mark_splits_for_deletion(
     metastore: &MetastoreServiceClient,
-    splits: &[MetricsSplitRecord],
+    splits: &[ParquetSplitRecord],
     progress_opt: Option<&Progress>,
 ) -> anyhow::Result<()> {
     if splits.is_empty() {
@@ -216,14 +206,29 @@ async fn mark_splits_for_deletion(
         let index_uid: IndexUid = index_uid_str.parse()?;
         info!(index_uid=%index_uid, count=%split_ids.len(), "marking stale staged parquet splits for deletion");
 
-        protect_future(
-            progress_opt,
-            metastore.mark_metrics_splits_for_deletion(MarkMetricsSplitsForDeletionRequest {
-                index_uid: Some(index_uid),
-                split_ids,
-            }),
-        )
-        .await?;
+        if is_sketches_index(&index_uid.index_id) {
+            protect_future(
+                progress_opt,
+                metastore.mark_sketch_splits_for_deletion(
+                    MarkSketchSplitsForDeletionRequest {
+                        index_uid: Some(index_uid),
+                        split_ids,
+                    },
+                ),
+            )
+            .await?;
+        } else {
+            protect_future(
+                progress_opt,
+                metastore.mark_metrics_splits_for_deletion(
+                    MarkMetricsSplitsForDeletionRequest {
+                        index_uid: Some(index_uid),
+                        split_ids,
+                    },
+                ),
+            )
+            .await?;
+        }
     }
 
     Ok(())
@@ -240,10 +245,12 @@ async fn delete_marked_parquet_splits(
 ) -> anyhow::Result<ParquetSplitRemovalInfo> {
     let mut removal_info = ParquetSplitRemovalInfo::default();
 
-    let mut query = ListMetricsSplitsQuery::for_index(index_uid.clone())
+    let mut query = ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec![SplitState::MarkedForDeletion])
         .with_update_timestamp_lte(deletion_cutoff)
         .with_limit(DELETE_PARQUET_SPLITS_BATCH_SIZE);
+
+    let is_sketch = is_sketches_index(&index_uid.index_id);
 
     loop {
         let sleep_duration = if let Some(max_rate) = get_maximum_split_deletion_rate_per_sec() {
@@ -253,30 +260,49 @@ async fn delete_marked_parquet_splits(
         };
         let sleep_future = tokio::time::sleep(sleep_duration);
 
-        let request = match ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query) {
-            Ok(req) => req,
-            Err(err) => {
-                error!(index_uid=%index_uid, error=?err, "failed to build list metrics splits request");
-                break;
-            }
-        };
-
-        let splits: Vec<MetricsSplitRecord> = match protect_future(
-            progress_opt,
-            metastore.list_metrics_splits(request),
-        )
-        .await
-        {
-            Ok(resp) => match resp.deserialize_splits() {
-                Ok(splits) => splits,
+        let splits: Vec<ParquetSplitRecord> = if is_sketch {
+            let request =
+                match ListSketchSplitsRequest::try_from_query(index_uid.clone(), &query) {
+                    Ok(req) => req,
+                    Err(err) => {
+                        error!(index_uid=%index_uid, error=?err, "failed to build list sketch splits request");
+                        break;
+                    }
+                };
+            match protect_future(progress_opt, metastore.list_sketch_splits(request)).await {
+                Ok(resp) => match resp.deserialize_splits() {
+                    Ok(splits) => splits,
+                    Err(err) => {
+                        error!(index_uid=%index_uid, error=?err, "failed to deserialize sketch splits");
+                        break;
+                    }
+                },
                 Err(err) => {
-                    error!(index_uid=%index_uid, error=?err, "failed to deserialize metrics splits");
+                    error!(index_uid=%index_uid, error=?err, "failed to list sketch splits");
                     break;
                 }
-            },
-            Err(err) => {
-                error!(index_uid=%index_uid, error=?err, "failed to list metrics splits");
-                break;
+            }
+        } else {
+            let request =
+                match ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query) {
+                    Ok(req) => req,
+                    Err(err) => {
+                        error!(index_uid=%index_uid, error=?err, "failed to build list metrics splits request");
+                        break;
+                    }
+                };
+            match protect_future(progress_opt, metastore.list_metrics_splits(request)).await {
+                Ok(resp) => match resp.deserialize_splits() {
+                    Ok(splits) => splits,
+                    Err(err) => {
+                        error!(index_uid=%index_uid, error=?err, "failed to deserialize metrics splits");
+                        break;
+                    }
+                },
+                Err(err) => {
+                    error!(index_uid=%index_uid, error=?err, "failed to list metrics splits");
+                    break;
+                }
             }
         };
 
@@ -323,7 +349,7 @@ async fn delete_parquet_splits_from_storage_and_metastore(
     metastore: &MetastoreServiceClient,
     index_uid: &IndexUid,
     storage: &dyn Storage,
-    splits: &[MetricsSplitRecord],
+    splits: &[ParquetSplitRecord],
     progress_opt: Option<&Progress>,
 ) -> (Vec<ParquetSplitInfo>, Vec<ParquetSplitInfo>) {
     let splits_to_delete: Vec<SplitToDelete> = splits
@@ -362,15 +388,19 @@ async fn delete_parquet_splits_from_storage_and_metastore(
 
     let batch_len = succeeded_stds.len();
     let ids_to_delete: Vec<String> = succeeded_stds.iter().map(|s| s.split_id.clone()).collect();
-    let delete_request = DeleteMetricsSplitsRequest {
-        index_uid: Some(index_uid.clone()),
-        split_ids: ids_to_delete,
+    let metastore_result = if is_sketches_index(&index_uid.index_id) {
+        let delete_request = DeleteSketchSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            split_ids: ids_to_delete,
+        };
+        protect_future(progress_opt, metastore.delete_sketch_splits(delete_request)).await
+    } else {
+        let delete_request = DeleteMetricsSplitsRequest {
+            index_uid: Some(index_uid.clone()),
+            split_ids: ids_to_delete,
+        };
+        protect_future(progress_opt, metastore.delete_metrics_splits(delete_request)).await
     };
-    let metastore_result = protect_future(
-        progress_opt,
-        metastore.delete_metrics_splits(delete_request),
-    )
-    .await;
 
     if let Some(progress) = progress_opt {
         progress.record_progress();
@@ -406,10 +436,8 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_metastore::ListMetricsSplitsResponseExt;
-    use quickwit_parquet_engine::split::{
-        MetricsSplitMetadata, MetricsSplitRecord, MetricsSplitState, SplitId, TimeRange,
-    };
+    use quickwit_metastore::{ListParquetSplitsResponseExt, ParquetSplitRecord, SplitState};
+    use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
     use quickwit_proto::metastore::{
         EmptyResponse, ListMetricsSplitsResponse, MetastoreServiceClient, MockMetastoreService,
     };
@@ -423,12 +451,12 @@ mod tests {
         IndexUid::for_test(TEST_INDEX, 0)
     }
 
-    fn make_split(split_id: &str, state: MetricsSplitState) -> MetricsSplitRecord {
-        MetricsSplitRecord {
+    fn make_split(split_id: &str, state: SplitState) -> ParquetSplitRecord {
+        ParquetSplitRecord {
             state,
             update_timestamp: 0,
-            metadata: MetricsSplitMetadata::builder()
-                .split_id(SplitId::new(split_id))
+            metadata: ParquetSplitMetadata::metrics_builder()
+                .split_id(ParquetSplitId::new(split_id))
                 .index_uid(test_index_uid().to_string())
                 .time_range(TimeRange::new(1000, 2000))
                 .num_rows(100)
@@ -437,7 +465,7 @@ mod tests {
         }
     }
 
-    fn list_response(splits: &[MetricsSplitRecord]) -> ListMetricsSplitsResponse {
+    fn list_response(splits: &[ParquetSplitRecord]) -> ListMetricsSplitsResponse {
         ListMetricsSplitsResponse::try_from_splits(splits).unwrap()
     }
 
@@ -450,8 +478,8 @@ mod tests {
         let mut mock = MockMetastoreService::new();
 
         let staged = vec![
-            make_split("staged-1", MetricsSplitState::Staged),
-            make_split("staged-2", MetricsSplitState::Staged),
+            make_split("staged-1", SplitState::Staged),
+            make_split("staged-2", SplitState::Staged),
         ];
         let resp = list_response(&staged);
         mock.expect_list_metrics_splits()
@@ -493,8 +521,8 @@ mod tests {
             .returning(|_| Ok(ListMetricsSplitsResponse::empty()));
 
         let marked = vec![
-            make_split("marked-1", MetricsSplitState::MarkedForDeletion),
-            make_split("marked-2", MetricsSplitState::MarkedForDeletion),
+            make_split("marked-1", SplitState::MarkedForDeletion),
+            make_split("marked-2", SplitState::MarkedForDeletion),
         ];
         let resp = list_response(&marked);
         mock.expect_list_metrics_splits()
@@ -540,8 +568,8 @@ mod tests {
             .returning(|_| Ok(ListMetricsSplitsResponse::empty()));
 
         let marked = vec![
-            make_split("ok-split", MetricsSplitState::MarkedForDeletion),
-            make_split("fail-split", MetricsSplitState::MarkedForDeletion),
+            make_split("ok-split", SplitState::MarkedForDeletion),
+            make_split("fail-split", SplitState::MarkedForDeletion),
         ];
         let resp = list_response(&marked);
         mock.expect_list_metrics_splits()
@@ -595,7 +623,7 @@ mod tests {
         let mut mock = MockMetastoreService::new();
 
         // Phase 1: list staged splits
-        let staged = vec![make_split("staged-1", MetricsSplitState::Staged)];
+        let staged = vec![make_split("staged-1", SplitState::Staged)];
         let resp = list_response(&staged);
         mock.expect_list_metrics_splits()
             .times(1)
@@ -605,8 +633,8 @@ mod tests {
 
         // Phase 2: list marked splits
         let marked = vec![
-            make_split("marked-1", MetricsSplitState::MarkedForDeletion),
-            make_split("marked-2", MetricsSplitState::MarkedForDeletion),
+            make_split("marked-1", SplitState::MarkedForDeletion),
+            make_split("marked-2", SplitState::MarkedForDeletion),
         ];
         let resp = list_response(&marked);
         mock.expect_list_metrics_splits()

@@ -661,7 +661,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let mut index_service = IndexService::new(metastore, storage_resolver);
 
-    if quickwit_common::is_metrics_index(&args.index_id) {
+    if quickwit_common::is_parquet_pipeline_index(&args.index_id) {
         let removal_info = index_service
             .garbage_collect_parquet_index(&args.index_id, args.grace_period, args.dry_run)
             .await?;

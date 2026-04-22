@@ -13,15 +13,17 @@
 // limitations under the License.
 
 use quickwit_actors::ActorContext;
+use quickwit_common::is_sketches_index;
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::{
-    ListMetricsSplitsQuery, ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt,
-    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
-    SplitState,
+    ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, ParquetSplitRecord,
+    SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{
-    ListMetricsSplitsRequest, ListSplitsRequest, MarkMetricsSplitsForDeletionRequest,
+    ListMetricsSplitsRequest, ListSketchSplitsRequest, ListSplitsRequest,
+    MarkMetricsSplitsForDeletionRequest, MarkSketchSplitsForDeletionRequest,
     MarkSplitsForDeletionRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
@@ -106,17 +108,21 @@ pub async fn run_execute_parquet_retention_policy(
     let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     let max_retention_timestamp = current_timestamp - retention_period.as_secs() as i64;
 
-    let query = ListMetricsSplitsQuery::for_index(index_uid.clone())
+    let query = ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states(vec![SplitState::Published])
         .with_max_time_range_end(max_retention_timestamp);
 
-    let request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)?;
-    let response = ctx
-        .protect_future(metastore.list_metrics_splits(request))
-        .await?;
-
-    let expired_splits: Vec<quickwit_parquet_engine::split::MetricsSplitRecord> =
-        response.deserialize_splits()?;
+    let expired_splits: Vec<ParquetSplitRecord> = if is_sketches_index(&index_uid.index_id) {
+        let request = ListSketchSplitsRequest::try_from_query(index_uid.clone(), &query)?;
+        ctx.protect_future(metastore.list_sketch_splits(request))
+            .await?
+            .deserialize_splits()?
+    } else {
+        let request = ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)?;
+        ctx.protect_future(metastore.list_metrics_splits(request))
+            .await?
+            .deserialize_splits()?
+    };
 
     if expired_splits.is_empty() {
         return Ok(0);
@@ -134,13 +140,23 @@ pub async fn run_execute_parquet_retention_policy(
         expired_split_ids.len()
     );
 
-    ctx.protect_future(metastore.mark_metrics_splits_for_deletion(
-        MarkMetricsSplitsForDeletionRequest {
-            index_uid: Some(index_uid.clone()),
-            split_ids: expired_split_ids,
-        },
-    ))
-    .await?;
+    if is_sketches_index(&index_uid.index_id) {
+        ctx.protect_future(metastore.mark_sketch_splits_for_deletion(
+            MarkSketchSplitsForDeletionRequest {
+                index_uid: Some(index_uid.clone()),
+                split_ids: expired_split_ids,
+            },
+        ))
+        .await?;
+    } else {
+        ctx.protect_future(metastore.mark_metrics_splits_for_deletion(
+            MarkMetricsSplitsForDeletionRequest {
+                index_uid: Some(index_uid.clone()),
+                split_ids: expired_split_ids,
+            },
+        ))
+        .await?;
+    }
 
     Ok(expired_splits.len())
 }

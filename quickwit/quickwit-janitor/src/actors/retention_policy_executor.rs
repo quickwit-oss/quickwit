@@ -18,7 +18,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
-use quickwit_common::is_metrics_index;
+use quickwit_common::is_parquet_pipeline_index;
 use quickwit_config::IndexConfig;
 use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
@@ -210,7 +210,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
             .as_ref()
             .expect("Expected index to have retention policy configure.");
 
-        if is_metrics_index(&message.index_uid.index_id) {
+        if is_parquet_pipeline_index(&message.index_uid.index_id) {
             let execution_result = run_execute_parquet_retention_policy(
                 &message.index_uid,
                 self.metastore.clone(),
@@ -521,10 +521,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_parquet_retention_policy_execution_calls_dependencies() -> anyhow::Result<()> {
-        use quickwit_metastore::ListMetricsSplitsResponseExt;
-        use quickwit_parquet_engine::split::{
-            MetricsSplitMetadata, MetricsSplitRecord, MetricsSplitState, SplitId, TimeRange,
-        };
+        use quickwit_metastore::{ListParquetSplitsResponseExt, ParquetSplitRecord, SplitState};
+        use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
         use quickwit_proto::metastore::ListMetricsSplitsResponse;
 
         let mut mock_metastore = MockMetastoreService::new();
@@ -539,11 +537,11 @@ mod tests {
             });
 
         // Two published splits older than the retention cutoff
-        let expired_split = MetricsSplitRecord {
-            state: MetricsSplitState::Published,
+        let expired_split = ParquetSplitRecord {
+            state: SplitState::Published,
             update_timestamp: 0,
-            metadata: MetricsSplitMetadata::builder()
-                .split_id(SplitId::new("metrics_expired"))
+            metadata: ParquetSplitMetadata::metrics_builder()
+                .split_id(ParquetSplitId::new("metrics_expired"))
                 .index_uid("otel-metrics-v0_9:00000000000000000000000000")
                 .time_range(TimeRange::new(0, 100))
                 .num_rows(10)

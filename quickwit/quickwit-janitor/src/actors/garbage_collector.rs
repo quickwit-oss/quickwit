@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use quickwit_actors::{Actor, ActorContext, Handler};
-use quickwit_common::is_metrics_index;
+use quickwit_common::is_parquet_pipeline_index;
 use quickwit_common::shared_consts::split_deletion_grace_period;
 use quickwit_index_management::{GcMetrics, run_garbage_collect, run_parquet_garbage_collect};
 use quickwit_metastore::ListIndexesMetadataResponseExt;
@@ -176,7 +176,7 @@ impl GarbageCollector {
         self.counters.num_failed_storage_resolution += expected_count - resolved.len();
 
         for (index_uid, storage) in resolved {
-            if is_metrics_index(&index_uid.index_id) {
+            if is_parquet_pipeline_index(&index_uid.index_id) {
                 parquet_storages.insert(index_uid, storage);
             } else {
                 tantivy_storages.insert(index_uid, storage);
@@ -869,10 +869,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_garbage_collect_parquet_index() {
-        use quickwit_metastore::ListMetricsSplitsResponseExt;
-        use quickwit_parquet_engine::split::{
-            MetricsSplitMetadata, MetricsSplitRecord, MetricsSplitState, SplitId, TimeRange,
-        };
+        use quickwit_metastore::{ListParquetSplitsResponseExt, ParquetSplitRecord, SplitState};
+        use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
         use quickwit_proto::metastore::ListMetricsSplitsResponse;
 
         let storage_resolver = StorageResolver::unconfigured();
@@ -886,11 +884,11 @@ mod tests {
             Ok(ListIndexesMetadataResponse::for_test(indexes))
         });
 
-        let marked_split = MetricsSplitRecord {
-            state: MetricsSplitState::MarkedForDeletion,
+        let marked_split = ParquetSplitRecord {
+            state: SplitState::MarkedForDeletion,
             update_timestamp: 0,
-            metadata: MetricsSplitMetadata::builder()
-                .split_id(SplitId::new("metrics_aaa"))
+            metadata: ParquetSplitMetadata::metrics_builder()
+                .split_id(ParquetSplitId::new("metrics_aaa"))
                 .index_uid("otel-metrics-v0_1:00000000000000000000000000")
                 .time_range(TimeRange::new(1000, 2000))
                 .num_rows(10)
