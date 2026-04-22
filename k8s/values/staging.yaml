@@ -130,7 +130,7 @@ control_plane:
     DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
 
 indexer:
-  replicaCount: 50
+  replicaCount: 70
 
   extraEnv:
     DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
