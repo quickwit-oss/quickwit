@@ -200,17 +200,21 @@ pub fn build_tool_command() -> Command {
                         "Maximum total docs per merge operation (default: 5_000_000).")
                         .display_order(6)
                         .required(false),
+                    arg!(--"split-timestamp-days-range" <SPLIT_TIMESTAMP_DAYS_RANGE>
+                        "Group splits that span this many days together (0 = single-day, default: 0).")
+                        .display_order(7)
+                        .required(false),
                     arg!(--"index-parallelism" <INDEX_PARALLELISM>
                         "Number of indexes processed concurrently (default: 50).")
-                        .display_order(7)
+                        .display_order(8)
                         .required(false),
                     arg!(--"index-id-patterns" <INDEX_ID_PATTERNS>
                         "Comma-separated list of index ID patterns to include (default: '*').")
-                        .display_order(8)
+                        .display_order(9)
                         .required(false),
                     arg!(--"metrics"
                         "Expose Prometheus metrics on the REST listen address during the run.")
-                        .display_order(9)
+                        .display_order(10)
                         .required(false),
                 ])
             )
@@ -482,6 +486,11 @@ impl ToolCliCommand {
             .map(|s| s.parse::<usize>())
             .transpose()?
             .unwrap_or(defaults.split_target_num_docs);
+        let split_timestamp_days_range = matches
+            .remove_one::<String>("split-timestamp-days-range")
+            .map(|s| s.parse::<i64>())
+            .transpose()?
+            .unwrap_or(defaults.split_timestamp_days_range);
         let index_parallelism = matches
             .remove_one::<String>("index-parallelism")
             .map(|s| s.parse::<usize>())
@@ -510,6 +519,7 @@ impl ToolCliCommand {
                 input_split_max_num_docs,
                 max_merge_group_size,
                 split_target_num_docs,
+                split_timestamp_days_range,
                 index_parallelism,
                 index_id_patterns,
             },

@@ -83,8 +83,8 @@ fn plan_operations_for_group(
 ///
 /// Rules:
 /// - Splits without a `time_range` are skipped (cannot assign a day).
-/// - A split is only assigned to a bucket when *both* `time_range.start()` and `time_range.end()`
-///   fall on the same UTC day (i.e., the split does not span midnight).
+/// - A split is only assigned to a bucket when `time_range.start()` and `time_range.end()` are
+///   exactly separated by the configured number of days.
 /// - Immature splits are excluded.
 /// - Splits whose `time_range.end()` falls within the retention safety buffer are excluded.
 ///
@@ -134,8 +134,8 @@ pub fn plan_merge_operations_for_index(
             // group at the day limits.
             .map(|r| r.start() / SECS_PER_DAY);
 
-        // Both endpoints must fall on the same UTC day.
-        if start_day != end_day {
+        // Focus on splits with a specific timestamp range.
+        if end_day - start_day == config.split_timestamp_days_range {
             continue;
         }
 

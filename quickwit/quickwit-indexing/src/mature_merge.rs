@@ -55,6 +55,8 @@ pub struct MatureMergeConfig {
     pub max_merge_group_size: usize,
     /// Maximum total number of documents per merge operation.
     pub split_target_num_docs: usize,
+    /// Focus on splits that span this many days.
+    pub split_timestamp_days_range: i64,
     /// Number of indexes processed concurrently. Lower to avoid fetching splits
     /// metadata too eagerly.
     pub index_parallelism: usize,
@@ -74,6 +76,7 @@ impl Default for MatureMergeConfig {
             input_split_max_num_docs: 10_000,
             max_merge_group_size: 100,
             split_target_num_docs: 5_000_000,
+            split_timestamp_days_range: 0, // by default single day splits
             index_parallelism: 50,
             max_concurrent_merges: 10,
             dry_run: false,
