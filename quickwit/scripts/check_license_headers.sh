@@ -9,7 +9,8 @@ for file in $(git ls-files | \
     grep -v "quickwit-proto/src" | \
     grep -v "cloudprem" | \
     grep -v "/codegen/" | \
-    grep -v "quickwit-remote-api/src/" \
+    grep -v "quickwit-remote-api/src/" | \
+    grep -v "pomsky-intake/proto" \
 )
 do
     diff <(sed 's/{\\d+}/2021/' .license_header.txt) <(head -n 14 $file) > /dev/null

@@ -1528,6 +1528,7 @@ async fn create_managed_indexes(
 pub enum DatadogIndexType {
     Logs,
     Metrics,
+    Sketches,
     Traces,
 }
 
@@ -1536,6 +1537,7 @@ impl fmt::Display for DatadogIndexType {
         match self {
             DatadogIndexType::Logs => write!(f, "logs"),
             DatadogIndexType::Metrics => write!(f, "metrics"),
+            DatadogIndexType::Sketches => write!(f, "sketches"),
             DatadogIndexType::Traces => write!(f, "traces"),
         }
     }
@@ -1553,6 +1555,10 @@ async fn create_or_update_datadog_indexes(
         (
             node_config.cloudprem_config.create_dd_metrics_index,
             DatadogIndexType::Metrics,
+        ),
+        (
+            node_config.cloudprem_config.create_dd_sketches_index,
+            DatadogIndexType::Sketches,
         ),
         (
             node_config.cloudprem_config.create_dd_traces_index,
@@ -1583,6 +1589,9 @@ async fn create_or_update_datadog_index(
         }
         DatadogIndexType::Metrics => {
             &include_bytes!("../../../config/cloudprem/datadog-metrics.yaml")[..]
+        }
+        DatadogIndexType::Sketches => {
+            &include_bytes!("../../../config/cloudprem/datadog-sketches.yaml")[..]
         }
         DatadogIndexType::Traces => {
             &include_bytes!("../../../config/cloudprem/datadog-spans.yaml")[..]

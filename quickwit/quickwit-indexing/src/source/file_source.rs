@@ -16,7 +16,7 @@ use std::fmt;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::ActorExitStatus;
 use quickwit_config::FileSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -25,8 +25,7 @@ use quickwit_proto::types::SourceId;
 use super::doc_file_reader::ObjectUriBatchReader;
 #[cfg(feature = "queue-sources")]
 use super::queue_sources::coordinator::QueueCoordinator;
-use crate::actors::Processor;
-use crate::source::{Source, SourceContext, SourceRuntime, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntime, SourceSink, TypedSourceFactory};
 
 enum FileSourceState {
     #[cfg(feature = "queue-sources")]
@@ -51,17 +50,17 @@ impl fmt::Debug for FileSource {
 }
 
 #[async_trait]
-impl<P: Processor> Source<P> for FileSource {
+impl Source for FileSource {
     #[allow(unused_variables)]
     async fn initialize(
         &mut self,
-        processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        source_sink: &SourceSink,
+        ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
             FileSourceState::Notification(coordinator) => {
-                coordinator.initialize(processor_mailbox, ctx).await
+                coordinator.initialize(source_sink, ctx).await
             }
             FileSourceState::Filepath { .. } => Ok(()),
         }
@@ -70,13 +69,13 @@ impl<P: Processor> Source<P> for FileSource {
     #[allow(unused_variables)]
     async fn emit_batches(
         &mut self,
-        processor_mailbox: &Mailbox<P>,
-        ctx: &SourceContext<P>,
+        source_sink: &SourceSink,
+        ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
             FileSourceState::Notification(coordinator) => {
-                coordinator.emit_batches(processor_mailbox, ctx).await?;
+                coordinator.emit_batches(source_sink, ctx).await?;
             }
             FileSourceState::Filepath {
                 batch_reader,
@@ -88,11 +87,11 @@ impl<P: Processor> Source<P> for FileSource {
                     .await?;
                 *num_bytes_processed += batch_builder.num_bytes;
                 *num_lines_processed += batch_builder.docs.len() as u64;
-                processor_mailbox
-                    .send_message(batch_builder.build())
+                source_sink
+                    .send_raw_doc_batch(batch_builder.build(), ctx)
                     .await?;
                 if batch_reader.is_eof() {
-                    ctx.send_exit_with_success(processor_mailbox).await?;
+                    source_sink.send_exit_with_success(ctx).await?;
                     return Err(ActorExitStatus::Success);
                 }
             }
@@ -108,7 +107,7 @@ impl<P: Processor> Source<P> for FileSource {
     async fn suggest_truncate(
         &mut self,
         checkpoint: SourceCheckpoint,
-        ctx: &SourceContext<P>,
+        ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         match &mut self.state {
             #[cfg(feature = "queue-sources")]
@@ -244,10 +243,7 @@ mod tests {
         let file_source = FileSourceFactory::typed_create_source(source_runtime, params)
             .await
             .unwrap();
-        let file_source_actor = SourceActor {
-            source: Box::new(file_source),
-            processor_mailbox: doc_processor_mailbox,
-        };
+        let file_source_actor = SourceActor::new(Box::new(file_source), doc_processor_mailbox);
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
@@ -297,10 +293,7 @@ mod tests {
         let file_source = FileSourceFactory::typed_create_source(source_runtime, params)
             .await
             .unwrap();
-        let file_source_actor = SourceActor {
-            source: Box::new(file_source),
-            processor_mailbox: doc_processor_mailbox,
-        };
+        let file_source_actor = SourceActor::new(Box::new(file_source), doc_processor_mailbox);
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
@@ -374,10 +367,7 @@ mod tests {
         let file_source = FileSourceFactory::typed_create_source(source_runtime, params)
             .await
             .unwrap();
-        let file_source_actor = SourceActor {
-            source: Box::new(file_source),
-            processor_mailbox: doc_processor_mailbox,
-        };
+        let file_source_actor = SourceActor::new(Box::new(file_source), doc_processor_mailbox);
         let (_file_source_mailbox, file_source_handle) =
             universe.spawn_builder().spawn(file_source_actor);
         let (actor_termination, counters) = file_source_handle.join().await;
@@ -457,10 +447,7 @@ mod localstack_tests {
         let (doc_processor_mailbox, doc_processor_inbox) =
             universe.create_test_mailbox::<DocProcessor>();
         {
-            let actor = SourceActor {
-                source: Box::new(sqs_source),
-                processor_mailbox: doc_processor_mailbox.clone(),
-            };
+            let actor = SourceActor::new(Box::new(sqs_source), doc_processor_mailbox.clone());
             let (_mailbox, handle) = universe.spawn_builder().spawn(actor);
 
             // run the source actor for a while

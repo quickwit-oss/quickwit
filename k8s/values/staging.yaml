@@ -7,7 +7,7 @@ cloudprem:
   index:
     minShards: 240 # number of indexers * number of * vCPUs * 2
   reverseConnection:
-    enabled: false
+    enabled: true
 
 datadog:
   site: dd.datad0g.com
@@ -116,6 +116,7 @@ metastore:
   extraEnv:
     # Points sqlx to the appropriate pgpass file location
     PGPASSFILE: /quickwit/pgpass
+    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
 
 control_plane:
   resources:
@@ -125,9 +126,14 @@ control_plane:
     requests:
       cpu: 2
       memory: 4Gi
+  extraEnv:
+    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
 
 indexer:
-  replicaCount: 40
+  replicaCount: 50
+
+  extraEnv:
+    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
 
   resources:
     limits:
@@ -203,7 +209,6 @@ searcher:
 
   extraEnv:
     DD_API_KEY_FILE: /quickwit/dd-api-key
-    CP_ENABLE_REVERSE_CONNECTION: "true"
 
 janitor:
   resources:
@@ -213,6 +218,8 @@ janitor:
     requests:
       cpu: 2
       memory: 4Gi
+  extraEnv:
+    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
 
 # ConfigMap entry that is rendered by consul-template into a pgpass file used for connecting to the OrgStore metastore DB
 extraConfigMaps:
