@@ -12,26 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Pomsky Parquet Engine
-//!
-//! High-throughput metrics storage and query engine using DataFusion/Parquet.
-//! Replaces Tantivy for metrics workloads while maintaining full compatibility
-//! with Tantivy for logs/traces.
+//! Tests for the zonemap module.
 
-#![deny(clippy::disallowed_methods)]
-
-pub mod index;
-pub mod ingest;
-pub mod metrics;
-pub mod row_keys;
-pub mod schema;
-pub mod sort_fields;
-pub mod sorted_series;
-pub mod split;
-pub mod storage;
-pub mod table_config;
-pub mod timeseries_id;
-pub mod zonemap;
-
-#[cfg(any(test, feature = "testsuite"))]
-pub mod test_helpers;
+mod algorithm_tests;
+mod pipeline_tests;

@@ -150,7 +150,7 @@ mod tests {
 
         let recovered = result.unwrap();
         assert_eq!(recovered.num_rows(), 10);
-        assert_eq!(recovered.num_columns(), 6); // 4 required + 2 tags
+        assert_eq!(recovered.num_columns(), 7); // 4 required + timeseries_id + 2 tags
     }
 
     #[test]

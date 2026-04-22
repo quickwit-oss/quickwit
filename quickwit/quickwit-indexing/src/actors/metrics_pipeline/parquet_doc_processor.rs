@@ -572,7 +572,8 @@ mod tests {
             writer_config,
             temp_dir.path(),
             &table_config,
-        );
+        )
+        .unwrap();
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 

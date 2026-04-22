@@ -106,7 +106,7 @@ bitpacking = "0.9.3"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "2.3.1", features = ["serde"] }
 bytestring = "1.5"
-chitchat = "0.10"
+chitchat = "0.10.1"
 chrono = { version = "0.4", default-features = false, features = [
   "clock",
   "std",
@@ -243,6 +243,7 @@ serial_test = { version = "3.2", features = ["file_locks"] }
 sha2 = "0.11"
 siphasher = "1.0"
 stateright = "0.31"
+storekey = { version = "0.11", default-features = false }
 smallvec = "1"
 sqlx = { version = "0.8", features = [
   "migrate",
@@ -387,7 +388,7 @@ quickwit-serve = { path = "quickwit-serve" }
 quickwit-storage = { path = "quickwit-storage" }
 # Fork: removed quickwit-telemetry (present in upstream)
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "58aa4b7", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "2e16243", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",
