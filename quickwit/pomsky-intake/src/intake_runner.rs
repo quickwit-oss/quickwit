@@ -33,6 +33,11 @@ fn build_vector_config(data_dir: &Path, config: &IntakeConfig, print: bool) -> S
         r#"
 data_dir: "{data_dir}"
 
+# Enable the API for exposing the healthcheck endpoint.
+api:
+  enabled: true
+  address: "0.0.0.0:8686"
+
 sources:
   datadog_agent:
     type: datadog_agent
