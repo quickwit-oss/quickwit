@@ -23,12 +23,30 @@ use vector::cli::Opts;
 use vector::extra_context::ExtraContext;
 
 use crate::IntakeConfig;
+use crate::host_tags::HostTagsStore;
+use crate::host_tags_poller::{self, HostTagsPollerConfig, UnknownHostsCollector};
 
 fn build_vector_config(data_dir: &Path, config: &IntakeConfig, print: bool) -> String {
     let data_dir = data_dir.display();
     let logs_endpoint = &config.logs_endpoint;
     let metrics_endpoint = &config.metrics_endpoint;
     let traces_endpoint = &config.traces_endpoint;
+
+    let print_sink = if print {
+        r#"
+  print:
+    type: console
+    inputs:
+      - add_log_host_tags
+      - add_metric_host_tags
+      - add_trace_host_tags
+    encoding:
+      codec: json
+"#
+    } else {
+        ""
+    };
+
     format!(
         r#"
 data_dir: "{data_dir}"
@@ -97,11 +115,26 @@ transforms:
       - explode_dd_trace_spans
       - otlp.traces
 
+  add_log_host_tags:
+    type: add_host_tags
+    inputs:
+      - preprocess_logs
+
+  add_metric_host_tags:
+    type: add_host_tags
+    inputs:
+      - preprocess_metrics
+
+  add_trace_host_tags:
+    type: add_host_tags
+    inputs:
+      - preprocess_traces
+
 sinks:
   logs_out:
     type: http
     inputs:
-      - preprocess_logs
+      - add_log_host_tags
     uri: "{logs_endpoint}"
     method: post
     encoding:
@@ -112,13 +145,13 @@ sinks:
   metrics_out:
     type: arrow_ipc_metrics
     inputs:
-      - preprocess_metrics
+      - add_metric_host_tags
     uri: "{metrics_endpoint}"
 
   traces_out:
     type: http
     inputs:
-      - preprocess_traces
+      - add_trace_host_tags
     uri: "{traces_endpoint}"
     method: post
     encoding:
@@ -126,22 +159,34 @@ sinks:
     framing:
       method: newline_delimited
 {print_sink}
-"#,
-        print_sink = if print {
-            r#"
-  print:
-    type: console
-    inputs:
-      - preprocess_logs
-      - preprocess_metrics
-      - preprocess_traces
-    encoding:
-      codec: json
 "#
-        } else {
-            ""
-        }
     )
+}
+
+/// Spawns the host-tags poller on the Vector runtime.
+///
+/// Panics if `dd_site` or `dd_api_key` cannot be resolved from either the
+/// intake config or the `DD_SITE` / `DD_API_KEY` environment variables —
+/// both are required for the intake service to run.
+fn spawn_host_tags_poller(config: &IntakeConfig, handle: &tokio::runtime::Handle) {
+    let dd_site = config.resolve_dd_site();
+    let dd_api_key = config
+        .resolve_dd_api_key()
+        .expect("DD API key should be set via config or DD_API_KEY env var");
+    let host_tags_config = &config.host_tags;
+    let poller_config = HostTagsPollerConfig {
+        store: HostTagsStore::global(),
+        collector: UnknownHostsCollector::global(),
+        metadata_service_url: host_tags_config.metadata_service_url(&dd_site),
+        dd_api_key,
+        poll_interval: host_tags_config.poll_interval(),
+        fetch_timeout: host_tags_config.fetch_timeout(),
+        ttl_min: host_tags_config.ttl_min(),
+        ttl_max: host_tags_config.ttl_max(),
+        cache_path: host_tags_config.cache_path.clone(),
+    };
+    handle.spawn(host_tags_poller::run_host_tags_poller(poller_config));
+    info!("spawned host-tags poller");
 }
 
 /// Starts Vector in-process with the default processing pipeline config.
@@ -173,6 +218,8 @@ pub fn run_intake(config: IntakeConfig, print: bool) -> anyhow::Result<()> {
     let extra_context: ExtraContext = std::iter::empty().collect();
     let (runtime, app) = Application::prepare_from_opts(opts, extra_context)
         .map_err(|code| anyhow::anyhow!("failed to prepare intake service (exit code {code})"))?;
+
+    spawn_host_tags_poller(&config, runtime.handle());
 
     let started = app
         .start(runtime.handle())

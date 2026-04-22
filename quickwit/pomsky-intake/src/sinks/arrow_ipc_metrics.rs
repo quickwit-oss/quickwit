@@ -228,9 +228,10 @@ fn extract_scalar_value(metric: &Metric) -> f64 {
     match metric.value() {
         MetricValue::Counter { value } | MetricValue::Gauge { value } => *value,
         MetricValue::Set { values } => values.len() as f64,
-        MetricValue::Distribution { samples, .. } => {
-            samples.iter().map(|s| s.value * s.rate as f64).sum()
-        }
+        MetricValue::Distribution { samples, .. } => samples
+            .iter()
+            .map(|sample| sample.value * sample.rate as f64)
+            .sum(),
         MetricValue::AggregatedHistogram { sum, .. } => *sum,
         MetricValue::AggregatedSummary { sum, .. } => *sum,
         MetricValue::Sketch { .. } => 0.0,
@@ -301,7 +302,11 @@ mod tests {
         let batch = reader.into_iter().next().unwrap().unwrap();
 
         let schema = batch.schema();
-        let field_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
+        let field_names: Vec<&str> = schema
+            .fields()
+            .iter()
+            .map(|field| field.name().as_str())
+            .collect();
 
         // Bare names, not tag_service / tag_env.
         assert!(field_names.contains(&"service"));
@@ -372,8 +377,11 @@ mod tests {
         assert_eq!(dp.metric_name, "http.requests");
         assert_eq!(dp.metric_type, MetricType::Sum);
         assert_eq!(dp.value, 42.0);
-        assert_eq!(dp.tags.get("service").map(|s| s.as_str()), Some("web"));
-        assert_eq!(dp.tags.get("env").map(|s| s.as_str()), Some("prod"));
+        assert_eq!(
+            dp.tags.get("service").map(|value| value.as_str()),
+            Some("web")
+        );
+        assert_eq!(dp.tags.get("env").map(|value| value.as_str()), Some("prod"));
         assert_eq!(dp.tags.len(), 2);
     }
 }

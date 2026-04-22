@@ -52,6 +52,7 @@ fn main() -> anyhow::Result<()> {
             pomsky_intake::IntakeConfig::default()
         }
     };
+    config.validate().context("invalid intake config")?;
 
     pomsky_intake::run_intake(config, cli.print)
 }

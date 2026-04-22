@@ -16,18 +16,20 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+arc-swap = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+indexmap = { workspace = true }
 # `std` is required for protobuf map<> field support (generated code uses HashMap).
 prost = { workspace = true, features = ["std"] }
-quickwit-opentelemetry = { workspace = true }
-quickwit-parquet-engine = { workspace = true }
+rand = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
@@ -39,8 +41,12 @@ vector-lib = { workspace = true }
 warp = { workspace = true }
 zstd = { workspace = true }
 
+quickwit-opentelemetry = { workspace = true }
+quickwit-parquet-engine = { workspace = true }
+
 [dev-dependencies]
 chrono = { workspace = true }
+wiremock = { workspace = true }
 
 [build-dependencies]
 glob = { workspace = true }
@@ -51,6 +57,6 @@ prost-build = { workspace = true }
 # required by vector-buffers (tokio::task::Builder needs tokio_unstable + tracing).
 # prost is used by the generated code in src/codegen/ (see build.rs + src/protos.rs
 # `include!`), which cargo-machete can't analyze.
-ignored = ["tokio", "prost"]
+ignored = ["prost", "tokio"]
 
 [features]

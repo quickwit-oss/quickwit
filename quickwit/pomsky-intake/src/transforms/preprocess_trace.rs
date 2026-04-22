@@ -102,7 +102,7 @@ fn preprocess_datadog_trace(trace: &mut TraceEvent) {
         let default_upper = std::borrow::Cow::Borrowed("0000000000000000");
         let upper_hex = trace
             .get("meta._dd.p.tid")
-            .and_then(|v| v.as_str())
+            .and_then(|value| value.as_str())
             .unwrap_or(default_upper);
         let hex_trace_id = format!("{upper_hex}{lower:016x}");
         trace.insert("trace_id", hex_trace_id);
