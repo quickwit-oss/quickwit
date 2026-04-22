@@ -49,12 +49,15 @@ impl From<LogSiteMetadata> for u64 {
 
 /// Helper function used in [`rate_limited_tracing`] to determine if this line should log,
 /// and update the related counters.
+///
+/// Returns `(should_log, skipped)` where `skipped` is the number of suppressed calls since
+/// the last reset. `skipped` is non-zero only on the first log after a rate-limit period ends.
 pub fn should_log<F: Fn() -> Instant>(
     count_atomic: &AtomicU64,
     last_reset_atomic: &AtomicU64,
     limit: u32,
     now: F,
-) -> bool {
+) -> (bool, u32) {
     //  count_atomic is treated as 2 u32: upper bits count "generation", lower bits count number of
     //  calls since LAST_RESET. We assume there won't be 2**32 calls to this log in ~60s.
     //  Generation is free to wrap around.
@@ -73,7 +76,7 @@ pub fn should_log<F: Fn() -> Instant>(
     } = logsite_meta_u64.into();
 
     if call_count < limit {
-        return true;
+        return (true, 0);
     }
 
     let current_time = Duration::from_ticks(now().as_ticks());
@@ -83,7 +86,7 @@ pub fn should_log<F: Fn() -> Instant>(
 
     if !should_reset {
         // we are over-limit and not far enough in time to reset: don't log
-        return false;
+        return (false, 0);
     }
 
     let mut update_time = false;
@@ -123,7 +126,16 @@ pub fn should_log<F: Fn() -> Instant>(
         // *we* updated generation, so we must update last_reset too
         last_reset_atomic.store(current_time.as_ticks(), Ordering::Release);
     }
-    can_log
+
+    // call_count is the pre-fetch_add value, equal to the number of prior calls in this period.
+    // Of those, `limit` were allowed through; the rest were suppressed.
+    // We only report when *we* did the reset (update_time), to avoid double-reporting.
+    let skipped = if update_time {
+        call_count.saturating_sub(limit)
+    } else {
+        0
+    };
+    (can_log, skipped)
 }
 
 #[macro_export]
@@ -136,7 +148,11 @@ macro_rules! rate_limited_tracing {
         // we can't get time from constant context, so we pre-initialize with zero
         static LAST_RESET: AtomicU64 = AtomicU64::new(0);
 
-        if $crate::rate_limited_tracing::should_log(&COUNT, &LAST_RESET, $limit, CoarsetimeInstant::now) {
+        let (can_log, skipped) = $crate::rate_limited_tracing::should_log(&COUNT, &LAST_RESET, $limit, CoarsetimeInstant::now);
+        if skipped > 0 {
+            ::tracing::$log_fn!("suppressed {skipped} similar log messages in the last minute");
+        }
+        if can_log {
             ::tracing::$log_fn!($($args)*);
         }
     }};
@@ -207,9 +223,10 @@ mod tests {
         let mut simulated_time = Instant::now();
         let simulation_step = Duration::from_secs(1);
 
-        assert!(should_log(&count, &last_reset, limit as _, || {
-            simulated_time
-        }));
+        assert_eq!(
+            should_log(&count, &last_reset, limit as _, || simulated_time),
+            (true, 0)
+        );
         assert_eq!(count.load(Ordering::Relaxed), 1);
         let reset_timestamp = last_reset.load(Ordering::Relaxed);
         assert_ne!(reset_timestamp, 0);
@@ -218,9 +235,10 @@ mod tests {
 
         for i in 1..limit {
             // we log as many time as expected
-            assert!(should_log(&count, &last_reset, limit as _, || {
-                simulated_time
-            }));
+            assert_eq!(
+                should_log(&count, &last_reset, limit as _, || simulated_time),
+                (true, 0)
+            );
             assert_eq!(count.load(Ordering::Relaxed), i + 1);
             assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
             simulated_time += simulation_step;
@@ -228,9 +246,10 @@ mod tests {
 
         for i in limit..(limit * 2) {
             // we don't log, nor update
-            assert!(!should_log(&count, &last_reset, limit as _, || {
-                simulated_time
-            }));
+            assert_eq!(
+                should_log(&count, &last_reset, limit as _, || simulated_time),
+                (false, 0)
+            );
             assert_eq!(count.load(Ordering::Relaxed), i + 1);
             assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
             simulated_time += simulation_step;
@@ -239,9 +258,11 @@ mod tests {
         // advance enough to reset counter
         simulated_time += simulation_step * 60;
 
-        assert!(should_log(&count, &last_reset, limit as _, || {
-            simulated_time
-        }));
+        // the first log after a reset reports how many were suppressed
+        assert_eq!(
+            should_log(&count, &last_reset, limit as _, || simulated_time),
+            (true, limit as u32)
+        );
         // counter got reset, generation increased
         assert_eq!(count.load(Ordering::Relaxed), 1 + (1 << 32));
         // last reset changed too
@@ -250,9 +271,10 @@ mod tests {
 
         for i in 1..limit {
             // we log as many time as expected
-            assert!(should_log(&count, &last_reset, limit as _, || {
-                simulated_time
-            }));
+            assert_eq!(
+                should_log(&count, &last_reset, limit as _, || simulated_time),
+                (true, 0)
+            );
             assert_eq!(count.load(Ordering::Relaxed), i + 1 + (1 << 32));
             assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
             simulated_time += simulation_step;
@@ -260,9 +282,10 @@ mod tests {
 
         for i in limit..(limit * 2) {
             // we don't log, nor update
-            assert!(!should_log(&count, &last_reset, limit as _, || {
-                simulated_time
-            }));
+            assert_eq!(
+                should_log(&count, &last_reset, limit as _, || simulated_time),
+                (false, 0)
+            );
             assert_eq!(count.load(Ordering::Relaxed), i + 1 + (1 << 32));
             assert_eq!(last_reset.load(Ordering::Relaxed), reset_timestamp);
             simulated_time += simulation_step;
