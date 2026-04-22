@@ -27,16 +27,17 @@ pub struct ServeMetrics {
     pub circuit_break_total: IntCounter,
 }
 
-quickwit_common::define_histogram_vec! {
-    REQUEST_DURATION_SECS,
-    name: "request_duration_secs",
-    help: "Response time in seconds",
-    subsystem: "",
-    const_labels: [],
-    labels: ["method", "status_code"],
-    // last bucket is 163.84s
-    buckets: quickwit_common::metrics::exponential_buckets(0.02, 2.0, 14).unwrap(),
-}
+pub static REQUEST_DURATION_SECS: LazyLock<HistogramVec<2>> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "request_duration_secs",
+        help: "Response time in seconds",
+        subsystem: "",
+        const_labels: [],
+        labels: ["method", "status_code"],
+        // last bucket is 163.84s
+        buckets: quickwit_common::metrics::exponential_buckets(0.02, 2.0, 14).unwrap(),
+    }
+});
 
 impl Default for ServeMetrics {
     fn default() -> Self {

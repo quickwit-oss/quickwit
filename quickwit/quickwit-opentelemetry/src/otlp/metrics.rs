@@ -26,15 +26,16 @@ pub struct OtlpServiceMetrics {
     pub ingested_bytes_total: IntCounterVec<4>,
 }
 
-quickwit_common::define_histogram_vec! {
-    REQUEST_DURATION_SECONDS,
-    name: "request_duration_seconds",
-    help: "Duration of requests",
-    subsystem: "otlp",
-    const_labels: [],
-    labels: ["service", "index", "transport", "format", "error"],
-    buckets: exponential_buckets(0.02, 2.0, 8).unwrap(),
-}
+pub static REQUEST_DURATION_SECONDS: LazyLock<HistogramVec<5>> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "request_duration_seconds",
+        help: "Duration of requests",
+        subsystem: "otlp",
+        const_labels: [],
+        labels: ["service", "index", "transport", "format", "error"],
+        buckets: exponential_buckets(0.02, 2.0, 8).unwrap(),
+    }
+});
 
 impl Default for OtlpServiceMetrics {
     fn default() -> Self {

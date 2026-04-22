@@ -18,8 +18,8 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
 use quickwit_common::metrics::{
-    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
-    new_gauge,
+    GaugeGuard, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, new_counter,
+    new_counter_vec, new_gauge,
 };
 use quickwit_config::CacheConfig;
 
@@ -49,15 +49,17 @@ pub struct StorageMetrics {
     pub object_storage_bulk_delete_request_duration: Histogram,
 }
 
-quickwit_common::define_histogram_vec! {
-    OBJECT_STORAGE_REQUEST_DURATION_SECONDS,
-    name: "object_storage_request_duration_seconds",
-    help: "Duration of object storage requests in seconds.",
-    subsystem: "storage",
-    const_labels: [],
-    labels: ["action"],
-    buckets: vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
-}
+pub static OBJECT_STORAGE_REQUEST_DURATION_SECONDS: LazyLock<HistogramVec<1>> =
+    LazyLock::new(|| {
+        quickwit_common::define_histogram! {
+            name: "object_storage_request_duration_seconds",
+            help: "Duration of object storage requests in seconds.",
+            subsystem: "storage",
+            const_labels: [],
+            labels: ["action"],
+            buckets: vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
+        }
+    });
 
 impl Default for StorageMetrics {
     fn default() -> Self {

@@ -396,9 +396,8 @@ impl Drop for OwnedGaugeGuard {
 }
 
 /// Static registration entry for a histogram. One `HistogramConfig` is submitted per histogram
-/// declaration via the `define_histogram!` / `define_histogram_vec!` macros; at recorder install
-/// time the full set is read via `inventory::iter::<HistogramConfig>` and applied to the
-/// Prometheus / OTLP exporters.
+/// declaration via the `define_histogram!` macro; at recorder install time the full set is read
+/// via `inventory::iter::<HistogramConfig>` and applied to the Prometheus / OTLP exporters.
 pub struct HistogramConfig {
     pub name: &'static str,
     pub subsystem: &'static str,
@@ -509,8 +508,8 @@ pub fn new_gauge_vec<const N: usize>(
     }
 }
 
-/// Implementation details exposed only for the `define_histogram!` / `define_histogram_vec!`
-/// macros. Do not call these items directly.
+/// Implementation details exposed only for the `define_histogram!` macro. Do not call these
+/// items directly.
 #[doc(hidden)]
 pub mod __private {
     use std::sync::Arc;
@@ -692,16 +691,41 @@ pub fn index_label(index_id: &str) -> &str {
 
 pub static MEMORY_METRICS: LazyLock<MemoryMetrics> = LazyLock::new(MemoryMetrics::default);
 
-/// Declares a histogram with compile-time static registration.
+/// Creates a histogram (or labeled histogram vector) and registers its bucket bounds with
+/// `inventory` so the recorder install path can apply them to the Prometheus / OTLP exporters.
+///
+/// The macro expands to a block expression that evaluates to a `Histogram` or `HistogramVec<N>`.
+/// Wrap the call in `LazyLock::new(|| ...)` (or any other ownership pattern) at the call site:
+///
+/// ```ignore
+/// static LATENCY_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+///     quickwit_common::define_histogram! {
+///         name: "latency_seconds",
+///         help: "Request latency in seconds.",
+///         subsystem: "search",
+///         buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
+///     }
+/// });
+///
+/// static REQUEST_DURATION_SECONDS: LazyLock<HistogramVec<2>> = LazyLock::new(|| {
+///     quickwit_common::define_histogram! {
+///         name: "request_duration_seconds",
+///         help: "Duration of requests in seconds.",
+///         subsystem: "search",
+///         const_labels: [("kind", "server")],
+///         labels: ["rpc", "status"],
+///         buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
+///     }
+/// });
+/// ```
 #[macro_export]
 macro_rules! define_histogram {
     (
-        $static_name:ident,
         name: $name:literal,
         help: $help:literal,
         subsystem: $subsystem:literal,
         buckets: $buckets:expr $(,)?
-    ) => {
+    ) => {{
         $crate::inventory::submit! {
             $crate::metrics::HistogramConfig {
                 name: $name,
@@ -710,26 +734,16 @@ macro_rules! define_histogram {
                 buckets_fn: || $buckets,
             }
         }
-
-        pub static $static_name: ::std::sync::LazyLock<$crate::metrics::Histogram> =
-            ::std::sync::LazyLock::new(|| {
-                $crate::metrics::__private::new_histogram($name, $subsystem)
-            });
-    };
-}
-
-/// Declares a labeled histogram (`HistogramVec<N>`) with compile-time static registration.
-#[macro_export]
-macro_rules! define_histogram_vec {
+        $crate::metrics::__private::new_histogram($name, $subsystem)
+    }};
     (
-        $static_name:ident,
         name: $name:literal,
         help: $help:literal,
         subsystem: $subsystem:literal,
         const_labels: [$(($ck:literal, $cv:literal)),* $(,)?],
         labels: [$($label:literal),+ $(,)?],
         buckets: $buckets:expr $(,)?
-    ) => {
+    ) => {{
         $crate::inventory::submit! {
             $crate::metrics::HistogramConfig {
                 name: $name,
@@ -738,18 +752,13 @@ macro_rules! define_histogram_vec {
                 buckets_fn: || $buckets,
             }
         }
-
-        pub static $static_name: ::std::sync::LazyLock<
-            $crate::metrics::HistogramVec<{ [$($label),+].len() }>,
-        > = ::std::sync::LazyLock::new(|| {
-            $crate::metrics::__private::new_histogram_vec(
-                $name,
-                $subsystem,
-                &[$(($ck, $cv)),*],
-                [$($label),+],
-            )
-        });
-    };
+        $crate::metrics::__private::new_histogram_vec(
+            $name,
+            $subsystem,
+            &[$(($ck, $cv)),*],
+            [$($label),+],
+        )
+    }};
 }
 
 #[cfg(test)]

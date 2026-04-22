@@ -16,13 +16,14 @@ use std::sync::LazyLock;
 
 use quickwit_common::metrics::Histogram;
 
-quickwit_common::define_histogram! {
-    THREAD_UNPARK_DURATION_MICROSECONDS,
-    name: "thread_unpark_duration_microseconds",
-    help: "Duration for which a thread of the main tokio runtime is unparked.",
-    subsystem: "cli",
-    buckets: quickwit_common::metrics::exponential_buckets(5.0, 5.0, 5).unwrap(),
-}
+pub static THREAD_UNPARK_DURATION_MICROSECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "thread_unpark_duration_microseconds",
+        help: "Duration for which a thread of the main tokio runtime is unparked.",
+        subsystem: "cli",
+        buckets: quickwit_common::metrics::exponential_buckets(5.0, 5.0, 5).unwrap(),
+    }
+});
 
 pub struct CliMetrics {
     pub thread_unpark_duration_microseconds: Histogram,

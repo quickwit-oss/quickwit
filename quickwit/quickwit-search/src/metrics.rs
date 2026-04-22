@@ -152,62 +152,68 @@ fn warmup_num_bytes_buckets() -> Vec<f64> {
     ]
 }
 
-quickwit_common::define_histogram_vec! {
-    ROOT_SEARCH_REQUEST_DURATION_SECONDS,
-    name: "root_search_request_duration_seconds",
-    help: "Duration of root search gRPC requests in seconds.",
-    subsystem: "search",
-    const_labels: [("kind", "server")],
-    labels: ["status"],
-    buckets: duration_buckets(),
-}
+pub static ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<HistogramVec<1>> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "root_search_request_duration_seconds",
+        help: "Duration of root search gRPC requests in seconds.",
+        subsystem: "search",
+        const_labels: [("kind", "server")],
+        labels: ["status"],
+        buckets: duration_buckets(),
+    }
+});
 
-quickwit_common::define_histogram_vec! {
-    ROOT_SEARCH_TARGETED_SPLITS,
-    name: "root_search_targeted_splits",
-    help: "Number of splits targeted per root search GRPC request.",
-    subsystem: "search",
-    const_labels: [],
-    labels: ["status"],
-    buckets: targeted_splits_buckets(),
-}
+pub static ROOT_SEARCH_TARGETED_SPLITS: LazyLock<HistogramVec<1>> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "root_search_targeted_splits",
+        help: "Number of splits targeted per root search GRPC request.",
+        subsystem: "search",
+        const_labels: [],
+        labels: ["status"],
+        buckets: targeted_splits_buckets(),
+    }
+});
 
-quickwit_common::define_histogram_vec! {
-    LEAF_SEARCH_REQUEST_DURATION_SECONDS,
-    name: "leaf_search_request_duration_seconds",
-    help: "Duration of leaf search gRPC requests in seconds.",
-    subsystem: "search",
-    const_labels: [("kind", "server")],
-    labels: ["status"],
-    buckets: duration_buckets(),
-}
+pub static LEAF_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<HistogramVec<1>> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "leaf_search_request_duration_seconds",
+        help: "Duration of leaf search gRPC requests in seconds.",
+        subsystem: "search",
+        const_labels: [("kind", "server")],
+        labels: ["status"],
+        buckets: duration_buckets(),
+    }
+});
 
-quickwit_common::define_histogram_vec! {
-    LEAF_SEARCH_TARGETED_SPLITS,
-    name: "leaf_search_targeted_splits",
-    help: "Number of splits targeted per leaf search GRPC request.",
-    subsystem: "search",
-    const_labels: [],
-    labels: ["status"],
-    buckets: targeted_splits_buckets(),
-}
+pub static LEAF_SEARCH_TARGETED_SPLITS: LazyLock<HistogramVec<1>> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "leaf_search_targeted_splits",
+        help: "Number of splits targeted per leaf search GRPC request.",
+        subsystem: "search",
+        const_labels: [],
+        labels: ["status"],
+        buckets: targeted_splits_buckets(),
+    }
+});
 
-quickwit_common::define_histogram! {
-    LEAF_SEARCH_SPLIT_DURATION_SECS,
-    name: "leaf_search_split_duration_secs",
-    help: "Number of seconds required to run a leaf search over a single split. The timer starts \
-           after the semaphore is obtained.",
-    subsystem: "search",
-    buckets: duration_buckets(),
-}
+pub static LEAF_SEARCH_SPLIT_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "leaf_search_split_duration_secs",
+        help: "Number of seconds required to run a leaf search over a single split. The timer \
+               starts after the semaphore is obtained.",
+        subsystem: "search",
+        buckets: duration_buckets(),
+    }
+});
 
-quickwit_common::define_histogram! {
-    LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES,
-    name: "leaf_search_single_split_warmup_num_bytes",
-    help: "Size of the short lived cache for a single split once the warmup is done.",
-    subsystem: "search",
-    buckets: warmup_num_bytes_buckets(),
-}
+pub static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyLock<Histogram> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "leaf_search_single_split_warmup_num_bytes",
+        help: "Size of the short lived cache for a single split once the warmup is done.",
+        subsystem: "search",
+        buckets: warmup_num_bytes_buckets(),
+    }
+});
 
 impl Default for SearchMetrics {
     fn default() -> Self {

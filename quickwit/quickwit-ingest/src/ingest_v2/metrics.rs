@@ -86,31 +86,35 @@ pub(super) struct IngestV2Metrics {
     pub ingest_attempts: IntCounterVec<1>,
 }
 
-quickwit_common::define_histogram! {
-    SHARD_LT_THROUGHPUT_MIB,
-    name: "shard_lt_throughput_mib",
-    help: "Shard long term throughput as reported through chitchat",
-    subsystem: "ingest",
-    buckets: linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
-}
+pub static SHARD_LT_THROUGHPUT_MIB: LazyLock<Histogram> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "shard_lt_throughput_mib",
+        help: "Shard long term throughput as reported through chitchat",
+        subsystem: "ingest",
+        buckets: linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
+    }
+});
 
-quickwit_common::define_histogram! {
-    SHARD_ST_THROUGHPUT_MIB,
-    name: "shard_st_throughput_mib",
-    help: "Shard short term throughput as reported through chitchat",
-    subsystem: "ingest",
-    buckets: linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
-}
+pub static SHARD_ST_THROUGHPUT_MIB: LazyLock<Histogram> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "shard_st_throughput_mib",
+        help: "Shard short term throughput as reported through chitchat",
+        subsystem: "ingest",
+        buckets: linear_buckets(0.0f64, 1.0f64, 15).unwrap(),
+    }
+});
 
-quickwit_common::define_histogram_vec! {
-    WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS,
-    name: "wal_acquire_lock_request_duration_secs",
-    help: "Duration of acquire lock requests in seconds.",
-    subsystem: "ingest",
-    const_labels: [],
-    labels: ["operation", "type"],
-    buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
-}
+pub static WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS: LazyLock<HistogramVec<2>> =
+    LazyLock::new(|| {
+        quickwit_common::define_histogram! {
+            name: "wal_acquire_lock_request_duration_secs",
+            help: "Duration of acquire lock requests in seconds.",
+            subsystem: "ingest",
+            const_labels: [],
+            labels: ["operation", "type"],
+            buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
+        }
+    });
 
 impl Default for IngestV2Metrics {
     fn default() -> Self {

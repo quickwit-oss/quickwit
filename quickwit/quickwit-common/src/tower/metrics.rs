@@ -21,7 +21,7 @@ use futures::{Future, ready};
 use pin_project::{pin_project, pinned_drop};
 use tower::{Layer, Service};
 
-use crate::define_histogram_vec;
+use crate::define_histogram;
 use crate::metrics::{
     HistogramVec, IntCounterVec, IntGaugeVec, exponential_buckets, new_counter_vec, new_gauge_vec,
 };
@@ -53,15 +53,16 @@ pub static GRPC_REQUESTS_IN_FLIGHT: LazyLock<IntGaugeVec<3>> = LazyLock::new(|| 
     )
 });
 
-define_histogram_vec! {
-    GRPC_REQUEST_DURATION_SECONDS,
-    name: "grpc_request_duration_seconds",
-    help: "Duration of gRPC request in seconds.",
-    subsystem: "",
-    const_labels: [],
-    labels: ["service", "kind", "rpc", "status"],
-    buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
-}
+pub static GRPC_REQUEST_DURATION_SECONDS: LazyLock<HistogramVec<4>> = LazyLock::new(|| {
+    define_histogram! {
+        name: "grpc_request_duration_seconds",
+        help: "Duration of gRPC request in seconds.",
+        subsystem: "",
+        const_labels: [],
+        labels: ["service", "kind", "rpc", "status"],
+        buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
+    }
+});
 
 #[derive(Clone)]
 pub struct GrpcMetrics<S> {

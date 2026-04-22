@@ -58,21 +58,23 @@ pub struct ParquetEngineMetrics {
     pub errors_total: IntCounterVec<2>,
 }
 
-quickwit_common::define_histogram! {
-    INDEX_BATCH_DURATION_SECONDS,
-    name: "index_batch_duration_seconds",
-    help: "Histogram of add_batch durations in seconds, including any triggered flush.",
-    subsystem: "metrics_engine",
-    buckets: duration_buckets(),
-}
+pub static INDEX_BATCH_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "index_batch_duration_seconds",
+        help: "Histogram of add_batch durations in seconds, including any triggered flush.",
+        subsystem: "metrics_engine",
+        buckets: duration_buckets(),
+    }
+});
 
-quickwit_common::define_histogram! {
-    QUERY_DURATION_SECONDS,
-    name: "query_duration_seconds",
-    help: "Histogram of query execution durations in seconds.",
-    subsystem: "metrics_engine",
-    buckets: duration_buckets(),
-}
+pub static QUERY_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "query_duration_seconds",
+        help: "Histogram of query execution durations in seconds.",
+        subsystem: "metrics_engine",
+        buckets: duration_buckets(),
+    }
+});
 
 impl Default for ParquetEngineMetrics {
     fn default() -> Self {

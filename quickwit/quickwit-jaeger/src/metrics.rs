@@ -25,15 +25,16 @@ pub struct JaegerServiceMetrics {
     pub transferred_bytes_total: IntCounterVec<2>,
 }
 
-quickwit_common::define_histogram_vec! {
-    REQUEST_DURATION_SECONDS,
-    name: "request_duration_seconds",
-    help: "Duration of requests",
-    subsystem: "jaeger",
-    const_labels: [],
-    labels: ["operation", "index", "error"],
-    buckets: exponential_buckets(0.02, 2.0, 8).unwrap(),
-}
+pub static REQUEST_DURATION_SECONDS: LazyLock<HistogramVec<3>> = LazyLock::new(|| {
+    quickwit_common::define_histogram! {
+        name: "request_duration_seconds",
+        help: "Duration of requests",
+        subsystem: "jaeger",
+        const_labels: [],
+        labels: ["operation", "index", "error"],
+        buckets: exponential_buckets(0.02, 2.0, 8).unwrap(),
+    }
+});
 
 impl Default for JaegerServiceMetrics {
     fn default() -> Self {
