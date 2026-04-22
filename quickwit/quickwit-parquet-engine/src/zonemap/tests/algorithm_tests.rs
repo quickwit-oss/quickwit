@@ -167,6 +167,37 @@ fn test_prune_with_empty_string() {
 }
 
 // ---------------------------------------------------------------------------
+// Pruned regex must match values containing newlines
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_pruned_regex_matches_newline_values() {
+    // A value with a newline: when pruned, the suffix wildcard must match it.
+    let values = &["service-a\nline2", "service-b\nline2", "service-c"];
+    let aut = build_superset_regex(values, 4);
+
+    let regex_str = aut.regex();
+
+    // The regex should contain [\s\S]+ (not .+) for the pruned suffix.
+    assert!(
+        regex_str.contains("[\\s\\S]+"),
+        "pruned regex should use [\\s\\S]+ wildcard: {regex_str}"
+    );
+
+    // Compile and verify all original values match, including the
+    // newline-containing ones. This is the critical correctness check:
+    // with plain `.+` this would fail because `.` doesn't match `\n`.
+    let re = regex::Regex::new(&regex_str).expect("generated regex must be valid");
+    for v in values {
+        assert!(
+            re.is_match(v),
+            "regex '{regex_str}' must match input value '{}'",
+            v.replace('\n', "\\n")
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
 // automaton_test.go: TestWriteCharacterClass
 // ---------------------------------------------------------------------------
 
