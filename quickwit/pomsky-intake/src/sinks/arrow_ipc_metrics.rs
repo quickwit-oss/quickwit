@@ -16,6 +16,7 @@
 //! and POSTs them to an HTTP endpoint.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use arrow::array::{
     ArrayRef, Float64Builder, StringDictionaryBuilder, UInt8Builder, UInt64Builder,
@@ -42,6 +43,9 @@ use crate::transforms::preprocess_metric::{
 
 /// Maximum number of metrics to accumulate before flushing a batch.
 const DEFAULT_BATCH_SIZE: usize = 1_000;
+
+/// Default time-based flush interval in seconds.
+const DEFAULT_FLUSH_INTERVAL_SECS: u64 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -138,12 +142,19 @@ pub struct ArrowIpcMetricsSinkConfig {
     /// Maximum number of metrics per Arrow IPC batch.
     #[serde(default = "default_batch_size")]
     pub batch_size: usize,
+    /// Maximum seconds to hold metrics before flushing, even if batch is not full.
+    #[serde(default = "default_flush_interval_secs")]
+    pub flush_interval_secs: u64,
     #[serde(default, skip_serializing_if = "vector_lib::serde::is_default")]
     pub acknowledgements: AcknowledgementsConfig,
 }
 
 fn default_batch_size() -> usize {
     DEFAULT_BATCH_SIZE
+}
+
+fn default_flush_interval_secs() -> u64 {
+    DEFAULT_FLUSH_INTERVAL_SECS
 }
 
 impl NamedComponent for ArrowIpcMetricsSinkConfig {
@@ -166,6 +177,7 @@ impl SinkConfig for ArrowIpcMetricsSinkConfig {
         let sink = ArrowIpcMetricsSink {
             uri: self.uri.clone(),
             batch_size: self.batch_size,
+            flush_interval: Duration::from_secs(self.flush_interval_secs),
             client: reqwest::Client::new(),
         };
         let healthcheck = futures::future::ok(()).boxed();
@@ -188,6 +200,7 @@ impl SinkConfig for ArrowIpcMetricsSinkConfig {
 struct ArrowIpcMetricsSink {
     uri: String,
     batch_size: usize,
+    flush_interval: Duration,
     client: reqwest::Client,
 }
 
@@ -197,25 +210,45 @@ impl StreamSink<EventArray> for ArrowIpcMetricsSink {
         let schema = Arc::new(metrics_arrow_schema());
         let mut pending_metrics: Vec<Metric> = Vec::with_capacity(self.batch_size);
         let mut pending_finalizers = Vec::new();
+        let mut flush_timer = tokio::time::interval(self.flush_interval);
 
-        while let Some(mut events) = input.next().await {
-            let finalizers = events.take_finalizers();
+        loop {
+            tokio::select! {
+                biased;
 
-            if let EventArray::Metrics(metrics) = events {
-                for metric in metrics {
-                    pending_metrics.push(metric);
+                maybe_events = input.next() => {
+                    let Some(mut events) = maybe_events else {
+                        break;
+                    };
+                    let finalizers = events.take_finalizers();
+
+                    if let EventArray::Metrics(metrics) = events {
+                        for metric in metrics {
+                            pending_metrics.push(metric);
+                        }
+                    }
+                    pending_finalizers.push(finalizers);
+
+                    if pending_metrics.len() >= self.batch_size {
+                        let status = self.flush(&schema, &mut pending_metrics).await;
+                        for pending_finalizer in pending_finalizers.drain(..) {
+                            pending_finalizer.update_status(status);
+                        }
+                        flush_timer.reset();
+                    }
                 }
-            }
-            pending_finalizers.push(finalizers);
 
-            if pending_metrics.len() >= self.batch_size {
-                let status = self.flush(&schema, &mut pending_metrics).await;
-                for pending_finalizer in pending_finalizers.drain(..) {
-                    pending_finalizer.update_status(status);
+                _ = flush_timer.tick() => {
+                    if !pending_metrics.is_empty() {
+                        let status = self.flush(&schema, &mut pending_metrics).await;
+                        for pending_finalizer in pending_finalizers.drain(..) {
+                            pending_finalizer.update_status(status);
+                        }
+                    }
                 }
             }
         }
-        // Flush remaining.
+        // Flush remaining on shutdown.
         if !pending_metrics.is_empty() {
             let status = self.flush(&schema, &mut pending_metrics).await;
             for pending_finalizer in pending_finalizers.drain(..) {

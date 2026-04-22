@@ -29,6 +29,8 @@ fn build_vector_config(data_dir: &Path, config: &IntakeConfig, print: bool) -> S
     let logs_endpoint = &config.logs_endpoint;
     let metrics_endpoint = &config.metrics_endpoint;
     let traces_endpoint = &config.traces_endpoint;
+    let org_id = &config.org_id;
+    let metadata_svc_url = &config.metadata_svc_url;
     format!(
         r#"
 data_dir: "{data_dir}"
@@ -71,8 +73,8 @@ transforms:
     type: metric_metadata
     inputs:
       - preprocess_metrics
-    org_id: "default"
-    metadata_svc_url: "http://localhost:9999"
+    org_id: "{org_id}"
+    metadata_svc_url: "{metadata_svc_url}"
 
   explode_dd_trace_spans:
     type: explode_trace_spans

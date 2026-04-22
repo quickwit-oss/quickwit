@@ -84,9 +84,9 @@ fn default_persist_file_path() -> String {
 
 /// Configuration for the metric metadata transform.
 ///
-/// All fields live in the Vector transform YAML config section per D-01.
-/// No changes are made to `IntakeConfig` — the org_id, metadata_svc_url,
-/// and operational parameters are declared here and deserialized by Vector.
+/// org_id and metadata_svc_url are sourced from `IntakeConfig` and interpolated
+/// into the Vector transform YAML. Operational parameters (flush intervals,
+/// batch size, TTLs, etc.) are declared here and deserialized by Vector.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct MetricMetadataConfig {
