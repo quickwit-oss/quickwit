@@ -53,6 +53,13 @@ sources:
     http:
       address: "0.0.0.0:8384"
 
+  # Receives raw agent CollectorConnections payloads.
+  # Handles V8 envelope stripping + zstd decompression at the source level,
+  # emits decoded protobuf bytes for the connections_to_apm_metrics transform.
+  connections:
+    type: connections
+    address: "0.0.0.0:8585"
+
 transforms:
   preprocess_logs:
     type: preprocess_log
@@ -61,11 +68,18 @@ transforms:
       - http
       - otlp.logs
 
+  # Decode connection payloads and produce universal.* metrics.
+  connections_to_apm_metrics:
+    type: connections_to_apm_metrics
+    inputs:
+      - connections
+
   preprocess_metrics:
     type: preprocess_metric
     inputs:
       - datadog_agent.metrics
       - otlp.metrics
+      - connections_to_apm_metrics
 
   explode_dd_trace_spans:
     type: explode_trace_spans

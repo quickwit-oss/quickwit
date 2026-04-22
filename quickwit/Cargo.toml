@@ -321,7 +321,7 @@ vrl = { version = "0.31", default-features = false, features = [
 ] }
 warp = { version = "0.4", features = ["server", "test"] }
 wiremock = "0.6"
-zstd = { version = "0.13", default-features = false }
+zstd = { version = "0.13", default-features = false, features = ["legacy"] }
 
 aws-config = "1.8"
 aws-credential-types = { version = "1.2", features = ["hardcoded-credentials"] }

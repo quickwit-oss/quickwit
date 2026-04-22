@@ -1,0 +1,2309 @@
+syntax = "proto3";
+
+option go_package = "github.com/DataDog/agent-payload/v5/process";
+
+package datadog.process_agent;
+
+//
+// Message Types
+//
+
+// ContainerHostType is a enum that represents the type of host detected for container collection.
+// Sometimes containers are running on host-less environment, we'll need additional information to identify them
+// This will help with the host resolution when we resolve container payloads
+enum ContainerHostType {
+	notSpecified = 0;
+	fargateECS = 1;
+	fargateEKS = 2;
+	sidecar = 3;
+}
+
+message ResCollector {
+	// Header must exist at position 1 for compatibility
+	// with older version of the Agent. We should be able
+	// to drop this at some point.
+	message Header {
+		int32 type = 4;
+	}
+	Header header = 1;
+	string message = 2;
+	CollectorStatus status = 3;
+}
+
+message CollectorProc {
+	reserved 13; // Unused fields
+
+	string hostName = 2;
+	string networkId = 11;
+	repeated Process processes = 3;
+	Host host = 4;
+	SystemInfo info = 5;
+	int32 groupId = 6;
+	int32 groupSize = 7;
+
+	reserved 8, 9; // Old, optional metadata fields
+
+	repeated Container containers = 10;
+
+	ContainerHostType containerHostType = 12;
+
+	oneof hints {int32 hintMask = 14;}
+}
+
+message CollectorProcDiscovery {
+	string hostName = 1;
+	int32  groupId = 2;
+	int32 groupSize = 3;
+	repeated ProcessDiscovery processDiscoveries = 4;
+	Host host = 5;
+}
+
+message CollectorRealTime {
+	string hostName = 2;
+	repeated ProcessStat stats = 3;
+	// Post-resolved fields
+	int64 hostId = 4;
+	int32 orgId = 5;
+	int32 groupId = 6;
+	int32 groupSize = 7;
+	int32 numCpus = 8;
+	int64 totalMemory = 9;
+
+	repeated ContainerStat containerStats = 10;
+
+	ContainerHostType containerHostType = 11;
+}
+
+message CollectorContainer {
+	string hostName = 1;
+	string networkId = 11;
+	SystemInfo info = 2;
+	repeated Container containers = 3;
+	int32 groupId = 4;
+	int32 groupSize = 5;
+
+	reserved 6, 7; // Old, optional metadata fields
+
+	// Post-resolved fields
+	Host host = 8;
+
+	ContainerHostType containerHostType = 9;
+}
+
+message CollectorContainerRealTime {
+	string hostName = 1;
+	repeated ContainerStat stats = 2;
+
+	// Used for normalization at host-level.
+	int32 numCpus = 3;
+	int64 totalMemory = 4;
+
+	// Post-resolved fields
+	int64 hostId = 5;
+
+	int32 groupId = 6;
+	int32 groupSize = 7;
+
+	ContainerHostType containerHostType = 8;
+}
+
+message CollectorReqStatus {
+	string hostName = 2;
+}
+
+message CollectorECSTask {
+	int64 awsAccountID = 1;
+	string clusterName = 2;
+	string clusterId = 3;
+	string region = 4;
+	int32 groupId = 5;
+	int32 groupSize = 6;
+	repeated ECSTask tasks = 7;
+	repeated string tags = 8;
+	Host host = 9; // Post-resolved field
+	string hostName = 10;
+	SystemInfo info = 11;
+	AgentVersion agentVersion = 12;
+}
+
+message ECSTask {
+	string arn = 1;
+	string resourceVersion = 2; // a custom field to track changes
+	string launchType = 3;
+	string desiredStatus = 4;
+	string knownStatus = 5;
+	string family = 6;
+	string version = 7;
+	string availabilityZone = 8;
+	map<string, double> limits = 9;
+	map<string, int64> ephemeralStorageMetrics = 10;
+	string serviceName = 11;
+	string vpcId = 12;
+	int64 pullStartedAt = 13;
+	int64 pullStoppedAt = 14;
+	int64 executionStoppedAt = 15;
+	repeated ECSContainer containers = 16;
+	repeated string tags = 17;
+	repeated string ecsTags = 18;
+	repeated string containerInstanceTags = 19;
+	Host host = 20; // Used post-resolution
+	string containerInstanceArn = 21;
+}
+
+message ECSContainer {
+	string dockerID = 1;
+	string dockerName = 2;
+	string name = 3;
+	string image = 4;
+	string imageID = 5;
+	int64 createdAt = 6;
+	int64 startedAt = 7;
+	int64 finishedAt = 8;
+	string desiredStatus = 9;
+	string knownStatus = 10;
+	ECSContainerExitCode exitCode = 11;
+	string type = 12;
+	string logDriver = 13;
+	map<string, string> logOptions = 14;
+	string containerArn = 15;
+	repeated ECSContainerPort ports = 16;
+	repeated ECSContainerNetwork networks = 17;
+	repeated ECSContainerVolume volumes = 18;
+	ECSContainerHealth health = 19;
+	repeated string labels = 20;
+	map<string, double> limits = 21;
+	string snapshotter = 22;
+}
+
+message ECSContainerNetwork {
+	string networkMode = 1;
+	repeated string ipv4Addresses = 2;
+	repeated string ipv6Addresses = 3;
+}
+
+message ECSContainerPort {
+	int32 containerPort = 1;
+	string protocol = 2;
+	string hostIp = 3;
+	int32 hostPort = 4;
+}
+
+message ECSContainerVolume {
+	string dockerName = 1;
+	string source = 2;
+	string destination = 3;
+}
+
+message ECSContainerHealth {
+	string status = 1;
+	int64 since = 2;
+	ECSContainerExitCode exitCode = 3;
+	string output = 4;
+}
+
+message ECSContainerExitCode {
+	int32 exitCode = 3;
+}
+
+message CollectorPod {
+	string hostName = 1;
+	string clusterName = 2;
+	string clusterId = 3;
+	int32 groupId = 4;
+	int32 groupSize = 5;
+	repeated Pod pods = 6;
+	Host host = 7; // Post-resolved field
+	repeated string tags = 8;
+	SystemInfo info = 9;
+	bool isTerminated = 10;
+	AgentVersion agentVersion = 11;
+}
+
+message CollectorPodDisruptionBudget {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	repeated PodDisruptionBudget podDisruptionBudgets = 4;
+	repeated string tags = 5;
+	int32 groupSize = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorReplicaSet {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated ReplicaSet replicaSets = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorDeployment {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated Deployment deployments = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorService {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated Service services = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorNode {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated Node nodes = 5;
+	repeated string tags = 6;
+	map<string, Host> hostAliasMapping = 7;
+	AgentVersion agentVersion = 8;
+}
+
+message CollectorCluster {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	Cluster cluster = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+// OriginCollector is the origin of the collector
+enum OriginCollector {
+	collectorUnknown = 0;
+	datadogAgent = 1;
+	datadogExporter = 2;
+}
+
+// CollectorManifest is the dedicated payload/pipeline for the yaml collection
+message CollectorManifest {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated Manifest manifests = 5;
+	repeated string tags = 6;
+	string hostName = 7;
+	AgentVersion agentVersion = 8;
+	OriginCollector originCollector = 9;
+	SystemInfo systemInfo = 10;
+}
+
+message CollectorManifestCRD {
+	CollectorManifest manifest = 1;
+	repeated string tags = 2;
+}
+
+message CollectorManifestCR {
+	CollectorManifest manifest = 1;
+	repeated string tags = 2;
+}
+
+message CollectorNamespace {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated Namespace namespaces = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorJob {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated Job jobs = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorCronJob {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated CronJob cronJobs = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorDaemonSet {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated DaemonSet daemonSets = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorStatefulSet {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated StatefulSet statefulSets = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorPersistentVolume {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated PersistentVolume persistentVolumes = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorPersistentVolumeClaim {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated PersistentVolumeClaim persistentVolumeClaims = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorRole {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated Role roles = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorRoleBinding {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated RoleBinding roleBindings = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorClusterRole {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated ClusterRole clusterRoles = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorClusterRoleBinding {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated ClusterRoleBinding clusterRoleBindings = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorServiceAccount {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated ServiceAccount serviceAccounts = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorIngress {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated Ingress ingresses = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorVerticalPodAutoscaler {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated VerticalPodAutoscaler verticalPodAutoscalers = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorHorizontalPodAutoscaler {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated HorizontalPodAutoscaler horizontalPodAutoscalers = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorNetworkPolicy {
+	string clusterName = 1;
+	string clusterId = 2;
+	int32 groupId = 3;
+	int32 groupSize = 4;
+	repeated NetworkPolicy networkPolicies = 5;
+	repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorLimitRange {
+    string clusterName = 1;
+    string clusterId = 2;
+    int32 groupId = 3;
+    int32 groupSize = 4;
+    repeated LimitRange limitRanges = 5;
+    repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+message CollectorStorageClass {
+    string clusterName = 1;
+    string clusterId = 2;
+    int32 groupId = 3;
+    int32 groupSize = 4;
+    repeated StorageClass storageClasses = 5;
+    repeated string tags = 6;
+	AgentVersion agentVersion = 7;
+}
+
+//
+// Models
+//
+
+message AgentVersion {
+	int64 Major = 1;
+	int64 Minor = 2;
+	int64 Patch = 3;
+	string Pre = 4;
+	string Meta = 5;
+	string Commit = 6;
+}
+
+message CollectorStatus {
+	int32 activeClients = 1;
+	int32 interval = 2;
+}
+
+// From https://github.com/DataDog/datadog-agent/blob/853fdeea6979e371eacda2a7022ba6291f211eec/pkg/languagedetection/languagemodels/language.go#L11-L38
+enum Language {
+	LANGUAGE_UNKNOWN = 0;
+	LANGUAGE_JAVA = 1;
+	LANGUAGE_NODE = 2;
+	LANGUAGE_PYTHON = 3;
+	LANGUAGE_RUBY = 4;
+	LANGUAGE_DOTNET = 5;
+	LANGUAGE_GO = 6;
+	LANGUAGE_CPP = 7;
+	LANGUAGE_PHP = 8;
+}
+
+enum ServiceNameSource {
+	SERVICE_NAME_SOURCE_UNKNOWN = 0;
+	SERVICE_NAME_SOURCE_DD_SERVICE = 1;
+	SERVICE_NAME_SOURCE_COMMAND_LINE = 2;
+	SERVICE_NAME_SOURCE_LARAVEL = 3;
+	SERVICE_NAME_SOURCE_PYTHON = 4;
+	SERVICE_NAME_SOURCE_NODEJS = 5;
+	SERVICE_NAME_SOURCE_GUNICORN = 6;
+	SERVICE_NAME_SOURCE_RAILS = 7;
+	SERVICE_NAME_SOURCE_SPRING = 8;
+	SERVICE_NAME_SOURCE_JBOSS = 9;
+	SERVICE_NAME_SOURCE_TOMCAT = 10;
+	SERVICE_NAME_SOURCE_WEBLOGIC = 11;
+	SERVICE_NAME_SOURCE_WEBSPHERE = 12;
+}
+
+enum InjectionState {
+	INJECTION_UNKNOWN = 0;
+	INJECTION_INJECTED = 1;
+	INJECTION_NOT_INJECTED = 2;
+}
+
+// Selected fields from TracerMetadata as defined in
+// https://github.com/DataDog/libdatadog/blob/99056cf717cfe9/ddcommon/src/tracer_metadata.rs#L7-L29
+message TracerMetadata {
+	string runtimeId = 1;
+	string serviceName = 2;
+}
+
+message PortInfo {
+	repeated int32 tcp = 1;
+	repeated int32 udp = 2;
+}
+
+message Process {
+	reserved 6;
+
+	uint32 key = 1;
+	int32 pid = 2;
+	int32 nsPid = 20;
+	Host host = 3;
+	Command command = 4;
+	ProcessUser user = 5;
+	MemoryStat memory = 7;
+	CPUStat cpu = 8;
+	int64 createTime = 9;
+	Container container = 10; // DEPRECATED - left in place to support previous versions
+	int32 openFdCount = 11;
+	ProcessState state = 12;
+	IOStat ioStat = 13;
+	string containerId = 14;
+	uint32 containerKey = 15;
+	uint64 voluntaryCtxSwitches = 16;
+	uint64 involuntaryCtxSwitches = 17;
+	bytes byteKey = 18;
+	bytes containerByteKey = 19;
+	ProcessNetworks networks = 21;
+	repeated string processContext = 22;
+	repeated string tags = 23;
+	Language language = 24;
+	PortInfo portInfo = 25;
+	ServiceDiscovery serviceDiscovery = 26;
+	InjectionState injectionState = 27;
+}
+
+message ServiceDiscovery {
+	ServiceName generatedServiceName = 1;
+	ServiceName ddServiceName = 2;
+	repeated ServiceName additionalGeneratedNames = 3;
+	repeated TracerMetadata tracerMetadata = 4;
+	bool apmInstrumentation = 5;
+	repeated Resource resources = 6;
+}
+
+message Resource {
+	oneof resource {
+		LogResource logs = 1;
+	}
+}
+
+message LogResource {
+	string path = 1;
+}
+
+message ServiceName {
+	string name = 1;
+	ServiceNameSource source = 2;
+}
+
+message ProcessDiscovery {
+	int32 pid = 1;
+	int32 nsPid = 2;
+	Host host = 3;
+	Command command = 4;
+	ProcessUser user = 5;
+	int64 createTime = 6;
+	bytes byteKey = 7;
+}
+
+message Command {
+	repeated string args = 1;
+	string cwd = 3;
+	string root = 4;
+	bool onDisk = 5;
+	int32 ppid = 6;
+	int32 pgroup = 7;
+	string exe = 8;
+	string comm = 9;
+}
+
+message ProcessUser {
+	string name = 1;
+	int32 uid = 2;
+	int32 gid = 3;
+	int32 euid = 4;
+	int32 egid = 5;
+	int32 suid = 6;
+	int32 sgid = 7;
+}
+
+// ProcessNetworks is a structure that holds network related metrics for processes
+message ProcessNetworks {
+	float connectionRate = 1;
+	float bytesRate = 2;
+}
+
+// status section in https://docs.docker.com/engine/api/v1.29/#tag/Container
+enum ContainerState {
+	unknown = 0;
+	created = 1;
+	restarting = 2;
+	running = 3;
+	paused = 4;
+	exited = 5;
+	dead = 6;
+}
+
+// https://blog.couchbase.com/docker-health-check-keeping-containers-healthy/
+// health can be: starting, healthy, unhealthy
+enum ContainerHealth {
+	unknownHealth = 0;
+	starting = 1;
+	healthy = 2;
+	unhealthy = 3;
+}
+
+// ContainerAddr records the IPs, Ports and Protocols for each container
+message ContainerAddr {
+	string ip = 1;
+	int32 port = 2;
+	ConnectionType protocol = 3;
+}
+
+message Container {
+	reserved 7;
+
+	string type = 1;
+	string id = 2;
+	string name = 3; // DEPRECATED - left in place to support previous versions
+	string image = 4; // DEPRECATED - left in place to support previous versions
+	float  cpuLimit = 5;
+	uint64 memoryLimit = 6;
+	ContainerState state = 8;
+	ContainerHealth health = 9;
+	int64 created = 10;
+	float rbps = 11;
+	float wbps = 12;
+	uint32 key = 13; // Unique key for a container resolved on backend.
+	float netRcvdPs = 14;
+	float netSentPs = 15;
+	float netRcvdBps = 16;
+	float netSentBps = 17;
+	float userPct = 18;
+	float systemPct = 19;
+	float totalPct = 20;
+	uint64 memRss = 21;
+	uint64 memCache = 22;
+	Host host = 23; // Used post-resolution
+	int64 started = 24;
+	bytes byteKey = 25;
+	repeated string tags = 26;
+	repeated ContainerAddr addresses = 27;
+	uint64 threadCount = 28;
+	uint64 threadLimit = 29;
+	uint64 memUsage = 30;
+	float cpuUsageNs = 31;
+	uint64 memAccounted = 32;
+	float cpuRequest = 33;
+	uint64 memoryRequest = 34;
+	string repoDigest = 35;
+}
+
+// Process state codes in http://wiki.preshweb.co.uk/doku.php?id=linux:psflags
+enum ProcessState {
+	U = 0; // unknown state
+	D = 1;
+	R = 2;
+	S = 3;
+	T = 4;
+	W = 5;
+	X = 6;
+	Z = 7;
+}
+
+// ProcessStat is used for real-time process messages. It should only contain
+// data that can change for a running process (and relevant information to
+// generate a key). We will send a lot of these in the real-time messages so
+// it's critical to keep this small.
+message ProcessStat {
+	int32 pid = 1;
+	// In milliseconds
+	int64 createTime = 2;
+	MemoryStat memory = 3;
+	CPUStat cpu = 4;
+	int32 nice = 5;
+	int32 threads = 7;
+	int32 openFdCount = 8;
+	uint32 key = 9;
+	// we need container id because we need to do the scoring by container
+	string containerId = 10;
+	ContainerState containerState = 11; // DEPRECATED
+	ProcessState processState = 12;
+	IOStat ioStat = 19;
+	ProcessNetworks networks  = 28;
+
+	// DEPRECATED: All container-level stats (except ID) have moved into ContainerStat.
+	// These will be removed in the future.
+	// These stats are from the container level but are stored per-process
+	// because we don't send a container primitive yet.
+	ContainerHealth containerHealth = 15;
+	float containerRbps = 16;
+	float containerWbps = 17;
+	uint32 containerKey = 18;
+	float containerNetRcvdPs = 20;
+	float containerNetSentPs = 21;
+	float containerNetRcvdBps = 22;
+	float containerNetSentBps = 23;
+
+	uint64 voluntaryCtxSwitches = 24;
+	uint64 involuntaryCtxSwitches = 25;
+	bytes byteKey = 26;
+	bytes containerByteKey = 27;
+}
+
+// ProcStatsWithPerm is holding attributes for processes that requires extra permission to collect.
+// It is used to pass data between system-probe and process-agent
+message ProcStatsWithPerm {
+	int32 openFDCount = 1;
+	int64 readCount = 2;
+	int64 writeCount = 3;
+	int64 readBytes = 4;
+	int64 writeBytes = 5;
+}
+
+// ProcStatsWithPermByPID stores ProcStatsWithPerm in a map with key as PIDs
+message ProcStatsWithPermByPID {
+	map<int32, ProcStatsWithPerm> statsByPID = 1;
+}
+
+// ContainerStat is used for real-time container messages. It should only contain
+// data that can change for a running container (and relevant information to
+// generate a key). We will send a lot of these in the real-time messages so
+// it's critical to keep this small (basically no strings except ID)
+message ContainerStat {
+	string id = 1;
+	float userPct = 2;
+	float systemPct = 3;
+	float totalPct = 4;
+	float cpuLimit = 5;
+	uint64 memRss = 6;
+	uint64 memCache = 7;
+	uint64 memLimit = 8;
+	float rbps = 9;
+	float wbps = 10;
+	float netRcvdPs = 11;
+	float netSentPs = 12;
+	float netRcvdBps = 13;
+	float netSentBps = 14;
+	ContainerState state = 15;
+	ContainerHealth health = 16;
+	// Post-resolved fields
+	uint32 key = 17;
+	int64 started = 18;
+	bytes byteKey = 19;
+	uint64 threadCount = 20;
+	uint64 threadLimit = 21;
+	uint64 memUsage = 22;
+	float cpuUsageNs = 23;
+	uint64 memAccounted = 24;
+	float cpuRequest = 25;
+	uint64 memoryRequest = 26;
+}
+
+
+message SystemInfo {
+	reserved 4;
+
+	string uuid = 1;
+	OSInfo os = 2;
+	repeated CPUInfo cpus = 3;
+	int64 totalMemory = 5;
+}
+
+message OSInfo {
+	string name = 1;
+	string platform = 2;
+	string family = 3;
+	string version = 4;
+	string kernelVersion = 5;
+}
+
+message IOStat {
+	float readRate = 1;
+	float writeRate = 2;
+	float readBytesRate = 3;
+	float writeBytesRate = 4;
+}
+
+enum ConnectionType {
+	tcp = 0;
+	udp = 1;
+}
+
+message MemoryStat {
+	uint64 rss = 1;
+	uint64 vms = 2;
+	uint64 swap = 3;
+	uint64 shared = 4;
+	uint64 text = 5;
+	uint64 lib = 6;
+	uint64 data = 7;
+	uint64 dirty = 8;
+}
+
+message CPUStat {
+	string lastCpu = 1;
+	float totalPct = 2;
+	float userPct = 3;
+	float systemPct = 4;
+	int32 numThreads = 5;
+	repeated SingleCPUStat cpus = 6;
+	int32 nice = 7;
+	int64 userTime = 8;
+	int64 systemTime = 9;
+}
+
+message SingleCPUStat {
+	string name = 1;
+	float  totalPct = 2;
+}
+
+message CPUInfo {
+	int32 number = 1;
+	string vendor = 2;
+	string family = 3;
+	string model = 4;
+	string physicalId = 5;
+	string coreId = 6;
+	int32 cores = 7;
+	int64 mhz = 8;
+	int32 cacheSize = 9;
+}
+
+// Host is used in backend post-resolution
+
+message Host {
+	reserved 4, 5;
+
+	int64 id = 1;
+	int32 orgId = 2;
+	string name = 3;
+	repeated string allTags = 6;
+	int32 numCpus = 7;
+	int64 totalMemory = 8;
+	int32 tagIndex = 9;
+	int64 tagsModified = 10;
+}
+
+
+enum OrchestratorResource {
+    OrchestratorResource_UNSPECIFIED = 0;
+    POD = 1;
+    REPLICASET = 2;
+    SERVICE = 3;
+    NODE = 4;
+    CLUSTER = 5;
+    JOB = 6;
+    CRONJOB = 7;
+    DAEMONSET = 8;
+    STATEFULSET = 9;
+    PERSISTENTVOLUME = 10;
+    PERSISTENTVOLUMECLAIM = 11;
+    ROLE = 12;
+    ROLEBINDING = 13;
+    CLUSTERROLE = 14;
+    CLUSTERROLEBINDING = 15;
+    SERVICEACCOUNT = 16;
+    INGRESS = 17;
+    DEPLOYMENT = 18;
+    NAMESPACE = 19;
+    CRD = 20;
+    CR = 21;
+    VERTICALPODAUTOSCALER = 22;
+    HORIZONTALPODAUTOSCALER = 23;
+    NETWORKPOLICY = 24;
+    LIMITRANGE = 25;
+    STORAGECLASS = 26;
+    K8S_POD_DISRUPTION_BUDGET = 27;
+    K8S_ENDPOINTSLICE = 28;
+    KUBELETCONFIGURATION = 29;
+    ECSTASK = 150;
+}
+
+message Cluster {
+	int32 nodeCount = 1;
+	map<string, int32> kubeletVersions = 2;
+	map<string, int32> apiServerVersions = 3;
+	// sum of all nodes capacities and allocatables.
+	// Using smallest possible quantity levels.
+	// For memory it is bytes, for CPU it is millicore.
+	uint32 podCapacity = 4;
+	uint32 podAllocatable = 5;
+	uint64 memoryAllocatable = 6;
+	uint64 memoryCapacity = 7;
+	uint64 cpuAllocatable = 8;
+	uint64 cpuCapacity = 9;
+	string resourceVersion = 10;
+	int64 creationTimestamp = 11;
+	repeated string tags = 12;
+	ResourceMetrics metrics = 13;
+	map<string, int64> extendedResourcesAllocatable = 14;
+	map<string, int64> extendedResourcesCapacity = 15;
+	repeated ClusterNodeInfo nodesInfo = 16;
+}
+
+message ClusterNodeInfo {
+	string name = 1;
+	string region = 2;
+	string instanceType = 3;
+	string operatingSystem = 4;
+	string operatingSystemImage = 5;
+	string architecture = 6;
+	string kernelVersion = 7;
+	string containerRuntimeVersion = 8;
+	string kubeletVersion = 9;
+	map<string, string> resourceAllocatable = 10;
+	map<string, string> resourceCapacity = 11;
+}
+
+// reference https://github.com/kubernetes/apimachinery/blob/2373d029717c4d169463414a6127cd1d0d12680e/pkg/apis/meta/v1/generated.proto#L521
+message Metadata {
+	string name = 1;
+	string namespace = 2;
+	string uid = 3;
+	int64 creationTimestamp = 4;
+	int64 deletionTimestamp = 5;
+	repeated string labels = 6;
+	repeated string annotations = 7;
+	repeated OwnerReference ownerReferences = 8;
+	string resourceVersion = 9;
+	repeated string finalizers = 10;
+	int64 deletionGracePeriodSeconds = 11;
+}
+
+message OwnerReference {
+	string name = 1;
+	string uid = 2;
+	string kind = 3;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/pkg/apis/core/types.go#L4317
+message ObjectReference {
+	string kind = 1;
+	string namespace = 2;
+	string name = 3;
+	string uid = 4;
+	string apiVersion = 5;
+	string resourceVersion = 6;
+	string fieldPath = 7;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L4571
+message ServicePort {
+	string name = 1;
+	string protocol = 2;
+	int32 port = 3;
+	string targetPort = 4; // int or str
+	int32 nodePort = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L4756
+message ServiceSessionAffinityConfig {
+	int32 clientIPTimeoutSeconds = 1;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L2107
+message Node {
+	Metadata metadata = 1;
+	// spec reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L2312
+	string podCIDR = 2;
+	repeated string podCIDRs = 3;
+	bool unschedulable = 4;
+	repeated Taint taints = 5;
+	NodeStatus status = 6;
+	bytes yaml = 7 [deprecated = true]; // see CollectorManifest
+	// we parse it from the labels. Similar to upstream https://github.com/kubernetes/kubernetes/blob/1e12d92a5179dbfeb455c79dbf9120c8536e5f9c/pkg/printers/internalversion/printers.go#L1487
+	repeated string roles = 8;
+	repeated string tags = 9;
+	string providerID = 10;
+	Host host = 11; // Used post-resolution
+	ResourceMetrics metrics = 12;
+}
+
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L2348
+message NodeStatus {
+	// Key/Value of a resource type and a corresponding quantity as an int64.
+	map<string, int64> capacity = 1;
+	// Key/Value of a resource type and a corresponding quantity as an int64.
+	map<string, int64> allocatable = 2;
+	// https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L2127
+	// these are valid types https://github.com/kubernetes/api/blob/master/core/v1/types.go#L4739-L4753
+	map<string,string> nodeAddresses = 3;
+	// node status displayed by "kubectl get node"
+	// mostly based on NodeCondition
+	// and https://github.com/kubernetes/kubernetes/blob/1e12d92a5179dbfeb455c79dbf9120c8536e5f9c/pkg/printers/internalversion/printers.go#L1410
+	string status = 4;
+	string kubeletVersion = 5;
+	repeated NodeCondition conditions = 6;
+	repeated ContainerImage images = 7;
+
+	// node system info reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L2411
+	string kubeProxyVersion = 8;
+	string operatingSystem = 9;
+	string architecture = 10;
+	string kernelVersion = 11;
+	string osImage = 12;
+	string containerRuntimeVersion = 13;
+}
+
+// reference: https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L2158
+message NodeCondition {
+	string type = 1;
+	string status = 2;
+	int64 lastTransitionTime = 3;
+	string reason = 4;
+	string message = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L777
+message ContainerImage {
+	repeated string names = 1;
+	int64 sizeBytes = 2;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L4849
+message Taint {
+	string key = 1;
+	string value = 2;
+	string effect = 3;
+	int64 timeAdded = 4;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L4620
+message ServiceSpec {
+	repeated ServicePort ports = 1;
+	repeated LabelSelectorRequirement selectors = 2;
+	string clusterIP = 3;
+	string type = 4;
+	repeated string externalIPs = 5;
+	string sessionAffinity = 6;
+	string loadBalancerIP = 7;
+	repeated string loadBalancerSourceRanges = 8;
+	string externalName = 9;
+	string externalTrafficPolicy = 10;
+	int32 healthCheckNodePort = 11;
+	bool publishNotReadyAddresses = 12;
+	ServiceSessionAffinityConfig sessionAffinityConfig = 13;
+	string ipFamily = 14;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L4748
+message ServiceStatus {
+	repeated string loadBalancerIngress = 17;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/release-1.19/staging/src/k8s.io/api/core/v1/generated.proto
+message Service {
+	Metadata metadata = 1;
+	ServiceSpec spec = 2;
+	ServiceStatus status = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+	ResourceMetrics metrics = 6;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L236
+message DeploymentCondition {
+	string type = 1;
+	string status = 2;
+	int64 lastUpdateTime = 6;
+	int64 lastTransitionTime = 7;
+	string reason = 4;
+	string message = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L221
+message Deployment {
+	Metadata metadata = 1;
+	// spec
+	int32 replicasDesired = 2;
+	string deploymentStrategy = 3;
+	string maxUnavailable = 4; // int or str
+	string maxSurge = 5; // int or str
+	bool paused = 6;
+	repeated LabelSelectorRequirement selectors = 7;
+	// status
+	int32 replicas = 8;
+	int32 updatedReplicas = 9;
+	int32 readyReplicas = 10;
+	int32 availableReplicas = 11;
+	int32 unavailableReplicas = 12;
+	string conditionMessage = 13;
+	repeated ResourceRequirements resourceRequirements = 16;
+	bytes yaml = 14 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 15;
+	ResourceMetrics metrics = 17;
+	repeated DeploymentCondition conditions = 18;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L388
+message ReplicaSetCondition {
+	string type = 1;
+	string status = 2;
+	int64 lastTransitionTime = 3;
+	string reason = 4;
+	string message = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L366
+message ReplicaSet {
+	Metadata metadata = 1;
+	// spec
+	int32 replicasDesired = 2;
+	repeated LabelSelectorRequirement selectors = 3;
+	// status
+	int32 replicas = 4;
+	int32 fullyLabeledReplicas = 5;
+	int32 readyReplicas = 6;
+	int32 availableReplicas = 7;
+	repeated ResourceRequirements resourceRequirements = 10;
+	bytes yaml = 8 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 9;
+	ResourceMetrics metrics = 11;
+	repeated ReplicaSetCondition conditions = 12;
+}
+
+message LabelSelectorRequirement {
+	string key = 1;
+	// Valid operators are In, NotIn, Exists and DoesNotExist.
+	string operator = 2;
+	repeated string values = 3;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/9ffc095f88c74c0f5b69b1c4a645836f0b7c83fc/staging/src/k8s.io/api/policy/v1/generated.proto#L46
+message PodDisruptionBudget {
+	Metadata metadata = 1;
+	PodDisruptionBudgetSpec spec = 2;
+	PodDisruptionBudgetStatus status = 3;
+	repeated string tags = 4;
+}
+
+message PodDisruptionBudgetSpec {
+	IntOrString minAvailable = 1;
+	repeated LabelSelectorRequirement selector = 2;
+	IntOrString maxUnavailable = 3;
+	string unhealthyPodEvictionPolicy = 4;
+}
+
+message PodDisruptionBudgetStatus {
+	map<string, int64> disruptedPods = 1;
+	int32 disruptionsAllowed = 2;
+	int32 currentHealthy = 3;
+	int32 desiredHealthy = 4;
+	int32 expectedPods = 5;
+	repeated Condition conditions = 6;
+}
+
+// https://github.com/kubernetes/apimachinery/blob/a8f449e276fe566efddb149992049c78f0088492/pkg/util/intstr/intstr.go#L41
+message IntOrString {
+	enum Type {
+		Int = 0;
+		String = 1;
+	}
+	Type type = 1;
+	int32 intVal = 2;
+	string strVal = 3;
+}
+
+// reference https://github.com/kubernetes/apimachinery/blob/ea28d546a962e50982945e357ad9869cee15f291/pkg/apis/meta/v1/generated.proto#L171
+message Condition {
+	string type = 1;
+	string status = 2;
+	int64 lastTransitionTime = 3;
+	string reason = 4;
+	string message = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto
+message Pod {
+	Metadata metadata = 1;
+	// status
+	string IP = 2;
+	string nominatedNodeName = 3;
+	string nodeName = 4;
+	string phase = 5;
+	int32 restartCount = 6;
+	repeated ContainerStatus containerStatuses = 7;
+	repeated ContainerStatus initContainerStatuses = 14;
+	string conditionMessage = 8;
+	string status = 9; // pod status displayed by "kubectl get pod"
+	bytes yaml = 10 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 11;
+	Host host = 12; // Used post-resolution
+	repeated ResourceRequirements resourceRequirements = 13;
+	string QOSClass = 15;
+	string priorityClass = 16;
+	ResourceMetrics metrics = 17;
+	int64 startTime = 18;
+	int64 scheduledTime = 19;
+	repeated PodCondition conditions = 20;
+	NodeAffinity nodeAffinity = 21;
+}
+
+message PodCondition {
+	string type = 1;
+	string status = 2;
+	int64 lastProbeTime = 3;
+	int64 lastTransitionTime = 4;
+	string reason = 5;
+	string message = 6;
+}
+
+message ContainerStatus {
+	string name = 1;
+	string containerID = 2;
+	bool ready = 3;
+	int32 restartCount = 4;
+	string state = 5;
+	string message = 6;
+	string image = 7;
+	string imageID = 8;
+}
+
+message NodeAffinity {
+	NodeSelector requiredDuringSchedulingIgnoredDuringExecution = 1;
+	repeated PreferredSchedulingTerm preferredDuringSchedulingIgnoredDuringExecution = 2;
+}
+
+message NodeSelector {
+	repeated NodeSelectorTerm nodeSelectorTerms = 1;
+}
+
+message PreferredSchedulingTerm {
+	int32 weight = 1;
+	NodeSelectorTerm preference = 2;
+}
+
+message Manifest {
+	int32 type = 1;
+	string resourceVersion = 2;
+	string uid = 3;
+	bytes content = 4;
+	string contentType = 5;
+	string version = 6;
+	repeated string tags = 7;
+	bool isTerminated = 8;
+	string apiVersion = 9;
+	string nodeName = 10;
+	string kind = 11;
+	Host host = 12; // Post-resolved field
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L2054
+message NamespaceCondition {
+	string type = 1;
+	string status = 2;
+	int64 lastTransitionTime = 3;
+	string reason = 4;
+	string message = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L2036
+message Namespace {
+	Metadata metadata = 1;
+	string status = 2; // namespace status displayed by "kubectl get namespace"
+	string conditionMessage = 3; // the message of the first 'false' condition
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+	repeated NamespaceCondition conditions = 6;
+}
+
+// https://github.com/kubernetes/kubernetes/blob/4112d8db20c5550cc27d30d3cee2723db0f8e1c4/staging/src/k8s.io/api/core/v1/types.go#L2097
+// Using smallest possible quantity levels.
+// For memory it is bytes, for CPU it is millicore.
+message ResourceRequirements{
+	// Limits describes the maximum amount of compute resources allowed.
+	// Key/Value of a resource type and a corresponding quantity as an int64.
+	map<string, int64> limits = 1;
+
+	// Requests describes the minimum amount of compute resources required.
+	// Key/Value of a resource type and a corresponding quantity as an int64.
+	map<string, int64> requests = 2;
+
+	// Name describes the name of the holder of the resource requirements (e.g. a container name).
+	string name = 3;
+
+	// ResourceRequirementsType describes the type which uses the ResourceRequirements.
+	ResourceRequirementsType type = 4;
+}
+
+// ResourceMetrics is used in backend enrichment.
+message ResourceMetrics {
+	map<string, double> metricValues = 1;
+}
+
+enum ResourceRequirementsType {
+	unknownType = 0;
+	container = 1;
+	initContainer = 2;
+	ephemeralContainer = 3;
+	nativeSidecar = 4;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/batch/v1/types.go#L61
+message JobSpec {
+	int32 parallelism = 1;
+	int32 completions = 2;
+	int64 activeDeadlineSeconds = 3;
+	int32 backoffLimit = 4;
+	repeated LabelSelectorRequirement selectors = 5;
+	bool manualSelector = 6;
+	repeated ResourceRequirements resourceRequirements = 7;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/batch/v1/types.go#L132
+message JobStatus {
+	string conditionMessage = 1;
+	int64 startTime = 2;
+	int64 completionTime = 3;
+	int32 active = 4;
+	int32 succeeded = 5;
+	int32 failed = 6;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/batch/v1/generated.proto#L51
+message JobCondition {
+	string type = 1;
+	string status = 2;
+	int64 lastProbeTime = 3;
+	int64 lastTransitionTime = 4;
+	string reason = 5;
+	string message = 6;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/batch/v1/types.go#L28
+message Job {
+	Metadata metadata = 1;
+	JobSpec spec = 2;
+	JobStatus status = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+	repeated JobCondition conditions = 6;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/batch/v1beta1/types.go#L92
+message CronJobSpec {
+	string schedule = 1;
+	int64 startingDeadlineSeconds = 2;
+	string concurrencyPolicy = 3;
+	bool suspend = 4;
+	int32 successfulJobsHistoryLimit = 5;
+	int32 failedJobsHistoryLimit = 6;
+	repeated ResourceRequirements resourceRequirements = 7;
+	string timeZone = 8;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/batch/v1beta1/types.go#L150
+message CronJobStatus {
+	repeated ObjectReference active = 1;
+	int64 lastScheduleTime = 2;
+	int64 lastSuccessfulTime = 3;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/batch/v1beta1/types.go#L58
+message CronJob {
+	Metadata metadata = 1;
+	CronJobSpec spec = 2;
+	CronJobStatus status = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L119
+message DaemonSetSpec {
+	repeated LabelSelectorRequirement selectors = 1;
+	string deploymentStrategy = 2;
+	string maxUnavailable = 3; // int or str
+	int32 minReadySeconds = 4;
+	int32 revisionHistoryLimit = 5;
+	repeated ResourceRequirements resourceRequirements = 6;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L152
+message DaemonSetStatus {
+	int32 currentNumberScheduled = 1;
+	int32 numberMisscheduled = 2;
+	int32 desiredNumberScheduled = 3;
+	int32 numberReady = 4;
+	int32 updatedNumberScheduled = 6;
+	int32 numberAvailable = 7;
+	int32 numberUnavailable = 8;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L87
+message DaemonSetCondition {
+  string type = 1;
+  string status = 2;
+  int64 lastTransitionTime = 3;
+  string reason = 4;
+  string message = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L66
+message DaemonSet {
+	Metadata metadata = 1;
+	DaemonSetSpec spec = 2;
+	DaemonSetStatus status = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+	ResourceMetrics metrics = 6;
+	repeated DaemonSetCondition conditions = 7;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L586
+message StatefulSetSpec {
+	int32 desiredReplicas = 1;
+	repeated LabelSelectorRequirement selectors = 2;
+	string serviceName = 3;
+	string podManagementPolicy = 4;
+	string updateStrategy = 5;
+	int32 partition = 6;
+	repeated ResourceRequirements resourceRequirements = 7;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L647
+message StatefulSetStatus {
+	int32 replicas = 1;
+	int32 readyReplicas = 2;
+	int32 currentReplicas = 3;
+	int32 updatedReplicas = 4;
+	// statefulset conditions are not yet set by the STS controller so we don't collect them
+	// see https://github.com/kubernetes/kubernetes/issues/79606#issuecomment-591504626
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L557
+message StatefulSetCondition {
+	string type = 1;
+	string status = 2;
+	int64 lastTransitionTime = 3;
+	string reason = 4;
+	string message = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/apps/v1/generated.proto#L542
+message StatefulSet {
+	Metadata metadata = 1;
+	StatefulSetSpec spec = 2;
+	StatefulSetStatus status = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+	ResourceMetrics metrics = 6;
+	repeated StatefulSetCondition conditions = 7;
+}
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L2576
+message PersistentVolume {
+	Metadata metadata = 1;
+	PersistentVolumeSpec spec = 2;
+	PersistentVolumeStatus status = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+}
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L2889
+message PersistentVolumeSpec {
+	// Key/Value of a resource type and a corresponding quantity as an int64.
+	map<string, int64> capacity = 1;
+	// in kubernetes these are actually fields in a struct where only one can be set.
+	// For now we only set it to a string with the name.
+	string persistentVolumeType = 2;
+	repeated string accessModes = 3;
+	ObjectReference claimRef = 4;
+	string persistentVolumeReclaimPolicy = 5;
+	string storageClassName = 6;
+	repeated string mountOptions = 7;
+	string volumeMode = 8;
+	repeated NodeSelectorTerm nodeAffinity = 9;
+	PersistentVolumeSource persistentVolumeSource = 10;
+}
+
+// reference https://github.com/kubernetes/api/blob/release-1.27/core/v1/generated.proto#L1722
+message PersistentVolumeSource{
+	 GCEPersistentDiskVolumeSource gcePersistentDisk = 1;
+	 AWSElasticBlockStoreVolumeSource awsElasticBlockStore = 2;
+	 AzureFilePersistentVolumeSource azureFile = 3;
+	 AzureDiskVolumeSource azureDisk = 4;
+	 CSIVolumeSource csi = 5;
+}
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L1616
+message GCEPersistentDiskVolumeSource {
+	 string pdName = 1;
+	 string fsType = 2;
+	 int32 partition = 3;
+	 bool readOnly = 4;
+}
+
+// reference https://github.com/kubernetes/api/blob/release-1.27/core/v1/generated.proto#L39
+message AWSElasticBlockStoreVolumeSource {
+	 string volumeID = 1;
+	 string fsType = 2;
+	 int32 partition = 3;
+	 bool readOnly = 4;
+}
+
+// reference https://github.com/kubernetes/api/blob/release-1.27/core/v1/generated.proto#L127
+message AzureFilePersistentVolumeSource {
+	 string secretName = 1;
+	 string shareName = 2;
+	 bool readOnly = 3;
+	 string secretNamespace = 4;
+}
+
+// reference https://github.com/kubernetes/api/blob/release-1.27/core/v1/generated.proto#L100
+message AzureDiskVolumeSource {
+	 string diskName = 1;
+	 string diskURI = 2;
+	 string cachingMode = 3;
+	 string fsType = 4;
+	 bool readOnly = 5;
+	 string kind = 6;
+}
+
+// reference https://github.com/kubernetes/api/blob/release-1.27/core/v1/generated.proto#L172
+message CSIVolumeSource {
+	string driver = 1;
+	string volumeHandle=2;
+	bool readOnly = 3;
+	string fsType = 4;
+	map<string, string> volumeAttributes = 5;
+	SecretReference controllerPublishSecretRef = 6;
+	SecretReference nodeStageSecretRef = 7;
+	SecretReference nodePublishSecretRef = 8;
+	SecretReference controllerExpandSecretRef = 9;
+	SecretReference nodeExpandSecretRef = 10;
+}
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L4553
+message SecretReference {
+	string name = 1;
+	string namespace = 2;
+}
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L2940
+message PersistentVolumeStatus {
+	string phase = 1;
+	string message = 2;
+	string reason = 3;
+}
+
+message NodeSelectorTerm {
+	repeated LabelSelectorRequirement matchExpressions = 1;
+	repeated LabelSelectorRequirement matchFields = 2;
+}
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L2597
+message PersistentVolumeClaim {
+	Metadata metadata = 1;
+	PersistentVolumeClaimSpec spec = 2;
+	PersistentVolumeClaimStatus status = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+}
+
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L2715
+message PersistentVolumeClaimStatus {
+	string phase = 1;
+	repeated string accessModes = 2;
+	map<string, int64> capacity = 3;
+	repeated PersistentVolumeClaimCondition conditions = 4;
+}
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L2654
+message PersistentVolumeClaimSpec {
+	repeated string accessModes = 1;
+	ResourceRequirements resources = 2;
+	string volumeName = 3;
+	repeated LabelSelectorRequirement selector = 4;
+	string storageClassName = 5;
+	string volumeMode = 6;
+	TypedLocalObjectReference dataSource = 7;
+}
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L5327
+message TypedLocalObjectReference {
+	string apiGroup = 1;
+	string kind = 2;
+	string name = 3;
+}
+
+// reference https://github.com/kubernetes/api/blob/4bdcbc60ffeee2c04231f11ff114314c1a93ce65/core/v1/generated.proto#L2616
+message PersistentVolumeClaimCondition {
+	string type = 1;
+	string status = 2;
+	int64 lastProbeTime = 3;
+	int64 lastTransitionTime = 4;
+	string reason = 5;
+	string message = 6;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/rbac/v1/generated.proto#L94
+message PolicyRule {
+	repeated string verbs = 1;
+	repeated string apiGroups = 2;
+	repeated string resources = 3;
+	repeated string resourceNames = 4;
+	repeated string nonResourceURLs = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/rbac/v1/generated.proto#L180
+message Subject {
+	string kind = 1;
+	string apiGroup = 2;
+	string name = 3;
+	string namespace = 4;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/rbac/v1/generated.proto#L119
+message Role {
+	Metadata metadata = 1;
+	repeated PolicyRule rules = 2;
+	bytes yaml = 3 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 4;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/rbac/v1/generated.proto#L132
+message RoleBinding {
+	Metadata metadata = 1;
+	repeated Subject subjects = 2;
+	TypedLocalObjectReference roleRef = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/rbac/v1/generated.proto#L40
+message ClusterRole {
+	Metadata metadata = 1;
+	repeated PolicyRule rules = 2;
+	repeated LabelSelectorRequirement aggregationRules = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+	ResourceMetrics metrics = 6;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/rbac/v1/generated.proto#L58
+message ClusterRoleBinding {
+	Metadata metadata = 1;
+	repeated Subject subjects = 2;
+	TypedLocalObjectReference roleRef = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+}
+
+// reference https://github.com/kubernetes/kubernetes/blob/cb19b56831d54d1d31249949318ef0b07bf00df9/staging/src/k8s.io/api/core/v1/generated.proto#L4495
+message ServiceAccount {
+	Metadata metadata = 1;
+	repeated ObjectReference secrets = 2;
+	repeated TypedLocalObjectReference imagePullSecrets = 3;
+	bool automountServiceAccountToken = 4;
+	bytes yaml = 5 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 6;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/networking/v1/generated.proto#L259
+// Note: ServiceBackendPort (contains port name and number) is flattened.
+message IngressServiceBackend {
+	string serviceName = 1;
+	string portName = 2;
+	int32 portNumber = 3;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/networking/v1/generated.proto#L112
+message IngressBackend {
+	IngressServiceBackend service = 1;
+	TypedLocalObjectReference resource = 2;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/networking/v1/generated.proto#L315
+message IngressTLS {
+	repeated string hosts = 1;
+	string secretName = 2;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/networking/v1/generated.proto#L35
+message HTTPIngressPath {
+	string path = 1;
+	string pathType = 3;
+	IngressBackend backend = 2;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/networking/v1/generated.proto#L214
+// Note: IngressRuleValue and HTTPIngressRuleValue are flattened
+message IngressRule {
+	string host = 1;
+	repeated HTTPIngressPath httpPaths = 2;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/networking/v1/generated.proto#L270
+message IngressSpec {
+	IngressBackend defaultBackend = 1;
+	repeated IngressTLS tls = 2;
+	repeated IngressRule rules = 3;
+	string ingressClassName = 4;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/core/v1/generated.proto#L3781
+message PortStatus {
+	int32 port = 1;
+	string protocol = 2;
+	string error = 3;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/core/v1/generated.proto#L2024
+message LoadBalancerIngress {
+	string ip = 1;
+	string hostname = 2;
+	repeated PortStatus ports = 4;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/networking/v1/generated.proto#L308
+// LoadBalancerStatus is flattened
+message IngressStatus {
+	repeated LoadBalancerIngress ingress = 1;
+}
+
+// reference https://github.com/kubernetes/api/blob/v0.21.5/networking/v1/generated.proto#L94
+message Ingress {
+	Metadata metadata = 1;
+	IngressSpec spec = 2;
+	IngressStatus status = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+}
+
+message KafkaStats {
+	uint32 count = 1;
+
+	// a protobuf encoded sketch of all the requests in a KafkaStats, in nanoseconds.
+	// this will be nil if count == 1
+	// To decode:
+	//    use a protobuf library to decode this into a github.com/DataDog/sketches-go/ddsketch/pb/sketchpb.DDSketch
+	// then call github.com/DataDog/sketches-go/ddsketch.FromProto
+	// To encode:
+	//    create a github.com/DataDog/sketches-go/ddsketch.DDSketch
+	//    call ToProto() and then run through a protobuf encoder
+	bytes latencies = 2;
+
+	// if the KafkaStats has a single sample, this field will be the latency (in nanoseconds) of the only sample.
+	// this is purely to avoid the overhead of having single entry sketches.
+	double firstLatencySample = 3;
+}
+
+message KafkaRequestHeader {
+	uint32 request_type = 1; // this is Kafka api key value from the protocol
+	uint32 request_version = 2;
+}
+
+message KafkaAggregation {
+	KafkaRequestHeader header = 1;
+	string topic = 2;
+	// The range of Kafka error codes spans from -1 to 119.
+	map<int32, KafkaStats> statsByErrorCode = 4;
+
+	// This approach for tracking Kafka hits is outdated, predating the inclusion of error codes.
+	// It remains here to accommodate older agent versions.
+	uint32 count = 3 [deprecated = true];
+}
+
+message DataStreamsAggregations {
+	// These fields were previously populated by the deprecated KafkaProduceAggregations and KafkaFetchAggregations messages
+	reserved 1, 2;
+	repeated KafkaAggregation kafkaAggregations = 3;
+}
+
+// A list of the supported operations for the Postgres database.
+// Other operations will not be monitored and will not be included in the agent's output.
+enum PostgresOperation {
+	PostgresUnknownOp = 0;
+	PostgresSelectOp = 1;
+	PostgresInsertOp = 2;
+	PostgresUpdateOp = 3;
+	PostgresDeleteOp = 4;
+	PostgresAlterOp = 5;
+	PostgresCreateOp = 6;
+	PostgresDropOp = 7;
+	PostgresTruncateOp = 8;
+	PostgresShowOp = 9;
+}
+
+// Represents the statistics for a single Postgres operation.
+message PostgresStats {
+	// The name of the table that this PostgresStats represents.
+	string tableName = 1;
+	// The operation that this PostgresStats represents.
+	PostgresOperation operation = 2;
+	// A protobuf encoded sketch of all the latencies for this operation. In nanoseconds.
+	bytes latencies = 3;
+	// If the PostgresStats has a single sample, this field will be the latency (in nanoseconds) of the only sample.
+	double firstLatencySample = 4;
+	// The number of samples in the latencies sketch.
+	uint32 count = 5;
+}
+
+// A list of the supported commands for the redis cache.
+// Top 10 most commonly used commands for monitoring.
+enum RedisCommand {
+	RedisUnknownCommand = 0;
+	RedisGetCommand = 1;
+	RedisSetCommand = 2;
+	RedisPingCommand = 3;
+	RedisDelCommand = 4;
+	RedisIncrCommand = 5;
+	RedisExpireCommand = 6;
+	RedisExistsCommand = 7;
+	RedisHGetCommand = 8;
+	RedisHSetCommand = 9;
+	RedisLPushCommand = 10;
+}
+
+enum RedisErrorType {
+	RedisNoError = 0;
+	RedisErrorTypeUnknown = 1;
+	RedisErrErr = 2;
+	RedisErrWrongType = 3;
+	RedisErrNoAuth = 4;
+	RedisErrNoPerm = 5;
+	RedisErrBusy = 6;
+	RedisErrNoScript = 7;
+	RedisErrLoading = 8;
+	RedisErrReadOnly = 9;
+	RedisErrExecAbort = 10;
+	RedisErrMasterDown = 11;
+	RedisErrMisconf = 12;
+	RedisErrCrossSlot = 13;
+	RedisErrTryAgain = 14;
+	RedisErrAsk = 15;
+	RedisErrMoved = 16;
+	RedisErrClusterDown = 17;
+	RedisErrNoReplicas = 18;
+	RedisErrOom = 19;
+	RedisErrNoQuorum = 20;
+	RedisErrBusyKey = 21;
+	RedisErrUnblocked = 22;
+	RedisErrWrongPass = 23;
+	RedisErrInvalidObj = 24;
+}
+
+message RedisStats {
+	// The command for the redis cache.
+	RedisCommand command = 1;
+	// The name of the key which the command was applied to.
+	string keyName = 2;
+	// Indicates whether the key name was truncated due to length limits.
+	bool truncated = 3;
+	// Mapping of error types to the associated Redis stats. Keys should be RedisErrorType values.
+	map<int32, RedisStatsEntry> errorToStats = 4;
+}
+
+// Represents the statistics for a single Redis transaction.
+message RedisStatsEntry {
+	// A protobuf encoded sketch of all the latencies for this operation. In nanoseconds.
+	bytes latencies = 1;
+	// If the PostgresStats has a single sample, this field will be the latency (in nanoseconds) of the only sample.
+	double firstLatencySample = 2;
+	// The number of samples in the latencies sketch.
+	uint32 count = 3;
+}
+
+// Represents the statistics for a single Database operation.
+message DatabaseStats {
+	// The idea is to have a single message that can represent the stats for any database.
+	// Each database will have its own message that will be populated by the agent.
+	oneof dbStats {
+		PostgresStats postgres = 1;
+		RedisStats redis = 2;
+	}
+}
+
+// Represents a list of database aggregations. Each entry in the list can be from a different database (postgres,
+// mysql, etc). The agent will only populate the fields for the database it is configured to monitor.
+message DatabaseAggregations {
+	repeated DatabaseStats aggregations = 1;
+}
+
+message HTTPAggregations {
+	reserved 1;
+	repeated HTTPStats endpointAggregations = 2;
+}
+
+// The current state of HTTP2Aggregations is identical to that of HTTPAggregations.
+// However, there is a possibility that additional fields might be added to it in the future.
+message HTTP2Aggregations {
+	repeated HTTPStats endpointAggregations = 1;
+}
+
+message HTTPStats {
+	string path = 4;
+	HTTPMethod method = 5;
+
+	// The agent can only read a limited part of the http header because
+	// of cpu/memory contraints. It is thus possible that the path is not
+	// read entirely.
+	// In case we're sure we've read the http path entirely, fullPath will
+	// be set to true. In any other cases, it would be set to false.
+	bool fullPath = 6;
+
+	repeated Data statsByResponseStatus = 1;
+	// This is a temporary field, that might be removed (and the index to be reserved) in the near future.
+	// This is the new format of saving aggregations. We support any status code rather than just the status code families
+	// as used in statsByResponseStatus.
+	map<int32, Data> statsByStatusCode = 2;
+
+	message Data {
+		reserved 3;
+		uint32 count = 1;
+
+		// a protobuf encoded sketch of all the requests in this HTTPStats. In nanoseconds.
+		// this will be nil if count == 1
+		// To decode:
+		//    use a protobuf library to decode this into a github.com/DataDog/sketches-go/ddsketch/pb/sketchpb.DDSketch
+		// then call github.com/DataDog/sketches-go/ddsketch.FromProto
+		// To encode:
+		//    create a github.com/DataDog/sketches-go/ddsketch.DDSketch
+		//    call ToProto() and then run through a protobuf encoder
+		bytes latencies = 2;
+
+		// if the HTTPStats has a single sample, this field will be the latency (in nanoseconds) of the only sample.
+		// this is purely to avoid the overhead of having single entry sketches.
+		double firstLatencySample = 4;
+	}
+}
+
+enum HTTPResponseStatus {
+	Info = 0;		// 1XX response
+	Success = 1;	// 2XX
+	Redirect = 2;	// 3XX
+	ClientErr = 3;	// 4XX
+	ServerErr = 4;	// 5XX
+}
+
+enum HTTPMethod {
+	Unknown = 0;
+	Get = 1;
+	Post = 2;
+	Put = 3;
+	Delete = 4;
+	Head = 5;
+	Options = 6;
+	Patch = 7;
+	Trace = 8;
+}
+
+
+
+// replaces DNSEntry.  Is a list of DNS names that a given IP resolved to.
+// List of offsets into the EncodedDomainDatabase.
+message DNSDatabaseEntry {
+	repeated int32 nameOffsets = 1 [packed = false];
+}
+
+// ResourceList is a set of (resource name, quantity) pairs
+// https://pkg.go.dev/k8s.io/api/core/v1#ResourceList
+message ResourceList{
+	map<string, double> metricValues = 1;
+}
+
+// https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1/types.go
+message VerticalPodAutoscaler {
+	Metadata metadata = 1;
+	VerticalPodAutoscalerSpec spec = 2;
+	VerticalPodAutoscalerStatus status = 3;
+	bytes yaml = 4 [deprecated = true]; // see CollectorManifest
+	repeated string tags = 5;
+	repeated VerticalPodAutoscalerCondition conditions = 6;
+}
+
+// reference https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1/types.go#L295
+message VerticalPodAutoscalerCondition {
+	string type = 1;
+	string status = 2;
+	int64 lastTransitionTime = 3;
+	string reason = 4;
+	string message = 5;
+}
+
+message VerticalPodAutoscalerSpec {
+	VerticalPodAutoscalerTarget target = 1;
+	string updateMode = 2; // Extracted from UpdatePolicy
+	repeated ContainerResourcePolicy resourcePolicies = 3;
+}
+
+message VerticalPodAutoscalerTarget{
+	string kind = 1;
+	string name = 2;
+}
+
+message ContainerResourcePolicy {
+	string containerName = 1;
+	string mode = 2;
+	ResourceList minAllowed = 3;
+	ResourceList maxAllowed = 4;
+	repeated string controlledResource = 5;
+	string controlledValues = 6;
+}
+
+message VerticalPodAutoscalerStatus {
+	int64 LastRecommendedDate = 1; // Extracted from Condition=RecommendationProvided AND Status=true
+	repeated ContainerRecommendation recommendations = 2;
+	repeated VPACondition conditions = 3;
+}
+
+message ContainerRecommendation {
+	string containerName = 1;
+	ResourceList target = 2;
+	ResourceList lowerBound = 3;
+	ResourceList upperBound = 4;
+	ResourceList uncappedTarget = 5;
+}
+
+message VPACondition {
+	string ConditionType = 1;
+	string ConditionStatus = 2;
+	int64 LastTransitionTime = 3;
+	string Reason = 4;
+	string Message = 5;
+}
+
+// https://github.com/kubernetes/api/blob/v0.23.15/autoscaling/v2/types.go
+message HorizontalPodAutoscaler {
+	Metadata metadata = 1;
+	HorizontalPodAutoscalerSpec spec = 2;
+	HorizontalPodAutoscalerStatus status = 3;
+	bytes yaml = 4 [deprecated = true];
+	repeated string tags = 5;
+	repeated HorizontalPodAutoscalerCondition conditions = 6;
+}
+
+message HorizontalPodAutoscalerSpec {
+	HorizontalPodAutoscalerTarget target = 1;
+	int32 minReplicas = 2;
+	int32 maxReplicas = 3;
+	repeated HorizontalPodAutoscalerMetricSpec metrics = 4;
+	HorizontalPodAutoscalerBehavior behavior = 5;
+}
+
+message HorizontalPodAutoscalerTarget {
+	string kind = 1;
+	string name = 2;
+}
+
+message HorizontalPodAutoscalerMetricSpec {
+	string type = 1;
+	ObjectMetricSource object = 2;
+	PodsMetricSource pods = 3;
+	ResourceMetricSource resource = 4;
+	ContainerResourceMetricSource containerResource = 5;
+	ExternalMetricSource external = 6;
+}
+
+message ObjectMetricSource {
+	ObjectReference describedObject = 1;
+	MetricTarget target = 2;
+	MetricIdentifier metric = 3;
+}
+
+message MetricTarget {
+	string type = 1;
+	int64 value = 2;
+}
+
+message MetricIdentifier {
+	string name = 1;
+	repeated LabelSelectorRequirement labelSelector = 2;
+}
+
+
+message PodsMetricSource {
+	MetricIdentifier metric = 1;
+	MetricTarget target = 2;
+}
+
+message ResourceMetricSource {
+	string resourceName = 1;
+	MetricTarget target = 2;
+}
+
+message ContainerResourceMetricSource {
+	string resourceName = 1;
+	MetricTarget target = 2;
+	string container = 3;
+}
+
+message ExternalMetricSource {
+	MetricIdentifier metric = 1;
+	MetricTarget target = 2;
+}
+
+message HorizontalPodAutoscalerBehavior {
+	HPAScalingRules scaleUp = 1;
+	HPAScalingRules scaleDown = 2;
+}
+
+message HPAScalingRules {
+	int32 stabilizationWindowSeconds = 1;
+	string selectPolicy = 2;
+	repeated HPAScalingPolicy policies =3;
+}
+
+message HPAScalingPolicy{
+	string type = 1;
+	int32 value = 2;
+	int32 periodSeconds = 3;
+}
+
+message HorizontalPodAutoscalerStatus {
+	int64 observedGeneration = 1;
+	int64 lastScaleTime = 2;
+	int32 currentReplicas = 3;
+	int32 desiredReplicas = 4;
+	repeated HorizontalPodAutoscalerMetricStatus currentMetrics = 5;
+}
+
+message HorizontalPodAutoscalerCondition {
+	string conditionType = 1;
+	string conditionStatus = 2;
+	int64 lastTransitionTime = 3;
+	string reason = 4;
+	string message = 5;
+}
+
+message HorizontalPodAutoscalerMetricStatus {
+	string type = 1;
+	ObjectMetricStatus object = 2;
+	PodsMetricStatus pods = 3;
+	ResourceMetricStatus resource = 4;
+	ContainerResourceMetricStatus containerResource = 5;
+	ExternalMetricStatus external = 6;
+}
+
+message ObjectMetricStatus {
+	ObjectReference describedObject = 1;
+	int64 current = 2;
+	MetricIdentifier metric = 3;
+}
+
+message PodsMetricStatus {
+	MetricIdentifier metric = 1;
+	int64 current = 2;
+}
+
+message ResourceMetricStatus {
+	string resourceName = 1;
+	int64 current = 2;
+}
+
+message ContainerResourceMetricStatus {
+	string resourceName = 1;
+	int64 current = 2;
+	string container = 3;
+}
+
+message ExternalMetricStatus {
+	MetricIdentifier metric = 1;
+	int64 current = 2;
+}
+
+
+// https://github.com/kubernetes/api/blob/v0.23.15/networking/v1/generated.proto
+message NetworkPolicy {
+	Metadata metadata = 1;
+	NetworkPolicySpec spec = 2;
+	bytes yaml = 3 [deprecated = true];
+	repeated string tags = 4;
+}
+
+message NetworkPolicySpec {
+	repeated LabelSelectorRequirement selectors = 1;
+	repeated NetworkPolicyIngressRule ingress = 2;
+	repeated NetworkPolicyEgressRule egress = 3;
+	repeated string policyTypes = 4;
+}
+
+message NetworkPolicyIPBlock {
+	string cidr = 1;
+	repeated string except = 2;
+}
+
+message NetworkPolicyIngressRule {
+	repeated NetworkPolicyPort ports = 1;
+	repeated NetworkPolicyPeer from = 2;
+}
+
+message NetworkPolicyEgressRule {
+	repeated NetworkPolicyPort ports = 1;
+	repeated NetworkPolicyPeer to = 2;
+}
+
+message NetworkPolicyPeer {
+	repeated LabelSelectorRequirement podSelector = 1;
+	repeated LabelSelectorRequirement namespaceSelector = 2;
+	NetworkPolicyIPBlock ipBlock = 3;
+	bool hasPodSelector = 4;
+	bool hasNamespaceSelector = 5;
+}
+
+message NetworkPolicyPort {
+	string protocol = 1;
+	int32 port = 2;
+	int32 endPort = 3;
+}
+
+// https://github.com/kubernetes/api/blob/v0.23.15/core/v1/types.go#L5800
+message LimitRange {
+    Metadata metadata = 1;
+    LimitRangeSpec spec = 2;
+    repeated string limitTypes = 3;
+    repeated string tags = 4;
+}
+
+message LimitRangeSpec {
+    repeated LimitRangeItem limits = 1;
+}
+
+message LimitRangeItem {
+    string type = 1;
+    map<string, int64> default = 2;
+    map<string, int64> defaultRequest = 3;
+    map<string, int64> max = 4;
+    map<string, int64> min = 5;
+    map<string, int64> maxLimitRequestRatio = 6;
+}
+
+// https://github.com/kubernetes/api/blob/v0.23.15/storage/v1/types.go#L33
+message StorageClass {
+    Metadata metadata = 1;
+    string provisioner = 2;
+    map<string, string> parameters = 3;
+    string reclaimPolicy = 4;
+    repeated string mountOptions = 5;
+    bool allowVolumeExpansion = 6;
+    StorageClassTopologies allowedTopologies = 7;
+    string volumeBindingMode = 8;
+    repeated string tags = 9;
+}
+
+message StorageClassTopologies {
+    repeated TopologyLabelSelector labelSelectors = 1;
+}
+
+message TopologyLabelSelector {
+    string key = 1;
+    repeated string values = 2;
+}

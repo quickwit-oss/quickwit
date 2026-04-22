@@ -1,5 +1,12 @@
 [files]
-extend-exclude = ["**/*.json"]
+extend-exclude = [
+    "**/*.json",
+    # Vendored Datadog-defined protobuf definitions — keep as-is so they
+    # diff cleanly against their upstream sources.
+    "quickwit/pomsky-intake/proto/**",
+    # Checked-in prost codegen output.
+    "quickwit/pomsky-intake/src/codegen/**",
+]
 
 [default.extend-words]
 # Don't correct the surname "Teh"
