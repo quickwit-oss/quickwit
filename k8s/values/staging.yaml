@@ -145,14 +145,14 @@ indexer:
 
   persistentVolume:
     enabled: true
-    storage: 200Gi
+    storage: 250Gi
     storageClass: gp3
     annotations:
       ebs.csi.aws.com/iops: "8000"
       ebs.csi.aws.com/throughput: "500"
 
 searcher:
-  replicaCount: 4
+  replicaCount: 20
 
   # Fabric Egress Gateway: allows searcher pods to reach lambda.us-east-1.amazonaws.com
   # for Lambda auto-deploy and invocation (offloaded leaf search)
@@ -162,11 +162,11 @@ searcher:
 
   resources:
     limits:
-      cpu: 4
-      memory: 16Gi
+      cpu: 16
+      memory: 64Gi
     requests:
-      cpu: 4
-      memory: 16Gi
+      cpu: 16
+      memory: 64Gi
 
   initContainers:
     - name: consul-template-dd-api-key
@@ -239,11 +239,21 @@ config:
   # username for database is $namespace_$serviceAccount with underscores as separators
   metastore_uri: postgres://logs_cloudprem_cloudprem@orgstore-logs-cloudprem-metastore-pg-proxy.orgstore-logs-cloudprem-metastore.all-clusters.local-dc.fabric.dog/logs_cloudprem_metastore
 
+  # Indexer settings
+  indexer:
+    split_store_max_num_bytes: 200G
+    split_store_max_num_splits: 10000
+  # Ingest API settings
   ingest_api:
     max_queue_memory_usage: 5GiB # memory capacity * 0.3
     max_queue_disk_usage: 10GiB # max queue mem usage * 2
-
+  # Searcher settings
   searcher:
+    fast_field_cache_capacity: 26G
+    split_footer_cache_capacity: 2G
+    partial_request_cache_capacity: 1G
+    max_num_concurrent_split_searches: 200
+    aggregation_memory_limit: 500M
     lambda:
       function_name: cloudprem-search
       max_splits_per_invocation: 8
