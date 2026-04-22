@@ -22,8 +22,8 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use arrow::array::{
-    ArrayRef, DictionaryArray, Float64Array, Int16Array, Int32Array, ListArray, StringArray,
-    UInt8Array, UInt32Array, UInt64Array,
+    ArrayRef, DictionaryArray, Float64Array, Int16Array, Int32Array, Int64Array, ListArray,
+    StringArray, UInt8Array, UInt32Array, UInt64Array,
 };
 use arrow::buffer::OffsetBuffer;
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
@@ -82,6 +82,7 @@ fn create_test_batch(
         Field::new("metric_type", DataType::UInt8, false),
         Field::new("timestamp_secs", DataType::UInt64, false),
         Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
         Field::new(
             "service",
             DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
@@ -99,6 +100,8 @@ fn create_test_batch(
     let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
     let values: Vec<f64> = (0..num_rows).map(|i| base_value + i as f64).collect();
     let value: ArrayRef = Arc::new(Float64Array::from(values));
+    let timeseries_ids: Vec<i64> = (0..num_rows).map(|i| 1000 + i as i64).collect();
+    let timeseries_id: ArrayRef = Arc::new(Int64Array::from(timeseries_ids));
     let service_arr: ArrayRef = {
         let keys = Int32Array::from(vec![0i32; num_rows]);
         let vals = StringArray::from(vec![service]);
@@ -112,6 +115,7 @@ fn create_test_batch(
             metric_type,
             timestamp_secs,
             value,
+            timeseries_id,
             service_arr,
         ],
     )
@@ -183,7 +187,8 @@ async fn test_metrics_pipeline_e2e() {
         writer_config,
         temp_dir.path(),
         &table_config,
-    );
+    )
+    .unwrap();
     let packager = ParquetPackager::new(split_writer, uploader_mailbox);
     let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
@@ -408,6 +413,7 @@ fn create_sketch_test_batch(
             DataType::List(Arc::new(Field::new("item", DataType::UInt64, false))),
             false,
         ),
+        Field::new("timeseries_id", DataType::Int64, false),
         Field::new("service", dict_type, true),
     ]));
 
@@ -454,6 +460,9 @@ fn create_sketch_test_batch(
         None,
     ));
 
+    let timeseries_ids: Vec<i64> = (0..num_rows).map(|i| 2000 + i as i64).collect();
+    let timeseries_id: ArrayRef = Arc::new(Int64Array::from(timeseries_ids));
+
     let service_arr: ArrayRef = {
         let keys = Int32Array::from(vec![0i32; num_rows]);
         let vals = StringArray::from(vec![service]);
@@ -472,6 +481,7 @@ fn create_sketch_test_batch(
             flags,
             keys_arr,
             counts_arr,
+            timeseries_id,
             service_arr,
         ],
     )
@@ -524,7 +534,8 @@ async fn test_sketch_pipeline_e2e() {
         writer_config,
         temp_dir.path(),
         &quickwit_parquet_engine::table_config::TableConfig::default(),
-    );
+    )
+    .unwrap();
     let packager = ParquetPackager::new(split_writer, uploader_mailbox);
     let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
