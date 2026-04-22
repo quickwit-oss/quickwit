@@ -1420,6 +1420,7 @@ mod tests {
                     enable_reverse_connection: false,
                     create_dd_logs_index: false,
                     create_dd_metrics_index: false,
+                    create_dd_sketches_index: false,
                     create_dd_traces_index: false,
                 },
                 ..NodeConfigBuilder::default()
