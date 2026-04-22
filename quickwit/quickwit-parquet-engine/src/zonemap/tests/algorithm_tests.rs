@@ -115,12 +115,12 @@ fn test_prune_booleans() {
         &build_superset_regex(values, 18),
     );
     assert_automaton(
-        "^(False|[Tt]rue|fals.+)$",
+        "^(False|[Tt]rue|fals[\\s\\S]+)$",
         false,
         &build_superset_regex(values, 17),
     );
-    assert_automaton("^[FTft].+$", false, &build_superset_regex(values, 4));
-    assert_automaton("^.+$", false, &build_superset_regex(values, 3));
+    assert_automaton("^[FTft][\\s\\S]+$", false, &build_superset_regex(values, 4));
+    assert_automaton("^[\\s\\S]+$", false, &build_superset_regex(values, 3));
 }
 
 #[test]
@@ -128,10 +128,18 @@ fn test_prune_alphanumeric() {
     let values = &["a0", "a1", "b0", "b1", "b2"];
     assert_automaton("^(a[01]|b[012])$", true, &build_superset_regex(values, -1));
     assert_automaton("^(a[01]|b[012])$", true, &build_superset_regex(values, 7));
-    assert_automaton("^(a.+|b[012])$", false, &build_superset_regex(values, 6));
-    assert_automaton("^(a[01]|b.+)$", false, &build_superset_regex(values, 4));
-    assert_automaton("^[ab].+$", false, &build_superset_regex(values, 3));
-    assert_automaton("^.+$", false, &build_superset_regex(values, 1));
+    assert_automaton(
+        "^(a[\\s\\S]+|b[012])$",
+        false,
+        &build_superset_regex(values, 6),
+    );
+    assert_automaton(
+        "^(a[01]|b[\\s\\S]+)$",
+        false,
+        &build_superset_regex(values, 4),
+    );
+    assert_automaton("^[ab][\\s\\S]+$", false, &build_superset_regex(values, 3));
+    assert_automaton("^[\\s\\S]+$", false, &build_superset_regex(values, 1));
 }
 
 #[test]
@@ -139,9 +147,9 @@ fn test_prune_duplicates() {
     let values = &["aa", "bb", "bb"];
     assert_automaton("^(aa|bb)$", true, &build_superset_regex(values, -1));
     assert_automaton("^(aa|bb)$", true, &build_superset_regex(values, 4));
-    assert_automaton("^(a.+|bb)$", false, &build_superset_regex(values, 3));
-    assert_automaton("^[ab].+$", false, &build_superset_regex(values, 2));
-    assert_automaton("^.+$", false, &build_superset_regex(values, 1));
+    assert_automaton("^(a[\\s\\S]+|bb)$", false, &build_superset_regex(values, 3));
+    assert_automaton("^[ab][\\s\\S]+$", false, &build_superset_regex(values, 2));
+    assert_automaton("^[\\s\\S]+$", false, &build_superset_regex(values, 1));
 }
 
 #[test]
@@ -149,9 +157,13 @@ fn test_prune_with_empty_string() {
     let values = &["", "a", "aaa"];
     assert_automaton("^(|a(|aa))$", true, &build_superset_regex(values, -1));
     assert_automaton("^(|a(|aa))$", true, &build_superset_regex(values, 3));
-    assert_automaton("^(|a(|a.+))$", false, &build_superset_regex(values, 2));
-    assert_automaton("^(|a.*)$", false, &build_superset_regex(values, 1));
-    assert_automaton("^.*$", false, &build_superset_regex(values, 0));
+    assert_automaton(
+        "^(|a(|a[\\s\\S]+))$",
+        false,
+        &build_superset_regex(values, 2),
+    );
+    assert_automaton("^(|a[\\s\\S]*)$", false, &build_superset_regex(values, 1));
+    assert_automaton("^[\\s\\S]*$", false, &build_superset_regex(values, 0));
 }
 
 // ---------------------------------------------------------------------------
@@ -280,13 +292,13 @@ fn test_after_prune() {
     }
     aut.prune(8);
 
-    assert_eq!("^a(|b(|c(|d(|e(|f(|g(|h.*)))))))$", aut.regex());
+    assert_eq!("^a(|b(|c(|d(|e(|f(|g(|h[\\s\\S]*)))))))$", aut.regex());
     assert!(!aut.is_strict_superset);
 
     // Adding after pruning should not change the regex past the pruned point.
     aut.add("abcdefghxrqx");
 
-    assert_eq!("^a(|b(|c(|d(|e(|f(|g(|h.*)))))))$", aut.regex());
+    assert_eq!("^a(|b(|c(|d(|e(|f(|g(|h[\\s\\S]*)))))))$", aut.regex());
     assert!(!aut.is_strict_superset);
 }
 
@@ -316,7 +328,7 @@ fn test_long_strings() {
     }
 
     assert_eq!(
-        "^(12345678.+|a(|b(|c(|d(|e(|f(|g(|h.*))))))))$",
+        "^(12345678[\\s\\S]+|a(|b(|c(|d(|e(|f(|g(|h[\\s\\S]*))))))))$",
         aut.regex()
     );
     assert!(!aut.is_strict_superset);
@@ -413,7 +425,7 @@ fn test_regex_builder_with_pruning() {
     builder.register("True");
 
     let result = builder.build();
-    assert_eq!(result.regex, "^[FTft].+$");
+    assert_eq!(result.regex, "^[FTft][\\s\\S]+$");
     assert!(!result.is_also_subset_regex);
 }
 
@@ -646,7 +658,7 @@ fn test_extract_zonemap_regexes_long_service_name() {
 
     let service_regex = &regexes["service"];
     assert!(
-        service_regex.contains(".+"),
+        service_regex.contains("[\\s\\S]+"),
         "long string should be pruned: {}",
         service_regex
     );
@@ -669,7 +681,7 @@ fn test_benchmark_data_produces_valid_regex() {
     // With 64 transitions the regex must be bounded — it should not
     // enumerate all 584 values verbatim.
     assert!(
-        regex.contains(".+"),
+        regex.contains("[\\s\\S]+"),
         "584 values with max 64 transitions should require pruning"
     );
 }
@@ -749,12 +761,12 @@ fn test_extract_zonemap_long_string_exact_regex() {
     };
     let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
 
-    // The Go test expects "^a_very_very_very_very_long_long_.+$" for a single
+    // The Go test expects "^a_very_very_very_very_long_long_[\s\S]+$" for a single
     // very long string with maxSize=32. With a single string the automaton
     // has one transition per character; pruning to 32 truncates at depth 32.
     let service_regex = &regexes["service"];
     assert_eq!(
-        service_regex, "^a_very_very_very_very_long_long_.+$",
+        service_regex, "^a_very_very_very_very_long_long_[\\s\\S]+$",
         "long service name should be pruned at 32 transitions"
     );
 }
@@ -1002,9 +1014,9 @@ fn test_extract_zonemap_all_string_column_types() {
     // The exact regex is deterministic: prod and production share a prefix.
     let expected = "^(prod(|uction)|staging)$";
 
-    // No `.+` or `.*` means no pruning — this is an exact-match regex.
-    assert!(!expected.contains(".+"));
-    assert!(!expected.contains(".*"));
+    // No `[\s\S]+` or `[\s\S]*` means no pruning — this is an exact-match regex.
+    assert!(!expected.contains("[\\s\\S]+"));
+    assert!(!expected.contains("[\\s\\S]*"));
 
     // --- Plain string types ---
     assert_eq!(

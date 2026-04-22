@@ -262,8 +262,11 @@ fn state_regex(states: &[State], idx: usize) -> String {
 fn write_regex(states: &[State], idx: usize, sb: &mut String) {
     let state = &states[idx];
     if state.transitions.is_none() {
-        // Pruned state: accept any suffix.
-        sb.push('.');
+        // Pruned state: accept any suffix. Use [\s\S] instead of '.' to
+        // match newlines — '.' excludes \n in standard regex semantics,
+        // which would break the superset guarantee if a tag value contains
+        // a newline.
+        sb.push_str("[\\s\\S]");
         if state.terminal {
             sb.push('*');
         } else {
@@ -315,8 +318,8 @@ fn write_regex(states: &[State], idx: usize, sb: &mut String) {
         clauses.push(clause_buf.clone());
     }
 
-    // ".+" is a common suffix because of pruning.
-    write_disjunctive_clauses_factoring_suffix(sb, &clauses, ".+");
+    // "[\\s\\S]+" is a common suffix because of pruning.
+    write_disjunctive_clauses_factoring_suffix(sb, &clauses, "[\\s\\S]+");
 }
 
 /// Write characters as a regex character class.
