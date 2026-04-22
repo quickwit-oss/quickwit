@@ -32,7 +32,10 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use arrow::array::{Array, DictionaryArray, LargeStringArray, StringArray};
-use arrow::datatypes::{DataType, Int32Type};
+use arrow::datatypes::{
+    DataType, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type, UInt16Type, UInt32Type,
+    UInt64Type,
+};
 use arrow::record_batch::RecordBatch;
 pub use minmax::{MinMax, MinMaxBuilder};
 pub use regex_builder::SupersetRegex;
@@ -179,32 +182,47 @@ fn is_string_dict(dt: &DataType) -> bool {
 
 /// Register all non-null string values from an Arrow column into the builder.
 ///
-/// Handles `Utf8`, `LargeUtf8`, and `Dictionary(Int32, Utf8|LargeUtf8)`.
-/// Dictionary columns iterate distinct values (not all rows) for efficiency.
+/// Handles `Utf8`, `LargeUtf8`, and `Dictionary(K, Utf8|LargeUtf8)` for all
+/// Arrow dictionary key types (Int8 through UInt64).
 fn register_string_values(
     array: &dyn Array,
     builder: &mut regex_builder::PrefixPreservingRegexBuilder,
 ) {
-    match array.data_type() {
-        DataType::Dictionary(_, _) => {
-            if let Some(dict) = array.as_any().downcast_ref::<DictionaryArray<Int32Type>>() {
+    /// Register string values from a dictionary array with a specific key type.
+    macro_rules! register_dict {
+        ($array:expr, $builder:expr, $key_type:ty) => {
+            if let Some(dict) = $array.as_any().downcast_ref::<DictionaryArray<$key_type>>() {
                 let values = dict.values();
                 if let Some(str_values) = values.as_any().downcast_ref::<StringArray>() {
                     for i in 0..str_values.len() {
                         if !str_values.is_null(i) {
-                            builder.register(str_values.value(i));
+                            $builder.register(str_values.value(i));
                         }
                     }
                 } else if let Some(str_values) = values.as_any().downcast_ref::<LargeStringArray>()
                 {
                     for i in 0..str_values.len() {
                         if !str_values.is_null(i) {
-                            builder.register(str_values.value(i));
+                            $builder.register(str_values.value(i));
                         }
                     }
                 }
             }
-        }
+        };
+    }
+
+    match array.data_type() {
+        DataType::Dictionary(key_type, _) => match key_type.as_ref() {
+            DataType::Int8 => register_dict!(array, builder, Int8Type),
+            DataType::Int16 => register_dict!(array, builder, Int16Type),
+            DataType::Int32 => register_dict!(array, builder, Int32Type),
+            DataType::Int64 => register_dict!(array, builder, Int64Type),
+            DataType::UInt8 => register_dict!(array, builder, UInt8Type),
+            DataType::UInt16 => register_dict!(array, builder, UInt16Type),
+            DataType::UInt32 => register_dict!(array, builder, UInt32Type),
+            DataType::UInt64 => register_dict!(array, builder, UInt64Type),
+            _ => {}
+        },
         DataType::Utf8 => {
             if let Some(str_array) = array.as_any().downcast_ref::<StringArray>() {
                 for i in 0..str_array.len() {

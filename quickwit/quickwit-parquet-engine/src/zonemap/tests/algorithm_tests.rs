@@ -19,10 +19,13 @@
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, DictionaryArray, Float64Array, Int32Array, Int64Array, LargeStringArray, StringArray,
-    UInt8Array, UInt64Array,
+    ArrayRef, DictionaryArray, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array,
+    LargeStringArray, StringArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
-use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
+use arrow::datatypes::{
+    DataType, Field, Int8Type, Int16Type, Int32Type, Int64Type, Schema as ArrowSchema, UInt8Type,
+    UInt16Type, UInt32Type, UInt64Type,
+};
 use arrow::record_batch::RecordBatch;
 
 use crate::test_helpers::{create_dict_array, create_nullable_dict_array};
@@ -960,127 +963,114 @@ fn test_minmax_for_int_columns() {
 }
 
 // ---------------------------------------------------------------------------
-// String column type coverage: Utf8, LargeUtf8, Dict(Int32, Utf8),
-// Dict(Int32, LargeUtf8) all produce the same regex.
+// String column type coverage: Utf8, LargeUtf8, and Dictionary with every
+// Arrow key type (Int8..UInt64) × (Utf8, LargeUtf8) must all produce the
+// same correct regex.
 // ---------------------------------------------------------------------------
+
+/// Helper: build a batch with a single string-typed "col" column and run
+/// extract_zonemap_regexes. Returns the regex for "col".
+fn extract_col_regex(col_array: ArrayRef, col_type: DataType) -> String {
+    let n = col_array.len();
+    let schema = Arc::new(ArrowSchema::new(vec![
+        Field::new("col", col_type, false),
+        Field::new("timeseries_id", DataType::Int64, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            col_array,
+            Arc::new(Int64Array::from(vec![1i64; n])) as ArrayRef,
+            Arc::new(UInt64Array::from(vec![100u64; n])) as ArrayRef,
+            Arc::new(Float64Array::from(vec![1.0; n])) as ArrayRef,
+        ],
+    )
+    .unwrap();
+    let sort_fields = "col|timeseries_id|timestamp_secs/V2";
+    let opts = ZonemapOptions::default();
+    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
+    regexes["col"].clone()
+}
 
 #[test]
 fn test_extract_zonemap_all_string_column_types() {
     let values = &["prod", "staging", "production"];
-    let n = values.len();
 
     // With 64 max transitions and 3 short values, no pruning occurs.
     // The exact regex is deterministic: prod and production share a prefix.
     let expected = "^(prod(|uction)|staging)$";
 
-    // Verify the regex encodes all input values:
-    // - "prod" matches via the `prod` prefix with empty alternation `(|uction)`
-    // - "production" matches via `prod` + `uction`
-    // - "staging" matches via the `staging` branch
-    // No `.+` or `.*` means no pruning occurred (exact match, not superset).
-    assert!(
-        !expected.contains(".+"),
-        "no pruning should occur with 64 max transitions"
-    );
-    assert!(
-        !expected.contains(".*"),
-        "no pruning should occur with 64 max transitions"
-    );
+    // No `.+` or `.*` means no pruning — this is an exact-match regex.
+    assert!(!expected.contains(".+"));
+    assert!(!expected.contains(".*"));
 
-    let sort_fields = "col|timeseries_id|timestamp_secs/V2";
-    let opts = ZonemapOptions::default();
-
-    // --- Utf8 ---
-    let schema = Arc::new(ArrowSchema::new(vec![
-        Field::new("col", DataType::Utf8, false),
-        Field::new("timeseries_id", DataType::Int64, false),
-        Field::new("timestamp_secs", DataType::UInt64, false),
-        Field::new("value", DataType::Float64, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        schema,
-        vec![
+    // --- Plain string types ---
+    assert_eq!(
+        extract_col_regex(
             Arc::new(StringArray::from(values.to_vec())) as ArrayRef,
-            Arc::new(Int64Array::from(vec![1i64; n])) as ArrayRef,
-            Arc::new(UInt64Array::from(vec![100u64; n])) as ArrayRef,
-            Arc::new(Float64Array::from(vec![1.0; n])) as ArrayRef,
-        ],
-    )
-    .unwrap();
-    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
-    assert_eq!(regexes["col"], expected, "Utf8 column should produce regex");
-
-    // --- LargeUtf8 ---
-    let schema = Arc::new(ArrowSchema::new(vec![
-        Field::new("col", DataType::LargeUtf8, false),
-        Field::new("timeseries_id", DataType::Int64, false),
-        Field::new("timestamp_secs", DataType::UInt64, false),
-        Field::new("value", DataType::Float64, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        schema,
-        vec![
+            DataType::Utf8,
+        ),
+        expected,
+        "Utf8"
+    );
+    assert_eq!(
+        extract_col_regex(
             Arc::new(LargeStringArray::from(values.to_vec())) as ArrayRef,
-            Arc::new(Int64Array::from(vec![1i64; n])) as ArrayRef,
-            Arc::new(UInt64Array::from(vec![100u64; n])) as ArrayRef,
-            Arc::new(Float64Array::from(vec![1.0; n])) as ArrayRef,
-        ],
-    )
-    .unwrap();
-    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
-    assert_eq!(
-        regexes["col"], expected,
-        "LargeUtf8 column should produce regex"
+            DataType::LargeUtf8,
+        ),
+        expected,
+        "LargeUtf8"
     );
 
-    // --- Dictionary(Int32, Utf8) ---
-    let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
-    let schema = Arc::new(ArrowSchema::new(vec![
-        Field::new("col", dict_type, false),
-        Field::new("timeseries_id", DataType::Int64, false),
-        Field::new("timestamp_secs", DataType::UInt64, false),
-        Field::new("value", DataType::Float64, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        schema,
-        vec![
-            create_dict_array(values) as ArrayRef,
-            Arc::new(Int64Array::from(vec![1i64; n])) as ArrayRef,
-            Arc::new(UInt64Array::from(vec![100u64; n])) as ArrayRef,
-            Arc::new(Float64Array::from(vec![1.0; n])) as ArrayRef,
-        ],
-    )
-    .unwrap();
-    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
-    assert_eq!(
-        regexes["col"], expected,
-        "Dictionary(Int32, Utf8) column should produce regex"
-    );
+    // --- Dictionary with every key type × Utf8 ---
+    // Macro to test a dictionary key type with both Utf8 and LargeUtf8 values.
+    macro_rules! test_dict_key {
+        ($key_arrow_type:expr, $key_rust_type:ty, $key_array:expr, $label:expr) => {
+            // Dict(K, Utf8)
+            let utf8_values = Arc::new(StringArray::from(values.to_vec()));
+            let dict = Arc::new(
+                DictionaryArray::<$key_rust_type>::try_new($key_array.clone(), utf8_values)
+                    .unwrap(),
+            );
+            let dt = DataType::Dictionary(Box::new($key_arrow_type), Box::new(DataType::Utf8));
+            assert_eq!(
+                extract_col_regex(dict as ArrayRef, dt),
+                expected,
+                concat!("Dict(", $label, ", Utf8)")
+            );
 
-    // --- Dictionary(Int32, LargeUtf8) ---
-    let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::LargeUtf8));
-    let schema = Arc::new(ArrowSchema::new(vec![
-        Field::new("col", dict_type, false),
-        Field::new("timeseries_id", DataType::Int64, false),
-        Field::new("timestamp_secs", DataType::UInt64, false),
-        Field::new("value", DataType::Float64, false),
-    ]));
-    let large_values = Arc::new(LargeStringArray::from(values.to_vec()));
-    let keys = Int32Array::from(vec![0i32, 1, 2]);
-    let dict_array = Arc::new(DictionaryArray::<Int32Type>::try_new(keys, large_values).unwrap());
-    let batch = RecordBatch::try_new(
-        schema,
-        vec![
-            dict_array as ArrayRef,
-            Arc::new(Int64Array::from(vec![1i64; n])) as ArrayRef,
-            Arc::new(UInt64Array::from(vec![100u64; n])) as ArrayRef,
-            Arc::new(Float64Array::from(vec![1.0; n])) as ArrayRef,
-        ],
-    )
-    .unwrap();
-    let regexes = extract_zonemap_regexes(sort_fields, &batch, &opts).unwrap();
-    assert_eq!(
-        regexes["col"], expected,
-        "Dictionary(Int32, LargeUtf8) column should produce regex"
-    );
+            // Dict(K, LargeUtf8)
+            let large_values = Arc::new(LargeStringArray::from(values.to_vec()));
+            let dict = Arc::new(
+                DictionaryArray::<$key_rust_type>::try_new($key_array.clone(), large_values)
+                    .unwrap(),
+            );
+            let dt = DataType::Dictionary(Box::new($key_arrow_type), Box::new(DataType::LargeUtf8));
+            assert_eq!(
+                extract_col_regex(dict as ArrayRef, dt),
+                expected,
+                concat!("Dict(", $label, ", LargeUtf8)")
+            );
+        };
+    }
+
+    let keys_i8 = Int8Array::from(vec![0i8, 1, 2]);
+    let keys_i16 = Int16Array::from(vec![0i16, 1, 2]);
+    let keys_i32 = Int32Array::from(vec![0i32, 1, 2]);
+    let keys_i64 = Int64Array::from(vec![0i64, 1, 2]);
+    let keys_u8 = UInt8Array::from(vec![0u8, 1, 2]);
+    let keys_u16 = UInt16Array::from(vec![0u16, 1, 2]);
+    let keys_u32 = UInt32Array::from(vec![0u32, 1, 2]);
+    let keys_u64 = UInt64Array::from(vec![0u64, 1, 2]);
+
+    test_dict_key!(DataType::Int8, Int8Type, keys_i8, "Int8");
+    test_dict_key!(DataType::Int16, Int16Type, keys_i16, "Int16");
+    test_dict_key!(DataType::Int32, Int32Type, keys_i32, "Int32");
+    test_dict_key!(DataType::Int64, Int64Type, keys_i64, "Int64");
+    test_dict_key!(DataType::UInt8, UInt8Type, keys_u8, "UInt8");
+    test_dict_key!(DataType::UInt16, UInt16Type, keys_u16, "UInt16");
+    test_dict_key!(DataType::UInt32, UInt32Type, keys_u32, "UInt32");
+    test_dict_key!(DataType::UInt64, UInt64Type, keys_u64, "UInt64");
 }
