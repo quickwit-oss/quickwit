@@ -19,7 +19,6 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Healthz, Mailbox,
@@ -27,9 +26,8 @@ use quickwit_actors::{
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
-use quickwit_common::io::Limiter;
 use quickwit_common::pubsub::EventBroker;
-use quickwit_common::{io, temp_dir};
+use quickwit_common::temp_dir;
 use quickwit_config::{
     INGEST_API_SOURCE_ID, IndexConfig, IndexerConfig, SourceConfig, build_doc_mapper,
     indexing_pipeline_params_fingerprint,
@@ -40,29 +38,23 @@ use quickwit_ingest::{
 };
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, IndexesMetadataResponseExt,
-    ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
-    SplitMetadata, SplitState,
+    ListIndexesMetadataResponseExt,
 };
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
-    IndexingTask, MergePipelineId, PipelineMetrics,
+    IndexingTask, PipelineMetrics,
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, IndexMetadataSubrequest, IndexesMetadataRequest,
-    ListIndexesMetadataRequest, ListSplitsRequest, MetastoreResult, MetastoreService,
-    MetastoreServiceClient,
+    ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
-use super::merge_pipeline::{MergePipeline, MergePipelineParams};
-use super::{MergePlanner, MergeSchedulerService};
-use crate::actors::merge_pipeline::FinishPendingMergesAndShutdownPipeline;
-use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
+use crate::models::{DetachIndexingPipeline, ObservePipeline, SpawnPipeline};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{IndexingSplitCache, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -75,14 +67,8 @@ pub struct IndexingServiceCounters {
     pub num_running_pipelines: usize,
     pub num_successful_pipelines: usize,
     pub num_failed_pipelines: usize,
-    pub num_running_merge_pipelines: usize,
     pub num_deleted_queues: usize,
     pub num_delete_queue_failures: usize,
-}
-
-struct MergePipelineHandle {
-    mailbox: Mailbox<MergePlanner>,
-    handle: ActorHandle<MergePipeline>,
 }
 
 struct PipelineHandle {
@@ -104,16 +90,13 @@ pub struct IndexingService {
     cluster: Cluster,
     metastore: MetastoreServiceClient,
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
-    merge_scheduler_service_opt: Option<Mailbox<MergeSchedulerService>>,
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
     indexing_pipelines: HashMap<PipelineUid, PipelineHandle>,
     counters: IndexingServiceCounters,
     local_split_store: Arc<IndexingSplitCache>,
     max_concurrent_split_uploads: usize,
-    merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
-    merge_io_throughput_limiter_opt: Option<Limiter>,
     event_broker: EventBroker,
 }
 
@@ -138,7 +121,6 @@ impl IndexingService {
         cluster: Cluster,
         metastore: MetastoreServiceClient,
         ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
-        merge_scheduler_service_opt: Option<Mailbox<MergeSchedulerService>>,
         ingester_pool: IngesterPool,
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
@@ -147,8 +129,6 @@ impl IndexingService {
             indexer_config.split_store_max_num_splits,
             indexer_config.split_store_max_num_bytes,
         )?;
-        let merge_io_throughput_limiter_opt =
-            indexer_config.max_merge_write_throughput.map(io::limiter);
         let split_cache_dir_path = get_cache_directory_path(&data_dir_path);
         let local_split_store =
             IndexingSplitCache::open(split_cache_dir_path, split_store_space_quota).await?;
@@ -167,15 +147,12 @@ impl IndexingService {
             cluster,
             metastore,
             ingest_api_service_opt,
-            merge_scheduler_service_opt,
             ingester_pool,
             storage_resolver,
             local_split_store: Arc::new(local_split_store),
             indexing_pipelines: Default::default(),
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
-            merge_pipeline_handles: HashMap::new(),
-            merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
         })
@@ -193,21 +170,6 @@ impl IndexingService {
                 IndexingError::Internal(message)
             })?;
         self.counters.num_running_pipelines -= 1;
-        Ok(pipeline_handle.handle)
-    }
-
-    async fn detach_merge_pipeline(
-        &mut self,
-        pipeline_id: &MergePipelineId,
-    ) -> Result<ActorHandle<MergePipeline>, IndexingError> {
-        let pipeline_handle = self
-            .merge_pipeline_handles
-            .remove(pipeline_id)
-            .ok_or_else(|| {
-                let message = format!("could not find merge pipeline `{pipeline_id}`");
-                IndexingError::Internal(message)
-            })?;
-        self.counters.num_running_merge_pipelines -= 1;
         Ok(pipeline_handle.handle)
     }
 
@@ -242,15 +204,8 @@ impl IndexingService {
             pipeline_uid,
         };
         let index_config = index_metadata.into_index_config();
-        self.spawn_pipeline_inner(
-            ctx,
-            pipeline_id.clone(),
-            index_config,
-            source_config,
-            None,
-            None,
-        )
-        .await?;
+        self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config, None)
+            .await?;
         Ok(pipeline_id)
     }
 
@@ -260,7 +215,6 @@ impl IndexingService {
         indexing_pipeline_id: IndexingPipelineId,
         index_config: IndexConfig,
         source_config: SourceConfig,
-        immature_splits_opt: Option<Vec<SplitMetadata>>,
         expected_params_fingerprint: Option<u64>,
     ) -> Result<(), IndexingError> {
         if self
@@ -291,43 +245,15 @@ impl IndexingService {
             })?;
         let merge_policy =
             crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
-        let retention_policy = index_config.retention_policy_opt.clone();
         let split_store = IndexingSplitStore::new(storage.clone(), self.local_split_store.clone());
 
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
             .map_err(|error| IndexingError::Internal(error.to_string()))?;
 
-        let merge_planner_mailbox_opt = if let Some(merge_scheduler_service) =
-            self.merge_scheduler_service_opt.clone()
-        {
-            let merge_pipeline_id = indexing_pipeline_id.merge_pipeline_id();
-            let merge_pipeline_params = MergePipelineParams {
-                pipeline_id: merge_pipeline_id,
-                doc_mapper: doc_mapper.clone(),
-                indexing_directory: indexing_directory.clone(),
-                metastore: self.metastore.clone(),
-                split_store: split_store.clone(),
-                merge_scheduler_service,
-                merge_policy: merge_policy.clone(),
-                retention_policy: retention_policy.clone(),
-                merge_io_throughput_limiter_opt: self.merge_io_throughput_limiter_opt.clone(),
-                max_concurrent_split_uploads: self.max_concurrent_split_uploads,
-                event_broker: self.event_broker.clone(),
-            };
-            Some(self.get_or_create_merge_pipeline(merge_pipeline_params, immature_splits_opt, ctx))
-        } else {
-            None
-        };
         // The concurrent uploads budget is split in 2: 1/2 for the indexing pipeline, 1/2 for the
         // merge pipeline. When there is no local merge pipeline, the indexing pipeline gets the
         // full budget.
-        let max_concurrent_split_uploads_index = if self.merge_scheduler_service_opt.is_some() {
-            (self.max_concurrent_split_uploads / 2).max(1)
-        } else {
-            self.max_concurrent_split_uploads
-        };
-        let max_concurrent_split_uploads_merge =
-            self.max_concurrent_split_uploads - max_concurrent_split_uploads_index;
+        let max_concurrent_split_uploads_index = self.max_concurrent_split_uploads;
 
         let params_fingerprint =
             indexing_pipeline_params_fingerprint(&index_config, &source_config);
@@ -359,12 +285,8 @@ impl IndexingService {
             split_store,
             max_concurrent_split_uploads_index,
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
-
-            // Merge-related parameters
+            // The merge policy is needed in the uploader for determining split maturity
             merge_policy,
-            retention_policy,
-            max_concurrent_split_uploads_merge,
-            merge_planner_mailbox_opt,
 
             // Source-related parameters
             source_config,
@@ -431,70 +353,6 @@ impl IndexingService {
         Ok(indexes_metadata)
     }
 
-    /// Fetches the immature splits candidates for merge for all the indexing pipelines for which a
-    /// merge pipeline is not running.
-    async fn fetch_immature_splits_for_new_merge_pipelines(
-        &mut self,
-        indexing_pipeline_ids: &[IndexingPipelineId],
-        ctx: &ActorContext<Self>,
-    ) -> MetastoreResult<HashMap<MergePipelineId, Vec<SplitMetadata>>> {
-        if self.merge_scheduler_service_opt.is_none() {
-            return Ok(Default::default());
-        }
-        let mut index_uids = Vec::new();
-
-        for indexing_pipeline_id in indexing_pipeline_ids {
-            let merge_pipeline_id = indexing_pipeline_id.merge_pipeline_id();
-
-            if !self.merge_pipeline_handles.contains_key(&merge_pipeline_id) {
-                index_uids.push(merge_pipeline_id.index_uid);
-            }
-        }
-        if index_uids.is_empty() {
-            return Ok(Default::default());
-        }
-        index_uids.sort_unstable();
-        index_uids.dedup();
-
-        let list_splits_query = ListSplitsQuery::try_from_index_uids(index_uids)
-            .expect("`index_uids` should not be empty")
-            .with_node_id(self.node_id.clone())
-            .with_split_state(SplitState::Published)
-            .retain_immature(OffsetDateTime::now_utc());
-        let list_splits_request =
-            ListSplitsRequest::try_from_list_splits_query(&list_splits_query)?;
-
-        let mut immature_splits_stream = ctx
-            .protect_future(self.metastore.list_splits(list_splits_request))
-            .await?;
-
-        let mut per_merge_pipeline_immature_splits: HashMap<MergePipelineId, Vec<SplitMetadata>> =
-            indexing_pipeline_ids
-                .iter()
-                .map(|indexing_pipeline_id| (indexing_pipeline_id.merge_pipeline_id(), Vec::new()))
-                .collect();
-
-        let mut num_immature_splits = 0usize;
-
-        while let Some(list_splits_response) = immature_splits_stream.try_next().await? {
-            for split_metadata in list_splits_response.deserialize_splits_metadata().await? {
-                num_immature_splits += 1;
-
-                let merge_pipeline_id = MergePipelineId {
-                    node_id: self.node_id.clone(),
-                    index_uid: split_metadata.index_uid.clone(),
-                    source_id: split_metadata.source_id.clone(),
-                };
-                per_merge_pipeline_immature_splits
-                    .entry(merge_pipeline_id)
-                    .or_default()
-                    .push(split_metadata);
-            }
-        }
-        info!("fetched {num_immature_splits} splits candidates for merge");
-        Ok(per_merge_pipeline_immature_splits)
-    }
-
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
         self.indexing_pipelines
             .retain(|pipeline_uid, pipeline_handle| {
@@ -522,48 +380,6 @@ impl IndexingService {
                     }
                 }
             });
-        let merge_pipelines_to_retain: HashSet<MergePipelineId> = self
-            .indexing_pipelines
-            .values()
-            .map(|pipeline_handle| pipeline_handle.indexing_pipeline_id.merge_pipeline_id())
-            .collect();
-
-        let merge_pipelines_to_shutdown: Vec<MergePipelineId> = self
-            .merge_pipeline_handles
-            .keys()
-            .filter(|running_merge_pipeline_id| {
-                !merge_pipelines_to_retain.contains(running_merge_pipeline_id)
-            })
-            .cloned()
-            .collect();
-
-        for merge_pipeline_to_shutdown in merge_pipelines_to_shutdown {
-            if let Some((_, merge_pipeline_handle)) = self
-                .merge_pipeline_handles
-                .remove_entry(&merge_pipeline_to_shutdown)
-            {
-                // We gracefully shutdown the merge pipeline, so we can complete the in-flight
-                // merges.
-                info!(
-                    index_uid=%merge_pipeline_to_shutdown.index_uid,
-                    source_id=%merge_pipeline_to_shutdown.source_id,
-                    "shutting down orphan merge pipeline"
-                );
-                // The queue capacity of the merge pipeline is unbounded, so `.send_message(...)`
-                // should not block.
-                // We avoid using `.quit()` here because it waits for the actor to exit.
-                merge_pipeline_handle
-                    .handle
-                    .mailbox()
-                    .send_message(FinishPendingMergesAndShutdownPipeline)
-                    .await
-                    .expect("merge pipeline mailbox should not be full");
-            }
-        }
-        // Finally, we remove the completed or failed merge pipelines.
-        self.merge_pipeline_handles
-            .retain(|_, merge_pipeline_handle| merge_pipeline_handle.handle.state().is_running());
-        self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
         self.update_chitchat_running_plan().await;
 
         let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = self
@@ -579,33 +395,6 @@ impl IndexingService {
             .update_self_node_pipeline_metrics(&pipeline_metrics)
             .await;
         Ok(())
-    }
-
-    fn get_or_create_merge_pipeline(
-        &mut self,
-        merge_pipeline_params: MergePipelineParams,
-        immature_splits_opt: Option<Vec<SplitMetadata>>,
-        ctx: &ActorContext<Self>,
-    ) -> Mailbox<MergePlanner> {
-        if let Some(merge_pipeline_handle) = self
-            .merge_pipeline_handles
-            .get(&merge_pipeline_params.pipeline_id)
-        {
-            return merge_pipeline_handle.mailbox.clone();
-        }
-        let merge_pipeline_id = merge_pipeline_params.pipeline_id.clone();
-        let merge_pipeline =
-            MergePipeline::new(merge_pipeline_params, immature_splits_opt, ctx.spawn_ctx());
-        let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
-        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(merge_pipeline);
-        let merge_pipeline_handle = MergePipelineHandle {
-            mailbox: merge_planner_mailbox.clone(),
-            handle: pipeline_handle,
-        };
-        self.merge_pipeline_handles
-            .insert(merge_pipeline_id, merge_pipeline_handle);
-        self.counters.num_running_merge_pipelines += 1;
-        merge_planner_mailbox
     }
 
     /// For all Ingest V2 pipelines, assigns the set of shards they should be working on.
@@ -714,10 +503,6 @@ impl IndexingService {
             .map(|index_metadata| (index_metadata.index_uid.clone(), index_metadata))
             .collect();
 
-        let mut per_merge_pipeline_immature_splits: HashMap<MergePipelineId, Vec<SplitMetadata>> =
-            self.fetch_immature_splits_for_new_merge_pipelines(&pipelines_to_spawn_ids, ctx)
-                .await?;
-
         let mut spawn_pipeline_failures: Vec<IndexingPipelineId> = Vec::new();
 
         for (task_to_spawn, id_to_spawn) in pipelines_to_spawn.iter().zip(pipelines_to_spawn_ids) {
@@ -725,17 +510,12 @@ impl IndexingService {
                 per_index_uid_indexes_metadata.get(task_to_spawn.index_uid())
             {
                 if let Some(source_config) = index_metadata.sources.get(&task_to_spawn.source_id) {
-                    let merge_pipeline_id = id_to_spawn.merge_pipeline_id();
-                    let immature_splits_opt =
-                        per_merge_pipeline_immature_splits.remove(&merge_pipeline_id);
-
                     if let Err(error) = self
                         .spawn_pipeline_inner(
                             ctx,
                             id_to_spawn.clone(),
                             index_metadata.index_config.clone(),
                             source_config.clone(),
-                            immature_splits_opt,
                             Some(task_to_spawn.params_fingerprint),
                         )
                         .await
@@ -914,19 +694,6 @@ impl Handler<DetachIndexingPipeline> for IndexingService {
     }
 }
 
-#[async_trait]
-impl Handler<DetachMergePipeline> for IndexingService {
-    type Reply = Result<ActorHandle<MergePipeline>, IndexingError>;
-
-    async fn handle(
-        &mut self,
-        msg: DetachMergePipeline,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.detach_merge_pipeline(&msg.pipeline_id).await)
-    }
-}
-
 #[derive(Debug)]
 struct SuperviseLoop;
 
@@ -1030,18 +797,16 @@ mod tests {
     };
     use quickwit_ingest::{CreateQueueIfNotExistsRequest, init_ingest_api};
     use quickwit_metastore::{
-        AddSourceRequestExt, CreateIndexRequestExt, ListIndexesMetadataResponseExt, Split,
+        AddSourceRequestExt, CreateIndexRequestExt, ListIndexesMetadataResponseExt,
         metastore_for_test,
     };
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::metastore::{
         AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, IndexMetadataResponse,
-        IndexesMetadataResponse, ListIndexesMetadataResponse, ListSplitsResponse,
-        MockMetastoreService,
+        IndexesMetadataResponse, ListIndexesMetadataResponse, MockMetastoreService,
     };
 
     use super::*;
-    use crate::actors::merge_pipeline::SUPERVISE_LOOP_INTERVAL;
 
     async fn spawn_indexing_service_for_test(
         data_dir_path: &Path,
@@ -1057,7 +822,6 @@ mod tests {
             init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
                 .await
                 .unwrap();
-        let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let indexing_server = IndexingService::new(
             NodeId::from("test-node"),
             data_dir_path.to_path_buf(),
@@ -1066,7 +830,6 @@ mod tests {
             cluster,
             metastore,
             Some(ingest_api_service),
-            Some(merge_scheduler_mailbox),
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
@@ -1166,15 +929,8 @@ mod tests {
             .await
             .unwrap();
         pipeline_handle.kill().await;
-        let _merge_pipeline = indexing_service
-            .ask_for_res(DetachMergePipeline {
-                pipeline_id: pipeline_id.merge_pipeline_id(),
-            })
-            .await
-            .unwrap();
         let observation = indexing_service_handle.process_pending_and_observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
-        assert_eq!(observation.num_running_merge_pipelines, 0);
         universe.assert_quit().await;
     }
 
@@ -1525,263 +1281,6 @@ mod tests {
         universe.assert_quit().await;
     }
 
-    #[tokio::test]
-    async fn test_indexing_service_shutdown_merge_pipeline_when_no_indexing_pipeline() {
-        quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-            .await
-            .unwrap();
-        let metastore = metastore_for_test();
-
-        let index_id = append_random_suffix("test-indexing-service");
-        let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(&index_id, &index_uri);
-
-        let source_config = SourceConfig {
-            source_id: "test-indexing-service--source".to_string(),
-            num_pipelines: NonZeroUsize::MIN,
-            enabled: true,
-            source_params: SourceParams::void(),
-            transform_config: None,
-            input_format: SourceInputFormat::Json,
-        };
-        let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-        let index_uid: IndexUid = metastore
-            .create_index(create_index_request)
-            .await
-            .unwrap()
-            .index_uid()
-            .clone();
-        let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
-        metastore.add_source(add_source_request).await.unwrap();
-
-        // Test `IndexingService::new`.
-        let temp_dir = tempfile::tempdir().unwrap();
-        let data_dir_path = temp_dir.path().to_path_buf();
-        let indexer_config = IndexerConfig::for_test().unwrap();
-        let num_blocking_threads = 1;
-        let storage_resolver = StorageResolver::unconfigured();
-        let universe = Universe::with_accelerated_time();
-        let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service =
-            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
-                .await
-                .unwrap();
-        let merge_scheduler_service = universe.get_or_spawn_one();
-        let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
-            data_dir_path,
-            indexer_config,
-            num_blocking_threads,
-            cluster.clone(),
-            metastore.clone(),
-            Some(ingest_api_service),
-            Some(merge_scheduler_service),
-            IngesterPool::default(),
-            storage_resolver.clone(),
-            EventBroker::default(),
-        )
-        .await
-        .unwrap();
-        let (indexing_server_mailbox, indexing_server_handle) =
-            universe.spawn_builder().spawn(indexing_server);
-        let pipeline_id = indexing_server_mailbox
-            .ask_for_res(SpawnPipeline {
-                index_id: index_id.clone(),
-                source_config,
-                pipeline_uid: PipelineUid::default(),
-            })
-            .await
-            .unwrap();
-        let observation = indexing_server_handle.observe().await;
-        assert_eq!(observation.num_running_pipelines, 1);
-        assert_eq!(observation.num_failed_pipelines, 0);
-        assert_eq!(observation.num_successful_pipelines, 0);
-        assert_eq!(observation.num_running_merge_pipelines, 1);
-
-        // Test `shutdown_pipeline`
-        let pipeline = indexing_server_mailbox
-            .ask_for_res(DetachIndexingPipeline { pipeline_id })
-            .await
-            .unwrap();
-        pipeline.quit().await;
-
-        // Let the service cleanup the merge pipelines.
-        universe.sleep(*HEARTBEAT).await;
-
-        let observation = indexing_server_handle.process_pending_and_observe().await;
-        assert_eq!(observation.num_running_pipelines, 0);
-        assert_eq!(observation.num_running_merge_pipelines, 0);
-        universe.sleep(SUPERVISE_LOOP_INTERVAL).await;
-        // Check that the merge pipeline is also shut down as they are no more indexing pipeilne on
-        // the index.
-        assert!(universe.get_one::<MergePipeline>().is_none());
-        // It may or may not panic
-        universe.quit().await;
-    }
-
-    #[tokio::test]
-    async fn test_indexing_service_no_merge_pipeline_when_no_merge_scheduler() {
-        quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-            .await
-            .unwrap();
-        let metastore = metastore_for_test();
-
-        let index_id = append_random_suffix("test-indexing-service-no-merge");
-        let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(&index_id, &index_uri);
-
-        let source_config = SourceConfig {
-            source_id: "test-source".to_string(),
-            num_pipelines: NonZeroUsize::MIN,
-            enabled: true,
-            source_params: SourceParams::void(),
-            transform_config: None,
-            input_format: SourceInputFormat::Json,
-        };
-        let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-        let index_uid: IndexUid = metastore
-            .create_index(create_index_request)
-            .await
-            .unwrap()
-            .index_uid()
-            .clone();
-        let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
-        metastore.add_source(add_source_request).await.unwrap();
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let data_dir_path = temp_dir.path().to_path_buf();
-        let indexer_config = IndexerConfig::for_test().unwrap();
-        let num_blocking_threads = 1;
-        let storage_resolver = StorageResolver::unconfigured();
-        let universe = Universe::with_accelerated_time();
-        let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service =
-            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
-                .await
-                .unwrap();
-        let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
-            data_dir_path,
-            indexer_config,
-            num_blocking_threads,
-            cluster.clone(),
-            metastore.clone(),
-            Some(ingest_api_service),
-            None, // No merge scheduler — external merge service handles compaction.
-            IngesterPool::default(),
-            storage_resolver.clone(),
-            EventBroker::default(),
-        )
-        .await
-        .unwrap();
-        let (indexing_server_mailbox, indexing_server_handle) =
-            universe.spawn_builder().spawn(indexing_server);
-
-        indexing_server_mailbox
-            .ask_for_res(SpawnPipeline {
-                index_id: index_id.clone(),
-                source_config,
-                pipeline_uid: PipelineUid::default(),
-            })
-            .await
-            .unwrap();
-
-        let observation = indexing_server_handle.observe().await;
-        assert_eq!(observation.num_running_pipelines, 1);
-        assert_eq!(observation.num_running_merge_pipelines, 0);
-        assert!(universe.get_one::<MergePipeline>().is_none());
-
-        universe.quit().await;
-    }
-
-    #[tokio::test]
-    async fn test_indexing_service_spawns_merge_pipeline_with_merge_scheduler() {
-        quickwit_common::setup_logging_for_tests();
-        let transport = ChannelTransport::default();
-        let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
-            .await
-            .unwrap();
-        let metastore = metastore_for_test();
-
-        let index_id = append_random_suffix("test-indexing-service-with-merge");
-        let index_uri = format!("ram:///indexes/{index_id}");
-        let index_config = IndexConfig::for_test(&index_id, &index_uri);
-
-        let source_config = SourceConfig {
-            source_id: "test-source".to_string(),
-            num_pipelines: NonZeroUsize::MIN,
-            enabled: true,
-            source_params: SourceParams::void(),
-            transform_config: None,
-            input_format: SourceInputFormat::Json,
-        };
-        let create_index_request =
-            CreateIndexRequest::try_from_index_config(&index_config).unwrap();
-        let index_uid: IndexUid = metastore
-            .create_index(create_index_request)
-            .await
-            .unwrap()
-            .index_uid()
-            .clone();
-        let add_source_request =
-            AddSourceRequest::try_from_source_config(index_uid.clone(), &source_config).unwrap();
-        metastore.add_source(add_source_request).await.unwrap();
-
-        let temp_dir = tempfile::tempdir().unwrap();
-        let data_dir_path = temp_dir.path().to_path_buf();
-        let indexer_config = IndexerConfig::for_test().unwrap();
-        let num_blocking_threads = 1;
-        let storage_resolver = StorageResolver::unconfigured();
-        let universe = Universe::with_accelerated_time();
-        let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-        let ingest_api_service =
-            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
-                .await
-                .unwrap();
-        let merge_scheduler_mailbox: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
-        let indexing_server = IndexingService::new(
-            NodeId::from("test-node"),
-            data_dir_path,
-            indexer_config,
-            num_blocking_threads,
-            cluster.clone(),
-            metastore.clone(),
-            Some(ingest_api_service),
-            Some(merge_scheduler_mailbox),
-            IngesterPool::default(),
-            storage_resolver.clone(),
-            EventBroker::default(),
-        )
-        .await
-        .unwrap();
-        let (indexing_server_mailbox, indexing_server_handle) =
-            universe.spawn_builder().spawn(indexing_server);
-
-        indexing_server_mailbox
-            .ask_for_res(SpawnPipeline {
-                index_id: index_id.clone(),
-                source_config,
-                pipeline_uid: PipelineUid::default(),
-            })
-            .await
-            .unwrap();
-
-        let observation = indexing_server_handle.observe().await;
-        assert_eq!(observation.num_running_pipelines, 1);
-        assert_eq!(observation.num_running_merge_pipelines, 1);
-        assert!(universe.get_one::<MergePipeline>().is_some());
-
-        universe.quit().await;
-    }
-
     #[derive(Debug)]
     struct FreezePipeline;
     #[async_trait]
@@ -1886,7 +1385,6 @@ mod tests {
         let observation = indexing_service_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 1);
         assert_eq!(observation.num_failed_pipelines, 0);
-        assert_eq!(observation.num_running_merge_pipelines, 1);
         // Might generate panics
         universe.quit().await;
     }
@@ -1931,7 +1429,6 @@ mod tests {
         let indexer_config = IndexerConfig::for_test().unwrap();
         let num_blocking_threads = 1;
         let storage_resolver = StorageResolver::unconfigured();
-        let merge_scheduler_service: Mailbox<MergeSchedulerService> = universe.get_or_spawn_one();
         let mut indexing_server = IndexingService::new(
             NodeId::from("test-ingest-api-gc-node"),
             data_dir_path,
@@ -1940,7 +1437,6 @@ mod tests {
             cluster.clone(),
             metastore.clone(),
             Some(ingest_api_service.clone()),
-            Some(merge_scheduler_service),
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),
@@ -2006,30 +1502,6 @@ mod tests {
                 let indexes_metadata = vec![index_metadata_1, index_metadata_2];
                 let failures = Vec::new();
                 let response = IndexesMetadataResponse::for_test(indexes_metadata, failures);
-                Ok(response)
-            });
-        mock_metastore
-            .expect_list_splits()
-            .withf(|request| {
-                let list_splits_query = request.deserialize_list_splits_query().unwrap();
-                list_splits_query.index_uids.unwrap() == [("test-index-0", 0)]
-            })
-            .return_once(|_request| Ok(ServiceStream::empty()));
-        mock_metastore
-            .expect_list_splits()
-            .withf(|request| {
-                let list_splits_query = request.deserialize_list_splits_query().unwrap();
-                list_splits_query.index_uids.unwrap() == [("test-index-1", 0), ("test-index-2", 0)]
-            })
-            .return_once(|_request| {
-                let splits = vec![Split {
-                    split_metadata: SplitMetadata::for_test("test-split".to_string()),
-                    split_state: SplitState::Published,
-                    update_timestamp: 0,
-                    publish_timestamp: Some(0),
-                }];
-                let list_splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
-                let response = ServiceStream::from(vec![Ok(list_splits_response)]);
                 Ok(response)
             });
 

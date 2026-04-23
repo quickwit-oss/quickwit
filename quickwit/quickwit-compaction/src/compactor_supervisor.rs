@@ -278,7 +278,10 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
     ) -> Result<(), ActorExitStatus> {
         let statuses = self.check_pipeline_statuses();
         let request = self.build_report_status_request(&statuses);
-        match ctx.protect_future(self.planner_client.report_status(request)).await {
+        match ctx
+            .protect_future(self.planner_client.report_status(request))
+            .await
+        {
             Ok(response) => {
                 ctx.protect_future(self.process_new_tasks(response.new_tasks, ctx.spawn_ctx()))
                     .await;

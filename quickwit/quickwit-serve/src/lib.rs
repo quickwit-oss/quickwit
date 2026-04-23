@@ -79,7 +79,7 @@ use quickwit_config::{ClusterConfig, IngestApiConfig, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
-use quickwit_indexing::actors::{IndexingService, MergeSchedulerService};
+use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
@@ -308,16 +308,6 @@ async fn get_compaction_planner_client_if_needed(
         node_config.grpc_config.max_message_size,
         None,
     )))
-}
-
-fn spawn_merge_scheduler_service(
-    universe: &Universe,
-    node_config: &NodeConfig,
-) -> Mailbox<MergeSchedulerService> {
-    let (mailbox, _) = universe.spawn_builder().spawn(MergeSchedulerService::new(
-        node_config.indexer_config.merge_concurrency.get(),
-    ));
-    mailbox
 }
 
 async fn start_ingest_client_if_needed(
@@ -608,7 +598,6 @@ pub async fn serve_quickwit(
     .context("failed to initialize compaction service client")?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
-        let merge_scheduler_mailbox_opt = None;
         let indexing_service = start_indexing_service(
             &universe,
             &node_config,
@@ -618,7 +607,6 @@ pub async fn serve_quickwit(
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
-            merge_scheduler_mailbox_opt,
         )
         .await
         .context("failed to start indexing service")?;

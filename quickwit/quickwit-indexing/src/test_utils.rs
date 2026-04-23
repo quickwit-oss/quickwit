@@ -111,7 +111,6 @@ impl TestSandbox {
         let num_blocking_threads = 1;
         let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
-        let merge_scheduler_mailbox = universe.get_or_spawn_one();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
         let ingest_api_service =
             init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default()).await?;
@@ -123,7 +122,6 @@ impl TestSandbox {
             cluster,
             metastore.clone(),
             Some(ingest_api_service),
-            Some(merge_scheduler_mailbox),
             IngesterPool::default(),
             storage_resolver.clone(),
             EventBroker::default(),

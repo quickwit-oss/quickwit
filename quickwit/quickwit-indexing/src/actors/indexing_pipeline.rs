@@ -27,7 +27,7 @@ use quickwit_common::metrics::OwnedGaugeGuard;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::{KillSwitch, is_metrics_index};
-use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
+use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
 use quickwit_proto::indexing::IndexingPipelineId;
@@ -37,7 +37,6 @@ use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
-use super::MergePlanner;
 use crate::SplitsUpdateMailbox;
 use crate::actors::doc_processor::DocProcessor;
 use crate::actors::index_serializer::IndexSerializer;
@@ -431,7 +430,7 @@ impl IndexingPipeline {
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
             self.params.metastore.clone(),
-            self.params.merge_planner_mailbox_opt.clone(),
+            None,
             Some(source_mailbox.clone()),
         );
         let (publisher_mailbox, publisher_handle) = ctx
@@ -460,7 +459,7 @@ impl IndexingPipeline {
             UploaderType::IndexUploader,
             self.params.metastore.clone(),
             self.params.merge_policy.clone(),
-            self.params.retention_policy.clone(),
+            None,
             self.params.split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             self.params.max_concurrent_split_uploads_index,
@@ -853,9 +852,6 @@ pub struct IndexingPipelineParams {
 
     // Merge-related parameters
     pub merge_policy: Arc<dyn MergePolicy>,
-    pub retention_policy: Option<RetentionPolicy>,
-    pub merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
-    pub max_concurrent_split_uploads_merge: usize,
 
     // Source-related parameters
     pub source_config: SourceConfig,
@@ -971,7 +967,6 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
 
         let universe = Universe::new();
-        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let pipeline_params = IndexingPipelineParams {
@@ -986,12 +981,9 @@ mod tests {
             storage,
             split_store,
             merge_policy: default_merge_policy(),
-            retention_policy: None,
             queues_dir_path: PathBuf::from("./queues"),
             max_concurrent_split_uploads_index: 4,
-            max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: EventBroker::default(),
             params_fingerprint: 42u64,
         };
@@ -1097,7 +1089,6 @@ mod tests {
         let universe = Universe::new();
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
-        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -1111,11 +1102,8 @@ mod tests {
             storage,
             split_store,
             merge_policy: default_merge_policy(),
-            retention_policy: None,
             max_concurrent_split_uploads_index: 4,
-            max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             event_broker: Default::default(),
             params_fingerprint: 42u64,
         };
@@ -1138,112 +1126,6 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_pipeline_simple_gz() -> anyhow::Result<()> {
         indexing_pipeline_simple("data/test_corpus.json.gz").await
-    }
-
-    #[tokio::test]
-    async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
-        let node_id = NodeId::from("test-node");
-        let pipeline_id = IndexingPipelineId {
-            node_id,
-            index_uid: IndexUid::new_with_random_ulid("test-index"),
-            source_id: "test-source".to_string(),
-            pipeline_uid: PipelineUid::for_test(0u128),
-        };
-        let source_config = SourceConfig {
-            source_id: "test-source".to_string(),
-            num_pipelines: NonZeroUsize::MIN,
-            enabled: true,
-            source_params: SourceParams::void(),
-            transform_config: None,
-            input_format: SourceInputFormat::Json,
-        };
-        let source_config_clone = source_config.clone();
-
-        let mut mock_metastore = MockMetastoreService::new();
-        mock_metastore
-            .expect_index_metadata()
-            .withf(|index_metadata_request| {
-                index_metadata_request.index_uid.as_ref().unwrap() == &("test-index", 2)
-            })
-            .returning(move |_| {
-                let mut index_metadata =
-                    IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                index_metadata
-                    .add_source(source_config_clone.clone())
-                    .unwrap();
-                Ok(IndexMetadataResponse::try_from_index_metadata(&index_metadata).unwrap())
-            });
-        mock_metastore
-            .expect_list_splits()
-            .returning(|_| Ok(ServiceStream::empty()));
-        let metastore = MetastoreServiceClient::from_mock(mock_metastore);
-
-        let universe = Universe::with_accelerated_time();
-        let doc_mapper = Arc::new(default_doc_mapper_for_test());
-        let storage = Arc::new(RamStorage::default());
-        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
-        let merge_pipeline_params = MergePipelineParams {
-            pipeline_id: pipeline_id.merge_pipeline_id(),
-            doc_mapper: doc_mapper.clone(),
-            indexing_directory: TempDirectory::for_test(),
-            metastore: metastore.clone(),
-            split_store: split_store.clone(),
-            merge_policy: default_merge_policy(),
-            retention_policy: None,
-            max_concurrent_split_uploads: 2,
-            merge_io_throughput_limiter_opt: None,
-            merge_scheduler_service: universe.get_or_spawn_one(),
-            event_broker: Default::default(),
-        };
-        let merge_pipeline = MergePipeline::new(merge_pipeline_params, None, universe.spawn_ctx());
-        let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
-        let (_merge_pipeline_mailbox, merge_pipeline_handler) =
-            universe.spawn_builder().spawn(merge_pipeline);
-        let indexing_pipeline_params = IndexingPipelineParams {
-            pipeline_id,
-            doc_mapper,
-            source_config,
-            source_storage_resolver: StorageResolver::for_test(),
-            indexing_directory: TempDirectory::for_test(),
-            indexing_settings: IndexingSettings::for_test(),
-            ingester_pool: IngesterPool::default(),
-            metastore,
-            queues_dir_path: PathBuf::from("./queues"),
-            storage,
-            split_store,
-            merge_policy: default_merge_policy(),
-            retention_policy: None,
-            max_concurrent_split_uploads_index: 4,
-            max_concurrent_split_uploads_merge: 5,
-            cooperative_indexing_permits: None,
-            merge_planner_mailbox_opt: Some(merge_planner_mailbox.clone()),
-            event_broker: Default::default(),
-            params_fingerprint: 42u64,
-        };
-        let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
-        let (_indexing_pipeline_mailbox, indexing_pipeline_handler) =
-            universe.spawn_builder().spawn(indexing_pipeline);
-        let obs = indexing_pipeline_handler
-            .process_pending_and_observe()
-            .await;
-        assert_eq!(obs.generation, 1);
-        // Let's shutdown the indexer, this will trigger the indexing pipeline failure and the
-        // restart.
-        let indexer = universe.get::<Indexer>().into_iter().next().unwrap();
-        let _ = indexer.ask(Command::Quit).await;
-        for _ in 0..10 {
-            universe.sleep(*quickwit_actors::HEARTBEAT).await;
-            // Check indexing pipeline has restarted.
-            let obs = indexing_pipeline_handler
-                .process_pending_and_observe()
-                .await;
-            if obs.generation == 2 {
-                assert_eq!(merge_pipeline_handler.check_health(true), Health::Healthy);
-                universe.quit().await;
-                return;
-            }
-        }
-        panic!("Pipeline was apparently not restarted.");
     }
 
     async fn indexing_pipeline_all_failures_handling(test_file: &str) -> anyhow::Result<()> {
@@ -1308,7 +1190,6 @@ mod tests {
         let universe = Universe::new();
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
-        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         // Create a minimal mapper with wrong date format to ensure that all documents will fail
         let broken_mapper = serde_json::from_str::<DocMapper>(
             r#"
@@ -1340,11 +1221,8 @@ mod tests {
             storage,
             split_store,
             merge_policy: default_merge_policy(),
-            retention_policy: None,
             max_concurrent_split_uploads_index: 4,
-            max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
-            merge_planner_mailbox_opt: Some(merge_planner_mailbox),
             params_fingerprint: 42u64,
             event_broker: Default::default(),
         };

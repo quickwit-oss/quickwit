@@ -181,7 +181,8 @@ impl CompactionPlanner {
 
         for (partition_key, operation) in pending {
             let task_id = Ulid::new().to_string();
-            let Some(index_entry) = self.index_config_metastore.get(&partition_key.index_uid) else {
+            let Some(index_entry) = self.index_config_metastore.get(&partition_key.index_uid)
+            else {
                 error!(index_uid=%partition_key.index_uid, "index config not found for pending operation, skipping");
                 continue;
             };
@@ -501,9 +502,9 @@ mod tests {
         let task_id = assignments[0].task_id.clone();
 
         // Report success for the task.
-        planner.state.process_successes(&[CompactionSuccess {
-            task_id,
-        }]);
+        planner
+            .state
+            .process_successes(&[CompactionSuccess { task_id }]);
 
         // The original splits are no longer tracked. Re-ingesting them
         // (simulating the merged output being immature) creates new work.
