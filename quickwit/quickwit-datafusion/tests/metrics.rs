@@ -679,7 +679,7 @@ async fn test_substrait_named_table_query() {
     let data_dir = &sandbox.data_dir;
     let builder = session_builder(&sandbox);
 
-    let index_uid = create_metrics_index(&metastore, "substrait-test", data_dir.path()).await;
+    let index_uid = create_metrics_index(&metastore, "metrics-substrait-test", data_dir.path()).await;
     publish_split(
         &metastore,
         &index_uid,
@@ -703,17 +703,17 @@ async fn test_substrait_named_table_query() {
     .await;
 
     // Build the Substrait plan from SQL via DataFusion's producer.
-    // The plan tree will have a NamedTable ReadRel for "substrait-test".
+    // The plan tree will have a NamedTable ReadRel for "metrics-substrait-test".
     let ctx = builder.build_session().unwrap();
 
     // Register a minimal table so the SQL planner can build the plan
     // (the actual schema will come from base_schema when the substrait consumer
     // resolves it at execution time).
     ctx.sql(
-        r#"CREATE OR REPLACE EXTERNAL TABLE "substrait-test" (
+        r#"CREATE OR REPLACE EXTERNAL TABLE "metrics-substrait-test" (
         metric_name VARCHAR NOT NULL, metric_type TINYINT,
         timestamp_secs BIGINT NOT NULL, value DOUBLE NOT NULL, service VARCHAR
-    ) STORED AS metrics LOCATION 'substrait-test'"#,
+    ) STORED AS metrics LOCATION 'metrics-substrait-test'"#,
     )
     .await
     .unwrap()
@@ -724,7 +724,7 @@ async fn test_substrait_named_table_query() {
     let df = ctx
         .sql(
             r#"SELECT metric_name, SUM(value) as total
-           FROM "substrait-test"
+           FROM "metrics-substrait-test"
            GROUP BY metric_name
            ORDER BY metric_name"#,
         )

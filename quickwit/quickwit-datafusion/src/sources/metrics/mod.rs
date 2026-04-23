@@ -37,6 +37,7 @@ use async_trait::async_trait;
 use datafusion::catalog::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;
+use quickwit_common::is_metrics_index;
 use quickwit_df_core::{DataSourceContributions, QuickwitDataSource};
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_storage::StorageResolver;
@@ -108,19 +109,29 @@ impl QuickwitDataSource for MetricsDataSource {
 
     /// Handle `ReadRel` nodes in incoming Substrait plans.
     ///
-    /// ## OSS path — `NamedTable`
+    /// ## OSS path — `NamedTable` with the index name as the leaf segment
     ///
-    /// When the read type is `NamedTable { names: [index_name] }` and the index
-    /// exists in the metastore, returns a `MetricsTableProvider` using the
-    /// schema from `schema_hint` (derived from `ReadRel.base_schema` by the
-    /// caller).  Returning `None` for an unknown index lets the standard catalog
-    /// path take over.
+    /// Treats `NamedTable.names.last()` as the index name and tries to
+    /// resolve it against the metastore. If the index exists, returns a
+    /// `MetricsTableProvider` using `schema_hint` (derived from
+    /// `ReadRel.base_schema` by the caller). If the resolver reports
+    /// "not found", returns `Ok(None)` so the standard catalog path can
+    /// try. Any other error is propagated.
+    ///
+    /// Producers are free to use any `NamedTable.names` shape their
+    /// table-reference scheme requires (single name, catalog/schema/table,
+    /// etc.) — only the leaf segment is interpreted here. Mapping a
+    /// caller-side logical table to a concrete Quickwit index is a
+    /// producer concern (e.g. a Pomsky-style bridge that rewrites
+    /// `datadog.metrics.points` to a concrete index name before emitting
+    /// the Substrait plan).
     ///
     /// ## Extension path — custom protos (downstream callers)
     ///
-    /// A downstream caller registers its own `QuickwitDataSource` that handles
-    /// `ExtensionTable<MetricRead>`.  This default implementation only handles
-    /// `NamedTable` — `ExtensionTable` always returns `Ok(None)` here.
+    /// A downstream caller registers its own `QuickwitDataSource` that
+    /// handles `ExtensionTable<MetricRead>`. This default implementation
+    /// only handles `NamedTable` — `ExtensionTable` always returns
+    /// `Ok(None)` here.
     async fn try_consume_read_rel(
         &self,
         rel: &datafusion_substrait::substrait::proto::ReadRel,
@@ -128,17 +139,27 @@ impl QuickwitDataSource for MetricsDataSource {
     ) -> DFResult<Option<(String, Arc<dyn TableProvider>)>> {
         use datafusion_substrait::substrait::proto::read_rel::ReadType;
 
-        // Only handle NamedTable reads.  ExtensionTable (downstream callers) returns None.
+        // Only handle NamedTable reads. ExtensionTable (downstream callers) returns None.
         let Some(ReadType::NamedTable(nt)) = &rel.read_type else {
             return Ok(None);
         };
         // `NamedTable::names` is a path like ["catalog", "schema", "table"];
-        // the last element is the effective table name.  An empty list is a
+        // the last element is the effective table name. An empty list is a
         // malformed plan — skip rather than silently resolving to index "".
         let Some(index_name) = nt.names.last() else {
             return Ok(None);
         };
         let index_name = index_name.as_str();
+
+        // Only claim indexes backed by the metrics (parquet) pipeline. This
+        // is a naming-prefix check today (`quickwit_common::is_metrics_index`);
+        // it exists so sibling sources — e.g. a future tantivy DataFusion
+        // source for logs/traces — can coexist in the same session without
+        // every source racing to claim every index. See `is_metrics_index`
+        // for the canonical list of prefixes.
+        if !is_metrics_index(index_name) {
+            return Ok(None);
+        }
 
         // Use the producer-declared schema if available; fall back to minimal base schema.
         let schema = schema_hint.unwrap_or_else(minimal_base_schema);
@@ -170,6 +191,11 @@ impl QuickwitDataSource for MetricsDataSource {
         &self,
         index_name: &str,
     ) -> DFResult<Option<Arc<dyn TableProvider>>> {
+        // Same gate as `try_consume_read_rel` — skip non-metrics indexes so
+        // a sibling source (e.g. tantivy) can claim them.
+        if !is_metrics_index(index_name) {
+            return Ok(None);
+        }
         match self.index_resolver.resolve(index_name).await {
             Ok((split_provider, index_uri)) => {
                 let provider =
@@ -193,6 +219,10 @@ impl QuickwitDataSource for MetricsDataSource {
     // `QuickwitObjectStoreRegistry` — nothing to do per worker session.
 
     async fn list_index_names(&self) -> DFResult<Vec<String>> {
-        self.index_resolver.list_index_names().await
+        // Only advertise indexes this source can actually serve, so
+        // `SHOW TABLES` / `information_schema` doesn't list tantivy-backed
+        // indexes under the metrics source.
+        let all = self.index_resolver.list_index_names().await?;
+        Ok(all.into_iter().filter(|id| is_metrics_index(id)).collect())
     }
 }
