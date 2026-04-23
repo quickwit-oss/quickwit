@@ -1,0 +1,25 @@
+version: 0.8
+
+listen_address: 127.0.0.1
+
+rest:
+  listen_port: 7280
+
+data_dir: ./pomsky-intake/local-test/sandbox
+
+# File-backed metastore (stored in data_dir/indexes)
+# metastore_uri defaults to ${data_dir}/indexes
+
+# Index data also defaults to ${data_dir}/indexes
+# default_index_root_uri defaults to ${data_dir}/indexes
+
+indexer:
+  enable_otlp_endpoint: true
+
+jaeger:
+  enable_endpoint: true
+
+cloudprem:
+  create_dd_logs_index: true
+  create_dd_metrics_index: true
+  create_dd_traces_index: true
