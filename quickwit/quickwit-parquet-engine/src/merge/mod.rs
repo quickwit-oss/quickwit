@@ -36,17 +36,20 @@ use tracing::info;
 
 use crate::sort_fields::{equivalent_schemas_for_compaction, parse_sort_fields};
 use crate::sorted_series::SORTED_SERIES_COLUMN;
-use crate::storage::{PARQUET_META_SORT_FIELDS, ParquetWriterConfig};
+use crate::storage::{
+    PARQUET_META_NUM_MERGE_OPS, PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION,
+    PARQUET_META_WINDOW_START, ParquetWriterConfig,
+};
 
 pub use self::merge_order::MergeRun;
 
 /// Configuration for a merge operation.
+///
+/// The sort schema, window metadata, and merge ops count are read from the
+/// input files' Parquet KV metadata — they are not provided by the caller.
+/// The compaction planner ensures all inputs share the same sort schema and
+/// window; the merge engine validates this.
 pub struct MergeConfig {
-    /// Sort fields string (e.g.,
-    /// "metric_name|host|env|timeseries_id|timestamp_secs/V2").
-    /// Must be identical across all input files.
-    pub sort_fields: String,
-
     /// Number of output files to produce. The merger splits at
     /// `sorted_series` boundaries so output files have non-overlapping
     /// key ranges. If there are fewer distinct series than `num_outputs`,
@@ -55,16 +58,15 @@ pub struct MergeConfig {
 
     /// Parquet writer configuration (compression, page size, etc.).
     pub writer_config: ParquetWriterConfig,
+}
 
-    /// Window start timestamp (epoch seconds) for output metadata.
-    pub window_start_secs: Option<i64>,
-
-    /// Window duration in seconds for output metadata.
-    pub window_duration_secs: u32,
-
-    /// Number of merge operations already applied to the most-merged input.
-    /// The output will be stamped with `input_num_merge_ops + 1`.
-    pub input_num_merge_ops: u32,
+/// Metadata extracted from input files' Parquet KV metadata.
+/// All inputs must agree on sort_fields, window_start, and window_duration.
+struct InputMetadata {
+    sort_fields: String,
+    window_start_secs: Option<i64>,
+    window_duration_secs: u32,
+    num_merge_ops: u32,
 }
 
 /// Result of a single output file from the merge.
@@ -92,6 +94,10 @@ pub struct MergeOutputFile {
 /// where the timestamp direction comes from the sort schema.
 /// Outputs are split at `sorted_series` boundaries to ensure non-overlapping
 /// key ranges.
+///
+/// The sort schema, window metadata, and merge operation count are read from
+/// the input files' Parquet KV metadata — the caller only provides the desired
+/// output count and writer configuration.
 ///
 /// Each output file is written with complete metadata: row keys, zonemap
 /// regexes, Parquet KV metadata (`qh.*` keys), native `sorting_columns`,
@@ -129,15 +135,16 @@ fn merge_sorted_parquet_files_impl(
         bail!("num_outputs must be at least 1");
     }
 
+    // Step 0: Read and validate metadata from all input files.
+    // Sort schema, window, and merge ops are derived from the files themselves.
+    let input_meta = extract_and_validate_input_metadata(input_paths)?;
+
     info!(
         num_inputs = input_paths.len(),
         num_outputs = config.num_outputs,
-        sort_fields = %config.sort_fields,
+        sort_fields = %input_meta.sort_fields,
         "starting sorted parquet merge"
     );
-
-    // Step 0: Validate that all inputs share the same sort schema.
-    validate_sort_schemas(input_paths, &config.sort_fields)?;
 
     // Step 1: Read all input files into RecordBatches.
     let inputs = read_inputs(input_paths, read_batch_size)?;
@@ -150,21 +157,16 @@ fn merge_sorted_parquet_files_impl(
 
     // Step 2: Resolve union schema and align all inputs.
     let (union_schema, aligned_inputs) =
-        schema::align_inputs_to_union_schema(&inputs, &config.sort_fields)?;
+        schema::align_inputs_to_union_schema(&inputs, &input_meta.sort_fields)?;
 
     // Step 3: Compute merge order using (sorted_series, timestamp_secs).
     // The timestamp sort direction comes from the sort schema.
-    let merge_order = merge_order::compute_merge_order(&aligned_inputs, &config.sort_fields)?;
+    let merge_order =
+        merge_order::compute_merge_order(&aligned_inputs, &input_meta.sort_fields)?;
 
     // Step 4: Compute output boundaries at sorted_series transitions.
     let boundaries =
         merge_order::compute_output_boundaries(&merge_order, &aligned_inputs, config.num_outputs)?;
-
-    info!(
-        total_rows,
-        num_outputs = boundaries.len(),
-        "merge order computed"
-    );
 
     // MC-4: verify union schema contains all columns from all inputs.
     {
@@ -186,6 +188,12 @@ fn merge_sorted_parquet_files_impl(
         }
     }
 
+    info!(
+        total_rows,
+        num_outputs = boundaries.len(),
+        "merge order computed"
+    );
+
     // Step 5: Write output files.
     let outputs = writer::write_merge_outputs(
         &aligned_inputs,
@@ -194,6 +202,7 @@ fn merge_sorted_parquet_files_impl(
         &boundaries,
         output_dir,
         config,
+        &input_meta,
     )?;
 
     // MC-1: verify total row count is preserved through merge.
@@ -267,59 +276,132 @@ fn read_inputs(paths: &[PathBuf], read_batch_size: Option<usize>) -> Result<Vec<
     Ok(batches)
 }
 
-/// Validate that all input files have the same sort schema as the merge config.
+/// Extract and validate metadata from all input files.
 ///
-/// Reads the `qh.sort_fields` key from each file's Parquet KV metadata and
-/// verifies it is equivalent to `expected_sort_fields` for compaction purposes.
-/// Files without sort schema metadata are accepted with a warning (they may
-/// be pre-Phase-1 files being merged for the first time).
-fn validate_sort_schemas(paths: &[PathBuf], expected_sort_fields: &str) -> Result<()> {
-    let expected_schema = parse_sort_fields(expected_sort_fields)?;
+/// Reads `qh.*` keys from each file's Parquet KV metadata. Validates that
+/// all inputs share the same sort schema (via `equivalent_schemas_for_compaction`),
+/// window_start, and window_duration. Returns the consensus metadata plus
+/// `max(num_merge_ops) + 1` for the output.
+fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadata> {
+    let mut consensus_sort_fields: Option<String> = None;
+    let mut consensus_window_start: Option<Option<i64>> = None;
+    let mut consensus_window_duration: Option<u32> = None;
+    let mut max_merge_ops: u32 = 0;
 
     for path in paths {
         let file = std::fs::File::open(path)
-            .with_context(|| format!("opening file for schema validation: {}", path.display()))?;
+            .with_context(|| format!("opening file for metadata: {}", path.display()))?;
         let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-            .with_context(|| format!("reading footer for schema validation: {}", path.display()))?;
+            .with_context(|| format!("reading footer for metadata: {}", path.display()))?;
 
         let kv_metadata = builder
             .metadata()
             .file_metadata()
             .key_value_metadata();
 
-        let file_sort_fields = kv_metadata
-            .and_then(|kvs| {
-                kvs.iter()
-                    .find(|kv| kv.key == PARQUET_META_SORT_FIELDS)
-                    .and_then(|kv| kv.value.as_deref())
-            });
+        let find_kv = |key: &str| -> Option<String> {
+            kv_metadata
+                .and_then(|kvs| {
+                    kvs.iter()
+                        .find(|kv| kv.key == key)
+                        .and_then(|kv| kv.value.clone())
+                })
+        };
 
-        match file_sort_fields {
-            Some(file_sf) => {
-                let file_schema = parse_sort_fields(file_sf)
-                    .with_context(|| format!(
-                        "parsing sort schema from {}: '{}'",
-                        path.display(),
-                        file_sf
-                    ))?;
+        // Sort fields: required, must be consistent across all inputs.
+        let file_sort_fields = find_kv(PARQUET_META_SORT_FIELDS).ok_or_else(|| {
+            anyhow::anyhow!(
+                "input file {} is missing {} metadata",
+                path.display(),
+                PARQUET_META_SORT_FIELDS
+            )
+        })?;
 
+        match &consensus_sort_fields {
+            Some(expected) => {
+                let expected_schema = parse_sort_fields(expected)?;
+                let file_schema = parse_sort_fields(&file_sort_fields).with_context(|| {
+                    format!("parsing sort schema from {}: '{}'", path.display(), file_sort_fields)
+                })?;
                 if !equivalent_schemas_for_compaction(&expected_schema, &file_schema) {
                     bail!(
                         "sort schema mismatch in {}: expected '{}', found '{}'",
                         path.display(),
-                        expected_sort_fields,
-                        file_sf
+                        expected,
+                        file_sort_fields
                     );
                 }
             }
             None => {
-                bail!(
-                    "input file {} is missing qh.sort_fields metadata",
-                    path.display()
-                );
+                // Validate the schema is parseable.
+                parse_sort_fields(&file_sort_fields).with_context(|| {
+                    format!("parsing sort schema from {}: '{}'", path.display(), file_sort_fields)
+                })?;
+                consensus_sort_fields = Some(file_sort_fields.clone());
             }
+        }
+
+        // Window start: must be consistent.
+        let file_window_start = find_kv(PARQUET_META_WINDOW_START)
+            .map(|s| s.parse::<i64>())
+            .transpose()
+            .with_context(|| format!("parsing window_start from {}", path.display()))?;
+
+        match &consensus_window_start {
+            Some(expected) => {
+                if file_window_start != *expected {
+                    bail!(
+                        "window_start mismatch in {}: expected {:?}, found {:?}",
+                        path.display(),
+                        expected,
+                        file_window_start
+                    );
+                }
+            }
+            None => {
+                consensus_window_start = Some(file_window_start);
+            }
+        }
+
+        // Window duration: must be consistent.
+        let file_window_duration = find_kv(PARQUET_META_WINDOW_DURATION)
+            .map(|s| s.parse::<u32>())
+            .transpose()
+            .with_context(|| format!("parsing window_duration from {}", path.display()))?
+            .unwrap_or(0);
+
+        match &consensus_window_duration {
+            Some(expected) => {
+                if file_window_duration != *expected {
+                    bail!(
+                        "window_duration_secs mismatch in {}: expected {}, found {}",
+                        path.display(),
+                        expected,
+                        file_window_duration
+                    );
+                }
+            }
+            None => {
+                consensus_window_duration = Some(file_window_duration);
+            }
+        }
+
+        // Merge ops: take the max across all inputs.
+        let file_merge_ops = find_kv(PARQUET_META_NUM_MERGE_OPS)
+            .map(|s| s.parse::<u32>())
+            .transpose()
+            .with_context(|| format!("parsing num_merge_ops from {}", path.display()))?
+            .unwrap_or(0);
+
+        if file_merge_ops > max_merge_ops {
+            max_merge_ops = file_merge_ops;
         }
     }
 
-    Ok(())
+    Ok(InputMetadata {
+        sort_fields: consensus_sort_fields.expect("at least one input required"),
+        window_start_secs: consensus_window_start.expect("at least one input required"),
+        window_duration_secs: consensus_window_duration.unwrap_or(0),
+        num_merge_ops: max_merge_ops + 1,
+    })
 }

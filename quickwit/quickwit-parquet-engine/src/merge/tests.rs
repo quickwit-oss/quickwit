@@ -140,14 +140,7 @@ fn test_merge_two_non_overlapping_inputs() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
@@ -196,14 +189,7 @@ fn test_merge_interleaved_inputs() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 1,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
@@ -235,14 +221,7 @@ fn test_merge_single_input() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
@@ -275,14 +254,7 @@ fn test_merge_multiple_outputs() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 3,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 3, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
 
@@ -306,14 +278,7 @@ fn test_merge_empty_inputs() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     // Zero inputs should error.
     let result = merge_sorted_parquet_files(&[], &output_dir, &config);
@@ -336,14 +301,7 @@ fn test_merge_verifies_parquet_kv_metadata() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(900),
-        window_duration_secs: 900,
-        input_num_merge_ops: 2,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
@@ -369,10 +327,10 @@ fn test_merge_verifies_parquet_kv_metadata() {
         find_kv("qh.sort_fields").as_deref(),
         Some(TEST_SORT_FIELDS)
     );
-    assert_eq!(find_kv("qh.window_start").as_deref(), Some("900"));
+    assert_eq!(find_kv("qh.window_start").as_deref(), Some("0"));
     assert_eq!(find_kv("qh.window_duration_secs").as_deref(), Some("900"));
-    // num_merge_ops = input_num_merge_ops (2) + 1 = 3.
-    assert_eq!(find_kv("qh.num_merge_ops").as_deref(), Some("3"));
+    // num_merge_ops = max(input.num_merge_ops) + 1. Input has 0, so output = 1.
+    assert_eq!(find_kv("qh.num_merge_ops").as_deref(), Some("1"));
     assert!(find_kv("qh.row_keys").is_some());
 }
 
@@ -392,14 +350,7 @@ fn test_merge_preserves_husky_column_ordering() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
@@ -587,14 +538,7 @@ fn test_merge_schema_evolution_extra_column() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[path1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
@@ -634,14 +578,7 @@ fn test_merge_mc2_row_contents_preserved() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
@@ -703,14 +640,7 @@ fn test_merge_dm5_sorted_series_preserved() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs =
         merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
@@ -767,14 +697,7 @@ fn test_merge_deep_interleaving() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
@@ -822,14 +745,7 @@ fn test_merge_duplicate_timestamps() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
@@ -918,14 +834,7 @@ fn test_merge_per_output_schema_strips_null_columns() {
     std::fs::create_dir_all(&output_dir).unwrap();
 
     // Request M=2 — alpha goes to output 1, zeta goes to output 2.
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 2,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 2, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[path1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 2, "should produce 2 output files");
@@ -978,14 +887,7 @@ fn test_merge_output_type_reflects_data() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
@@ -1068,14 +970,7 @@ fn test_merge_cross_row_group_interleaving() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     let outputs =
         merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
@@ -1154,14 +1049,7 @@ fn test_merge_cross_record_batch_interleaving() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig {
-        sort_fields: TEST_SORT_FIELDS.to_string(),
-        num_outputs: 1,
-        writer_config: ParquetWriterConfig::default(),
-        window_start_secs: Some(0),
-        window_duration_secs: 900,
-        input_num_merge_ops: 0,
-    };
+    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
 
     // Force read batch size of 2 — each 6-row file yields 3 RecordBatches.
     let outputs = crate::merge::merge_sorted_parquet_files_with_read_batch_size(
@@ -1342,12 +1230,8 @@ mod proptests {
             std::fs::create_dir_all(&output_dir).unwrap();
 
             let config = MergeConfig {
-                sort_fields: TEST_SORT_FIELDS.to_string(),
                 num_outputs,
                 writer_config: ParquetWriterConfig::default(),
-                window_start_secs: Some(0),
-                window_duration_secs: 900,
-                input_num_merge_ops: 0,
             };
 
             let total_input_rows = data1.0.len() + data2.0.len();
@@ -1426,12 +1310,8 @@ mod proptests {
             std::fs::create_dir_all(&output_dir).unwrap();
 
             let config = MergeConfig {
-                sort_fields: TEST_SORT_FIELDS.to_string(),
                 num_outputs,
                 writer_config: ParquetWriterConfig::default(),
-                window_start_secs: Some(0),
-                window_duration_secs: 900,
-                input_num_merge_ops: 0,
             };
 
             let total_input_rows = data1.0.len() + data2.0.len() + data3.0.len();

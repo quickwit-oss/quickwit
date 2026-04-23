@@ -35,7 +35,7 @@ use prost::Message;
 use ulid::Ulid;
 
 use super::merge_order::MergeRun;
-use super::{MergeConfig, MergeOutputFile};
+use super::{InputMetadata, MergeConfig, MergeOutputFile};
 use crate::row_keys;
 use crate::sort_fields::parse_sort_fields;
 use crate::sorted_series::SORTED_SERIES_COLUMN;
@@ -57,9 +57,9 @@ pub fn write_merge_outputs(
     boundaries: &[Range<usize>],
     output_dir: &Path,
     config: &MergeConfig,
+    input_meta: &InputMetadata,
 ) -> Result<Vec<MergeOutputFile>> {
     let mut outputs = Vec::with_capacity(boundaries.len());
-    let num_merge_ops = config.input_num_merge_ops + 1;
 
     for boundary in boundaries {
         let runs = &merge_order[boundary.clone()];
@@ -75,7 +75,7 @@ pub fn write_merge_outputs(
         // timestamp_secs <direction per sort schema>). We check sorted_series
         // is non-decreasing; within equal sorted_series, timestamp_secs
         // respects the schema's sort direction.
-        verify_sort_order(&sorted_batch, &config.sort_fields);
+        verify_sort_order(&sorted_batch, &input_meta.sort_fields);
 
         // Optimize the output batch: strip all-null columns and choose
         // the best encoding for each column based on its actual data.
@@ -87,24 +87,24 @@ pub fn write_merge_outputs(
         // Row keys and zonemaps are computed from the actual output data,
         // reflecting only the columns present in this file.
         let row_keys_proto =
-            row_keys::extract_row_keys(&config.sort_fields, &sorted_batch)
+            row_keys::extract_row_keys(&input_meta.sort_fields, &sorted_batch)
                 .context("extracting row keys from merge output")?
                 .map(|rk| row_keys::encode_row_keys_proto(&rk));
 
         let zonemap_opts = ZonemapOptions::default();
         let zonemap_regexes =
-            zonemap::extract_zonemap_regexes(&config.sort_fields, &sorted_batch, &zonemap_opts)
+            zonemap::extract_zonemap_regexes(&input_meta.sort_fields, &sorted_batch, &zonemap_opts)
                 .context("extracting zonemap regexes from merge output")?;
 
         // Build KV metadata.
         let kv_entries =
-            build_merge_kv_metadata(config, num_merge_ops, &row_keys_proto, &zonemap_regexes);
+            build_merge_kv_metadata(input_meta, &row_keys_proto, &zonemap_regexes);
 
         // Build sorting_columns for Parquet metadata.
-        let sorting_cols = build_sorting_columns(&sorted_batch, &config.sort_fields)?;
+        let sorting_cols = build_sorting_columns(&sorted_batch, &input_meta.sort_fields)?;
 
         // Build writer properties.
-        let sort_field_names = resolve_sort_field_names(&config.sort_fields)?;
+        let sort_field_names = resolve_sort_field_names(&input_meta.sort_fields)?;
         let props = config.writer_config.to_writer_properties_with_metadata(
             &sorted_batch.schema(),
             sorting_cols,
@@ -187,37 +187,36 @@ fn apply_merge_permutation(
 
 /// Build Parquet KV metadata entries for a merge output file.
 fn build_merge_kv_metadata(
-    config: &MergeConfig,
-    num_merge_ops: u32,
+    input_meta: &InputMetadata,
     row_keys_proto: &Option<Vec<u8>>,
     zonemap_regexes: &std::collections::HashMap<String, String>,
 ) -> Vec<KeyValue> {
     let mut kvs = Vec::new();
 
-    if !config.sort_fields.is_empty() {
+    if !input_meta.sort_fields.is_empty() {
         kvs.push(KeyValue::new(
             PARQUET_META_SORT_FIELDS.to_string(),
-            config.sort_fields.clone(),
+            input_meta.sort_fields.clone(),
         ));
     }
 
-    if let Some(ws) = config.window_start_secs {
+    if let Some(ws) = input_meta.window_start_secs {
         kvs.push(KeyValue::new(
             PARQUET_META_WINDOW_START.to_string(),
             ws.to_string(),
         ));
     }
 
-    if config.window_duration_secs > 0 {
+    if input_meta.window_duration_secs > 0 {
         kvs.push(KeyValue::new(
             PARQUET_META_WINDOW_DURATION.to_string(),
-            config.window_duration_secs.to_string(),
+            input_meta.window_duration_secs.to_string(),
         ));
     }
 
     kvs.push(KeyValue::new(
         PARQUET_META_NUM_MERGE_OPS.to_string(),
-        num_merge_ops.to_string(),
+        input_meta.num_merge_ops.to_string(),
     ));
 
     if let Some(rk_bytes) = row_keys_proto {
