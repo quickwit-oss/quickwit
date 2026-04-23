@@ -992,7 +992,12 @@ fn list_parquet_splits(
         .collect();
 
     // Sort by split_id for deterministic pagination.
-    results.sort_by(|a, b| a.metadata.split_id.as_str().cmp(b.metadata.split_id.as_str()));
+    results.sort_by(|a, b| {
+        a.metadata
+            .split_id
+            .as_str()
+            .cmp(b.metadata.split_id.as_str())
+    });
 
     // Apply cursor: skip splits up to and including after_split_id.
     if let Some(ref after_id) = query.after_split_id {
