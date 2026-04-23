@@ -1115,6 +1115,87 @@ fn test_merge_cross_row_group_interleaving() {
     );
 }
 
+#[test]
+fn test_merge_cross_record_batch_interleaving() {
+    // Test that the merge correctly handles inputs that yield multiple
+    // Arrow RecordBatches when read. We force a read batch size of 2 rows,
+    // so each input is read as multiple RecordBatches that must be
+    // concatenated before the merge can operate on them.
+    //
+    // This exercises the concat_batches path in read_inputs and proves
+    // that RecordBatch boundaries within a file don't affect the merge.
+    let dir = TempDir::new().unwrap();
+
+    // Input 1: 6 rows, will be read as 3 batches of 2 rows each.
+    let input1 = write_test_split(
+        dir.path(),
+        "input1.parquet",
+        &["alpha", "alpha", "beta", "beta", "gamma", "gamma"],
+        &[200, 100, 200, 100, 200, 100],
+        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        &[10, 10, 20, 20, 30, 30],
+    );
+
+    // Input 2: 6 rows, will be read as 3 batches of 2 rows each.
+    let input2 = write_test_split(
+        dir.path(),
+        "input2.parquet",
+        &["alpha", "alpha", "beta", "beta", "gamma", "gamma"],
+        &[150, 50, 150, 50, 150, 50],
+        &[11.0, 12.0, 13.0, 14.0, 15.0, 16.0],
+        &[10, 10, 20, 20, 30, 30],
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let config = MergeConfig {
+        sort_fields: TEST_SORT_FIELDS.to_string(),
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+        window_start_secs: Some(0),
+        window_duration_secs: 900,
+        input_num_merge_ops: 0,
+    };
+
+    // Force read batch size of 2 — each 6-row file yields 3 RecordBatches.
+    let outputs = crate::merge::merge_sorted_parquet_files_with_read_batch_size(
+        &[input1, input2],
+        &output_dir,
+        &config,
+        2, // 2 rows per RecordBatch
+    )
+    .unwrap();
+
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(outputs[0].num_rows, 12, "MC-1: all 12 rows must survive");
+
+    let batch = read_parquet_file(&outputs[0].path);
+    let names = extract_string_column(&batch, "metric_name");
+    let timestamps = extract_u64_column(&batch, "timestamp_secs");
+    let values = extract_f64_column(&batch, "value");
+
+    // Expected: alpha(200,150,100,50), beta(200,150,100,50), gamma(200,150,100,50)
+    assert_eq!(
+        names,
+        vec![
+            "alpha", "alpha", "alpha", "alpha",
+            "beta", "beta", "beta", "beta",
+            "gamma", "gamma", "gamma", "gamma",
+        ]
+    );
+    assert_eq!(
+        timestamps,
+        vec![200, 150, 100, 50, 200, 150, 100, 50, 200, 150, 100, 50]
+    );
+    // Values trace back to which input each row came from:
+    // alpha: 200(v=1,input1), 150(v=11,input2), 100(v=2,input1), 50(v=12,input2)
+    assert_eq!(
+        values,
+        vec![1.0, 11.0, 2.0, 12.0, 3.0, 13.0, 4.0, 14.0, 5.0, 15.0, 6.0, 16.0]
+    );
+}
+
 /// Build a test RecordBatch from raw column data (shared by test helpers).
 fn build_test_batch(
     metric_names: &[&str],

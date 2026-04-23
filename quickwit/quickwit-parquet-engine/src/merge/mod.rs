@@ -98,6 +98,27 @@ pub fn merge_sorted_parquet_files(
     output_dir: &Path,
     config: &MergeConfig,
 ) -> Result<Vec<MergeOutputFile>> {
+    merge_sorted_parquet_files_impl(input_paths, output_dir, config, None)
+}
+
+/// Test-only variant that forces a small Parquet read batch size to exercise
+/// the multi-RecordBatch concatenation path.
+#[cfg(test)]
+pub(crate) fn merge_sorted_parquet_files_with_read_batch_size(
+    input_paths: &[PathBuf],
+    output_dir: &Path,
+    config: &MergeConfig,
+    read_batch_size: usize,
+) -> Result<Vec<MergeOutputFile>> {
+    merge_sorted_parquet_files_impl(input_paths, output_dir, config, Some(read_batch_size))
+}
+
+fn merge_sorted_parquet_files_impl(
+    input_paths: &[PathBuf],
+    output_dir: &Path,
+    config: &MergeConfig,
+    read_batch_size: Option<usize>,
+) -> Result<Vec<MergeOutputFile>> {
     if input_paths.is_empty() {
         bail!("merge requires at least one input file");
     }
@@ -113,7 +134,7 @@ pub fn merge_sorted_parquet_files(
     );
 
     // Step 1: Read all input files into RecordBatches.
-    let inputs = read_inputs(input_paths)?;
+    let inputs = read_inputs(input_paths, read_batch_size)?;
     let total_rows: usize = inputs.iter().map(|b| b.num_rows()).sum();
 
     if total_rows == 0 {
@@ -182,15 +203,24 @@ pub fn merge_sorted_parquet_files(
 }
 
 /// Read each input Parquet file into a single RecordBatch.
-fn read_inputs(paths: &[PathBuf]) -> Result<Vec<RecordBatch>> {
+///
+/// When `read_batch_size` is `Some(n)`, the Parquet reader yields batches
+/// of at most `n` rows, which are then concatenated. This exercises the
+/// multi-batch concatenation path in tests. In production, `None` uses
+/// the reader's default batch size.
+fn read_inputs(paths: &[PathBuf], read_batch_size: Option<usize>) -> Result<Vec<RecordBatch>> {
     let mut batches = Vec::with_capacity(paths.len());
 
     for path in paths {
         let file = std::fs::File::open(path)
             .with_context(|| format!("opening input file: {}", path.display()))?;
 
-        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+        let mut builder = ParquetRecordBatchReaderBuilder::try_new(file)
             .with_context(|| format!("reading parquet footer: {}", path.display()))?;
+
+        if let Some(batch_size) = read_batch_size {
+            builder = builder.with_batch_size(batch_size);
+        }
 
         let reader = builder
             .build()
