@@ -29,6 +29,7 @@ quick_cache = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+stable_deref_trait = { workspace = true }
 tantivy = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }

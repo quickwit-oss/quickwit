@@ -24,6 +24,7 @@ use tokio::io::{AsyncRead, AsyncWriteExt as TokioAsyncWriteExt};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 
 use crate::metrics::object_storage_get_slice_in_flight_guards;
+use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, MultiPartPolicy, OwnedBytes, PutPayload, Storage, StorageError,
@@ -123,8 +124,11 @@ impl Storage for OpendalStorage {
         // recorded before issuing the query to the object store.
         let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
         crate::STORAGE_METRICS.object_storage_get_total.inc();
-        let storage_content = self.op.read_with(&path).range(range).await?.to_vec();
-        Ok(OwnedBytes::new(storage_content))
+        // `Buffer::to_bytes` is zero-copy when the underlying buffer is contiguous, and coalesces
+        // into a single `Bytes` otherwise — avoiding the extra `Vec<u8>` round-trip `to_vec` would
+        // perform.
+        let storage_content = self.op.read_with(&path).range(range).await?.to_bytes();
+        Ok(into_owned_bytes(storage_content))
     }
 
     async fn get_slice_stream(
@@ -146,8 +150,8 @@ impl Storage for OpendalStorage {
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
-        let storage_content = self.op.read(&path).await?.to_vec();
-        Ok(OwnedBytes::new(storage_content))
+        let storage_content = self.op.read(&path).await?.to_bytes();
+        Ok(into_owned_bytes(storage_content))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
