@@ -187,6 +187,9 @@ pub struct SearchRequest {
     pub ignore_missing_indexes: bool,
     #[prost(string, optional, tag = "19")]
     pub split_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// The user agent of the client that initiated the search request.
+    #[prost(string, optional, tag = "20")]
+    pub user_agent: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

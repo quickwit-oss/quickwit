@@ -14,6 +14,7 @@
 
 use bytes::Bytes;
 use bytesize::ByteSize;
+use http::HeaderValue;
 use serde::de::DeserializeOwned;
 use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
@@ -165,14 +166,21 @@ pub(crate) fn elastic_resolve_index_filter()
 }
 
 #[utoipa::path(get, tag = "Count", path = "/{index}/_count")]
-pub(crate) fn elastic_index_count_filter()
--> impl Filter<Extract = (Vec<String>, SearchQueryParamsCount, SearchBody), Error = Rejection> + Clone
-{
+pub(crate) fn elastic_index_count_filter() -> impl Filter<
+    Extract = (
+        Vec<String>,
+        SearchQueryParamsCount,
+        SearchBody,
+        Option<HeaderValue>,
+    ),
+    Error = Rejection,
+> + Clone {
     warp::path!("_elastic" / String / "_count")
         .and_then(extract_index_id_patterns)
         .and(warp::get().or(warp::post()).unify())
         .and(warp::query())
         .and(json_or_empty())
+        .and(warp::header::optional::<HeaderValue>("user-agent"))
 }
 
 #[utoipa::path(delete, tag = "Indexes", path = "/{index}")]
@@ -222,23 +230,33 @@ pub(crate) fn elastic_cat_indices_filter()
 }
 
 #[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
-pub(crate) fn elastic_index_search_filter()
--> impl Filter<Extract = (Vec<String>, SearchQueryParams, SearchBody), Error = Rejection> + Clone {
+pub(crate) fn elastic_index_search_filter() -> impl Filter<
+    Extract = (
+        Vec<String>,
+        SearchQueryParams,
+        SearchBody,
+        Option<HeaderValue>,
+    ),
+    Error = Rejection,
+> + Clone {
     warp::path!("_elastic" / String / "_search")
         .and_then(extract_index_id_patterns)
         .and(warp::get().or(warp::post()).unify())
         .and(warp::query())
         .and(json_or_empty())
+        .and(warp::header::optional::<HeaderValue>("user-agent"))
 }
 
 #[utoipa::path(post, tag = "Search", path = "/_msearch")]
 pub(crate) fn elastic_multi_search_filter()
--> impl Filter<Extract = (Bytes, MultiSearchQueryParams), Error = Rejection> + Clone {
+-> impl Filter<Extract = (Bytes, MultiSearchQueryParams, Option<HeaderValue>), Error = Rejection> + Clone
+{
     warp::path!("_elastic" / "_msearch")
         .and(warp::body::content_length_limit(BODY_LENGTH_LIMIT.as_u64()))
         .and(warp::body::bytes())
         .and(warp::post())
         .and(warp::query())
+        .and(warp::header::optional::<HeaderValue>("user-agent"))
 }
 
 fn merge_scroll_body_params(

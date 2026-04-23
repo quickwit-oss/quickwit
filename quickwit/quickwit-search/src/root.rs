@@ -407,6 +407,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         count_hits: quickwit_proto::search::CountHits::Underestimate as i32,
         ignore_missing_indexes: req.ignore_missing_indexes,
         split_id: req.split_id.clone(),
+        user_agent: req.user_agent.clone(),
     })
 }
 
@@ -824,7 +825,11 @@ pub(crate) async fn search_partial_hits_phase(
     }
 
     if !leaf_search_response.failed_splits.is_empty() {
-        quickwit_common::rate_limited_error!(limit_per_min=6, failed_splits = ?leaf_search_response.failed_splits, "leaf search response contains at least one failed split");
+        quickwit_common::rate_limited_error!(
+            limit_per_min = 6,
+            failed_splits = ?PrettySample::new(&leaf_search_response.failed_splits, 5),
+            "leaf search response contains at least one failed split"
+        );
     }
 
     Ok(leaf_search_response)
@@ -1263,6 +1268,7 @@ pub async fn root_search(
 
     let (split_metadatas, indexes_meta_for_leaf_search) = SearchPlanMetricsFuture {
         start: start_instant,
+        user_agent: search_request.user_agent.clone().unwrap_or_default(),
         tracked: plan_splits_for_root_search(&mut search_request, &mut metastore),
         is_success: None,
     }
@@ -1274,6 +1280,8 @@ pub async fn root_search(
     // It would have been nice to add those in the context of the trace span,
     // but with our current logging setting, it makes logs too verbose.
     info!(
+        indexes = ?PrettySample::new(&search_request.index_id_patterns, 5),
+        user_agent = search_request.user_agent.as_deref().unwrap_or_default(),
         query_ast = search_request.query_ast.as_str(),
         agg = search_request.aggregation_request(),
         start_ts = ?(search_request.start_timestamp()..search_request.end_timestamp()),
@@ -1300,6 +1308,7 @@ pub async fn root_search(
 
     let mut search_response_result = RootSearchMetricsFuture {
         start: start_instant,
+        user_agent: search_request.user_agent.clone().unwrap_or_default(),
         tracked: root_search_aux(
             searcher_context,
             &indexes_meta_for_leaf_search,

@@ -15,6 +15,7 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
+use http::HeaderValue;
 use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, SortField, SortOrder};
@@ -246,6 +247,7 @@ mod count_hits_from_bool {
 pub fn search_request_from_api_request(
     index_id_patterns: Vec<String>,
     search_request: SearchRequestQueryString,
+    user_agent: Option<String>,
 ) -> Result<quickwit_proto::search::SearchRequest, SearchError> {
     // The query ast below may still contain user input query. The actual
     // parsing of the user query will happen in the root service, and might require
@@ -269,6 +271,7 @@ pub fn search_request_from_api_request(
         count_hits: search_request.count_all.into(),
         ignore_missing_indexes: false,
         split_id: search_request.split_id,
+        user_agent,
     };
     Ok(search_request)
 }
@@ -276,10 +279,12 @@ pub fn search_request_from_api_request(
 async fn search_endpoint(
     index_id_patterns: Vec<String>,
     search_request: SearchRequestQueryString,
+    user_agent: Option<String>,
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
     let allow_failed_splits = search_request.allow_failed_splits;
-    let search_request = search_request_from_api_request(index_id_patterns, search_request)?;
+    let search_request =
+        search_request_from_api_request(index_id_patterns, search_request, user_agent)?;
     let search_response =
         search_service
             .root_search(search_request)
@@ -298,20 +303,24 @@ async fn search_endpoint(
 }
 
 fn search_get_filter()
--> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+-> impl Filter<Extract = (Vec<String>, SearchRequestQueryString, Option<HeaderValue>), Error = Rejection>
++ Clone {
     warp::path!(String / "search")
         .and_then(extract_index_id_patterns)
         .and(warp::get())
         .and(warp::query())
+        .and(warp::header::optional::<HeaderValue>("user-agent"))
 }
 
 fn search_post_filter()
--> impl Filter<Extract = (Vec<String>, SearchRequestQueryString), Error = Rejection> + Clone {
+-> impl Filter<Extract = (Vec<String>, SearchRequestQueryString, Option<HeaderValue>), Error = Rejection>
++ Clone {
     warp::path!(String / "search")
         .and_then(extract_index_id_patterns)
         .and(warp::post())
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::body::json())
+        .and(warp::header::optional::<HeaderValue>("user-agent"))
 }
 
 fn search_plan_get_filter()
@@ -334,11 +343,18 @@ fn search_plan_post_filter()
 async fn search(
     index_id_patterns: Vec<String>,
     search_request: SearchRequestQueryString,
+    user_agent: Option<HeaderValue>,
     search_service: Arc<dyn SearchService>,
 ) -> impl warp::Reply {
     info!(request =? search_request, "search");
     let body_format = search_request.format;
-    let result = search_endpoint(index_id_patterns, search_request, &*search_service).await;
+    let result = search_endpoint(
+        index_id_patterns,
+        search_request,
+        user_agent.and_then(|h| h.to_str().ok().map(str::to_owned)),
+        &*search_service,
+    )
+    .await;
     into_rest_api_response(result, body_format)
 }
 
@@ -349,7 +365,8 @@ async fn search_plan(
 ) -> impl warp::Reply {
     let body_format = search_request.format;
     let result: Result<SearchPlanResponseRest, SearchError> = async {
-        let plan_request = search_request_from_api_request(index_id_patterns, search_request)?;
+        let plan_request =
+            search_request_from_api_request(index_id_patterns, search_request, None)?;
         let plan_response = search_service.search_plan(plan_request).await?;
         let response = serde_json::from_str(&plan_response.result)?;
         Ok(response)
@@ -522,7 +539,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_api_route_post() {
         let rest_search_api_filter = search_post_filter();
-        let (indexes, req) = warp::test::request()
+        let (indexes, req, _) = warp::test::request()
             .method("POST")
             .path("/quickwit-demo-index/search")
             .json(&true)
@@ -550,7 +567,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_api_route_post_multi_indexes() {
         let rest_search_api_filter = search_post_filter();
-        let (indexes, req) = warp::test::request()
+        let (indexes, req, _) = warp::test::request()
             .method("POST")
             .path("/quickwit-demo-index,quickwit-demo,quickwit-demo-index-*/search")
             .json(&true)
@@ -605,7 +622,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_api_route_simple() {
         let rest_search_api_filter = search_get_filter();
-        let (indexes, req) = warp::test::request()
+        let (indexes, req, _) = warp::test::request()
             .path(
                 "/quickwit-demo-index/search?query=*&end_timestamp=1450720000&max_hits=10&\
                  start_offset=22",
@@ -633,7 +650,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_api_route_count_all() {
         let rest_search_api_filter = search_get_filter();
-        let (indexes, req) = warp::test::request()
+        let (indexes, req, _) = warp::test::request()
             .path("/quickwit-demo-index/search?query=*&count_all=true")
             .filter(&rest_search_api_filter)
             .await
@@ -651,7 +668,7 @@ mod tests {
             }
         );
         let rest_search_api_filter = search_get_filter();
-        let (indexes, req) = warp::test::request()
+        let (indexes, req, _) = warp::test::request()
             .path("/quickwit-demo-index/search?query=*&count_all=false")
             .filter(&rest_search_api_filter)
             .await
@@ -673,7 +690,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_api_route_simple_default_num_hits_default_offset() {
         let rest_search_api_filter = search_get_filter();
-        let (indexes, req) = warp::test::request()
+        let (indexes, req, _) = warp::test::request()
             .path(
                 "/quickwit-demo-index/search?query=*&end_timestamp=1450720000&search_field=title,\
                  body",
@@ -701,7 +718,7 @@ mod tests {
     #[tokio::test]
     async fn test_rest_search_api_route_simple_format() {
         let rest_search_api_filter = search_get_filter();
-        let (indexes, req) = warp::test::request()
+        let (indexes, req, _) = warp::test::request()
             .path("/quickwit-demo-index/search?query=*&format=json")
             .filter(&rest_search_api_filter)
             .await
@@ -826,7 +843,7 @@ mod tests {
                 "/quickwit-demo-index/search?query=*&format=json&sort_by={sort_by_query_param}"
             );
             let rest_search_api_filter = search_get_filter();
-            let (_, req) = warp::test::request()
+            let (_, req, _) = warp::test::request()
                 .path(&path)
                 .filter(&rest_search_api_filter)
                 .await
@@ -840,7 +857,7 @@ mod tests {
         }
 
         let rest_search_api_filter = search_get_filter();
-        let (_, req) = warp::test::request()
+        let (_, req, _) = warp::test::request()
             .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=fiel1")
             .filter(&rest_search_api_filter)
             .await

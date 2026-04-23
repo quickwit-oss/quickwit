@@ -7108,6 +7108,7 @@ dependencies = [
  "mockall",
  "once_cell",
  "percent-encoding",
+ "pin-project",
  "pprof",
  "prost 0.14.1",
  "prost-types 0.14.1",

@@ -687,7 +687,7 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
         split_id: None,
     };
     let search_request =
-        search_request_from_api_request(vec![args.index_id], search_request_query_string)?;
+        search_request_from_api_request(vec![args.index_id], search_request_query_string, None)?;
     debug!(search_request=?search_request, "search-request");
     let search_response: SearchResponse =
         single_node_search(search_request, metastore, storage_resolver).await?;

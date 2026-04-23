@@ -105,9 +105,9 @@ impl SplitSearchOutcomeCounters {
 }
 
 pub struct SearchMetrics {
-    pub root_search_requests_total: IntCounterVec<1>,
-    pub root_search_request_duration_seconds: HistogramVec<1>,
-    pub root_search_targeted_splits: HistogramVec<1>,
+    pub root_search_requests_total: IntCounterVec<2>,
+    pub root_search_request_duration_seconds: HistogramVec<2>,
+    pub root_search_targeted_splits: HistogramVec<2>,
     pub leaf_search_requests_total: IntCounterVec<2>,
     pub leaf_search_request_duration_seconds: HistogramVec<2>,
     pub leaf_search_targeted_splits: HistogramVec<2>,
@@ -170,14 +170,14 @@ impl Default for SearchMetrics {
                 "Total number of root search gRPC requests processed.",
                 "search",
                 &[("kind", "server")],
-                ["status"],
+                ["user_agent", "status"],
             ),
             root_search_request_duration_seconds: new_histogram_vec(
                 "root_search_request_duration_seconds",
                 "Duration of root search gRPC requests in seconds.",
                 "search",
                 &[("kind", "server")],
-                ["status"],
+                ["user_agent", "status"],
                 duration_buckets(),
             ),
             root_search_targeted_splits: new_histogram_vec(
@@ -185,7 +185,7 @@ impl Default for SearchMetrics {
                 "Number of splits targeted per root search GRPC request.",
                 "search",
                 &[],
-                ["status"],
+                ["user_agent", "status"],
                 targeted_splits_buckets.clone(),
             ),
             leaf_search_requests_total: new_counter_vec(

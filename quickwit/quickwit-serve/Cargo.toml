@@ -31,6 +31,7 @@ itertools = { workspace = true }
 mime_guess = { workspace = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
+pin-project = { workspace = true }
 pprof = { workspace = true, optional = true }
 prost = { workspace = true }
 prost-types = { workspace = true }

@@ -25,7 +25,7 @@ use quickwit_proto::ingest::Shard;
 use quickwit_serve::{
     ListSplitsQueryParams, ListSplitsResponse, RestIngestResponse, SearchRequestQueryString,
 };
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::tls::Certificate;
 use reqwest::{ClientBuilder as ReqwestClientBuilder, Method, StatusCode, Url};
 use reqwest_middleware::{ClientBuilder as ReqwestMiddlewareClientBuilder, ClientWithMiddleware};
@@ -112,6 +112,7 @@ impl Transport {
         }
         let mut request_headers = HeaderMap::new();
         request_headers.insert(CONTENT_TYPE, HeaderValue::from_static(DEFAULT_CONTENT_TYPE));
+        request_headers.insert(USER_AGENT, HeaderValue::from_static("qw-rest-client"));
         if let Some(header_map_val) = header_map {
             request_headers.extend(header_map_val.into_iter());
         }

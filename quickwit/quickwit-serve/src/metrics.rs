@@ -19,8 +19,8 @@ use quickwit_common::metrics::{
 };
 
 pub struct ServeMetrics {
-    pub http_requests_total: IntCounterVec<2>,
-    pub request_duration_secs: HistogramVec<2>,
+    pub http_requests_total: IntCounterVec<1>,
+    pub request_duration_secs: HistogramVec<1>,
     pub ongoing_requests: IntGaugeVec<1>,
     pub pending_requests: IntGaugeVec<1>,
     pub circuit_break_total: IntCounter,
@@ -40,14 +40,14 @@ impl Default for ServeMetrics {
                 "Total number of HTTP requests processed.",
                 "",
                 &[],
-                ["method", "status_code"],
+                ["status_code"],
             ),
             request_duration_secs: new_histogram_vec(
                 "request_duration_secs",
                 "Response time in seconds",
                 "",
                 &[],
-                ["method", "status_code"],
+                ["status_code"],
                 // last bucket is 163.84s
                 quickwit_common::metrics::exponential_buckets(0.02, 2.0, 14).unwrap(),
             ),

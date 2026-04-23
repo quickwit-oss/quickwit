@@ -249,6 +249,9 @@ message SearchRequest {
   bool ignore_missing_indexes = 18;
 
   optional string split_id = 19;
+
+  // The user agent of the client that initiated the search request.
+  optional string user_agent = 20;
 }
 
 enum CountHits {
