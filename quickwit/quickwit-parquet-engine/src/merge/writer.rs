@@ -224,6 +224,8 @@ fn build_merge_kv_metadata(
         ));
 
         // Best-effort human-readable JSON for debugging.
+        // Allow nested if: let-chain form triggers a rustfmt parse error.
+        #[allow(clippy::collapsible_if)]
         if let Ok(rk) = quickwit_proto::sortschema::RowKeys::decode(rk_bytes.as_slice()) {
             if let Ok(json) = serde_json::to_string(&rk) {
                 kvs.push(KeyValue::new(PARQUET_META_ROW_KEYS_JSON.to_string(), json));

@@ -214,6 +214,8 @@ fn build_husky_ordered_schema(
     }
 
     // Phase 1b: sorted_series immediately after sort columns.
+    // Allow nested if: let-chain form triggers a rustfmt parse error.
+    #[allow(clippy::collapsible_if)]
     if let Some(field) = field_map.get(SORTED_SERIES_COLUMN) {
         if !used.contains(SORTED_SERIES_COLUMN) {
             ordered_fields.push(Arc::clone(field));
