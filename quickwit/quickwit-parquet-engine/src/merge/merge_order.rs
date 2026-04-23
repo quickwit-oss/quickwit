@@ -196,6 +196,29 @@ pub fn compute_merge_order(inputs: &[RecordBatch], sort_fields_str: &str) -> Res
         row_arrays.push(Some(rows));
     }
 
+    // Extract sorted_series arrays for checking series boundaries during
+    // run extension. A run must not span multiple series — otherwise
+    // output boundary computation cannot find transitions within runs.
+    let ss_arrays: Vec<Option<&BinaryArray>> = inputs
+        .iter()
+        .map(|batch| {
+            if batch.num_rows() == 0 {
+                return None;
+            }
+            let idx = batch
+                .schema()
+                .index_of(SORTED_SERIES_COLUMN)
+                .expect("sorted_series column must exist");
+            Some(
+                batch
+                    .column(idx)
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .expect("sorted_series must be Binary"),
+            )
+        })
+        .collect();
+
     // Build shared state for heap entries.
     let state = Arc::new(MergeHeapState {
         row_arrays,
@@ -219,12 +242,20 @@ pub fn compute_merge_order(inputs: &[RecordBatch], sort_fields_str: &str) -> Res
     }
 
     // K-way merge: pop smallest, extend or start a run, push next row.
+    //
+    // A run is only extended when the new row is consecutive from the same
+    // input AND has the same sorted_series value as the run's start row.
+    // This guarantees every MergeRun contains exactly one series, so
+    // compute_output_boundaries can find all series transitions by
+    // comparing adjacent runs.
     while let Some(entry) = heap.pop() {
         // Extend the current run or start a new one.
         let extends_current = match merge_order.last() {
             Some(run) => {
                 run.input_index == entry.input_index
                     && run.start_row + run.row_count == entry.row_pos
+                    && ss_arrays[entry.input_index].unwrap().value(run.start_row)
+                        == ss_arrays[entry.input_index].unwrap().value(entry.row_pos)
             }
             None => false,
         };

@@ -1191,6 +1191,74 @@ fn count_row_groups(path: &std::path::Path) -> usize {
     builder.metadata().num_row_groups()
 }
 
+#[test]
+fn test_merge_single_input_splits_into_multiple_outputs() {
+    // Regression test: when a single input contains multiple series
+    // (alpha, beta, gamma), the k-way merge produces one contiguous run
+    // covering all rows. The output boundary computation must still detect
+    // series transitions within that run and split into M outputs.
+    //
+    // Without the fix, transition_indices stays empty (only inter-run
+    // transitions were checked), so num_outputs=3 produces 1 output.
+    let dir = TempDir::new().unwrap();
+
+    // Single input with 3 distinct series, 2 rows each.
+    let input1 = write_test_split(
+        dir.path(),
+        "input1.parquet",
+        &["alpha", "alpha", "beta", "beta", "gamma", "gamma"],
+        &[200, 100, 200, 100, 200, 100],
+        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+        &[10, 10, 20, 20, 30, 30],
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let config = MergeConfig {
+        num_outputs: 3,
+        writer_config: ParquetWriterConfig::default(),
+    };
+
+    let outputs =
+        merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
+
+    // Must produce 3 outputs — one per series.
+    assert_eq!(
+        outputs.len(),
+        3,
+        "single input with 3 series and num_outputs=3 must produce 3 files, \
+         got {}",
+        outputs.len()
+    );
+
+    // Each output should have exactly 2 rows.
+    for (i, output) in outputs.iter().enumerate() {
+        assert_eq!(
+            output.num_rows, 2,
+            "output {} should have 2 rows, got {}",
+            i, output.num_rows
+        );
+    }
+
+    // Verify each output contains exactly one series.
+    let batch0 = read_parquet_file(&outputs[0].path);
+    let batch1 = read_parquet_file(&outputs[1].path);
+    let batch2 = read_parquet_file(&outputs[2].path);
+
+    let names0 = extract_string_column(&batch0, "metric_name");
+    let names1 = extract_string_column(&batch1, "metric_name");
+    let names2 = extract_string_column(&batch2, "metric_name");
+
+    assert_eq!(names0, vec!["alpha", "alpha"]);
+    assert_eq!(names1, vec!["beta", "beta"]);
+    assert_eq!(names2, vec!["gamma", "gamma"]);
+
+    // Total rows preserved (MC-1).
+    let total: usize = outputs.iter().map(|o| o.num_rows).sum();
+    assert_eq!(total, 6);
+}
+
 // ---- Proptest DST: property-based invariant verification ----
 
 mod proptests {
