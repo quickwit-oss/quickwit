@@ -1220,15 +1220,13 @@ fn test_merge_single_input_splits_into_multiple_outputs() {
         writer_config: ParquetWriterConfig::default(),
     };
 
-    let outputs =
-        merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
+    let outputs = merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
 
     // Must produce 3 outputs — one per series.
     assert_eq!(
         outputs.len(),
         3,
-        "single input with 3 series and num_outputs=3 must produce 3 files, \
-         got {}",
+        "single input with 3 series and num_outputs=3 must produce 3 files, got {}",
         outputs.len()
     );
 
@@ -1272,7 +1270,9 @@ fn test_merge_split_after_oversized_series() {
     let input1 = write_test_split(
         dir.path(),
         "input1.parquet",
-        &["alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "beta", "gamma"],
+        &[
+            "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "beta", "gamma",
+        ],
         &[600, 500, 400, 300, 200, 100, 100, 100],
         &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
         &[10, 10, 10, 10, 10, 10, 20, 30],
