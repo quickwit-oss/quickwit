@@ -32,6 +32,7 @@ pub mod test_utils;
 
 use std::sync::Arc;
 
+use datafusion::arrow as arrow;
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
 use async_trait::async_trait;
 use datafusion::catalog::TableProviderFactory;

@@ -31,6 +31,7 @@ use std::io::Cursor;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use datafusion::arrow as arrow;
 use arrow::array::RecordBatch;
 use arrow::ipc::writer::StreamWriter;
 use datafusion::execution::SendableRecordBatchStream;

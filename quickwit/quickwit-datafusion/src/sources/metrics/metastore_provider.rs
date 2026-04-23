@@ -17,9 +17,9 @@
 use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
 use quickwit_metastore::{
-    ListMetricsSplitsQuery, ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt,
+    ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
 };
-use quickwit_parquet_engine::split::MetricsSplitMetadata;
+use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_proto::metastore::{
     ListMetricsSplitsRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -57,7 +57,7 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
             num_splits,
         )
     )]
-    async fn list_splits(&self, query: &MetricsSplitQuery) -> DFResult<Vec<MetricsSplitMetadata>> {
+    async fn list_splits(&self, query: &MetricsSplitQuery) -> DFResult<Vec<ParquetSplitMetadata>> {
         let metastore_query = to_metastore_query(&self.index_uid, query);
 
         let request =
@@ -78,7 +78,7 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
         // The metastore guarantees only Published splits are returned because
         // `to_metastore_query` sets `split_states = vec![Published]`. No
         // client-side re-filter is needed here.
-        let splits: Vec<MetricsSplitMetadata> =
+        let splits: Vec<ParquetSplitMetadata> =
             records.into_iter().map(|record| record.metadata).collect();
 
         tracing::Span::current().record("num_splits", splits.len());
@@ -93,19 +93,19 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
 /// Only metric name and time range are forwarded — the only dimensions the
 /// metastore reliably populates today. Tag-based pruning will be wired once
 /// the zonemap/bloom-filter mechanism is in place.
-fn to_metastore_query(index_uid: &IndexUid, query: &MetricsSplitQuery) -> ListMetricsSplitsQuery {
-    let mut metastore_query = ListMetricsSplitsQuery::for_index(index_uid.clone());
+fn to_metastore_query(index_uid: &IndexUid, query: &MetricsSplitQuery) -> ListParquetSplitsQuery {
+    let mut metastore_query = ListParquetSplitsQuery::for_index(index_uid.clone());
 
     if let Some(ref names) = query.metric_names {
         metastore_query.metric_names = names.clone();
     }
 
     if let Some(start) = query.time_range_start {
-        metastore_query.time_range_start = Some(start as i64);
+        metastore_query = metastore_query.with_time_range_start_gte(start as i64);
     }
 
     if let Some(end) = query.time_range_end {
-        metastore_query.time_range_end = Some(end as i64);
+        metastore_query = metastore_query.with_time_range_end_lte(end as i64);
     }
 
     metastore_query

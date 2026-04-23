@@ -55,6 +55,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use datafusion::arrow as arrow;
 use datafusion::catalog::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;

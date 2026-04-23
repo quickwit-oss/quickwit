@@ -52,6 +52,7 @@
 
 use std::sync::Arc;
 
+use datafusion::arrow as arrow;
 use arrow::datatypes::SchemaRef;
 use async_trait::async_trait;
 use datafusion::catalog::TableProvider;

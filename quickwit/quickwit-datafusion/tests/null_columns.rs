@@ -21,13 +21,14 @@
 use std::sync::Arc;
 
 use arrow::array::{
-    Array, DictionaryArray, Float64Array, Int32Array, Int64Array, RecordBatch, StringArray,
-    UInt8Array, UInt64Array,
+    DictionaryArray, Float64Array, Int32Array, Int64Array, RecordBatch, StringArray, UInt8Array,
+    UInt64Array,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch_with_tags;
 use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry};
+use quickwit_parquet_engine::timeseries_id::compute_timeseries_id;
 
 mod common;
 
@@ -42,7 +43,9 @@ fn make_narrow_batch(metric_name: &str, timestamps: &[u64], values: &[f64]) -> R
         Field::new("metric_type", DataType::UInt8, false),
         Field::new("timestamp_secs", DataType::UInt64, false),
         Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
     ]));
+    let timeseries_id = compute_timeseries_id(metric_name, 0, &std::collections::HashMap::new());
     let keys = Int32Array::from(vec![0i32; n]);
     let vals = StringArray::from(vec![metric_name]);
     let metric_col = Arc::new(DictionaryArray::<Int32Type>::try_new(keys, Arc::new(vals)).unwrap());
@@ -53,12 +56,16 @@ fn make_narrow_batch(metric_name: &str, timestamps: &[u64], values: &[f64]) -> R
             Arc::new(UInt8Array::from(vec![0u8; n])),
             Arc::new(UInt64Array::from(timestamps.to_vec())),
             Arc::new(Float64Array::from(values.to_vec())),
+            Arc::new(Int64Array::from(vec![timeseries_id; n])),
         ],
     )
     .unwrap()
 }
 
-async fn run_sql(builder: &DataFusionSessionBuilder, sql: &str) -> Vec<RecordBatch> {
+async fn run_sql(
+    builder: &DataFusionSessionBuilder,
+    sql: &str,
+) -> Vec<datafusion::arrow::array::RecordBatch> {
     let ctx = builder.build_session().unwrap();
     let fragments: Vec<&str> = sql
         .split(';')
@@ -133,7 +140,7 @@ async fn test_null_columns_for_missing_parquet_fields() {
         .column_by_name("total_rows")
         .unwrap()
         .as_any()
-        .downcast_ref::<Int64Array>()
+        .downcast_ref::<datafusion::arrow::array::Int64Array>()
         .unwrap()
         .value(0);
     assert_eq!(total, 4);
@@ -142,7 +149,7 @@ async fn test_null_columns_for_missing_parquet_fields() {
         .column_by_name("rows_with_service")
         .unwrap()
         .as_any()
-        .downcast_ref::<Int64Array>()
+        .downcast_ref::<datafusion::arrow::array::Int64Array>()
         .unwrap()
         .value(0);
     assert_eq!(
@@ -154,7 +161,7 @@ async fn test_null_columns_for_missing_parquet_fields() {
         .column_by_name("rows_with_env")
         .unwrap()
         .as_any()
-        .downcast_ref::<Int64Array>()
+        .downcast_ref::<datafusion::arrow::array::Int64Array>()
         .unwrap()
         .value(0);
     assert_eq!(with_env, 2);

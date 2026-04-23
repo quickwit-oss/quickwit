@@ -26,6 +26,7 @@
 
 use std::sync::Arc;
 
+use datafusion::arrow as arrow;
 use arrow::array::{Float64Array, Int64Array};
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch;

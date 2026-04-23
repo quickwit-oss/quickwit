@@ -21,6 +21,7 @@ use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
+use datafusion::arrow as arrow;
 use arrow::compute::SortOptions;
 use arrow::datatypes::SchemaRef;
 use async_trait::async_trait;
@@ -37,11 +38,20 @@ use datafusion_datasource::file_scan_config::FileScanConfigBuilder;
 use datafusion_datasource_parquet::source::ParquetSource;
 use datafusion_physical_plan::expressions::Column;
 use quickwit_common::uri::Uri;
-use quickwit_parquet_engine::schema::SORT_ORDER;
-use quickwit_parquet_engine::split::MetricsSplitMetadata;
+use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use tracing::debug;
 
 use super::predicate;
+
+const METRICS_SORT_ORDER: &[&str] = &[
+    "metric_name",
+    "service",
+    "env",
+    "datacenter",
+    "region",
+    "host",
+    "timestamp_secs",
+];
 
 /// Provides split metadata for a metrics index.
 #[async_trait]
@@ -49,7 +59,7 @@ pub trait MetricsSplitProvider: Send + Sync + fmt::Debug {
     async fn list_splits(
         &self,
         query: &predicate::MetricsSplitQuery,
-    ) -> DFResult<Vec<MetricsSplitMetadata>>;
+    ) -> DFResult<Vec<ParquetSplitMetadata>>;
 }
 
 /// TableProvider for a single metrics index.
@@ -219,7 +229,7 @@ impl TableProvider for MetricsTableProvider {
             descending: false,
             nulls_first: false,
         };
-        let sort_exprs: Vec<PhysicalSortExpr> = SORT_ORDER
+        let sort_exprs: Vec<PhysicalSortExpr> = METRICS_SORT_ORDER
             .iter()
             .filter_map(|col_name| {
                 self.schema.index_of(col_name).ok().map(|idx| {

@@ -19,9 +19,10 @@ use std::collections::HashSet;
 
 use arrow::array::{Array, RecordBatch};
 use arrow::datatypes::Int32Type;
-use quickwit_metastore::StageMetricsSplitsRequestExt;
-use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
+use quickwit_metastore::StageParquetSplitsRequestExt;
+use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
 use quickwit_parquet_engine::storage::{ParquetWriter, ParquetWriterConfig};
+use quickwit_parquet_engine::table_config::TableConfig;
 use quickwit_proto::metastore::{
     MetastoreService, MetastoreServiceClient, PublishMetricsSplitsRequest,
     StageMetricsSplitsRequest,
@@ -38,8 +39,9 @@ pub(crate) async fn publish_split(
     split_name: &str,
     batch: &RecordBatch,
 ) {
-    let parquet_bytes = ParquetWriter::new(ParquetWriterConfig::default())
-        .write_to_bytes(batch)
+    let (parquet_bytes, _) = ParquetWriter::new(ParquetWriterConfig::default(), &TableConfig::default())
+        .unwrap()
+        .write_to_bytes(batch, None)
         .unwrap();
     let size_bytes = parquet_bytes.len() as u64;
     std::fs::write(
@@ -80,8 +82,8 @@ pub(crate) async fn publish_split(
         .map(|i| values.value(i).to_string())
         .collect();
 
-    let mut builder = MetricsSplitMetadata::builder()
-        .split_id(SplitId::new(split_name))
+    let mut builder = ParquetSplitMetadata::metrics_builder()
+        .split_id(ParquetSplitId::new(split_name))
         .index_uid(index_uid.to_string())
         .time_range(TimeRange::new(min_ts, max_ts + 1))
         .num_rows(batch.num_rows() as u64)

@@ -23,8 +23,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use arrow::array::{
-    Array, ArrayRef, DictionaryArray, Float64Array, Int32Array, RecordBatch, StringArray,
-    UInt8Array, UInt64Array,
+    Array, ArrayRef, DictionaryArray, Float64Array, Int32Array, Int64Array, RecordBatch,
+    StringArray, UInt8Array, UInt64Array,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema, SchemaRef};
 use async_trait::async_trait;
@@ -34,8 +34,10 @@ use datafusion::prelude::SessionContext;
 use object_store::memory::InMemory;
 use object_store::path::Path as ObjectPath;
 use object_store::{ObjectStore, PutPayload};
-use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
+use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
 use quickwit_parquet_engine::storage::{ParquetWriter, ParquetWriterConfig};
+use quickwit_parquet_engine::table_config::TableConfig;
+use quickwit_parquet_engine::timeseries_id::compute_timeseries_id;
 
 use super::predicate::MetricsSplitQuery;
 use super::table_provider::MetricsSplitProvider;
@@ -56,6 +58,7 @@ pub fn oss_schema_with_service() -> SchemaRef {
         Field::new("metric_type", DataType::UInt8, false),
         Field::new("timestamp_secs", DataType::UInt64, false),
         Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
         Field::new("service", dict_type(), true),
     ]))
 }
@@ -73,12 +76,18 @@ pub fn make_batch(
 ) -> RecordBatch {
     let n = timestamps.len();
     assert_eq!(n, values.len());
+    let mut tags = std::collections::HashMap::new();
+    if let Some(service) = service {
+        tags.insert("service".to_string(), service.to_string());
+    }
+    let timeseries_id = compute_timeseries_id(metric_name, 0, &tags);
 
     let cols: Vec<ArrayRef> = vec![
         make_dict(n, metric_name),
         Arc::new(UInt8Array::from(vec![0u8; n])),
         Arc::new(UInt64Array::from(timestamps.to_vec())),
         Arc::new(Float64Array::from(values.to_vec())),
+        Arc::new(Int64Array::from(vec![timeseries_id; n])),
         make_nullable_dict(n, service),
     ];
 
@@ -111,12 +120,27 @@ pub fn make_batch_with_tags(
         Field::new("metric_type", DataType::UInt8, false),
         Field::new("timestamp_secs", DataType::UInt64, false),
         Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
     ];
+    let mut tags = std::collections::HashMap::new();
+    for (name, val) in [
+        ("service", service),
+        ("env", env),
+        ("datacenter", datacenter),
+        ("region", region),
+        ("host", host),
+    ] {
+        if let Some(v) = val {
+            tags.insert(name.to_string(), v.to_string());
+        }
+    }
+    let timeseries_id = compute_timeseries_id(metric_name, 0, &tags);
     let mut cols: Vec<ArrayRef> = vec![
         make_dict(n, metric_name),
         Arc::new(UInt8Array::from(vec![0u8; n])),
         Arc::new(UInt64Array::from(timestamps.to_vec())),
         Arc::new(Float64Array::from(values.to_vec())),
+        Arc::new(Int64Array::from(vec![timeseries_id; n])),
     ];
 
     // Only emit a column when the value is Some — matching production behavior.
@@ -165,11 +189,11 @@ fn make_nullable_dict(n: usize, value: Option<&str>) -> ArrayRef {
 /// Uses OSS tag key names (bare, no `tag_` prefix) for `get_tag_values`.
 #[derive(Debug, Clone)]
 pub struct TestSplitProvider {
-    pub splits: Vec<MetricsSplitMetadata>,
+    pub splits: Vec<ParquetSplitMetadata>,
 }
 
 impl TestSplitProvider {
-    pub fn new(splits: Vec<MetricsSplitMetadata>) -> Self {
+    pub fn new(splits: Vec<ParquetSplitMetadata>) -> Self {
         Self { splits }
     }
 
@@ -182,7 +206,7 @@ impl TestSplitProvider {
 
 #[async_trait]
 impl MetricsSplitProvider for TestSplitProvider {
-    async fn list_splits(&self, query: &MetricsSplitQuery) -> DFResult<Vec<MetricsSplitMetadata>> {
+    async fn list_splits(&self, query: &MetricsSplitQuery) -> DFResult<Vec<ParquetSplitMetadata>> {
         let mut result = self.splits.clone();
 
         if let Some(ref names) = query.metric_names {
@@ -206,7 +230,7 @@ impl MetricsSplitProvider for TestSplitProvider {
 /// Writes real parquet files via `ParquetWriter` to an in-memory object store.
 pub struct MetricsTestbed {
     pub object_store: Arc<InMemory>,
-    pub splits: Vec<MetricsSplitMetadata>,
+    pub splits: Vec<ParquetSplitMetadata>,
     split_counter: usize,
 }
 
@@ -219,7 +243,7 @@ impl MetricsTestbed {
         }
     }
 
-    pub async fn add_split(&mut self, batch: &RecordBatch) -> MetricsSplitMetadata {
+    pub async fn add_split(&mut self, batch: &RecordBatch) -> ParquetSplitMetadata {
         self.split_counter += 1;
         let split_id = format!("split_{}", self.split_counter);
         let metadata = write_split(&self.object_store, batch, &split_id).await;
@@ -233,7 +257,7 @@ impl MetricsTestbed {
         timestamps: &[u64],
         values: &[f64],
         service: Option<&str>,
-    ) -> MetricsSplitMetadata {
+    ) -> ParquetSplitMetadata {
         let batch = make_batch(metric_name, timestamps, values, service);
         self.add_split(&batch).await
     }
@@ -259,11 +283,14 @@ pub async fn physical_plan(ctx: &SessionContext, sql: &str) -> Arc<dyn Execution
     df.create_physical_plan().await.unwrap()
 }
 
-pub async fn execute(ctx: &SessionContext, sql: &str) -> Vec<RecordBatch> {
+pub async fn execute(
+    ctx: &SessionContext,
+    sql: &str,
+) -> Vec<datafusion::arrow::array::RecordBatch> {
     ctx.sql(sql).await.unwrap().collect().await.unwrap()
 }
 
-pub fn total_rows(batches: &[RecordBatch]) -> usize {
+pub fn total_rows(batches: &[datafusion::arrow::array::RecordBatch]) -> usize {
     batches.iter().map(|b| b.num_rows()).sum()
 }
 
@@ -273,11 +300,11 @@ async fn write_split(
     store: &InMemory,
     batch: &RecordBatch,
     split_id: &str,
-) -> MetricsSplitMetadata {
+) -> ParquetSplitMetadata {
     let config = ParquetWriterConfig::default();
-    let writer = ParquetWriter::new(config);
+    let writer = ParquetWriter::new(config, &TableConfig::default()).unwrap();
 
-    let parquet_bytes = writer.write_to_bytes(batch).unwrap();
+    let (parquet_bytes, _) = writer.write_to_bytes(batch, None).unwrap();
     let size_bytes = parquet_bytes.len() as u64;
 
     store
@@ -321,8 +348,8 @@ async fn write_split(
         }
     }
 
-    let mut builder = MetricsSplitMetadata::builder()
-        .split_id(SplitId::new(split_id))
+    let mut builder = ParquetSplitMetadata::metrics_builder()
+        .split_id(ParquetSplitId::new(split_id))
         .index_uid("test-index:00000000000000000000000000")
         .time_range(TimeRange::new(min_ts, max_ts + 1))
         .num_rows(batch.num_rows() as u64)

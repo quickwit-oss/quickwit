@@ -27,7 +27,7 @@
 
 use std::sync::Arc;
 
-use arrow::array::{Array, Float64Array, Int64Array, RecordBatch};
+use arrow::array::{Int64Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
 use quickwit_config::service::QuickwitService;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
@@ -35,6 +35,7 @@ use quickwit_datafusion::test_utils::{make_batch, make_batch_with_tags};
 use quickwit_datafusion::{
     DataFusionSessionBuilder, QuickwitObjectStoreRegistry, QuickwitWorkerResolver,
 };
+use quickwit_parquet_engine::timeseries_id::compute_timeseries_id;
 use quickwit_metastore::CreateIndexRequestExt;
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::IndexUid;
@@ -62,8 +63,10 @@ fn make_narrow_batch(metric_name: &str, timestamps: &[u64], values: &[f64]) -> R
         Field::new("metric_type", DataType::UInt8, false),
         Field::new("timestamp_secs", DataType::UInt64, false),
         Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
     ]));
     use arrow::array::{DictionaryArray, Float64Array, Int32Array, StringArray, UInt64Array, UInt8Array};
+    let timeseries_id = compute_timeseries_id(metric_name, 0, &std::collections::HashMap::new());
     let keys = Int32Array::from(vec![0i32; n]);
     let vals = StringArray::from(vec![metric_name]);
     let metric_col = Arc::new(DictionaryArray::<Int32Type>::try_new(keys, Arc::new(vals)).unwrap());
@@ -72,6 +75,7 @@ fn make_narrow_batch(metric_name: &str, timestamps: &[u64], values: &[f64]) -> R
         Arc::new(UInt8Array::from(vec![0u8; n])),
         Arc::new(UInt64Array::from(timestamps.to_vec())),
         Arc::new(Float64Array::from(values.to_vec())),
+        Arc::new(Int64Array::from(vec![timeseries_id; n])),
     ]).unwrap()
 }
 
@@ -90,7 +94,10 @@ async fn create_metrics_index(
         .await.unwrap().index_uid().clone()
 }
 
-async fn run_sql(builder: &DataFusionSessionBuilder, sql: &str) -> Vec<RecordBatch> {
+async fn run_sql(
+    builder: &DataFusionSessionBuilder,
+    sql: &str,
+) -> Vec<datafusion::arrow::array::RecordBatch> {
     let ctx = builder.build_session().unwrap();
     let fragments: Vec<&str> = sql.split(';').map(str::trim).filter(|s| !s.is_empty()).collect();
     for fragment in &fragments[..fragments.len().saturating_sub(1)] {
@@ -189,11 +196,11 @@ async fn test_distributed_tasks_not_shuffles() {
     let batches = df.collect().await.unwrap();
     assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 1);
     let total = batches[0].column_by_name("total").unwrap()
-        .as_any().downcast_ref::<Float64Array>().unwrap().value(0);
+        .as_any().downcast_ref::<datafusion::arrow::array::Float64Array>().unwrap().value(0);
     let expected = 0.1 + 0.2 + 0.3 + 0.4 + 1024.0 + 2048.0 + 3072.0 + 4096.0;
     assert!((total - expected).abs() < 1.0, "expected {expected:.1}, got {total:.1}");
     let cnt = batches[0].column_by_name("cnt").unwrap()
-        .as_any().downcast_ref::<Int64Array>().unwrap().value(0);
+        .as_any().downcast_ref::<datafusion::arrow::array::Int64Array>().unwrap().value(0);
     assert_eq!(cnt, 8);
 
     // Shut the cluster down cleanly so the test doesn't leak actors into the
@@ -248,16 +255,16 @@ async fn test_null_columns_for_missing_parquet_fields() {
     assert_eq!(batches.iter().map(|b| b.num_rows()).sum::<usize>(), 1);
 
     let total = batches[0].column_by_name("total_rows").unwrap()
-        .as_any().downcast_ref::<Int64Array>().unwrap().value(0);
+        .as_any().downcast_ref::<datafusion::arrow::array::Int64Array>().unwrap().value(0);
     assert_eq!(total, 4);
 
     let with_service = batches[0].column_by_name("rows_with_service").unwrap()
-        .as_any().downcast_ref::<Int64Array>().unwrap().value(0);
+        .as_any().downcast_ref::<datafusion::arrow::array::Int64Array>().unwrap().value(0);
     assert_eq!(with_service, 2,
         "split_a has no service col → NULLs; split_b has service='web' → 2 non-null");
 
     let with_env = batches[0].column_by_name("rows_with_env").unwrap()
-        .as_any().downcast_ref::<Int64Array>().unwrap().value(0);
+        .as_any().downcast_ref::<datafusion::arrow::array::Int64Array>().unwrap().value(0);
     assert_eq!(with_env, 2);
 
     sandbox.shutdown().await.unwrap();

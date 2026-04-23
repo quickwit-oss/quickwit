@@ -297,7 +297,7 @@ mod tests {
         let filters = vec![Expr::BinaryExpr(BinaryExpr {
             left: Box::new(Expr::Cast(datafusion::logical_expr::Cast {
                 expr: Box::new(col("timestamp_secs")),
-                data_type: arrow::datatypes::DataType::Int64,
+                data_type: datafusion::arrow::datatypes::DataType::Int64,
             })),
             op: Operator::GtEq,
             right: Box::new(lit(1000i64)),
@@ -312,7 +312,7 @@ mod tests {
         let filters = vec![Expr::BinaryExpr(BinaryExpr {
             left: Box::new(Expr::Cast(datafusion::logical_expr::Cast {
                 expr: Box::new(col("timestamp_secs")),
-                data_type: arrow::datatypes::DataType::Int64,
+                data_type: datafusion::arrow::datatypes::DataType::Int64,
             })),
             op: Operator::Lt,
             right: Box::new(lit(2000i64)),
@@ -329,7 +329,7 @@ mod tests {
             op: Operator::Gt,
             right: Box::new(Expr::Cast(datafusion::logical_expr::Cast {
                 expr: Box::new(lit(500i64)),
-                data_type: arrow::datatypes::DataType::UInt64,
+                data_type: datafusion::arrow::datatypes::DataType::UInt64,
             })),
         })];
         let (query, remaining) = extract_split_filters(&filters);
@@ -341,7 +341,7 @@ mod tests {
     fn test_metric_name_eq_with_dict_cast() {
         let dict_lit = Expr::Literal(
             ScalarValue::Dictionary(
-                Box::new(arrow::datatypes::DataType::Int32),
+                Box::new(datafusion::arrow::datatypes::DataType::Int32),
                 Box::new(ScalarValue::Utf8(Some("cpu.usage".to_string()))),
             ),
             None,
@@ -418,20 +418,20 @@ mod tests {
     /// were removed — `count_matching` would return 2 instead of 1.
     #[test]
     fn test_metric_name_pruning_prunes_splits_not_just_rows() {
-        use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
+        use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
 
         use crate::sources::metrics::test_utils::TestSplitProvider;
 
-        let cpu_split = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("cpu"))
+        let cpu_split = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("cpu"))
             .index_uid("idx:0000")
             .time_range(TimeRange::new(100, 300))
             .num_rows(2)
             .size_bytes(1024)
             .add_metric_name("cpu.usage")
             .build();
-        let mem_split = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("mem"))
+        let mem_split = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("mem"))
             .index_uid("idx:0000")
             .time_range(TimeRange::new(100, 300))
             .num_rows(2)
@@ -460,28 +460,28 @@ mod tests {
 
     #[test]
     fn test_metric_name_in_list_prunes_splits() {
-        use quickwit_parquet_engine::split::{MetricsSplitMetadata, SplitId, TimeRange};
+        use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
 
         use crate::sources::metrics::test_utils::TestSplitProvider;
 
-        let cpu_split = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("cpu"))
+        let cpu_split = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("cpu"))
             .index_uid("idx:0000")
             .time_range(TimeRange::new(100, 300))
             .num_rows(2)
             .size_bytes(1024)
             .add_metric_name("cpu.usage")
             .build();
-        let mem_split = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("mem"))
+        let mem_split = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("mem"))
             .index_uid("idx:0000")
             .time_range(TimeRange::new(100, 300))
             .num_rows(2)
             .size_bytes(1024)
             .add_metric_name("memory.used")
             .build();
-        let disk_split = MetricsSplitMetadata::builder()
-            .split_id(SplitId::new("disk"))
+        let disk_split = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("disk"))
             .index_uid("idx:0000")
             .time_range(TimeRange::new(100, 300))
             .num_rows(2)
