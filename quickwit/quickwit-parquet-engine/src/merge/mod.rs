@@ -31,10 +31,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use arrow::array::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use tracing::info;
+use tracing::{info, warn};
 
+use crate::sort_fields::{equivalent_schemas_for_compaction, parse_sort_fields};
 use crate::sorted_series::SORTED_SERIES_COLUMN;
-use crate::storage::ParquetWriterConfig;
+use crate::storage::{PARQUET_META_SORT_FIELDS, ParquetWriterConfig};
 
 pub use self::merge_order::MergeRun;
 
@@ -133,6 +134,9 @@ fn merge_sorted_parquet_files_impl(
         "starting sorted parquet merge"
     );
 
+    // Step 0: Validate that all inputs share the same sort schema.
+    validate_sort_schemas(input_paths, &config.sort_fields)?;
+
     // Step 1: Read all input files into RecordBatches.
     let inputs = read_inputs(input_paths, read_batch_size)?;
     let total_rows: usize = inputs.iter().map(|b| b.num_rows()).sum();
@@ -147,7 +151,8 @@ fn merge_sorted_parquet_files_impl(
         schema::align_inputs_to_union_schema(&inputs, &config.sort_fields)?;
 
     // Step 3: Compute merge order using (sorted_series, timestamp_secs).
-    let merge_order = merge_order::compute_merge_order(&aligned_inputs)?;
+    // The timestamp sort direction comes from the sort schema.
+    let merge_order = merge_order::compute_merge_order(&aligned_inputs, &config.sort_fields)?;
 
     // Step 4: Compute output boundaries at sorted_series transitions.
     let boundaries =
@@ -258,4 +263,61 @@ fn read_inputs(paths: &[PathBuf], read_batch_size: Option<usize>) -> Result<Vec<
     }
 
     Ok(batches)
+}
+
+/// Validate that all input files have the same sort schema as the merge config.
+///
+/// Reads the `qh.sort_fields` key from each file's Parquet KV metadata and
+/// verifies it is equivalent to `expected_sort_fields` for compaction purposes.
+/// Files without sort schema metadata are accepted with a warning (they may
+/// be pre-Phase-1 files being merged for the first time).
+fn validate_sort_schemas(paths: &[PathBuf], expected_sort_fields: &str) -> Result<()> {
+    let expected_schema = parse_sort_fields(expected_sort_fields)?;
+
+    for path in paths {
+        let file = std::fs::File::open(path)
+            .with_context(|| format!("opening file for schema validation: {}", path.display()))?;
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+            .with_context(|| format!("reading footer for schema validation: {}", path.display()))?;
+
+        let kv_metadata = builder
+            .metadata()
+            .file_metadata()
+            .key_value_metadata();
+
+        let file_sort_fields = kv_metadata
+            .and_then(|kvs| {
+                kvs.iter()
+                    .find(|kv| kv.key == PARQUET_META_SORT_FIELDS)
+                    .and_then(|kv| kv.value.as_deref())
+            });
+
+        match file_sort_fields {
+            Some(file_sf) => {
+                let file_schema = parse_sort_fields(file_sf)
+                    .with_context(|| format!(
+                        "parsing sort schema from {}: '{}'",
+                        path.display(),
+                        file_sf
+                    ))?;
+
+                if !equivalent_schemas_for_compaction(&expected_schema, &file_schema) {
+                    bail!(
+                        "sort schema mismatch in {}: expected '{}', found '{}'",
+                        path.display(),
+                        expected_sort_fields,
+                        file_sf
+                    );
+                }
+            }
+            None => {
+                warn!(
+                    path = %path.display(),
+                    "input file has no qh.sort_fields metadata — accepting for merge"
+                );
+            }
+        }
+    }
+
+    Ok(())
 }

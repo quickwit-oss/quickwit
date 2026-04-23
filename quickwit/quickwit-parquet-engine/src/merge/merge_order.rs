@@ -31,6 +31,7 @@ use arrow::compute::SortOptions;
 use arrow::datatypes::DataType;
 use arrow::row::{RowConverter, Rows, SortField};
 
+use crate::sort_fields::parse_sort_fields;
 use crate::sorted_series::SORTED_SERIES_COLUMN;
 
 const TIMESTAMP_COLUMN: &str = "timestamp_secs";
@@ -121,10 +122,28 @@ impl Ord for HeapEntry {
 ///
 /// Returns an RLE-encoded merge order: contiguous runs from the same input
 /// are collapsed into a single `MergeRun`.
-pub fn compute_merge_order(inputs: &[RecordBatch]) -> Result<Vec<MergeRun>> {
+pub fn compute_merge_order(
+    inputs: &[RecordBatch],
+    sort_fields_str: &str,
+) -> Result<Vec<MergeRun>> {
     if inputs.is_empty() {
         return Ok(Vec::new());
     }
+
+    // Parse the sort schema to determine timestamp sort direction.
+    let sort_schema = parse_sort_fields(sort_fields_str)?;
+    let ts_column = sort_schema
+        .column
+        .iter()
+        .find(|c| c.name == TIMESTAMP_COLUMN)
+        .ok_or_else(|| anyhow::anyhow!(
+            "sort schema '{}' does not contain '{}'",
+            sort_fields_str,
+            TIMESTAMP_COLUMN
+        ))?;
+
+    let ts_descending = ts_column.sort_direction
+        == quickwit_proto::sortschema::SortColumnDirection::SortDirectionDescending as i32;
 
     // Determine the timestamp column data type from the first non-empty input.
     let ts_data_type = inputs
@@ -139,16 +158,17 @@ pub fn compute_merge_order(inputs: &[RecordBatch]) -> Result<Vec<MergeRun>> {
         })
         .unwrap_or(DataType::UInt64);
 
-    // Build a RowConverter for (sorted_series ASC, timestamp_secs DESC).
+    // Build a RowConverter for (sorted_series ASC, timestamp_secs <direction>).
+    // The timestamp direction comes from the sort schema, not hardcoded.
     let sort_fields = vec![
         SortField::new(DataType::Binary), // sorted_series ASC
         SortField::new_with_options(
             ts_data_type,
             SortOptions {
-                descending: true,
+                descending: ts_descending,
                 nulls_first: false,
             },
-        ), // timestamp_secs DESC
+        ),
     ];
     let converter = RowConverter::new(sort_fields)?;
 
