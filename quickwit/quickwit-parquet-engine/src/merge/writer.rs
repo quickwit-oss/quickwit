@@ -245,6 +245,16 @@ fn build_merge_kv_metadata(
     kvs
 }
 
+/// Normalize a sort schema column name to its physical column name.
+/// Legacy schemas use "timestamp" but the physical column is "timestamp_secs".
+fn normalize_column_name(name: &str) -> &str {
+    if name == "timestamp" {
+        "timestamp_secs"
+    } else {
+        name
+    }
+}
+
 /// Build `SortingColumn` entries for Parquet file metadata.
 fn build_sorting_columns(batch: &RecordBatch, sort_fields_str: &str) -> Result<Vec<SortingColumn>> {
     let sort_schema = parse_sort_fields(sort_fields_str)?;
@@ -252,7 +262,8 @@ fn build_sorting_columns(batch: &RecordBatch, sort_fields_str: &str) -> Result<V
 
     let mut sorting_cols = Vec::new();
     for col in &sort_schema.column {
-        if let Ok(idx) = schema.index_of(&col.name) {
+        let col_name = normalize_column_name(&col.name);
+        if let Ok(idx) = schema.index_of(col_name) {
             let descending = col.sort_direction
                 == quickwit_proto::sortschema::SortColumnDirection::SortDirectionDescending as i32;
             sorting_cols.push(SortingColumn {
@@ -267,9 +278,14 @@ fn build_sorting_columns(batch: &RecordBatch, sort_fields_str: &str) -> Result<V
 }
 
 /// Resolve sort field names from the sort schema string.
+/// Normalizes legacy names (e.g. "timestamp" → "timestamp_secs").
 fn resolve_sort_field_names(sort_fields_str: &str) -> Result<Vec<String>> {
     let sort_schema = parse_sort_fields(sort_fields_str)?;
-    Ok(sort_schema.column.iter().map(|c| c.name.clone()).collect())
+    Ok(sort_schema
+        .column
+        .iter()
+        .map(|c| normalize_column_name(&c.name).to_string())
+        .collect())
 }
 
 /// MC-3: Verify the output batch is sorted by (sorted_series ASC,
