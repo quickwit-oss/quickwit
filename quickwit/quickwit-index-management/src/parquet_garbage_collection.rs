@@ -91,8 +91,14 @@ pub async fn run_parquet_garbage_collect(
 
     let mut deletable_staged_splits = Vec::new();
     for index_uid in indexes.keys() {
-        let splits =
-            list_parquet_splits(&metastore, index_uid, vec![SplitState::Staged], staged_cutoff, progress_opt).await?;
+        let splits = list_parquet_splits(
+            &metastore,
+            index_uid,
+            vec![SplitState::Staged],
+            staged_cutoff,
+            progress_opt,
+        )
+        .await?;
         deletable_staged_splits.extend(splits);
     }
 
@@ -102,8 +108,14 @@ pub async fn run_parquet_garbage_collect(
 
         let mut splits_marked_for_deletion = Vec::new();
         for index_uid in indexes.keys() {
-            let splits =
-                list_parquet_splits(&metastore, index_uid, vec![SplitState::MarkedForDeletion], deletion_cutoff, progress_opt).await?;
+            let splits = list_parquet_splits(
+                &metastore,
+                index_uid,
+                vec![SplitState::MarkedForDeletion],
+                deletion_cutoff,
+                progress_opt,
+            )
+            .await?;
             splits_marked_for_deletion.extend(splits);
         }
         splits_marked_for_deletion.extend(deletable_staged_splits);
@@ -209,23 +221,19 @@ async fn mark_splits_for_deletion(
         if is_sketches_index(&index_uid.index_id) {
             protect_future(
                 progress_opt,
-                metastore.mark_sketch_splits_for_deletion(
-                    MarkSketchSplitsForDeletionRequest {
-                        index_uid: Some(index_uid),
-                        split_ids,
-                    },
-                ),
+                metastore.mark_sketch_splits_for_deletion(MarkSketchSplitsForDeletionRequest {
+                    index_uid: Some(index_uid),
+                    split_ids,
+                }),
             )
             .await?;
         } else {
             protect_future(
                 progress_opt,
-                metastore.mark_metrics_splits_for_deletion(
-                    MarkMetricsSplitsForDeletionRequest {
-                        index_uid: Some(index_uid),
-                        split_ids,
-                    },
-                ),
+                metastore.mark_metrics_splits_for_deletion(MarkMetricsSplitsForDeletionRequest {
+                    index_uid: Some(index_uid),
+                    split_ids,
+                }),
             )
             .await?;
         }
@@ -261,14 +269,13 @@ async fn delete_marked_parquet_splits(
         let sleep_future = tokio::time::sleep(sleep_duration);
 
         let splits: Vec<ParquetSplitRecord> = if is_sketch {
-            let request =
-                match ListSketchSplitsRequest::try_from_query(index_uid.clone(), &query) {
-                    Ok(req) => req,
-                    Err(err) => {
-                        error!(index_uid=%index_uid, error=?err, "failed to build list sketch splits request");
-                        break;
-                    }
-                };
+            let request = match ListSketchSplitsRequest::try_from_query(index_uid.clone(), &query) {
+                Ok(req) => req,
+                Err(err) => {
+                    error!(index_uid=%index_uid, error=?err, "failed to build list sketch splits request");
+                    break;
+                }
+            };
             match protect_future(progress_opt, metastore.list_sketch_splits(request)).await {
                 Ok(resp) => match resp.deserialize_splits() {
                     Ok(splits) => splits,
@@ -283,14 +290,14 @@ async fn delete_marked_parquet_splits(
                 }
             }
         } else {
-            let request =
-                match ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query) {
-                    Ok(req) => req,
-                    Err(err) => {
-                        error!(index_uid=%index_uid, error=?err, "failed to build list metrics splits request");
-                        break;
-                    }
-                };
+            let request = match ListMetricsSplitsRequest::try_from_query(index_uid.clone(), &query)
+            {
+                Ok(req) => req,
+                Err(err) => {
+                    error!(index_uid=%index_uid, error=?err, "failed to build list metrics splits request");
+                    break;
+                }
+            };
             match protect_future(progress_opt, metastore.list_metrics_splits(request)).await {
                 Ok(resp) => match resp.deserialize_splits() {
                     Ok(splits) => splits,
@@ -399,7 +406,11 @@ async fn delete_parquet_splits_from_storage_and_metastore(
             index_uid: Some(index_uid.clone()),
             split_ids: ids_to_delete,
         };
-        protect_future(progress_opt, metastore.delete_metrics_splits(delete_request)).await
+        protect_future(
+            progress_opt,
+            metastore.delete_metrics_splits(delete_request),
+        )
+        .await
     };
 
     if let Some(progress) = progress_opt {
