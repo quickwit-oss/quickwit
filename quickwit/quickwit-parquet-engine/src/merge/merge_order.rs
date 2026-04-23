@@ -37,6 +37,10 @@ use crate::sorted_series::SORTED_SERIES_COLUMN;
 
 const TIMESTAMP_COLUMN: &str = "timestamp_secs";
 
+/// Legacy sort schemas may use "timestamp" instead of "timestamp_secs".
+/// Normalize to the physical column name.
+const TIMESTAMP_COLUMN_LEGACY: &str = "timestamp";
+
 /// A contiguous run of rows from a single input in the merged output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MergeRun {
@@ -128,16 +132,18 @@ pub fn compute_merge_order(inputs: &[RecordBatch], sort_fields_str: &str) -> Res
     }
 
     // Parse the sort schema to determine timestamp sort direction.
+    // Legacy schemas may use "timestamp" instead of "timestamp_secs".
     let sort_schema = parse_sort_fields(sort_fields_str)?;
     let ts_column = sort_schema
         .column
         .iter()
-        .find(|c| c.name == TIMESTAMP_COLUMN)
+        .find(|c| c.name == TIMESTAMP_COLUMN || c.name == TIMESTAMP_COLUMN_LEGACY)
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "sort schema '{}' does not contain '{}'",
+                "sort schema '{}' does not contain '{}' or '{}'",
                 sort_fields_str,
-                TIMESTAMP_COLUMN
+                TIMESTAMP_COLUMN,
+                TIMESTAMP_COLUMN_LEGACY,
             )
         })?;
 

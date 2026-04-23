@@ -288,7 +288,7 @@ fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
     let ts_descending = sort_schema
         .column
         .iter()
-        .find(|c| c.name == "timestamp_secs")
+        .find(|c| c.name == "timestamp_secs" || c.name == "timestamp")
         .map(|c| {
             c.sort_direction
                 == quickwit_proto::sortschema::SortColumnDirection::SortDirectionDescending as i32
