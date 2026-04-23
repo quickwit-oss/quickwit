@@ -39,7 +39,7 @@
 //! `execute_substrait` returns a `SendableRecordBatchStream` backed by the
 //! DataFusion streaming executor — no intermediate materialization occurs.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
@@ -208,6 +208,23 @@ impl DataFusionSessionBuilder {
 
     /// Build a `SessionContext` backed by the shared `RuntimeEnv`.
     pub fn build_session(&self) -> DFResult<SessionContext> {
+        self.build_session_with_properties(&HashMap::new())
+    }
+
+    /// Build a `SessionContext` with per-request `SessionConfig` overrides.
+    ///
+    /// Each `(key, value)` pair in `properties` is applied via
+    /// `ConfigOptions::set` *after* the defaults and any source-installed
+    /// extensions, so callers can override anything. Keys are DataFusion
+    /// option paths — e.g. `execution.target_partitions`, `execution.batch_size`.
+    ///
+    /// Intended for RPC request plumbing: `ExecuteSubstraitRequest.properties`
+    /// and `ExecuteSqlRequest.properties` flow through this method. Production
+    /// callers without per-request overrides use the zero-arg `build_session`.
+    pub fn build_session_with_properties(
+        &self,
+        properties: &HashMap<String, String>,
+    ) -> DFResult<SessionContext> {
         let mut config = SessionConfig::new();
         config.options_mut().catalog.default_catalog = "quickwit".to_string();
         config.options_mut().catalog.default_schema = "public".to_string();
@@ -222,6 +239,12 @@ impl DataFusionSessionBuilder {
         // sync execution pool, ...) before `SessionStateBuilder::new()` runs.
         for source in &self.sources {
             source.configure_session(&mut config);
+        }
+
+        // Apply per-request property overrides last so callers can override
+        // anything — defaults, catalog settings, source-installed extensions.
+        for (key, value) in properties {
+            config.options_mut().set(key, value)?;
         }
 
         let mut builder = SessionStateBuilder::new()

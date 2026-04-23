@@ -133,19 +133,19 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
             req.explain,
         ) {
             (true, _, false) => service
-                .execute_substrait(&req.substrait_plan_bytes)
+                .execute_substrait(&req.substrait_plan_bytes, &req.properties)
                 .await
                 .map_err(df_error_to_status)?,
             (true, _, true) => service
-                .explain_substrait(&req.substrait_plan_bytes)
+                .explain_substrait(&req.substrait_plan_bytes, &req.properties)
                 .await
                 .map_err(df_error_to_status)?,
             (false, true, false) => service
-                .execute_substrait_json(&req.substrait_plan_json)
+                .execute_substrait_json(&req.substrait_plan_json, &req.properties)
                 .await
                 .map_err(df_error_to_status)?,
             (false, true, true) => service
-                .explain_substrait_json(&req.substrait_plan_json)
+                .explain_substrait_json(&req.substrait_plan_json, &req.properties)
                 .await
                 .map_err(df_error_to_status)?,
             _ => {
@@ -168,10 +168,13 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         let req = request.into_inner();
         let service = Arc::clone(&self.service);
 
-        let stream = service.execute_sql(&req.sql).await.map_err(|err| {
-            warn!(error = %err, "DataFusion SQL execution error");
-            df_error_to_status(err)
-        })?;
+        let stream = service
+            .execute_sql(&req.sql, &req.properties)
+            .await
+            .map_err(|err| {
+                warn!(error = %err, "DataFusion SQL execution error");
+                df_error_to_status(err)
+            })?;
 
         let response_stream = map_batch_stream(stream, |ipc_bytes| ExecuteSqlResponse {
             arrow_ipc_bytes: ipc_bytes,

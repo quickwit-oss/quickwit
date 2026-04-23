@@ -41,6 +41,7 @@
 //! }
 //! ```
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use datafusion::error::Result as DFResult;
@@ -77,13 +78,19 @@ impl DataFusionService {
     /// decodes the plan, and returns a streaming `RecordBatch` iterator.
     /// The caller decides whether to collect, send via gRPC, or pipe to Arrow
     /// Flight — no materialization happens inside this method.
-    #[tracing::instrument(skip(self, plan_bytes), fields(plan_bytes_len = plan_bytes.len()))]
+    ///
+    /// `properties` flows from `ExecuteSubstraitRequest.properties` into
+    /// `SessionConfig` overrides (e.g. `execution.target_partitions`). Pass
+    /// an empty map when no overrides apply.
+    #[tracing::instrument(skip(self, plan_bytes, properties), fields(plan_bytes_len = plan_bytes.len()))]
     pub async fn execute_substrait(
         &self,
         plan_bytes: &[u8],
+        properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
         tracing::info!(
             plan_bytes_len = plan_bytes.len(),
+            num_properties = properties.len(),
             "executing substrait plan"
         );
         use datafusion_substrait::substrait::proto::Plan;
@@ -92,7 +99,7 @@ impl DataFusionService {
         let plan = Plan::decode(plan_bytes)
             .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
 
-        self.execute_substrait_plan(&plan).await
+        self.execute_substrait_plan(&plan, properties).await
     }
 
     /// Execute a Substrait plan from its proto3 JSON representation.
@@ -106,6 +113,7 @@ impl DataFusionService {
     pub async fn execute_substrait_json(
         &self,
         plan_json: &str,
+        properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
         use datafusion_substrait::substrait::proto::Plan;
 
@@ -113,14 +121,15 @@ impl DataFusionService {
             datafusion::error::DataFusionError::Plan(format!("invalid Substrait plan JSON: {e}"))
         })?;
 
-        self.execute_substrait_plan(&plan).await
+        self.execute_substrait_plan(&plan, properties).await
     }
 
     async fn execute_substrait_plan(
         &self,
         plan: &datafusion_substrait::substrait::proto::Plan,
+        properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
-        let ctx = self.builder.build_session()?;
+        let ctx = self.builder.build_session_with_properties(properties)?;
         crate::substrait::execute_substrait_plan_streaming(plan, &ctx, self.builder.sources()).await
     }
 
@@ -130,31 +139,34 @@ impl DataFusionService {
     pub async fn explain_substrait(
         &self,
         plan_bytes: &[u8],
+        properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
         use datafusion_substrait::substrait::proto::Plan;
         use prost::Message;
         let plan = Plan::decode(plan_bytes)
             .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
-        self.explain_substrait_plan(&plan).await
+        self.explain_substrait_plan(&plan, properties).await
     }
 
     /// JSON variant of [`explain_substrait`] — same semantics, proto3-JSON input.
     pub async fn explain_substrait_json(
         &self,
         plan_json: &str,
+        properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
         use datafusion_substrait::substrait::proto::Plan;
         let plan: Plan = serde_json::from_str(plan_json).map_err(|e| {
             datafusion::error::DataFusionError::Plan(format!("invalid Substrait plan JSON: {e}"))
         })?;
-        self.explain_substrait_plan(&plan).await
+        self.explain_substrait_plan(&plan, properties).await
     }
 
     async fn explain_substrait_plan(
         &self,
         plan: &datafusion_substrait::substrait::proto::Plan,
+        properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
-        let ctx = self.builder.build_session()?;
+        let ctx = self.builder.build_session_with_properties(properties)?;
         crate::substrait::explain_substrait_plan_streaming(plan, &ctx, self.builder.sources()).await
     }
 
@@ -165,10 +177,18 @@ impl DataFusionService {
     ///
     /// Returns an error if `sql` is empty after splitting, or if any statement
     /// fails to parse or execute.
-    #[tracing::instrument(skip(self, sql), fields(sql_len = sql.len()))]
-    pub async fn execute_sql(&self, sql: &str) -> DFResult<SendableRecordBatchStream> {
-        tracing::info!(sql_len = sql.len(), "executing SQL query");
-        let ctx = self.builder.build_session()?;
+    #[tracing::instrument(skip(self, sql, properties), fields(sql_len = sql.len()))]
+    pub async fn execute_sql(
+        &self,
+        sql: &str,
+        properties: &HashMap<String, String>,
+    ) -> DFResult<SendableRecordBatchStream> {
+        tracing::info!(
+            sql_len = sql.len(),
+            num_properties = properties.len(),
+            "executing SQL query"
+        );
+        let ctx = self.builder.build_session_with_properties(properties)?;
 
         // Split on `;` and discard empty fragments (trailing `;` etc.).
         let statements: Vec<&str> = sql
