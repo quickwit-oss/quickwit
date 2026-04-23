@@ -18,17 +18,23 @@
 //! Port of `parser/kafka.go::parseKafkaAggregations`.
 
 use prost::Message;
+use tracing::warn;
 
 use super::super::types::{Operation, ProtoStat};
 use super::http::{optional_bytes, optional_f64};
 use crate::protos::process::DataStreamsAggregations;
 
+// Kafka API keys ("request_type" in the agent proto). Named constants so the
+// parser's `match` is self-documenting rather than magic 0/1.
+const KAFKA_API_PRODUCE: u32 = 0;
+const KAFKA_API_CONSUME: u32 = 1;
+
 /// Maps Kafka request-type (API key) values to operation strings. Matches
 /// the Go sidecar's `kafkaAPIKeyToOperation` map.
 fn operation_for(request_type: u32) -> Option<&'static str> {
     match request_type {
-        0 => Some("produce"),
-        1 => Some("consume"),
+        KAFKA_API_PRODUCE => Some("produce"),
+        KAFKA_API_CONSUME => Some("consume"),
         _ => None,
     }
 }
@@ -40,11 +46,20 @@ pub(in crate::transforms::connections_to_apm_metrics) fn parse_kafka_aggregation
 ) -> Vec<ProtoStat> {
     let agg = match DataStreamsAggregations::decode(data) {
         Ok(agg) => agg,
-        Err(_) => return Vec::new(),
+        Err(err) => {
+            warn!(%err, bytes = data.len(), "kafka aggregation decode failed, dropping");
+            return Vec::new();
+        }
     };
     let mut out: Vec<ProtoStat> = Vec::new();
     for ka in agg.kafka_aggregations {
-        let request_type = ka.header.map(|h| h.request_type).unwrap_or(u32::MAX);
+        // Go's proto getter returns 0 (produce) on a nil header. Match that
+        // so agents that omit the header don't silently lose their Kafka
+        // USM data.
+        let request_type = ka
+            .header
+            .map(|h| h.request_type)
+            .unwrap_or(KAFKA_API_PRODUCE);
         let Some(op_str) = operation_for(request_type) else {
             continue;
         };
@@ -151,6 +166,38 @@ mod tests {
             kafka_aggregations: vec![kafka_agg(99, "topic", &[(0, 1)])],
         };
         assert!(parse_kafka_aggregations(&agg.encode_to_vec()).is_empty());
+    }
+
+    #[test]
+    fn missing_header_defaults_to_produce() {
+        // Go's generated proto getter returns 0 (produce) on nil header.
+        // Our parser must match — otherwise older or buggy agents that
+        // omit the header lose their Kafka USM data entirely.
+        #[allow(deprecated)]
+        let ka = KafkaAggregation {
+            header: None,
+            topic: "orders".into(),
+            stats_by_error_code: std::collections::HashMap::from([(
+                0,
+                KafkaStats {
+                    count: 3,
+                    latencies: Vec::new(),
+                    first_latency_sample: 0.0,
+                },
+            )]),
+            count: 0,
+        };
+        let agg = DataStreamsAggregations {
+            kafka_aggregations: vec![ka],
+        };
+        let stats = parse_kafka_aggregations(&agg.encode_to_vec());
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].resource, "produce/orders");
+    }
+
+    #[test]
+    fn malformed_bytes_return_empty() {
+        assert!(parse_kafka_aggregations(b"\xff\xff\xff").is_empty());
     }
 
     #[test]

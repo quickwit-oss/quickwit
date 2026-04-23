@@ -31,9 +31,7 @@ pub(super) fn extract_usm_stats(cc: &mut CollectorConnections) -> Vec<UsmStat> {
 
     let mut out: Vec<UsmStat> = Vec::new();
     for conn in &cc.connections {
-        let Some(direction) = Direction::from_agent(conn.direction) else {
-            continue;
-        };
+        let direction = Direction::from_agent(conn.direction);
         let service = resolver::resolve_service(cc, conn);
         let env = resolver::resolve_env(cc, conn);
 

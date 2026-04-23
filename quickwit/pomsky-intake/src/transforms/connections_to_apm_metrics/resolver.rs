@@ -33,8 +33,22 @@
 use std::collections::HashSet;
 
 use crate::protos::process::{
-    CollectorConnections, Connection, ConnectionDirection, ConnectionType,
+    CollectorConnections, Connection, ConnectionDirection, ConnectionType, EphemeralPortState,
 };
+
+/// Well-known DNS port. Traffic on this remote port is assumed to be DNS
+/// regardless of UDP/TCP or the agent's direction heuristic.
+const DNS_PORT: i32 = 53;
+/// Upper bound (exclusive) of the "well-known" port range. DNS-fixup uses
+/// this to distinguish server-side ports from ephemeral client ports.
+const WELL_KNOWN_PORT_MAX: i32 = 1024;
+/// Lower bound (inclusive) of the Linux ephemeral-port range on most
+/// distros. Used as a fallback heuristic when the agent did not set
+/// `is_local_port_ephemeral` explicitly.
+const EPHEMERAL_PORT_MIN: i32 = 32768;
+/// Length of the Docker "short" container-ID prefix we fall back to when no
+/// service-name tag is resolvable. Matches what SaaS displays.
+const CONTAINER_ID_PREFIX_LEN: usize = 12;
 
 /// Walks an encoded-tag buffer at `tag_index` and yields each tag slice
 /// until the caller returns `false` or the group ends. Handles both V1 and
@@ -287,10 +301,27 @@ pub(super) fn resolve_service(cc: &CollectorConnections, conn: &Connection) -> S
     if let Some(cid) = container_id
         && !cid.is_empty()
     {
-        let take = cid.len().min(12);
-        return format!("container:{}", &cid[..take]);
+        return format!(
+            "container:{}",
+            truncate_at_char_boundary(&cid, CONTAINER_ID_PREFIX_LEN)
+        );
     }
     cc.host_name.clone()
+}
+
+/// Truncates `s` to at most `max_bytes` bytes without splitting a UTF-8
+/// character. Container IDs are hex in practice, but `Connection.laddr.container_id`
+/// is an arbitrary proto3 `string` (valid UTF-8), so a multi-byte char at the
+/// boundary would panic a raw `&s[..max_bytes]`.
+fn truncate_at_char_boundary(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }
 
 /// Splits `key:value` on the first colon. Returns `None` if no colon.
@@ -346,20 +377,61 @@ pub(super) fn fixup_directions(cc: &mut CollectorConnections) {
             let key = (conn.r#type, laddr.port, conn.pid, conn.net_ns);
             if listening.contains(&key) {
                 conn.direction = ConnectionDirection::Incoming as i32;
+                // Don't also evaluate the DNS heuristic on this connection —
+                // the listening-match flip already decided it.
+                continue;
             }
         }
 
-        let has_dns = !conn.dns_stats_by_domain.is_empty()
-            || !conn.dns_stats_by_domain_by_query_type.is_empty();
-        if has_dns
-            && conn.r#type == ConnectionType::Udp as i32
-            && let (Some(laddr), Some(raddr)) = (conn.laddr.as_ref(), conn.raddr.as_ref())
-            && laddr.port >= 32768
-            && raddr.port < 1024
-        {
+        if is_probably_dns(conn) {
             conn.direction = ConnectionDirection::Outgoing as i32;
         }
     }
+}
+
+/// Matches the Go sidecar's DNS heuristic: flip a connection to "outgoing"
+/// if ANY of the following holds.
+///
+/// 1. `raddr.port == 53` (protocol-agnostic).
+/// 2. The connection carries DNS stats in any of its three DNS maps (`dns_stats_by_domain`,
+///    `dns_stats_by_domain_by_query_type`, or `dns_count_by_rcode`).
+/// 3. UDP + local port marked ephemeral by the agent + `raddr.port < 1024`.
+///
+/// Reference: `byoc-usm-stats/internal/resolver/direction.go::fixupDirection`.
+fn is_probably_dns(conn: &Connection) -> bool {
+    let Some(raddr) = conn.raddr.as_ref() else {
+        return false;
+    };
+    if raddr.port == DNS_PORT {
+        return true;
+    }
+    if has_dns_stats(conn) {
+        return true;
+    }
+    if conn.r#type == ConnectionType::Udp as i32
+        && conn.is_local_port_ephemeral == EphemeralPortState::EphemeralTrue as i32
+        && raddr.port < WELL_KNOWN_PORT_MAX
+    {
+        return true;
+    }
+    // Fallback ephemeral heuristic for agents that don't set
+    // `is_local_port_ephemeral`: UDP + laddr in the Linux ephemeral range +
+    // raddr in the well-known range. Keeps parity with older agent payloads
+    // that pre-date the explicit ephemeral-port flag.
+    if conn.r#type == ConnectionType::Udp as i32
+        && let Some(laddr) = conn.laddr.as_ref()
+        && laddr.port >= EPHEMERAL_PORT_MIN
+        && raddr.port < WELL_KNOWN_PORT_MAX
+    {
+        return true;
+    }
+    false
+}
+
+fn has_dns_stats(conn: &Connection) -> bool {
+    !conn.dns_stats_by_domain.is_empty()
+        || !conn.dns_stats_by_domain_by_query_type.is_empty()
+        || !conn.dns_count_by_rcode.is_empty()
 }
 
 #[cfg(test)]
@@ -719,6 +791,127 @@ mod tests {
         assert_eq!(
             cc.connections[0].direction,
             ConnectionDirection::Outgoing as i32
+        );
+    }
+
+    #[test]
+    fn fixup_flips_tcp_to_dns_port() {
+        // Go's heuristic flips DNS regardless of protocol: raddr.port == 53
+        // alone is enough. TCP DNS (AXFR, big responses) must flip too.
+        let mut cc = CollectorConnections::default();
+        cc.connections.push(Connection {
+            r#type: ConnectionType::Tcp as i32,
+            direction: ConnectionDirection::Incoming as i32,
+            laddr: Some(Addr {
+                port: 12345,
+                ..Default::default()
+            }),
+            raddr: Some(Addr {
+                port: 53,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        fixup_directions(&mut cc);
+        assert_eq!(
+            cc.connections[0].direction,
+            ConnectionDirection::Outgoing as i32
+        );
+    }
+
+    #[test]
+    fn fixup_flips_on_dns_count_by_rcode_alone() {
+        // Go also considers `dns_count_by_rcode` when testing for DNS.
+        // A connection that carries that map but none of the other two
+        // must still flip.
+        let mut cc = CollectorConnections::default();
+        let mut conn = Connection {
+            r#type: ConnectionType::Udp as i32,
+            direction: ConnectionDirection::Incoming as i32,
+            laddr: Some(Addr {
+                port: 12345,
+                ..Default::default()
+            }),
+            raddr: Some(Addr {
+                port: 12345,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        conn.dns_count_by_rcode.insert(0, 1);
+        cc.connections.push(conn);
+        fixup_directions(&mut cc);
+        assert_eq!(
+            cc.connections[0].direction,
+            ConnectionDirection::Outgoing as i32
+        );
+    }
+
+    #[test]
+    fn fixup_flips_udp_with_explicit_ephemeral_flag() {
+        // Connection has laddr.port below the 32768 fallback threshold, but
+        // the agent marked it ephemeral explicitly. Go uses the flag; we
+        // match.
+        let mut cc = CollectorConnections::default();
+        cc.connections.push(Connection {
+            r#type: ConnectionType::Udp as i32,
+            direction: ConnectionDirection::Incoming as i32,
+            is_local_port_ephemeral: EphemeralPortState::EphemeralTrue as i32,
+            laddr: Some(Addr {
+                port: 20000,
+                ..Default::default()
+            }),
+            raddr: Some(Addr {
+                port: 500,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        fixup_directions(&mut cc);
+        assert_eq!(
+            cc.connections[0].direction,
+            ConnectionDirection::Outgoing as i32
+        );
+    }
+
+    #[test]
+    fn truncate_at_char_boundary_handles_multibyte() {
+        // Pure-ASCII container id: normal truncation.
+        assert_eq!(
+            truncate_at_char_boundary("abcdef1234567890", 12),
+            "abcdef123456"
+        );
+        // Shorter than limit: returned as-is.
+        assert_eq!(truncate_at_char_boundary("abc", 12), "abc");
+        // Multi-byte boundary: '€' is 3 bytes. Naive `&s[..7]` would panic;
+        // this helper should back up to the previous char boundary.
+        let s = "abcd€xyz";
+        let out = truncate_at_char_boundary(s, 7);
+        assert!(s.starts_with(out), "{out:?} must be a prefix of {s:?}");
+        assert!(!out.is_empty());
+    }
+
+    #[test]
+    fn fixup_does_not_flip_plain_udp() {
+        // UDP with no DNS markers and non-DNS ports — no fixup.
+        let mut cc = CollectorConnections::default();
+        cc.connections.push(Connection {
+            r#type: ConnectionType::Udp as i32,
+            direction: ConnectionDirection::Incoming as i32,
+            laddr: Some(Addr {
+                port: 1234,
+                ..Default::default()
+            }),
+            raddr: Some(Addr {
+                port: 5678,
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        fixup_directions(&mut cc);
+        assert_eq!(
+            cc.connections[0].direction,
+            ConnectionDirection::Incoming as i32
         );
     }
 }

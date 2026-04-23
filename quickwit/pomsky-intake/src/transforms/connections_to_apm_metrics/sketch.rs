@@ -52,10 +52,22 @@ const SINGLE_SAMPLE_RELATIVE_ACCURACY: f64 = 0.01;
 /// Decodes an agent-embedded `ddsketch_full` proto payload into a Vector
 /// `AgentDDSketch`. Returns `None` if the proto is invalid, empty, or
 /// carries no mapping.
+///
+/// Decode failures are logged at `warn` so that a corrupt sketch doesn't
+/// silently yield a hit-without-distribution metric downstream.
 pub(super) fn decode_proto(bytes: &[u8]) -> Option<AgentDDSketch> {
-    let proto = DdSketch::decode(bytes).ok()?;
+    let proto = match DdSketch::decode(bytes) {
+        Ok(proto) => proto,
+        Err(err) => {
+            warn!(%err, bytes = bytes.len(), "ddsketch proto decode failed, dropping sketch");
+            return None;
+        }
+    };
 
-    let mapping = proto.mapping?;
+    let Some(mapping) = proto.mapping else {
+        warn!("ddsketch payload missing mapping, dropping sketch");
+        return None;
+    };
     let gamma = mapping.gamma;
     if !gamma.is_finite() || gamma <= 1.0 {
         warn!(gamma, "invalid ddsketch mapping gamma");

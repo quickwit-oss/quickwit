@@ -22,9 +22,12 @@ use std::sync::OnceLock;
 
 use prost::Message;
 use regex::Regex;
+use tracing::warn;
 
 use super::super::types::{Operation, ProtoStat};
-use super::http::{is_method_unknown, method_string, optional_bytes, optional_f64};
+use super::http::{
+    HTTP_ERROR_STATUS_MIN, is_method_unknown, method_string, optional_bytes, optional_f64,
+};
 use crate::protos::process::{Http2Aggregations, HttpMethod};
 
 /// Path regex the Go sidecar uses to classify gRPC traffic from the HTTP/2
@@ -36,7 +39,10 @@ pub(in crate::transforms::connections_to_apm_metrics) fn parse_http2_aggregation
 ) -> Vec<ProtoStat> {
     let agg = match Http2Aggregations::decode(data) {
         Ok(agg) => agg,
-        Err(_) => return Vec::new(),
+        Err(err) => {
+            warn!(%err, bytes = data.len(), "http2 aggregation decode failed, dropping");
+            return Vec::new();
+        }
     };
     let re = grpc_pattern();
     let mut out: Vec<ProtoStat> = Vec::new();
@@ -62,13 +68,35 @@ pub(in crate::transforms::connections_to_apm_metrics) fn parse_http2_aggregation
             if data.count == 0 {
                 continue;
             }
-            let errors = if *status_code >= 400 { data.count } else { 0 };
+            let errors = if *status_code >= HTTP_ERROR_STATUS_MIN {
+                data.count
+            } else {
+                0
+            };
             out.push(ProtoStat {
                 operation,
                 resource: resource.clone(),
                 status: *status_code,
                 hits: data.count,
                 errors,
+                latencies: optional_bytes(&data.latencies),
+                first_latency_sample: optional_f64(data.first_latency_sample),
+            });
+        }
+
+        // Legacy fallback: older agents emit `stats_by_response_status`
+        // without per-status-code keys. Mirrors the HTTP/1 parser path so
+        // that older-agent HTTP/2 and gRPC payloads aren't silently dropped.
+        for data in &ep.stats_by_response_status {
+            if data.count == 0 {
+                continue;
+            }
+            out.push(ProtoStat {
+                operation,
+                resource: resource.clone(),
+                status: 0,
+                hits: data.count,
+                errors: 0,
                 latencies: optional_bytes(&data.latencies),
                 first_latency_sample: optional_f64(data.first_latency_sample),
             });
@@ -158,5 +186,32 @@ mod tests {
             ],
         };
         assert!(parse_http2_aggregations(&agg.encode_to_vec()).is_empty());
+    }
+
+    #[test]
+    fn legacy_stats_by_response_status_gives_status_zero() {
+        let agg = Http2Aggregations {
+            endpoint_aggregations: vec![HttpStats {
+                path: "/legacy".into(),
+                method: HttpMethod::Get as i32,
+                full_path: true,
+                stats_by_response_status: vec![Data {
+                    count: 7,
+                    latencies: Vec::new(),
+                    first_latency_sample: 0.0,
+                }],
+                stats_by_status_code: std::collections::HashMap::new(),
+            }],
+        };
+        let stats = parse_http2_aggregations(&agg.encode_to_vec());
+        assert_eq!(stats.len(), 1);
+        assert_eq!(stats[0].operation, Operation::Http2);
+        assert_eq!(stats[0].status, 0);
+        assert_eq!(stats[0].hits, 7);
+    }
+
+    #[test]
+    fn malformed_bytes_return_empty() {
+        assert!(parse_http2_aggregations(b"\xff\xff\xff").is_empty());
     }
 }

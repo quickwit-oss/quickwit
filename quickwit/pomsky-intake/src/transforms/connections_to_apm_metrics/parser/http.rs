@@ -19,16 +19,24 @@
 
 use bytes::Bytes;
 use prost::Message;
+use tracing::warn;
 
 use super::super::types::{Operation, ProtoStat};
 use crate::protos::process::{HttpAggregations, HttpMethod};
+
+/// HTTP status code at and above which a response is counted as an error.
+/// Matches NSX `(status_code / 100) == 4 || == 5`.
+pub(super) const HTTP_ERROR_STATUS_MIN: i32 = 400;
 
 pub(in crate::transforms::connections_to_apm_metrics) fn parse_http_aggregations(
     data: &[u8],
 ) -> Vec<ProtoStat> {
     let agg = match HttpAggregations::decode(data) {
         Ok(agg) => agg,
-        Err(_) => return Vec::new(),
+        Err(err) => {
+            warn!(%err, bytes = data.len(), "http aggregation decode failed, dropping");
+            return Vec::new();
+        }
     };
     let mut out: Vec<ProtoStat> = Vec::new();
     for ep in agg.endpoint_aggregations {
@@ -42,7 +50,11 @@ pub(in crate::transforms::connections_to_apm_metrics) fn parse_http_aggregations
             if data.count == 0 {
                 continue;
             }
-            let errors = if *status_code >= 400 { data.count } else { 0 };
+            let errors = if *status_code >= HTTP_ERROR_STATUS_MIN {
+                data.count
+            } else {
+                0
+            };
             out.push(ProtoStat {
                 operation: Operation::Http,
                 resource: resource.clone(),

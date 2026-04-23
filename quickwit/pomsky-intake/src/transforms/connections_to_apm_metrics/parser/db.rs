@@ -18,6 +18,7 @@
 //! Port of `parser/db.go`.
 
 use prost::Message;
+use tracing::warn;
 
 use super::super::types::{Operation, ProtoStat};
 use super::http::{optional_bytes, optional_f64};
@@ -32,7 +33,10 @@ pub(in crate::transforms::connections_to_apm_metrics) fn parse_database_aggregat
 ) -> Vec<ProtoStat> {
     let agg = match DatabaseAggregations::decode(data) {
         Ok(agg) => agg,
-        Err(_) => return Vec::new(),
+        Err(err) => {
+            warn!(%err, bytes = data.len(), "database aggregation decode failed, dropping");
+            return Vec::new();
+        }
     };
     let mut out: Vec<ProtoStat> = Vec::new();
     for stats in agg.aggregations {

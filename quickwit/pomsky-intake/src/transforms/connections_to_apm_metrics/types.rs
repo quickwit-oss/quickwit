@@ -86,17 +86,14 @@ pub(super) enum Direction {
 
 impl Direction {
     /// Maps the agent's `ConnectionDirection` proto enum to our internal
-    /// representation. Returns `None` for `Unspecified` (skip the connection).
-    pub(super) fn from_agent(d: i32) -> Option<Self> {
-        // The proto enum name is `ConnectionDirection`. Outgoing → client,
-        // Incoming → server. (Values match dd-source's resolver package.)
-        match ConnectionDirection::try_from(d).ok()? {
-            ConnectionDirection::Unspecified => None,
-            ConnectionDirection::Incoming => Some(Self::Server),
-            ConnectionDirection::Outgoing => Some(Self::Client),
-            // Loopback / "none" / local patterns: treat as server by default.
-            // The Go sidecar treats anything non-outgoing as incoming.
-            _ => Some(Self::Server),
+    /// representation. Mirrors the Go sidecar's rule: `Incoming` → server,
+    /// everything else (including `Unspecified`, `Local`, `None`, and
+    /// unknown int values) → client.
+    pub(super) fn from_agent(d: i32) -> Self {
+        if d == ConnectionDirection::Incoming as i32 {
+            Self::Server
+        } else {
+            Self::Client
         }
     }
 
@@ -208,6 +205,36 @@ mod tests {
         assert_eq!(status_class_from_code(599), Some(StatusClass::FiveXx));
         assert_eq!(status_class_from_code(600), None);
         assert_eq!(status_class_from_code(0), None);
+    }
+
+    #[test]
+    fn direction_from_agent_matches_go_rule() {
+        // Incoming is the only value that maps to Server. Everything else
+        // (Unspecified, Outgoing, Local, None, unknown int) maps to Client —
+        // matches dd-source byoc-usm-stats `resolver.Direction`.
+        assert_eq!(
+            Direction::from_agent(ConnectionDirection::Incoming as i32),
+            Direction::Server
+        );
+        assert_eq!(
+            Direction::from_agent(ConnectionDirection::Unspecified as i32),
+            Direction::Client
+        );
+        assert_eq!(
+            Direction::from_agent(ConnectionDirection::Outgoing as i32),
+            Direction::Client
+        );
+        assert_eq!(
+            Direction::from_agent(ConnectionDirection::Local as i32),
+            Direction::Client
+        );
+        assert_eq!(
+            Direction::from_agent(ConnectionDirection::None as i32),
+            Direction::Client
+        );
+        // Unknown int values (e.g., a newer agent enum variant) also map to
+        // Client, mirroring Go's fall-through.
+        assert_eq!(Direction::from_agent(99), Direction::Client);
     }
 
     #[test]

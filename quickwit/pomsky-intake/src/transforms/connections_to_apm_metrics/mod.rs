@@ -45,6 +45,18 @@ use vector_lib::config::clone_input_definitions;
 use crate::protos::process::CollectorConnections;
 use crate::sources::connections::{CONNECTIONS_PROTO_FIELD, CONNECTIONS_TIMESTAMP_FIELD};
 
+/// Safety cap on connections per single CollectorConnections payload.
+///
+/// Each connection can spawn tens of `ProtoStat`s (one per endpoint per
+/// status code per protocol) and each ProtoStat carries owned strings +
+/// optional sketch bytes. A payload with millions of connections would OOM
+/// the intake before we ever hit the aggregator. A misbehaving or malicious
+/// agent shouldn't be able to take down pomsky-intake with one POST.
+///
+/// The bound is generous: a healthy agent reports ~500-5000 connections
+/// every 30 s. One million is ~200× the 99th-percentile real payload.
+const MAX_CONNECTIONS_PER_PAYLOAD: usize = 1_000_000;
+
 /// Processes agent CollectorConnections payloads and emits APM metrics.
 ///
 /// Input: Log events carrying decoded CollectorConnections protobuf bytes
@@ -130,6 +142,16 @@ impl FunctionTransform for ConnectionsToApmMetrics {
                 return;
             }
         };
+
+        if cc.connections.len() > MAX_CONNECTIONS_PER_PAYLOAD {
+            warn!(
+                host = %cc.host_name,
+                connections = cc.connections.len(),
+                cap = MAX_CONNECTIONS_PER_PAYLOAD,
+                "connections payload exceeds cap, truncating"
+            );
+            cc.connections.truncate(MAX_CONNECTIONS_PER_PAYLOAD);
+        }
 
         debug!(
             host = %cc.host_name,

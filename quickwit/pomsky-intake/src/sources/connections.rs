@@ -57,6 +57,16 @@ pub struct ConnectionsSourceConfig {
 // Default listen address: all interfaces, port 8585.
 const DEFAULT_PORT: u16 = 8585;
 
+/// Max accepted size of a compressed `POST /api/v1/connections` body.
+///
+/// The agent-side cap on a single CollectorConnections payload is tens of
+/// MB post-compression. 64 MiB gives us ~8-16× headroom over the largest
+/// real payload while bounding memory pressure from a misbehaving or
+/// malicious agent. Requests over this return 413 without consuming the
+/// body. Note: this is the compressed on-wire size; zstd expansion is
+/// bounded separately by the envelope decoder's inherent cost.
+const MAX_REQUEST_BODY_BYTES: u64 = 64 * 1024 * 1024;
+
 fn default_address() -> SocketAddr {
     // Build from typed parts — no parsing, no possible panic.
     SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), DEFAULT_PORT)
@@ -145,6 +155,7 @@ fn build_routes(
         .and(warp::path("v1"))
         .and(warp::path("connections"))
         .and(warp::path::end())
+        .and(warp::body::content_length_limit(MAX_REQUEST_BODY_BYTES))
         .and(warp::body::bytes())
         .and(warp::any().map(move || out.clone()))
         .and_then(handle_connections);
