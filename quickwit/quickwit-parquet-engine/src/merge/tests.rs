@@ -145,7 +145,7 @@ fn test_merge_two_non_overlapping_inputs() {
     assert_eq!(batch.num_rows(), 4);
 
     // metric_name should be sorted: cpu, cpu, mem, mem.
-    let metric_names = extract_dict_string_column(&batch, "metric_name");
+    let metric_names = extract_string_column(&batch, "metric_name");
     assert_eq!(metric_names, vec!["cpu", "cpu", "mem", "mem"]);
 
     // Within each metric, timestamps should be descending (sort default).
@@ -199,7 +199,7 @@ fn test_merge_interleaved_inputs() {
     let batch = read_parquet_file(&outputs[0].path);
 
     // Expected: cpu (t=200, t=100), mem (t=200, t=100).
-    let metric_names = extract_dict_string_column(&batch, "metric_name");
+    let metric_names = extract_string_column(&batch, "metric_name");
     assert_eq!(metric_names, vec!["cpu", "cpu", "mem", "mem"]);
 
     let timestamps = extract_u64_column(&batch, "timestamp_secs");
@@ -435,25 +435,39 @@ fn read_parquet_file(path: &std::path::Path) -> RecordBatch {
     arrow::compute::concat_batches(&schema, &batches).unwrap()
 }
 
-fn extract_dict_string_column(batch: &RecordBatch, name: &str) -> Vec<String> {
+/// Extract string values from a column that may be Utf8, LargeUtf8,
+/// or Dictionary-encoded. Handles all representations uniformly.
+fn extract_string_column(batch: &RecordBatch, name: &str) -> Vec<String> {
     let idx = batch.schema().index_of(name).unwrap();
     let col = batch.column(idx);
-    let dict = col
-        .as_any()
-        .downcast_ref::<DictionaryArray<Int32Type>>()
-        .expect("expected Dict<Int32, Utf8>");
-    let values = dict
-        .values()
-        .as_any()
-        .downcast_ref::<StringArray>()
-        .unwrap();
 
-    (0..dict.len())
-        .map(|i| {
-            let key = dict.keys().value(i) as usize;
-            values.value(key).to_string()
-        })
-        .collect()
+    // Try Dictionary<Int32, Utf8> first (most common in our pipeline).
+    if let Some(dict) = col.as_any().downcast_ref::<DictionaryArray<Int32Type>>() {
+        let values = dict
+            .values()
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        return (0..dict.len())
+            .map(|i| {
+                let key = dict.keys().value(i) as usize;
+                values.value(key).to_string()
+            })
+            .collect();
+    }
+
+    // Try plain Utf8.
+    if let Some(str_arr) = col.as_any().downcast_ref::<StringArray>() {
+        return (0..str_arr.len())
+            .map(|i| str_arr.value(i).to_string())
+            .collect();
+    }
+
+    panic!(
+        "column '{}' is neither Dict<Int32, Utf8> nor Utf8, got {:?}",
+        name,
+        col.data_type()
+    );
 }
 
 fn extract_u64_column(batch: &RecordBatch, name: &str) -> Vec<u64> {
@@ -620,7 +634,7 @@ fn test_merge_mc2_row_contents_preserved() {
     let batch = read_parquet_file(&outputs[0].path);
 
     // Collect all (metric_name, timestamp, value) triples from output.
-    let names = extract_dict_string_column(&batch, "metric_name");
+    let names = extract_string_column(&batch, "metric_name");
     let timestamps = extract_u64_column(&batch, "timestamp_secs");
     let values = extract_f64_column(&batch, "value");
 
@@ -701,6 +715,277 @@ fn test_merge_dm5_sorted_series_preserved() {
             "DM-5: sorted_series must be preserved through merge"
         );
     }
+}
+
+// ---- Row-level interleaving and boundary tests ----
+
+#[test]
+fn test_merge_deep_interleaving() {
+    // Construct inputs where the sorted output must interleave rows from
+    // the middle of different inputs — not just append one after another.
+    //
+    // Input 1: alpha@300, beta@100
+    // Input 2: alpha@100, beta@300
+    //
+    // After sort by (metric_name ASC, timestamp DESC):
+    //   alpha@300 (input 1), alpha@100 (input 2), beta@300 (input 2), beta@100 (input 1)
+    //
+    // This forces row 0 of input 1, row 0 of input 2, row 1 of input 2, row 1 of input 1.
+    let dir = TempDir::new().unwrap();
+
+    let input1 = write_test_split(
+        dir.path(),
+        "input1.parquet",
+        &["alpha", "beta"],
+        &[300, 100],
+        &[1.0, 2.0],
+        &[10, 20],
+    );
+
+    let input2 = write_test_split(
+        dir.path(),
+        "input2.parquet",
+        &["alpha", "beta"],
+        &[100, 300],
+        &[3.0, 4.0],
+        &[10, 20],
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let config = MergeConfig {
+        sort_fields: TEST_SORT_FIELDS.to_string(),
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+        window_start_secs: Some(0),
+        window_duration_secs: 900,
+        input_num_merge_ops: 0,
+    };
+
+    let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
+    let batch = read_parquet_file(&outputs[0].path);
+
+    let names = extract_string_column(&batch, "metric_name");
+    let timestamps = extract_u64_column(&batch, "timestamp_secs");
+    let values = extract_f64_column(&batch, "value");
+
+    // Verify deep interleaving: alpha rows come first, then beta rows.
+    // Within each metric, timestamps are descending.
+    assert_eq!(names, vec!["alpha", "alpha", "beta", "beta"]);
+    assert_eq!(timestamps, vec![300, 100, 300, 100]);
+
+    // Verify which input each row came from via the value column:
+    // alpha@300 = 1.0 (input1), alpha@100 = 3.0 (input2),
+    // beta@300 = 4.0 (input2), beta@100 = 2.0 (input1).
+    assert_eq!(values, vec![1.0, 3.0, 4.0, 2.0]);
+}
+
+#[test]
+fn test_merge_duplicate_timestamps() {
+    // MC-1: duplicate timestamps within the same series must all survive.
+    // Two inputs contribute rows for the same metric at the same timestamp
+    // with different values.
+    let dir = TempDir::new().unwrap();
+
+    let input1 = write_test_split(
+        dir.path(),
+        "input1.parquet",
+        &["cpu", "cpu"],
+        &[100, 100], // same timestamp, different values
+        &[1.0, 2.0],
+        &[42, 42],   // same timeseries_id
+    );
+
+    let input2 = write_test_split(
+        dir.path(),
+        "input2.parquet",
+        &["cpu", "cpu"],
+        &[100, 100],
+        &[3.0, 4.0],
+        &[42, 42],
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let config = MergeConfig {
+        sort_fields: TEST_SORT_FIELDS.to_string(),
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+        window_start_secs: Some(0),
+        window_duration_secs: 900,
+        input_num_merge_ops: 0,
+    };
+
+    let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
+    let batch = read_parquet_file(&outputs[0].path);
+
+    // MC-1: all 4 rows must survive — no deduplication.
+    assert_eq!(batch.num_rows(), 4);
+
+    let timestamps = extract_u64_column(&batch, "timestamp_secs");
+    assert_eq!(timestamps, vec![100, 100, 100, 100]);
+
+    // MC-2: all 4 values must be present.
+    let mut values = extract_f64_column(&batch, "value");
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(values, vec![1.0, 2.0, 3.0, 4.0]);
+}
+
+#[test]
+fn test_merge_per_output_schema_strips_null_columns() {
+    // When M=2, an output file whose rows all came from an input that
+    // lacks a column should not have that column (all-null stripped).
+    let dir = TempDir::new().unwrap();
+
+    // Input 1 has "extra_tag", metric "alpha".
+    let metric_name_array: DictionaryArray<Int32Type> =
+        vec![Some("alpha")].into_iter().collect();
+    let timestamp_array = UInt64Array::from(vec![100u64]);
+    let value_array = arrow::array::Float64Array::from(vec![1.0]);
+    let tsid_array = Int64Array::from(vec![42i64]);
+    let metric_type_array = UInt8Array::from(vec![0u8]);
+    let extra_tag_array: DictionaryArray<Int32Type> =
+        vec![Some("us-east")].into_iter().collect();
+
+    let schema_with_extra = Arc::new(Schema::new(vec![
+        Field::new(
+            "metric_name",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            false,
+        ),
+        Field::new("metric_type", DataType::UInt8, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
+        Field::new(
+            "extra_tag",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            true,
+        ),
+    ]));
+
+    let batch_with_extra = RecordBatch::try_new(
+        schema_with_extra,
+        vec![
+            Arc::new(metric_name_array),
+            Arc::new(metric_type_array),
+            Arc::new(timestamp_array),
+            Arc::new(value_array),
+            Arc::new(tsid_array),
+            Arc::new(extra_tag_array),
+        ],
+    )
+    .unwrap();
+
+    let table_config = TableConfig {
+        product_type: ProductType::Metrics,
+        sort_fields: Some(TEST_SORT_FIELDS.to_string()),
+        window_duration_secs: 900,
+    };
+    let writer_config = ParquetWriterConfig::default();
+    let writer = ParquetWriter::new(writer_config, &table_config).unwrap();
+    let path1 = dir.path().join("input1_extra.parquet");
+    writer
+        .write_to_file_with_metadata(&batch_with_extra, &path1, None)
+        .unwrap();
+
+    // Input 2 without extra_tag, metric "zeta" (sorts after "alpha").
+    let input2 = write_test_split(
+        dir.path(),
+        "input2.parquet",
+        &["zeta"],
+        &[200],
+        &[2.0],
+        &[99],
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    // Request M=2 — alpha goes to output 1, zeta goes to output 2.
+    let config = MergeConfig {
+        sort_fields: TEST_SORT_FIELDS.to_string(),
+        num_outputs: 2,
+        writer_config: ParquetWriterConfig::default(),
+        window_start_secs: Some(0),
+        window_duration_secs: 900,
+        input_num_merge_ops: 0,
+    };
+
+    let outputs = merge_sorted_parquet_files(&[path1, input2], &output_dir, &config).unwrap();
+    assert_eq!(outputs.len(), 2, "should produce 2 output files");
+
+    // Output 1 (alpha) should have extra_tag.
+    let batch1 = read_parquet_file(&outputs[0].path);
+    let names1 = extract_string_column(&batch1, "metric_name");
+    assert_eq!(names1, vec!["alpha"]);
+    assert!(
+        batch1.schema().index_of("extra_tag").is_ok(),
+        "output 1 (alpha) must have extra_tag"
+    );
+
+    // Output 2 (zeta) should NOT have extra_tag — it would be all-null.
+    let batch2 = read_parquet_file(&outputs[1].path);
+    let names2 = extract_string_column(&batch2, "metric_name");
+    assert_eq!(names2, vec!["zeta"]);
+    assert!(
+        batch2.schema().index_of("extra_tag").is_err(),
+        "output 2 (zeta) must not have extra_tag (all-null stripped)"
+    );
+}
+
+#[test]
+fn test_merge_output_type_reflects_data() {
+    // The output column type should be determined by the actual data,
+    // not by the input types. Low-cardinality string columns should be
+    // dictionary-encoded in the output regardless of input encoding.
+    let dir = TempDir::new().unwrap();
+
+    // Both inputs have the same metric repeated — low cardinality.
+    let input1 = write_test_split(
+        dir.path(),
+        "input1.parquet",
+        &["cpu", "cpu", "cpu", "cpu"],
+        &[100, 200, 300, 400],
+        &[1.0, 2.0, 3.0, 4.0],
+        &[42, 42, 42, 42],
+    );
+
+    let input2 = write_test_split(
+        dir.path(),
+        "input2.parquet",
+        &["cpu", "cpu", "cpu", "cpu"],
+        &[150, 250, 350, 450],
+        &[5.0, 6.0, 7.0, 8.0],
+        &[42, 42, 42, 42],
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let config = MergeConfig {
+        sort_fields: TEST_SORT_FIELDS.to_string(),
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+        window_start_secs: Some(0),
+        window_duration_secs: 900,
+        input_num_merge_ops: 0,
+    };
+
+    let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
+    let batch = read_parquet_file(&outputs[0].path);
+
+    // metric_name has 1 distinct value across 8 rows — should be dictionary-encoded.
+    let schema = batch.schema();
+    let mn_idx = schema.index_of("metric_name").unwrap();
+    let mn_type = schema.field(mn_idx).data_type();
+    assert!(
+        matches!(mn_type, DataType::Dictionary(_, _)),
+        "low-cardinality metric_name should be dictionary-encoded, got {:?}",
+        mn_type
+    );
 }
 
 // ---- Proptest DST: property-based invariant verification ----

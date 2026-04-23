@@ -17,14 +17,19 @@
 //! Uses `(sorted_series ASC, timestamp_secs DESC)` as the merge key.
 //! Produces a run-length encoded merge order that naturally captures
 //! contiguous runs from the same input.
+//!
+//! The merge operates at the individual row level — any row from any input
+//! can end up at any position in any output. Input row group boundaries are
+//! irrelevant; they are erased when each file is read into a flat RecordBatch.
 
 use std::collections::BinaryHeap;
+use std::sync::Arc;
 
 use anyhow::Result;
 use arrow::array::{BinaryArray, RecordBatch};
 use arrow::compute::SortOptions;
 use arrow::datatypes::DataType;
-use arrow::row::{RowConverter, SortField};
+use arrow::row::{RowConverter, Rows, SortField};
 
 use crate::sorted_series::SORTED_SERIES_COLUMN;
 
@@ -41,22 +46,60 @@ pub struct MergeRun {
     pub row_count: usize,
 }
 
-/// An entry in the merge heap.
+/// Shared state for the k-way merge heap.
 ///
-/// Wraps `Reverse<(row_bytes, input_index)>` so that `BinaryHeap` (max-heap)
-/// yields the smallest element first.
+/// Holds the converted row arrays so that heap entries can reference rows
+/// by (input_index, row_pos) without copying key bytes.
+struct MergeHeapState {
+    row_arrays: Vec<Option<Rows>>,
+    input_lengths: Vec<usize>,
+}
+
+/// An entry in the merge heap. Stores only indices — row bytes are looked
+/// up from the shared [`MergeHeapState`] during comparison.
+///
+/// Uses a raw pointer to the shared state to satisfy `Ord` without copying
+/// key bytes. This is safe because:
+/// - The state lives on the stack in `compute_merge_order` and outlives the heap.
+/// - The pointer is never dereferenced after the heap is dropped.
+/// - The state is never mutated while the heap exists.
 struct HeapEntry {
-    /// Row bytes from RowConverter — binary-comparable.
-    row_bytes: Vec<u8>,
     /// Which input this row comes from.
     input_index: usize,
     /// Current row position within that input.
     row_pos: usize,
+    /// Shared state for row lookup during comparison.
+    state: *const MergeHeapState,
+}
+
+// SAFETY: MergeHeapState is immutable during the heap's lifetime and lives
+// on the same thread. We never send HeapEntry across threads.
+unsafe impl Send for HeapEntry {}
+
+impl HeapEntry {
+    /// Compare this entry's row with another's by looking up from shared state.
+    fn cmp_rows(&self, other: &Self) -> std::cmp::Ordering {
+        // SAFETY: state pointer is valid for the lifetime of compute_merge_order.
+        let state = unsafe { &*self.state };
+
+        let self_rows = state.row_arrays[self.input_index]
+            .as_ref()
+            .expect("heap entry references a non-empty input");
+        let other_rows = state.row_arrays[other.input_index]
+            .as_ref()
+            .expect("heap entry references a non-empty input");
+
+        let self_row = self_rows.row(self.row_pos);
+        let other_row = other_rows.row(other.row_pos);
+
+        self_row.cmp(&other_row)
+    }
 }
 
 impl PartialEq for HeapEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.row_bytes == other.row_bytes && self.input_index == other.input_index
+        self.cmp_rows(other) == std::cmp::Ordering::Equal
+            && self.input_index == other.input_index
     }
 }
 
@@ -72,7 +115,7 @@ impl Ord for HeapEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Reverse so BinaryHeap (max-heap) pops the smallest row first.
         // Break ties by input_index for determinism.
-        match other.row_bytes.cmp(&self.row_bytes) {
+        match other.cmp_rows(self) {
             std::cmp::Ordering::Equal => other.input_index.cmp(&self.input_index),
             ord => ord,
         }
@@ -82,8 +125,12 @@ impl Ord for HeapEntry {
 /// Compute the merge order across all inputs.
 ///
 /// Each input must be a RecordBatch with `sorted_series` (Binary, ascending)
-/// and `timestamp_secs` (Int64, descending) columns. Inputs must already be
-/// sorted by these columns.
+/// and `timestamp_secs` (descending) columns. Inputs must already be sorted
+/// by these columns.
+///
+/// The merge operates at individual row granularity — input row group
+/// boundaries are irrelevant. Any row from any input can end up at any
+/// position in the output, depending on sort order.
 ///
 /// Returns an RLE-encoded merge order: contiguous runs from the same input
 /// are collapsed into a single `MergeRun`.
@@ -137,20 +184,26 @@ pub fn compute_merge_order(inputs: &[RecordBatch]) -> Result<Vec<MergeRun>> {
         row_arrays.push(Some(rows));
     }
 
+    // Build shared state for heap entries. The state is immutable after this
+    // point and lives on the stack until the heap is fully drained.
+    let state = MergeHeapState {
+        row_arrays,
+        input_lengths: input_lengths.clone(),
+    };
+    let state_ptr: *const MergeHeapState = &state;
+
     // Estimate total rows for capacity hint.
     let total_rows: usize = input_lengths.iter().sum();
-    // Rough estimate: runs are at least 1 row each, but typically much longer.
     let mut merge_order: Vec<MergeRun> = Vec::with_capacity(total_rows.min(1024));
 
     // Initialize the min-heap with the first row from each non-empty input.
     let mut heap: BinaryHeap<HeapEntry> = BinaryHeap::with_capacity(inputs.len());
-    for (input_index, rows_opt) in row_arrays.iter().enumerate() {
-        if let Some(rows) = rows_opt {
-            let row = rows.row(0);
+    for (input_index, rows_opt) in state.row_arrays.iter().enumerate() {
+        if rows_opt.is_some() {
             heap.push(HeapEntry {
-                row_bytes: row.as_ref().to_vec(),
                 input_index,
                 row_pos: 0,
+                state: state_ptr,
             });
         }
     }
@@ -178,13 +231,11 @@ pub fn compute_merge_order(inputs: &[RecordBatch]) -> Result<Vec<MergeRun>> {
 
         // Push the next row from this input, if any.
         let next_pos = entry.row_pos + 1;
-        if next_pos < input_lengths[entry.input_index] {
-            let rows = row_arrays[entry.input_index].as_ref().unwrap();
-            let row = rows.row(next_pos);
+        if next_pos < state.input_lengths[entry.input_index] {
             heap.push(HeapEntry {
-                row_bytes: row.as_ref().to_vec(),
                 input_index: entry.input_index,
                 row_pos: next_pos,
+                state: state_ptr,
             });
         }
     }
@@ -307,5 +358,5 @@ fn get_column(batch: &RecordBatch, name: &str, input_index: usize) -> Result<arr
         .schema()
         .index_of(name)
         .map_err(|_| anyhow::anyhow!("input {} is missing column '{}'", input_index, name))?;
-    Ok(std::sync::Arc::clone(batch.column(idx)))
+    Ok(Arc::clone(batch.column(idx)))
 }

@@ -76,7 +76,15 @@ pub fn write_merge_outputs(
         // within equal sorted_series, timestamp_secs is non-increasing.
         verify_sort_order(&sorted_batch);
 
-        // Extract metadata from the sorted output batch.
+        // Optimize the output batch: strip all-null columns and choose
+        // the best encoding for each column based on its actual data.
+        // String columns are dictionary-encoded when cardinality is low.
+        // This runs per-output-file so each file's schema reflects its data.
+        let sorted_batch = super::schema::optimize_output_batch(&sorted_batch);
+
+        // Extract metadata from the optimized output batch.
+        // Row keys and zonemaps are computed from the actual output data,
+        // reflecting only the columns present in this file.
         let row_keys_proto =
             row_keys::extract_row_keys(&config.sort_fields, &sorted_batch)
                 .context("extracting row keys from merge output")?
