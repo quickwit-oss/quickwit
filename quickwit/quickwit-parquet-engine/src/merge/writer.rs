@@ -86,10 +86,9 @@ pub fn write_merge_outputs(
         // Extract metadata from the optimized output batch.
         // Row keys and zonemaps are computed from the actual output data,
         // reflecting only the columns present in this file.
-        let row_keys_proto =
-            row_keys::extract_row_keys(&input_meta.sort_fields, &sorted_batch)
-                .context("extracting row keys from merge output")?
-                .map(|rk| row_keys::encode_row_keys_proto(&rk));
+        let row_keys_proto = row_keys::extract_row_keys(&input_meta.sort_fields, &sorted_batch)
+            .context("extracting row keys from merge output")?
+            .map(|rk| row_keys::encode_row_keys_proto(&rk));
 
         let zonemap_opts = ZonemapOptions::default();
         let zonemap_regexes =
@@ -97,8 +96,7 @@ pub fn write_merge_outputs(
                 .context("extracting zonemap regexes from merge output")?;
 
         // Build KV metadata.
-        let kv_entries =
-            build_merge_kv_metadata(input_meta, &row_keys_proto, &zonemap_regexes);
+        let kv_entries = build_merge_kv_metadata(input_meta, &row_keys_proto, &zonemap_regexes);
 
         // Build sorting_columns for Parquet metadata.
         let sorting_cols = build_sorting_columns(&sorted_batch, &input_meta.sort_fields)?;
@@ -226,11 +224,10 @@ fn build_merge_kv_metadata(
         ));
 
         // Best-effort human-readable JSON for debugging.
-        if let Ok(rk) =
-            quickwit_proto::sortschema::RowKeys::decode(rk_bytes.as_slice())
-            && let Ok(json) = serde_json::to_string(&rk)
-        {
-            kvs.push(KeyValue::new(PARQUET_META_ROW_KEYS_JSON.to_string(), json));
+        if let Ok(rk) = quickwit_proto::sortschema::RowKeys::decode(rk_bytes.as_slice()) {
+            if let Ok(json) = serde_json::to_string(&rk) {
+                kvs.push(KeyValue::new(PARQUET_META_ROW_KEYS_JSON.to_string(), json));
+            }
         }
     }
 
@@ -247,10 +244,7 @@ fn build_merge_kv_metadata(
 }
 
 /// Build `SortingColumn` entries for Parquet file metadata.
-fn build_sorting_columns(
-    batch: &RecordBatch,
-    sort_fields_str: &str,
-) -> Result<Vec<SortingColumn>> {
+fn build_sorting_columns(batch: &RecordBatch, sort_fields_str: &str) -> Result<Vec<SortingColumn>> {
     let sort_schema = parse_sort_fields(sort_fields_str)?;
     let schema = batch.schema();
 
@@ -287,8 +281,8 @@ fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
     }
 
     // Determine timestamp sort direction from the sort schema.
-    let sort_schema = parse_sort_fields(sort_fields_str)
-        .expect("sort schema must parse for MC-3 check");
+    let sort_schema =
+        parse_sort_fields(sort_fields_str).expect("sort schema must parse for MC-3 check");
     let ts_descending = sort_schema
         .column
         .iter()
@@ -316,13 +310,14 @@ fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
     let ts_col = batch.column(ts_idx);
 
     // Timestamp may be UInt64 or Int64 depending on schema.
-    let ts_values: Vec<i64> = if let Some(arr) = ts_col.as_any().downcast_ref::<arrow::array::UInt64Array>() {
-        arr.values().iter().map(|&v| v as i64).collect()
-    } else if let Some(arr) = ts_col.as_any().downcast_ref::<arrow::array::Int64Array>() {
-        arr.values().to_vec()
-    } else {
-        panic!("timestamp_secs must be UInt64 or Int64 for MC-3 check");
-    };
+    let ts_values: Vec<i64> =
+        if let Some(arr) = ts_col.as_any().downcast_ref::<arrow::array::UInt64Array>() {
+            arr.values().iter().map(|&v| v as i64).collect()
+        } else if let Some(arr) = ts_col.as_any().downcast_ref::<arrow::array::Int64Array>() {
+            arr.values().to_vec()
+        } else {
+            panic!("timestamp_secs must be UInt64 or Int64 for MC-3 check");
+        };
 
     for i in 0..batch.num_rows() - 1 {
         let ss_a = ss_col.value(i);
@@ -333,7 +328,8 @@ fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
                 quickwit_dst::check_invariant!(
                     quickwit_dst::invariants::InvariantId::MC3,
                     false,
-                    ": sorted_series decreased at row {}", i
+                    ": sorted_series decreased at row {}",
+                    i
                 );
             }
             std::cmp::Ordering::Equal => {
@@ -343,7 +339,11 @@ fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
                 } else {
                     ts_values[i] <= ts_values[i + 1]
                 };
-                let direction_str = if ts_descending { "descending" } else { "ascending" };
+                let direction_str = if ts_descending {
+                    "descending"
+                } else {
+                    "ascending"
+                };
                 quickwit_dst::check_invariant!(
                     quickwit_dst::invariants::InvariantId::MC3,
                     order_ok,
@@ -362,11 +362,7 @@ fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
 }
 
 /// Write a RecordBatch to a Parquet file.
-fn write_parquet_file(
-    batch: &RecordBatch,
-    path: &Path,
-    props: WriterProperties,
-) -> Result<u64> {
+fn write_parquet_file(batch: &RecordBatch, path: &Path, props: WriterProperties) -> Result<u64> {
     let file = std::fs::File::create(path)
         .with_context(|| format!("creating output file: {}", path.display()))?;
 

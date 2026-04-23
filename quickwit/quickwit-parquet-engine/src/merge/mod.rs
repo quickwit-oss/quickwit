@@ -34,14 +34,13 @@ use arrow::array::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use tracing::info;
 
+pub use self::merge_order::MergeRun;
 use crate::sort_fields::{equivalent_schemas_for_compaction, parse_sort_fields};
 use crate::sorted_series::SORTED_SERIES_COLUMN;
 use crate::storage::{
     PARQUET_META_NUM_MERGE_OPS, PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION,
     PARQUET_META_WINDOW_START, ParquetWriterConfig,
 };
-
-pub use self::merge_order::MergeRun;
 
 /// Configuration for a merge operation.
 ///
@@ -161,8 +160,7 @@ fn merge_sorted_parquet_files_impl(
 
     // Step 3: Compute merge order using (sorted_series, timestamp_secs).
     // The timestamp sort direction comes from the sort schema.
-    let merge_order =
-        merge_order::compute_merge_order(&aligned_inputs, &input_meta.sort_fields)?;
+    let merge_order = merge_order::compute_merge_order(&aligned_inputs, &input_meta.sort_fields)?;
 
     // Step 4: Compute output boundaries at sorted_series transitions.
     let boundaries =
@@ -262,7 +260,11 @@ fn read_inputs(paths: &[PathBuf], read_batch_size: Option<usize>) -> Result<Vec<
             .with_context(|| format!("concatenating batches: {}", path.display()))?;
 
         // Verify sorted_series column exists.
-        if concatenated.schema().index_of(SORTED_SERIES_COLUMN).is_err() {
+        if concatenated
+            .schema()
+            .index_of(SORTED_SERIES_COLUMN)
+            .is_err()
+        {
             bail!(
                 "input file {} is missing the '{}' column",
                 path.display(),
@@ -294,18 +296,14 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
         let builder = ParquetRecordBatchReaderBuilder::try_new(file)
             .with_context(|| format!("reading footer for metadata: {}", path.display()))?;
 
-        let kv_metadata = builder
-            .metadata()
-            .file_metadata()
-            .key_value_metadata();
+        let kv_metadata = builder.metadata().file_metadata().key_value_metadata();
 
         let find_kv = |key: &str| -> Option<String> {
-            kv_metadata
-                .and_then(|kvs| {
-                    kvs.iter()
-                        .find(|kv| kv.key == key)
-                        .and_then(|kv| kv.value.clone())
-                })
+            kv_metadata.and_then(|kvs| {
+                kvs.iter()
+                    .find(|kv| kv.key == key)
+                    .and_then(|kv| kv.value.clone())
+            })
         };
 
         // Sort fields: required, must be consistent across all inputs.
@@ -321,7 +319,11 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
             Some(expected) => {
                 let expected_schema = parse_sort_fields(expected)?;
                 let file_schema = parse_sort_fields(&file_sort_fields).with_context(|| {
-                    format!("parsing sort schema from {}: '{}'", path.display(), file_sort_fields)
+                    format!(
+                        "parsing sort schema from {}: '{}'",
+                        path.display(),
+                        file_sort_fields
+                    )
                 })?;
                 if !equivalent_schemas_for_compaction(&expected_schema, &file_schema) {
                     bail!(
@@ -335,7 +337,11 @@ fn extract_and_validate_input_metadata(paths: &[PathBuf]) -> Result<InputMetadat
             None => {
                 // Validate the schema is parseable.
                 parse_sort_fields(&file_sort_fields).with_context(|| {
-                    format!("parsing sort schema from {}: '{}'", path.display(), file_sort_fields)
+                    format!(
+                        "parsing sort schema from {}: '{}'",
+                        path.display(),
+                        file_sort_fields
+                    )
                 })?;
                 consensus_sort_fields = Some(file_sort_fields.clone());
             }

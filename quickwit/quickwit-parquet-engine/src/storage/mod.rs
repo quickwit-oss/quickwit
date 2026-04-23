@@ -20,11 +20,10 @@ mod writer;
 
 pub use config::{Compression, ParquetWriterConfig};
 pub use split_writer::ParquetSplitWriter;
-pub use writer::{ParquetWriteError, ParquetWriter};
-
 // Re-export metadata constants for use by the merge module and tests.
 pub(crate) use writer::{
     PARQUET_META_NUM_MERGE_OPS, PARQUET_META_ROW_KEYS, PARQUET_META_ROW_KEYS_JSON,
     PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION, PARQUET_META_WINDOW_START,
     PARQUET_META_ZONEMAP_REGEXES,
 };
+pub use writer::{ParquetWriteError, ParquetWriter};

@@ -71,8 +71,8 @@ pub fn align_inputs_to_union_schema(
                 Some(existing) => {
                     if *existing.data_type() != normalized_type {
                         bail!(
-                            "type conflict for column '{}': input 0 has {:?}, \
-                             input {} has {:?} (normalized: {:?} vs {:?})",
+                            "type conflict for column '{}': input 0 has {:?}, input {} has {:?} \
+                             (normalized: {:?} vs {:?})",
                             field.name(),
                             existing.data_type(),
                             input_idx,
@@ -83,18 +83,14 @@ pub fn align_inputs_to_union_schema(
                     }
                     // If either side is nullable, the union must be too.
                     if field.is_nullable() && !existing.is_nullable() {
-                        let nullable_field = Arc::new(Field::new(
-                            field.name(),
-                            normalized_type,
-                            true,
-                        ));
+                        let nullable_field =
+                            Arc::new(Field::new(field.name(), normalized_type, true));
                         field_map.insert(field.name().clone(), nullable_field);
                     }
                 }
                 None => {
                     // Columns that don't appear in every input must be nullable.
-                    let nullable_field =
-                        Arc::new(Field::new(field.name(), normalized_type, true));
+                    let nullable_field = Arc::new(Field::new(field.name(), normalized_type, true));
                     field_map.insert(field.name().clone(), nullable_field);
                 }
             }
@@ -119,8 +115,8 @@ pub fn align_inputs_to_union_schema(
 /// the best encoding for each column based on the actual data.
 ///
 /// - All-null columns are removed.
-/// - String columns (Utf8) are dictionary-encoded if their distinct value
-///   count is low relative to the row count.
+/// - String columns (Utf8) are dictionary-encoded if their distinct value count is low relative to
+///   the row count.
 /// - Binary columns (like sorted_series) are left as-is.
 /// - Non-string columns are left as-is.
 pub fn optimize_output_batch(batch: &RecordBatch) -> RecordBatch {
@@ -153,7 +149,11 @@ pub fn optimize_output_batch(batch: &RecordBatch) -> RecordBatch {
                     DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
                 let dict_col = cast(col.as_ref(), &dict_type)
                     .expect("cast Utf8 -> Dictionary(Int32, Utf8) must succeed");
-                new_fields.push(Arc::new(Field::new(field.name(), dict_type, field.is_nullable())));
+                new_fields.push(Arc::new(Field::new(
+                    field.name(),
+                    dict_type,
+                    field.is_nullable(),
+                )));
                 new_columns.push(dict_col);
                 continue;
             }
@@ -214,11 +214,11 @@ fn build_husky_ordered_schema(
     }
 
     // Phase 1b: sorted_series immediately after sort columns.
-    if let Some(field) = field_map.get(SORTED_SERIES_COLUMN)
-        && !used.contains(SORTED_SERIES_COLUMN)
-    {
-        ordered_fields.push(Arc::clone(field));
-        used.insert(SORTED_SERIES_COLUMN);
+    if let Some(field) = field_map.get(SORTED_SERIES_COLUMN) {
+        if !used.contains(SORTED_SERIES_COLUMN) {
+            ordered_fields.push(Arc::clone(field));
+            used.insert(SORTED_SERIES_COLUMN);
+        }
     }
 
     // Phase 2: remaining columns alphabetically (BTreeMap is already sorted).

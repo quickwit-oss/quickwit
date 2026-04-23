@@ -87,8 +87,7 @@ impl HeapEntry {
 
 impl PartialEq for HeapEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.cmp_rows(other) == std::cmp::Ordering::Equal
-            && self.input_index == other.input_index
+        self.cmp_rows(other) == std::cmp::Ordering::Equal && self.input_index == other.input_index
     }
 }
 
@@ -123,10 +122,7 @@ impl Ord for HeapEntry {
 ///
 /// Returns an RLE-encoded merge order: contiguous runs from the same input
 /// are collapsed into a single `MergeRun`.
-pub fn compute_merge_order(
-    inputs: &[RecordBatch],
-    sort_fields_str: &str,
-) -> Result<Vec<MergeRun>> {
+pub fn compute_merge_order(inputs: &[RecordBatch], sort_fields_str: &str) -> Result<Vec<MergeRun>> {
     if inputs.is_empty() {
         return Ok(Vec::new());
     }
@@ -137,11 +133,13 @@ pub fn compute_merge_order(
         .column
         .iter()
         .find(|c| c.name == TIMESTAMP_COLUMN)
-        .ok_or_else(|| anyhow::anyhow!(
-            "sort schema '{}' does not contain '{}'",
-            sort_fields_str,
-            TIMESTAMP_COLUMN
-        ))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "sort schema '{}' does not contain '{}'",
+                sort_fields_str,
+                TIMESTAMP_COLUMN
+            )
+        })?;
 
     let ts_descending = ts_column.sort_direction
         == quickwit_proto::sortschema::SortColumnDirection::SortDirectionDescending as i32;
@@ -359,7 +357,11 @@ pub fn compute_output_boundaries(
 }
 
 /// Get a column by name from a RecordBatch, with a clear error message.
-fn get_column(batch: &RecordBatch, name: &str, input_index: usize) -> Result<arrow::array::ArrayRef> {
+fn get_column(
+    batch: &RecordBatch,
+    name: &str,
+    input_index: usize,
+) -> Result<arrow::array::ArrayRef> {
     let idx = batch
         .schema()
         .index_of(name)

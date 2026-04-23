@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::array::{
-    Array, DictionaryArray, Int64Array, RecordBatch, StringArray, UInt64Array, UInt8Array,
+    Array, DictionaryArray, Int64Array, RecordBatch, StringArray, UInt8Array, UInt64Array,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema};
 use tempfile::TempDir;
@@ -48,14 +48,11 @@ fn write_test_split(
     assert_eq!(metric_names.len(), timeseries_ids.len());
 
     // Build dictionary-encoded metric_name column.
-    let metric_name_array: DictionaryArray<Int32Type> = metric_names
-        .iter()
-        .map(|s| Some(*s))
-        .collect();
+    let metric_name_array: DictionaryArray<Int32Type> =
+        metric_names.iter().map(|s| Some(*s)).collect();
 
-    let timestamp_array = UInt64Array::from(
-        timestamps.iter().map(|&t| t as u64).collect::<Vec<u64>>(),
-    );
+    let timestamp_array =
+        UInt64Array::from(timestamps.iter().map(|&t| t as u64).collect::<Vec<u64>>());
     let value_array = arrow::array::Float64Array::from(values.to_vec());
     let tsid_array = Int64Array::from(timeseries_ids.to_vec());
     // metric_type: 0 = gauge for all rows.
@@ -140,7 +137,10 @@ fn test_merge_two_non_overlapping_inputs() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
@@ -189,7 +189,10 @@ fn test_merge_interleaved_inputs() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
@@ -221,7 +224,10 @@ fn test_merge_single_input() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
@@ -254,7 +260,10 @@ fn test_merge_multiple_outputs() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 3, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 3,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
 
@@ -278,7 +287,10 @@ fn test_merge_empty_inputs() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     // Zero inputs should error.
     let result = merge_sorted_parquet_files(&[], &output_dir, &config);
@@ -301,15 +313,18 @@ fn test_merge_verifies_parquet_kv_metadata() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
 
     // Read back the Parquet file and verify KV metadata.
     let file = std::fs::File::open(&outputs[0].path).unwrap();
-    let reader = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file)
-        .unwrap();
+    let reader =
+        parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
     let kv_metadata = reader
         .metadata()
         .file_metadata()
@@ -323,10 +338,7 @@ fn test_merge_verifies_parquet_kv_metadata() {
             .and_then(|kv| kv.value.clone())
     };
 
-    assert_eq!(
-        find_kv("qh.sort_fields").as_deref(),
-        Some(TEST_SORT_FIELDS)
-    );
+    assert_eq!(find_kv("qh.sort_fields").as_deref(), Some(TEST_SORT_FIELDS));
     assert_eq!(find_kv("qh.window_start").as_deref(), Some("0"));
     assert_eq!(find_kv("qh.window_duration_secs").as_deref(), Some("900"));
     // num_merge_ops = max(input.num_merge_ops) + 1. Input has 0, so output = 1.
@@ -350,23 +362,28 @@ fn test_merge_preserves_husky_column_ordering() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
 
     let schema = batch.schema();
-    let col_names: Vec<&str> = schema
-        .fields()
-        .iter()
-        .map(|f| f.name().as_str())
-        .collect();
+    let col_names: Vec<&str> = schema.fields().iter().map(|f| f.name().as_str()).collect();
 
     // Sort schema columns first (metric_name, timestamp_secs), then
     // sorted_series, then remaining alphabetically.
     let metric_pos = col_names.iter().position(|n| *n == "metric_name").unwrap();
-    let ts_pos = col_names.iter().position(|n| *n == "timestamp_secs").unwrap();
-    let ss_pos = col_names.iter().position(|n| *n == SORTED_SERIES_COLUMN).unwrap();
+    let ts_pos = col_names
+        .iter()
+        .position(|n| *n == "timestamp_secs")
+        .unwrap();
+    let ss_pos = col_names
+        .iter()
+        .position(|n| *n == SORTED_SERIES_COLUMN)
+        .unwrap();
 
     assert!(
         metric_pos < ts_pos,
@@ -473,14 +490,12 @@ fn test_merge_schema_evolution_extra_column() {
     let dir = TempDir::new().unwrap();
 
     // We'll write input1 with an extra column by building a custom batch.
-    let metric_name_array: DictionaryArray<Int32Type> =
-        vec![Some("cpu")].into_iter().collect();
+    let metric_name_array: DictionaryArray<Int32Type> = vec![Some("cpu")].into_iter().collect();
     let timestamp_array = UInt64Array::from(vec![100u64]);
     let value_array = arrow::array::Float64Array::from(vec![1.0]);
     let tsid_array = Int64Array::from(vec![42i64]);
     let metric_type_array = UInt8Array::from(vec![0u8]);
-    let extra_tag_array: DictionaryArray<Int32Type> =
-        vec![Some("us-east")].into_iter().collect();
+    let extra_tag_array: DictionaryArray<Int32Type> = vec![Some("us-east")].into_iter().collect();
 
     let schema_with_extra = Arc::new(Schema::new(vec![
         Field::new(
@@ -538,7 +553,10 @@ fn test_merge_schema_evolution_extra_column() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[path1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
@@ -578,7 +596,10 @@ fn test_merge_mc2_row_contents_preserved() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
@@ -605,7 +626,10 @@ fn test_merge_mc2_row_contents_preserved() {
     ];
     expected.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
 
-    assert_eq!(output_triples, expected, "MC-2: row contents must be preserved");
+    assert_eq!(
+        output_triples, expected,
+        "MC-2: row contents must be preserved"
+    );
 }
 
 #[test]
@@ -640,16 +664,21 @@ fn test_merge_dm5_sorted_series_preserved() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
-    let outputs =
-        merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
+    let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     let output_batch = read_parquet_file(&outputs[0].path);
     let output_ss = extract_binary_column(&output_batch, SORTED_SERIES_COLUMN);
 
     // All inputs had the same metric and timeseries_id, so sorted_series
     // should be identical across all rows.
-    assert_eq!(input1_ss[0], input2_ss[0], "same series should have same key");
+    assert_eq!(
+        input1_ss[0], input2_ss[0],
+        "same series should have same key"
+    );
 
     // DM-5: output sorted_series values must match input values.
     for ss in &output_ss {
@@ -697,7 +726,10 @@ fn test_merge_deep_interleaving() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
@@ -730,7 +762,7 @@ fn test_merge_duplicate_timestamps() {
         &["cpu", "cpu"],
         &[100, 100], // same timestamp, different values
         &[1.0, 2.0],
-        &[42, 42],   // same timeseries_id
+        &[42, 42], // same timeseries_id
     );
 
     let input2 = write_test_split(
@@ -745,7 +777,10 @@ fn test_merge_duplicate_timestamps() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
@@ -769,14 +804,12 @@ fn test_merge_per_output_schema_strips_null_columns() {
     let dir = TempDir::new().unwrap();
 
     // Input 1 has "extra_tag", metric "alpha".
-    let metric_name_array: DictionaryArray<Int32Type> =
-        vec![Some("alpha")].into_iter().collect();
+    let metric_name_array: DictionaryArray<Int32Type> = vec![Some("alpha")].into_iter().collect();
     let timestamp_array = UInt64Array::from(vec![100u64]);
     let value_array = arrow::array::Float64Array::from(vec![1.0]);
     let tsid_array = Int64Array::from(vec![42i64]);
     let metric_type_array = UInt8Array::from(vec![0u8]);
-    let extra_tag_array: DictionaryArray<Int32Type> =
-        vec![Some("us-east")].into_iter().collect();
+    let extra_tag_array: DictionaryArray<Int32Type> = vec![Some("us-east")].into_iter().collect();
 
     let schema_with_extra = Arc::new(Schema::new(vec![
         Field::new(
@@ -834,7 +867,10 @@ fn test_merge_per_output_schema_strips_null_columns() {
     std::fs::create_dir_all(&output_dir).unwrap();
 
     // Request M=2 — alpha goes to output 1, zeta goes to output 2.
-    let config = MergeConfig { num_outputs: 2, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 2,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[path1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 2, "should produce 2 output files");
@@ -887,7 +923,10 @@ fn test_merge_output_type_reflects_data() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     let batch = read_parquet_file(&outputs[0].path);
@@ -960,20 +999,18 @@ fn test_merge_cross_row_group_interleaving() {
     let tsids2: Vec<i64> = vec![10, 10, 10, 20, 20, 20, 40, 40];
 
     let batch2 = build_test_batch(&names2, &ts2, &vals2, &tsids2);
-    let input2 = write_test_split_with_config(
-        dir.path(),
-        "input2.parquet",
-        &batch2,
-        small_rg_config,
-    );
+    let input2 =
+        write_test_split_with_config(dir.path(), "input2.parquet", &batch2, small_rg_config);
 
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
-    let outputs =
-        merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
+    let outputs = merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
     assert_eq!(outputs.len(), 1);
     assert_eq!(outputs[0].num_rows, 16, "MC-1: all 16 rows must survive");
 
@@ -988,30 +1025,25 @@ fn test_merge_cross_row_group_interleaving() {
     // delta: 300(v=17), 200(v=18)
     // gamma: 300(v=7), 200(v=8)
     let expected_names = vec![
-        "alpha", "alpha", "alpha", "alpha", "alpha", "alpha",
-        "beta", "beta", "beta", "beta", "beta", "beta",
-        "delta", "delta",
-        "gamma", "gamma",
+        "alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "beta", "beta", "beta", "beta",
+        "beta", "beta", "delta", "delta", "gamma", "gamma",
     ];
     let expected_ts: Vec<u64> = vec![
-        300, 250, 200, 150, 100, 50,
-        300, 250, 200, 150, 100, 50,
-        300, 200,
-        300, 200,
+        300, 250, 200, 150, 100, 50, 300, 250, 200, 150, 100, 50, 300, 200, 300, 200,
     ];
     let expected_vals = vec![
-        1.0, 11.0, 2.0, 12.0, 3.0, 13.0,
-        4.0, 14.0, 5.0, 15.0, 6.0, 16.0,
-        17.0, 18.0,
-        7.0, 8.0,
+        1.0, 11.0, 2.0, 12.0, 3.0, 13.0, 4.0, 14.0, 5.0, 15.0, 6.0, 16.0, 17.0, 18.0, 7.0, 8.0,
     ];
 
     assert_eq!(names, expected_names, "metric names must be sorted");
-    assert_eq!(timestamps, expected_ts, "timestamps must be descending within series");
+    assert_eq!(
+        timestamps, expected_ts,
+        "timestamps must be descending within series"
+    );
     assert_eq!(
         values, expected_vals,
-        "values must match — proving rows from different row groups \
-         of different inputs interleave correctly"
+        "values must match — proving rows from different row groups of different inputs \
+         interleave correctly"
     );
 }
 
@@ -1049,7 +1081,10 @@ fn test_merge_cross_record_batch_interleaving() {
     let output_dir = dir.path().join("output");
     std::fs::create_dir_all(&output_dir).unwrap();
 
-    let config = MergeConfig { num_outputs: 1, writer_config: ParquetWriterConfig::default(), };
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
 
     // Force read batch size of 2 — each 6-row file yields 3 RecordBatches.
     let outputs = crate::merge::merge_sorted_parquet_files_with_read_batch_size(
@@ -1072,9 +1107,8 @@ fn test_merge_cross_record_batch_interleaving() {
     assert_eq!(
         names,
         vec![
-            "alpha", "alpha", "alpha", "alpha",
-            "beta", "beta", "beta", "beta",
-            "gamma", "gamma", "gamma", "gamma",
+            "alpha", "alpha", "alpha", "alpha", "beta", "beta", "beta", "beta", "gamma", "gamma",
+            "gamma", "gamma",
         ]
     );
     assert_eq!(
@@ -1085,7 +1119,9 @@ fn test_merge_cross_record_batch_interleaving() {
     // alpha: 200(v=1,input1), 150(v=11,input2), 100(v=2,input1), 50(v=12,input2)
     assert_eq!(
         values,
-        vec![1.0, 11.0, 2.0, 12.0, 3.0, 13.0, 4.0, 14.0, 5.0, 15.0, 6.0, 16.0]
+        vec![
+            1.0, 11.0, 2.0, 12.0, 3.0, 13.0, 4.0, 14.0, 5.0, 15.0, 6.0, 16.0
+        ]
     );
 }
 
@@ -1158,8 +1194,9 @@ fn count_row_groups(path: &std::path::Path) -> usize {
 // ---- Proptest DST: property-based invariant verification ----
 
 mod proptests {
-    use super::*;
     use proptest::prelude::*;
+
+    use super::*;
 
     /// Strategy to generate a list of metric names from a small set.
     fn metric_name_strategy() -> impl Strategy<Value = String> {
