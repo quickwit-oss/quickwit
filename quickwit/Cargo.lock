@@ -7771,6 +7771,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-dst",
  "quickwit-proto",
+ "regex",
  "serde",
  "serde_json",
  "siphasher",

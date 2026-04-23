@@ -38,9 +38,7 @@ use tracing::{debug, error, info, instrument};
 
 use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
 use crate::SplitsUpdateMailbox;
-use crate::actors::pipeline_shared::{
-    SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry,
-};
+use crate::actors::pipeline_shared::{SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry, MAX_PIPELINE_FAILURES};
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
@@ -88,6 +86,8 @@ pub struct IndexingPipeline {
     // requiring a respawn of the pipeline.
     // We keep the list of shards here however, to reassign them after a respawn.
     shard_ids: BTreeSet<ShardId>,
+    // Total failures observed over this actor's lifetime. See `MAX_PIPELINE_FAILURES`.
+    failure_count: usize,
     _indexing_pipelines_gauge_guard: OwnedGaugeGuard,
 }
 
@@ -138,7 +138,26 @@ impl IndexingPipeline {
                 ..Default::default()
             },
             shard_ids: Default::default(),
+            failure_count: 0,
             _indexing_pipelines_gauge_guard: indexing_pipelines_gauge_guard,
+        }
+    }
+
+    /// Records a pipeline failure and exits the process if the lifetime failure count
+    /// exceeds `MAX_PIPELINE_FAILURES`. This is a last-resort break-glass: returning
+    /// `ActorExitStatus::Failure` would just be caught by the supervise loop and respawned
+    /// in-process, which is exactly the cycle we want to escape. A `std::process::exit`
+    /// terminates the entire process so it can be restarted fresh.
+    fn record_failure_and_maybe_exit(&mut self) {
+        self.failure_count += 1;
+        if self.failure_count > MAX_PIPELINE_FAILURES {
+            error!(
+                pipeline_id=?self.params.pipeline_id,
+                failure_count = self.failure_count,
+                max_allowed = MAX_PIPELINE_FAILURES,
+                "indexing pipeline exceeded failure limit, exiting process to force a pod restart"
+            );
+            std::process::exit(1);
         }
     }
 
@@ -257,6 +276,7 @@ impl IndexingPipeline {
         match health {
             Health::Healthy => {}
             Health::FailureOrUnhealthy => {
+                self.record_failure_and_maybe_exit();
                 self.terminate().await;
                 let first_retry_delay = wait_duration_before_retry(0);
                 ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 });
@@ -493,6 +513,7 @@ impl Handler<Spawn> for IndexingPipeline {
                 info!(error = ?spawn_error, "could not spawn pipeline, index might have been deleted");
                 return Err(ActorExitStatus::Success);
             }
+            self.record_failure_and_maybe_exit();
             let retry_delay = wait_duration_before_retry(spawn.retry_count + 1);
             error!(error = ?spawn_error, retry_count = spawn.retry_count, retry_delay = ?retry_delay, "error while spawning indexing pipeline, retrying after some time");
             ctx.schedule_self_msg(
@@ -566,7 +587,8 @@ pub struct IndexingPipelineParams {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroUsize;
+    use crate::actors::pipeline_shared::MAX_RETRY_DELAY;
+use std::num::NonZeroUsize;
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::time::Duration;
@@ -590,12 +612,12 @@ mod tests {
 
     #[test]
     fn test_wait_duration() {
-        assert_eq!(wait_duration_before_retry(0), Duration::from_secs(1));
-        assert_eq!(wait_duration_before_retry(1), Duration::from_secs(2));
-        assert_eq!(wait_duration_before_retry(2), Duration::from_secs(4));
-        assert_eq!(wait_duration_before_retry(3), Duration::from_secs(8));
-        assert_eq!(wait_duration_before_retry(9), Duration::from_secs(512));
-        assert_eq!(wait_duration_before_retry(10), Duration::from_secs(600));
+        // `RETRY_BASE_DURATION` is 10ms and `MAX_RETRY_DELAY` is 50ms under `cfg(test)`.
+        assert_eq!(wait_duration_before_retry(0), Duration::from_millis(10));
+        assert_eq!(wait_duration_before_retry(1), Duration::from_millis(20));
+        assert_eq!(wait_duration_before_retry(2), Duration::from_millis(40));
+        assert_eq!(wait_duration_before_retry(3), MAX_RETRY_DELAY);
+        assert_eq!(wait_duration_before_retry(20), MAX_RETRY_DELAY);
     }
 
     async fn test_indexing_pipeline_num_fails_before_success(
@@ -730,6 +752,87 @@ mod tests {
     #[tokio::test]
     async fn test_indexing_pipeline_retry_1_gz() -> anyhow::Result<()> {
         test_indexing_pipeline_num_fails_before_success(1, "data/test_corpus.json.gz").await
+    }
+
+    /// Verifies the `record_failure_and_maybe_exit` failsafe via a re-exec fork: the parent
+    /// spawns the test binary as a child that runs a doomed pipeline, and asserts the child
+    /// exits with status 1.
+    #[tokio::test]
+    async fn test_indexing_pipeline_exits_after_max_failures() {
+        // Presence of this env var tells us we're the child.
+        const CHILD_ENV: &str = "QW_PIPELINE_EXIT_TEST_CHILD";
+        if std::env::var(CHILD_ENV).is_err() {
+            // Parent: re-exec ourselves filtered to just this test, with CHILD_ENV set.
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "actors::indexing_pipeline::tests::test_indexing_pipeline_exits_after_max_failures",
+                    "--exact",
+                    "--nocapture",
+                ])
+                .env(CHILD_ENV, "1")
+                .status()
+                .unwrap();
+            // Parent: `Some(1)` = normal exit via `std::process::exit(1)`, as expected.
+            assert_eq!(
+                status.code(),
+                Some(1),
+                "child process should have exited with code 1"
+            );
+            return;
+        }
+
+        // Child: build a pipeline whose spawn always errors; the failsafe will eventually
+        // call `std::process::exit(1)` and this process dies before reaching the panic below.
+        let pipeline_id = IndexingPipelineId {
+            node_id: NodeId::from("test-node"),
+            index_uid: IndexUid::for_test("test-index", 2),
+            source_id: "test-source".to_string(),
+            pipeline_uid: PipelineUid::for_test(0u128),
+        };
+        let source_config = SourceConfig {
+            source_id: "test-source".to_string(),
+            num_pipelines: NonZeroUsize::MIN,
+            enabled: true,
+            source_params: SourceParams::file_from_str("data/test_corpus.json").unwrap(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_index_metadata()
+            .returning(|_| Err(MetastoreError::Timeout("forever".to_string())));
+
+        let universe = Universe::new();
+        let (merge_planner_mailbox, _) = universe.create_test_mailbox();
+        let storage = Arc::new(RamStorage::default());
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
+        let pipeline_params = IndexingPipelineParams {
+            pipeline_id,
+            doc_mapper: Arc::new(default_doc_mapper_for_test()),
+            source_config,
+            source_storage_resolver: StorageResolver::for_test(),
+            indexing_directory: TempDirectory::for_test(),
+            indexing_settings: IndexingSettings::for_test(),
+            ingester_pool: IngesterPool::default(),
+            metastore: MetastoreServiceClient::from_mock(mock_metastore),
+            storage,
+            split_store,
+            merge_policy: default_merge_policy(),
+            retention_policy: None,
+            queues_dir_path: PathBuf::from("./queues"),
+            max_concurrent_split_uploads_index: 4,
+            max_concurrent_split_uploads_merge: 5,
+            cooperative_indexing_permits: None,
+            merge_planner_mailbox,
+            event_broker: EventBroker::default(),
+            params_fingerprint: 42u64,
+        };
+        let pipeline = IndexingPipeline::new(pipeline_params);
+        let (_pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(pipeline);
+        // `record_failure_and_maybe_exit` calls `std::process::exit(1)` once the 11th failure
+        // is recorded, so this `join` should never return.
+        let _ = pipeline_handle.join().await;
+        panic!("pipeline should have exited the process before reaching this point");
     }
 
     async fn indexing_pipeline_simple(test_file: &str) -> anyhow::Result<()> {

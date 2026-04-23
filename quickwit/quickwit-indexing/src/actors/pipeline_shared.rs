@@ -18,25 +18,45 @@ use std::time::Duration;
 
 use tokio::sync::Semaphore;
 
-pub(crate) const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
+/// Cap on the retry wait. Beyond this, the `MAX_PIPELINE_FAILURES` counter is the failsafe
+/// that eventually forces a pod restart.
+pub(crate) const MAX_RETRY_DELAY: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(50)
+} else {
+    Duration::from_secs(300) // 5 min.
+};
 
-const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
+/// Base duration for the exponential-backoff retry schedule.
+pub(crate) const RETRY_BASE_DURATION: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(10)
+} else {
+    Duration::from_secs(1)
+};
+
+/// Maximum number of failures (either spawn errors or runtime unhealthy transitions) a single
+/// pipeline may accumulate before the process exits to force a pod restart. A stuck pipeline is
+/// treated as a signal that the pod itself has accumulated state (e.g. dead fetch streams,
+/// stale chitchat view, invalid publish tokens) that only a fresh process will clear.
+pub(crate) const MAX_PIPELINE_FAILURES: usize = 10;
+
+pub(crate) const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug)]
 pub(crate) struct SuperviseLoop;
 
 /// Calculates the wait time based on retry count.
-// retry_count, wait_time
+// retry_count, wait_time (prod: base 1s, cap 5min)
 // 0   1s
 // 1   2s
 // 2   4s
 // 3   8s
 // ...
-// >=8   5mn
+// 8   256s
+// >=9 300s (cap)
 pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
     // Protect against a `retry_count` that will lead to an overflow.
     let max_power = (retry_count as u32).min(31);
-    Duration::from_secs(2u64.pow(max_power)).min(MAX_RETRY_DELAY)
+    (RETRY_BASE_DURATION * 2u32.pow(max_power)).min(MAX_RETRY_DELAY)
 }
 
 /// Spawning an indexing pipeline puts a lot of pressure on the file system, metastore, etc. so

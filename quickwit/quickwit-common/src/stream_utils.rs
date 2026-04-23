@@ -267,6 +267,11 @@ impl<T> TrackedSender<T> {
             .await
             .map_err(|send_error| mpsc::error::SendError(send_error.0.0))
     }
+
+    /// Completes when the receiving half of the channel is dropped.
+    pub async fn closed(&self) {
+        self.sender.closed().await
+    }
 }
 
 pub struct TrackedUnboundedSender<T> {

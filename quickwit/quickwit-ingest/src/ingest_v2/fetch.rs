@@ -119,9 +119,20 @@ impl FetchStreamTask {
         };
 
         loop {
-            if has_drained_queue && self.shard_status_rx.changed().await.is_err() {
-                // The shard was dropped.
-                break;
+            if has_drained_queue {
+                tokio::select! {
+                    biased;
+                    _ = self.fetch_message_tx.closed() => {
+                        // The consumer was dropped.
+                        return;
+                    }
+                    changed = self.shard_status_rx.changed() => {
+                        if changed.is_err() {
+                            // The shard was dropped.
+                            break;
+                        }
+                    }
+                }
             }
             has_drained_queue = true;
 
@@ -1274,6 +1285,54 @@ pub(super) mod tests {
             fetch_payload.mrecord_batch.as_ref().unwrap().mrecord_buffer,
             "\0\0test-doc-foo"
         );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_task_terminates_on_consumer_drop() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mrecordlog = Arc::new(RwLock::new(Some(
+            MultiRecordLogAsync::open(tempdir.path()).await.unwrap(),
+        )));
+        let client_id = "test-client".to_string();
+        let index_uid: IndexUid = IndexUid::for_test("test-index", 0);
+        let source_id = "test-source".to_string();
+        let shard_id = ShardId::from(1);
+        let queue_id = queue_id(&index_uid, &source_id, &shard_id);
+
+        // Create the queue so the task does not exit via the "queue was dropped" path and instead
+        // progresses into the `shard_status_rx.changed()` await where the pre-fix zombie lived.
+        let mut mrecordlog_guard = mrecordlog.write().await;
+        mrecordlog_guard
+            .as_mut()
+            .unwrap()
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
+        drop(mrecordlog_guard);
+
+        let open_fetch_stream_request = OpenFetchStreamRequest {
+            client_id: client_id.clone(),
+            index_uid: Some(index_uid.clone()),
+            source_id: source_id.clone(),
+            shard_id: Some(shard_id.clone()),
+            from_position_exclusive: Some(Position::Beginning),
+        };
+        // Keep `_shard_status_tx` alive so `shard_status_rx.changed()` cannot resolve (the task
+        // must exit via the consumer-closed branch, not the shard-dropped branch).
+        let (_shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
+        let (fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
+            open_fetch_stream_request,
+            mrecordlog.clone(),
+            shard_status_rx,
+            1024,
+        );
+        // Simulate the RPC consumer hanging up.
+        drop(fetch_stream);
+
+        timeout(Duration::from_secs(1), fetch_task_handle)
+            .await
+            .expect("fetch task should terminate after consumer is dropped")
+            .unwrap();
     }
 
     #[test]
