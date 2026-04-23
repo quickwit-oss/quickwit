@@ -72,9 +72,10 @@ pub fn write_merge_outputs(
         }
 
         // MC-3: verify the output batch is sorted by (sorted_series ASC,
-        // timestamp_secs DESC). We check sorted_series is non-decreasing;
-        // within equal sorted_series, timestamp_secs is non-increasing.
-        verify_sort_order(&sorted_batch);
+        // timestamp_secs <direction per sort schema>). We check sorted_series
+        // is non-decreasing; within equal sorted_series, timestamp_secs
+        // respects the schema's sort direction.
+        verify_sort_order(&sorted_batch, &config.sort_fields);
 
         // Optimize the output batch: strip all-null columns and choose
         // the best encoding for each column based on its actual data.
@@ -276,14 +277,28 @@ fn resolve_sort_field_names(sort_fields_str: &str) -> Result<Vec<String>> {
     Ok(sort_schema.column.iter().map(|c| c.name.clone()).collect())
 }
 
-/// MC-3: Verify the output batch is sorted by (sorted_series ASC, timestamp_secs DESC).
+/// MC-3: Verify the output batch is sorted by (sorted_series ASC,
+/// timestamp_secs <direction per sort schema>).
 ///
 /// Checks that sorted_series values are non-decreasing, and within equal
-/// sorted_series values, timestamp_secs values are non-increasing.
-fn verify_sort_order(batch: &RecordBatch) {
+/// sorted_series values, timestamp_secs respects the schema's sort direction.
+fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
     if batch.num_rows() <= 1 {
         return;
     }
+
+    // Determine timestamp sort direction from the sort schema.
+    let sort_schema = parse_sort_fields(sort_fields_str)
+        .expect("sort schema must parse for MC-3 check");
+    let ts_descending = sort_schema
+        .column
+        .iter()
+        .find(|c| c.name == "timestamp_secs")
+        .map(|c| {
+            c.sort_direction
+                == quickwit_proto::sortschema::SortColumnDirection::SortDirectionDescending as i32
+        })
+        .unwrap_or(true);
 
     let ss_idx = batch
         .schema()
@@ -323,11 +338,18 @@ fn verify_sort_order(batch: &RecordBatch) {
                 );
             }
             std::cmp::Ordering::Equal => {
-                // Within same series, timestamp_secs must be non-increasing (DESC).
+                // Within same series, timestamp must respect the schema direction.
+                let order_ok = if ts_descending {
+                    ts_values[i] >= ts_values[i + 1]
+                } else {
+                    ts_values[i] <= ts_values[i + 1]
+                };
+                let direction_str = if ts_descending { "descending" } else { "ascending" };
                 quickwit_dst::check_invariant!(
                     quickwit_dst::invariants::InvariantId::MC3,
-                    ts_values[i] >= ts_values[i + 1],
-                    ": timestamp_secs not descending within series at row {}: {} < {}",
+                    order_ok,
+                    ": timestamp_secs not {} within series at row {}: {} vs {}",
+                    direction_str,
                     i,
                     ts_values[i],
                     ts_values[i + 1]

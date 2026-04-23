@@ -14,7 +14,8 @@
 
 //! K-way merge order computation for sorted Parquet files.
 //!
-//! Uses `(sorted_series ASC, timestamp_secs DESC)` as the merge key.
+//! Uses `(sorted_series ASC, timestamp_secs <direction>)` as the merge key,
+//! where the timestamp direction comes from the sort schema.
 //! Produces a run-length encoded merge order that naturally captures
 //! contiguous runs from the same input.
 //!

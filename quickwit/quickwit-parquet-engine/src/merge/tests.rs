@@ -1319,7 +1319,7 @@ mod proptests {
 
     proptest! {
         /// MC-1: Row count is preserved through merge.
-        /// MC-3: Output is sorted by (sorted_series ASC, timestamp_secs DESC).
+        /// MC-3: Output is sorted by (sorted_series ASC, timestamp_secs per sort schema).
         /// MC-2: All input data values appear in the output.
         #[test]
         fn prop_merge_preserves_invariants(

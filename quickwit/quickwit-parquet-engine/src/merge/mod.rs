@@ -16,8 +16,9 @@
 //!
 //! Takes N sorted Parquet files sharing the same sort schema and produces M
 //! sorted output files. The merge preserves sort order using a k-way merge on
-//! `(sorted_series, timestamp_secs)` and splits outputs at series boundaries
-//! so each output file has non-overlapping key ranges.
+//! `(sorted_series, timestamp_secs)` where the timestamp sort direction comes
+//! from the sort schema. Outputs are split at series boundaries so each output
+//! file has non-overlapping key ranges.
 
 mod merge_order;
 mod schema;
@@ -87,7 +88,8 @@ pub struct MergeOutputFile {
 /// Merge N sorted Parquet files into M sorted output files.
 ///
 /// All inputs must share the same sort schema and contain a `sorted_series`
-/// column. The merge key is `(sorted_series ASC, timestamp_secs DESC)`.
+/// column. The merge key is `(sorted_series ASC, timestamp_secs <direction>)`,
+/// where the timestamp direction comes from the sort schema.
 /// Outputs are split at `sorted_series` boundaries to ensure non-overlapping
 /// key ranges.
 ///
