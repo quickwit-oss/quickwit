@@ -1,0 +1,311 @@
+// Copyright 2021-Present Datadog, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! K-way merge order computation for sorted Parquet files.
+//!
+//! Uses `(sorted_series ASC, timestamp_secs DESC)` as the merge key.
+//! Produces a run-length encoded merge order that naturally captures
+//! contiguous runs from the same input.
+
+use std::collections::BinaryHeap;
+
+use anyhow::Result;
+use arrow::array::{BinaryArray, RecordBatch};
+use arrow::compute::SortOptions;
+use arrow::datatypes::DataType;
+use arrow::row::{RowConverter, SortField};
+
+use crate::sorted_series::SORTED_SERIES_COLUMN;
+
+const TIMESTAMP_COLUMN: &str = "timestamp_secs";
+
+/// A contiguous run of rows from a single input in the merged output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MergeRun {
+    /// Index of the input file (0-based).
+    pub input_index: usize,
+    /// Starting row within that input file.
+    pub start_row: usize,
+    /// Number of consecutive rows from this input.
+    pub row_count: usize,
+}
+
+/// An entry in the merge heap.
+///
+/// Wraps `Reverse<(row_bytes, input_index)>` so that `BinaryHeap` (max-heap)
+/// yields the smallest element first.
+struct HeapEntry {
+    /// Row bytes from RowConverter — binary-comparable.
+    row_bytes: Vec<u8>,
+    /// Which input this row comes from.
+    input_index: usize,
+    /// Current row position within that input.
+    row_pos: usize,
+}
+
+impl PartialEq for HeapEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.row_bytes == other.row_bytes && self.input_index == other.input_index
+    }
+}
+
+impl Eq for HeapEntry {}
+
+impl PartialOrd for HeapEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for HeapEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Reverse so BinaryHeap (max-heap) pops the smallest row first.
+        // Break ties by input_index for determinism.
+        match other.row_bytes.cmp(&self.row_bytes) {
+            std::cmp::Ordering::Equal => other.input_index.cmp(&self.input_index),
+            ord => ord,
+        }
+    }
+}
+
+/// Compute the merge order across all inputs.
+///
+/// Each input must be a RecordBatch with `sorted_series` (Binary, ascending)
+/// and `timestamp_secs` (Int64, descending) columns. Inputs must already be
+/// sorted by these columns.
+///
+/// Returns an RLE-encoded merge order: contiguous runs from the same input
+/// are collapsed into a single `MergeRun`.
+pub fn compute_merge_order(inputs: &[RecordBatch]) -> Result<Vec<MergeRun>> {
+    if inputs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Determine the timestamp column data type from the first non-empty input.
+    let ts_data_type = inputs
+        .iter()
+        .find(|b| b.num_rows() > 0)
+        .map(|b| {
+            let schema = b.schema();
+            let (_, field) = schema
+                .column_with_name(TIMESTAMP_COLUMN)
+                .expect("timestamp_secs column must exist");
+            field.data_type().clone()
+        })
+        .unwrap_or(DataType::UInt64);
+
+    // Build a RowConverter for (sorted_series ASC, timestamp_secs DESC).
+    let sort_fields = vec![
+        SortField::new(DataType::Binary), // sorted_series ASC
+        SortField::new_with_options(
+            ts_data_type,
+            SortOptions {
+                descending: true,
+                nulls_first: false,
+            },
+        ), // timestamp_secs DESC
+    ];
+    let converter = RowConverter::new(sort_fields)?;
+
+    // Convert sort columns from each input into row format.
+    let mut row_arrays = Vec::with_capacity(inputs.len());
+    let mut input_lengths = Vec::with_capacity(inputs.len());
+
+    for (idx, batch) in inputs.iter().enumerate() {
+        if batch.num_rows() == 0 {
+            row_arrays.push(None);
+            input_lengths.push(0);
+            continue;
+        }
+
+        let ss_col = get_column(batch, SORTED_SERIES_COLUMN, idx)?;
+        let ts_col = get_column(batch, TIMESTAMP_COLUMN, idx)?;
+
+        let rows = converter.convert_columns(&[ss_col, ts_col])?;
+        input_lengths.push(batch.num_rows());
+        row_arrays.push(Some(rows));
+    }
+
+    // Estimate total rows for capacity hint.
+    let total_rows: usize = input_lengths.iter().sum();
+    // Rough estimate: runs are at least 1 row each, but typically much longer.
+    let mut merge_order: Vec<MergeRun> = Vec::with_capacity(total_rows.min(1024));
+
+    // Initialize the min-heap with the first row from each non-empty input.
+    let mut heap: BinaryHeap<HeapEntry> = BinaryHeap::with_capacity(inputs.len());
+    for (input_index, rows_opt) in row_arrays.iter().enumerate() {
+        if let Some(rows) = rows_opt {
+            let row = rows.row(0);
+            heap.push(HeapEntry {
+                row_bytes: row.as_ref().to_vec(),
+                input_index,
+                row_pos: 0,
+            });
+        }
+    }
+
+    // K-way merge: pop smallest, extend or start a run, push next row.
+    while let Some(entry) = heap.pop() {
+        // Extend the current run or start a new one.
+        let extends_current = match merge_order.last() {
+            Some(run) => {
+                run.input_index == entry.input_index
+                    && run.start_row + run.row_count == entry.row_pos
+            }
+            None => false,
+        };
+
+        if extends_current {
+            merge_order.last_mut().unwrap().row_count += 1;
+        } else {
+            merge_order.push(MergeRun {
+                input_index: entry.input_index,
+                start_row: entry.row_pos,
+                row_count: 1,
+            });
+        }
+
+        // Push the next row from this input, if any.
+        let next_pos = entry.row_pos + 1;
+        if next_pos < input_lengths[entry.input_index] {
+            let rows = row_arrays[entry.input_index].as_ref().unwrap();
+            let row = rows.row(next_pos);
+            heap.push(HeapEntry {
+                row_bytes: row.as_ref().to_vec(),
+                input_index: entry.input_index,
+                row_pos: next_pos,
+            });
+        }
+    }
+
+    Ok(merge_order)
+}
+
+/// Compute boundaries for splitting the merge order into M output files.
+///
+/// Each boundary is a range of indices into `merge_order`. Splits happen at
+/// `sorted_series` transitions — the sorted_series value in the last row of
+/// one output differs from the first row of the next output.
+///
+/// If there are fewer distinct sorted_series values than `num_outputs`,
+/// fewer outputs are produced.
+///
+/// Returns: a vector of `(start_run_idx, end_run_idx)` pairs, where each
+/// pair is a half-open range into `merge_order`.
+pub fn compute_output_boundaries(
+    merge_order: &[MergeRun],
+    inputs: &[RecordBatch],
+    num_outputs: usize,
+) -> Result<Vec<std::ops::Range<usize>>> {
+    if merge_order.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let total_rows: usize = merge_order.iter().map(|r| r.row_count).sum();
+
+    if num_outputs == 1 {
+        let all = 0..merge_order.len();
+        return Ok(vec![all]);
+    }
+
+    // Find the sorted_series transitions in the merge order. A transition
+    // is a run index where the sorted_series value changes compared to the
+    // previous row.
+    let ss_arrays: Vec<&BinaryArray> = inputs
+        .iter()
+        .map(|batch| {
+            let idx = batch
+                .schema()
+                .index_of(SORTED_SERIES_COLUMN)
+                .expect("sorted_series column must exist");
+            batch
+                .column(idx)
+                .as_any()
+                .downcast_ref::<BinaryArray>()
+                .expect("sorted_series must be Binary")
+        })
+        .collect();
+
+    // Walk the merge order and record run indices where sorted_series changes.
+    let mut transition_indices: Vec<usize> = Vec::new();
+    let mut prev_ss: Option<&[u8]> = None;
+
+    for (run_idx, run) in merge_order.iter().enumerate() {
+        let current_ss = ss_arrays[run.input_index].value(run.start_row);
+
+        let is_transition = match prev_ss {
+            Some(prev) => current_ss != prev,
+            None => false, // First run is not a transition.
+        };
+
+        if is_transition {
+            transition_indices.push(run_idx);
+        }
+
+        // Track the sorted_series of the last row in this run.
+        let last_row = run.start_row + run.row_count - 1;
+        prev_ss = Some(ss_arrays[run.input_index].value(last_row));
+    }
+
+    // If fewer transitions than num_outputs - 1, produce fewer outputs.
+    let actual_outputs = (transition_indices.len() + 1).min(num_outputs);
+
+    if actual_outputs <= 1 {
+        let all = 0..merge_order.len();
+        return Ok(vec![all]);
+    }
+
+    // Distribute transitions evenly by row count.
+    let target_rows_per_output = total_rows / actual_outputs;
+
+    // Walk the merge order, accumulating row counts. When we cross a
+    // transition point near the target row count, place a boundary.
+    let mut boundaries: Vec<std::ops::Range<usize>> = Vec::with_capacity(actual_outputs);
+    let mut current_start: usize = 0;
+    let mut rows_in_current: usize = 0;
+    let mut outputs_remaining = actual_outputs;
+    let transition_set: std::collections::HashSet<usize> =
+        transition_indices.iter().cloned().collect();
+
+    for (run_idx, run) in merge_order.iter().enumerate() {
+        rows_in_current += run.row_count;
+
+        // Check if we should place a boundary here.
+        // We place a boundary at a transition point when we've accumulated
+        // roughly the target number of rows and we still need more outputs.
+        let at_transition = transition_set.contains(&(run_idx + 1));
+        let past_target = rows_in_current >= target_rows_per_output;
+        let is_last_run = run_idx + 1 == merge_order.len();
+
+        if (at_transition && past_target && outputs_remaining > 1) || is_last_run {
+            boundaries.push(current_start..(run_idx + 1));
+            current_start = run_idx + 1;
+            rows_in_current = 0;
+            outputs_remaining -= 1;
+        }
+    }
+
+    // If we didn't fill all outputs (can happen when transitions are sparse),
+    // that's fine — we produce fewer files.
+    Ok(boundaries)
+}
+
+/// Get a column by name from a RecordBatch, with a clear error message.
+fn get_column(batch: &RecordBatch, name: &str, input_index: usize) -> Result<arrow::array::ArrayRef> {
+    let idx = batch
+        .schema()
+        .index_of(name)
+        .map_err(|_| anyhow::anyhow!("input {} is missing column '{}'", input_index, name))?;
+    Ok(std::sync::Arc::clone(batch.column(idx)))
+}

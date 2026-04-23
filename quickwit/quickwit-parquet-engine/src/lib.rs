@@ -22,6 +22,7 @@
 
 pub mod index;
 pub mod ingest;
+pub mod merge;
 pub mod metrics;
 pub mod row_keys;
 pub mod schema;
