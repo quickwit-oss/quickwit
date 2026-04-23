@@ -20,6 +20,13 @@ pub struct ExecuteSubstraitRequest {
     /// Exactly one of substrait_plan_bytes or substrait_plan_json must be set.
     #[prost(string, tag = "3")]
     pub substrait_plan_json: ::prost::alloc::string::String,
+    /// When true, the server runs the plan through the DataFusion planner and
+    /// returns the EXPLAIN output (logical + physical plan text) as an Arrow
+    /// batch instead of executing the plan. Does not touch storage. Intended
+    /// for dev tooling (e.g. `qwm substrait --plan`); production callers leave
+    /// this unset.
+    #[prost(bool, tag = "4")]
+    pub explain: bool,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ExecuteSubstraitResponse {

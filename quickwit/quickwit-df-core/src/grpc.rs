@@ -125,20 +125,34 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
         // Route to the appropriate DataFusionService method:
         // - substrait_plan_bytes: production path (pre-encoded protobuf)
         // - substrait_plan_json:  dev/tooling path (grpcurl, rollup JSON files)
-        let stream = if !req.substrait_plan_bytes.is_empty() {
-            service
+        // When `explain` is set, the server returns the EXPLAIN output
+        // (no storage I/O) instead of executing the plan.
+        let stream = match (
+            !req.substrait_plan_bytes.is_empty(),
+            !req.substrait_plan_json.is_empty(),
+            req.explain,
+        ) {
+            (true, _, false) => service
                 .execute_substrait(&req.substrait_plan_bytes)
                 .await
-                .map_err(df_error_to_status)?
-        } else if !req.substrait_plan_json.is_empty() {
-            service
+                .map_err(df_error_to_status)?,
+            (true, _, true) => service
+                .explain_substrait(&req.substrait_plan_bytes)
+                .await
+                .map_err(df_error_to_status)?,
+            (false, true, false) => service
                 .execute_substrait_json(&req.substrait_plan_json)
                 .await
-                .map_err(df_error_to_status)?
-        } else {
-            return Err(tonic::Status::invalid_argument(
-                "either substrait_plan_bytes or substrait_plan_json must be set",
-            ));
+                .map_err(df_error_to_status)?,
+            (false, true, true) => service
+                .explain_substrait_json(&req.substrait_plan_json)
+                .await
+                .map_err(df_error_to_status)?,
+            _ => {
+                return Err(tonic::Status::invalid_argument(
+                    "either substrait_plan_bytes or substrait_plan_json must be set",
+                ));
+            }
         };
 
         let response_stream = map_batch_stream(stream, |ipc_bytes| ExecuteSubstraitResponse {

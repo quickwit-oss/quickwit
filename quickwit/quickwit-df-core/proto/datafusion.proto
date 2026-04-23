@@ -48,6 +48,13 @@ message ExecuteSubstraitRequest {
   // directly without encoding to binary protobuf first.
   // Exactly one of substrait_plan_bytes or substrait_plan_json must be set.
   string substrait_plan_json = 3;
+
+  // When true, the server runs the plan through the DataFusion planner and
+  // returns the EXPLAIN output (logical + physical plan text) as an Arrow
+  // batch instead of executing the plan. Does not touch storage. Intended
+  // for dev tooling (e.g. `qwm substrait --plan`); production callers leave
+  // this unset.
+  bool explain = 4;
 }
 
 message ExecuteSubstraitResponse {

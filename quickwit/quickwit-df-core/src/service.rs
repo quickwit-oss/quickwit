@@ -124,6 +124,40 @@ impl DataFusionService {
         crate::substrait::execute_substrait_plan_streaming(plan, &ctx, self.builder.sources()).await
     }
 
+    /// Like [`execute_substrait`], but returns the EXPLAIN output instead of
+    /// running the plan. The returned stream emits `(plan_type, plan)` rows
+    /// — same shape as a SQL `EXPLAIN VERBOSE`.
+    pub async fn explain_substrait(
+        &self,
+        plan_bytes: &[u8],
+    ) -> DFResult<SendableRecordBatchStream> {
+        use datafusion_substrait::substrait::proto::Plan;
+        use prost::Message;
+        let plan = Plan::decode(plan_bytes)
+            .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
+        self.explain_substrait_plan(&plan).await
+    }
+
+    /// JSON variant of [`explain_substrait`] — same semantics, proto3-JSON input.
+    pub async fn explain_substrait_json(
+        &self,
+        plan_json: &str,
+    ) -> DFResult<SendableRecordBatchStream> {
+        use datafusion_substrait::substrait::proto::Plan;
+        let plan: Plan = serde_json::from_str(plan_json).map_err(|e| {
+            datafusion::error::DataFusionError::Plan(format!("invalid Substrait plan JSON: {e}"))
+        })?;
+        self.explain_substrait_plan(&plan).await
+    }
+
+    async fn explain_substrait_plan(
+        &self,
+        plan: &datafusion_substrait::substrait::proto::Plan,
+    ) -> DFResult<SendableRecordBatchStream> {
+        let ctx = self.builder.build_session()?;
+        crate::substrait::explain_substrait_plan_streaming(plan, &ctx, self.builder.sources()).await
+    }
+
     /// Execute one or more semicolon-separated SQL statements.
     ///
     /// DDL statements (e.g. `CREATE EXTERNAL TABLE`) are executed for side
