@@ -25,6 +25,7 @@ use tempfile::TempDir;
 
 use crate::merge::{MergeConfig, merge_sorted_parquet_files};
 use crate::sorted_series::SORTED_SERIES_COLUMN;
+use crate::split::{ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, TimeRange};
 use crate::storage::{ParquetWriter, ParquetWriterConfig};
 use crate::table_config::{ProductType, TableConfig};
 
@@ -101,9 +102,13 @@ fn write_test_split_with_config(
     };
     let writer = ParquetWriter::new(writer_config, &table_config).unwrap();
 
+    // Build minimal split metadata so qh.sort_fields is embedded in the
+    // Parquet KV metadata. The merge engine validates this on every input.
+    let metadata = build_test_metadata();
+
     let path = dir.join(name);
     writer
-        .write_to_file_with_metadata(batch, &path, None)
+        .write_to_file_with_metadata(batch, &path, Some(&metadata))
         .unwrap();
     path
 }
@@ -566,7 +571,7 @@ fn test_merge_schema_evolution_extra_column() {
     let writer = ParquetWriter::new(writer_config, &table_config).unwrap();
     let path1 = dir.path().join("input1_extra.parquet");
     writer
-        .write_to_file_with_metadata(&batch_with_extra, &path1, None)
+        .write_to_file_with_metadata(&batch_with_extra, &path1, Some(&build_test_metadata()))
         .unwrap();
 
     // Input 2 without the extra column.
@@ -896,7 +901,7 @@ fn test_merge_per_output_schema_strips_null_columns() {
     let writer = ParquetWriter::new(writer_config, &table_config).unwrap();
     let path1 = dir.path().join("input1_extra.parquet");
     writer
-        .write_to_file_with_metadata(&batch_with_extra, &path1, None)
+        .write_to_file_with_metadata(&batch_with_extra, &path1, Some(&build_test_metadata()))
         .unwrap();
 
     // Input 2 without extra_tag, metric "zeta" (sorts after "alpha").
@@ -1194,6 +1199,19 @@ fn test_merge_cross_record_batch_interleaving() {
         values,
         vec![1.0, 11.0, 2.0, 12.0, 3.0, 13.0, 4.0, 14.0, 5.0, 15.0, 6.0, 16.0]
     );
+}
+
+/// Build a minimal ParquetSplitMetadata for test files.
+/// The merge engine validates qh.sort_fields on every input.
+fn build_test_metadata() -> ParquetSplitMetadata {
+    ParquetSplitMetadata::metrics_builder()
+        .split_id(ParquetSplitId::generate(ParquetSplitKind::Metrics))
+        .index_uid("test-index:0")
+        .sort_fields(TEST_SORT_FIELDS)
+        .window_duration_secs(900)
+        .window_start_secs(0)
+        .time_range(TimeRange::new(0, 1))
+        .build()
 }
 
 /// Build a test RecordBatch from raw column data (shared by test helpers).

@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use arrow::array::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::sort_fields::{equivalent_schemas_for_compaction, parse_sort_fields};
 use crate::sorted_series::SORTED_SERIES_COLUMN;
@@ -311,9 +311,9 @@ fn validate_sort_schemas(paths: &[PathBuf], expected_sort_fields: &str) -> Resul
                 }
             }
             None => {
-                warn!(
-                    path = %path.display(),
-                    "input file has no qh.sort_fields metadata — accepting for merge"
+                bail!(
+                    "input file {} is missing qh.sort_fields metadata",
+                    path.display()
                 );
             }
         }
