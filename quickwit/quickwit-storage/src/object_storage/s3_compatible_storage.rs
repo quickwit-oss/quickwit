@@ -150,7 +150,6 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_timeout_config(Some(
         TimeoutConfig::builder()
             .connect_timeout(Duration::from_secs(5))
-            .read_timeout(Duration::from_secs(10)) // Time to first byte
             .operation_attempt_timeout(Duration::from_secs(900)) // Single attempt timeout
             .operation_timeout(Duration::from_secs(1800)) // Total timeout
             .build(),
