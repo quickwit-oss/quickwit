@@ -56,6 +56,7 @@ This section contains one configuration subsection per storage provider. If a st
 | `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO). | `false` |
 | `disable_multi_object_delete` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS). | `false` |
 | `disable_multipart_upload` | Disables [multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html) of objects. Required by some S3-compatible providers (GCS). | `false` |
+| `disable_checksums` | Disables [checksums](https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html) on requests and responses. Required by S3-compatible providers that do not support the additional checksum algorithms enabled by default in recent versions of the AWS SDK (Digital Ocean, Garage, GCS, MinIO). | `false` |
 
 :::warning
 Hardcoding credentials into configuration files is not secure and strongly discouraged. Prefer the alternative authentication methods that your storage backend may provide.
@@ -78,19 +79,19 @@ Storage flavors ensure that Quickwit works correctly with storage providers that
 
 *Digital Ocean*
 
-The Digital Ocean flavor (`digital_ocean`) forces path-style access and turns off multi-object delete requests.
+The Digital Ocean flavor (`digital_ocean`) forces path-style access, turns off multi-object delete requests, and disables checksums.
 
 *Garage flavor*
 
-The Garage flavor (`garage`) overrides the `region` parameter to `garage` and forces path-style access.
+The Garage flavor (`garage`) overrides the `region` parameter to `garage`, forces path-style access, and disables checksums.
 
 *Google Cloud Storage*
 
-The Google Cloud Storage flavor (`gcs`) turns off multi-object delete requests and multipart uploads.
+The Google Cloud Storage flavor (`gcs`) turns off multi-object delete requests, multipart uploads, and disables checksums.
 
 *MinIO flavor*
 
-The MinIO flavor (`minio`) overrides the `region` parameter to `minio` and forces path-style access.
+The MinIO flavor (`minio`) overrides the `region` parameter to `minio`, forces path-style access, and disables checksums.
 
 Example of a storage configuration for Google Cloud Storage in YAML format:
 
