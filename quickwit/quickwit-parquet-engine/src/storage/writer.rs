@@ -35,6 +35,18 @@ use crate::schema::{validate_required_fields, validate_required_sketch_fields};
 use crate::sort_fields::parse_sort_fields;
 use crate::split::{ParquetSplitKind, ParquetSplitMetadata};
 use crate::table_config::TableConfig;
+use crate::zonemap::ZonemapOptions;
+
+/// Metadata extracted during the write pipeline (row keys + zonemap regexes).
+pub type WriteMetadata = (Option<Vec<u8>>, std::collections::HashMap<String, String>);
+
+/// Result of preparing a batch for writing, containing all extracted metadata.
+struct PreparedWrite {
+    sorted_batch: RecordBatch,
+    props: WriterProperties,
+    row_keys_proto: Option<Vec<u8>>,
+    zonemap_regexes: std::collections::HashMap<String, String>,
+}
 
 /// Parquet key_value_metadata keys for compaction metadata.
 /// Prefixed with "qh." to avoid collision with standard Parquet/Arrow keys.
@@ -44,6 +56,7 @@ pub(crate) const PARQUET_META_WINDOW_DURATION: &str = "qh.window_duration_secs";
 pub(crate) const PARQUET_META_NUM_MERGE_OPS: &str = "qh.num_merge_ops";
 pub(crate) const PARQUET_META_ROW_KEYS: &str = "qh.row_keys";
 pub(crate) const PARQUET_META_ROW_KEYS_JSON: &str = "qh.row_keys_json";
+pub(crate) const PARQUET_META_ZONEMAP_REGEXES: &str = "qh.zonemap_regexes";
 
 /// Build Parquet key_value_metadata entries for compaction metadata.
 /// Returns Vec<KeyValue> that can be added to WriterProperties.
@@ -365,16 +378,16 @@ impl ParquetWriter {
             .expect("reorder_columns: schema and columns must be consistent")
     }
 
-    /// Validate, compute derived columns, sort, reorder, extract row keys,
-    /// and build WriterProperties.
+    /// Validate, compute derived columns, sort, reorder, extract row keys
+    /// and zonemap regexes, and build WriterProperties.
     ///
-    /// Returns the prepared batch, writer properties, and the serialized
-    /// `RowKeys` proto bytes (if the batch is non-empty).
+    /// Returns a [`PreparedWrite`] containing the sorted batch, writer
+    /// properties, serialized RowKeys proto, and per-column zonemap regexes.
     fn prepare_write(
         &self,
         batch: &RecordBatch,
         split_metadata: Option<&ParquetSplitMetadata>,
-    ) -> Result<(RecordBatch, WriterProperties, Option<Vec<u8>>), ParquetWriteError> {
+    ) -> Result<PreparedWrite, ParquetWriteError> {
         let is_sketch = split_metadata
             .map(|m| m.kind == ParquetSplitKind::Sketches)
             .unwrap_or(false);
@@ -400,7 +413,16 @@ impl ParquetWriter {
                 .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?
                 .map(|rk| crate::row_keys::encode_row_keys_proto(&rk));
 
-        // Build KV metadata from split metadata + row keys.
+        // Extract zonemap regexes for string-valued sort schema columns.
+        let zonemap_opts = ZonemapOptions::default();
+        let zonemap_regexes = crate::zonemap::extract_zonemap_regexes(
+            &self.sort_fields_string,
+            &sorted_batch,
+            &zonemap_opts,
+        )
+        .map_err(|e| ParquetWriteError::SchemaValidation(e.to_string()))?;
+
+        // Build KV metadata from split metadata + row keys + zonemap.
         let mut kv_entries = split_metadata
             .map(build_compaction_key_value_metadata)
             .unwrap_or_default();
@@ -427,6 +449,16 @@ impl ParquetWriter {
             }
         }
 
+        if !zonemap_regexes.is_empty() {
+            // HashMap<String, String> serialization is infallible.
+            let json = serde_json::to_string(&zonemap_regexes)
+                .expect("HashMap<String, String> JSON serialization cannot fail");
+            kv_entries.push(KeyValue::new(
+                PARQUET_META_ZONEMAP_REGEXES.to_string(),
+                json,
+            ));
+        }
+
         // SS-5: verify kv_metadata sort_fields matches source.
         if let Some(meta) = split_metadata {
             verify_ss5_kv_consistency(meta, &kv_entries);
@@ -443,48 +475,58 @@ impl ParquetWriter {
             Some(kv_entries),
             &sort_field_names,
         );
-        Ok((sorted_batch, props, row_keys_proto))
+        Ok(PreparedWrite {
+            sorted_batch,
+            props,
+            row_keys_proto,
+            zonemap_regexes,
+        })
     }
 
     /// Write a RecordBatch to Parquet bytes in memory.
     ///
-    /// Returns `(parquet_bytes, row_keys_proto)`.
+    /// Returns `(parquet_bytes, (row_keys_proto, zonemap_regexes))`.
     #[instrument(skip(self, batch), fields(batch_rows = batch.num_rows()))]
     pub fn write_to_bytes(
         &self,
         batch: &RecordBatch,
         split_metadata: Option<&ParquetSplitMetadata>,
-    ) -> Result<(Vec<u8>, Option<Vec<u8>>), ParquetWriteError> {
-        let (sorted_batch, props, row_keys_proto) = self.prepare_write(batch, split_metadata)?;
+    ) -> Result<(Vec<u8>, WriteMetadata), ParquetWriteError> {
+        let prepared = self.prepare_write(batch, split_metadata)?;
 
         let buffer = Cursor::new(Vec::new());
-        let mut writer = ArrowWriter::try_new(buffer, sorted_batch.schema(), Some(props))?;
-        writer.write(&sorted_batch)?;
+        let mut writer =
+            ArrowWriter::try_new(buffer, prepared.sorted_batch.schema(), Some(prepared.props))?;
+        writer.write(&prepared.sorted_batch)?;
         let bytes = writer.into_inner()?.into_inner();
 
         debug!(bytes_written = bytes.len(), "completed write to bytes");
-        Ok((bytes, row_keys_proto))
+        Ok((bytes, (prepared.row_keys_proto, prepared.zonemap_regexes)))
     }
 
     /// Write a RecordBatch to a Parquet file with optional compaction metadata.
     ///
-    /// Returns `(bytes_written, row_keys_proto)`.
+    /// Returns `(bytes_written, (row_keys_proto, zonemap_regexes))`.
     #[instrument(skip(self, batch, split_metadata), fields(batch_rows = batch.num_rows(), path = %path.display()))]
     pub fn write_to_file_with_metadata(
         &self,
         batch: &RecordBatch,
         path: &Path,
         split_metadata: Option<&ParquetSplitMetadata>,
-    ) -> Result<(u64, Option<Vec<u8>>), ParquetWriteError> {
-        let (sorted_batch, props, row_keys_proto) = self.prepare_write(batch, split_metadata)?;
+    ) -> Result<(u64, WriteMetadata), ParquetWriteError> {
+        let prepared = self.prepare_write(batch, split_metadata)?;
 
         let file = File::create(path)?;
-        let mut writer = ArrowWriter::try_new(file, sorted_batch.schema(), Some(props))?;
-        writer.write(&sorted_batch)?;
+        let mut writer =
+            ArrowWriter::try_new(file, prepared.sorted_batch.schema(), Some(prepared.props))?;
+        writer.write(&prepared.sorted_batch)?;
 
         let bytes_written = writer.into_inner()?.metadata()?.len();
         debug!(bytes_written, "completed write to file");
-        Ok((bytes_written, row_keys_proto))
+        Ok((
+            bytes_written,
+            (prepared.row_keys_proto, prepared.zonemap_regexes),
+        ))
     }
 }
 
@@ -515,7 +557,8 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::array::{
-        ArrayRef, DictionaryArray, Float64Array, Int64Array, StringArray, UInt8Array, UInt64Array,
+        Array, ArrayRef, DictionaryArray, Float64Array, Int64Array, StringArray, UInt8Array,
+        UInt64Array,
     };
     use arrow::datatypes::{DataType, Field, Int32Type, Schema};
 
@@ -879,7 +922,7 @@ mod tests {
 
         let temp_dir = std::env::temp_dir();
         let path = temp_dir.join("test_self_describing_roundtrip.parquet");
-        let (_, computed_row_keys) = writer
+        let (_, (computed_row_keys, _zonemap_regexes)) = writer
             .write_to_file_with_metadata(&batch, &path, Some(&original))
             .unwrap();
         let computed_row_keys =
@@ -1179,6 +1222,152 @@ mod tests {
         let mut sorted = remaining.to_vec();
         sorted.sort();
         assert_eq!(remaining, &sorted, "data columns should be alphabetical");
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    /// Verify that nulls always sort last, regardless of ascending or descending
+    /// direction. This is critical for compaction: when a column is absent from a
+    /// split, it is treated as null, and nulls-last ensures the comparison is
+    /// well-defined without special-casing missing columns.
+    #[test]
+    fn test_nulls_sort_last_ascending_and_descending() {
+        use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
+
+        use crate::test_helpers::create_nullable_dict_array;
+
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("service", dict_type.clone(), true),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
+        ]));
+
+        // Three rows: service = "beta", null, "alpha".
+        let metric_name: ArrayRef =
+            crate::test_helpers::create_dict_array(&["cpu.usage", "cpu.usage", "cpu.usage"]);
+        let service: ArrayRef = create_nullable_dict_array(&[Some("beta"), None, Some("alpha")]);
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; 3]));
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(vec![100u64, 200, 300]));
+        let value: ArrayRef = Arc::new(Float64Array::from(vec![1.0, 2.0, 3.0]));
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(vec![10i64, 20, 30]));
+
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![
+                metric_name,
+                service,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+            ],
+        )
+        .unwrap();
+
+        // Test ascending: service sorted ascending, nulls last.
+        // Expected order: alpha(300), beta(100), null(200).
+        let asc_config = TableConfig {
+            sort_fields: Some("metric_name|service|timeseries_id|timestamp_secs/V2".to_string()),
+            ..TableConfig::default()
+        };
+        let writer = ParquetWriter::new(ParquetWriterConfig::default(), &asc_config).unwrap();
+
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_nulls_last_asc.parquet");
+        writer
+            .write_to_file_with_metadata(&batch, &path, None)
+            .unwrap();
+
+        let file = std::fs::File::open(&path).unwrap();
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+            .unwrap()
+            .build()
+            .unwrap();
+        let batches: Vec<_> = reader.collect::<Result<Vec<_>, _>>().unwrap();
+        let result = &batches[0];
+
+        let svc_idx = result.schema().index_of("service").unwrap();
+        let svc_col = result.column(svc_idx);
+        let svc_dict = svc_col
+            .as_any()
+            .downcast_ref::<DictionaryArray<Int32Type>>()
+            .unwrap();
+        let svc_values = svc_dict.values();
+        let svc_strings = svc_values.as_any().downcast_ref::<StringArray>().unwrap();
+
+        // Row 0: alpha, Row 1: beta, Row 2: null (last).
+        assert!(!svc_dict.is_null(0), "row 0 should not be null (ascending)");
+        let key0 = svc_dict.keys().value(0) as usize;
+        assert_eq!(
+            svc_strings.value(key0),
+            "alpha",
+            "row 0 = alpha (ascending)"
+        );
+        assert!(!svc_dict.is_null(1), "row 1 should not be null (ascending)");
+        let key1 = svc_dict.keys().value(1) as usize;
+        assert_eq!(svc_strings.value(key1), "beta", "row 1 = beta (ascending)");
+        assert!(
+            svc_dict.is_null(2),
+            "row 2 should be null (last, ascending)"
+        );
+
+        std::fs::remove_file(&path).ok();
+
+        // Test descending: service sorted descending, nulls STILL last.
+        // Expected order: beta(100), alpha(300), null(200).
+        let desc_config = TableConfig {
+            sort_fields: Some("metric_name|-service|timeseries_id|timestamp_secs/V2".to_string()),
+            ..TableConfig::default()
+        };
+        let writer = ParquetWriter::new(ParquetWriterConfig::default(), &desc_config).unwrap();
+
+        let path = temp_dir.join("test_nulls_last_desc.parquet");
+        writer
+            .write_to_file_with_metadata(&batch, &path, None)
+            .unwrap();
+
+        let file = std::fs::File::open(&path).unwrap();
+        let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+            .unwrap()
+            .build()
+            .unwrap();
+        let batches: Vec<_> = reader.collect::<Result<Vec<_>, _>>().unwrap();
+        let result = &batches[0];
+
+        let svc_idx = result.schema().index_of("service").unwrap();
+        let svc_col = result.column(svc_idx);
+        let svc_dict = svc_col
+            .as_any()
+            .downcast_ref::<DictionaryArray<Int32Type>>()
+            .unwrap();
+        let svc_values = svc_dict.values();
+        let svc_strings = svc_values.as_any().downcast_ref::<StringArray>().unwrap();
+
+        // Row 0: beta, Row 1: alpha, Row 2: null (last).
+        assert!(
+            !svc_dict.is_null(0),
+            "row 0 should not be null (descending)"
+        );
+        let key0 = svc_dict.keys().value(0) as usize;
+        assert_eq!(svc_strings.value(key0), "beta", "row 0 = beta (descending)");
+        assert!(
+            !svc_dict.is_null(1),
+            "row 1 should not be null (descending)"
+        );
+        let key1 = svc_dict.keys().value(1) as usize;
+        assert_eq!(
+            svc_strings.value(key1),
+            "alpha",
+            "row 1 = alpha (descending)"
+        );
+        assert!(
+            svc_dict.is_null(2),
+            "row 2 should be null (last, descending)"
+        );
 
         std::fs::remove_file(&path).ok();
     }

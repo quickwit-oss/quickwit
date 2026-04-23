@@ -414,7 +414,7 @@ fn test_row_keys_in_parquet_kv_metadata() {
 
     let temp_dir = std::env::temp_dir();
     let path = temp_dir.join("test_row_keys_kv.parquet");
-    let (_, row_keys_proto) = writer
+    let (_, (row_keys_proto, _zonemap_regexes)) = writer
         .write_to_file_with_metadata(&batch, &path, None)
         .unwrap();
 
@@ -687,21 +687,10 @@ fn test_row_keys_consistent_across_all_storage_paths() {
     // -- Min row (first after sort): cpu.usage / api / ... --
     assert_eq!(col_string(&min_cols[0]), "cpu.usage", "min metric_name");
     // service: "api" is the smallest non-null service value.
-    // Whether null sorts before "api" depends on nulls_first — the writer
-    // uses nulls_first=true, so the null-service row (cpu.usage/null)
-    // sorts before (cpu.usage/api). Let's check.
-    // Actually with nulls_first=true, null < "api", so the first row
-    // after sort is cpu.usage with service=null.
-    //
-    // But ColumnValue for null is { value: None }, so let's handle both.
-    // The key question: does the row with service=null sort before service="api"?
-    // With nulls_first=true: yes.
-    if min_cols[1].value.is_none() {
-        // First sorted row has null service (cpu.usage with no service).
-        // This is correct with nulls_first=true.
-    } else {
-        assert_eq!(col_string(&min_cols[1]), "api", "min service");
-    }
+    // The writer uses nulls_first=false (nulls sort last), so null-service
+    // rows sort after all non-null values. The first sorted row for
+    // cpu.usage has service="api".
+    assert_eq!(col_string(&min_cols[1]), "api", "min service");
 
     // timeseries_id at index 6 — should be an integer.
     assert!(

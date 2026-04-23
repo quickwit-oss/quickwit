@@ -20,4 +20,6 @@ mod writer;
 
 pub use config::{Compression, ParquetWriterConfig};
 pub use split_writer::ParquetSplitWriter;
+#[cfg(test)]
+pub(crate) use writer::PARQUET_META_ZONEMAP_REGEXES;
 pub use writer::{ParquetWriteError, ParquetWriter};
