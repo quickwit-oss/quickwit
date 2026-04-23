@@ -20,11 +20,12 @@
 //!
 //! ## No tonic / gRPC coupling
 //!
-//! This struct has zero gRPC dependencies.  The OSS gRPC handler in
-//! `quickwit-serve/src/datafusion_api/grpc_handler.rs` wraps it and encodes
-//! each batch as Arrow IPC.  A downstream caller can do the same from its own
-//! handler, calling `execute_substrait(&[u8])` and streaming the resulting
-//! batches in its own proto response format.
+//! This struct has zero gRPC dependencies. `quickwit_df_core::grpc`
+//! provides the tonic adapter that encodes batches as Arrow IPC, and
+//! `quickwit-serve/src/datafusion_api/setup.rs` mounts that service in OSS.
+//! A downstream caller can do the same from its own handler, calling
+//! `execute_substrait(&[u8])` and streaming the resulting batches in its own
+//! proto response format.
 //!
 //! ## Usage
 //!
@@ -44,10 +45,65 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use datafusion::error::Result as DFResult;
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::SendableRecordBatchStream;
+use datafusion::prelude::SessionContext;
+use datafusion::sql::sqlparser::dialect::dialect_from_str;
+use datafusion::sql::sqlparser::tokenizer::{Token, Tokenizer};
 
 use crate::session::DataFusionSessionBuilder;
+
+/// Split a SQL string into top-level statements using the configured dialect's
+/// tokenizer rather than raw string splitting.
+pub fn split_sql_statements(ctx: &SessionContext, sql: &str) -> DFResult<Vec<String>> {
+    let state = ctx.state();
+    let tokens = {
+        let options = state.config().options();
+        let dialect = dialect_from_str(&options.sql_parser.dialect).ok_or_else(|| {
+            DataFusionError::Plan(format!(
+                "unsupported SQL dialect: {}",
+                options.sql_parser.dialect
+            ))
+        })?;
+
+        Tokenizer::new(dialect.as_ref(), sql)
+            .with_unescape(false)
+            .tokenize()
+            .map_err(|err| DataFusionError::Plan(err.to_string()))?
+    };
+
+    let mut statements = Vec::new();
+    let mut current = String::new();
+    let mut has_content = false;
+
+    for token in tokens {
+        if token == Token::SemiColon {
+            if has_content {
+                statements.push(std::mem::take(&mut current));
+                has_content = false;
+            } else {
+                current.clear();
+            }
+            continue;
+        }
+
+        if !matches!(token, Token::Whitespace(_)) {
+            has_content = true;
+        }
+        current.push_str(&token.to_string());
+    }
+
+    if has_content {
+        statements.push(current);
+    }
+
+    if statements.is_empty() {
+        return Err(DataFusionError::Plan(
+            "no SQL statements provided".to_string(),
+        ));
+    }
+    Ok(statements)
+}
 
 /// Pure-Rust query execution service backed by a `DataFusionSessionBuilder`.
 ///
@@ -170,12 +226,12 @@ impl DataFusionService {
         crate::substrait::explain_substrait_plan_streaming(plan, &ctx, self.builder.sources()).await
     }
 
-    /// Execute one or more semicolon-separated SQL statements.
+    /// Execute one or more SQL statements from a single SQL string.
     ///
     /// DDL statements (e.g. `CREATE EXTERNAL TABLE`) are executed for side
     /// effects.  The last statement produces the result stream.
     ///
-    /// Returns an error if `sql` is empty after splitting, or if any statement
+    /// Returns an error if `sql` contains no statements, or if any statement
     /// fails to parse or execute.
     #[tracing::instrument(skip(self, sql, properties), fields(sql_len = sql.len()))]
     pub async fn execute_sql(
@@ -189,32 +245,16 @@ impl DataFusionService {
             "executing SQL query"
         );
         let ctx = self.builder.build_session_with_properties(properties)?;
+        let mut statements = split_sql_statements(&ctx, sql)?;
+        let last = statements
+            .pop()
+            .ok_or_else(|| DataFusionError::Plan("no SQL statements provided".to_string()))?;
 
-        // Split on `;` and discard empty fragments (trailing `;` etc.).
-        let statements: Vec<&str> = sql
-            .split(';')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .collect();
-
-        if statements.is_empty() {
-            return Err(datafusion::error::DataFusionError::Plan(
-                "no SQL statements provided".to_string(),
-            ));
+        for statement in statements {
+            ctx.sql(&statement).await?.collect().await?;
         }
 
-        // Execute all but the last statement as DDL / side-effect statements.
-        let (last, prefixes) = statements
-            .split_last()
-            .expect("non-empty after the check above");
-
-        for stmt in prefixes {
-            ctx.sql(stmt).await?.collect().await?;
-        }
-
-        // Execute the final statement and return the stream.
-        let df = ctx.sql(last).await?;
-        let stream = df.execute_stream().await?;
-        Ok(stream)
+        let df = ctx.sql(&last).await?;
+        df.execute_stream().await
     }
 }

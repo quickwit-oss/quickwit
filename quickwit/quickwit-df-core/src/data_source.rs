@@ -19,9 +19,9 @@
 //!
 //! Each data source **returns its additive contributions** via [`contributions()`].
 //! The [`DataFusionSessionBuilder`][crate::session::DataFusionSessionBuilder] accumulates
-//! contributions from all registered sources before building any session.  This mirrors
-//! the pattern in `dd-datafusion/runtime/src/connector.rs` where `Connector::init()`
-//! returns a `DDDataFusionQueryPlanner` that the runtime merges across all connectors.
+//! contributions from all registered sources before building any session. This mirrors
+//! the `dd-datafusion` runtime, where each connector contributes planner/runtime
+//! state and the runtime merges those contributions before execution.
 //!
 //! Advantages over a builder-mutation chain (`configure_session(builder) -> builder`):
 //! - **No silent overwrite**: two sources registering different codecs both win.

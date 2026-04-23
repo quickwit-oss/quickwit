@@ -26,8 +26,9 @@
 
 use std::sync::Arc;
 
-use datafusion::arrow as arrow;
 use arrow::array::{Float64Array, Int64Array};
+use datafusion::arrow;
+use quickwit_datafusion::service::split_sql_statements;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch;
 use quickwit_datafusion::{
@@ -112,19 +113,13 @@ async fn test_distributed_tasks_not_shuffles() {
 
     // Verify plan shape and execute in the same session so both reflect identical state.
     let ctx = builder.build_session().unwrap();
-    let fragments: Vec<&str> = agg_sql
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
-    ctx.sql(fragments[0])
-        .await
-        .unwrap()
-        .collect()
-        .await
-        .unwrap(); // DDL
+    let mut statements = split_sql_statements(&ctx, &agg_sql).unwrap();
+    let query = statements.pop().unwrap();
+    for statement in statements {
+        ctx.sql(&statement).await.unwrap().collect().await.unwrap();
+    }
 
-    let df = ctx.sql(fragments[1]).await.unwrap();
+    let df = ctx.sql(&query).await.unwrap();
     let plan = df.clone().create_physical_plan().await.unwrap();
     let plan_str = format!(
         "{}",

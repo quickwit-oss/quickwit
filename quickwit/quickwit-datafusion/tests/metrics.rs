@@ -20,8 +20,10 @@
 
 use std::sync::Arc;
 
-use datafusion::arrow as arrow;
 use arrow::array::{Array, Float64Array, RecordBatch};
+use datafusion::arrow;
+use futures::TryStreamExt;
+use quickwit_datafusion::service::split_sql_statements;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch;
 use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry};
@@ -52,21 +54,12 @@ fn session_builder(sandbox: &TestSandbox) -> DataFusionSessionBuilder {
 /// Execute SQL in-process and return batches.
 async fn run_sql(builder: &DataFusionSessionBuilder, sql: &str) -> Vec<RecordBatch> {
     let ctx = builder.build_session().unwrap();
-    // Split on ';' — DFParser consumes trailing ';' which breaks multi-stmt parse
-    let fragments: Vec<&str> = sql
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
-    for fragment in &fragments[..fragments.len().saturating_sub(1)] {
-        ctx.sql(fragment).await.unwrap().collect().await.unwrap();
+    let mut statements = split_sql_statements(&ctx, sql).unwrap();
+    let last = statements.pop().unwrap();
+    for statement in statements {
+        ctx.sql(&statement).await.unwrap().collect().await.unwrap();
     }
-    ctx.sql(fragments.last().unwrap())
-        .await
-        .unwrap()
-        .collect()
-        .await
-        .unwrap()
+    ctx.sql(&last).await.unwrap().collect().await.unwrap()
 }
 
 fn total_rows(batches: &[RecordBatch]) -> usize {
@@ -256,6 +249,42 @@ async fn test_group_by() {
         ) STORED AS metrics LOCATION 'test-group';
         SELECT service, COUNT(*) as cnt FROM "test-group" GROUP BY service ORDER BY service"#;
     assert_eq!(total_rows(&run_sql(&builder, sql).await), 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_multi_statement_sql_with_semicolons_in_literals_and_comments() {
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = Arc::new(session_builder(&sandbox));
+
+    let index_uid = create_metrics_index(&metastore, "test-semi", data_dir.path()).await;
+    let batch = make_batch("cpu.usage", &[100, 200], &[0.5, 0.8], Some("web"));
+    publish_split(&metastore, &index_uid, data_dir.path(), "split_1", &batch).await;
+
+    let sql = r#"
+        SELECT ';' AS literal /* ; comment */;
+        CREATE OR REPLACE EXTERNAL TABLE "test-semi" (
+          metric_name VARCHAR NOT NULL, metric_type TINYINT,
+          timestamp_secs BIGINT NOT NULL, value DOUBLE NOT NULL, service VARCHAR
+        ) STORED AS metrics LOCATION 'test-semi';
+        SELECT COUNT(*) AS cnt FROM "test-semi"
+    "#;
+
+    let stream = quickwit_datafusion::DataFusionService::new(Arc::clone(&builder))
+        .execute_sql(sql, &std::collections::HashMap::new())
+        .await
+        .unwrap();
+    let batches: Vec<RecordBatch> = stream.try_collect().await.unwrap();
+    assert_eq!(total_rows(&batches), 1);
+    let cnt = batches[0]
+        .column_by_name("cnt")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<datafusion::arrow::array::Int64Array>()
+        .unwrap()
+        .value(0);
+    assert_eq!(cnt, 2);
 }
 
 /// Verifies that CAST-unwrapping in `predicate.rs` causes fewer splits to be scanned

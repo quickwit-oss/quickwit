@@ -19,7 +19,7 @@
 //! Arrow Flight.  The name `flight` would be misleading.
 //!
 //! `QuickwitWorkerSessionBuilder` prepares each worker session:
-//! 1. Applies source contributions (optimizer rules, extension planners, UDFs, UDAFs, codecs)
+//! 1. Applies source contributions (optimizer rules, UDFs, codecs)
 //!    before `SessionStateBuilder::build()`.
 //! 2. Injects the shared `RuntimeEnv` from the coordinator's `DataFusionSessionBuilder` so that
 //!    object stores registered at startup are visible on workers without any per-session
@@ -72,7 +72,7 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
             }
         }
 
-        // Phase 1: contributions (rules, planners, UDFs, UDAFs, codecs) + shared env.
+        // Phase 1: contributions (rules, UDFs, codecs) + shared env.
         let mut combined = crate::data_source::DataSourceContributions::default();
         for source in &self.sources {
             combined.merge(source.contributions());

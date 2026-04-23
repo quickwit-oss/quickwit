@@ -16,7 +16,7 @@
 //!
 //! `MetricsDataSource` implements `QuickwitDataSource` and encapsulates all
 //! metrics-specific logic: split providers, index resolution, filter pushdown,
-//! and object-store pre-registration for Flight workers.
+//! and lazy object-store access for distributed workers.
 //!
 //! All metrics-specific code lives in this module; none leaks into the generic
 //! session / catalog / worker layer.
@@ -32,9 +32,9 @@ pub mod test_utils;
 
 use std::sync::Arc;
 
-use datafusion::arrow as arrow;
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
 use async_trait::async_trait;
+use datafusion::arrow as arrow;
 use datafusion::catalog::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;

@@ -25,6 +25,7 @@ use arrow::array::{
     UInt64Array,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
+use quickwit_datafusion::service::split_sql_statements;
 use quickwit_datafusion::sources::metrics::MetricsDataSource;
 use quickwit_datafusion::test_utils::make_batch_with_tags;
 use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry};
@@ -67,20 +68,12 @@ async fn run_sql(
     sql: &str,
 ) -> Vec<datafusion::arrow::array::RecordBatch> {
     let ctx = builder.build_session().unwrap();
-    let fragments: Vec<&str> = sql
-        .split(';')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .collect();
-    for fragment in &fragments[..fragments.len().saturating_sub(1)] {
-        ctx.sql(fragment).await.unwrap().collect().await.unwrap();
+    let mut statements = split_sql_statements(&ctx, sql).unwrap();
+    let last = statements.pop().unwrap();
+    for statement in statements {
+        ctx.sql(&statement).await.unwrap().collect().await.unwrap();
     }
-    ctx.sql(fragments.last().unwrap())
-        .await
-        .unwrap()
-        .collect()
-        .await
-        .unwrap()
+    ctx.sql(&last).await.unwrap().collect().await.unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
