@@ -84,18 +84,26 @@ fn write_test_split(
     )
     .unwrap();
 
-    // Use the standard writer which sorts, adds sorted_series, reorders.
+    write_test_split_with_config(dir, name, &batch, ParquetWriterConfig::default())
+}
+
+/// Write a test split with a custom writer config (e.g., small row group size).
+fn write_test_split_with_config(
+    dir: &std::path::Path,
+    name: &str,
+    batch: &RecordBatch,
+    writer_config: ParquetWriterConfig,
+) -> PathBuf {
     let table_config = TableConfig {
         product_type: ProductType::Metrics,
         sort_fields: Some(TEST_SORT_FIELDS.to_string()),
         window_duration_secs: 900,
     };
-    let writer_config = ParquetWriterConfig::default();
     let writer = ParquetWriter::new(writer_config, &table_config).unwrap();
 
     let path = dir.join(name);
     writer
-        .write_to_file_with_metadata(&batch, &path, None)
+        .write_to_file_with_metadata(batch, &path, None)
         .unwrap();
     path
 }
@@ -986,6 +994,178 @@ fn test_merge_output_type_reflects_data() {
         "low-cardinality metric_name should be dictionary-encoded, got {:?}",
         mn_type
     );
+}
+
+#[test]
+fn test_merge_cross_row_group_interleaving() {
+    // Test that the merge correctly handles inputs with multiple Parquet
+    // row groups. We write inputs with a tiny row group size (3 rows) so
+    // that each input spans multiple row groups, then verify that rows
+    // from different row groups of different inputs interleave correctly.
+    //
+    // Input 1 (row group size 3):
+    //   RG0: alpha@300, alpha@200, alpha@100  (one series, 3 rows)
+    //   RG1: beta@300, beta@200, beta@100     (another series, 3 rows)
+    //   RG2: gamma@300, gamma@200             (partial row group, 2 rows)
+    //
+    // Input 2 (row group size 3):
+    //   RG0: alpha@250, alpha@150, alpha@50   (overlaps input 1's alpha range)
+    //   RG1: beta@250, beta@150, beta@50      (overlaps input 1's beta range)
+    //   RG2: delta@300, delta@200             (new series not in input 1)
+    //
+    // The sorted output must interleave rows from across row group
+    // boundaries: e.g., alpha@300 (input1 RG0), alpha@250 (input2 RG0),
+    // alpha@200 (input1 RG0), alpha@150 (input2 RG0), etc.
+
+    let dir = TempDir::new().unwrap();
+    let small_rg_config = ParquetWriterConfig::default().with_row_group_size(3);
+
+    // Input 1: 8 rows across 3 row groups.
+    let names1: Vec<&str> = vec![
+        "alpha", "alpha", "alpha", "beta", "beta", "beta", "gamma", "gamma",
+    ];
+    let ts1: Vec<i64> = vec![300, 200, 100, 300, 200, 100, 300, 200];
+    let vals1: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let tsids1: Vec<i64> = vec![10, 10, 10, 20, 20, 20, 30, 30];
+
+    let batch1 = build_test_batch(&names1, &ts1, &vals1, &tsids1);
+    let input1 = write_test_split_with_config(
+        dir.path(),
+        "input1.parquet",
+        &batch1,
+        small_rg_config.clone(),
+    );
+
+    // Verify input1 actually has multiple row groups.
+    let input1_rg_count = count_row_groups(&input1);
+    assert!(
+        input1_rg_count > 1,
+        "input1 must have multiple row groups (got {})",
+        input1_rg_count
+    );
+
+    // Input 2: 8 rows across 3 row groups, interleaving with input 1.
+    let names2: Vec<&str> = vec![
+        "alpha", "alpha", "alpha", "beta", "beta", "beta", "delta", "delta",
+    ];
+    let ts2: Vec<i64> = vec![250, 150, 50, 250, 150, 50, 300, 200];
+    let vals2: Vec<f64> = vec![11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0];
+    let tsids2: Vec<i64> = vec![10, 10, 10, 20, 20, 20, 40, 40];
+
+    let batch2 = build_test_batch(&names2, &ts2, &vals2, &tsids2);
+    let input2 = write_test_split_with_config(
+        dir.path(),
+        "input2.parquet",
+        &batch2,
+        small_rg_config,
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let config = MergeConfig {
+        sort_fields: TEST_SORT_FIELDS.to_string(),
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+        window_start_secs: Some(0),
+        window_duration_secs: 900,
+        input_num_merge_ops: 0,
+    };
+
+    let outputs =
+        merge_sorted_parquet_files(&[input1, input2], &output_dir, &config).unwrap();
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(outputs[0].num_rows, 16, "MC-1: all 16 rows must survive");
+
+    let batch = read_parquet_file(&outputs[0].path);
+    let names = extract_string_column(&batch, "metric_name");
+    let timestamps = extract_u64_column(&batch, "timestamp_secs");
+    let values = extract_f64_column(&batch, "value");
+
+    // Expected sort order: metric_name ASC, then timestamp DESC within series.
+    // alpha: 300(v=1), 250(v=11), 200(v=2), 150(v=12), 100(v=3), 50(v=13)
+    // beta:  300(v=4), 250(v=14), 200(v=5), 150(v=15), 100(v=6), 50(v=16)
+    // delta: 300(v=17), 200(v=18)
+    // gamma: 300(v=7), 200(v=8)
+    let expected_names = vec![
+        "alpha", "alpha", "alpha", "alpha", "alpha", "alpha",
+        "beta", "beta", "beta", "beta", "beta", "beta",
+        "delta", "delta",
+        "gamma", "gamma",
+    ];
+    let expected_ts: Vec<u64> = vec![
+        300, 250, 200, 150, 100, 50,
+        300, 250, 200, 150, 100, 50,
+        300, 200,
+        300, 200,
+    ];
+    let expected_vals = vec![
+        1.0, 11.0, 2.0, 12.0, 3.0, 13.0,
+        4.0, 14.0, 5.0, 15.0, 6.0, 16.0,
+        17.0, 18.0,
+        7.0, 8.0,
+    ];
+
+    assert_eq!(names, expected_names, "metric names must be sorted");
+    assert_eq!(timestamps, expected_ts, "timestamps must be descending within series");
+    assert_eq!(
+        values, expected_vals,
+        "values must match — proving rows from different row groups \
+         of different inputs interleave correctly"
+    );
+}
+
+/// Build a test RecordBatch from raw column data (shared by test helpers).
+fn build_test_batch(
+    metric_names: &[&str],
+    timestamps: &[i64],
+    values: &[f64],
+    timeseries_ids: &[i64],
+) -> RecordBatch {
+    let n = metric_names.len();
+    assert_eq!(n, timestamps.len());
+    assert_eq!(n, values.len());
+    assert_eq!(n, timeseries_ids.len());
+
+    let metric_name_array: DictionaryArray<Int32Type> =
+        metric_names.iter().map(|s| Some(*s)).collect();
+    let timestamp_array =
+        UInt64Array::from(timestamps.iter().map(|&t| t as u64).collect::<Vec<u64>>());
+    let value_array = arrow::array::Float64Array::from(values.to_vec());
+    let tsid_array = Int64Array::from(timeseries_ids.to_vec());
+    let metric_type_array = UInt8Array::from(vec![0u8; n]);
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new(
+            "metric_name",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            false,
+        ),
+        Field::new("metric_type", DataType::UInt8, false),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
+    ]));
+
+    RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(metric_name_array),
+            Arc::new(metric_type_array),
+            Arc::new(timestamp_array),
+            Arc::new(value_array),
+            Arc::new(tsid_array),
+        ],
+    )
+    .unwrap()
+}
+
+/// Count the number of row groups in a Parquet file.
+fn count_row_groups(path: &std::path::Path) -> usize {
+    let file = std::fs::File::open(path).unwrap();
+    let builder =
+        parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
+    builder.metadata().num_row_groups()
 }
 
 // ---- Proptest DST: property-based invariant verification ----
