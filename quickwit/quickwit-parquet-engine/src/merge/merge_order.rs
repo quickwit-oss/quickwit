@@ -56,36 +56,23 @@ struct MergeHeapState {
 }
 
 /// An entry in the merge heap. Stores only indices — row bytes are looked
-/// up from the shared [`MergeHeapState`] during comparison.
-///
-/// Uses a raw pointer to the shared state to satisfy `Ord` without copying
-/// key bytes. This is safe because:
-/// - The state lives on the stack in `compute_merge_order` and outlives the heap.
-/// - The pointer is never dereferenced after the heap is dropped.
-/// - The state is never mutated while the heap exists.
+/// up from the shared [`MergeHeapState`] during comparison via `Arc`.
 struct HeapEntry {
     /// Which input this row comes from.
     input_index: usize,
     /// Current row position within that input.
     row_pos: usize,
     /// Shared state for row lookup during comparison.
-    state: *const MergeHeapState,
+    state: Arc<MergeHeapState>,
 }
-
-// SAFETY: MergeHeapState is immutable during the heap's lifetime and lives
-// on the same thread. We never send HeapEntry across threads.
-unsafe impl Send for HeapEntry {}
 
 impl HeapEntry {
     /// Compare this entry's row with another's by looking up from shared state.
     fn cmp_rows(&self, other: &Self) -> std::cmp::Ordering {
-        // SAFETY: state pointer is valid for the lifetime of compute_merge_order.
-        let state = unsafe { &*self.state };
-
-        let self_rows = state.row_arrays[self.input_index]
+        let self_rows = self.state.row_arrays[self.input_index]
             .as_ref()
             .expect("heap entry references a non-empty input");
-        let other_rows = state.row_arrays[other.input_index]
+        let other_rows = other.state.row_arrays[other.input_index]
             .as_ref()
             .expect("heap entry references a non-empty input");
 
@@ -184,13 +171,11 @@ pub fn compute_merge_order(inputs: &[RecordBatch]) -> Result<Vec<MergeRun>> {
         row_arrays.push(Some(rows));
     }
 
-    // Build shared state for heap entries. The state is immutable after this
-    // point and lives on the stack until the heap is fully drained.
-    let state = MergeHeapState {
+    // Build shared state for heap entries.
+    let state = Arc::new(MergeHeapState {
         row_arrays,
         input_lengths: input_lengths.clone(),
-    };
-    let state_ptr: *const MergeHeapState = &state;
+    });
 
     // Estimate total rows for capacity hint.
     let total_rows: usize = input_lengths.iter().sum();
@@ -203,7 +188,7 @@ pub fn compute_merge_order(inputs: &[RecordBatch]) -> Result<Vec<MergeRun>> {
             heap.push(HeapEntry {
                 input_index,
                 row_pos: 0,
-                state: state_ptr,
+                state: Arc::clone(&state),
             });
         }
     }
@@ -235,7 +220,7 @@ pub fn compute_merge_order(inputs: &[RecordBatch]) -> Result<Vec<MergeRun>> {
             heap.push(HeapEntry {
                 input_index: entry.input_index,
                 row_pos: next_pos,
-                state: state_ptr,
+                state: Arc::clone(&state),
             });
         }
     }
