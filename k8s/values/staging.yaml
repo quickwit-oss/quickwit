@@ -7,7 +7,10 @@ cloudprem:
   index:
     minShards: 240 # number of indexers * number of * vCPUs * 2
   reverseConnection:
-    enabled: false
+    enabled: true
+
+datadog:
+  site: dd.datad0g.com
 
 environment:
   QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER: true
@@ -18,7 +21,7 @@ environment:
 podAnnotations:
   # https://docs.datadoghq.com/containers/kubernetes/prometheus/?tab=kubernetesadv2
   # https://docs.datadoghq.com/containers/guide/template_variables/
-  ad.datadoghq.com/pomsky.checks: |
+  ad.datadoghq.com/cloudprem.checks: |
       {
         "openmetrics": {
           "instances": [
@@ -113,6 +116,7 @@ metastore:
   extraEnv:
     # Points sqlx to the appropriate pgpass file location
     PGPASSFILE: /quickwit/pgpass
+    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
 
 control_plane:
   resources:
@@ -122,9 +126,14 @@ control_plane:
     requests:
       cpu: 2
       memory: 4Gi
+  extraEnv:
+    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
 
 indexer:
-  replicaCount: 40
+  replicaCount: 70
+
+  extraEnv:
+    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
 
   resources:
     limits:
@@ -143,7 +152,7 @@ indexer:
       ebs.csi.aws.com/throughput: "500"
 
 searcher:
-  replicaCount: 4
+  replicaCount: 40
 
   # Fabric Egress Gateway: allows searcher pods to reach lambda.us-east-1.amazonaws.com
   # for Lambda auto-deploy and invocation (offloaded leaf search)
@@ -153,11 +162,53 @@ searcher:
 
   resources:
     limits:
-      cpu: 4
-      memory: 16Gi
+      cpu: 16
+      memory: 64Gi
     requests:
-      cpu: 4
-      memory: 16Gi
+      cpu: 16
+      memory: 64Gi
+
+  initContainers:
+    - name: consul-template-dd-api-key
+      image: 727006795293.dkr.ecr.us-east-1.amazonaws.com/consul-template:0.40.0-dd
+      args:
+        - -once
+        - -template=/template/dd-api-key.tpl:/quickwit/dd-api-key
+      resources:
+        limits:
+          cpu: 200m
+          memory: 200Mi
+        requests:
+          cpu: 200m
+          memory: 200Mi
+      securityContext:
+        runAsUser: 1005
+      volumeMounts:
+        - name: dd-api-key-template
+          mountPath: /template/dd-api-key.tpl
+          subPath: dd-api-key.tpl
+        - name: dd-api-key
+          mountPath: /quickwit
+
+  extraVolumes:
+    - name: dd-api-key
+      emptyDir:
+        medium: Memory
+    - name: dd-api-key-template
+      configMap:
+        name: pomsky-cloudprem-dd-api-key-template
+        items:
+          - key: dd-api-key.tpl
+            path: dd-api-key.tpl
+
+  extraVolumeMounts:
+    - name: dd-api-key
+      mountPath: /quickwit/dd-api-key
+      subPath: dd-api-key
+      readOnly: true
+
+  extraEnv:
+    DD_API_KEY_FILE: /quickwit/dd-api-key
 
 janitor:
   resources:
@@ -167,6 +218,8 @@ janitor:
     requests:
       cpu: 2
       memory: 4Gi
+  extraEnv:
+    DD_API_KEY: "dummy-not-used-by-non-searcher-pods"
 
 # ConfigMap entry that is rendered by consul-template into a pgpass file used for connecting to the OrgStore metastore DB
 extraConfigMaps:
@@ -174,6 +227,10 @@ extraConfigMaps:
     data:
       pgpass.tpl: |
         *:*:*:*:{% with secret "kv/orgstore/orgstore-logs-cloudprem-metastore/orgstore-logs-cloudprem-metastore-pg-proxy/k8s/logs-cloudprem/cloudprem/credentials" %}{% .Data.data.password %}{% end %}
+  - name: dd-api-key-template
+    data:
+      dd-api-key.tpl: |
+        {% with secret "kv/k8s/logs-cloudprem/cloudprem/dogfooding-cluster-reverse-connection-dd-api-key" %}{% .Data.data.value %}{% end %}
 
 
 config:
@@ -182,14 +239,30 @@ config:
   # username for database is $namespace_$serviceAccount with underscores as separators
   metastore_uri: postgres://logs_cloudprem_cloudprem@orgstore-logs-cloudprem-metastore-pg-proxy.orgstore-logs-cloudprem-metastore.all-clusters.local-dc.fabric.dog/logs_cloudprem_metastore
 
+  # Indexer settings
+  indexer:
+    split_store_max_num_bytes: 200G
+    split_store_max_num_splits: 10000
+  # Ingest API settings
   ingest_api:
     max_queue_memory_usage: 5GiB # memory capacity * 0.3
     max_queue_disk_usage: 10GiB # max queue mem usage * 2
-
+  # Searcher settings
   searcher:
-    lambda:
-      function_name: cloudprem-search
-      max_splits_per_invocation: 8
-      offload_threshold: 100
-      auto_deploy:
-        execution_role_arn: arn:aws:iam::727006795293:role/cloudprem-lambda-execution
+    fast_field_cache_capacity: 22G
+    split_footer_cache_capacity: 4G
+    partial_request_cache:
+      capacity: 2G
+      policy: s3-fifo
+    predicate_cache:
+      capacity: 5G
+      policy: s3-fifo
+    warmup_memory_budget: 20G
+    max_num_concurrent_split_searches: 200
+    aggregation_memory_limit: 500M
+    # lambda:
+    #   function_name: cloudprem-search
+    #   max_splits_per_invocation: 8
+    #   offload_threshold: 100
+    #   auto_deploy:
+    #     execution_role_arn: arn:aws:iam::727006795293:role/cloudprem-lambda-execution

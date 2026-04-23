@@ -17,6 +17,10 @@
 //! Provides high-throughput metrics ingestion by converting Arrow IPC batches
 //! directly to Parquet splits, bypassing Tantivy entirely.
 
+pub mod arrow_sketches;
 pub mod processor;
+pub mod sketch_processor;
 
+pub use arrow_sketches::{ArrowSketchBatchBuilder, SketchDataPoint};
 pub use processor::{IngestError, ParquetIngestProcessor, record_batch_to_ipc};
+pub use sketch_processor::SketchParquetIngestProcessor;

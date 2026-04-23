@@ -329,6 +329,8 @@ pub struct S3StorageConfig {
     pub disable_multi_object_delete: bool,
     #[serde(default)]
     pub disable_multipart_upload: bool,
+    #[serde(default)]
+    pub disable_checksums: bool,
 }
 
 impl S3StorageConfig {
@@ -337,18 +339,22 @@ impl S3StorageConfig {
             Some(StorageBackendFlavor::DigitalOcean) => {
                 self.force_path_style_access = true;
                 self.disable_multi_object_delete = true;
+                self.disable_checksums = true;
             }
             Some(StorageBackendFlavor::Garage) => {
                 self.region = Some("garage".to_string());
                 self.force_path_style_access = true;
+                self.disable_checksums = true;
             }
             Some(StorageBackendFlavor::Gcs) => {
                 self.disable_multi_object_delete = true;
                 self.disable_multipart_upload = true;
+                self.disable_checksums = true;
             }
             Some(StorageBackendFlavor::MinIO) => {
                 self.region = Some("minio".to_string());
                 self.force_path_style_access = true;
+                self.disable_checksums = true;
             }
             _ => {}
         }
@@ -627,6 +633,7 @@ mod tests {
                 force_path_style_access: true
                 disable_multi_object_delete_requests: true
                 disable_multipart_upload: true
+                disable_checksums: true
             "#;
             let s3_storage_config: S3StorageConfig =
                 serde_yaml::from_str(s3_storage_config_yaml).unwrap();
@@ -637,6 +644,7 @@ mod tests {
                 force_path_style_access: true,
                 disable_multi_object_delete: true,
                 disable_multipart_upload: true,
+                disable_checksums: true,
                 ..Default::default()
             };
             assert_eq!(s3_storage_config, expected_s3_config);

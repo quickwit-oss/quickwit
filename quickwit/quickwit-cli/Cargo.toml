@@ -44,7 +44,7 @@ opentelemetry-otlp = { workspace = true }
 reqwest = { workspace = true }
 rustls = { workspace = true }
 serde_json = { workspace = true }
-sysinfo = { workspace = true }
+sysinfo = { workspace = true, features = ["system", "network"] }
 tabled = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
@@ -95,6 +95,9 @@ ci-test = []
 testsuite = []
 pprof = ["quickwit-serve/pprof"]
 openssl-support = ["openssl-probe"]
+# metrics here refers to adding support for metrics ingestion within Quickwit.
+# (this is not about quickwit's metrics themselves)
+metrics = [ "quickwit-indexing/metrics" ]
 # Requires to enable tokio unstable via RUSTFLAGS="--cfg tokio_unstable"
 tokio-console = ["console-subscriber", "quickwit-common/named_tasks"]
 release-feature-set = [
@@ -106,11 +109,16 @@ release-feature-set = [
   "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
 ]
+release-feature-set-metrics = [
+  "release-feature-set",
+  "metrics",
+]
 release-feature-vendored-set = [
   "jemalloc",
   "openssl-support",
   "pprof",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/metrics",
   "quickwit-indexing/pulsar",
   "quickwit-indexing/sqs",
   "quickwit-indexing/vrl",
@@ -124,6 +132,7 @@ release-macos-feature-vendored-set = [
   "jemalloc",
   "openssl-support",
   "quickwit-indexing/kinesis",
+  "quickwit-indexing/metrics",
   "quickwit-indexing/pulsar",
   "quickwit-indexing/sqs",
   "quickwit-indexing/vrl",

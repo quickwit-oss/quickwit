@@ -60,6 +60,7 @@ COPY .cargo/config.toml /quickwit/.cargo/config.toml
 
 COPY config/cloudprem/datadog-logs.yaml /config/cloudprem/datadog-logs.yaml
 COPY config/cloudprem/datadog-metrics.yaml /config/cloudprem/datadog-metrics.yaml
+COPY config/cloudprem/datadog-sketches.yaml /config/cloudprem/datadog-sketches.yaml
 COPY config/cloudprem/datadog-spans.yaml /config/cloudprem/datadog-spans.yaml
 COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
 
@@ -70,16 +71,24 @@ WORKDIR /quickwit
 
 RUN rustup toolchain install
 
-RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
+RUN echo "Building binaries with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
+    && echo "Building pomsky" \
     && RUSTFLAGS="--cfg tokio_unstable" \
     cargo build \
     -p quickwit-cli \
     --features $CARGO_FEATURES \
     --bin quickwit \
     $(test "$CARGO_PROFILE" = "release" && echo "--release") \
+    && echo "Building pomsky-intake" \
+    && RUSTFLAGS="--cfg tokio_unstable" \
+    cargo build \
+    -p pomsky-intake \
+    --bin pomsky-intake \
+    $(test "$CARGO_PROFILE" = "release" && echo "--release") \
     && echo "Copying binaries to /quickwit/bin" \
     && mkdir -p /quickwit/bin \
-    && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
+    && TARGET_DIR=$(test "$CARGO_PROFILE" = "dev" && echo "debug" || echo "$CARGO_PROFILE") \
+    && find target/$TARGET_DIR -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
 FROM registry.ddbuild.io/images/base/gbi-ubuntu_2404:latest AS quickwit
 
@@ -104,6 +113,7 @@ RUN apt-get -y update \
 
 WORKDIR /quickwit
 RUN mkdir config qwdata
+COPY --from=bin-builder /quickwit/bin/pomsky-intake /usr/local/bin/pomsky-intake
 COPY --from=bin-builder /quickwit/bin/quickwit /usr/local/bin/quickwit
 COPY --from=bin-builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit.yaml
 
@@ -113,6 +123,7 @@ ENV QW_LISTEN_ADDRESS=0.0.0.0
 
 USER dog
 
+RUN pomsky-intake --help > /dev/null
 RUN quickwit --version
 
 ENTRYPOINT ["quickwit"]

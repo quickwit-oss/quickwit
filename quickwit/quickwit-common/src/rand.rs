@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use rand::Rng;
+use rand::RngExt;
 use rand::distr::Alphanumeric;
 
 /// Appends a random suffix composed of a hyphen and five random alphanumeric characters.

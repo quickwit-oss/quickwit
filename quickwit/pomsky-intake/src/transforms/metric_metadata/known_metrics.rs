@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use rand::Rng;
+use rand::RngExt;
 
 /// Returns the current time as Unix seconds since the epoch.
 fn now_unix_secs() -> u64 {

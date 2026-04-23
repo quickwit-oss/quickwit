@@ -133,8 +133,8 @@ mod tests {
 
     fn make_dd_metric(name: &str, tags: &[(&str, &str)]) -> Event {
         let mut metric_tags = MetricTags::default();
-        for (k, v) in tags {
-            metric_tags.insert(k.to_string(), v.to_string());
+        for (key, value) in tags {
+            metric_tags.insert(key.to_string(), value.to_string());
         }
         let mut metric = Metric::new(
             name,
@@ -150,8 +150,8 @@ mod tests {
 
     fn make_otel_metric(name: &str, tags: &[(&str, &str)]) -> Event {
         let mut metric_tags = MetricTags::default();
-        for (k, v) in tags {
-            metric_tags.insert(k.to_string(), v.to_string());
+        for (key, value) in tags {
+            metric_tags.insert(key.to_string(), value.to_string());
         }
         let mut metric = Metric::new(
             name,

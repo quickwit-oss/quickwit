@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum ProductType {
     Metrics,
+    Sketches,
     Logs,
     Traces,
 }
@@ -48,6 +49,9 @@ impl ProductType {
     pub fn default_sort_fields(self) -> &'static str {
         match self {
             Self::Metrics => {
+                "metric_name|service|env|datacenter|region|host|timeseries_id|timestamp_secs/V2"
+            }
+            Self::Sketches => {
                 "metric_name|service|env|datacenter|region|host|timeseries_id|timestamp_secs/V2"
             }
             // Placeholder: column names TBD when logs Parquet schema is defined.
@@ -117,6 +121,18 @@ mod tests {
     #[test]
     fn test_metrics_default_sort_fields_parses() {
         let schema = parse_sort_fields(ProductType::Metrics.default_sort_fields())
+            .expect("metrics default sort fields must parse");
+        assert_eq!(schema.column.len(), 8);
+        // Proto names are bare (suffixes stripped by parser).
+        assert_eq!(schema.column[0].name, "metric_name");
+        assert_eq!(schema.column[1].name, "service");
+        assert_eq!(schema.column[6].name, "timeseries_id");
+        assert_eq!(schema.column[7].name, "timestamp_secs");
+    }
+
+    #[test]
+    fn test_sketches_default_sort_fields_parses() {
+        let schema = parse_sort_fields(ProductType::Sketches.default_sort_fields())
             .expect("metrics default sort fields must parse");
         assert_eq!(schema.column.len(), 8);
         // Proto names are bare (suffixes stripped by parser).

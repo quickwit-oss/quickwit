@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub mod add_host_tags;
+pub mod connections_to_apm_metrics;
 pub mod explode_trace_spans;
 pub mod metric_metadata;
 pub mod preprocess_log;

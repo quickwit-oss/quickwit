@@ -18,6 +18,7 @@ mod metastore;
 mod metrics;
 mod migrator;
 mod model;
+pub(crate) mod parquet_model;
 mod pool;
 mod split_stream;
 mod tags;

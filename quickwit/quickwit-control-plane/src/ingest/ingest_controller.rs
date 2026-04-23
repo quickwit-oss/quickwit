@@ -49,7 +49,7 @@ use quickwit_proto::types::{IndexUid, NodeId, NodeIdRef, Position, ShardId, Sour
 use rand::prelude::IndexedRandom;
 use rand::rngs::ThreadRng;
 use rand::seq::SliceRandom;
-use rand::{Rng, RngCore, rng};
+use rand::{Rng, RngExt, rng};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use tracing::{Level, debug, enabled, error, info, instrument, warn};

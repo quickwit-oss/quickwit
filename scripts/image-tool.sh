@@ -159,6 +159,7 @@ build_image() {
         --build-arg QW_COMMIT_DATE="$QW_COMMIT_DATE" \
         --build-arg QW_COMMIT_HASH="$QW_COMMIT_HASH" \
         --build-arg QW_COMMIT_TAGS="$QW_COMMIT_TAGS" \
+        ${CARGO_FEATURES:+--build-arg CARGO_FEATURES="$CARGO_FEATURES"} \
         ${CI_JOB_TOKEN:+--build-arg CI_JOB_TOKEN="$CI_JOB_TOKEN"} \
         ${POMCHI_TOKEN:+--build-arg POMCHI_TOKEN="$POMCHI_TOKEN"} \
         ${EVENT_PERCOLATION_TOKEN:+--build-arg EVENT_PERCOLATION_TOKEN="$EVENT_PERCOLATION_TOKEN"} \

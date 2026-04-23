@@ -15,12 +15,19 @@
 #![deny(clippy::disallowed_methods)]
 
 mod config;
+pub mod host_tags;
+pub mod host_tags_poller;
 mod intake_runner;
+
+// Vendored agent-side protobuf types; generated code lives under
+// `src/codegen/` (checked in) and is reexported through `protos::*`.
+pub mod protos;
 
 // Custom Vector components — the `typetag` registration in each module
 // ensures Vector discovers them at link time.
 pub mod sinks;
+pub mod sources;
 pub mod transforms;
 
-pub use config::IntakeConfig;
+pub use config::{HostTagsConfig, IntakeConfig};
 pub use intake_runner::run_intake;
