@@ -63,10 +63,7 @@ pub(crate) fn build_datafusion_session_builder(
         return Ok(None);
     }
 
-    let metrics_source = Arc::new(MetricsDataSource::new(
-        metastore,
-        storage_resolver.clone(),
-    ));
+    let metrics_source = Arc::new(MetricsDataSource::new(metastore));
     let worker_resolver = QuickwitWorkerResolver::new(searcher_pool.clone())
         .with_tls(node_config.grpc_config.tls.is_some());
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));

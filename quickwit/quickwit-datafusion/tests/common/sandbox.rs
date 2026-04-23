@@ -85,6 +85,10 @@ impl TestSandbox {
 ///
 /// Drop the handle to shut the server down. The shutdown signal fires on drop,
 /// and tonic exits cleanly so tests do not leak background tasks.
+///
+/// Only `tests/distributed.rs` uses this; `metrics.rs` / `null_columns.rs`
+/// compile the common module but not these symbols.
+#[allow(dead_code)]
 pub struct SpawnedWorker {
     pub addr: SocketAddr,
     _shutdown: oneshot::Sender<()>,
@@ -97,6 +101,7 @@ pub struct SpawnedWorker {
 ///
 /// Mirrors the pair of services that `quickwit-serve/src/grpc.rs` mounts on the
 /// searcher gRPC port, so distributed tests exercise the real worker codepath.
+#[allow(dead_code)]
 pub async fn spawn_df_worker(builder: Arc<DataFusionSessionBuilder>) -> SpawnedWorker {
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await

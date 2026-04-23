@@ -65,10 +65,7 @@ async fn test_distributed_tasks_not_shuffles() {
         .await;
     }
 
-    let source = Arc::new(MetricsDataSource::new(
-        metastore,
-        sandbox.storage_resolver.clone(),
-    ));
+    let source = Arc::new(MetricsDataSource::new(metastore));
 
     // Pool starts empty; we populate it once the workers are bound. The resolver
     // reads pool keys lazily at query time, so this ordering is safe.

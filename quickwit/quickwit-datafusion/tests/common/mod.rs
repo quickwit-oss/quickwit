@@ -14,8 +14,6 @@
 
 //! Shared helpers for quickwit-datafusion integration tests.
 
-#![allow(dead_code)]
-
 pub mod sandbox;
 pub mod splits;
 

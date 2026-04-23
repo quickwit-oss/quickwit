@@ -29,7 +29,6 @@ use quickwit_metastore::{IndexMetadataResponseExt, ListIndexesMetadataResponseEx
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_storage::StorageResolver;
 use tracing::debug;
 
 use super::metastore_provider::MetastoreSplitProvider;
@@ -50,24 +49,17 @@ pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
 
 /// Production `MetricsIndexResolver` backed by the Quickwit metastore.
 ///
-/// `resolve()` fetches `IndexMetadata` and returns the URI. The
-/// `StorageResolver` itself is not consulted here — the object store
-/// registry does that lazily on first read.
+/// `resolve()` fetches `IndexMetadata` and returns the URI. No
+/// `StorageResolver` is held here — the object store registry resolves
+/// storage lazily on first read.
 #[derive(Clone)]
 pub struct MetastoreIndexResolver {
     metastore: MetastoreServiceClient,
-    /// Retained so tests and other consumers that want a standalone
-    /// resolver instance don't need to rewire everything. The registry is
-    /// constructed with its own clone of the resolver.
-    _storage_resolver: StorageResolver,
 }
 
 impl MetastoreIndexResolver {
-    pub fn new(metastore: MetastoreServiceClient, storage_resolver: StorageResolver) -> Self {
-        Self {
-            metastore,
-            _storage_resolver: storage_resolver,
-        }
+    pub fn new(metastore: MetastoreServiceClient) -> Self {
+        Self { metastore }
     }
 }
 

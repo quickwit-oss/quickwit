@@ -41,7 +41,6 @@ use datafusion::error::Result as DFResult;
 use quickwit_common::is_metrics_index;
 use quickwit_df_core::{DataSourceContributions, QuickwitDataSource};
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
-use quickwit_storage::StorageResolver;
 
 use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
@@ -78,10 +77,9 @@ pub struct MetricsDataSource {
 
 impl MetricsDataSource {
     /// Create a production `MetricsDataSource` backed by the metastore.
-    pub fn new(metastore: MetastoreServiceClient, storage_resolver: StorageResolver) -> Self {
-        let resolver = MetastoreIndexResolver::new(metastore, storage_resolver);
+    pub fn new(metastore: MetastoreServiceClient) -> Self {
         Self {
-            index_resolver: Arc::new(resolver),
+            index_resolver: Arc::new(MetastoreIndexResolver::new(metastore)),
         }
     }
 
