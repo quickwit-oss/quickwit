@@ -1259,6 +1259,55 @@ fn test_merge_single_input_splits_into_multiple_outputs() {
     assert_eq!(total, 6);
 }
 
+#[test]
+fn test_merge_split_after_oversized_series() {
+    // Regression test: when an early series has far more rows than the
+    // target per output, the boundary algorithm must still split at
+    // subsequent transitions. With series row counts [6, 1, 1] and
+    // num_outputs=3, all 3 transitions are available and 3 outputs
+    // should be produced.
+    let dir = TempDir::new().unwrap();
+
+    // alpha: 6 rows, beta: 1 row, gamma: 1 row.
+    let input1 = write_test_split(
+        dir.path(),
+        "input1.parquet",
+        &["alpha", "alpha", "alpha", "alpha", "alpha", "alpha", "beta", "gamma"],
+        &[600, 500, 400, 300, 200, 100, 100, 100],
+        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        &[10, 10, 10, 10, 10, 10, 20, 30],
+    );
+
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let config = MergeConfig {
+        num_outputs: 3,
+        writer_config: ParquetWriterConfig::default(),
+    };
+
+    let outputs = merge_sorted_parquet_files(&[input1], &output_dir, &config).unwrap();
+
+    // 3 distinct series and num_outputs=3: must produce 3 files.
+    assert_eq!(
+        outputs.len(),
+        3,
+        "oversized first series must not prevent splitting at later transitions, got {} outputs",
+        outputs.len()
+    );
+
+    let names0 = extract_string_column(&read_parquet_file(&outputs[0].path), "metric_name");
+    let names1 = extract_string_column(&read_parquet_file(&outputs[1].path), "metric_name");
+    let names2 = extract_string_column(&read_parquet_file(&outputs[2].path), "metric_name");
+
+    assert!(names0.iter().all(|n| n == "alpha"));
+    assert_eq!(names1, vec!["beta"]);
+    assert_eq!(names2, vec!["gamma"]);
+
+    let total: usize = outputs.iter().map(|o| o.num_rows).sum();
+    assert_eq!(total, 8);
+}
+
 // ---- Proptest DST: property-based invariant verification ----
 
 mod proptests {

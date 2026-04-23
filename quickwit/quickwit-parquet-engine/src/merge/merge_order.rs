@@ -358,38 +358,57 @@ pub fn compute_output_boundaries(
         return Ok(vec![all]);
     }
 
-    // Distribute transitions evenly by row count.
+    let transition_set: std::collections::HashSet<usize> =
+        transition_indices.iter().cloned().collect();
+
     let target_rows_per_output = total_rows / actual_outputs;
 
-    // Walk the merge order, accumulating row counts. When we cross a
-    // transition point near the target row count, place a boundary.
+    // Walk the merge order, accumulating row counts. At each transition
+    // point, decide whether to place a boundary.
+    //
+    // Strategy: split at a transition when we've accumulated at least
+    // target_rows_per_output. But also track remaining transitions and
+    // outputs — if we're running low on transitions relative to the
+    // outputs we still need, split eagerly to avoid producing too few files.
     let mut boundaries: Vec<std::ops::Range<usize>> = Vec::with_capacity(actual_outputs);
     let mut current_start: usize = 0;
     let mut rows_in_current: usize = 0;
     let mut outputs_remaining = actual_outputs;
-    let transition_set: std::collections::HashSet<usize> =
-        transition_indices.iter().cloned().collect();
+    let mut transitions_remaining = transition_indices.len();
 
     for (run_idx, run) in merge_order.iter().enumerate() {
         rows_in_current += run.row_count;
 
-        // Check if we should place a boundary here.
-        // We place a boundary at a transition point when we've accumulated
-        // roughly the target number of rows and we still need more outputs.
         let at_transition = transition_set.contains(&(run_idx + 1));
-        let past_target = rows_in_current >= target_rows_per_output;
         let is_last_run = run_idx + 1 == merge_order.len();
 
-        if (at_transition && past_target && outputs_remaining > 1) || is_last_run {
+        if is_last_run {
+            // Always emit the final boundary.
             boundaries.push(current_start..(run_idx + 1));
-            current_start = run_idx + 1;
-            rows_in_current = 0;
-            outputs_remaining -= 1;
+            break;
+        }
+
+        if at_transition && outputs_remaining > 1 {
+            let past_target = rows_in_current >= target_rows_per_output;
+
+            // We must split here if the remaining transitions (including
+            // this one) equal the remaining splits needed. The last
+            // boundary is emitted by is_last_run without needing a
+            // transition, so we need (outputs_remaining - 1) transition-
+            // splits total.
+            let must_split = transitions_remaining < outputs_remaining;
+
+            if past_target || must_split {
+                boundaries.push(current_start..(run_idx + 1));
+                current_start = run_idx + 1;
+                rows_in_current = 0;
+                outputs_remaining -= 1;
+            }
+
+            transitions_remaining -= 1;
         }
     }
 
-    // If we didn't fill all outputs (can happen when transitions are sparse),
-    // that's fine — we produce fewer files.
     Ok(boundaries)
 }
 
