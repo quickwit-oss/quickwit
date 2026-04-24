@@ -873,3 +873,41 @@ fn test_descending_column_inverts_key_order() {
         "ascending and descending keys for same data must differ"
     );
 }
+
+#[test]
+fn test_descending_column_null_sorts_after_non_null() {
+    // When a descending column has a null value, the null row must still
+    // sort after non-null rows in the composite key (matching the writer's
+    // nulls_first=false behavior). The ordinal bytes must NOT be inverted
+    // — only the value bytes — so that null rows (which skip the column)
+    // have a higher key than non-null rows.
+    //
+    // Sort schema: metric_name | -service | timeseries_id | timestamp_secs
+    // Physical order (writer): beta, alpha, null (descending service, nulls last)
+    // Key order must match: key(beta) < key(alpha) < key(null)
+    let desc_schema = "metric_name|-service|timeseries_id|timestamp_secs/V2";
+
+    let batch_beta = build_single_row_batch("cpu", Some("beta"), None, 100);
+    let batch_alpha = build_single_row_batch("cpu", Some("alpha"), None, 100);
+    let batch_null = build_single_row_batch("cpu", None, None, 100);
+
+    let key_beta = compute_sorted_series_column(desc_schema, &batch_beta).unwrap();
+    let key_alpha = compute_sorted_series_column(desc_schema, &batch_alpha).unwrap();
+    let key_null = compute_sorted_series_column(desc_schema, &batch_null).unwrap();
+
+    // Descending: beta before alpha (inverted value bytes).
+    assert!(
+        key_beta.value(0) < key_alpha.value(0),
+        "descending: beta key must be less than alpha key"
+    );
+
+    // Null must sort after both non-null values.
+    assert!(
+        key_alpha.value(0) < key_null.value(0),
+        "null service must have a larger key than non-null alpha"
+    );
+    assert!(
+        key_beta.value(0) < key_null.value(0),
+        "null service must have a larger key than non-null beta"
+    );
+}
