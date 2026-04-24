@@ -53,9 +53,9 @@ mkdir $SANDBOX
 # Start the endpoint server
 POMSKY_DIR=$GOPATH/src/github.com/DataDog/pomsky
 echo Building Pomsky...
-(cd "$POMSKY_DIR/quickwit" && cargo build -p quickwit-cli)
+(cd "$POMSKY_DIR/quickwit" && cargo build -p quickwit-cli --features metrics)
 echo Starting Pomsky...
-(cd "$POMSKY_DIR/quickwit" && cargo run -p quickwit-cli -- run --config $LOC/quickwit-local.yaml) &
+(cd "$POMSKY_DIR/quickwit" && cargo run -p quickwit-cli --features metrics -- run --config $LOC/quickwit-local.yaml) &
 POMSKY_PID=$!
 echo Waiting for Pomsky to be ready...
 while ! curl -sf http://localhost:7280/health/livez > /dev/null 2>&1; do
