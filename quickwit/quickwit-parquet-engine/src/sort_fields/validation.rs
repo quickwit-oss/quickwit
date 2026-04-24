@@ -24,6 +24,8 @@ use super::column_type::{ColumnTypeId, TIEBREAKER, default_is_descending};
 /// Name used for the special skip-builder schema that does not require timestamp.
 const DEFAULT_SKIP_BUILDER_SCHEMA_NAME: &str = "defaultSkipBuilderSchema";
 
+const TIMESERIES_ID: &str = "timeseries_id";
+
 /// Check if a bare column name is a timestamp column (defaults to descending).
 fn is_timestamp_column(name: &str) -> bool {
     default_is_descending(name)
@@ -39,6 +41,9 @@ fn is_timestamp_column(name: &str) -> bool {
 /// - `timestamp` must be Int64 and descending (unless it's a msgid schema).
 /// - `timestamp` must come before `tiebreaker`.
 /// - No non-tiebreaker columns may appear after `timestamp`.
+/// - No non-timestamp, non-tiebreaker columns may appear after `timeseries_id`. The sorted_series
+///   key encodes columns up to (and including) timeseries_id; any additional tag columns after it
+///   would be in the physical sort order but not in the key, breaking merge correctness.
 pub fn validate_schema(schema: &SortSchema) -> Result<(), SortFieldsError> {
     if schema.column.is_empty() {
         return Err(SortFieldsError::ValidationError("empty schema".to_string()));
@@ -66,6 +71,23 @@ pub fn validate_schema(schema: &SortSchema) -> Result<(), SortFieldsError> {
         }
 
         let has_seen_timestamp = seen.iter().any(|s| is_timestamp_column(s));
+        let has_seen_timeseries_id = seen.contains(TIMESERIES_ID);
+
+        // After timeseries_id, only timestamp and tiebreaker are allowed.
+        // The sorted_series key encodes columns up to timeseries_id; any
+        // tag column after it would be in the physical sort order but not
+        // in the key, breaking merge correctness.
+        if has_seen_timeseries_id
+            && name != TIMESERIES_ID
+            && !is_timestamp_column(name)
+            && name != TIEBREAKER
+        {
+            return Err(SortFieldsError::ValidationError(format!(
+                "column '{}' appears after timeseries_id; only timestamp and tiebreaker may \
+                 follow timeseries_id in the sort schema",
+                name
+            )));
+        }
 
         if is_timestamp_column(name) {
             if seen.contains(TIEBREAKER) {

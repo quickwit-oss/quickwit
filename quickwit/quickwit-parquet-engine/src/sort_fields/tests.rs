@@ -961,3 +961,37 @@ fn test_column_type_try_from_u64_invalid() {
     assert!(ColumnTypeId::try_from(1u64).is_err());
     assert!(ColumnTypeId::try_from(99u64).is_err());
 }
+
+#[test]
+fn test_rejects_tag_column_after_timeseries_id() {
+    // A tag column after timeseries_id would be in the physical sort order
+    // but not in the sorted_series key, breaking merge correctness.
+    // parse_sort_fields calls validate_schema internally, so the parse
+    // itself must fail.
+    let result = parse_sort_fields("metric_name|timeseries_id|extra_tag|timestamp_secs/V2");
+    assert!(
+        result.is_err(),
+        "schema with tag after timeseries_id must be rejected"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("after timeseries_id"),
+        "error should mention timeseries_id: {}",
+        err
+    );
+}
+
+#[test]
+fn test_accepts_timestamp_after_timeseries_id() {
+    // timestamp immediately after timeseries_id is the normal case.
+    let schema = parse_sort_fields("metric_name|timeseries_id|timestamp_secs/V2").unwrap();
+    assert!(super::validation::validate_schema(&schema).is_ok());
+}
+
+#[test]
+fn test_accepts_schema_without_timeseries_id() {
+    // Schemas without timeseries_id are valid (the sorted_series encoding
+    // will reject them separately, but the schema itself is valid).
+    let schema = parse_sort_fields("metric_name|timestamp_secs/V2").unwrap();
+    assert!(super::validation::validate_schema(&schema).is_ok());
+}
