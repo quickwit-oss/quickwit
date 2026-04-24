@@ -14,7 +14,10 @@ retention:
   schedule: hourly
 
 search_settings:
-  default_search_fields: []
+  # Keep in sync with expand_virtual_fields() in quickwit-query/src/cloudprem/query.rs
+  default_search_fields:
+    - message
+    - extra_fts
 
 # TODO: replace ALL default tokenizer with ddg tokenizer
 # There would be two tokenizers: ddg and ddg_ignore_case (for message and all)
@@ -42,7 +45,7 @@ doc_mapping:
   # CAUTION: Update this UID (this is actually an ULID) when you modify the doc mapping.
   # It has no semantic meaning. The Datadog index doc mapping is only updated
   # if and only if this UID differs from the current doc mapping UID.
-  doc_mapping_uid: "01KCKZM549X2BHRYZ330F5BMHA"
+  doc_mapping_uid: "01KNHN22NJ9NJ4H8RMFD3A3490"
   mode: dynamic
   field_mappings:
     # TODO: Add RFC3164
@@ -87,17 +90,45 @@ doc_mapping:
       indexed: false
       fast: false
 
-    # The subfields are `message` and `stack`. Are there others?
-    # If all fields are clear, we can convert to object.
-    # TODO: This is unused currently in the Pomsky processing
-    # We need to move errors from custom to its own field because the tokenization is different
+    # Explicit error object with tokenized sub-fields for individual queries
+    # (e.g. error.message:* , error.stack:*). Populated by PomChi from
+    # custom.error.message and custom.error.stack at ingest time.
     - name: error
-      type: json
+      type: object
+      field_mappings:
+        - name: message
+          type: text
+          tokenizer: datadog
+          record: position
+          fieldnorms: false
+          stored: false
+        - name: stack
+          type: text
+          tokenizer: datadog
+          record: position
+          fieldnorms: false
+          stored: false
+
+    # Title field for individual queries (title:*). Populated by PomChi
+    # from custom.title at ingest time.
+    - name: title
+      type: text
       tokenizer: datadog
       record: position
-      fast: false # We can use custom.error for aggregations instead
-      # downstream expects the error to be in custom.error, so we will store it only there
+      fieldnorms: false
       stored: false
+
+    # Combined FTS field: concatenates error.message, error.stack, and title
+    # into a single index for bare text queries and Trino FTS.
+    # No additional storage — just merges inverted index entries.
+    - name: extra_fts
+      type: concatenate
+      concatenate_fields:
+        - error.message
+        - error.stack
+        - title
+      tokenizer: datadog
+      record: position
 
     # other text like core attributes
     - name: service
@@ -157,7 +188,7 @@ doc_mapping:
         # TODO: Check if we need to cover queries addressing tags, e.g. tags `*:"env:prod"` or tag `*:prod`
         # Generally this could be extracted by a query processor
         # - tag OR tags
-        - error
+        # error field removed — FTS on error sub-fields now handled by extra_fts
         - source
         - service
         - service_type

@@ -974,3 +974,112 @@ async fn test_get_indexes() {
 
     sandbox.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn test_extra_fts_indexing_and_search() {
+    // Test that extra_fts (concatenate), error (object), and title fields work.
+    // Covers: FTS via extra_fts, individual field queries, and type:object regression.
+    let mut docs: Vec<Value> = serde_json::from_value(serde_json::json!([
+        {
+            "message": "{\"error\":{\"message\":\"connection refused by remote host\",\"stack\":\"RuntimeError at handle_request line 42\"},\"title\":\"payment service crash\"}",
+            "status": "error",
+            "timestamp": 1762360556800u64,
+            "hostname": "test-host",
+            "service": "service123",
+            "ddsource": "java",
+            "ddtags": "env:dev"
+        },
+        {
+            "message": "Successfully processed payment for order_id=ORD-12345",
+            "status": "info",
+            "timestamp": 1762360556900u64,
+            "hostname": "test-host",
+            "service": "service123",
+            "ddsource": "go",
+            "ddtags": "env:dev"
+        },
+        {
+            "message": "{\"error\":\"plain string error, not an object\"}",
+            "status": "error",
+            "timestamp": 1762360557000u64,
+            "hostname": "test-host",
+            "service": "service123",
+            "ddsource": "python",
+            "ddtags": "env:dev"
+        }
+    ]))
+    .unwrap();
+
+    // Verify PomChi produces ExtraFts with error object and title
+    let msg: DatadogLogMsg = serde_json::from_value(docs[0].clone()).unwrap();
+    let processed = pomchi::ProcessedLog::from_datadog_log_msg(msg);
+    assert!(!processed.extra_fts.is_empty());
+    assert_eq!(
+        processed.extra_fts.error.message.as_deref(),
+        Some("connection refused by remote host")
+    );
+    assert_eq!(
+        processed.extra_fts.error.stack.as_deref(),
+        Some("RuntimeError at handle_request line 42")
+    );
+    assert_eq!(
+        processed.extra_fts.title.as_deref(),
+        Some("payment service crash")
+    );
+
+    // Verify PomChi ignores error when it's a plain string (not an object)
+    let msg_str_error: DatadogLogMsg = serde_json::from_value(docs[2].clone()).unwrap();
+    let processed_str = pomchi::ProcessedLog::from_datadog_log_msg(msg_str_error);
+    assert!(processed_str.extra_fts.error.is_empty());
+    assert!(processed_str.extra_fts.title.is_none());
+
+    let sandbox = setup_env(&mut docs).await;
+
+    // Verify documents were indexed
+    sandbox.assert_hit_count("datadog", "source:java", 1).await;
+    sandbox.assert_hit_count("datadog", "source:go", 1).await;
+    sandbox
+        .assert_hit_count("datadog", "source:python", 1)
+        .await;
+
+    // --- FTS via extra_fts (concatenate field) ---
+    // Bare text search should find words in error.message, error.stack, title
+    sandbox.assert_hit_count("datadog", "refused", 1).await;
+    sandbox.assert_hit_count("datadog", "crash", 1).await;
+    sandbox.assert_hit_count("datadog", "RuntimeError", 1).await;
+
+    // Bare text search should also find words in message field
+    sandbox.assert_hit_count("datadog", "processed", 1).await;
+
+    // --- Individual field queries (type:object regression test) ---
+    // error.message should be queryable as an individual field
+    sandbox
+        .assert_hit_count("datadog", "error.message:refused", 1)
+        .await;
+    sandbox
+        .assert_hit_count("datadog", "error.message:nonexistent", 0)
+        .await;
+
+    // error.stack should be queryable as an individual field
+    sandbox
+        .assert_hit_count("datadog", "error.stack:RuntimeError", 1)
+        .await;
+
+    // title should be queryable as an individual field
+    sandbox.assert_hit_count("datadog", "title:crash", 1).await;
+    sandbox
+        .assert_hit_count("datadog", "title:nonexistent", 0)
+        .await;
+
+    // --- Negative tests ---
+    sandbox
+        .assert_hit_count("datadog", "nonexistentword12345", 0)
+        .await;
+
+    // error as plain string should NOT appear in error.message field
+    sandbox
+        .assert_hit_count("datadog", "error.message:plain", 0)
+        .await;
+
+    sandbox.shutdown().await.unwrap();
+}
