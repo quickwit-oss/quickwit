@@ -39,10 +39,11 @@ pub(crate) async fn publish_split(
     split_name: &str,
     batch: &RecordBatch,
 ) {
-    let (parquet_bytes, _) = ParquetWriter::new(ParquetWriterConfig::default(), &TableConfig::default())
-        .unwrap()
-        .write_to_bytes(batch, None)
-        .unwrap();
+    let (parquet_bytes, _) =
+        ParquetWriter::new(ParquetWriterConfig::default(), &TableConfig::default())
+            .unwrap()
+            .write_to_bytes(batch, None)
+            .unwrap();
     let size_bytes = parquet_bytes.len() as u64;
     std::fs::write(
         data_dir.join(format!("{split_name}.parquet")),
@@ -95,9 +96,9 @@ pub(crate) async fn publish_split(
     for tag_col in &["service", "env", "datacenter", "region", "host"] {
         if let Ok(col_idx) = batch_schema.index_of(tag_col) {
             let col = batch.column(col_idx);
-            let values: HashSet<String> = if let Some(dict) = col
-                .as_any()
-                .downcast_ref::<arrow::array::DictionaryArray<Int32Type>>()
+            let values: HashSet<String> = if let Some(dict) =
+                col.as_any()
+                    .downcast_ref::<arrow::array::DictionaryArray<Int32Type>>()
             {
                 let keys = dict
                     .keys()
