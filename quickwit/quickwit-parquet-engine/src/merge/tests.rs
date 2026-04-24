@@ -1308,6 +1308,122 @@ fn test_merge_split_after_oversized_series() {
     assert_eq!(total, 8);
 }
 
+#[test]
+fn test_merge_descending_pre_timestamp_column() {
+    // Verify that a sort schema with a descending pre-timestamp column
+    // produces correct merge output. The sorted_series encoding must
+    // invert storekey bytes for descending columns so that ascending
+    // memcmp on the composite key matches the physical sort order.
+    //
+    // Sort schema: metric_name ASC | -service (DESC) | timeseries_id | timestamp_secs
+    // Physical order: within same metric_name, service is descending
+    // (zebra before alpha).
+    let dir = TempDir::new().unwrap();
+
+    let desc_sort_fields = "metric_name|-service|timeseries_id|timestamp_secs/V2";
+
+    // Build input with a "service" column.
+    let metric_names: Vec<&str> = vec!["cpu", "cpu", "cpu", "cpu"];
+    let services: Vec<&str> = vec!["alpha", "alpha", "zebra", "zebra"];
+    let timestamps: Vec<u64> = vec![200, 100, 200, 100];
+    let values: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0];
+    let tsids: Vec<i64> = vec![10, 10, 20, 20];
+
+    let metric_name_array: DictionaryArray<Int32Type> =
+        metric_names.iter().map(|s| Some(*s)).collect();
+    let service_array: DictionaryArray<Int32Type> = services.iter().map(|s| Some(*s)).collect();
+    let timestamp_array = UInt64Array::from(timestamps);
+    let value_array = arrow::array::Float64Array::from(values);
+    let tsid_array = Int64Array::from(tsids);
+    let metric_type_array = UInt8Array::from(vec![0u8; 4]);
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new(
+            "metric_name",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            false,
+        ),
+        Field::new("metric_type", DataType::UInt8, false),
+        Field::new(
+            "service",
+            DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)),
+            false,
+        ),
+        Field::new("timestamp_secs", DataType::UInt64, false),
+        Field::new("value", DataType::Float64, false),
+        Field::new("timeseries_id", DataType::Int64, false),
+    ]));
+
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![
+            Arc::new(metric_name_array),
+            Arc::new(metric_type_array),
+            Arc::new(service_array),
+            Arc::new(timestamp_array),
+            Arc::new(value_array),
+            Arc::new(tsid_array),
+        ],
+    )
+    .unwrap();
+
+    // Write with the descending sort schema.
+    let table_config = TableConfig {
+        product_type: ProductType::Metrics,
+        sort_fields: Some(desc_sort_fields.to_string()),
+        window_duration_secs: 900,
+    };
+    let writer = ParquetWriter::new(ParquetWriterConfig::default(), &table_config).unwrap();
+
+    let metadata = ParquetSplitMetadata::metrics_builder()
+        .split_id(ParquetSplitId::generate(ParquetSplitKind::Metrics))
+        .index_uid("test-index:0")
+        .sort_fields(desc_sort_fields)
+        .window_duration_secs(900)
+        .window_start_secs(0)
+        .time_range(TimeRange::new(0, 1))
+        .build();
+
+    let input_path = dir.path().join("input_desc.parquet");
+    writer
+        .write_to_file_with_metadata(&batch, &input_path, Some(&metadata))
+        .unwrap();
+
+    // Read back and verify the input is sorted correctly:
+    // cpu/zebra (DESC service) before cpu/alpha.
+    let input_batch = read_parquet_file(&input_path);
+    let input_services = extract_string_column(&input_batch, "service");
+    assert_eq!(
+        input_services,
+        vec!["zebra", "zebra", "alpha", "alpha"],
+        "input must be sorted with service descending"
+    );
+
+    // Now merge — this should preserve the sort order.
+    let output_dir = dir.path().join("output");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let config = MergeConfig {
+        num_outputs: 1,
+        writer_config: ParquetWriterConfig::default(),
+    };
+
+    let outputs = merge_sorted_parquet_files(&[input_path], &output_dir, &config).unwrap();
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(outputs[0].num_rows, 4);
+
+    let output_batch = read_parquet_file(&outputs[0].path);
+    let output_services = extract_string_column(&output_batch, "service");
+
+    // Service must still be descending within same metric_name:
+    // zebra before alpha.
+    assert_eq!(
+        output_services,
+        vec!["zebra", "zebra", "alpha", "alpha"],
+        "merge output must preserve descending service order"
+    );
+}
+
 // ---- Proptest DST: property-based invariant verification ----
 
 mod proptests {

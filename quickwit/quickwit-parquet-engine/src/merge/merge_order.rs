@@ -134,6 +134,7 @@ pub fn compute_merge_order(inputs: &[RecordBatch], sort_fields_str: &str) -> Res
     // Parse the sort schema to determine timestamp sort direction.
     // Legacy schemas may use "timestamp" instead of "timestamp_secs".
     let sort_schema = parse_sort_fields(sort_fields_str)?;
+
     let ts_column = sort_schema
         .column
         .iter()
