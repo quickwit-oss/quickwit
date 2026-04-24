@@ -48,22 +48,12 @@ type SessionConfigSetter = Arc<dyn Fn(&mut SessionConfig) + Send + Sync>;
 /// registration. It carries the values that are native to the OSS
 /// `SessionStateBuilder` API: config setters, UDFs, optimizer rules, and DDL
 /// table factories.
+#[derive(Default)]
 pub struct QuickwitRuntimeRegistration {
     session_config_setters: Vec<SessionConfigSetter>,
     physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>>,
     udfs: Vec<Arc<ScalarUDF>>,
     table_factories: Vec<(String, Arc<dyn TableProviderFactory>)>,
-}
-
-impl Default for QuickwitRuntimeRegistration {
-    fn default() -> Self {
-        Self {
-            session_config_setters: Vec::new(),
-            physical_optimizer_rules: Vec::new(),
-            udfs: Vec::new(),
-            table_factories: Vec::new(),
-        }
-    }
 }
 
 impl QuickwitRuntimeRegistration {

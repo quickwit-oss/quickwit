@@ -14,6 +14,8 @@
 
 //! Real `MetricsSplitProvider` backed by the Quickwit metastore.
 
+use std::ops::Bound;
+
 use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
 use quickwit_metastore::{
@@ -101,12 +103,33 @@ fn to_metastore_query(index_uid: &IndexUid, query: &MetricsSplitQuery) -> ListPa
     }
 
     if let Some(start) = query.time_range_start {
-        metastore_query = metastore_query.with_time_range_start_gte(start as i64);
+        metastore_query.time_range.start = Bound::Excluded(start as i64);
     }
 
     if let Some(end) = query.time_range_end {
-        metastore_query = metastore_query.with_time_range_end_lte(end as i64);
+        metastore_query.time_range.end = Bound::Excluded(end as i64);
     }
 
     metastore_query
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn to_metastore_query_uses_half_open_time_range_bounds() {
+        let index_uid = IndexUid::for_test("metrics", 0);
+        let query = MetricsSplitQuery {
+            metric_names: Some(vec!["cpu.usage".to_string()]),
+            time_range_start: Some(1_000),
+            time_range_end: Some(2_000),
+        };
+
+        let metastore_query = to_metastore_query(&index_uid, &query);
+
+        assert_eq!(metastore_query.time_range.start, Bound::Excluded(1_000));
+        assert_eq!(metastore_query.time_range.end, Bound::Excluded(2_000));
+        assert_eq!(metastore_query.metric_names, vec!["cpu.usage".to_string()]);
+    }
 }

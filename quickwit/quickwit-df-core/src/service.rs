@@ -59,7 +59,7 @@ pub fn split_sql_statements(ctx: &SessionContext, sql: &str) -> DFResult<Vec<Str
     let state = ctx.state();
     let tokens = {
         let options = state.config().options();
-        let dialect = dialect_from_str(&options.sql_parser.dialect).ok_or_else(|| {
+        let dialect = dialect_from_str(options.sql_parser.dialect).ok_or_else(|| {
             DataFusionError::Plan(format!(
                 "unsupported SQL dialect: {}",
                 options.sql_parser.dialect
@@ -160,9 +160,9 @@ impl DataFusionService {
 
     /// Execute a Substrait plan from its proto3 JSON representation.
     ///
-    /// Accepts the JSON format produced by DataFusion's `to_substrait_plan`
-    /// + `serde_json::to_string`, or the `rollup_substrait.json` format used
-    /// in integration tests and dev tooling.
+    /// Accepts the JSON format produced by DataFusion's `to_substrait_plan` +
+    /// `serde_json::to_string`, or the `rollup_substrait.json` format used in
+    /// integration tests and dev tooling.
     ///
     /// This is the dev/tooling path — grpcurl and Python scripts can pass the
     /// plan as a JSON string without pre-encoding to binary protobuf.

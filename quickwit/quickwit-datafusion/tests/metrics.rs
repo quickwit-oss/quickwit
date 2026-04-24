@@ -963,7 +963,7 @@ async fn test_rollup_substrait_from_file() {
     for batch in &batches {
         println!(
             "{}",
-            arrow::util::pretty::pretty_format_batches(&[batch.clone()]).unwrap()
+            arrow::util::pretty::pretty_format_batches(std::slice::from_ref(batch)).unwrap()
         );
     }
 

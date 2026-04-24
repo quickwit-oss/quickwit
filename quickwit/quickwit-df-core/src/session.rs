@@ -152,7 +152,8 @@ impl DataFusionSessionBuilder {
                 existing
             } else {
                 let catalog: Arc<dyn CatalogProvider> = Arc::new(MemoryCatalogProvider::new());
-                catalog_list.register_catalog(registration.catalog_name.clone(), Arc::clone(&catalog));
+                catalog_list
+                    .register_catalog(registration.catalog_name.clone(), Arc::clone(&catalog));
                 catalog
             };
 
@@ -274,16 +275,11 @@ impl DataFusionSessionBuilder {
         use datafusion_substrait::substrait::proto::Plan;
         use prost::Message;
 
-        let plan = Plan::decode(plan_bytes)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?;
+        let plan = Plan::decode(plan_bytes).map_err(|e| DataFusionError::External(Box::new(e)))?;
 
         let ctx = self.build_session()?;
-        crate::substrait::execute_substrait_plan_streaming(
-            &plan,
-            &ctx,
-            self.substrait_extensions(),
-        )
-        .await
+        crate::substrait::execute_substrait_plan_streaming(&plan, &ctx, self.substrait_extensions())
+            .await
     }
 
     pub fn build_session(&self) -> DFResult<SessionContext> {
@@ -438,7 +434,12 @@ mod tests {
                 .and_then(|entry| entry.value),
             Some("2K".to_string())
         );
-        assert!(builder.runtime().object_store(UrlLookup(&source_url)).is_ok());
+        assert!(
+            builder
+                .runtime()
+                .object_store(UrlLookup(&source_url))
+                .is_ok()
+        );
         assert!(
             builder
                 .runtime()
@@ -457,7 +458,10 @@ mod tests {
         let builder = DataFusionSessionBuilder::new().with_runtime_plugin(source);
 
         let default_ctx = builder.build_session().unwrap();
-        assert_eq!(default_ctx.state().config().options().execution.batch_size, 512);
+        assert_eq!(
+            default_ctx.state().config().options().execution.batch_size,
+            512
+        );
 
         let overrides = HashMap::from([(
             "datafusion.execution.batch_size".to_string(),
@@ -465,7 +469,12 @@ mod tests {
         )]);
         let overridden_ctx = builder.build_session_with_properties(&overrides).unwrap();
         assert_eq!(
-            overridden_ctx.state().config().options().execution.batch_size,
+            overridden_ctx
+                .state()
+                .config()
+                .options()
+                .execution
+                .batch_size,
             1024
         );
     }

@@ -695,13 +695,13 @@ pub async fn serve_quickwit(
     #[cfg(feature = "datafusion")]
     let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
         &node_config,
-        &searcher_pool,
+        cluster.change_stream(),
         metastore_through_control_plane.clone(),
         storage_resolver.clone(),
     )?;
-    // `searcher_pool` is only consumed by the DataFusion wiring above; without
-    // the feature, drop it here so the unused-binding warning does not fire.
-    #[cfg(not(feature = "datafusion"))]
+    // The search job placer owns a clone of this pool; the local binding is not
+    // needed after the searcher and DataFusion setup paths have registered
+    // their listeners.
     drop(searcher_pool);
 
     // The control plane listens for local shards updates to learn about each shard's ingestion

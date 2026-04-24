@@ -92,8 +92,8 @@ fn classify_df_error(err: &DataFusionError) -> GrpcErrorKind {
         | DataFusionError::Internal(_)
         | DataFusionError::ExecutionJoin(_)
         | DataFusionError::External(_)
-        | DataFusionError::Ffi(_)
-        | _ => GrpcErrorKind::Internal,
+        | DataFusionError::Ffi(_) => GrpcErrorKind::Internal,
+        _ => GrpcErrorKind::Internal,
     }
 }
 

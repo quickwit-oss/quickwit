@@ -50,6 +50,7 @@ const METRICS_SORT_ORDER: &[&str] = &[
     "datacenter",
     "region",
     "host",
+    "timeseries_id",
     "timestamp_secs",
 ];
 
@@ -219,24 +220,10 @@ impl TableProvider for MetricsTableProvider {
             builder = builder.with_limit(Some(lim));
         }
 
-        // Declare the full parquet sort order to DataFusion so it can skip
-        // redundant sort operators. Matches the writer's SORT_ORDER exactly:
-        // [metric_name, service, env, datacenter, region, host, timestamp_secs].
-        // Columns absent from the projected schema are skipped; nulls_first=false
-        // matches the writer's SortOptions.
-        let sort_options = SortOptions {
-            descending: false,
-            nulls_first: false,
-        };
-        let sort_exprs: Vec<PhysicalSortExpr> = METRICS_SORT_ORDER
-            .iter()
-            .filter_map(|col_name| {
-                self.schema.index_of(col_name).ok().map(|idx| {
-                    PhysicalSortExpr::new(Arc::new(Column::new(col_name, idx)), sort_options)
-                })
-            })
-            .collect();
-        if let Some(ordering) = LexOrdering::new(sort_exprs) {
+        // Advertise only the contiguous prefix of the writer sort order present
+        // in the table schema. Later keys are not globally ordered if an
+        // earlier discriminator is hidden by the declared schema.
+        if let Some(ordering) = metrics_output_ordering(&self.schema) {
             builder = builder.with_output_ordering(vec![ordering]);
         }
 
@@ -276,4 +263,77 @@ fn classify_filter(expr: &Expr) -> TableProviderFilterPushDown {
 
 fn column_name_from_expr(expr: &Expr) -> Option<String> {
     predicate::column_name(expr)
+}
+
+fn metrics_output_ordering(schema: &SchemaRef) -> Option<LexOrdering> {
+    let sort_options = SortOptions {
+        descending: false,
+        nulls_first: false,
+    };
+    let sort_exprs: Vec<PhysicalSortExpr> = METRICS_SORT_ORDER
+        .iter()
+        .map_while(|col_name| {
+            schema.index_of(col_name).ok().map(|idx| {
+                PhysicalSortExpr::new(Arc::new(Column::new(col_name, idx)), sort_options)
+            })
+        })
+        .collect();
+    LexOrdering::new(sort_exprs)
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::datatypes::{DataType, Field, Schema};
+
+    use super::*;
+
+    fn schema_with_columns(columns: &[&str]) -> SchemaRef {
+        let fields = columns
+            .iter()
+            .map(|column| Field::new(*column, DataType::Utf8, true))
+            .collect::<Vec<_>>();
+        Arc::new(Schema::new(fields))
+    }
+
+    fn ordering_column_names(ordering: &LexOrdering) -> Vec<String> {
+        ordering
+            .iter()
+            .map(|expr| {
+                expr.expr
+                    .as_any()
+                    .downcast_ref::<Column>()
+                    .expect("metrics ordering should contain column expressions")
+                    .name()
+                    .to_string()
+            })
+            .collect()
+    }
+
+    fn expected_names(names: &[&str]) -> Vec<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    }
+
+    #[test]
+    fn metrics_output_ordering_stops_at_first_missing_sort_key() {
+        let schema = schema_with_columns(&["metric_name", "service", "timestamp_secs"]);
+
+        let ordering = metrics_output_ordering(&schema).unwrap();
+
+        assert_eq!(
+            ordering_column_names(&ordering),
+            expected_names(&["metric_name", "service"])
+        );
+    }
+
+    #[test]
+    fn metrics_output_ordering_keeps_timestamp_after_all_discriminators() {
+        let schema = schema_with_columns(METRICS_SORT_ORDER);
+
+        let ordering = metrics_output_ordering(&schema).unwrap();
+
+        assert_eq!(
+            ordering_column_names(&ordering),
+            expected_names(METRICS_SORT_ORDER)
+        );
+    }
 }

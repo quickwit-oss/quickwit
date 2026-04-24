@@ -54,9 +54,9 @@
 
 use std::sync::Arc;
 
-use datafusion::arrow as arrow;
 use arrow::datatypes::SchemaRef;
 use async_trait::async_trait;
+use datafusion::arrow;
 use datafusion::catalog::TableProvider;
 use datafusion::common::TableReference;
 use datafusion::error::{DataFusionError, Result as DFResult};
@@ -133,8 +133,8 @@ impl SubstraitConsumer for QuickwitSubstraitConsumer<'_> {
     ///    `from_read_rel` performs its catalog lookup. If the original rel used `ExtensionTable`,
     ///    rewrite it to `NamedTable` so `from_read_rel` can apply the standard filter/projection
     ///    handling.
-    /// 4. If no extension claims the rel, fall through to the default path
-    ///    which uses native catalog/schema resolution.
+    /// 4. If no extension claims the rel, fall through to the default path which uses native
+    ///    catalog/schema resolution.
     async fn consume_read(&self, rel: &ReadRel) -> DFResult<LogicalPlan> {
         // Convert base_schema to Arrow once so every extension can use it
         // without re-parsing the Substrait types.

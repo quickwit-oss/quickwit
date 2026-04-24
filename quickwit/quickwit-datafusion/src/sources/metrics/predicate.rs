@@ -101,74 +101,88 @@ fn try_extract_in_list(expr: &Expr, list: &[Expr], query: &mut MetricsSplitQuery
 
 fn try_extract_ts_gte(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bool {
     // column >= literal
-    if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right)) {
-        if c == "timestamp_secs" {
-            q.time_range_start = Some(q.time_range_start.map_or(v, |prev| prev.max(v)));
-            return true;
-        }
+    if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right))
+        && c == "timestamp_secs"
+    {
+        tighten_time_range_start(q, v);
+        return true;
     }
     // literal >= column  →  column <= literal  →  time_range_end
-    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right)) {
-        if c == "timestamp_secs" {
-            q.time_range_end = Some(q.time_range_end.map_or(v + 1, |prev| prev.min(v + 1)));
-            return true;
-        }
+    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right))
+        && c == "timestamp_secs"
+    {
+        tighten_time_range_end(q, v + 1);
+        return true;
     }
     false
 }
 
 fn try_extract_ts_gt(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bool {
     // column > literal
-    if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right)) {
-        if c == "timestamp_secs" {
-            q.time_range_start = Some(q.time_range_start.map_or(v + 1, |prev| prev.max(v + 1)));
-            return true;
-        }
+    if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right))
+        && c == "timestamp_secs"
+    {
+        tighten_time_range_start(q, v + 1);
+        return true;
     }
     // literal > column  →  column < literal  →  time_range_end
-    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right)) {
-        if c == "timestamp_secs" {
-            q.time_range_end = Some(q.time_range_end.map_or(v, |prev| prev.min(v)));
-            return true;
-        }
+    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right))
+        && c == "timestamp_secs"
+    {
+        tighten_time_range_end(q, v);
+        return true;
     }
     false
 }
 
 fn try_extract_ts_lt(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bool {
     // column < literal
-    if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right)) {
-        if c == "timestamp_secs" {
-            q.time_range_end = Some(q.time_range_end.map_or(v, |prev| prev.min(v)));
-            return true;
-        }
+    if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right))
+        && c == "timestamp_secs"
+    {
+        tighten_time_range_end(q, v);
+        return true;
     }
     // literal < column  →  column > literal  →  time_range_start
-    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right)) {
-        if c == "timestamp_secs" {
-            q.time_range_start = Some(q.time_range_start.map_or(v + 1, |prev| prev.max(v + 1)));
-            return true;
-        }
+    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right))
+        && c == "timestamp_secs"
+    {
+        tighten_time_range_start(q, v + 1);
+        return true;
     }
     false
 }
 
 fn try_extract_ts_lte(left: &Expr, right: &Expr, q: &mut MetricsSplitQuery) -> bool {
     // column <= literal
-    if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right)) {
-        if c == "timestamp_secs" {
-            q.time_range_end = Some(q.time_range_end.map_or(v + 1, |prev| prev.min(v + 1)));
-            return true;
-        }
+    if let (Some(c), Some(v)) = (column_name(left), scalar_u64(right))
+        && c == "timestamp_secs"
+    {
+        tighten_time_range_end(q, v + 1);
+        return true;
     }
     // literal <= column  →  column >= literal  →  time_range_start
-    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right)) {
-        if c == "timestamp_secs" {
-            q.time_range_start = Some(q.time_range_start.map_or(v, |prev| prev.max(v)));
-            return true;
-        }
+    if let (Some(v), Some(c)) = (scalar_u64(left), column_name(right))
+        && c == "timestamp_secs"
+    {
+        tighten_time_range_start(q, v);
+        return true;
     }
     false
+}
+
+fn tighten_time_range_start(q: &mut MetricsSplitQuery, start: u64) {
+    q.time_range_start = Some(match q.time_range_start {
+        Some(prev) => prev.max(start),
+        None => start,
+    });
+}
+
+fn tighten_time_range_end(q: &mut MetricsSplitQuery, end: u64) {
+    q.time_range_end = Some(match q.time_range_end {
+        Some(prev) => prev.min(end),
+        None => end,
+    });
 }
 
 /// Map OSS column names (no `tag_` prefix) to MetricsSplitQuery tag fields.

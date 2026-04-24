@@ -102,6 +102,7 @@ pub fn make_batch(
 ///
 /// This matches what `metrics_ingest_api::build_record_batch` produces, ensuring
 /// tests exercise the same dynamic schema that real ingestion emits.
+#[allow(clippy::too_many_arguments)]
 pub fn make_batch_with_tags(
     metric_name: &str,
     timestamps: &[u64],
@@ -264,6 +265,12 @@ impl MetricsTestbed {
 
     pub fn split_provider(&self) -> Arc<TestSplitProvider> {
         Arc::new(TestSplitProvider::new(self.splits.clone()))
+    }
+}
+
+impl Default for MetricsTestbed {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

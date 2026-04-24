@@ -22,10 +22,9 @@
 //!
 //! ## Features
 //!
-//! - `grpc` (off by default) — compiles the `proto` module (generated from
-//!   `datafusion.proto`) and the `grpc` module (tonic server adapter for
-//!   [`service::DataFusionService`]). Enable this only when building the
-//!   Quickwit server; downstream connector crates should leave it off.
+//! - `grpc` (off by default) — compiles the `proto` module (generated from `datafusion.proto`) and
+//!   the `grpc` module (tonic server adapter for [`service::DataFusionService`]). Enable this only
+//!   when building the Quickwit server; downstream connector crates should leave it off.
 
 pub mod data_source;
 pub mod service;

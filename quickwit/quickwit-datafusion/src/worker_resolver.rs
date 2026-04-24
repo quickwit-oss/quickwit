@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `SearcherPool`-backed `WorkerResolver` implementation.
+//! DataFusion-worker pool backed `WorkerResolver` implementation.
 //!
-//! Every searcher node runs both the Quickwit gRPC `SearchService` and the
-//! DataFusion `WorkerService` on the same port, so the addresses in
-//! [`SearcherPool`] double as DataFusion worker URLs.
+//! The pool is populated only with searcher nodes whose gRPC reflection service
+//! exposes Quickwit's DataFusion endpoint. Those nodes run the Quickwit gRPC
+//! `SearchService` and DataFusion `WorkerService` on the same port, so the pool
+//! keys double as DataFusion worker URLs.
 
 use std::net::SocketAddr;
 
@@ -25,7 +26,7 @@ use datafusion_distributed::WorkerResolver;
 use quickwit_search::SearcherPool;
 use url::Url;
 
-/// Resolves worker URLs from the cluster's `SearcherPool`.
+/// Resolves worker URLs from the cluster's DataFusion-enabled worker pool.
 #[derive(Clone)]
 pub struct QuickwitWorkerResolver {
     searcher_pool: SearcherPool,

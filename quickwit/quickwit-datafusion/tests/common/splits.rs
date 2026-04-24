@@ -50,7 +50,7 @@ pub async fn create_metrics_index(
         .create_index(CreateIndexRequest::try_from_index_config(&index_config).unwrap())
         .await
         .expect("create_index");
-    IndexUid::from(response.index_uid().clone())
+    response.index_uid().clone()
 }
 
 /// Write `batch` as a parquet file under `data_dir`, stage it in the metastore,
@@ -163,7 +163,7 @@ pub async fn publish_split(
     metastore
         .clone()
         .publish_metrics_splits(PublishMetricsSplitsRequest {
-            index_uid: Some(index_uid.clone().into()),
+            index_uid: Some(index_uid.clone()),
             staged_split_ids: vec![split_name.to_string()],
             replaced_split_ids: vec![],
             index_checkpoint_delta_json_opt: None,
