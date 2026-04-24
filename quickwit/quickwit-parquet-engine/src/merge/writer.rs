@@ -23,7 +23,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use arrow::array::{Array, BinaryArray, RecordBatch, UInt32Array};
+use arrow::array::{Array, BinaryArray, RecordBatch};
 use arrow::compute::take;
 use arrow::datatypes::SchemaRef;
 use base64::Engine;
@@ -155,11 +155,12 @@ fn apply_merge_permutation(
     }
 
     // Build global take indices by walking the merge runs.
-    let mut take_indices: Vec<u32> = Vec::with_capacity(total_rows);
+    // Use u64 to avoid silent truncation when concatenated inputs exceed u32::MAX rows.
+    let mut take_indices: Vec<u64> = Vec::with_capacity(total_rows);
     for run in runs {
         let base = input_offsets[run.input_index] + run.start_row;
         for row in 0..run.row_count {
-            take_indices.push((base + row) as u32);
+            take_indices.push((base + row) as u64);
         }
     }
 
@@ -168,8 +169,8 @@ fn apply_merge_permutation(
     let concatenated = arrow::compute::concat_batches(union_schema, all_batches.into_iter())
         .context("concatenating inputs for merge")?;
 
-    // Apply permutation.
-    let indices = UInt32Array::from(take_indices);
+    // Apply permutation. Use UInt64 indices to support >4B row merges.
+    let indices = arrow::array::UInt64Array::from(take_indices);
     let columns: Vec<Arc<dyn arrow::array::Array>> = concatenated
         .columns()
         .iter()
