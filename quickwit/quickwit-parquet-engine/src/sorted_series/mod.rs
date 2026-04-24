@@ -241,10 +241,13 @@ fn encode_row_key(
         }
         let value = extract_string_value(col.as_ref(), row_idx)?;
         if kc.descending {
-            // Encode to a temporary buffer, then bitwise-NOT into the key.
-            let start = buf.len();
+            // Ordinal is written normally (ascending) so that null rows
+            // (which skip this column entirely) sort after non-null rows
+            // — matching the writer's nulls_first=false behavior.
+            // Only the value bytes are inverted to reverse the sort order.
             storekey::encode(&mut *buf, &kc.ordinal)
                 .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
+            let start = buf.len();
             storekey::encode(&mut *buf, value)
                 .map_err(|e| anyhow!("storekey encode value: {}", e))?;
             invert_bytes(&mut buf[start..]);
