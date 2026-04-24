@@ -105,13 +105,18 @@ async fn test_null_columns_for_missing_parquet_fields() {
     publish_split(&metastore, &index_uid, data_dir.path(), "wide", &batch_b).await;
 
     let source = Arc::new(MetricsDataSource::new(metastore));
+    let schema_source = Arc::clone(&source);
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(
         sandbox.storage_resolver.clone(),
     ));
     let builder = DataFusionSessionBuilder::new()
         .with_object_store_registry(registry)
         .expect("install object store registry")
-        .with_source(source);
+        .with_runtime_plugin(Arc::clone(&source) as Arc<_>)
+        .with_substrait_consumer(source as Arc<_>)
+        .with_schema_provider_factory("quickwit", "public", move || {
+            schema_source.schema_provider()
+        });
 
     // COUNT(col) counts non-NULL values — tests the NULL-fill behavior.
     let sql_str = r#"

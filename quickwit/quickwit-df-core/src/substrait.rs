@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Substrait plan consumption for Quickwit data sources.
+//! Substrait plan consumption for Quickwit runtime extensions.
 //!
 //! ## How this fits together
 //!
 //! [`QuickwitSubstraitConsumer`] implements the `SubstraitConsumer` trait from
-//! `datafusion-substrait`.  It intercepts `ReadRel` nodes in an incoming
-//! Substrait plan, routes them to whichever registered [`QuickwitDataSource`]
-//! claims them, and falls back to the standard catalog lookup for everything
-//! else.
+//! `datafusion-substrait`. It intercepts `ReadRel` nodes in an incoming
+//! Substrait plan, routes them to whichever registered
+//! [`QuickwitSubstraitConsumerExt`] claims them, and falls back to the
+//! standard catalog lookup for everything else.
 //!
 //! ## OSS path — standard Substrait (no custom protos)
 //!
@@ -40,14 +40,16 @@
 //!
 //! ## Extension path — custom protos (downstream callers)
 //!
-//! A downstream caller registers its own `QuickwitDataSource` implementation that decodes
-//! DD-internal protos (e.g. `ExtensionTable<MetricRead>`).  The OSS code
-//! simply calls the hook; the proto decoding stays in the downstream caller.
+//! A downstream caller registers its own `QuickwitSubstraitConsumerExt`
+//! implementation that decodes DD-internal protos (e.g.
+//! `ExtensionTable<MetricRead>`). The OSS code simply calls the hook; the
+//! proto decoding stays in the downstream caller.
 //!
 //! ## Entry point
 //!
 //! [`DataFusionSessionBuilder::execute_substrait`][crate::session::DataFusionSessionBuilder::execute_substrait]
-//! builds a `QuickwitSubstraitConsumer` from the session state and sources,
+//! builds a `QuickwitSubstraitConsumer` from the session state and registered
+//! Substrait extensions,
 //! converts the plan via `from_substrait_plan_with_consumer`, then executes it.
 
 use std::sync::Arc;
@@ -70,28 +72,29 @@ use datafusion_substrait::substrait::proto::read_rel::{
 };
 use datafusion_substrait::substrait::proto::{Plan, ReadRel};
 
-use crate::data_source::QuickwitDataSource;
+use crate::data_source::QuickwitSubstraitConsumerExt;
 
 /// `SubstraitConsumer` that routes `ReadRel` nodes to registered
-/// [`QuickwitDataSource`]s before falling back to the standard catalog path.
+/// [`QuickwitSubstraitConsumerExt`] values before falling back to the standard
+/// catalog path.
 ///
 /// Constructed by [`DataFusionSessionBuilder::execute_substrait`].
 pub struct QuickwitSubstraitConsumer<'a> {
     extensions: &'a Extensions,
     state: &'a SessionState,
-    sources: &'a [Arc<dyn QuickwitDataSource>],
+    extensions_for_reads: &'a [Arc<dyn QuickwitSubstraitConsumerExt>],
 }
 
 impl<'a> QuickwitSubstraitConsumer<'a> {
     pub fn new(
         extensions: &'a Extensions,
         state: &'a SessionState,
-        sources: &'a [Arc<dyn QuickwitDataSource>],
+        extensions_for_reads: &'a [Arc<dyn QuickwitSubstraitConsumerExt>],
     ) -> Self {
         Self {
             extensions,
             state,
-            sources,
+            extensions_for_reads,
         }
     }
 }
@@ -120,29 +123,29 @@ impl SubstraitConsumer for QuickwitSubstraitConsumer<'_> {
 
     // ── Custom ReadRel handling ───────────────────────────────────────
 
-    /// Intercept `ReadRel` nodes and offer them to each registered source.
+    /// Intercept `ReadRel` nodes and offer them to each registered extension.
     ///
     /// 1. Convert `ReadRel.base_schema` → Arrow `SchemaRef` (the schema hint the producer declared;
     ///    sources use this for schema injection rather than the minimal default).
-    /// 2. Call each source's `try_consume_read_rel`.  The first source that returns
+    /// 2. Call each extension's `try_consume_read_rel`. The first extension that returns
     ///    `Some((table_name, provider))` wins.
-    /// 3. If a source claims the rel, build a temporary resolver that returns the provider when
+    /// 3. If an extension claims the rel, build a temporary resolver that returns the provider when
     ///    `from_read_rel` performs its catalog lookup. If the original rel used `ExtensionTable`,
     ///    rewrite it to `NamedTable` so `from_read_rel` can apply the standard filter/projection
     ///    handling.
-    /// 4. If no source claims the rel, fall through to the default path which uses
-    ///    `resolve_table_ref` → quickwit catalog → `QuickwitSchemaProvider`.
+    /// 4. If no extension claims the rel, fall through to the default path
+    ///    which uses native catalog/schema resolution.
     async fn consume_read(&self, rel: &ReadRel) -> DFResult<LogicalPlan> {
-        // Convert base_schema to Arrow once so every source can use it without
-        // re-parsing the Substrait types.
+        // Convert base_schema to Arrow once so every extension can use it
+        // without re-parsing the Substrait types.
         let schema_hint: Option<SchemaRef> = if let Some(ns) = &rel.base_schema {
             Some(Arc::clone(from_substrait_named_struct(self, ns)?.inner()))
         } else {
             None
         };
 
-        for source in self.sources {
-            if let Some((table_name, provider)) = source
+        for extension in self.extensions_for_reads {
+            if let Some((table_name, provider)) = extension
                 .try_consume_read_rel(rel, schema_hint.clone())
                 .await?
             {
@@ -173,7 +176,7 @@ impl SubstraitConsumer for QuickwitSubstraitConsumer<'_> {
             }
         }
 
-        // No source claimed this rel — use the standard path (catalog lookup).
+        // No extension claimed this rel — use the standard path (catalog lookup).
         from_read_rel(self, rel).await
     }
 }
@@ -214,28 +217,26 @@ impl SubstraitConsumer for WithCustomProvider<'_> {
     }
 }
 
-/// Convert a Substrait plan to batches using the registered data sources.
+/// Convert a Substrait plan to batches using the registered Substrait
+/// extensions.
 ///
 /// This is the entry point for external coordinators that send Substrait plans
 /// to Quickwit.  It is called by
 /// [`DataFusionSessionBuilder::execute_substrait`].
 ///
-/// Takes the full `SessionContext` (not just state) so that catalog
-/// registrations made by `build_session()` — including the `quickwit.public`
-/// schema provider — are visible during both plan conversion and execution.
-/// Creating a fresh `SessionContext::new_with_state(state.clone())` loses
-/// those registrations because `register_catalog` lives on the context, not
-/// the state snapshot.
+/// Takes the full `SessionContext` because execution goes through
+/// `ctx.execute_logical_plan(...)`. Catalog and schema registrations are
+/// already embedded in the session state via `SessionStateBuilder::with_catalog_list(...)`.
 pub async fn execute_substrait_plan(
     plan: &Plan,
     ctx: &datafusion::prelude::SessionContext,
-    sources: &[Arc<dyn QuickwitDataSource>],
+    extensions_for_reads: &[Arc<dyn QuickwitSubstraitConsumerExt>],
 ) -> DFResult<Vec<arrow::array::RecordBatch>> {
     let state = ctx.state();
     let extensions = Extensions::try_from(&plan.extensions)
         .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, sources);
+    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, extensions_for_reads);
     let logical_plan = from_substrait_plan_with_consumer(&consumer, plan).await?;
 
     tracing::debug!(
@@ -256,19 +257,19 @@ pub async fn execute_substrait_plan(
 /// caller can poll lazily.  This is the preferred path for gRPC streaming
 /// responses and Arrow Flight handlers.
 ///
-/// Takes the full `SessionContext` for the same reasons as
-/// `execute_substrait_plan` — catalog registrations live on the context, not
-/// the state snapshot.
+/// Takes the full `SessionContext` for the same reason as
+/// `execute_substrait_plan` — execution goes through the context, while the
+/// native catalog registrations already live in the session state.
 pub async fn execute_substrait_plan_streaming(
     plan: &Plan,
     ctx: &datafusion::prelude::SessionContext,
-    sources: &[Arc<dyn QuickwitDataSource>],
+    extensions_for_reads: &[Arc<dyn QuickwitSubstraitConsumerExt>],
 ) -> DFResult<SendableRecordBatchStream> {
     let state = ctx.state();
     let extensions = Extensions::try_from(&plan.extensions)
         .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, sources);
+    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, extensions_for_reads);
     let logical_plan = from_substrait_plan_with_consumer(&consumer, plan).await?;
 
     tracing::debug!(
@@ -291,13 +292,13 @@ pub async fn execute_substrait_plan_streaming(
 pub async fn explain_substrait_plan_streaming(
     plan: &Plan,
     ctx: &datafusion::prelude::SessionContext,
-    sources: &[Arc<dyn QuickwitDataSource>],
+    extensions_for_reads: &[Arc<dyn QuickwitSubstraitConsumerExt>],
 ) -> DFResult<SendableRecordBatchStream> {
     let state = ctx.state();
     let extensions = Extensions::try_from(&plan.extensions)
         .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
-    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, sources);
+    let consumer = QuickwitSubstraitConsumer::new(&extensions, &state, extensions_for_reads);
     let logical_plan = from_substrait_plan_with_consumer(&consumer, plan).await?;
 
     let df = ctx.execute_logical_plan(logical_plan).await?;

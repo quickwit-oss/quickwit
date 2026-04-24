@@ -113,8 +113,7 @@ pub async fn spawn_df_worker(builder: Arc<DataFusionSessionBuilder>) -> SpawnedW
     let grpc_service = DataFusionServiceServer::new(DataFusionServiceGrpcImpl::new(
         DataFusionService::new(Arc::clone(&builder)),
     ));
-    let worker_service =
-        build_worker(builder.sources(), Arc::clone(builder.runtime())).into_worker_server();
+    let worker_service = build_worker(Arc::clone(&builder)).into_worker_server();
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
     let shutdown = async move {

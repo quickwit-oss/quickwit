@@ -151,11 +151,16 @@ async fn test_distributed_tasks_not_shuffles() {
 
     let storage_resolver = quickwit_storage::StorageResolver::unconfigured();
     let source = Arc::new(MetricsDataSource::new(metastore));
+    let schema_source = Arc::clone(&source);
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
     let builder = DataFusionSessionBuilder::new()
         .with_object_store_registry(registry)
         .expect("install object store registry")
-        .with_source(source)
+        .with_runtime_plugin(Arc::clone(&source) as Arc<_>)
+        .with_substrait_consumer(source as Arc<_>)
+        .with_schema_provider_factory("quickwit", "public", move || {
+            schema_source.schema_provider()
+        })
         .with_worker_resolver(QuickwitWorkerResolver::new(pool));
 
     let ddl = r#"CREATE OR REPLACE EXTERNAL TABLE "dist-test" (
@@ -235,11 +240,16 @@ async fn test_null_columns_for_missing_parquet_fields() {
 
     let storage_resolver = quickwit_storage::StorageResolver::unconfigured();
     let source = Arc::new(MetricsDataSource::new(metastore));
+    let schema_source = Arc::clone(&source);
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
     let builder = DataFusionSessionBuilder::new()
         .with_object_store_registry(registry)
         .expect("install object store registry")
-        .with_source(source);
+        .with_runtime_plugin(Arc::clone(&source) as Arc<_>)
+        .with_substrait_consumer(source as Arc<_>)
+        .with_schema_provider_factory("quickwit", "public", move || {
+            schema_source.schema_provider()
+        });
 
     // COUNT(col) counts non-NULL values — tests the NULL-fill behavior
     let sql_str = r#"

@@ -14,46 +14,28 @@
 
 //! Distributed DataFusion worker session setup.
 //!
-//! This module is named `worker` because the distributed protocol uses a
-//! custom `WorkerService` gRPC (from datafusion-distributed PR #375), not
-//! Arrow Flight.  The name `flight` would be misleading.
-//!
-//! `QuickwitWorkerSessionBuilder` prepares each worker session:
-//! 1. Applies source contributions (optimizer rules, UDFs, codecs)
-//!    before `SessionStateBuilder::build()`.
-//! 2. Injects the shared `RuntimeEnv` from the coordinator's `DataFusionSessionBuilder` so that
-//!    object stores registered at startup are visible on workers without any per-session
-//!    re-registration.
-//! 3. Registers the `QuickwitSchemaProvider` so table references in deserialized plan fragments
-//!    resolve correctly.
-//! 4. Calls `register_for_worker()` for any post-build runtime state.
+//! The worker builder mirrors the coordinator's native OSS registration flow:
+//! runtime plugins contribute `SessionStateBuilder` state, and catalogs/schemas
+//! are created fresh per worker session via the same factory registrations used
+//! on the coordinator.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
 use datafusion::error::DataFusionError;
 use datafusion::execution::SessionState;
-use datafusion::execution::runtime_env::RuntimeEnv;
 use datafusion_distributed::{Worker, WorkerQueryContext, WorkerSessionBuilder};
 
-use crate::catalog::QuickwitSchemaProvider;
-use crate::data_source::QuickwitDataSource;
+use crate::session::DataFusionSessionBuilder;
 
-/// `WorkerSessionBuilder` that shares the coordinator's `RuntimeEnv` and
-/// applies all source contributions on every new worker session.
 #[derive(Clone)]
 pub struct QuickwitWorkerSessionBuilder {
-    sources: Vec<Arc<dyn QuickwitDataSource>>,
-    /// Shared with the coordinator's `DataFusionSessionBuilder`.
-    /// Object stores registered at startup (via `init`) or lazily (via `scan`)
-    /// are immediately visible to workers without any re-registration.
-    runtime: Arc<RuntimeEnv>,
+    session_builder: Arc<DataFusionSessionBuilder>,
 }
 
 impl QuickwitWorkerSessionBuilder {
-    pub fn new(sources: Vec<Arc<dyn QuickwitDataSource>>, runtime: Arc<RuntimeEnv>) -> Self {
-        Self { sources, runtime }
+    pub fn new(session_builder: Arc<DataFusionSessionBuilder>) -> Self {
+        Self { session_builder }
     }
 }
 
@@ -63,59 +45,27 @@ impl WorkerSessionBuilder for QuickwitWorkerSessionBuilder {
         &self,
         mut ctx: WorkerQueryContext,
     ) -> Result<SessionState, DataFusionError> {
-        // Phase 0: let sources install config extensions on the builder's
-        // `SessionConfig` before anything else runs. Matches the ordering on
-        // the coordinator side (`DataFusionSessionBuilder::build_session`).
+        let registration = self.session_builder.merged_runtime_registration();
         if let Some(config) = ctx.builder.config() {
-            for source in &self.sources {
-                source.configure_session(config);
-            }
+            registration.apply_to_config(config);
         }
 
-        // Phase 1: contributions (rules, UDFs, codecs) + shared env.
-        let mut combined = crate::data_source::DataSourceContributions::default();
-        for source in &self.sources {
-            combined.merge(source.contributions());
-        }
-        let state = combined
-            .apply_to_builder(ctx.builder)
-            .with_runtime_env(Arc::clone(&self.runtime))
+        let state = registration
+            .apply_to_builder(
+                ctx.builder
+                    .with_runtime_env(Arc::clone(self.session_builder.runtime()))
+                    .with_catalog_list(self.session_builder.build_catalog_list()?),
+            )
             .build();
 
-        // Phase 2: catalog for table-reference resolution in plan fragments.
-        // `register_schema` only fails if "public" is already registered, which
-        // cannot happen here since the catalog is freshly created above.
-        let schema_provider = Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
-        let catalog = Arc::new(MemoryCatalogProvider::new());
-        catalog
-            .register_schema("public", schema_provider)
-            .map_err(|e| {
-                DataFusionError::Internal(format!(
-                    "failed to register 'public' schema on worker: {e}"
-                ))
-            })?;
-        state
-            .catalog_list()
-            .register_catalog("quickwit".to_string(), catalog);
-
-        // Phase 3: post-build runtime registration. Errors here are fatal —
-        // swallowing them produces late, hard-to-diagnose execution failures
-        // when a connector relies on this hook for runtime state it cannot
-        // express in `contributions()` (e.g. worker-side index openers).
-        for source in &self.sources {
-            source.register_for_worker(&state).await?;
+        for plugin in self.session_builder.runtime_plugins() {
+            plugin.register_for_worker(&state).await?;
         }
 
         Ok(state)
     }
 }
 
-/// Build a `Worker` that shares the coordinator's `RuntimeEnv`.
-///
-/// Pass `session_builder.runtime()` from the coordinator's
-/// `DataFusionSessionBuilder` so that object stores registered at service
-/// startup are available to workers without re-registration.
-pub fn build_worker(sources: &[Arc<dyn QuickwitDataSource>], runtime: Arc<RuntimeEnv>) -> Worker {
-    let session_builder = QuickwitWorkerSessionBuilder::new(sources.to_vec(), runtime);
-    Worker::from_session_builder(session_builder)
+pub fn build_worker(session_builder: Arc<DataFusionSessionBuilder>) -> Worker {
+    Worker::from_session_builder(QuickwitWorkerSessionBuilder::new(session_builder))
 }

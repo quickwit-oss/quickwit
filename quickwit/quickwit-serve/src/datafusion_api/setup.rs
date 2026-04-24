@@ -64,13 +64,18 @@ pub(crate) fn build_datafusion_session_builder(
     }
 
     let metrics_source = Arc::new(MetricsDataSource::new(metastore));
+    let schema_source = Arc::clone(&metrics_source);
     let worker_resolver = QuickwitWorkerResolver::new(searcher_pool.clone())
         .with_tls(node_config.grpc_config.tls.is_some());
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(storage_resolver));
     let builder = DataFusionSessionBuilder::new()
         .with_object_store_registry(registry)
         .context("failed to install DataFusion object store registry")?
-        .with_source(metrics_source)
+        .with_runtime_plugin(Arc::clone(&metrics_source) as Arc<_>)
+        .with_substrait_consumer(metrics_source as Arc<_>)
+        .with_schema_provider_factory("quickwit", "public", move || {
+            schema_source.schema_provider()
+        })
         .with_worker_resolver(worker_resolver);
     Ok(Some(Arc::new(builder)))
 }
@@ -130,10 +135,7 @@ pub(crate) fn build_datafusion_mount(
         .max_decoding_message_size(max_size)
         .max_encoding_message_size(max_size);
 
-        let worker = build_worker(
-            session_builder.sources(),
-            Arc::clone(session_builder.runtime()),
-        );
+        let worker = build_worker(Arc::clone(&session_builder));
 
         router
             .add_service(query_server)

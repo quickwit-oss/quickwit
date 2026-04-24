@@ -20,20 +20,26 @@
 //! `ExecuteSubstraitResponse::arrow_ipc_bytes` /
 //! `ExecuteSqlResponse::arrow_ipc_bytes`.
 //!
+//! This adapter is intentionally thin: it forwards requests to
+//! [`crate::service::DataFusionService`], serializes `RecordBatch`es to Arrow
+//! IPC bytes, and maps `DataFusionError` values onto gRPC status codes.
+//!
 //! ## Error mapping
 //!
 //! `datafusion::error::DataFusionError` is mapped to `tonic::Status`:
-//! - Plan / Schema errors → `InvalidArgument`
-//! - I/O errors → `Internal`
+//! - SQL / plan / schema / execution / configuration / Substrait errors → `InvalidArgument`
+//! - `NotImplemented` → `Unimplemented`
+//! - `ResourcesExhausted` → `ResourceExhausted`
 //! - Everything else → `Internal`
 
 use std::io::Cursor;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use datafusion::arrow as arrow;
 use arrow::array::RecordBatch;
 use arrow::ipc::writer::StreamWriter;
+use datafusion::arrow;
+use datafusion::error::DataFusionError;
 use datafusion::execution::SendableRecordBatchStream;
 use futures::{Stream, StreamExt};
 use tracing::warn;
@@ -44,18 +50,56 @@ use crate::proto::{
 };
 use crate::service::DataFusionService;
 
-/// Converts a DataFusion error (represented as any `std::error::Error`) to an
-/// appropriate `tonic::Status`.
-///
-/// Plan / schema errors are surfaced as `InvalidArgument`; everything else as
-/// `Internal`.
-fn df_error_to_status(err: impl std::fmt::Display) -> tonic::Status {
-    let msg = err.to_string();
-    if msg.starts_with("Error during planning") || msg.starts_with("Schema error") {
-        tonic::Status::invalid_argument(msg)
-    } else {
-        tonic::Status::internal(msg)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GrpcErrorKind {
+    InvalidArgument,
+    ResourceExhausted,
+    Unimplemented,
+    Internal,
+}
+
+impl GrpcErrorKind {
+    fn into_status(self, message: String) -> tonic::Status {
+        match self {
+            Self::InvalidArgument => tonic::Status::invalid_argument(message),
+            Self::ResourceExhausted => tonic::Status::resource_exhausted(message),
+            Self::Unimplemented => tonic::Status::unimplemented(message),
+            Self::Internal => tonic::Status::internal(message),
+        }
     }
+}
+
+fn classify_df_error(err: &DataFusionError) -> GrpcErrorKind {
+    match err {
+        DataFusionError::Shared(err) => classify_df_error(err),
+        DataFusionError::Context(_, err) => classify_df_error(err),
+        DataFusionError::Diagnostic(_, err) => classify_df_error(err),
+        DataFusionError::Collection(errors) => errors
+            .first()
+            .map(classify_df_error)
+            .unwrap_or(GrpcErrorKind::Internal),
+        DataFusionError::SQL(_, _)
+        | DataFusionError::Plan(_)
+        | DataFusionError::Configuration(_)
+        | DataFusionError::SchemaError(_, _)
+        | DataFusionError::Execution(_)
+        | DataFusionError::Substrait(_) => GrpcErrorKind::InvalidArgument,
+        DataFusionError::NotImplemented(_) => GrpcErrorKind::Unimplemented,
+        DataFusionError::ResourcesExhausted(_) => GrpcErrorKind::ResourceExhausted,
+        DataFusionError::ArrowError(_, _)
+        | DataFusionError::IoError(_)
+        | DataFusionError::ObjectStore(_)
+        | DataFusionError::Internal(_)
+        | DataFusionError::ExecutionJoin(_)
+        | DataFusionError::External(_)
+        | DataFusionError::Ffi(_)
+        | _ => GrpcErrorKind::Internal,
+    }
+}
+
+/// Converts a `DataFusionError` to the corresponding `tonic::Status`.
+fn df_error_to_status(err: &DataFusionError) -> tonic::Status {
+    classify_df_error(err).into_status(err.to_string())
 }
 
 /// Map a `SendableRecordBatchStream` into a pinned `Stream` of gRPC responses.
@@ -74,7 +118,7 @@ where
 {
     Box::pin(stream.map(move |result| match result {
         Ok(batch) => batch_to_ipc_bytes(&batch).map(&wrap),
-        Err(err) => Err(tonic::Status::internal(format!("stream error: {err}"))),
+        Err(err) => Err(df_error_to_status(&err)),
     }))
 }
 
@@ -136,19 +180,19 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
             (true, _, false) => service
                 .execute_substrait(&req.substrait_plan_bytes, &req.properties)
                 .await
-                .map_err(df_error_to_status)?,
+                .map_err(|err| df_error_to_status(&err))?,
             (true, _, true) => service
                 .explain_substrait(&req.substrait_plan_bytes, &req.properties)
                 .await
-                .map_err(df_error_to_status)?,
+                .map_err(|err| df_error_to_status(&err))?,
             (false, true, false) => service
                 .execute_substrait_json(&req.substrait_plan_json, &req.properties)
                 .await
-                .map_err(df_error_to_status)?,
+                .map_err(|err| df_error_to_status(&err))?,
             (false, true, true) => service
                 .explain_substrait_json(&req.substrait_plan_json, &req.properties)
                 .await
-                .map_err(df_error_to_status)?,
+                .map_err(|err| df_error_to_status(&err))?,
             _ => {
                 return Err(tonic::Status::invalid_argument(
                     "either substrait_plan_bytes or substrait_plan_json must be set",
@@ -174,7 +218,7 @@ impl data_fusion_service_server::DataFusionService for DataFusionServiceGrpcImpl
             .await
             .map_err(|err| {
                 warn!(error = %err, "DataFusion SQL execution error");
-                df_error_to_status(err)
+                df_error_to_status(&err)
             })?;
 
         let response_stream = map_batch_stream(stream, |ipc_bytes| ExecuteSqlResponse {

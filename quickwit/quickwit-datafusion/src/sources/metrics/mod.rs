@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Metrics data source for DataFusion.
+//! Metrics-specific DataFusion integration.
 //!
-//! `MetricsDataSource` implements `QuickwitDataSource` and encapsulates all
-//! metrics-specific logic: split providers, index resolution, filter pushdown,
-//! and lazy object-store access for distributed workers.
+//! `MetricsDataSource` carries the runtime and Substrait pieces.
+//! `MetricsSchemaProvider` carries the native OSS catalog/schema integration.
 //!
 //! All metrics-specific code lives in this module; none leaks into the generic
-//! session / catalog / worker layer.
+//! session / worker / Substrait layer.
 
 pub(crate) mod factory;
 pub(crate) mod index_resolver;
@@ -30,16 +29,19 @@ pub(crate) mod table_provider;
 #[cfg(any(test, feature = "testsuite"))]
 pub mod test_utils;
 
+use std::any::Any;
 use std::sync::Arc;
 
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema, SchemaRef};
 use async_trait::async_trait;
-use datafusion::arrow as arrow;
-use datafusion::catalog::TableProviderFactory;
+use datafusion::arrow;
+use datafusion::catalog::{MemorySchemaProvider, SchemaProvider, TableProviderFactory};
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;
 use quickwit_common::is_metrics_index;
-use quickwit_df_core::{DataSourceContributions, QuickwitDataSource};
+use quickwit_df_core::{
+    QuickwitRuntimePlugin, QuickwitRuntimeRegistration, QuickwitSubstraitConsumerExt,
+};
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 
 use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory};
@@ -61,7 +63,7 @@ fn is_index_not_found(err: &datafusion::error::DataFusionError) -> bool {
     }
 }
 
-/// `QuickwitDataSource` implementation for OSS parquet metrics.
+/// Runtime/Substrait integration for OSS parquet metrics.
 ///
 /// Backed by the Quickwit metastore for split discovery. Object-store
 /// construction is delegated to
@@ -87,6 +89,37 @@ impl MetricsDataSource {
     pub fn with_resolver(index_resolver: Arc<dyn MetricsIndexResolver>) -> Self {
         Self { index_resolver }
     }
+
+    pub fn schema_provider(&self) -> Arc<dyn SchemaProvider> {
+        Arc::new(MetricsSchemaProvider::new(Arc::clone(&self.index_resolver)))
+    }
+}
+
+async fn resolve_metrics_table_provider(
+    index_resolver: &dyn MetricsIndexResolver,
+    index_name: &str,
+    schema: SchemaRef,
+) -> DFResult<Option<Arc<dyn TableProvider>>> {
+    // Only claim indexes backed by the metrics (parquet) pipeline. This
+    // remains a naming-prefix check today so sibling sources can coexist
+    // without racing to claim every index.
+    if !is_metrics_index(index_name) {
+        return Ok(None);
+    }
+
+    match index_resolver.resolve(index_name).await {
+        Ok((split_provider, index_uri)) => {
+            let provider = MetricsTableProvider::new(schema, split_provider, index_uri)?;
+            Ok(Some(Arc::new(provider)))
+        }
+        Err(err) => {
+            if is_index_not_found(&err) {
+                Ok(None)
+            } else {
+                Err(err)
+            }
+        }
+    }
 }
 
 /// Minimal 4-column schema — always present in every OSS metrics parquet file.
@@ -100,12 +133,93 @@ fn minimal_base_schema() -> SchemaRef {
     ]))
 }
 
+/// Native OSS `SchemaProvider` for metrics indexes.
+pub struct MetricsSchemaProvider {
+    index_resolver: Arc<dyn MetricsIndexResolver>,
+    ddl_tables: MemorySchemaProvider,
+}
+
+impl MetricsSchemaProvider {
+    pub fn new(index_resolver: Arc<dyn MetricsIndexResolver>) -> Self {
+        Self {
+            index_resolver,
+            ddl_tables: MemorySchemaProvider::new(),
+        }
+    }
+}
+
+impl std::fmt::Debug for MetricsSchemaProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MetricsSchemaProvider")
+            .field("num_ddl_tables", &self.ddl_tables.table_names().len())
+            .finish()
+    }
+}
+
 #[async_trait]
-impl QuickwitDataSource for MetricsDataSource {
-    fn contributions(&self) -> DataSourceContributions {
-        DataSourceContributions::default()
+impl SchemaProvider for MetricsSchemaProvider {
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 
+    fn table_names(&self) -> Vec<String> {
+        let resolver = Arc::clone(&self.index_resolver);
+        let mut names = self.ddl_tables.table_names();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                if let Ok(mut resolved_names) = resolver.list_index_names().await {
+                    resolved_names.retain(|id| is_metrics_index(id));
+                    names.append(&mut resolved_names);
+                }
+            })
+        });
+        names.sort();
+        names.dedup();
+        names
+    }
+
+    async fn table(&self, name: &str) -> DFResult<Option<Arc<dyn TableProvider>>> {
+        if let Some(provider) = self.ddl_tables.table(name).await? {
+            return Ok(Some(provider));
+        }
+
+        resolve_metrics_table_provider(
+            self.index_resolver.as_ref(),
+            name,
+            minimal_base_schema(),
+        )
+        .await
+    }
+
+    fn table_exist(&self, name: &str) -> bool {
+        self.ddl_tables.table_exist(name)
+    }
+
+    fn register_table(
+        &self,
+        name: String,
+        table: Arc<dyn TableProvider>,
+    ) -> DFResult<Option<Arc<dyn TableProvider>>> {
+        self.ddl_tables.register_table(name, table)
+    }
+
+    fn deregister_table(&self, name: &str) -> DFResult<Option<Arc<dyn TableProvider>>> {
+        self.ddl_tables.deregister_table(name)
+    }
+}
+
+#[async_trait]
+impl QuickwitRuntimePlugin for MetricsDataSource {
+    fn registration(&self) -> QuickwitRuntimeRegistration {
+        let factory: Arc<dyn TableProviderFactory> = Arc::new(MetricsTableProviderFactory::new(
+            Arc::clone(&self.index_resolver),
+        ));
+        QuickwitRuntimeRegistration::default().with_table_factory(METRICS_FILE_TYPE, factory)
+    }
+}
+
+#[async_trait]
+impl QuickwitSubstraitConsumerExt for MetricsDataSource {
     /// Handle `ReadRel` nodes in incoming Substrait plans.
     ///
     /// ## OSS path — `NamedTable` with the index name as the leaf segment
@@ -127,7 +241,7 @@ impl QuickwitDataSource for MetricsDataSource {
     ///
     /// ## Extension path — custom protos (downstream callers)
     ///
-    /// A downstream caller registers its own `QuickwitDataSource` that
+    /// A downstream caller registers its own `QuickwitSubstraitConsumerExt` that
     /// handles `ExtensionTable<MetricRead>`. This default implementation
     /// only handles `NamedTable` — `ExtensionTable` always returns
     /// `Ok(None)` here.
@@ -150,78 +264,11 @@ impl QuickwitDataSource for MetricsDataSource {
         };
         let index_name = index_name.as_str();
 
-        // Only claim indexes backed by the metrics (parquet) pipeline. This
-        // is a naming-prefix check today (`quickwit_common::is_metrics_index`);
-        // it exists so sibling sources — e.g. a future tantivy DataFusion
-        // source for logs/traces — can coexist in the same session without
-        // every source racing to claim every index. See `is_metrics_index`
-        // for the canonical list of prefixes.
-        if !is_metrics_index(index_name) {
-            return Ok(None);
-        }
-
         // Use the producer-declared schema if available; fall back to minimal base schema.
         let schema = schema_hint.unwrap_or_else(minimal_base_schema);
-
-        match self.index_resolver.resolve(index_name).await {
-            Ok((split_provider, index_uri)) => {
-                let provider = MetricsTableProvider::new(schema, split_provider, index_uri)?;
-                Ok(Some((index_name.to_string(), Arc::new(provider))))
-            }
-            Err(err) => {
-                // Not-found means this source doesn't own the index; let others try.
-                if is_index_not_found(&err) {
-                    Ok(None)
-                } else {
-                    Err(err)
-                }
-            }
-        }
-    }
-
-    fn ddl_registration(&self) -> Option<(String, Arc<dyn TableProviderFactory>)> {
-        let factory: Arc<dyn TableProviderFactory> = Arc::new(MetricsTableProviderFactory::new(
-            Arc::clone(&self.index_resolver),
-        ));
-        Some((METRICS_FILE_TYPE.to_string(), factory))
-    }
-
-    async fn create_default_table_provider(
-        &self,
-        index_name: &str,
-    ) -> DFResult<Option<Arc<dyn TableProvider>>> {
-        // Same gate as `try_consume_read_rel` — skip non-metrics indexes so
-        // a sibling source (e.g. tantivy) can claim them.
-        if !is_metrics_index(index_name) {
-            return Ok(None);
-        }
-        match self.index_resolver.resolve(index_name).await {
-            Ok((split_provider, index_uri)) => {
-                let provider =
-                    MetricsTableProvider::new(minimal_base_schema(), split_provider, index_uri)?;
-                Ok(Some(Arc::new(provider)))
-            }
-            Err(err) => {
-                // Only swallow "index not found" — propagate everything else so the
-                // caller gets an actionable error (e.g. metastore unavailable).
-                if is_index_not_found(&err) {
-                    Ok(None)
-                } else {
-                    Err(err)
-                }
-            }
-        }
-    }
-
-    // `register_for_worker` intentionally uses the framework default (no-op).
-    // Object stores are constructed on demand by
-    // `QuickwitObjectStoreRegistry` — nothing to do per worker session.
-
-    async fn list_index_names(&self) -> DFResult<Vec<String>> {
-        // Only advertise indexes this source can actually serve, so
-        // `SHOW TABLES` / `information_schema` doesn't list tantivy-backed
-        // indexes under the metrics source.
-        let all = self.index_resolver.list_index_names().await?;
-        Ok(all.into_iter().filter(|id| is_metrics_index(id)).collect())
+        let provider =
+            resolve_metrics_table_provider(self.index_resolver.as_ref(), index_name, schema)
+                .await?;
+        Ok(provider.map(|provider| (index_name.to_string(), provider)))
     }
 }

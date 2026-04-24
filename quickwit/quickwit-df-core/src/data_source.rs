@@ -12,126 +12,74 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `QuickwitDataSource` — the extension point for plugging data sources
-//! (metrics, logs, traces, …) into the DataFusion session layer.
+//! Narrow DataFusion extension traits used by Quickwit.
 //!
-//! ## Design: contribution-return pattern
+//! The native OSS DataFusion integration points are:
+//! - `RuntimeEnv`
+//! - `SessionStateBuilder`
+//! - `CatalogProviderList` / `CatalogProvider` / `SchemaProvider`
+//! - `TableProviderFactory`
+//! - `SubstraitConsumer`
 //!
-//! Each data source **returns its additive contributions** via [`contributions()`].
-//! The [`DataFusionSessionBuilder`][crate::session::DataFusionSessionBuilder] accumulates
-//! contributions from all registered sources before building any session. This mirrors
-//! the `dd-datafusion` runtime, where each connector contributes planner/runtime
-//! state and the runtime merges those contributions before execution.
-//!
-//! Advantages over a builder-mutation chain (`configure_session(builder) -> builder`):
-//! - **No silent overwrite**: two sources registering different codecs both win.
-//! - **Inspectable**: the `DataSourceContributions` struct is a plain value — easy to test and
-//!   introspect without constructing a full `SessionStateBuilder`.
-//! - **Conflict detection**: the session builder can validate (e.g., no two sources register the
-//!   same UDF name) before building the session.
-//!
-//! ## Lifecycle
-//!
-//! For each session (coordinator or worker):
-//!
-//! 1. **`contributions()`** — called once. Returns optimizer rules, codecs, and UDFs to register.
-//!    Applied before `SessionStateBuilder::build()`.
-//!
-//! 2. `SessionStateBuilder::build()` — called by the framework.
-//!
-//! 3. **`register_for_worker(&SessionState)`** — called after `build()` for runtime state that
-//!    requires the session to already exist (rare; prefer `contributions()` for most things).
-//!
-//! ## Protocol compatibility note
-//!
-//! The worker communication protocol changed in datafusion-distributed PR #375
-//! (commit 556a5de) from Arrow Flight to a custom `WorkerService` gRPC protocol.
-//! Any data source that needs distributed execution must be built against the same
-//! protocol version as the coordinator.  The logs data source (PR #6160) was written
-//! against the pre-#375 Arrow Flight API and will require a protocol update before
-//! it can share a `datafusion-distributed` pin with the metrics source.
+//! This module keeps Quickwit-specific abstractions aligned with those native
+//! hooks by splitting runtime/session registration from Substrait read
+//! interception. Catalog and schema registration stay in the native DataFusion
+//! provider interfaces rather than on a broad "data source" trait.
 
 use std::fmt::Debug;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use datafusion::arrow as arrow;
+use datafusion::arrow;
 use datafusion::catalog::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;
 use datafusion::execution::SessionStateBuilder;
 use datafusion::logical_expr::ScalarUDF;
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
+use datafusion::prelude::SessionConfig;
 
-/// Additive contributions from a [`QuickwitDataSource`] to the DataFusion session.
+type SessionConfigSetter = Arc<dyn Fn(&mut SessionConfig) + Send + Sync>;
+
+/// Additive runtime/session registration emitted by a
+/// [`QuickwitRuntimePlugin`].
 ///
-/// Returned by [`QuickwitDataSource::contributions()`] and aggregated across all
-/// registered sources before any session is built.
-///
-/// Analogous to `DDDataFusionQueryPlanner` in `dd-datafusion`, which accumulates
-/// extension planners, rules, and UDFs from every registered `Connector`.
-///
-/// ## Codec registration
-///
-/// Physical extension codecs (e.g. `TantivyCodec` for the logs data source) are
-/// applied via [`DataSourceContributions::apply_to_builder`] using the
-/// `with_distributed_user_codec` builder extension from `datafusion_distributed`.
-/// If your source needs a codec, call it inside the `codec_applier` callback:
-///
-/// ```ignore
-/// fn contributions(&self) -> DataSourceContributions {
-///     DataSourceContributions::default()
-///         .with_codec_applier(|builder| {
-///             builder.with_distributed_user_codec(TantivyCodec)
-///         })
-/// }
-/// ```
-pub struct DataSourceContributions {
-    /// Physical optimizer rules contributed by this source.
-    ///
-    /// Logs adds tantivy-specific pushdown rules here.
-    /// Metrics adds nothing — DataFusion's built-in parquet pushdown is sufficient.
+/// This is the runtime-scoped analogue of `dd-datafusion`'s additive planner
+/// registration. It carries the values that are native to the OSS
+/// `SessionStateBuilder` API: config setters, UDFs, optimizer rules, and DDL
+/// table factories.
+pub struct QuickwitRuntimeRegistration {
+    session_config_setters: Vec<SessionConfigSetter>,
     physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>>,
-
-    /// Scalar UDFs contributed by this source.
-    ///
-    /// Logs adds `full_text_udf()` here.
-    /// Metrics adds nothing.
     udfs: Vec<Arc<ScalarUDF>>,
-
-    /// Callbacks that apply codec / builder extensions that cannot be expressed
-    /// as plain values (e.g. `with_distributed_user_codec(TantivyCodec)`).
-    ///
-    /// Applied to the `SessionStateBuilder` after rules and UDFs are merged.
-    /// Using callbacks avoids a direct dependency on `datafusion-proto` types.
-    ///
-    /// These are `FnOnce` because `SessionStateBuilder` is consumed and returned;
-    /// each applier can only run once.
-    codec_appliers: Vec<Box<dyn FnOnce(SessionStateBuilder) -> SessionStateBuilder + Send + Sync>>,
+    table_factories: Vec<(String, Arc<dyn TableProviderFactory>)>,
 }
 
-impl Default for DataSourceContributions {
+impl Default for QuickwitRuntimeRegistration {
     fn default() -> Self {
         Self {
+            session_config_setters: Vec::new(),
             physical_optimizer_rules: Vec::new(),
             udfs: Vec::new(),
-            codec_appliers: Vec::new(),
+            table_factories: Vec::new(),
         }
     }
 }
 
-impl DataSourceContributions {
-    /// Add a scalar UDF.
+impl QuickwitRuntimeRegistration {
+    pub fn with_session_config_setter(
+        mut self,
+        setter: impl Fn(&mut SessionConfig) + Send + Sync + 'static,
+    ) -> Self {
+        self.session_config_setters.push(Arc::new(setter));
+        self
+    }
+
     pub fn with_udf(mut self, udf: Arc<ScalarUDF>) -> Self {
         self.udfs.push(udf);
         self
     }
 
-    /// Add a physical optimizer rule (e.g. source-specific pushdown rules
-    /// like `TantivyAggPushdown`).
-    ///
-    /// Rules contributed by all sources run *before* the distributed
-    /// optimizer so they see an already source-optimized plan.
     pub fn with_physical_optimizer_rule(
         mut self,
         rule: Arc<dyn PhysicalOptimizerRule + Send + Sync>,
@@ -140,23 +88,12 @@ impl DataSourceContributions {
         self
     }
 
-    /// Add a callback that extends the `SessionStateBuilder` with values that
-    /// cannot be expressed as plain rules or UDFs — typically
-    /// `datafusion-distributed` user codecs:
-    ///
-    /// ```ignore
-    /// DataSourceContributions::default().with_codec_applier(|builder| {
-    ///     builder.with_distributed_user_codec(TantivyCodec)
-    /// })
-    /// ```
-    ///
-    /// Appliers are `FnOnce` (the builder is consumed and returned on each
-    /// call) and run after rules and UDFs are installed.
-    pub fn with_codec_applier(
+    pub fn with_table_factory(
         mut self,
-        applier: impl FnOnce(SessionStateBuilder) -> SessionStateBuilder + Send + Sync + 'static,
+        key: impl Into<String>,
+        factory: Arc<dyn TableProviderFactory>,
     ) -> Self {
-        self.codec_appliers.push(Box::new(applier));
+        self.table_factories.push((key.into(), factory));
         self
     }
 
@@ -164,15 +101,12 @@ impl DataSourceContributions {
         self.udfs.iter().map(|udf| udf.name().to_string()).collect()
     }
 
-    /// Apply all contributions to a `SessionStateBuilder`.
-    ///
-    /// Called by `DataFusionSessionBuilder` and `QuickwitWorkerSessionBuilder`
-    /// after merging contributions from all sources.
-    ///
-    /// Injects in order:
-    /// 1. Physical optimizer rules
-    /// 2. Scalar UDFs (into the builder's scalar function map)
-    /// 3. Codec appliers (consumed in order)
+    pub fn apply_to_config(&self, config: &mut SessionConfig) {
+        for setter in &self.session_config_setters {
+            setter(config);
+        }
+    }
+
     pub fn apply_to_builder(self, mut builder: SessionStateBuilder) -> SessionStateBuilder {
         for rule in self.physical_optimizer_rules {
             builder = builder.with_physical_optimizer_rule(rule);
@@ -185,144 +119,63 @@ impl DataSourceContributions {
                 .extend(self.udfs);
         }
 
-        for applier in self.codec_appliers {
-            builder = applier(builder);
+        for (key, factory) in self.table_factories {
+            builder = builder.with_table_factory(key.clone(), Arc::clone(&factory));
+            let upper = key.to_uppercase();
+            if upper != key {
+                builder = builder.with_table_factory(upper, factory);
+            }
         }
 
         builder
     }
 
-    /// Merge another set of contributions into this one (additive, no dedup).
-    ///
-    /// Used by `DataFusionSessionBuilder` to accumulate across all sources.
-    pub fn merge(&mut self, other: DataSourceContributions) {
+    pub fn merge(&mut self, other: QuickwitRuntimeRegistration) {
+        self.session_config_setters
+            .extend(other.session_config_setters);
         self.physical_optimizer_rules
             .extend(other.physical_optimizer_rules);
         self.udfs.extend(other.udfs);
-        self.codec_appliers.extend(other.codec_appliers);
+        self.table_factories.extend(other.table_factories);
     }
 }
 
-/// Extension point for plugging a data source into `DataFusionSessionBuilder`.
+/// Runtime/session registration hook for Quickwit-specific functionality.
 ///
-/// Implement this trait for each data type (metrics, logs, traces, …) that
-/// should be queryable via DataFusion SQL.
+/// Implement this trait for components that need to:
+/// - initialize the shared `RuntimeEnv`
+/// - contribute native `SessionStateBuilder` state
+/// - perform post-build worker setup
 #[async_trait]
-pub trait QuickwitDataSource: Send + Sync + Debug {
-    // ── Startup hook ─────────────────────────────────────────────────
-
-    /// Called once when the source is registered via
-    /// `DataFusionSessionBuilder::with_source()`.
-    ///
-    /// Receives the shared `RuntimeEnv` that all sessions built by this builder
-    /// will use.  Sources that know their object-store URLs at construction time
-    /// should register them here — analogous to `BlobStoreConnector::init` in
-    /// `dd-datafusion`, which calls `env.register_object_store(url, store)` once
-    /// at service startup so that every query can reach the store without any
-    /// per-session registration.
-    ///
-    /// Sources whose URLs are only discoverable at query time (e.g. metrics,
-    /// where indexes are listed from the metastore) should leave this as a no-op
-    /// and perform lazy registration in `MetricsTableProvider::scan()`, which
-    /// writes into the same shared `RuntimeEnv`.
-    ///
-    /// Default: no-op.
+pub trait QuickwitRuntimePlugin: Send + Sync + Debug {
+    /// Called once when the plugin is registered on a
+    /// [`crate::session::DataFusionSessionBuilder`].
     fn init(&self, _env: &datafusion::execution::runtime_env::RuntimeEnv) {}
 
-    // ── Per-session config mutation ──────────────────────────────────
-
-    /// Mutate the `SessionConfig` before `SessionStateBuilder::new()` is called.
-    ///
-    /// Called once per `build_session()` / worker `build_session_state()`, on
-    /// every registered source, before any contributions are applied. Use this
-    /// when a source needs to install a config extension that must be present
-    /// at builder construction time — typical examples from
-    /// `tantivy-datafusion`:
-    ///
-    /// ```ignore
-    /// fn configure_session(&self, config: &mut SessionConfig) {
-    ///     config.set_split_runtime_factory(Arc::new(MyFactory::new()));
-    ///     config.set_sync_execution_pool(Arc::clone(&self.sync_pool));
-    /// }
-    /// ```
-    ///
-    /// If all you need is a UDF, optimizer rule, or codec, prefer
-    /// [`contributions()`][Self::contributions] — this hook exists specifically
-    /// for config-extension registrations that `DataSourceContributions` cannot
-    /// express.
-    ///
-    /// Default: no-op.
-    fn configure_session(&self, _config: &mut datafusion::prelude::SessionConfig) {}
-
-    // ── Additive session contributions ──────────────────────────────
-
-    /// Return this source's additive contributions to every session.
-    ///
-    /// Called once per `build_session()` / worker `build_session_state()` call.
-    /// Contributions from all registered sources are merged and applied to the
-    /// `SessionStateBuilder` before `build()` is called.
-    ///
-    /// Default: no contributions (metrics, for example, needs none).
-    fn contributions(&self) -> DataSourceContributions {
-        DataSourceContributions::default()
+    /// Return this plugin's additive runtime/session registration.
+    fn registration(&self) -> QuickwitRuntimeRegistration {
+        QuickwitRuntimeRegistration::default()
     }
 
-    // ── DDL support (optional) ───────────────────────────────────────
-
-    /// Return the DDL file-type token and its `TableProviderFactory` together,
-    /// or `None` if this source does not support DDL.
-    ///
-    /// When `Some((token, factory))` is returned:
-    /// - `token` is the string used in `STORED AS <token>` DDL (e.g. `"metrics"`).
-    /// - `factory` handles `CREATE [OR REPLACE] EXTERNAL TABLE … STORED AS <token>`.
-    ///
-    /// The session registers the factory under both the literal token and its
-    /// uppercase equivalent because DataFusion uppercases the `STORED AS` token.
-    ///
-    /// Returning both pieces from a single method prevents the mismatch bug where
-    /// `file_type()` and `create_table_provider_factory()` could disagree or
-    /// create two different factory instances.
-    ///
-    /// Return `None` (the default) if this source resolves tables purely through
-    /// the schema provider — for example, the logs data source looks up the index
-    /// schema from the metastore at query time and needs no DDL.
-    fn ddl_registration(&self) -> Option<(String, Arc<dyn TableProviderFactory>)> {
-        None
+    /// Register runtime state the worker needs after the session is built.
+    async fn register_for_worker(
+        &self,
+        _state: &datafusion::execution::SessionState,
+    ) -> DFResult<()> {
+        Ok(())
     }
+}
 
-    // ── Substrait consumer hook ──────────────────────────────────────
-
-    /// Try to handle a Substrait `ReadRel` for this source.
+/// Optional Substrait extension hook mirroring `dd-datafusion`'s
+/// `SubstraitConsumerExt`.
+#[async_trait]
+pub trait QuickwitSubstraitConsumerExt: Send + Sync + Debug {
+    /// Try to handle a Substrait `ReadRel`.
     ///
-    /// Called by `QuickwitSubstraitConsumer::consume_read` for each registered
-    /// source before falling back to the standard catalog-lookup path.
-    ///
-    /// ## OSS path — standard Substrait (`NamedTable`)
-    ///
-    /// Producers that target Quickwit send a standard `ReadRel` with
-    /// `read_type = NamedTable { names: ["<index_name>"] }`.  The `base_schema`
-    /// field of the `ReadRel` carries the Arrow schema the producer wants back
-    /// (already converted from Substrait types to Arrow by the caller).
-    ///
-    /// `MetricsDataSource` implements this path: it resolves the index from the
-    /// metastore and returns a `MetricsTableProvider` using the declared schema.
-    ///
-    /// ## Extension path — custom protos (downstream callers)
-    ///
-    /// Producers that carry DD-internal proto payloads (e.g.
-    /// `ExtensionTable<MetricRead>`) implement a custom `QuickwitDataSource` in
-    /// A downstream caller that decodes its own proto and returns the appropriate provider.
-    /// No custom protos are needed in OSS.
-    ///
-    /// ## Return value
-    ///
-    /// - `Ok(Some((table_name, provider)))` — this source claims the rel. `table_name` is the
-    ///   effective table identifier used for the scan. The caller converts any `ExtensionTable` rel
-    ///   to a `NamedTable` rel with this name so that `from_read_rel` can apply
-    ///   filters/projections.
-    /// - `Ok(None)` — this source does not claim the rel; try the next source.
-    ///
-    /// Default: `Ok(None)` — does not participate in Substrait consumption.
+    /// Returning `Ok(Some((table_name, provider)))` claims the relation. The
+    /// caller will rewrite any `ExtensionTable` to a `NamedTable` with that
+    /// effective name so that the standard `from_read_rel` path can still apply
+    /// filter and projection handling.
     async fn try_consume_read_rel(
         &self,
         _rel: &datafusion_substrait::substrait::proto::ReadRel,
@@ -330,56 +183,4 @@ pub trait QuickwitDataSource: Send + Sync + Debug {
     ) -> DFResult<Option<(String, Arc<dyn TableProvider>)>> {
         Ok(None)
     }
-
-    // ── Default table resolution (schema-provider path) ─────────────
-
-    /// Create a default `TableProvider` for `index_name` without DDL.
-    ///
-    /// Called by `QuickwitSchemaProvider::table(name)` when no DDL-registered
-    /// table matches.  Returns `Ok(None)` if this source does not own the
-    /// index — the schema provider will try the next registered source.
-    async fn create_default_table_provider(
-        &self,
-        index_name: &str,
-    ) -> DFResult<Option<Arc<dyn TableProvider>>>;
-
-    // ── Worker runtime setup (post-build, optional) ──────────────────
-
-    /// Register runtime state the worker needs after the session is built.
-    ///
-    /// Called after `SessionStateBuilder::build()`.  Use this for resources
-    /// that can only be registered on an existing `SessionState` (e.g.,
-    /// object stores in the `RuntimeEnv` that depend on lazily-discovered
-    /// index URIs).
-    ///
-    /// For resources that are known at construction time, prefer registering
-    /// them in `contributions()` — or directly on the `RuntimeEnv` passed to
-    /// the session builder (analogous to `BlobStoreConnector::init(env)`).
-    ///
-    /// Default: no-op.
-    async fn register_for_worker(
-        &self,
-        _state: &datafusion::execution::SessionState,
-    ) -> DFResult<()> {
-        Ok(())
-    }
-
-    // ── Index enumeration ────────────────────────────────────────────
-
-    /// Return all index names exposed by this source.
-    ///
-    /// Used by `QuickwitSchemaProvider::table_names()` for `SHOW TABLES` /
-    /// `information_schema`.  Sources that cannot enumerate cheaply may
-    /// return an empty `Vec` (the logs data source does this — it would need
-    /// to list potentially thousands of indexes).
-    ///
-    /// # Threading note
-    ///
-    /// This method may be called from within a `tokio::task::block_in_place`
-    /// context on the DataFusion query thread.  Implementations that call
-    /// blocking I/O must ensure they are not already inside a `block_in_place`
-    /// context (tokio panics on nested `block_in_place`).  If in doubt, use
-    /// `tokio::task::spawn_blocking` or check
-    /// `tokio::runtime::Handle::try_current()` before blocking.
-    async fn list_index_names(&self) -> DFResult<Vec<String>>;
 }

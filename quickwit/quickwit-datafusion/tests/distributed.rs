@@ -78,6 +78,9 @@ async fn test_distributed_tasks_not_shuffles() {
     // from it, so no startup registration is needed. Mirrors what
     // `build_datafusion_session_builder` does inside `quickwit-serve`.
     let make_builder = || -> Arc<DataFusionSessionBuilder> {
+        let runtime_source = Arc::clone(&source);
+        let substrait_source = Arc::clone(&source);
+        let schema_source = Arc::clone(&source);
         let registry = Arc::new(QuickwitObjectStoreRegistry::new(
             sandbox.storage_resolver.clone(),
         ));
@@ -85,7 +88,11 @@ async fn test_distributed_tasks_not_shuffles() {
             DataFusionSessionBuilder::new()
                 .with_object_store_registry(registry)
                 .expect("install object store registry")
-                .with_source(Arc::clone(&source) as Arc<_>)
+                .with_runtime_plugin(runtime_source as Arc<_>)
+                .with_substrait_consumer(substrait_source as Arc<_>)
+                .with_schema_provider_factory("quickwit", "public", move || {
+                    schema_source.schema_provider()
+                })
                 .with_worker_resolver(QuickwitWorkerResolver::new(pool.clone())),
         )
     };

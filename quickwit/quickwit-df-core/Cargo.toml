@@ -29,9 +29,9 @@ datafusion-physical-plan = "52"
 datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed", rev = "0f2c8be3e148b0bd5c7f17b23f2df8bb1201d5fb" }
 object_store = "0.12"
 
-# gRPC surface is opt-in. The connector trait + session builder do not need
-# tonic or the generated proto; downstream crates that only implement
-# `QuickwitDataSource` should depend on this crate without the `grpc` feature.
+# gRPC surface is opt-in. The extension traits + session builder do not need
+# tonic or the generated proto; downstream crates that only implement runtime
+# plugins / Substrait extensions should depend on this crate without `grpc`.
 tonic = { workspace = true, optional = true }
 tonic-prost = { workspace = true, optional = true }
 

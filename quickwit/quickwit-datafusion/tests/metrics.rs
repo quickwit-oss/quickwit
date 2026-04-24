@@ -42,13 +42,18 @@ async fn start_sandbox() -> TestSandbox {
 /// Build a `DataFusionSessionBuilder` wired to the sandbox's metastore + storage.
 fn session_builder(sandbox: &TestSandbox) -> DataFusionSessionBuilder {
     let source = Arc::new(MetricsDataSource::new(sandbox.metastore.clone()));
+    let schema_source = Arc::clone(&source);
     let registry = Arc::new(QuickwitObjectStoreRegistry::new(
         sandbox.storage_resolver.clone(),
     ));
     DataFusionSessionBuilder::new()
         .with_object_store_registry(registry)
         .expect("install object store registry")
-        .with_source(source)
+        .with_runtime_plugin(Arc::clone(&source) as Arc<_>)
+        .with_substrait_consumer(source as Arc<_>)
+        .with_schema_provider_factory("quickwit", "public", move || {
+            schema_source.schema_provider()
+        })
 }
 
 /// Execute SQL in-process and return batches.
@@ -706,7 +711,8 @@ async fn test_substrait_named_table_query() {
     let data_dir = &sandbox.data_dir;
     let builder = session_builder(&sandbox);
 
-    let index_uid = create_metrics_index(&metastore, "metrics-substrait-test", data_dir.path()).await;
+    let index_uid =
+        create_metrics_index(&metastore, "metrics-substrait-test", data_dir.path()).await;
     publish_split(
         &metastore,
         &index_uid,

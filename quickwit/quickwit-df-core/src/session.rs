@@ -16,36 +16,31 @@
 //!
 //! ## Runtime environment lifecycle
 //!
-//! `DataFusionSessionBuilder` creates a single `Arc<RuntimeEnv>` at construction
-//! time and shares it across every session it builds. A shared `RuntimeEnv` lets
-//! object stores registered at service-startup time be visible to all queries
-//! without any per-query re-registration.
+//! `DataFusionSessionBuilder` maintains a shared `Arc<RuntimeEnv>` for every
+//! session it builds. A shared `RuntimeEnv` lets object stores registered at
+//! service-startup time be visible to all queries without any per-query
+//! re-registration.
 //!
-//! ## Memory limits
+//! ## Native OSS registration
 //!
-//! By default the shared `RuntimeEnv` uses DataFusion's default memory pool,
-//! which imposes no cap on query memory. For production deployments use
-//! `with_memory_limit(bytes)` to install a `GreedyMemoryPool`.
+//! Catalogs, schemas, and DDL table factories are wired through the native OSS
+//! `SessionStateBuilder` APIs:
+//! - `with_catalog_list(...)`
+//! - `with_table_factory(...)`
 //!
-//! ## Worker URL resolution
-//!
-//! Enable distributed execution by calling `with_worker_resolver(resolver)` with
-//! any type that implements `datafusion_distributed::WorkerResolver`. Downstream
-//! crates (e.g. `quickwit-datafusion`) provide concrete resolvers backed by
-//! Quickwit's `SearcherPool`.
-//!
-//! ## Result streaming
-//!
-//! `execute_substrait` returns a `SendableRecordBatchStream` backed by the
-//! DataFusion streaming executor — no intermediate materialization occurs.
+//! Schema and catalog providers are created fresh per session so DDL state
+//! remains session-local.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use datafusion::catalog::{CatalogProvider, MemoryCatalogProvider};
-use datafusion::error::Result as DFResult;
+use datafusion::catalog::{
+    CatalogProvider, CatalogProviderList, MemoryCatalogProvider, MemoryCatalogProviderList,
+    SchemaProvider,
+};
+use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::SessionStateBuilder;
-use datafusion::execution::memory_pool::GreedyMemoryPool;
+use datafusion::execution::memory_pool::{GreedyMemoryPool, MemoryPool};
 use datafusion::execution::object_store::ObjectStoreRegistry;
 use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
 use datafusion::prelude::{SessionConfig, SessionContext};
@@ -53,30 +48,48 @@ use datafusion_distributed::{
     DistributedExt, DistributedPhysicalOptimizerRule, TaskEstimator, WorkerResolver,
 };
 
-use crate::catalog::QuickwitSchemaProvider;
-use crate::data_source::QuickwitDataSource;
+use crate::data_source::{
+    QuickwitRuntimePlugin, QuickwitRuntimeRegistration, QuickwitSubstraitConsumerExt,
+};
 use crate::task_estimator::DataSourceExecPartitionEstimator;
 
-/// Builds `SessionContext`s for DataFusion queries over registered data sources.
-///
-/// Holds a single `Arc<RuntimeEnv>` shared across all sessions it creates.
+type CatalogProviderFactory = Arc<dyn Fn() -> Arc<dyn CatalogProvider> + Send + Sync>;
+type SchemaProviderFactory = Arc<dyn Fn() -> Arc<dyn SchemaProvider> + Send + Sync>;
+
+#[derive(Clone)]
+pub(crate) struct CatalogRegistration {
+    name: String,
+    factory: CatalogProviderFactory,
+}
+
+#[derive(Clone)]
+pub(crate) struct SchemaRegistration {
+    catalog_name: String,
+    schema_name: String,
+    factory: SchemaProviderFactory,
+}
+
+/// Builds `SessionContext`s for DataFusion queries over registered runtime
+/// plugins, catalogs, and Substrait extensions.
 pub struct DataFusionSessionBuilder {
-    sources: Vec<Arc<dyn QuickwitDataSource>>,
-    /// Pluggable worker URL resolver.  `None` = single-node execution.
+    runtime_plugins: Vec<Arc<dyn QuickwitRuntimePlugin>>,
+    substrait_extensions: Vec<Arc<dyn QuickwitSubstraitConsumerExt>>,
+    catalog_registrations: Vec<CatalogRegistration>,
+    schema_registrations: Vec<SchemaRegistration>,
     worker_resolver: Option<Arc<dyn WorkerResolver + Send + Sync>>,
-    /// Task estimator applied when distributed execution is enabled. Defaults to
-    /// [`DataSourceExecPartitionEstimator`], which works for any `DataSourceExec`
-    /// plan (parquet, tantivy, custom). Override via [`with_task_estimator`] for
-    /// source-specific heuristics.
     task_estimator: Arc<dyn TaskEstimator + Send + Sync>,
-    /// Shared runtime environment — one instance for the lifetime of this builder.
+    memory_pool: Option<Arc<dyn MemoryPool>>,
+    object_store_registry: Option<Arc<dyn ObjectStoreRegistry>>,
     runtime: Arc<RuntimeEnv>,
 }
 
 impl std::fmt::Debug for DataFusionSessionBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DataFusionSessionBuilder")
-            .field("num_sources", &self.sources.len())
+            .field("num_runtime_plugins", &self.runtime_plugins.len())
+            .field("num_substrait_extensions", &self.substrait_extensions.len())
+            .field("num_catalogs", &self.catalog_registrations.len())
+            .field("num_schemas", &self.schema_registrations.len())
             .field("distributed", &self.worker_resolver.is_some())
             .finish()
     }
@@ -91,54 +104,126 @@ impl Default for DataFusionSessionBuilder {
 impl DataFusionSessionBuilder {
     pub fn new() -> Self {
         Self {
-            sources: Vec::new(),
+            runtime_plugins: Vec::new(),
+            substrait_extensions: Vec::new(),
+            catalog_registrations: Vec::new(),
+            schema_registrations: Vec::new(),
             worker_resolver: None,
             task_estimator: Arc::new(DataSourceExecPartitionEstimator),
+            memory_pool: None,
+            object_store_registry: None,
             runtime: Arc::new(RuntimeEnv::default()),
         }
     }
 
-    /// Set a hard memory limit (bytes) for all queries built by this session builder.
-    ///
-    /// Installs a `GreedyMemoryPool` on the shared `RuntimeEnv`.  DataFusion will
-    /// return an error from any query that attempts to allocate beyond this limit.
-    ///
-    /// Must be called before `with_source()` — sources call `init(&self.runtime)`
-    /// on registration and expect the pool to be in place.
-    pub fn with_memory_limit(mut self, bytes: usize) -> DFResult<Self> {
-        let runtime = RuntimeEnvBuilder::new()
-            .with_memory_pool(Arc::new(GreedyMemoryPool::new(bytes)))
-            .build_arc()?;
+    fn rebuild_runtime(&mut self) -> DFResult<()> {
+        let mut builder = RuntimeEnvBuilder::new();
+        if let Some(memory_pool) = &self.memory_pool {
+            builder = builder.with_memory_pool(Arc::clone(memory_pool));
+        }
+        if let Some(object_store_registry) = &self.object_store_registry {
+            builder = builder.with_object_store_registry(Arc::clone(object_store_registry));
+        }
+        let runtime = builder.build_arc()?;
+        for plugin in &self.runtime_plugins {
+            plugin.init(&runtime);
+        }
         self.runtime = runtime;
+        Ok(())
+    }
+
+    pub(crate) fn merged_runtime_registration(&self) -> QuickwitRuntimeRegistration {
+        let mut combined = QuickwitRuntimeRegistration::default();
+        for plugin in &self.runtime_plugins {
+            combined.merge(plugin.registration());
+        }
+        combined
+    }
+
+    pub(crate) fn build_catalog_list(&self) -> DFResult<Arc<dyn CatalogProviderList>> {
+        let catalog_list = Arc::new(MemoryCatalogProviderList::new());
+
+        for registration in &self.catalog_registrations {
+            catalog_list.register_catalog(registration.name.clone(), (registration.factory)());
+        }
+
+        for registration in &self.schema_registrations {
+            let catalog = if let Some(existing) = catalog_list.catalog(&registration.catalog_name) {
+                existing
+            } else {
+                let catalog: Arc<dyn CatalogProvider> = Arc::new(MemoryCatalogProvider::new());
+                catalog_list.register_catalog(registration.catalog_name.clone(), Arc::clone(&catalog));
+                catalog
+            };
+
+            catalog
+                .register_schema(&registration.schema_name, (registration.factory)())
+                .map_err(|e| {
+                    DataFusionError::Internal(format!(
+                        "failed to register schema '{}.{}': {e}",
+                        registration.catalog_name, registration.schema_name
+                    ))
+                })?;
+        }
+
+        Ok(catalog_list as Arc<dyn CatalogProviderList>)
+    }
+
+    pub fn with_memory_limit(mut self, bytes: usize) -> DFResult<Self> {
+        self.memory_pool = Some(Arc::new(GreedyMemoryPool::new(bytes)));
+        self.rebuild_runtime()?;
         Ok(self)
     }
 
-    /// Install a custom `ObjectStoreRegistry` on the shared `RuntimeEnv`.
-    ///
-    /// Use this when the glue layer wants to resolve object stores on
-    /// demand — for example, `quickwit_datafusion::QuickwitObjectStoreRegistry`
-    /// builds lazy wrappers over a `StorageResolver` on miss.
-    ///
-    /// Must be called before `with_source()` so that any source-side
-    /// registration through the `init` hook uses the intended registry.
     pub fn with_object_store_registry(
         mut self,
         registry: Arc<dyn ObjectStoreRegistry>,
     ) -> DFResult<Self> {
-        self.runtime = RuntimeEnvBuilder::new()
-            .with_object_store_registry(registry)
-            .build_arc()?;
+        self.object_store_registry = Some(registry);
+        self.rebuild_runtime()?;
         Ok(self)
     }
 
-    /// Register a data source and call its `init` hook immediately.
-    pub fn with_source(mut self, source: Arc<dyn QuickwitDataSource>) -> Self {
-        source.init(&self.runtime);
-        self.sources.push(source);
+    pub fn with_runtime_plugin(mut self, plugin: Arc<dyn QuickwitRuntimePlugin>) -> Self {
+        plugin.init(&self.runtime);
+        self.runtime_plugins.push(plugin);
         self
     }
 
-    /// Enable distributed execution with the given worker URL resolver.
+    pub fn with_substrait_consumer(
+        mut self,
+        extension: Arc<dyn QuickwitSubstraitConsumerExt>,
+    ) -> Self {
+        self.substrait_extensions.push(extension);
+        self
+    }
+
+    pub fn with_catalog_provider_factory(
+        mut self,
+        catalog_name: impl Into<String>,
+        factory: impl Fn() -> Arc<dyn CatalogProvider> + Send + Sync + 'static,
+    ) -> Self {
+        self.catalog_registrations.push(CatalogRegistration {
+            name: catalog_name.into(),
+            factory: Arc::new(factory),
+        });
+        self
+    }
+
+    pub fn with_schema_provider_factory(
+        mut self,
+        catalog_name: impl Into<String>,
+        schema_name: impl Into<String>,
+        factory: impl Fn() -> Arc<dyn SchemaProvider> + Send + Sync + 'static,
+    ) -> Self {
+        self.schema_registrations.push(SchemaRegistration {
+            catalog_name: catalog_name.into(),
+            schema_name: schema_name.into(),
+            factory: Arc::new(factory),
+        });
+        self
+    }
+
     pub fn with_worker_resolver(
         mut self,
         resolver: impl WorkerResolver + Send + Sync + 'static,
@@ -147,10 +232,6 @@ impl DataFusionSessionBuilder {
         self
     }
 
-    /// Override the task estimator used for distributed execution.
-    ///
-    /// The default [`DataSourceExecPartitionEstimator`] is sufficient for any
-    /// source that produces a `DataSourceExec` with accurate output partitioning.
     pub fn with_task_estimator(
         mut self,
         estimator: impl TaskEstimator + Send + Sync + 'static,
@@ -159,31 +240,26 @@ impl DataFusionSessionBuilder {
         self
     }
 
-    /// Returns the shared `RuntimeEnv`.
-    ///
-    /// Pass this to [`crate::worker::build_worker`] so workers share the same
-    /// object-store registry as the coordinator.
     pub fn runtime(&self) -> &Arc<RuntimeEnv> {
         &self.runtime
     }
 
-    /// Returns a slice of all registered data sources.
-    pub fn sources(&self) -> &[Arc<dyn QuickwitDataSource>] {
-        &self.sources
+    pub fn runtime_plugins(&self) -> &[Arc<dyn QuickwitRuntimePlugin>] {
+        &self.runtime_plugins
     }
 
-    /// Validate that no two sources register conflicting UDF names.
-    ///
-    /// Development-time sanity check — call once at service startup after all
-    /// sources are registered, not on every query. Not called automatically.
+    pub(crate) fn substrait_extensions(&self) -> &[Arc<dyn QuickwitSubstraitConsumerExt>] {
+        &self.substrait_extensions
+    }
+
     pub fn check_invariants(&self) -> DFResult<()> {
         let mut seen_udfs: HashSet<String> = HashSet::new();
-        for source in &self.sources {
-            let contribs = source.contributions();
-            for name in contribs.udf_names() {
+        for plugin in &self.runtime_plugins {
+            let registration = plugin.registration();
+            for name in registration.udf_names() {
                 if !seen_udfs.insert(name.clone()) {
-                    return Err(datafusion::error::DataFusionError::Configuration(format!(
-                        "two data sources both register a scalar UDF named '{name}'"
+                    return Err(DataFusionError::Configuration(format!(
+                        "two runtime plugins both register a scalar UDF named '{name}'"
                     )));
                 }
             }
@@ -191,7 +267,6 @@ impl DataFusionSessionBuilder {
         Ok(())
     }
 
-    /// Execute a Substrait plan (protobuf bytes) and return a streaming result.
     pub async fn execute_substrait(
         &self,
         plan_bytes: &[u8],
@@ -200,49 +275,36 @@ impl DataFusionSessionBuilder {
         use prost::Message;
 
         let plan = Plan::decode(plan_bytes)
-            .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
+            .map_err(|e| DataFusionError::External(Box::new(e)))?;
 
         let ctx = self.build_session()?;
-        crate::substrait::execute_substrait_plan_streaming(&plan, &ctx, &self.sources).await
+        crate::substrait::execute_substrait_plan_streaming(
+            &plan,
+            &ctx,
+            self.substrait_extensions(),
+        )
+        .await
     }
 
-    /// Build a `SessionContext` backed by the shared `RuntimeEnv`.
     pub fn build_session(&self) -> DFResult<SessionContext> {
         self.build_session_with_properties(&HashMap::new())
     }
 
-    /// Build a `SessionContext` with per-request `SessionConfig` overrides.
-    ///
-    /// Each `(key, value)` pair in `properties` is applied via
-    /// `ConfigOptions::set` *after* the defaults and any source-installed
-    /// extensions, so callers can override anything. Keys are DataFusion
-    /// option paths — e.g. `execution.target_partitions`, `execution.batch_size`.
-    ///
-    /// Intended for RPC request plumbing: `ExecuteSubstraitRequest.properties`
-    /// and `ExecuteSqlRequest.properties` flow through this method. Production
-    /// callers without per-request overrides use the zero-arg `build_session`.
     pub fn build_session_with_properties(
         &self,
         properties: &HashMap<String, String>,
     ) -> DFResult<SessionContext> {
+        let registration = self.merged_runtime_registration();
         let mut config = SessionConfig::new();
         config.options_mut().catalog.default_catalog = "quickwit".to_string();
         config.options_mut().catalog.default_schema = "public".to_string();
         config.options_mut().catalog.information_schema = true;
-        // We register our own catalog; skip the default "datafusion" one.
         config
             .options_mut()
             .catalog
             .create_default_catalog_and_schema = false;
+        registration.apply_to_config(&mut config);
 
-        // Let each source install its config extensions (split runtime factory,
-        // sync execution pool, ...) before `SessionStateBuilder::new()` runs.
-        for source in &self.sources {
-            source.configure_session(&mut config);
-        }
-
-        // Apply per-request property overrides last so callers can override
-        // anything — defaults, catalog settings, source-installed extensions.
         for (key, value) in properties {
             config.options_mut().set(key, value)?;
         }
@@ -250,69 +312,30 @@ impl DataFusionSessionBuilder {
         let mut builder = SessionStateBuilder::new()
             .with_config(config)
             .with_default_features()
-            .with_runtime_env(Arc::clone(&self.runtime));
+            .with_runtime_env(Arc::clone(&self.runtime))
+            .with_catalog_list(self.build_catalog_list()?);
 
-        // Accumulate contributions from all sources and apply them first, so
-        // source-specific physical optimizer rules run before the distributed
-        // rule inspects the fully-optimized plan.
-        let mut combined = crate::data_source::DataSourceContributions::default();
-        for source in &self.sources {
-            combined.merge(source.contributions());
-        }
-        builder = combined.apply_to_builder(builder);
+        builder = registration.apply_to_builder(builder);
 
         if let Some(resolver) = &self.worker_resolver {
-            // DistributedPhysicalOptimizerRule is added LAST so it sees the
-            // fully source-optimized plan.
             builder = builder
                 .with_distributed_worker_resolver(ArcWorkerResolver(Arc::clone(resolver)))
                 .with_distributed_task_estimator(ArcTaskEstimator(Arc::clone(&self.task_estimator)))
                 .with_physical_optimizer_rule(Arc::new(DistributedPhysicalOptimizerRule));
         }
 
-        let mut state = builder.build();
-
-        for source in &self.sources {
-            let Some((ft, factory)) = source.ddl_registration() else {
-                continue;
-            };
-            state
-                .table_factories_mut()
-                .insert(ft.clone(), Arc::clone(&factory));
-            state
-                .table_factories_mut()
-                .insert(ft.to_uppercase(), Arc::clone(&factory));
-        }
-
-        let ctx = SessionContext::new_with_state(state);
-
-        let schema_provider = Arc::new(QuickwitSchemaProvider::new(self.sources.clone()));
-        let catalog = Arc::new(MemoryCatalogProvider::new());
-        catalog
-            .register_schema("public", schema_provider)
-            .map_err(|e| {
-                datafusion::error::DataFusionError::Internal(format!(
-                    "failed to register 'public' schema: {e}"
-                ))
-            })?;
-        ctx.register_catalog("quickwit", catalog);
-
-        Ok(ctx)
+        Ok(SessionContext::new_with_state(builder.build()))
     }
 }
 
-/// Newtype wrapper so `Arc<dyn WorkerResolver>` can be passed to
-/// `with_distributed_worker_resolver`, which requires an owned `impl WorkerResolver`.
 struct ArcWorkerResolver(Arc<dyn WorkerResolver + Send + Sync>);
 
 impl WorkerResolver for ArcWorkerResolver {
-    fn get_urls(&self) -> Result<Vec<url::Url>, datafusion::error::DataFusionError> {
+    fn get_urls(&self) -> Result<Vec<url::Url>, DataFusionError> {
         self.0.get_urls()
     }
 }
 
-/// Newtype wrapper so `Arc<dyn TaskEstimator>` can be passed to
-/// `with_distributed_task_estimator`, which requires an owned `impl TaskEstimator`.
 struct ArcTaskEstimator(Arc<dyn TaskEstimator + Send + Sync>);
 
 impl std::fmt::Debug for ArcTaskEstimator {
@@ -337,5 +360,113 @@ impl TaskEstimator for ArcTaskEstimator {
         cfg: &datafusion::config::ConfigOptions,
     ) -> Option<Arc<dyn datafusion::physical_plan::ExecutionPlan>> {
         self.0.scale_up_leaf_node(plan, task_count, cfg)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use async_trait::async_trait;
+    use datafusion::execution::object_store::DefaultObjectStoreRegistry;
+    use object_store::memory::InMemory;
+    use url::Url;
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct TestSource {
+        init_calls: Arc<AtomicUsize>,
+        source_url: Url,
+        batch_size: usize,
+    }
+
+    struct UrlLookup<'a>(&'a Url);
+
+    impl AsRef<Url> for UrlLookup<'_> {
+        fn as_ref(&self) -> &Url {
+            self.0
+        }
+    }
+
+    #[async_trait]
+    impl QuickwitRuntimePlugin for TestSource {
+        fn init(&self, env: &RuntimeEnv) {
+            self.init_calls.fetch_add(1, Ordering::SeqCst);
+            env.register_object_store(&self.source_url, Arc::new(InMemory::new()));
+        }
+
+        fn registration(&self) -> crate::data_source::QuickwitRuntimeRegistration {
+            let batch_size = self.batch_size;
+            crate::data_source::QuickwitRuntimeRegistration::default().with_session_config_setter(
+                move |config| {
+                    config.options_mut().execution.batch_size = batch_size;
+                },
+            )
+        }
+    }
+
+    #[test]
+    fn runtime_settings_compose_and_reinitialize_sources() {
+        let source_url = Url::parse("test://source").unwrap();
+        let registry_url = Url::parse("memory://registry").unwrap();
+        let registry = Arc::new(DefaultObjectStoreRegistry::new());
+        registry.register_store(&registry_url, Arc::new(InMemory::new()));
+
+        let init_calls = Arc::new(AtomicUsize::new(0));
+        let source = Arc::new(TestSource {
+            init_calls: Arc::clone(&init_calls),
+            source_url: source_url.clone(),
+            batch_size: 512,
+        });
+
+        let builder = DataFusionSessionBuilder::new()
+            .with_runtime_plugin(source)
+            .with_object_store_registry(registry)
+            .unwrap()
+            .with_memory_limit(2048)
+            .unwrap();
+
+        assert_eq!(init_calls.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            builder
+                .runtime()
+                .config_entries()
+                .into_iter()
+                .find(|entry| entry.key == "datafusion.runtime.memory_limit")
+                .and_then(|entry| entry.value),
+            Some("2K".to_string())
+        );
+        assert!(builder.runtime().object_store(UrlLookup(&source_url)).is_ok());
+        assert!(
+            builder
+                .runtime()
+                .object_store(UrlLookup(&registry_url))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn session_config_setters_are_additive_and_overridable() {
+        let source = Arc::new(TestSource {
+            init_calls: Arc::new(AtomicUsize::new(0)),
+            source_url: Url::parse("test://source").unwrap(),
+            batch_size: 512,
+        });
+        let builder = DataFusionSessionBuilder::new().with_runtime_plugin(source);
+
+        let default_ctx = builder.build_session().unwrap();
+        assert_eq!(default_ctx.state().config().options().execution.batch_size, 512);
+
+        let overrides = HashMap::from([(
+            "datafusion.execution.batch_size".to_string(),
+            "1024".to_string(),
+        )]);
+        let overridden_ctx = builder.build_session_with_properties(&overrides).unwrap();
+        assert_eq!(
+            overridden_ctx.state().config().options().execution.batch_size,
+            1024
+        );
     }
 }

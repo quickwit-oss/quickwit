@@ -33,7 +33,7 @@
 //! use std::sync::Arc;
 //! use quickwit_datafusion::{DataFusionService, DataFusionSessionBuilder};
 //!
-//! let builder = Arc::new(DataFusionSessionBuilder::new().with_source(my_source));
+//! let builder = Arc::new(DataFusionSessionBuilder::new().with_runtime_plugin(my_plugin));
 //! let service = DataFusionService::new(Arc::clone(&builder));
 //!
 //! let mut stream = service.execute_substrait(&plan_bytes).await?;
@@ -186,7 +186,12 @@ impl DataFusionService {
         properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
         let ctx = self.builder.build_session_with_properties(properties)?;
-        crate::substrait::execute_substrait_plan_streaming(plan, &ctx, self.builder.sources()).await
+        crate::substrait::execute_substrait_plan_streaming(
+            plan,
+            &ctx,
+            self.builder.substrait_extensions(),
+        )
+        .await
     }
 
     /// Like [`execute_substrait`], but returns the EXPLAIN output instead of
@@ -223,7 +228,12 @@ impl DataFusionService {
         properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
         let ctx = self.builder.build_session_with_properties(properties)?;
-        crate::substrait::explain_substrait_plan_streaming(plan, &ctx, self.builder.sources()).await
+        crate::substrait::explain_substrait_plan_streaming(
+            plan,
+            &ctx,
+            self.builder.substrait_extensions(),
+        )
+        .await
     }
 
     /// Execute one or more SQL statements from a single SQL string.
