@@ -48,6 +48,10 @@ enum SearchServiceClientImpl {
 pub struct SearchServiceClient {
     client_impl: SearchServiceClientImpl,
     grpc_addr: SocketAddr,
+    /// In test/testsuite builds, overrides the load returned by `get_load()` for local clients,
+    /// so that tests using mock services don't need to set up `get_load` expectations.
+    #[cfg(any(test, feature = "testsuite"))]
+    test_load: Option<usize>,
 }
 
 impl fmt::Debug for SearchServiceClient {
@@ -74,6 +78,8 @@ impl SearchServiceClient {
         SearchServiceClient {
             client_impl: SearchServiceClientImpl::Grpc(client),
             grpc_addr,
+            #[cfg(any(test, feature = "testsuite"))]
+            test_load: None,
         }
     }
 
@@ -82,7 +88,19 @@ impl SearchServiceClient {
         SearchServiceClient {
             client_impl: SearchServiceClientImpl::Local(service),
             grpc_addr,
+            #[cfg(any(test, feature = "testsuite"))]
+            test_load: None,
         }
+    }
+
+    /// Sets the load to return from `get_load()` for this client in test/testsuite builds.
+    ///
+    /// This short-circuits the call to the underlying service so that mock services
+    /// do not need to set up `get_load` expectations in tests unrelated to load-aware placement.
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn with_test_load(mut self, load: usize) -> Self {
+        self.test_load = Some(load);
+        self
     }
 
     /// Return the grpc_addr the underlying client connects to.
@@ -221,6 +239,12 @@ impl SearchServiceClient {
     /// Returns the current load of the targeted node, expressed as the sum of job costs
     /// across all queued and active tasks in its SearchPermitProvider.
     pub async fn get_load(&mut self) -> crate::Result<usize> {
+        // In test/testsuite builds, short-circuit for local clients so that mock services
+        // do not need a `get_load` expectation in tests unrelated to load-aware placement.
+        #[cfg(any(test, feature = "testsuite"))]
+        if let SearchServiceClientImpl::Local(_) = &self.client_impl {
+            return Ok(self.test_load.unwrap_or(0));
+        }
         match &mut self.client_impl {
             SearchServiceClientImpl::Local(service) => Ok(service.get_load().await),
             SearchServiceClientImpl::Grpc(grpc_client) => {

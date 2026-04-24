@@ -195,9 +195,7 @@ impl SearchJobPlacer {
         const GET_LOAD_TIMEOUT: Duration = Duration::from_millis(200);
         let load_futures = candidate_nodes.iter_mut().map(|node| {
             let mut client = node.client.clone();
-            async move {
-                tokio::time::timeout(GET_LOAD_TIMEOUT, client.get_load()).await
-            }
+            async move { tokio::time::timeout(GET_LOAD_TIMEOUT, client.get_load()).await }
         });
         let loads = join_all(load_futures).await;
         for (node, load_result) in candidate_nodes.iter_mut().zip(loads) {
@@ -226,25 +224,50 @@ impl SearchJobPlacer {
         let mut job_assignments: HashMap<SocketAddr, (SearchServiceClient, Vec<J>)> =
             HashMap::with_capacity(num_nodes);
 
-        // Only reachable nodes (Some) contribute to the existing load sum.
-        // Unreachable nodes are excluded so they don't inflate the target and
-        // cause us to overload healthy nodes.
-        let existing_load: usize = candidate_nodes
-            .iter()
-            .filter_map(|node| node.load)
-            .sum();
         let total_load: usize = jobs.iter().map(|job| job.cost()).sum();
 
+        // Compute `target_load` using only reachable nodes (those with a known
+        // load), iteratively excluding nodes whose existing load already exceeds
+        // the computed target. This converges because:
+        //   (a) each round can only shrink the schedulable set, and
+        //   (b) with total_load > 0 a single-node set is always stable: its
+        //       target = (load + total_load) * 1.05 > load, so it never
+        //       excludes itself.
+        //
+        // After convergence every schedulable node has load < target, which
+        // guarantees total remaining capacity across those nodes is at least
+        // total_load * 1.05 > total_load. The "found no lightly loaded
+        // searcher" warn path is therefore unreachable in practice.
+        //
         // allow around 5% disparity. Round up so we never end up in a case where
-        // target_load * num_nodes < total_load
+        // target_load * schedulable_nodes < total_load.
         // some of our tests needs 2 splits to be put on 2 different searchers. It makes sense for
         // these tests to keep doing so (testing root merge). Either we can make the allowed
         // difference stricter, find the right split names ("split6" instead of "split2" works).
         // or modify mock_split_meta() so that not all splits have the same job cost
         // for now i went with the mock_split_meta() changes.
         const ALLOWED_DIFFERENCE: usize = 105;
-        let target_load =
-            ((existing_load + total_load) * ALLOWED_DIFFERENCE).div_ceil(num_nodes * 100);
+        let target_load = {
+            let mut schedulable: Vec<usize> = candidate_nodes
+                .iter()
+                .filter_map(|node| node.load)
+                .collect();
+            loop {
+                if schedulable.is_empty() {
+                    // All nodes are unreachable; the job loop falls through to
+                    // the warn path and uses candidate_nodes[0] as a fallback.
+                    break 0;
+                }
+                let existing_load: usize = schedulable.iter().sum();
+                let target = ((existing_load + total_load) * ALLOWED_DIFFERENCE)
+                    .div_ceil(schedulable.len() * 100);
+                let prev_len = schedulable.len();
+                schedulable.retain(|&load| load < target);
+                if schedulable.len() == prev_len {
+                    break target;
+                }
+            }
+        };
         for job in jobs {
             sort_by_rendez_vous_hash(&mut candidate_nodes, job.split_id());
 
@@ -358,13 +381,23 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{MockSearchService, SearchJob, searcher_pool_for_test};
+    use std::sync::Arc;
 
-    fn mock_search_service(load: usize) -> MockSearchService {
-        let mut mock = MockSearchService::new();
-        mock.expect_get_load().returning(move || load);
-        mock
+    use super::*;
+    use crate::{MockSearchService, SearchJob, SearchServiceClient, searcher_pool_for_test};
+
+    fn searcher_pool_with_loads_for_test(
+        iter: impl IntoIterator<Item = (&'static str, usize)>,
+    ) -> SearcherPool {
+        SearcherPool::from_iter(iter.into_iter().map(|(grpc_addr_str, load)| {
+            let grpc_addr: SocketAddr = grpc_addr_str
+                .parse()
+                .expect("the gRPC address should be a valid socket address");
+            let client =
+                SearchServiceClient::from_service(Arc::new(MockSearchService::new()), grpc_addr)
+                    .with_test_load(load);
+            (grpc_addr, client)
+        }))
     }
 
     #[test]
@@ -433,7 +466,7 @@ mod tests {
         }
         {
             let searcher_pool =
-                searcher_pool_for_test([("127.0.0.1:1001", mock_search_service(0))]);
+                searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
             let search_job_placer = SearchJobPlacer::new(searcher_pool);
             let jobs = vec![
                 SearchJob::for_test("split1", 1),
@@ -461,8 +494,8 @@ mod tests {
         }
         {
             let searcher_pool = searcher_pool_for_test([
-                ("127.0.0.1:1001", mock_search_service(0)),
-                ("127.0.0.1:1002", mock_search_service(0)),
+                ("127.0.0.1:1001", MockSearchService::new()),
+                ("127.0.0.1:1002", MockSearchService::new()),
             ]);
             let search_job_placer = SearchJobPlacer::new(searcher_pool);
             let jobs = vec![
@@ -506,8 +539,8 @@ mod tests {
         }
         {
             let searcher_pool = searcher_pool_for_test([
-                ("127.0.0.1:1001", mock_search_service(0)),
-                ("127.0.0.1:1002", mock_search_service(0)),
+                ("127.0.0.1:1001", MockSearchService::new()),
+                ("127.0.0.1:1002", MockSearchService::new()),
             ]);
             let search_job_placer = SearchJobPlacer::new(searcher_pool);
             let jobs = vec![
@@ -541,11 +574,11 @@ mod tests {
     #[tokio::test]
     async fn test_search_job_placer_many_splits() {
         let searcher_pool = searcher_pool_for_test([
-            ("127.0.0.1:1001", mock_search_service(0)),
-            ("127.0.0.1:1002", mock_search_service(0)),
-            ("127.0.0.1:1003", mock_search_service(0)),
-            ("127.0.0.1:1004", mock_search_service(0)),
-            ("127.0.0.1:1005", mock_search_service(0)),
+            ("127.0.0.1:1001", MockSearchService::new()),
+            ("127.0.0.1:1002", MockSearchService::new()),
+            ("127.0.0.1:1003", MockSearchService::new()),
+            ("127.0.0.1:1004", MockSearchService::new()),
+            ("127.0.0.1:1005", MockSearchService::new()),
         ]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let jobs = (0..1000)
@@ -562,26 +595,127 @@ mod tests {
         }
     }
 
-    // Verifies that pre-existing load on a node shifts new jobs away from it.
+    // With both nodes at equal load, each split should go to its highest-affinity
+    // node as determined by rendezvous hashing.
     //
-    // Node 1001 reports existing load of 1000; node 1002 reports 0.
-    // Two jobs with split affinities that would both prefer 1001 (by rendezvous
-    // hash) should nevertheless be sent to 1002 because 1001 is already loaded.
+    // Affinities for the (1001, 1002) pool (from test_search_job_placer):
+    //   1001 ← split3, split4, split5
+    //   1002 ← split1, split2, split6
     #[tokio::test]
-    async fn test_search_job_placer_existing_load() {
-        // split1 and split2 are both affinized to 1001 when both nodes are
-        // equally loaded. With node 1001 pre-seeded at load 1000 the placer
-        // should route both splits to the idle node 1002.
+    async fn test_equal_load_affinity_respected() {
         let searcher_pool = searcher_pool_for_test([
-            ("127.0.0.1:1001", mock_search_service(1000)),
-            ("127.0.0.1:1002", mock_search_service(0)),
+            ("127.0.0.1:1001", MockSearchService::new()),
+            ("127.0.0.1:1002", MockSearchService::new()),
         ]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        // split1 → 1002, split3 → 1001 at equal load.
+        let jobs = vec![
+            SearchJob::for_test("split1", 1),
+            SearchJob::for_test("split3", 3),
+        ];
+        let mut assigned: Vec<(SocketAddr, Vec<SearchJob>)> = search_job_placer
+            .assign_jobs(jobs, &HashSet::default())
+            .await
+            .unwrap()
+            .map(|(client, jobs)| (client.grpc_addr(), jobs))
+            .collect();
+        assigned.sort_unstable_by_key(|(addr, _)| *addr);
+        let addr_1001: SocketAddr = ([127, 0, 0, 1], 1001).into();
+        let addr_1002: SocketAddr = ([127, 0, 0, 1], 1002).into();
+        assert_eq!(assigned.len(), 2);
+        assert_eq!(
+            assigned[0],
+            (addr_1001, vec![SearchJob::for_test("split3", 3)])
+        );
+        assert_eq!(
+            assigned[1],
+            (addr_1002, vec![SearchJob::for_test("split1", 1)])
+        );
+    }
 
-        // Use splits that rendezvous-hash to 1001 when loads are equal.
-        // "split1" and "split3" both naturally prefer 1001 in the balanced case
-        // (verified by the basic test above). With 1001 pre-loaded they should
-        // all go to 1002.
+    // When one node has high existing load, jobs are redirected to lighter nodes
+    // even if that means ignoring affinity.
+    //
+    // split3 naturally prefers 1001. With 1001 pre-loaded above the target, the
+    // placer should send split3 to 1002 instead.
+    #[tokio::test]
+    async fn test_existing_load_overrides_affinity() {
+        let searcher_pool =
+            searcher_pool_with_loads_for_test([("127.0.0.1:1001", 1_000), ("127.0.0.1:1002", 0)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let jobs = vec![SearchJob::for_test("split3", 3)];
+        let assigned: Vec<(SocketAddr, Vec<SearchJob>)> = search_job_placer
+            .assign_jobs(jobs, &HashSet::default())
+            .await
+            .unwrap()
+            .map(|(client, jobs)| (client.grpc_addr(), jobs))
+            .collect();
+        assert_eq!(assigned.len(), 1);
+        let expected_addr: SocketAddr = ([127, 0, 0, 1], 1002).into();
+        assert_eq!(assigned[0].0, expected_addr);
+    }
+
+    // A node with extreme existing load should receive no new jobs, and the
+    // remaining idle nodes should receive a balanced share.
+    //
+    // This specifically exercises the two-pass target computation. With a
+    // single-pass mean, the overloaded node inflates target_load to ~350_035,
+    // which means both idle nodes are far below target and all 100 jobs pile
+    // onto whichever one rendezvous hash prefers most (100:0 split). The
+    // second pass recomputes the target over only the two idle nodes (~53),
+    // forcing balanced distribution (~50:50).
+    #[tokio::test]
+    async fn test_extreme_load_excluded_remaining_balanced() {
+        let searcher_pool = searcher_pool_with_loads_for_test([
+            ("127.0.0.1:1001", 1_000_000),
+            ("127.0.0.1:1002", 0),
+            ("127.0.0.1:1003", 0),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let jobs = (0..100)
+            .map(|id| SearchJob::for_test(&format!("split{id}"), 1))
+            .collect();
+        let mut assigned: Vec<(SocketAddr, Vec<SearchJob>)> = search_job_placer
+            .assign_jobs(jobs, &HashSet::default())
+            .await
+            .unwrap()
+            .map(|(client, jobs)| (client.grpc_addr(), jobs))
+            .collect();
+        assigned.sort_unstable_by_key(|(addr, _)| *addr);
+
+        let overloaded_addr: SocketAddr = ([127, 0, 0, 1], 1001).into();
+        for (addr, _) in &assigned {
+            assert_ne!(
+                *addr, overloaded_addr,
+                "overloaded node must not receive new jobs"
+            );
+        }
+        assert_eq!(
+            assigned.len(),
+            2,
+            "only the two idle nodes should receive jobs"
+        );
+        for (addr, jobs) in &assigned {
+            assert!(
+                jobs.len() >= 35 && jobs.len() <= 65,
+                "node {} received {} jobs, expected roughly 50",
+                addr,
+                jobs.len()
+            );
+        }
+    }
+
+    // Verifies that pre-existing load on a node shifts new jobs away from it,
+    // even for splits whose affinity points to the loaded node.
+    //
+    // Node 1001 has load 1000; node 1002 is idle.
+    // split3 prefers 1001 by affinity; split1 prefers 1002.
+    // Both should land on 1002 because 1001 is excluded by the target computation.
+    #[tokio::test]
+    async fn test_search_job_placer_existing_load() {
+        let searcher_pool =
+            searcher_pool_with_loads_for_test([("127.0.0.1:1001", 1000), ("127.0.0.1:1002", 0)]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let jobs = vec![
             SearchJob::for_test("split1", 1),
             SearchJob::for_test("split3", 3),
@@ -594,9 +728,8 @@ mod tests {
             .collect();
         assigned_jobs.sort_unstable_by_key(|(addr, _)| *addr);
 
-        // All jobs should land on 1002 (the idle node).
         assert_eq!(assigned_jobs.len(), 1);
-        let (addr, _jobs) = &assigned_jobs[0];
+        let (addr, _) = &assigned_jobs[0];
         let expected_addr: SocketAddr = ([127, 0, 0, 1], 1002).into();
         assert_eq!(*addr, expected_addr);
     }
