@@ -77,6 +77,12 @@ impl KnownMetrics {
         self.entries.iter().map(|(k, v)| (k.as_str(), *v))
     }
 
+    /// Returns the `Entry` for the given metric name, allowing callers to
+    /// use the standard `HashMap::Entry` API for conditional operations.
+    pub fn entry(&mut self, name: String) -> std::collections::hash_map::Entry<'_, String, u64> {
+        self.entries.entry(name)
+    }
+
     /// Returns the number of known metrics.
     pub fn len(&self) -> usize {
         self.entries.len()

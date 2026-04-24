@@ -15,6 +15,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{Stream, StreamExt};
@@ -231,7 +232,7 @@ impl TaskTransform<Event> for MetricMetadataTransform {
         let mut input = task;
         let mut known_metrics = self.known_metrics;
         let mut pending = self.pending;
-        let flush_client = self.flush_client;
+        let flush_client = Arc::new(self.flush_client);
         let config = self.config;
         let persist_path = config.persist_file_path.clone();
 
@@ -240,10 +241,34 @@ impl TaskTransform<Event> for MetricMetadataTransform {
         let mut persist_timer =
             tokio::time::interval(Duration::from_secs(config.persist_interval_secs));
 
+        // Channel for receiving flush results from background tasks.
+        // Decouples collecting unknown metrics from reporting them so that
+        // slow HTTP calls do not stall the event pipeline (same pattern as
+        // host-tags enrichment).
+        let (flush_result_tx, mut flush_result_rx) =
+            tokio::sync::mpsc::channel::<Result<Vec<String>, flush_client::FlushError>>(1);
+        let mut flush_in_flight = false;
+
         Box::pin(async_stream::stream! {
             loop {
                 tokio::select! {
                     biased;
+
+                    // Highest priority: drain background flush results so
+                    // known_metrics stays up-to-date for classification.
+                    Some(result) = flush_result_rx.recv() => {
+                        flush_in_flight = false;
+                        match result {
+                            Ok(succeeded) => {
+                                for name in succeeded {
+                                    known_metrics.insert(name);
+                                }
+                            }
+                            Err(err) => {
+                                warn!(error = %err, "metadata flush failed, will retry on next cycle");
+                            }
+                        }
+                    }
 
                     maybe_event = input.next() => {
                         let Some(event) = maybe_event else {
@@ -251,48 +276,44 @@ impl TaskTransform<Event> for MetricMetadataTransform {
                             break;
                         };
 
-                        // Per-event: classify metric and accumulate unknowns
+                        // Per-event: classify metric and accumulate unknowns.
+                        // Only allocate the name String when the metric is
+                        // unknown — the common-case (known) path is alloc-free.
                         if let Event::Metric(ref metric) = event {
-                            let name = metric.name().to_string();
-                            if !known_metrics.contains(&name) {
+                            let metric_name = metric.name();
+                            if !known_metrics.contains(metric_name) {
                                 let type_info = map_metric_type(metric);
                                 // HashMap dedup; last-seen-wins
-                                pending.insert(name, type_info);
+                                pending.insert(metric_name.to_string(), type_info);
                             }
                         }
 
-                        // D-04: batch_size trigger -- flush before yield
-                        if pending.len() >= config.batch_size {
-                            match flush_client.flush_pending(&pending).await {
-                                Ok(succeeded) => {
-                                    for name in succeeded {
-                                        known_metrics.insert(name);
-                                    }
-                                }
-                                Err(err) => {
-                                    warn!(error = %err, "batch-size flush failed, pending metrics dropped");
-                                }
-                            }
-                            pending.clear();
+                        // D-04: batch_size trigger — spawn background flush
+                        if pending.len() >= config.batch_size && !flush_in_flight {
+                            let batch = std::mem::take(&mut pending);
+                            let client = flush_client.clone();
+                            let tx = flush_result_tx.clone();
+                            flush_in_flight = true;
+                            tokio::spawn(async move {
+                                let result = client.flush_pending(&batch).await;
+                                let _ = tx.send(result).await;
+                            });
                             flush_timer.reset(); // D-05: avoid double-flush
                         }
 
                         yield event; // XFRM-01: pass-through unchanged
                     }
 
-                    _ = flush_timer.tick() => {
+                    _ = flush_timer.tick(), if !flush_in_flight => {
                         if !pending.is_empty() {
-                            match flush_client.flush_pending(&pending).await {
-                                Ok(succeeded) => {
-                                    for name in succeeded {
-                                        known_metrics.insert(name);
-                                    }
-                                }
-                                Err(err) => {
-                                    warn!(error = %err, "interval flush failed, pending metrics dropped");
-                                }
-                            }
-                            pending.clear();
+                            let batch = std::mem::take(&mut pending);
+                            let client = flush_client.clone();
+                            let tx = flush_result_tx.clone();
+                            flush_in_flight = true;
+                            tokio::spawn(async move {
+                                let result = client.flush_pending(&batch).await;
+                                let _ = tx.send(result).await;
+                            });
                         }
                     }
 
@@ -309,7 +330,23 @@ impl TaskTransform<Event> for MetricMetadataTransform {
             }
 
             // D-06: post-loop shutdown sequence
-            // Step 1: flush remaining pending metrics
+            // Step 1: wait for any in-flight background flush to complete
+            if flush_in_flight {
+                if let Some(result) = flush_result_rx.recv().await {
+                    match result {
+                        Ok(succeeded) => {
+                            for name in succeeded {
+                                known_metrics.insert(name);
+                            }
+                        }
+                        Err(err) => {
+                            warn!(error = %err, "in-flight flush failed during shutdown");
+                        }
+                    }
+                }
+            }
+
+            // Step 2: flush remaining pending metrics (shutdown — OK to await inline)
             if !pending.is_empty() {
                 match flush_client.flush_pending(&pending).await {
                     Ok(succeeded) => {
@@ -325,10 +362,10 @@ impl TaskTransform<Event> for MetricMetadataTransform {
                 pending.clear();
             }
 
-            // Step 2: prune expired entries
+            // Step 3: prune expired entries
             known_metrics.prune_expired();
 
-            // Step 3: D-08: always persist CSV on shutdown
+            // Step 4: D-08: always persist CSV on shutdown
             if let Err(err) = csv_persistence::save_to_csv(
                 Path::new(&persist_path),
                 known_metrics.iter(),

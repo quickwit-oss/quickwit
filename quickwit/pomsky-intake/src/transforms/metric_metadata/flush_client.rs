@@ -53,19 +53,10 @@ fn is_zero(val: &i64) -> bool {
 #[derive(Deserialize)]
 struct UpsertResponse {
     /// Names of metrics successfully upserted. May be null, empty, or a subset.
-    #[serde(default, deserialize_with = "deserialize_null_as_empty_vec")]
-    succeeded_metrics: Vec<String>,
-}
-
-/// Deserializes a JSON value as `Vec<String>`, treating `null` as an empty vec.
-/// `#[serde(default)]` handles the missing-field case; this function handles
-/// an explicitly-present `null` value.
-fn deserialize_null_as_empty_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let opt: Option<Vec<String>> = Option::deserialize(deserializer)?;
-    Ok(opt.unwrap_or_default())
+    /// `Option<Vec<..>>` handles all three wire cases: missing field (`#[serde(default)]`
+    /// → `None`), explicit `null` → `None`, and a present array → `Some(vec)`.
+    #[serde(default)]
+    succeeded_metrics: Option<Vec<String>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +150,7 @@ impl FlushClient {
             .await
             .map_err(|err| FlushError::ResponseParse(err.to_string()))?;
 
-        Ok(api_response.succeeded_metrics)
+        Ok(api_response.succeeded_metrics.unwrap_or_default())
     }
 }
 

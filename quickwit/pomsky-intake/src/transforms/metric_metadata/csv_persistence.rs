@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 
 use tempfile::NamedTempFile;
@@ -88,19 +88,30 @@ pub fn save_to_csv<'a>(
 ) -> anyhow::Result<()> {
     // D-05: create temp file in same directory for atomic rename
     let parent = path.parent().unwrap_or(Path::new("."));
-    let mut temp_file = NamedTempFile::new_in(parent)?;
+    let temp_file = NamedTempFile::new_in(parent)?;
+    let mut writer = BufWriter::new(temp_file);
 
     // D-03: header row
-    writeln!(temp_file, "{}", CSV_HEADER)?;
+    writeln!(writer, "{}", CSV_HEADER)?;
 
     // D-02: metric_name,expiry_ts
     for (name, expiry_ts) in entries {
-        writeln!(temp_file, "{},{}", name, expiry_ts)?;
+        writeln!(writer, "{},{}", name, expiry_ts)?;
     }
 
-    temp_file.flush()?;
+    // Flush the BufWriter, then recover the underlying NamedTempFile.
+    writer.flush()?;
+    let temp_file = writer.into_inner().map_err(|e| e.into_error())?;
+
+    // fsync the temp file (data + metadata) before rename
+    temp_file.as_file().sync_all()?;
+
     // D-05: atomic rename
     temp_file.persist(path)?;
+
+    // fsync the parent directory so the rename itself survives a crash
+    std::fs::File::open(parent)?.sync_all()?;
+
     Ok(())
 }
 
