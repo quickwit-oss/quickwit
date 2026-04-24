@@ -219,7 +219,7 @@ impl AggregationMapper {
                 let regex = include.replace('*', ".*");
                 if regex.contains("*") {
                     // If the original include had a `*`, we don't surround with `.*`
-                    IncludeExcludeParam::Regex(include)
+                    IncludeExcludeParam::Regex(regex)
                 } else {
                     IncludeExcludeParam::Regex(format!(".*{}.*", include))
                 }
