@@ -48,6 +48,9 @@ pub const OTEL_METRICS_INDEX_ID: &str = "otel-metrics-v0_9";
 /// directly and queries via DataFusion. The doc mapping is unused; this config
 /// exists only so the index can be registered in the metastore for source
 /// assignment and lifecycle management.
+///
+/// TODO: As a temporary hack, we are including a timestamp_field, so that
+/// we can pass the retention policy validation.
 const OTEL_METRICS_INDEX_CONFIG: &str = r#"
 version: 0.8
 
@@ -55,9 +58,18 @@ index_id: ${INDEX_ID}
 
 doc_mapping:
   mode: dynamic
+  field_mappings:
+    - name: timestamp
+      type: datetime
+      fast: true
+  timestamp_field: timestamp
 
 indexing_settings:
   commit_timeout_secs: 15
+
+retention:
+  period: 30 days
+  schedule: hourly
 
 search_settings:
   default_search_fields: []
@@ -579,6 +591,14 @@ mod tests {
         let index_config =
             OtlpGrpcMetricsService::index_config(&Uri::for_test("ram:///indexes")).unwrap();
         assert_eq!(index_config.index_id, OTEL_METRICS_INDEX_ID);
+        let retention = index_config
+            .retention_policy_opt
+            .expect("retention policy should be set");
+        assert_eq!(
+            retention.retention_period().unwrap(),
+            std::time::Duration::from_secs(30 * 24 * 3600)
+        );
+        assert_eq!(retention.evaluation_schedule, "hourly");
     }
 
     #[tokio::test]
