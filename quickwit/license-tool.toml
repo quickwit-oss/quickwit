@@ -8,3 +8,10 @@
 
 # openssl-macros doesn't declare a repository in its crate metadata
 "openssl-macros" = { origin = "https://github.com/sfackler/rust-openssl" }
+
+# datafusion-distributed 0.1.0 is pinned as a git dep; the Cargo.toml at that
+# rev does not declare a license field (added upstream after our pinned commit).
+# The crate is Apache-2.0 — see the crate's current Cargo.toml and
+# https://crates.io/crates/datafusion-distributed. Bumping to the crates.io
+# release requires a datafusion 52 → 53 workspace bump, tracked separately.
+"datafusion-distributed-0.1.0" = { license = "Apache-2.0", origin = "https://github.com/datafusion-contrib/datafusion-distributed" }
