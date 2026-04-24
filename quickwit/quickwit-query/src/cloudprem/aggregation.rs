@@ -211,16 +211,19 @@ impl AggregationMapper {
         let missing = attribute_group_by
             .missing
             .map(tantivy::aggregation::Key::Str);
-        let include = attribute_group_by.include.map(|include| {
-            // Replace `*` with `.*` to allow wildcard matching.
-            let regex = include.replace('*', ".*");
-            if regex.contains("*") {
-                // If the original include had a `*`, we don't surround with `.*`
-                IncludeExcludeParam::Regex(include)
-            } else {
-                IncludeExcludeParam::Regex(format!(".*{}.*", include))
-            }
-        });
+        let include = attribute_group_by
+            .include
+            .filter(|s| !s.is_empty())
+            .map(|include| {
+                // Replace `*` with `.*` to allow wildcard matching.
+                let regex = include.replace('*', ".*");
+                if regex.contains("*") {
+                    // If the original include had a `*`, we don't surround with `.*`
+                    IncludeExcludeParam::Regex(regex)
+                } else {
+                    IncludeExcludeParam::Regex(format!(".*{}.*", include))
+                }
+            });
 
         let Some(child) = attribute_group_by.child else {
             return Err(missing_required("attribute_fields.child"));
@@ -1396,6 +1399,52 @@ mod tests {
         let res = to_tantivy_aggregation(evp_agg, 0).unwrap();
 
         assert_eq!(res, expected);
+    }
+
+    #[test]
+    fn test_count_by_facet_with_include() {
+        let make_agg = |include: Option<&str>| {
+            let evp_agg = Aggregation {
+                aggregation: Some(AggregationEnum::AttributeGroupBy(Box::new(
+                    AttributeGroupBy {
+                        include: include.map(str::to_string),
+                        expression: Some(status_expr()),
+                        limit: 50,
+                        sort: None,
+                        missing: None,
+                        total: None,
+                        child: Some(Box::new(Aggregation {
+                            aggregation: Some(AggregationEnum::Computes(Computes {
+                                aggregation: vec![Aggregation {
+                                    aggregation: Some(count_metric()),
+                                }],
+                                time_grouping: vec![],
+                            })),
+                        })),
+                    },
+                ))),
+            };
+            to_tantivy_aggregation(evp_agg, 0).unwrap()
+        };
+
+        // A non-empty include value should produce a regex filter.
+        let res = make_agg(Some("error"));
+        let terms = match &res["status"].agg {
+            AggregationVariants::Terms(terms) => terms,
+            other => panic!("expected Terms, got {other:?}"),
+        };
+        assert_eq!(
+            terms.include,
+            Some(IncludeExcludeParam::Regex(".*error.*".to_string()))
+        );
+
+        // An empty include string must be treated the same as None — no regex built.
+        let res_empty = make_agg(Some(""));
+        let terms_empty = match &res_empty["status"].agg {
+            AggregationVariants::Terms(terms) => terms,
+            other => panic!("expected Terms, got {other:?}"),
+        };
+        assert_eq!(terms_empty.include, None);
     }
 
     #[test]
