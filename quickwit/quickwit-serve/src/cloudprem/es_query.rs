@@ -22,6 +22,7 @@ use quickwit_config::NodeConfig;
 use quickwit_proto::cloudprem::{CloudPremError, CloudPremResult, EsHttpRequest, EsHttpResponse};
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::SearchService;
+use serde_json::Value;
 use tracing::warn;
 
 use crate::BuildInfo;
@@ -150,7 +151,8 @@ pub(crate) async fn handle_es_query(
 
         [index, "_search"] => {
             let params = parse_query_params::<SearchQueryParams>(query_string)?;
-            let search_body: SearchBody = parse_body_or_default(&body)?;
+            let mut search_body: SearchBody = parse_body_or_default(&body)?;
+            transform_aggs(&mut search_body.aggs);
             dispatch_es!(es_compat_index_search(
                 vec![index.to_string()],
                 params,
@@ -253,17 +255,54 @@ fn es_error_to_response(
     }
 }
 
+/// Known aggregation types Trino ES connector sends
+const AGG_TYPES: &[&str] = &["composite", "sum", "avg", "min", "max", "value_count"];
+
+/// Returns aggregation type (e.g. `"composite"`, `"sum"`) for a given
+/// aggregation value
+fn agg_type(value: &Value) -> Option<&'static str> {
+    let obj = value.as_object()?;
+    AGG_TYPES.iter().copied().find(|t| obj.contains_key(*t))
+}
+
+/// Prefix each aggregation key with its type (e.g. "groupBy" → "composite#groupBy",
+/// "sum_duration" → "sum#sum_duration") so the response carries the typed_keys prefix
+/// Trino's ES client expects. Applied recursively to nested sub-aggregations.
+fn transform_aggs(aggs: &mut serde_json::Map<String, Value>) {
+    let old = std::mem::take(aggs);
+    for (key, mut value) in old {
+        // Recurse into nested sub-aggregations.
+        // Trino sends them under the "aggregations" key; tantivy expects "aggs".
+        if let Some(obj) = value.as_object_mut()
+            && let Some(sub_aggs) = obj.remove("aggregations")
+            && let Value::Object(mut sub_map) = sub_aggs
+        {
+            transform_aggs(&mut sub_map);
+            obj.insert("aggs".to_string(), Value::Object(sub_map));
+        }
+
+        // Prefix current level key
+        let formatted_key = if let Some(prefix) = agg_type(&value) {
+            format!("{prefix}#{key}")
+        } else {
+            key
+        };
+        aggs.insert(formatted_key, value);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use assert_json_diff::assert_json_eq;
     use quickwit_cluster::{ChannelTransport, create_cluster_for_test};
     use quickwit_config::NodeConfig;
     use quickwit_proto::cloudprem::{CloudPremError, EsHttpRequest};
     use quickwit_proto::metastore::MetastoreServiceClient;
     use quickwit_search::MockSearchService;
 
-    use super::handle_es_query;
+    use super::{handle_es_query, transform_aggs};
 
     fn make_request(method: &str, path: &str) -> EsHttpRequest {
         EsHttpRequest {
@@ -368,6 +407,70 @@ mod tests {
         // query string should be stripped from path routing
         let resp = call_es_query("GET", "/_aliases?pretty=true").await.unwrap();
         assert_eq!(resp.status_code, 200);
+    }
+
+    #[test]
+    fn test_transform_aggs_simple() {
+        let mut aggs = serde_json::Map::new();
+        aggs.insert(
+            "sum_duration".to_string(),
+            serde_json::json!({"sum": {"field": "@duration"}}),
+        );
+        transform_aggs(&mut aggs);
+        assert!(!aggs.contains_key("sum_duration"));
+        assert!(aggs.contains_key("sum#sum_duration"));
+    }
+
+    #[test]
+    fn test_transform_aggs_mixed() {
+        let mut aggs = serde_json::Map::new();
+        aggs.insert(
+            "groupBy".to_string(),
+            serde_json::json!({
+                "composite": {
+                    "sources": [{"service": {"terms": {"field": "service"}}}]
+                }
+            }),
+        );
+        aggs.insert(
+            "avg_duration".to_string(),
+            serde_json::json!({"avg": {"field": "@duration"}}),
+        );
+        transform_aggs(&mut aggs);
+        assert!(aggs.contains_key("composite#groupBy"));
+        assert!(aggs.contains_key("avg#avg_duration"));
+    }
+
+    #[test]
+    fn test_transform_aggs_nested() {
+        let mut aggs = serde_json::Map::new();
+        aggs.insert(
+            "groupBy".to_string(),
+            serde_json::json!({
+                "composite": {
+                    "sources": [{"service": {"terms": {"field": "service"}}}]
+                },
+                "aggregations": {
+                    "sum_duration": {"sum": {"field": "@duration"}}
+                }
+            }),
+        );
+        transform_aggs(&mut aggs);
+        let outer = &aggs["composite#groupBy"];
+        assert!(outer.get("aggregations").is_none());
+
+        let sub = outer.get("aggs").and_then(|v| v.as_object()).unwrap();
+        assert!(sub.contains_key("sum#sum_duration"));
+    }
+
+    #[test]
+    fn test_transform_aggs_unknown_type() {
+        let mut aggs = serde_json::Map::new();
+        let original = serde_json::json!({"terms": {"field": "service"}});
+        aggs.insert("my_terms".to_string(), original.clone());
+        transform_aggs(&mut aggs);
+
+        assert_json_eq!(aggs["my_terms"], original);
     }
 
     #[test]

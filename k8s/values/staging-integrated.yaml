@@ -355,7 +355,7 @@ config:
     lambda:
       function_name: cloudprem-search
       max_splits_per_invocation: 8
-      offload_threshold: 0
+      offload_threshold: 1000000000
       auto_deploy:
         execution_role_arn: arn:aws:iam::727006795293:role/cloudprem-lambda-execution
 
