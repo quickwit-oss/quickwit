@@ -35,19 +35,19 @@ quickwit-search = { workspace = true }
 quickwit-storage = { workspace = true }
 
 arrow = { workspace = true }
-datafusion = "52"
-datafusion-substrait = "52"
-datafusion-datasource = "52"
-datafusion-sql = "52"
-datafusion-physical-plan = "52"
-datafusion-datasource-parquet = "52"
-datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed", rev = "0f2c8be3e148b0bd5c7f17b23f2df8bb1201d5fb" }
-object_store = "0.12"
+datafusion = "53"
+datafusion-substrait = "53"
+datafusion-datasource = "53"
+datafusion-sql = "53"
+datafusion-physical-plan = "53"
+datafusion-datasource-parquet = "53"
+datafusion-distributed = "1.0"
+object_store = "0.13"
 
 [dev-dependencies]
 bytesize = { workspace = true }
-datafusion = "52"
-datafusion-substrait = "52"
+datafusion = "53"
+datafusion-substrait = "53"
 prost = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

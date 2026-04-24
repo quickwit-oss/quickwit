@@ -23,11 +23,11 @@ tracing = { workspace = true }
 url = "2"
 
 arrow = { workspace = true }
-datafusion = "52"
-datafusion-substrait = "52"
-datafusion-physical-plan = "52"
-datafusion-distributed = { git = "https://github.com/datafusion-contrib/datafusion-distributed", rev = "0f2c8be3e148b0bd5c7f17b23f2df8bb1201d5fb" }
-object_store = "0.12"
+datafusion = "53"
+datafusion-substrait = "53"
+datafusion-physical-plan = "53"
+datafusion-distributed = "1.0"
+object_store = "0.13"
 
 # gRPC surface is opt-in. The extension traits + session builder do not need
 # tonic or the generated proto; downstream crates that only implement runtime

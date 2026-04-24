@@ -183,12 +183,8 @@ impl SchemaProvider for MetricsSchemaProvider {
             return Ok(Some(provider));
         }
 
-        resolve_metrics_table_provider(
-            self.index_resolver.as_ref(),
-            name,
-            minimal_base_schema(),
-        )
-        .await
+        resolve_metrics_table_provider(self.index_resolver.as_ref(), name, minimal_base_schema())
+            .await
     }
 
     fn table_exist(&self, name: &str) -> bool {

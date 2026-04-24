@@ -26,19 +26,20 @@
 //! This mirrors how `quickwit-search` uses the resolver:
 //! `storage_resolver.resolve(&uri).await` per request, no global registry.
 //!
-//! Only read operations (`get_opts`, `get_range`, `head`) are implemented.
-//! All write and list operations return `NotSupported` — DataFusion only
-//! reads parquet files through this store.
+//! Only `get_opts` is implemented. All write, delete, copy, and list
+//! operations return `NotSupported` — DataFusion only reads parquet files
+//! through this store.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use futures::StreamExt;
 use futures::stream::BoxStream;
 use object_store::path::Path as ObjectPath;
 use object_store::{
-    GetOptions, GetRange, GetResult, GetResultPayload, ListResult, MultipartUpload, ObjectMeta,
-    ObjectStore, PutMultipartOptions, PutOptions, PutPayload, PutResult,
+    CopyOptions, GetOptions, GetRange, GetResult, GetResultPayload, ListResult, MultipartUpload,
+    ObjectMeta, ObjectStore, PutMultipartOptions, PutOptions, PutPayload, PutResult,
     Result as ObjectStoreResult,
 };
 use quickwit_common::uri::Uri;
@@ -127,10 +128,13 @@ impl ObjectStore for QuickwitObjectStore {
         let location_str = location.as_ref();
         let map_err = |err| to_object_store_error(err, location_str);
 
-        let (bytes, byte_range) = match options.range {
+        let (bytes, byte_range) = match &options.range {
             Some(GetRange::Bounded(r)) => {
                 let usize_range = r.start as usize..r.end as usize;
-                let data = storage.get_slice(&path, usize_range).await.map_err(map_err)?;
+                let data = storage
+                    .get_slice(&path, usize_range)
+                    .await
+                    .map_err(map_err)?;
                 let b = Bytes::copy_from_slice(data.as_ref());
                 let len = b.len() as u64;
                 // The storage may return fewer bytes than requested if the range
@@ -140,17 +144,24 @@ impl ObjectStore for QuickwitObjectStore {
             }
             Some(GetRange::Suffix(n)) => {
                 let file_size = storage.file_num_bytes(&path).await.map_err(map_err)?;
-                let start = file_size.saturating_sub(n);
+                let start = file_size.saturating_sub(*n);
                 let usize_range = start as usize..file_size as usize;
-                let data = storage.get_slice(&path, usize_range).await.map_err(map_err)?;
+                let data = storage
+                    .get_slice(&path, usize_range)
+                    .await
+                    .map_err(map_err)?;
                 let b = Bytes::copy_from_slice(data.as_ref());
                 let len = b.len() as u64;
                 (b, start..start + len)
             }
             Some(GetRange::Offset(start)) => {
                 let file_size = storage.file_num_bytes(&path).await.map_err(map_err)?;
+                let start = *start;
                 let usize_range = start as usize..file_size as usize;
-                let data = storage.get_slice(&path, usize_range).await.map_err(map_err)?;
+                let data = storage
+                    .get_slice(&path, usize_range)
+                    .await
+                    .map_err(map_err)?;
                 let b = Bytes::copy_from_slice(data.as_ref());
                 let len = b.len() as u64;
                 (b, start..start + len)
@@ -171,42 +182,19 @@ impl ObjectStore for QuickwitObjectStore {
             e_tag: None,
             version: None,
         };
+        options.check_preconditions(&meta)?;
+
+        let payload = if options.head {
+            GetResultPayload::Stream(Box::pin(futures::stream::empty()))
+        } else {
+            GetResultPayload::Stream(Box::pin(futures::stream::once(async { Ok(bytes) })))
+        };
+
         Ok(GetResult {
-            payload: GetResultPayload::Stream(Box::pin(futures::stream::once(async { Ok(bytes) }))),
+            payload,
             meta,
             range: byte_range,
             attributes: Default::default(),
-        })
-    }
-
-    async fn get_range(
-        &self,
-        location: &ObjectPath,
-        range: std::ops::Range<u64>,
-    ) -> ObjectStoreResult<Bytes> {
-        let storage = self.storage().await?;
-        let path = object_path_to_std(location);
-        let usize_range = range.start as usize..range.end as usize;
-        let data = storage
-            .get_slice(&path, usize_range)
-            .await
-            .map_err(|err| to_object_store_error(err, location.as_ref()))?;
-        Ok(Bytes::copy_from_slice(data.as_ref()))
-    }
-
-    async fn head(&self, location: &ObjectPath) -> ObjectStoreResult<ObjectMeta> {
-        let storage = self.storage().await?;
-        let path = object_path_to_std(location);
-        let size = storage
-            .file_num_bytes(&path)
-            .await
-            .map_err(|err| to_object_store_error(err, location.as_ref()))?;
-        Ok(ObjectMeta {
-            location: location.clone(),
-            last_modified: chrono::Utc::now(),
-            size,
-            e_tag: None,
-            version: None,
         })
     }
 
@@ -231,10 +219,18 @@ impl ObjectStore for QuickwitObjectStore {
         })
     }
 
-    async fn delete(&self, _location: &ObjectPath) -> ObjectStoreResult<()> {
-        Err(object_store::Error::NotSupported {
-            source: "QuickwitObjectStore is read-only".into(),
-        })
+    fn delete_stream(
+        &self,
+        locations: BoxStream<'static, ObjectStoreResult<ObjectPath>>,
+    ) -> BoxStream<'static, ObjectStoreResult<ObjectPath>> {
+        locations
+            .map(|location| match location {
+                Ok(_) => Err(object_store::Error::NotSupported {
+                    source: "QuickwitObjectStore is read-only".into(),
+                }),
+                Err(err) => Err(err),
+            })
+            .boxed()
     }
 
     fn list(
@@ -257,16 +253,11 @@ impl ObjectStore for QuickwitObjectStore {
         })
     }
 
-    async fn copy(&self, _from: &ObjectPath, _to: &ObjectPath) -> ObjectStoreResult<()> {
-        Err(object_store::Error::NotSupported {
-            source: "QuickwitObjectStore is read-only".into(),
-        })
-    }
-
-    async fn copy_if_not_exists(
+    async fn copy_opts(
         &self,
         _from: &ObjectPath,
         _to: &ObjectPath,
+        _options: CopyOptions,
     ) -> ObjectStoreResult<()> {
         Err(object_store::Error::NotSupported {
             source: "QuickwitObjectStore is read-only".into(),

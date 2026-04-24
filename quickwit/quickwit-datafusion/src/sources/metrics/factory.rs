@@ -28,9 +28,9 @@
 
 use std::sync::Arc;
 
-use datafusion::arrow as arrow;
 use arrow::datatypes::SchemaRef;
 use async_trait::async_trait;
+use datafusion::arrow;
 use datafusion::catalog::{Session, TableProviderFactory};
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::CreateExternalTable;

@@ -43,6 +43,9 @@ members = [
 
 # The following list excludes `quickwit-metastore-utils`
 # from the default member to ease build/deps.
+#
+# DataFusion crates are opt-in and covered by their own CI lane. Keep them out
+# of the default members so a plain `cargo build` does not pull DataFusion in.
 default-members = [
   "quickwit-actors",
   "quickwit-aws",
@@ -53,9 +56,7 @@ default-members = [
   "quickwit-common",
   "quickwit-config",
   "quickwit-control-plane",
-  "quickwit-datafusion",
   "quickwit-datetime",
-  "quickwit-df-core",
   "quickwit-directories",
   "quickwit-doc-mapper",
   "quickwit-index-management",

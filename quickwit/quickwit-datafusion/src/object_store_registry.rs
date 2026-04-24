@@ -26,12 +26,11 @@
 //! This registry resolves the tension by doing the sync/async split on
 //! the correct axis:
 //!
-//! - `get_store` (sync) builds a [`QuickwitObjectStore`] wrapper on demand.
-//!   Construction is cheap — just stashes the URI and a clone of the
-//!   resolver.
+//! - `get_store` (sync) builds a [`QuickwitObjectStore`] wrapper on demand. Construction is cheap —
+//!   just stashes the URI and a clone of the resolver.
 //! - `QuickwitObjectStore`'s own methods are already async, so the actual
-//!   `StorageResolver::resolve(&uri).await` runs the first time
-//!   DataFusion asks for data — inside the `ObjectStore` method itself.
+//!   `StorageResolver::resolve(&uri).await` runs the first time DataFusion asks for data — inside
+//!   the `ObjectStore` method itself.
 //!
 //! End result: one `StorageResolver` per node, used per-request, no
 //! global cache warm-up, no per-query listing. Matches the search-leaf
@@ -48,8 +47,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
-use datafusion::common::DataFusionError;
-use datafusion::common::Result as DFResult;
+use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::execution::object_store::{DefaultObjectStoreRegistry, ObjectStoreRegistry};
 use object_store::ObjectStore;
 use quickwit_common::uri::Uri;
@@ -140,10 +138,8 @@ impl ObjectStoreRegistry for QuickwitObjectStoreRegistry {
                 "failed to build Quickwit URI from `{key}`: {err}"
             ))))
         })?;
-        let store: Arc<dyn ObjectStore> = Arc::new(QuickwitObjectStore::new(
-            uri,
-            self.storage_resolver.clone(),
-        ));
+        let store: Arc<dyn ObjectStore> =
+            Arc::new(QuickwitObjectStore::new(uri, self.storage_resolver.clone()));
         let mut write = self
             .lazy_stores
             .write()

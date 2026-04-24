@@ -42,7 +42,7 @@ datafusion = [
 # above — these live here only because dev-deps cannot be `optional`.
 arrow = { workspace = true, optional = true }
 bytesize = { workspace = true, optional = true }
-datafusion = { version = "52", optional = true }
+datafusion = { version = "53", optional = true }
 quickwit-datafusion = { workspace = true, features = ["testsuite"], optional = true }
 quickwit-parquet-engine = { workspace = true, optional = true }
 

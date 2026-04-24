@@ -21,10 +21,10 @@ use std::any::Any;
 use std::fmt;
 use std::sync::Arc;
 
-use datafusion::arrow as arrow;
 use arrow::compute::SortOptions;
 use arrow::datatypes::SchemaRef;
 use async_trait::async_trait;
+use datafusion::arrow;
 use datafusion::catalog::Session;
 use datafusion::datasource::TableProvider;
 use datafusion::datasource::source::DataSourceExec;
@@ -71,9 +71,8 @@ pub trait MetricsSplitProvider: Send + Sync + fmt::Debug {
 /// `ObjectStoreUrl` only accepts a scheme + authority, so the full index
 /// URI is split:
 /// - `scheme://authority` goes into the `ObjectStoreUrl`.
-/// - The path component (e.g. the `my-index/` part of
-///   `s3://bucket/my-index/`) is prepended to each split's filename in the
-///   emitted `PartitionedFile`s.
+/// - The path component (e.g. the `my-index/` part of `s3://bucket/my-index/`) is prepended to each
+///   split's filename in the emitted `PartitionedFile`s.
 ///
 /// Neither this type nor `scan()` constructs an `Arc<dyn ObjectStore>` —
 /// the session's custom

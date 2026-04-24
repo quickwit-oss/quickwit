@@ -65,10 +65,11 @@ pub async fn publish_split(
     split_name: &str,
     batch: &RecordBatch,
 ) {
-    let (parquet_bytes, _) = ParquetWriter::new(ParquetWriterConfig::default(), &TableConfig::default())
-        .unwrap()
-        .write_to_bytes(batch, None)
-        .expect("parquet encode");
+    let (parquet_bytes, _) =
+        ParquetWriter::new(ParquetWriterConfig::default(), &TableConfig::default())
+            .unwrap()
+            .write_to_bytes(batch, None)
+            .expect("parquet encode");
     let size_bytes = parquet_bytes.len() as u64;
     std::fs::write(
         data_dir.join(format!("{split_name}.parquet")),
