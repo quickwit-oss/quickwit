@@ -138,6 +138,12 @@ impl RpcName for AdviseResetShardsRequest {
     }
 }
 
+impl RpcName for SwapIndexingPipelinesRequest {
+    fn rpc_name() -> &'static str {
+        "swap_indexing_pipelines"
+    }
+}
+
 impl GetOrCreateOpenShardsFailureReason {
     pub fn create_failure(
         &self,

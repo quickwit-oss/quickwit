@@ -47,7 +47,7 @@ use crate::developer_api::developer_api_routes;
 use crate::elasticsearch_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
-use crate::indexing_api::indexing_get_handler;
+use crate::indexing_api::{indexing_get_handler, swap_pipelines_handler};
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
 use crate::metrics_api::metrics_handler;
@@ -410,6 +410,10 @@ fn api_v1_routes(
         .boxed()
         .or(indexing_get_handler(
             quickwit_services.indexing_service_opt.clone(),
+        ))
+        .boxed()
+        .or(swap_pipelines_handler(
+            quickwit_services.control_plane_client.clone(),
         ))
         .boxed()
         .or(search_routes(quickwit_services.search_service.clone()))

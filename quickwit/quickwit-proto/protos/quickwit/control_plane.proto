@@ -69,6 +69,9 @@ service ControlPlaneService {
 
   // Performs a debounced shard pruning request to the metastore.
   rpc PruneShards(quickwit.metastore.PruneShardsRequest) returns (quickwit.metastore.EmptyResponse);
+
+  // Swaps indexing pipelines of different indexes between different indexers.
+  rpc SwapIndexingPipelines(SwapIndexingPipelinesRequest) returns (SwapIndexingPipelinesResponse);
 }
 
 // Shard API
@@ -124,4 +127,26 @@ message AdviseResetShardsRequest {
 message AdviseResetShardsResponse {
   repeated quickwit.ingest.ShardIds shards_to_delete = 1;
   repeated quickwit.ingest.ShardIdPositions shards_to_truncate = 2;
+}
+
+message SwapIndexingPipelinesRequest {
+  repeated SwapIndexingPipelinesEntry swaps = 1;
+}
+
+message SwapIndexingPipelinesEntry {
+  string left_node_id = 1;
+  string left_index_id = 2;
+  string right_node_id = 3;
+  optional string right_index_id = 4;
+}
+
+message SwapIndexingPipelinesResponse {
+  repeated SwapIndexingPipelinesResult results = 1;
+}
+
+message SwapIndexingPipelinesResult {
+  SwapIndexingPipelinesEntry swap = 1;
+  bool success = 2;
+  // Human-readable reason when success is false.
+  string reason = 3;
 }

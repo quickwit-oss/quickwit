@@ -178,7 +178,7 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
         indexing_service_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 1);
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 1);
-    assert!(scheduler_state.last_applied_physical_plan.is_some());
+    assert!(scheduler_state.current_targeted_physical_plan.is_some());
     assert_eq!(indexing_service_inbox_messages.len(), 1);
 
     // After a CONTROL_PLAN_LOOP_INTERVAL, the control loop will check if the desired plan is
@@ -266,7 +266,7 @@ async fn test_scheduler_scheduling_no_indexer() {
         .indexing_scheduler;
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 0);
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
-    assert!(scheduler_state.last_applied_physical_plan.is_none());
+    assert!(scheduler_state.current_targeted_physical_plan.is_none());
 
     // There is no indexer, we should observe no
     // scheduling.
@@ -278,7 +278,7 @@ async fn test_scheduler_scheduling_no_indexer() {
         .indexing_scheduler;
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 0);
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
-    assert!(scheduler_state.last_applied_physical_plan.is_none());
+    assert!(scheduler_state.current_targeted_physical_plan.is_none());
     universe.assert_quit().await;
 }
 
@@ -324,7 +324,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
         indexing_service_inbox_1.drain_for_test_typed::<ApplyIndexingPlanRequest>();
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 0);
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
-    assert!(scheduler_state.last_applied_physical_plan.is_none());
+    assert!(scheduler_state.current_targeted_physical_plan.is_none());
     assert_eq!(indexing_service_inbox_messages.len(), 0);
 
     cluster

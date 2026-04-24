@@ -41,6 +41,7 @@ use quickwit_metastore::{CreateIndexRequestExt, CreateIndexResponseExt, IndexMet
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, AdviseResetShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSubrequest,
+    SwapIndexingPipelinesRequest, SwapIndexingPipelinesResponse,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
@@ -353,7 +354,7 @@ impl ControlPlane {
         let physical_indexing_plan: Vec<JsonValue> = self
             .indexing_scheduler
             .observable_state()
-            .last_applied_physical_plan
+            .current_targeted_physical_plan
             .map(|plan| {
                 plan.indexing_tasks_per_indexer()
                     .iter()
@@ -954,6 +955,20 @@ impl Handler<AdviseResetShardsRequest> for ControlPlane {
 }
 
 #[async_trait]
+impl Handler<SwapIndexingPipelinesRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<SwapIndexingPipelinesResponse>;
+
+    async fn handle(
+        &mut self,
+        request: SwapIndexingPipelinesRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let response = self.indexing_scheduler.swap_pipelines(request);
+        Ok(response)
+    }
+}
+
+#[async_trait]
 impl Handler<LocalShardsUpdate> for ControlPlane {
     type Reply = ControlPlaneResult<()>;
 
@@ -1181,6 +1196,7 @@ mod tests {
     };
     use quickwit_proto::control_plane::{
         GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsSubrequest,
+        SwapIndexingPipelinesEntry,
     };
     use quickwit_proto::indexing::{
         ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, CpuCapacity, IndexingServiceClient,
@@ -1906,7 +1922,7 @@ mod tests {
             control_plane_mailbox.ask(Observe).await.unwrap();
         let last_applied_physical_plan = control_plane_obs
             .indexing_scheduler
-            .last_applied_physical_plan
+            .current_targeted_physical_plan
             .unwrap();
         let indexing_tasks = last_applied_physical_plan
             .indexing_tasks_per_indexer()
@@ -1937,7 +1953,7 @@ mod tests {
             control_plane_mailbox.ask(Observe).await.unwrap();
         let last_applied_physical_plan = control_plane_obs
             .indexing_scheduler
-            .last_applied_physical_plan
+            .current_targeted_physical_plan
             .unwrap();
         let indexing_tasks = last_applied_physical_plan
             .indexing_tasks_per_indexer()
@@ -2660,6 +2676,231 @@ mod tests {
             ["test-index:00000000000000000000000000"]["test-ingester"][0];
         assert_eq!(shard["shard_id"], "00000000000000000000");
         assert_eq!(shard["shard_state"], "closed");
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_control_plane_swap_pipelines_applied_on_next_control_loop() {
+        let universe = Universe::default();
+        let node_id = NodeId::from("test-control-plane");
+        let cluster_change_stream_factory = ClusterChangeStreamFactoryForTest::default();
+        let indexer_pool = IndexerPool::default();
+        let ingester_pool = IngesterPool::default();
+
+        // Two mock indexers that accept unlimited apply_indexing_plan calls.
+        let mut mock_indexer_1 = MockIndexingService::new();
+        mock_indexer_1
+            .expect_apply_indexing_plan()
+            .returning(|_| Ok(ApplyIndexingPlanResponse {}));
+        let mut mock_indexer_2 = MockIndexingService::new();
+        mock_indexer_2
+            .expect_apply_indexing_plan()
+            .returning(|_| Ok(ApplyIndexingPlanResponse {}));
+
+        indexer_pool.insert(
+            NodeId::from("indexer-1"),
+            IndexerNodeInfo {
+                node_id: NodeId::from("indexer-1"),
+                generation_id: 0,
+                client: IndexingServiceClient::from_mock(mock_indexer_1),
+                indexing_tasks: Vec::new(),
+                indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            },
+        );
+        indexer_pool.insert(
+            NodeId::from("indexer-2"),
+            IndexerNodeInfo {
+                node_id: NodeId::from("indexer-2"),
+                generation_id: 0,
+                client: IndexingServiceClient::from_mock(mock_indexer_2),
+                indexing_tasks: Vec::new(),
+                indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+            },
+        );
+
+        // Two indexes, each with a single-pipeline Kafka source and an ingest-v2 source
+        // (so that `create_or_enable_ingest_v2_sources_if_necessary` does not call `add_source`).
+        let mut index_a = IndexMetadata::for_test("index-a", "ram:///index-a");
+        index_a
+            .add_source(SourceConfig::for_test(
+                "kafka-source",
+                SourceParams::Kafka(KafkaSourceParams {
+                    topic: "topic-a".to_string(),
+                    client_log_level: None,
+                    enable_backfill_mode: false,
+                    client_params: json!({}),
+                }),
+            ))
+            .unwrap();
+        index_a.add_source(SourceConfig::ingest_v2()).unwrap();
+
+        let mut index_b = IndexMetadata::for_test("index-b", "ram:///index-b");
+        index_b
+            .add_source(SourceConfig::for_test(
+                "kafka-source",
+                SourceParams::Kafka(KafkaSourceParams {
+                    topic: "topic-b".to_string(),
+                    client_log_level: None,
+                    enable_backfill_mode: false,
+                    client_params: json!({}),
+                }),
+            ))
+            .unwrap();
+        index_b.add_source(SourceConfig::ingest_v2()).unwrap();
+
+        let mut mock_metastore = MockMetastoreService::new();
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .return_once(move |_| {
+                Ok(ListIndexesMetadataResponse::for_test(vec![
+                    index_a, index_b,
+                ]))
+            });
+        mock_metastore
+            .expect_list_shards()
+            .return_once(|_| Ok(ListShardsResponse::default()));
+
+        let cluster_config = ClusterConfig::for_test();
+        let (control_plane_mailbox, _control_plane_handle, _readiness_rx) =
+            ControlPlane::spawn_inner(
+                &universe,
+                cluster_config,
+                node_id,
+                cluster_change_stream_factory,
+                indexer_pool,
+                ingester_pool,
+                MetastoreServiceClient::from_mock(mock_metastore),
+                false, // keep the control loop enabled
+            );
+
+        // ── Wait for the initial plan to be built ──────────────────────────
+        // Use `mailbox.ask(Observe)` to get state directly from the inner
+        // actor (the supervisor handle only returns a cached snapshot that may
+        // lag behind).
+        let initial_state = {
+            let mut state = None;
+            for _ in 0..100 {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                let obs: ControlPlaneObservableState =
+                    control_plane_mailbox.ask(Observe).await.unwrap();
+                if obs
+                    .indexing_scheduler
+                    .current_targeted_physical_plan
+                    .is_some()
+                {
+                    state = Some(obs);
+                    break;
+                }
+            }
+            state.expect("initial plan should have been built")
+        };
+
+        let initial_plan = initial_state
+            .indexing_scheduler
+            .current_targeted_physical_plan
+            .as_ref()
+            .unwrap();
+
+        // Each indexer should have exactly 1 task (4000 mcpu capacity, 3200 mcpu per pipeline).
+        let i1_tasks = initial_plan.indexer("indexer-1").unwrap();
+        let i2_tasks = initial_plan.indexer("indexer-2").unwrap();
+        assert_eq!(i1_tasks.len(), 1);
+        assert_eq!(i2_tasks.len(), 1);
+
+        let idx_on_1 = i1_tasks[0].index_uid().index_id.clone();
+        let idx_on_2 = i2_tasks[0].index_uid().index_id.clone();
+        assert_ne!(idx_on_1, idx_on_2);
+
+        let num_schedule_before = initial_state.indexing_scheduler.num_schedule_indexing_plan;
+
+        // ── Swap pipelines ─────────────────────────────────────────────────
+        let response: SwapIndexingPipelinesResponse = control_plane_mailbox
+            .ask(SwapIndexingPipelinesRequest {
+                swaps: vec![SwapIndexingPipelinesEntry {
+                    left_node_id: "indexer-1".to_string(),
+                    left_index_id: idx_on_1.clone(),
+                    right_node_id: "indexer-2".to_string(),
+                    right_index_id: Some(idx_on_2.clone()),
+                }],
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(response.results[0].success, "swap must succeed");
+
+        // Immediately after the swap, the targeted plan should reflect it.
+        let after_swap: ControlPlaneObservableState =
+            control_plane_mailbox.ask(Observe).await.unwrap();
+        let plan = after_swap
+            .indexing_scheduler
+            .current_targeted_physical_plan
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            plan.indexer("indexer-1").unwrap()[0].index_uid().index_id,
+            idx_on_2,
+            "indexer-1 should now have the index that was on indexer-2"
+        );
+        assert_eq!(
+            plan.indexer("indexer-2").unwrap()[0].index_uid().index_id,
+            idx_on_1,
+            "indexer-2 should now have the index that was on indexer-1"
+        );
+
+        let num_applied_after_swap = after_swap
+            .indexing_scheduler
+            .num_applied_physical_indexing_plan;
+
+        // ── Wait for the control loop to re-apply the (swapped) plan ───────
+        // `control_running_plan` has a MIN_DURATION_BETWEEN_SCHEDULING cooldown
+        // (50 ms in tests). The control loop interval is 100 ms. We poll until
+        // the apply counter increases.
+        let mut reapplied = false;
+        for _ in 0..40 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let obs: ControlPlaneObservableState =
+                control_plane_mailbox.ask(Observe).await.unwrap();
+            if obs.indexing_scheduler.num_applied_physical_indexing_plan > num_applied_after_swap {
+                reapplied = true;
+                break;
+            }
+        }
+        assert!(
+            reapplied,
+            "the control loop should have re-applied the plan"
+        );
+
+        // ── Verify the swapped plan is still in place after re-apply ───────
+        let final_state: ControlPlaneObservableState =
+            control_plane_mailbox.ask(Observe).await.unwrap();
+        let final_plan = final_state
+            .indexing_scheduler
+            .current_targeted_physical_plan
+            .as_ref()
+            .unwrap();
+
+        assert_eq!(
+            final_plan.indexer("indexer-1").unwrap()[0]
+                .index_uid()
+                .index_id,
+            idx_on_2,
+            "after control loop re-apply, indexer-1 should still have the swapped index"
+        );
+        assert_eq!(
+            final_plan.indexer("indexer-2").unwrap()[0]
+                .index_uid()
+                .index_id,
+            idx_on_1,
+            "after control loop re-apply, indexer-2 should still have the swapped index"
+        );
+
+        // No rebuild should have happened; only re-applies of the existing plan.
+        assert_eq!(
+            final_state.indexing_scheduler.num_schedule_indexing_plan, num_schedule_before,
+            "no rebuild should have happened after the swap – the control loop should only \
+             re-apply the existing plan"
+        );
 
         universe.assert_quit().await;
     }
