@@ -137,7 +137,7 @@ pub(crate) async fn publish_split(
     metastore
         .clone()
         .publish_metrics_splits(PublishMetricsSplitsRequest {
-            index_uid: Some(index_uid.clone().into()),
+            index_uid: Some(index_uid.clone()),
             staged_split_ids: vec![split_name.to_string()],
             replaced_split_ids: vec![],
             index_checkpoint_delta_json_opt: None,

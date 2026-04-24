@@ -12,20 +12,15 @@ license.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
-bytes = { workspace = true }
 futures = { workspace = true }
 prost = { workspace = true }            # substrait Plan::decode (runtime only)
 serde_json = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true }
-tokio-stream = { workspace = true }
 tracing = { workspace = true }
 url = "2"
 
 arrow = { workspace = true }
 datafusion = "53"
 datafusion-substrait = "53"
-datafusion-physical-plan = "53"
 datafusion-distributed = "1.0"
 object_store = "0.13"
 

@@ -15,7 +15,6 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
-hyper = { workspace = true }
 bytesize = { workspace = true }
 elasticsearch-dsl = "0.4"
 flate2 = { workspace = true }
@@ -27,7 +26,7 @@ http = { workspace = true }
 http-body = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
-hyper-util = {workspace = true}
+hyper-util = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 opentelemetry = { workspace = true }

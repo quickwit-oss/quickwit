@@ -11,17 +11,13 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 prost = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tracing = { workspace = true }
 url = "2"
@@ -38,7 +34,6 @@ arrow = { workspace = true }
 datafusion = "53"
 datafusion-substrait = "53"
 datafusion-datasource = "53"
-datafusion-sql = "53"
 datafusion-physical-plan = "53"
 datafusion-datasource-parquet = "53"
 datafusion-distributed = "1.0"
