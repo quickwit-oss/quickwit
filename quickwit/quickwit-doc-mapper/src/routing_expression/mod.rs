@@ -22,6 +22,12 @@ pub(crate) use expression_dsl::parse_field_name;
 use serde_json::Value as JsonValue;
 use siphasher::sip::SipHasher;
 
+#[cfg(feature = "metrics")]
+mod metrics;
+
+#[cfg(feature = "metrics")]
+pub use metrics::ArrowRowContext;
+
 pub trait RoutingExprContext {
     fn hash_attribute<H: Hasher>(&self, attr_name: &[String], hasher: &mut H);
 }
@@ -132,6 +138,11 @@ impl RoutingExpr {
             inner_opt: Some(Arc::new(inner)),
             salted_hasher,
         })
+    }
+
+    /// Returns `true` if no routing expression is configured.
+    pub fn is_empty(&self) -> bool {
+        self.inner_opt.is_none()
     }
 
     /// Evaluates the expression applied to the given

@@ -105,7 +105,7 @@ testsuite = [
   "quickwit-proto/testsuite",
   "quickwit-storage/testsuite"
 ]
-metrics = ["dep:arrow", "dep:quickwit-parquet-engine"]
+metrics = ["dep:arrow", "dep:quickwit-parquet-engine", "quickwit-doc-mapper/metrics"]
 vrl = ["dep:vrl", "quickwit-config/vrl"]
 postgres = ["quickwit-metastore/postgres"]
 ci-test = []

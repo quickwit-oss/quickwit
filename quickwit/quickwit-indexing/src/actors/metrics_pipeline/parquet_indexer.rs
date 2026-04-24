@@ -18,6 +18,7 @@
 //! Arrow RecordBatches and forwarding concatenated batches to ParquetPackager for
 //! Parquet encoding and file writing.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -35,7 +36,7 @@ use tracing::{debug, info, info_span, warn};
 use ulid::Ulid;
 
 use super::ProcessedParquetBatch;
-use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
+use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager, PartitionedRecordBatch};
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).
@@ -116,8 +117,10 @@ pub struct ParquetIndexer {
     index_uid: IndexUid,
     /// Source identifier.
     source_id: SourceId,
-    /// Batch accumulator for buffering and concatenating RecordBatches.
-    accumulator: ParquetBatchAccumulator,
+    /// Per-partition batch accumulators.
+    accumulators: HashMap<u64, ParquetBatchAccumulator>,
+    /// Config for creating new accumulators.
+    accumulator_config: ParquetIndexingConfig,
     /// Accumulated checkpoint delta.
     checkpoint_delta: SourceCheckpointDelta,
     /// Publish lock for coordinating with sources.
@@ -152,8 +155,7 @@ impl ParquetIndexer {
         packager_mailbox: Mailbox<ParquetPackager>,
         commit_timeout: Option<Duration>,
     ) -> Self {
-        let config = config.unwrap_or_default();
-        let accumulator = ParquetBatchAccumulator::new(config);
+        let accumulator_config = config.unwrap_or_default();
         let counters = ParquetIndexerCounters::default();
         let commit_timeout = commit_timeout.unwrap_or(DEFAULT_COMMIT_TIMEOUT);
 
@@ -167,7 +169,8 @@ impl ParquetIndexer {
         Self {
             index_uid,
             source_id,
-            accumulator,
+            accumulators: HashMap::new(),
+            accumulator_config,
             checkpoint_delta: SourceCheckpointDelta::default(),
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
@@ -179,16 +182,18 @@ impl ParquetIndexer {
         }
     }
 
-    /// Process a batch and potentially produce a flushed RecordBatch.
+    /// Process a batch and potentially flush the current workbench.
     ///
-    /// Returns at most one concatenated RecordBatch. A flush is triggered either by
-    /// the accumulator exceeding its row/byte threshold, or by a force_commit request.
-    /// This ensures exactly one checkpoint delta per flushed batch.
+    /// The metrics pipeline now buffers rows separately per `partition_id`, but it still
+    /// commits them as a single workbench so checkpoint and timeout semantics stay coherent.
+    ///
+    /// Any commit trigger flushes all partition accumulators together and returns one batch
+    /// per partition.
     fn process_batch(
         &mut self,
         batch: ProcessedParquetBatch,
         ctx: &ActorContext<Self>,
-    ) -> Result<Option<RecordBatch>, ActorExitStatus> {
+    ) -> Result<Vec<(u64, RecordBatch)>, ActorExitStatus> {
         let _span = info_span!(
             target: "quickwit-indexing",
             "metrics-indexer",
@@ -219,20 +224,20 @@ impl ParquetIndexer {
             })?;
 
         let force_commit = batch.force_commit;
+        let partition_id = batch.partition_id;
 
-        // Add batch to accumulator (auto-flushes if threshold exceeded)
-        let mut flushed = match self.accumulator.add_batch(batch.batch) {
-            Ok(threshold_batch) => {
-                if let Some(ref combined) = threshold_batch {
-                    debug!(
-                        num_rows = combined.num_rows(),
-                        "accumulator flushed from threshold"
-                    );
-                }
-                threshold_batch
-            }
+        // Get or create accumulator for this partition.
+        let accumulator = self
+            .accumulators
+            .entry(partition_id)
+            .or_insert_with(|| ParquetBatchAccumulator::new(self.accumulator_config.clone()));
+
+        // Add the batch to the partition accumulator. If this partition crosses its threshold,
+        // the returned batch becomes one member of a workbench-wide flush.
+        let threshold_flushed = match accumulator.add_batch(batch.batch) {
+            Ok(threshold_batch) => threshold_batch,
             Err(error) => {
-                warn!(error = %error, "Failed to add batch to accumulator");
+                warn!(error = %error, "failed to add batch to accumulator");
                 self.counters.record_error();
                 return Err(ActorExitStatus::Failure(
                     anyhow::anyhow!("{}", error).into(),
@@ -240,51 +245,79 @@ impl ParquetIndexer {
             }
         };
 
-        // Reset actor state if the accumulator auto-flushed.
-        if flushed.is_some() {
-            self.workbench_id = Ulid::new();
-            self.commit_timeout_scheduled = false;
-        }
-
         ctx.record_progress();
 
-        // Force flush if requested and threshold didn't already flush
-        if force_commit && flushed.is_none() {
-            debug!("force commit requested, flushing accumulator");
-            flushed = self.flush_accumulator()?;
-        }
-
-        if let Some(ref combined) = flushed {
-            self.counters.record_flush();
-            info!(
-                num_rows = combined.num_rows(),
-                "flushed concatenated batch to packager"
+        // A force commit always flushes the entire workbench so the checkpoint can advance.
+        if force_commit {
+            debug!("force commit requested, flushing all partitions");
+            return self.flush_workbench(
+                threshold_flushed.map(|flushed_batch| (partition_id, flushed_batch)),
             );
         }
 
-        Ok(flushed)
+        // Threshold pressure on any partition commits the whole workbench. This matches the
+        // logs pipeline model and avoids advancing checkpoints while other partitions remain
+        // buffered in memory.
+        if let Some(batch) = threshold_flushed {
+            debug!(
+                partition_id,
+                num_rows = batch.num_rows(),
+                "threshold exceeded, flushing workbench"
+            );
+            return self.flush_workbench(Some((partition_id, batch)));
+        }
+
+        Ok(Vec::new())
     }
 
-    /// Flush the accumulator.
-    ///
-    /// Returns the concatenated RecordBatch, or None if no pending data.
-    fn flush_accumulator(&mut self) -> Result<Option<RecordBatch>, ActorExitStatus> {
-        match self.accumulator.flush() {
-            Ok(batch_opt) => {
-                if batch_opt.is_some() {
-                    // Reset workbench for next batch of work
-                    self.workbench_id = Ulid::new();
-                    self.commit_timeout_scheduled = false;
+    /// Flush the entire workbench and reset timeout state.
+    fn flush_workbench(
+        &mut self,
+        already_flushed_opt: Option<(u64, RecordBatch)>,
+    ) -> Result<Vec<(u64, RecordBatch)>, ActorExitStatus> {
+        let mut results = Vec::new();
+        if let Some(already_flushed) = already_flushed_opt {
+            results.push(already_flushed);
+        }
+
+        for (partition_id, mut accumulator) in std::mem::take(&mut self.accumulators) {
+            match accumulator.flush() {
+                Ok(Some(batch)) => results.push((partition_id, batch)),
+                Ok(None) => {}
+                Err(error) => {
+                    warn!(
+                        error = %error,
+                        partition_id,
+                        "failed to flush partition accumulator"
+                    );
+                    self.counters.record_error();
+                    return Err(ActorExitStatus::Failure(
+                        anyhow::anyhow!("{}", error).into(),
+                    ));
                 }
-                Ok(batch_opt)
             }
-            Err(error) => {
-                warn!(error = %error, "Failed to flush accumulator");
-                self.counters.record_error();
-                Err(ActorExitStatus::Failure(
-                    anyhow::anyhow!("{}", error).into(),
-                ))
-            }
+        }
+
+        results.sort_by_key(|(partition_id, _batch)| *partition_id);
+        self.reset_workbench();
+        Ok(results)
+    }
+
+    /// Reset workbench-scoped timeout state after a full commit boundary.
+    fn reset_workbench(&mut self) {
+        self.workbench_id = Ulid::new();
+        self.commit_timeout_scheduled = false;
+    }
+
+    /// Record the split batches emitted to the packager.
+    fn record_flushed_batches(&mut self, flushed_partitions: &[(u64, RecordBatch)]) {
+        for (partition_id, batch) in flushed_partitions {
+            self.counters.record_flush();
+            info!(
+                partition_id,
+                num_rows = batch.num_rows(),
+                "flushed batch to packager"
+            );
         }
     }
 
@@ -299,6 +332,49 @@ impl ParquetIndexer {
             source_id: self.source_id.clone(),
             source_delta: self.take_checkpoint_delta(),
         }
+    }
+
+    /// Send one flushed workbench downstream as a single packager message.
+    async fn send_workbench_to_packager(
+        &mut self,
+        flushed_partitions: Vec<(u64, RecordBatch)>,
+        ctx: &ActorContext<Self>,
+        error_context: &str,
+    ) -> Result<(), ActorExitStatus> {
+        if flushed_partitions.is_empty() && self.checkpoint_delta.is_empty() {
+            return Ok(());
+        }
+
+        if !flushed_partitions.is_empty() {
+            self.record_flushed_batches(&flushed_partitions);
+        }
+
+        let batch_for_packager = ParquetBatchForPackager {
+            batches: flushed_partitions
+                .into_iter()
+                .map(|(partition_id, batch)| PartitionedRecordBatch {
+                    batch,
+                    partition_id,
+                })
+                .collect(),
+            index_uid: self.index_uid.clone(),
+            checkpoint_delta: self.make_index_checkpoint_delta(),
+            publish_lock: self.publish_lock.clone(),
+            publish_token_opt: self.publish_token_opt.clone(),
+        };
+
+        if batch_for_packager.batches.is_empty()
+            && batch_for_packager.checkpoint_delta.source_delta.is_empty()
+        {
+            return Ok(());
+        }
+
+        ctx.send_message(&self.packager_mailbox, batch_for_packager)
+            .await
+            .map_err(|e| {
+                ActorExitStatus::Failure(anyhow::anyhow!("{error_context}: {e}").into())
+            })?;
+        Ok(())
     }
 }
 
@@ -338,36 +414,17 @@ impl Actor for ParquetIndexer {
             | ActorExitStatus::Failure(_)
             | ActorExitStatus::Panicked => return Ok(()),
             ActorExitStatus::Quit | ActorExitStatus::Success => {
-                // Flush remaining data on clean shutdown.
-                let flushed_batch = match self.flush_accumulator() {
-                    Ok(Some(combined)) => {
-                        self.counters.record_flush();
-                        info!(
-                            num_rows = combined.num_rows(),
-                            "flushed final batch on shutdown"
-                        );
-                        Some(combined)
-                    }
-                    Ok(None) => None,
-                    Err(_) => None,
+                let flushed_partitions = match self.flush_workbench(None) {
+                    Ok(partitions) => partitions,
+                    Err(_) => Vec::new(),
                 };
-
-                // Send even when batch is None — the checkpoint delta may contain
-                // EOF positions that must flow through the pipeline for graceful
-                // decommission to complete.
-                let checkpoint_delta = self.make_index_checkpoint_delta();
-                if flushed_batch.is_some() || !checkpoint_delta.source_delta.is_empty() {
-                    let batch_for_packager = ParquetBatchForPackager {
-                        batch: flushed_batch,
-                        index_uid: self.index_uid.clone(),
-                        checkpoint_delta,
-                        publish_lock: self.publish_lock.clone(),
-                        publish_token_opt: self.publish_token_opt.clone(),
-                    };
-                    let _ = ctx
-                        .send_message(&self.packager_mailbox, batch_for_packager)
-                        .await;
-                }
+                let _ = self
+                    .send_workbench_to_packager(
+                        flushed_partitions,
+                        ctx,
+                        "failed to send final ParquetBatchForPackager to packager",
+                    )
+                    .await;
             }
         }
         Ok(())
@@ -402,33 +459,15 @@ impl Handler<ProcessedParquetBatch> for ParquetIndexer {
         }
 
         let force_commit = batch.force_commit;
-        let flushed_batch = self.process_batch(batch, ctx)?;
+        let flushed_partitions = self.process_batch(batch, ctx)?;
 
-        // Send downstream if we have data, or if force_commit needs to push
-        // the checkpoint through immediately (e.g. shard EOF).
-        let should_send =
-            flushed_batch.is_some() || (force_commit && !self.checkpoint_delta.is_empty());
-
-        if should_send {
-            let batch_for_packager = ParquetBatchForPackager {
-                batch: flushed_batch,
-                index_uid: self.index_uid.clone(),
-                checkpoint_delta: self.make_index_checkpoint_delta(),
-                publish_lock: self.publish_lock.clone(),
-                publish_token_opt: self.publish_token_opt.clone(),
-            };
-
-            ctx.send_message(&self.packager_mailbox, batch_for_packager)
-                .await
-                .map_err(|e| {
-                    ActorExitStatus::Failure(
-                        anyhow::anyhow!("failed to send to packager: {}", e).into(),
-                    )
-                })?;
-
-            // Reset so the next batch schedules a fresh timeout.
-            self.workbench_id = Ulid::new();
-            self.commit_timeout_scheduled = false;
+        if force_commit || !flushed_partitions.is_empty() {
+            self.send_workbench_to_packager(
+                flushed_partitions,
+                ctx,
+                "failed to send ParquetBatchForPackager to packager",
+            )
+            .await?;
         }
 
         Ok(())
@@ -449,7 +488,7 @@ impl Handler<NewPublishLock> for ParquetIndexer {
         // Discard pending data — it was accumulated under the old publish lock
         // and must not be published. This matches the standard Indexer behavior
         // which discards its workbench on publish lock change.
-        self.accumulator.discard();
+        self.accumulators.clear();
 
         // Reset state for new lock
         self.publish_lock = publish_lock;
@@ -492,48 +531,16 @@ impl Handler<CommitTimeout> for ParquetIndexer {
 
         debug!(
             workbench_id = %self.workbench_id,
-            "commit timeout triggered, flushing accumulator"
+            "commit timeout triggered, flushing all partitions"
         );
 
-        // Flush the accumulator
-        let flushed_batch = self.flush_accumulator()?;
-        if let Some(ref combined) = flushed_batch {
-            self.counters.record_flush();
-            info!(
-                num_rows = combined.num_rows(),
-                "flushed batch on commit timeout"
-            );
-        }
-
-        // Forward if we have data or a pending checkpoint delta.
-        let should_send = flushed_batch.is_some() || !self.checkpoint_delta.is_empty();
-
-        if should_send {
-            let batch_for_packager = ParquetBatchForPackager {
-                batch: flushed_batch,
-                index_uid: self.index_uid.clone(),
-                checkpoint_delta: self.make_index_checkpoint_delta(),
-                publish_lock: self.publish_lock.clone(),
-                publish_token_opt: self.publish_token_opt.clone(),
-            };
-
-            ctx.send_message(&self.packager_mailbox, batch_for_packager)
-                .await
-                .map_err(|e| {
-                    ActorExitStatus::Failure(
-                        anyhow::anyhow!(
-                            "failed to send ParquetBatchForPackager to packager on commit \
-                             timeout: {}",
-                            e
-                        )
-                        .into(),
-                    )
-                })?;
-
-            // Reset so the next batch schedules a fresh timeout.
-            self.workbench_id = Ulid::new();
-            self.commit_timeout_scheduled = false;
-        }
+        let flushed_partitions = self.flush_workbench(None)?;
+        self.send_workbench_to_packager(
+            flushed_partitions,
+            ctx,
+            "failed to send ParquetBatchForPackager to packager on commit timeout",
+        )
+        .await?;
 
         Ok(())
     }
@@ -584,6 +591,7 @@ mod tests {
         mock_metastore
             .expect_stage_metrics_splits()
             .withf(move |request| request.index_uid().index_id == expected_index_id)
+            .times(..)
             .returning(|_| Ok(EmptyResponse {}));
 
         let ram_storage = Arc::new(RamStorage::default());
@@ -613,8 +621,7 @@ mod tests {
             writer_config,
             temp_dir,
             &table_config,
-        )
-        .unwrap();
+        );
 
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)
@@ -660,7 +667,7 @@ mod tests {
         // Send a batch
         let batch = create_test_batch(10);
         let processed =
-            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..10), false);
+            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..10), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
 
@@ -696,6 +703,7 @@ mod tests {
         let batch = create_test_batch(5);
         let processed = ProcessedParquetBatch::new(
             batch,
+            0,
             SourceCheckpointDelta::from_range(0..5),
             true, // force_commit
         );
@@ -750,7 +758,7 @@ mod tests {
         // Send batch after lock is dead
         let batch = create_test_batch(10);
         let processed =
-            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..10), false);
+            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..10), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
 
@@ -788,7 +796,7 @@ mod tests {
         // Send batch that exceeds threshold
         let batch = create_test_batch(100);
         let processed =
-            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..100), false);
+            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..100), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
 
@@ -805,6 +813,65 @@ mod tests {
 
         // Verify uploader received the splits
         uploader_handle.process_pending_and_observe().await;
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_indexer_threshold_flush_commits_all_partitions_in_workbench() {
+        let universe = Universe::with_accelerated_time();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let config = ParquetIndexingConfig::default().with_max_rows(50);
+
+        let (uploader_mailbox, _uploader_handle) =
+            create_test_uploader_with_staging_expectation(&universe, "test-index");
+        let (packager_mailbox, packager_handle) =
+            create_test_packager(&universe, temp_dir.path(), uploader_mailbox);
+
+        let indexer = ParquetIndexer::new(
+            IndexUid::for_test("test-index", 0),
+            "test-source".to_string(),
+            Some(config),
+            packager_mailbox,
+            None,
+        );
+
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+
+        // First partition stays buffered in the workbench.
+        let partition_one_batch = create_test_batch(10);
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                partition_one_batch,
+                1,
+                SourceCheckpointDelta::from_range(0..10),
+                false,
+            ))
+            .await
+            .unwrap();
+        let counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.batches_flushed, 0);
+
+        // Second partition crosses the threshold and should commit the full workbench,
+        // including the buffered rows from partition 1.
+        let partition_two_batch = create_test_batch(100);
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                partition_two_batch,
+                2,
+                SourceCheckpointDelta::from_range(10..110),
+                false,
+            ))
+            .await
+            .unwrap();
+
+        let counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.batches_received, 2);
+        assert_eq!(counters.batches_flushed, 2);
+
+        let packager_counters = packager_handle.process_pending_and_observe().await.state;
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 2);
 
         universe.assert_quit().await;
     }
@@ -832,7 +899,7 @@ mod tests {
         // Send batch without force_commit
         let batch = create_test_batch(10);
         let processed =
-            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..10), false);
+            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..10), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
         indexer_handle.process_pending_and_observe().await;
@@ -856,8 +923,185 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_metrics_indexer_commit_timeout() {
+    async fn test_metrics_indexer_force_commit_flushes_all_partitions_in_workbench() {
         let universe = Universe::with_accelerated_time();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let (uploader_mailbox, _uploader_handle) =
+            create_test_uploader_with_staging_expectation(&universe, "test-index");
+        let (packager_mailbox, packager_handle) =
+            create_test_packager(&universe, temp_dir.path(), uploader_mailbox);
+
+        let indexer = ParquetIndexer::new(
+            IndexUid::for_test("test-index", 0),
+            "test-source".to_string(),
+            None,
+            packager_mailbox,
+            None,
+        );
+
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                create_test_batch(10),
+                1,
+                SourceCheckpointDelta::from_range(0..10),
+                false,
+            ))
+            .await
+            .unwrap();
+        indexer_handle.process_pending_and_observe().await;
+
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                create_test_batch(20),
+                2,
+                SourceCheckpointDelta::from_range(10..30),
+                true,
+            ))
+            .await
+            .unwrap();
+
+        let counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.batches_received, 2);
+        assert_eq!(counters.batches_flushed, 2);
+
+        let packager_counters = packager_handle.process_pending_and_observe().await.state;
+        assert_eq!(packager_counters.splits_produced.load(Ordering::Relaxed), 2);
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_indexer_partitioning() {
+        let universe = Universe::with_accelerated_time();
+        let (packager_mailbox, packager_inbox) = universe.create_test_mailbox::<ParquetPackager>();
+
+        let indexer = ParquetIndexer::new(
+            IndexUid::for_test("test-index", 0),
+            "test-source".to_string(),
+            None,
+            packager_mailbox,
+            None,
+        );
+
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                create_test_batch(10),
+                1,
+                SourceCheckpointDelta::from_range(0..10),
+                false,
+            ))
+            .await
+            .unwrap();
+        indexer_handle.process_pending_and_observe().await;
+
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                create_test_batch(20),
+                3,
+                SourceCheckpointDelta::from_range(10..30),
+                false,
+            ))
+            .await
+            .unwrap();
+        indexer_handle.process_pending_and_observe().await;
+
+        universe
+            .send_exit_with_success(&indexer_mailbox)
+            .await
+            .unwrap();
+        let (exit_status, counters) = indexer_handle.join().await;
+
+        assert!(matches!(exit_status, ActorExitStatus::Success));
+        assert_eq!(counters.batches_received, 2);
+        assert_eq!(counters.rows_indexed, 30);
+        assert_eq!(counters.batches_flushed, 2);
+
+        let packager_batches: Vec<ParquetBatchForPackager> = packager_inbox.drain_for_test_typed();
+        assert_eq!(packager_batches.len(), 1);
+        assert_eq!(packager_batches[0].batches.len(), 2);
+        assert_eq!(
+            packager_batches[0]
+                .batches
+                .iter()
+                .map(|batch| batch.partition_id)
+                .collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert_eq!(
+            packager_batches[0].checkpoint_delta.source_delta,
+            SourceCheckpointDelta::from_range(0..30)
+        );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_indexer_emits_one_packager_message_per_workbench_flush() {
+        let universe = Universe::with_accelerated_time();
+        let (packager_mailbox, packager_inbox) = universe.create_test_mailbox::<ParquetPackager>();
+
+        let indexer = ParquetIndexer::new(
+            IndexUid::for_test("test-index", 0),
+            "test-source".to_string(),
+            None,
+            packager_mailbox,
+            None,
+        );
+
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                create_test_batch(10),
+                1,
+                SourceCheckpointDelta::from_range(0..10),
+                false,
+            ))
+            .await
+            .unwrap();
+        indexer_handle.process_pending_and_observe().await;
+
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                create_test_batch(20),
+                2,
+                SourceCheckpointDelta::from_range(10..30),
+                true,
+            ))
+            .await
+            .unwrap();
+
+        let counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.batches_received, 2);
+        assert_eq!(counters.batches_flushed, 2);
+
+        let packager_batches: Vec<ParquetBatchForPackager> = packager_inbox.drain_for_test_typed();
+        assert_eq!(packager_batches.len(), 1);
+        assert_eq!(packager_batches[0].batches.len(), 2);
+        assert_eq!(
+            packager_batches[0]
+                .batches
+                .iter()
+                .map(|batch| batch.partition_id)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(
+            packager_batches[0].checkpoint_delta.source_delta,
+            SourceCheckpointDelta::from_range(0..30)
+        );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_indexer_commit_timeout() {
+        let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
 
         let (uploader_mailbox, uploader_handle) =
@@ -866,7 +1110,7 @@ mod tests {
             create_test_packager(&universe, temp_dir.path(), uploader_mailbox);
 
         // Use a short commit timeout for testing
-        let commit_timeout = Duration::from_secs(2);
+        let commit_timeout = Duration::from_millis(50);
         let indexer = ParquetIndexer::new(
             IndexUid::for_test("test-index", 0),
             "test-source".to_string(),
@@ -880,7 +1124,7 @@ mod tests {
         // Send batch without force_commit
         let batch = create_test_batch(10);
         let processed =
-            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..10), false);
+            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..10), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
         indexer_handle.process_pending_and_observe().await;
@@ -890,9 +1134,7 @@ mod tests {
         assert_eq!(counters.batches_flushed, 0);
 
         // Wait for commit timeout to trigger
-        universe
-            .sleep(commit_timeout + Duration::from_millis(100))
-            .await;
+        tokio::time::sleep(commit_timeout + Duration::from_millis(50)).await;
         indexer_handle.process_pending_and_observe().await;
 
         // Should have flushed due to commit timeout
@@ -952,6 +1194,7 @@ mod tests {
         let batch = create_test_batch(20);
         let processed = ProcessedParquetBatch::new(
             batch,
+            0,
             SourceCheckpointDelta::from_range(0..20),
             true, // force_commit
         );

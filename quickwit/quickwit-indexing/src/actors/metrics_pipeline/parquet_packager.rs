@@ -39,19 +39,28 @@ use super::ParquetUploader;
 use super::parquet_indexer::ParquetSplitBatch;
 use crate::models::PublishLock;
 
-/// A concatenated RecordBatch ready to be written to a Parquet file.
+/// A flushed partition-local RecordBatch within a workbench commit.
+#[derive(Debug)]
+pub struct PartitionedRecordBatch {
+    /// The concatenated RecordBatch for a single partition.
+    pub batch: RecordBatch,
+    /// Partition this batch belongs to.
+    pub partition_id: u64,
+}
+
+/// A flushed workbench ready to be written to one or more Parquet files.
 ///
-/// Sent from ParquetIndexer to ParquetPackager when the accumulator flushes
-/// (either from threshold or force commit).
+/// Sent from ParquetIndexer to ParquetPackager when the current workbench flushes
+/// (either from threshold, timeout, or force commit).
 #[derive(Debug)]
 pub struct ParquetBatchForPackager {
-    /// The concatenated RecordBatch, ready for Parquet encoding.
-    /// None when the indexer is forwarding only a checkpoint delta (e.g. on finalize
-    /// with no pending data).
-    pub batch: Option<RecordBatch>,
+    /// The concatenated partition-local RecordBatches in this workbench.
+    ///
+    /// Empty when the indexer is forwarding only a checkpoint delta.
+    pub batches: Vec<PartitionedRecordBatch>,
     /// Index unique identifier for split metadata.
     pub index_uid: IndexUid,
-    /// Checkpoint delta covering all data in this batch.
+    /// Checkpoint delta covering all data in this workbench.
     pub checkpoint_delta: IndexCheckpointDelta,
     /// Publish lock for coordination.
     pub publish_lock: PublishLock,
@@ -169,7 +178,7 @@ impl Handler<ParquetBatchForPackager> for ParquetPackager {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let ParquetBatchForPackager {
-            batch,
+            batches,
             index_uid,
             checkpoint_delta,
             publish_lock,
@@ -179,35 +188,43 @@ impl Handler<ParquetBatchForPackager> for ParquetPackager {
         let output_dir = self.split_writer.base_path().clone();
         let index_uid_str = index_uid.to_string();
 
-        let splits = if let Some(batch) = batch {
+        let mut splits = Vec::with_capacity(batches.len());
+        for PartitionedRecordBatch {
+            batch,
+            partition_id,
+        } in batches
+        {
             let num_rows = batch.num_rows();
 
-            // Write the batch to a Parquet file
             match self.split_writer.write_split(&batch, &index_uid_str) {
-                Ok(split_metadata) => {
+                Ok(mut split_metadata) => {
+                    split_metadata.partition_id = partition_id;
                     let size_bytes = split_metadata.size_bytes();
                     self.counters.record_split(size_bytes);
 
                     info!(
                         split_id = %split_metadata.split_id_str(),
+                        partition_id,
                         num_rows,
                         size_bytes,
                         "ParquetPackager wrote split"
                     );
-                    vec![split_metadata]
+                    splits.push(split_metadata);
                 }
                 Err(error) => {
-                    warn!(error = %error, num_rows, "ParquetPackager failed to write split");
+                    warn!(
+                        error = %error,
+                        partition_id,
+                        num_rows,
+                        "ParquetPackager failed to write split"
+                    );
                     self.counters.record_error();
                     return Err(ActorExitStatus::Failure(
                         anyhow::anyhow!("Failed to write Parquet split: {}", error).into(),
                     ));
                 }
             }
-        } else {
-            // No batch data — just forwarding checkpoint delta (e.g. on finalize).
-            Vec::new()
-        };
+        }
 
         ctx.record_progress();
 
@@ -280,8 +297,7 @@ mod tests {
             writer_config,
             temp_dir,
             &table_config,
-        )
-        .unwrap();
+        );
 
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)
@@ -316,7 +332,10 @@ mod tests {
         // Send a batch to the packager
         let batch = create_test_batch(10);
         let batch_for_packager = ParquetBatchForPackager {
-            batch: Some(batch),
+            batches: vec![PartitionedRecordBatch {
+                batch,
+                partition_id: 0,
+            }],
             index_uid: IndexUid::for_test("test-index", 0),
             checkpoint_delta: IndexCheckpointDelta {
                 source_id: "test-source".to_string(),
@@ -355,7 +374,7 @@ mod tests {
 
         // Send a batch with no data (just checkpoint delta)
         let batch_for_packager = ParquetBatchForPackager {
-            batch: None,
+            batches: Vec::new(),
             index_uid: IndexUid::for_test("test-index", 0),
             checkpoint_delta: IndexCheckpointDelta {
                 source_id: "test-source".to_string(),
@@ -375,6 +394,107 @@ mod tests {
         // No split should be produced
         assert_eq!(counters.splits_produced.load(AtomicOrdering::Relaxed), 0);
         assert_eq!(counters.bytes_written.load(AtomicOrdering::Relaxed), 0);
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_packager_writes_all_splits_in_workbench_batch() {
+        let universe = Universe::with_accelerated_time();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let (uploader_mailbox, uploader_handle) = create_test_uploader(&universe);
+        let (packager_mailbox, packager_handle) =
+            create_test_packager(&universe, temp_dir.path(), uploader_mailbox);
+
+        let batch_for_packager = ParquetBatchForPackager {
+            batches: vec![
+                PartitionedRecordBatch {
+                    batch: create_test_batch(10),
+                    partition_id: 1,
+                },
+                PartitionedRecordBatch {
+                    batch: create_test_batch(20),
+                    partition_id: 2,
+                },
+            ],
+            index_uid: IndexUid::for_test("test-index", 0),
+            checkpoint_delta: IndexCheckpointDelta {
+                source_id: "test-source".to_string(),
+                source_delta: SourceCheckpointDelta::from_range(0..30),
+            },
+            publish_lock: PublishLock::default(),
+            publish_token_opt: None,
+        };
+
+        packager_mailbox
+            .send_message(batch_for_packager)
+            .await
+            .unwrap();
+
+        let counters = packager_handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.splits_produced.load(AtomicOrdering::Relaxed), 2);
+        assert!(counters.bytes_written.load(AtomicOrdering::Relaxed) > 0);
+
+        wait_for_staged_splits(&uploader_handle, 2)
+            .await
+            .expect("Uploader should have staged 2 splits");
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_packager_preserves_partition_ids_in_split_metadata() {
+        let universe = Universe::with_accelerated_time();
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let (uploader_mailbox, uploader_inbox) = universe.create_test_mailbox::<ParquetUploader>();
+        let (packager_mailbox, packager_handle) =
+            create_test_packager(&universe, temp_dir.path(), uploader_mailbox);
+
+        let batch_for_packager = ParquetBatchForPackager {
+            batches: vec![
+                PartitionedRecordBatch {
+                    batch: create_test_batch(10),
+                    partition_id: 1,
+                },
+                PartitionedRecordBatch {
+                    batch: create_test_batch(20),
+                    partition_id: 3,
+                },
+            ],
+            index_uid: IndexUid::for_test("test-index", 0),
+            checkpoint_delta: IndexCheckpointDelta {
+                source_id: "test-source".to_string(),
+                source_delta: SourceCheckpointDelta::from_range(0..30),
+            },
+            publish_lock: PublishLock::default(),
+            publish_token_opt: None,
+        };
+
+        packager_mailbox
+            .send_message(batch_for_packager)
+            .await
+            .unwrap();
+
+        let counters = packager_handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.splits_produced.load(AtomicOrdering::Relaxed), 2);
+
+        let split_batches: Vec<ParquetSplitBatch> = uploader_inbox.drain_for_test_typed();
+        assert_eq!(split_batches.len(), 1);
+        assert_eq!(split_batches[0].splits.len(), 2);
+        assert_eq!(
+            split_batches[0]
+                .splits
+                .iter()
+                .map(|split| split.partition_id)
+                .collect::<Vec<_>>(),
+            vec![1, 3]
+        );
+        assert_eq!(
+            split_batches[0].checkpoint_delta.source_delta,
+            SourceCheckpointDelta::from_range(0..30)
+        );
 
         universe.assert_quit().await;
     }

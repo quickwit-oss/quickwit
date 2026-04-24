@@ -91,6 +91,8 @@ pub struct MetricsPipelineParams {
     pub params_fingerprint: u64,
     pub event_broker: EventBroker,
     pub use_sketch_processors: bool,
+    /// Routing expression for partitioning incoming data.
+    pub partition_key: quickwit_doc_mapper::RoutingExpr,
 }
 
 pub struct MetricsPipeline {
@@ -354,7 +356,7 @@ impl MetricsPipeline {
             writer_config,
             self.params.indexing_directory.path(),
             &table_config,
-        )?;
+        );
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = ctx
             .spawn_actor()
@@ -388,6 +390,7 @@ impl MetricsPipeline {
         };
         let doc_processor = ParquetDocProcessor::new(
             processor,
+            self.params.partition_key.clone(),
             index_id.to_string(),
             source_id.to_string(),
             indexer_mailbox,

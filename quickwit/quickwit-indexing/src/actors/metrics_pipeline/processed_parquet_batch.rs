@@ -30,6 +30,8 @@ use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 pub struct ProcessedParquetBatch {
     /// The Arrow RecordBatch containing parquet pipeline data.
     pub batch: RecordBatch,
+    /// Partition to which this batch belongs.
+    pub partition_id: u64,
     /// Checkpoint delta for this batch.
     pub checkpoint_delta: SourceCheckpointDelta,
     /// Force commit flag - when true, accumulator should flush immediately.
@@ -43,10 +45,12 @@ impl ProcessedParquetBatch {
     ///
     /// # Arguments
     /// * `batch` - The Arrow RecordBatch containing parquet pipeline data
+    /// * `partition_id` - Partition this batch belongs to
     /// * `checkpoint_delta` - Checkpoint progress for this batch
     /// * `force_commit` - Whether to force an immediate commit/flush
     pub fn new(
         batch: RecordBatch,
+        partition_id: u64,
         checkpoint_delta: SourceCheckpointDelta,
         force_commit: bool,
     ) -> Self {
@@ -62,6 +66,7 @@ impl ProcessedParquetBatch {
 
         Self {
             batch,
+            partition_id,
             checkpoint_delta,
             force_commit,
             _gauge_guard: gauge_guard,
@@ -88,6 +93,7 @@ impl fmt::Debug for ProcessedParquetBatch {
         f.debug_struct("ProcessedParquetBatch")
             .field("num_rows", &self.batch.num_rows())
             .field("num_columns", &self.batch.num_columns())
+            .field("partition_id", &self.partition_id)
             .field("checkpoint_delta", &self.checkpoint_delta)
             .field("force_commit", &self.force_commit)
             .finish()
@@ -105,7 +111,7 @@ mod tests {
         let batch = create_test_batch(10);
         let checkpoint_delta = SourceCheckpointDelta::from_range(0..10);
 
-        let processed = ProcessedParquetBatch::new(batch, checkpoint_delta, false);
+        let processed = ProcessedParquetBatch::new(batch, 0, checkpoint_delta, false);
 
         assert_eq!(processed.num_rows(), 10);
         assert!(!processed.force_commit);
@@ -117,7 +123,7 @@ mod tests {
         let batch = create_test_batch(5);
         let checkpoint_delta = SourceCheckpointDelta::from_range(0..5);
 
-        let processed = ProcessedParquetBatch::new(batch, checkpoint_delta, true);
+        let processed = ProcessedParquetBatch::new(batch, 0, checkpoint_delta, true);
 
         assert!(processed.force_commit);
         assert_eq!(processed.num_rows(), 5);
@@ -128,7 +134,7 @@ mod tests {
         let batch = create_test_batch(3);
         let checkpoint_delta = SourceCheckpointDelta::from_range(0..3);
 
-        let processed = ProcessedParquetBatch::new(batch, checkpoint_delta, false);
+        let processed = ProcessedParquetBatch::new(batch, 0, checkpoint_delta, false);
 
         let debug_str = format!("{:?}", processed);
         assert!(debug_str.contains("ProcessedParquetBatch"));

@@ -20,6 +20,7 @@
 use quickwit_actors::ActorContext;
 use quickwit_common::{is_parquet_pipeline_index, is_sketches_index, temp_dir};
 use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_doc_mapper::RoutingExpr;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::{IndexingError, IndexingPipelineId};
 
@@ -57,6 +58,15 @@ impl IndexingService {
                 IndexingError::Internal(message)
             })?;
 
+        let partition_key_str = index_config
+            .doc_mapping
+            .partition_key
+            .as_deref()
+            .unwrap_or("");
+        let partition_key = RoutingExpr::new(partition_key_str).map_err(|error| {
+            IndexingError::Internal(format!("failed to parse partition_key: {error}"))
+        })?;
+
         let pipeline_params = MetricsPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
@@ -71,6 +81,7 @@ impl IndexingService {
             params_fingerprint,
             event_broker: self.event_broker.clone(),
             use_sketch_processors,
+            partition_key,
         };
         let pipeline = MetricsPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);

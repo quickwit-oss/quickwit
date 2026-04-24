@@ -17,11 +17,16 @@
 //! This actor processes RawDocBatch messages containing Arrow IPC data and routes
 //! them directly to the metrics engine, bypassing Tantivy document conversion.
 
+use std::collections::HashMap;
+
+use arrow::array::UInt32Array;
+use arrow::compute::take_record_batch;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
+use quickwit_doc_mapper::ArrowRowContext;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 use quickwit_parquet_engine::ingest::{
     IngestError, ParquetIngestProcessor, SketchParquetIngestProcessor,
@@ -142,6 +147,8 @@ impl IngestProcessor {
 pub struct ParquetDocProcessor {
     /// Processor for converting Arrow IPC to RecordBatch.
     processor: IngestProcessor,
+    /// Routing expression for computing partition_id per row.
+    partition_key: quickwit_doc_mapper::RoutingExpr,
     /// Processing counters.
     counters: ParquetDocProcessorCounters,
     /// Publish lock for coordinating with sources.
@@ -154,6 +161,7 @@ impl ParquetDocProcessor {
     /// Creates a new ParquetDocProcessor.
     pub fn new(
         processor: IngestProcessor,
+        partition_key: quickwit_doc_mapper::RoutingExpr,
         index_id: IndexId,
         source_id: SourceId,
         indexer_mailbox: Mailbox<ParquetIndexer>,
@@ -163,11 +171,13 @@ impl ParquetDocProcessor {
         info!(
             index_id = %index_id,
             source_id = %source_id,
+            partition_key = %partition_key,
             "ParquetDocProcessor created"
         );
 
         Self {
             processor,
+            partition_key,
             counters,
             publish_lock: PublishLock::default(),
             indexer_mailbox,
@@ -277,26 +287,44 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                     let num_rows = batch.num_rows();
                     self.counters.record_valid(num_rows, num_bytes);
 
+                    let should_force_commit = force_commit && is_last_doc;
+                    let mut batch_checkpoint = if is_last_doc {
+                        std::mem::take(&mut checkpoint_delta)
+                    } else {
+                        SourceCheckpointDelta::default()
+                    };
+
+                    // Split the batch by partition_id.
+                    let partitioned = partition_batch(&batch, &self.partition_key);
+
+                    let num_partitions = partitioned.len();
+                    for (part_idx, (partition_id, sub_batch)) in partitioned.into_iter().enumerate()
                     {
-                        let should_force_commit = force_commit && is_last_doc;
-                        // Pass checkpoint_delta only on the last doc to avoid double-counting
-                        let batch_checkpoint = if is_last_doc {
-                            std::mem::take(&mut checkpoint_delta)
+                        let is_last_partition = part_idx + 1 == num_partitions;
+                        // Attach checkpoint and force_commit only to the last
+                        // sub-batch so progress is tracked exactly once.
+                        let sub_checkpoint = if is_last_partition {
+                            std::mem::replace(
+                                &mut batch_checkpoint,
+                                SourceCheckpointDelta::default(),
+                            )
                         } else {
                             SourceCheckpointDelta::default()
                         };
+                        let sub_force = should_force_commit && is_last_partition;
 
                         let processed_batch = ProcessedParquetBatch::new(
-                            batch,
-                            batch_checkpoint,
-                            should_force_commit,
+                            sub_batch,
+                            partition_id,
+                            sub_checkpoint,
+                            sub_force,
                         );
-
                         ctx.send_message(&self.indexer_mailbox, processed_batch)
                             .await?;
-                        if is_last_doc {
-                            checkpoint_forwarded = true;
-                        }
+                    }
+
+                    if is_last_doc {
+                        checkpoint_forwarded = true;
                     }
                 }
                 Err(error) => {
@@ -321,7 +349,7 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
             let empty_batch =
                 RecordBatch::new_empty(std::sync::Arc::new(arrow::datatypes::Schema::empty()));
             let processed_batch =
-                ProcessedParquetBatch::new(empty_batch, checkpoint_delta, force_commit);
+                ProcessedParquetBatch::new(empty_batch, 0, checkpoint_delta, force_commit);
             ctx.send_message(&self.indexer_mailbox, processed_batch)
                 .await?;
         }
@@ -360,6 +388,49 @@ impl Handler<NewPublishToken> for ParquetDocProcessor {
 
         Ok(())
     }
+}
+
+/// Splits a RecordBatch into sub-batches by partition_id.
+///
+/// When the routing expression is empty (no partition_key configured), all rows
+/// map to partition 0 and the batch is returned as-is.
+fn partition_batch(
+    batch: &RecordBatch,
+    partition_key: &quickwit_doc_mapper::RoutingExpr,
+) -> Vec<(u64, RecordBatch)> {
+    let num_rows = batch.num_rows();
+    if num_rows == 0 {
+        return vec![(0, batch.clone())];
+    }
+
+    // Fast path: no partition expression configured.
+    if partition_key.is_empty() {
+        return vec![(0, batch.clone())];
+    }
+
+    // Group row indices by partition_id.
+    let mut partition_rows: HashMap<u64, Vec<u32>> = HashMap::new();
+    for row_idx in 0..num_rows {
+        let ctx = ArrowRowContext::new(batch, row_idx);
+        let pid = partition_key.eval_hash(&ctx);
+        partition_rows.entry(pid).or_default().push(row_idx as u32);
+    }
+
+    // If all rows ended up in the same partition, return the batch as-is.
+    if partition_rows.len() == 1 {
+        let (pid, _) = partition_rows.into_iter().next().unwrap();
+        return vec![(pid, batch.clone())];
+    }
+
+    // Split the batch using take_record_batch.
+    let mut result = Vec::with_capacity(partition_rows.len());
+    for (pid, indices) in partition_rows {
+        let indices_arr = UInt32Array::from(indices);
+        let sub_batch = take_record_batch(batch, &indices_arr)
+            .expect("take_record_batch should not fail on valid indices");
+        result.push((pid, sub_batch));
+    }
+    result
 }
 
 #[cfg(test)]
@@ -419,6 +490,7 @@ mod tests {
         let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox::<ParquetIndexer>();
         let metrics_doc_processor = ParquetDocProcessor::new(
             IngestProcessor::Metrics(ParquetIngestProcessor),
+            quickwit_doc_mapper::RoutingExpr::default(),
             "test-metrics-index".to_string(),
             "test-source".to_string(),
             indexer_mailbox,
@@ -461,6 +533,7 @@ mod tests {
         let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox::<ParquetIndexer>();
         let metrics_doc_processor = ParquetDocProcessor::new(
             IngestProcessor::Metrics(ParquetIngestProcessor),
+            quickwit_doc_mapper::RoutingExpr::default(),
             "test-metrics-index".to_string(),
             "test-source".to_string(),
             indexer_mailbox,
@@ -497,6 +570,7 @@ mod tests {
         let (indexer_mailbox, _indexer_inbox) = universe.create_test_mailbox::<ParquetIndexer>();
         let metrics_doc_processor = ParquetDocProcessor::new(
             IngestProcessor::Metrics(ParquetIngestProcessor),
+            quickwit_doc_mapper::RoutingExpr::default(),
             "test-metrics-index".to_string(),
             "test-source".to_string(),
             indexer_mailbox,
@@ -572,8 +646,7 @@ mod tests {
             writer_config,
             temp_dir.path(),
             &table_config,
-        )
-        .unwrap();
+        );
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 
@@ -589,6 +662,7 @@ mod tests {
 
         let metrics_doc_processor = ParquetDocProcessor::new(
             IngestProcessor::Metrics(ParquetIngestProcessor),
+            quickwit_doc_mapper::RoutingExpr::default(),
             "test-index".to_string(),
             "test-source".to_string(),
             indexer_mailbox,
