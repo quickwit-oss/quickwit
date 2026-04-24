@@ -322,22 +322,20 @@ async fn byoc_ingest_temp_metrics(
 
         // Build metrics subrequest.
         if !parsed.metrics.is_empty() {
-            let mut arrow_builder =
-                ArrowMetricsBatchBuilder::with_capacity(parsed.metrics.len());
+            let mut arrow_builder = ArrowMetricsBatchBuilder::with_capacity(parsed.metrics.len());
             let mut doc_uids = Vec::with_capacity(parsed.metrics.len());
             for dp in parsed.metrics {
                 arrow_builder.append(dp);
                 doc_uids.push(doc_uid_generator.next_doc_uid());
             }
             let record_batch = arrow_builder.finish();
-            let doc_batch =
-                ArrowDocBatchV2Builder::from_record_batch(&record_batch, doc_uids)
-                    .map_err(|error| {
-                        ByocApiError::IngestError(IngestV2Error::Internal(format!(
-                            "failed to serialize metrics Arrow IPC: {error}"
-                        )))
-                    })?
-                    .build();
+            let doc_batch = ArrowDocBatchV2Builder::from_record_batch(&record_batch, doc_uids)
+                .map_err(|error| {
+                    ByocApiError::IngestError(IngestV2Error::Internal(format!(
+                        "failed to serialize metrics Arrow IPC: {error}"
+                    )))
+                })?
+                .build();
             subrequests.push(IngestSubrequest {
                 subrequest_id,
                 index_id: BYOC_METRICS_INDEX.to_string(),
@@ -349,8 +347,7 @@ async fn byoc_ingest_temp_metrics(
 
         // Build sketches subrequest.
         if !parsed.sketches.is_empty() {
-            let mut sketch_builder =
-                ArrowSketchBatchBuilder::with_capacity(parsed.sketches.len());
+            let mut sketch_builder = ArrowSketchBatchBuilder::with_capacity(parsed.sketches.len());
             let mut sketch_doc_uids = Vec::with_capacity(parsed.sketches.len());
             for dp in parsed.sketches {
                 sketch_builder.append(dp);
@@ -478,9 +475,10 @@ fn parse_timestamp(name: &str, ts: &Option<String>) -> Result<u64, ByocApiError>
                 "failed to parse timestamp '{ts}'"
             )))
         }),
-        None => Err(ByocApiError::IngestError(IngestV2Error::Internal(
-            format!("metric '{}' is missing timestamp", name),
-        ))),
+        None => Err(ByocApiError::IngestError(IngestV2Error::Internal(format!(
+            "metric '{}' is missing timestamp",
+            name
+        )))),
     }
 }
 
@@ -521,10 +519,7 @@ fn vector_msg_to_sketch_data_point(
     let timestamp_secs = parse_timestamp(&msg.name, &msg.timestamp)?;
     let VectorMetricSketch::AgentDDSketch(dd) = sketch.sketch;
 
-    let sketch_reserved: Vec<&str> = SketchParquetField::all()
-        .iter()
-        .map(|f| f.name())
-        .collect();
+    let sketch_reserved: Vec<&str> = SketchParquetField::all().iter().map(|f| f.name()).collect();
     let tags: HashMap<String, String> = msg
         .tags
         .into_iter()
