@@ -414,6 +414,7 @@ uaparser = "0.6.4"
 unicode-segmentation = "1.12"
 urlencoding = "2"
 vector = { git = "https://github.com/vectordotdev/vector", rev = "fbb1e4b501d6081d72f864da891a98464e60d097", default-features = false, features = [
+  "api",
   "sinks-blackhole",
   "sinks-console",
   "sinks-http",
