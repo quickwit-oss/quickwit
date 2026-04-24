@@ -52,9 +52,9 @@ Each column has:
 | **Name** | Column name as it appears in the Parquet schema |
 | **Direction** | Ascending (`+`, default) or descending (`-`). `timestamp` defaults to descending |
 | **Type** | Inferred from Parquet schema: string/binary (lexicographic), integer types (numeric), float types (numeric, NaN sorts after all values per IEEE 754 total order) |
-| **Null handling** | Nulls sort **after** non-null values for ascending columns, **before** non-null values for descending columns |
+| **Null handling** | Nulls always sort **after** non-null values (`nulls_first: false`), regardless of column direction |
 
-**Note on null handling:** The current implementation uses `nulls_first: true` for all columns. This must be changed to match the design: ascending columns should use `nulls_first: false` (nulls last), descending columns should use `nulls_first: true` (nulls first). This ensures nulls cluster at the end of each column's value range in both directions.
+**Note on null handling:** Nulls sort last for all columns. This simplifies compaction: when a sort column is absent from a split, all rows are treated as null for that column. With nulls-last, these rows cluster at the end and don't interfere with key-range comparisons between splits that do have the column. Implemented in PR #6295.
 
 ### 2. Schema Requirements
 
@@ -169,22 +169,27 @@ Phase 4 of the locality compaction roadmap extends sorting to the Tantivy pipeli
 
 | Component | Location | Status |
 |-----------|----------|--------|
-| Fixed sort at ingestion | `quickwit-parquet-engine/src/storage/writer.rs:84-109` | Done (Matthew Kim). Hardcoded sort on MetricName, TagService, TagEnv, TagDatacenter, TagRegion, TagHost, TimestampSecs |
-| Sort column definition | `quickwit-parquet-engine/src/schema/fields.rs:146-158` | Done. `ParquetField::sort_order()` returns fixed column list |
-| lexsort_to_indices usage | `quickwit-parquet-engine/src/storage/writer.rs` | Done. Arrow sort + take kernel applied in `sort_batch()` |
+| Fixed sort at ingestion | `quickwit-parquet-engine/src/storage/writer.rs` | Done (Matthew Kim). Replaced by configurable sort in PR #6287 |
+| Configurable sort schema | `quickwit-parquet-engine/src/table_config.rs` | Done (PR #6287). `TableConfig` with `effective_sort_fields()` override; `ParquetWriter` resolves sort fields dynamically |
+| Sort schema parser | `quickwit-parquet-engine/src/sort_fields/parser.rs` | Done (PR #6290). Parses `column\|...\|&metadata\|timestamp/V2` with directions, LSM cutoff, version |
+| Per-column sort direction | `sort_fields/parser.rs` + `storage/writer.rs` | Done (PR #6290 + #6287). Parser extracts `+`/`-` suffix; writer respects `descending` flag |
+| lexsort_to_indices usage | `quickwit-parquet-engine/src/storage/writer.rs` | Done. Arrow sort + take kernel with stable-sort tiebreaker |
+| Physical column ordering | `quickwit-parquet-engine/src/storage/writer.rs` | Done (PR #6287). Sort columns first, then sorted_series, then alphabetical |
+| timeseries_id computation | `quickwit-indexing/src/ingest/arrow_metrics.rs` | Done (PR #6286). SipHash-2-4 over canonicalized tag key/value pairs, computed at OTLP ingest |
+| sorted_series column | `quickwit-parquet-engine/src/sorted_series/mod.rs` | Done (PR #6290). Order-preserving binary encoding of sort schema tag values + timeseries_id |
+| RowKeys (min/max boundaries) | `quickwit-parquet-engine/src/row_keys/mod.rs` | Done (PR #6292). First/last row sort column values as proto, stored in KV metadata + MetricsSplitMetadata |
+| Zonemap regexes | `quickwit-parquet-engine/src/zonemap/mod.rs` | Done (PR #6295). Prefix-preserving superset regex per string sort column, stored in KV metadata + MetricsSplitMetadata |
+| Sort metadata in Parquet key_value_metadata | `quickwit-parquet-engine/src/storage/writer.rs` | Done (PR #6292 + #6295). `qh.sort_fields`, `qh.row_keys`, `qh.row_keys_json`, `qh.window_start`, `qh.window_duration_secs`, `qh.zonemap_regexes` |
+| Parquet native sorting_columns field | `quickwit-parquet-engine/src/storage/writer.rs` | Done (PR #6287). `sorting_columns()` sets column indices and directions |
+| Nulls-last ordering | `quickwit-parquet-engine/src/storage/writer.rs` | Done (PR #6295). `nulls_first: false` for all sort columns — nulls always sort after non-null values regardless of direction. Tested ascending + descending |
 
 ### Not Yet Implemented
 
 | Component | Notes | Gap |
 |-----------|-------|-----|
-| Sort schema parser | Parse `column\|...\|timestamp&metadata/V2` format | [GAP-002](./gaps/002-fixed-sort-schema.md) |
-| Sort schema in metastore | Schema stored per-index in metastore, mutable at runtime, propagated to pipelines on change | [GAP-002](./gaps/002-fixed-sort-schema.md) |
-| Configurable sort directions | Currently all ascending. Need per-column `+`/`-` | [GAP-002](./gaps/002-fixed-sort-schema.md) |
-| Correct null ordering | Currently `nulls_first: true` for all. Need nulls-last for ascending | [GAP-002](./gaps/002-fixed-sort-schema.md) |
+| Sort schema in metastore | Schema stored per-index in metastore, mutable at runtime, propagated to pipelines on change. Currently `TableConfig::default()` is hardcoded in `indexing_pipeline.rs` | [GAP-002](./gaps/002-fixed-sort-schema.md) (Phase 32) |
 | Parquet column index + offset index emission | Enable page-level min/max stats at write time | [GAP-004](./gaps/004-incomplete-split-metadata.md) |
-| Sort metadata in PostgreSQL | sort_schema, per-column min/max/regex in MetricsSplitMetadata | [GAP-004](./gaps/004-incomplete-split-metadata.md) |
-| Sort metadata in Parquet key_value_metadata | sort_schema, min/max/regex embedded in file | [GAP-004](./gaps/004-incomplete-split-metadata.md) |
-| Parquet native sorting_columns field | Declare sort order in Parquet file metadata | [GAP-004](./gaps/004-incomplete-split-metadata.md) |
+| Sort metadata in PostgreSQL | Full migration for row_keys + zonemap columns in `metrics_splits` table | [GAP-004](./gaps/004-incomplete-split-metadata.md) |
 
 ## References
 
