@@ -34,7 +34,7 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, RateLimitingCause};
-use quickwit_proto::types::{NodeId, SubrequestId};
+use quickwit_proto::types::{IndexUid, NodeId, SourceId, SubrequestId};
 use serde_json::{Value as JsonValue, json};
 use tokio::sync::{Mutex, Semaphore};
 use tokio::time::error::Elapsed;
@@ -280,14 +280,28 @@ impl IngestRouter {
                     for persist_success in persist_response.successes {
                         workbench.record_persist_success(persist_success);
                     }
+                    let mut no_shard_source_uids: Vec<(IndexUid, SourceId)> = Vec::new();
+
                     for persist_failure in persist_response.failures {
                         workbench.record_persist_failure(&persist_failure);
 
                         match persist_failure.reason() {
                             PersistFailureReason::NoShardsAvailable => {
-                                // For non-critical failures, we don't mark the nodes unavailable;
-                                // a routing update is piggybacked on PersistResponses, so shard
-                                // counts and capacity scores will be fresh on the next try.
+                                // The ingester's piggybacked routing update only lists sources it
+                                // currently has open shards for. When a source has been deleted,
+                                // the ingester omits it entirely, leaving the routing table with a
+                                // stale seeded_from_cp=true entry whose open_shard_count remains
+                                // positive. This causes has_open_nodes() to keep returning true,
+                                // bypassing the CP re-query on every retry and failing all
+                                // MAX_PERSIST_ATTEMPTS with NoShardsAvailable.
+                                // Zero out this node's entry so the next attempt sees no open
+                                // nodes and asks the CP, which returns the new incarnation.
+                                // The piggybacked routing update applied below will overwrite this
+                                // if the source is still alive on the ingester.
+                                no_shard_source_uids.push((
+                                    persist_failure.index_uid().clone(),
+                                    persist_failure.source_id.clone(),
+                                ));
                             }
                             PersistFailureReason::NodeUnavailable
                             | PersistFailureReason::WalFull
@@ -302,6 +316,15 @@ impl IngestRouter {
                         // Since we just talked to the node, we take advantage and use the
                         // opportunity to get a fresh routing update.
                         let mut state_guard = self.state.lock().await;
+                        for (index_uid, source_id) in no_shard_source_uids {
+                            state_guard.routing_table.apply_capacity_update(
+                                leader_id.clone(),
+                                index_uid,
+                                source_id,
+                                0,
+                                0,
+                            );
+                        }
                         for shard_update in routing_update.source_shard_updates {
                             state_guard.routing_table.apply_capacity_update(
                                 leader_id.clone(),
@@ -1862,5 +1885,151 @@ mod tests {
             .pick_node("test-index", "test-source", &ingester_pool, &HashSet::new())
             .unwrap();
         assert_eq!(node.node_id, NodeId::from("test-ingester-0"));
+    }
+
+    #[tokio::test]
+    async fn test_router_clears_stale_routing_entry_on_no_shards_available() {
+        // Regression test for: index deleted and re-created (v1 → v2) while the routing table
+        // still holds a stale v1 entry (seeded_from_cp=true, open_shard_count>0).
+        // Without the fix, has_open_nodes() returns true on every retry, all MAX_PERSIST_ATTEMPTS
+        // route to the dead v1 node, and the request fails with 503 NoShardsAvailable.
+        // With the fix, the first NoShardsAvailable response zeroes the stale v1 node so the
+        // second attempt queries the CP, gets v2 shards, and succeeds.
+        let index_uid_v1: IndexUid = IndexUid::for_test("test-index", 0);
+        let index_uid_v2: IndexUid = IndexUid::for_test("test-index", 1);
+
+        let mut mock_control_plane = MockControlPlaneService::new();
+        let index_uid_v2_cp = index_uid_v2.clone();
+        mock_control_plane
+            .expect_get_or_create_open_shards()
+            .once()
+            .returning(move |request| {
+                assert_eq!(request.subrequests.len(), 1);
+                assert_eq!(request.subrequests[0].index_id, "test-index");
+                Ok(GetOrCreateOpenShardsResponse {
+                    successes: vec![GetOrCreateOpenShardsSuccess {
+                        subrequest_id: 0,
+                        index_uid: Some(index_uid_v2_cp.clone()),
+                        source_id: "test-source".to_string(),
+                        open_shards: vec![Shard {
+                            index_uid: Some(index_uid_v2_cp.clone()),
+                            source_id: "test-source".to_string(),
+                            shard_id: Some(ShardId::from(1u64)),
+                            shard_state: ShardState::Open as i32,
+                            leader_id: "test-ingester-0".to_string(),
+                            ..Default::default()
+                        }],
+                    }],
+                    ..Default::default()
+                })
+            });
+
+        let control_plane = ControlPlaneServiceClient::from_mock(mock_control_plane);
+        let ingester_pool = IngesterPool::default();
+        let router = IngestRouter::new(
+            "test-router".into(),
+            control_plane,
+            ingester_pool.clone(),
+            1,
+            EventBroker::default(),
+            Some("test-az".to_string()),
+        );
+
+        // Pre-seed routing table with stale v1 (index was deleted, broadcast hasn't cleared it).
+        {
+            let mut state_guard = router.state.lock().await;
+            state_guard.routing_table.merge_from_shards(
+                index_uid_v1.clone(),
+                "test-source".to_string(),
+                vec![Shard {
+                    index_uid: Some(index_uid_v1.clone()),
+                    source_id: "test-source".to_string(),
+                    shard_id: Some(ShardId::from(1u64)),
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-ingester-0".to_string(),
+                    ..Default::default()
+                }],
+            );
+        }
+
+        let mut mock_ingester = MockIngesterService::new();
+
+        // Attempt 1: router routes to stale v1. Ingester returns NoShardsAvailable.
+        // The routing update intentionally omits (v1, test-source) — simulating a deleted source
+        // that the ingester no longer tracks.
+        let index_uid_v1_clone = index_uid_v1.clone();
+        mock_ingester
+            .expect_persist()
+            .once()
+            .returning(move |request| {
+                assert_eq!(request.subrequests[0].index_uid(), &index_uid_v1_clone);
+                Ok(PersistResponse {
+                    leader_id: request.leader_id,
+                    successes: Vec::new(),
+                    failures: vec![PersistFailure {
+                        subrequest_id: 0,
+                        index_uid: Some(index_uid_v1_clone.clone()),
+                        source_id: "test-source".to_string(),
+                        reason: PersistFailureReason::NoShardsAvailable as i32,
+                    }],
+                    routing_update: Some(RoutingUpdate {
+                        capacity_score: 7,
+                        source_shard_updates: Vec::new(),
+                        ..Default::default()
+                    }),
+                })
+            });
+
+        // Attempt 2: fix clears stale v1 entry → has_open_nodes=false → CP queried → v2 routed.
+        let index_uid_v2_clone = index_uid_v2.clone();
+        mock_ingester
+            .expect_persist()
+            .once()
+            .returning(move |request| {
+                assert_eq!(request.subrequests[0].index_uid(), &index_uid_v2_clone);
+                Ok(PersistResponse {
+                    leader_id: request.leader_id,
+                    successes: vec![PersistSuccess {
+                        subrequest_id: 0,
+                        index_uid: Some(index_uid_v2_clone.clone()),
+                        source_id: "test-source".to_string(),
+                        shard_id: Some(ShardId::from(1u64)),
+                        replication_position_inclusive: Some(Position::offset(0u64)),
+                        num_persisted_docs: 1,
+                        parse_failures: Vec::new(),
+                    }],
+                    failures: Vec::new(),
+                    routing_update: Some(RoutingUpdate {
+                        capacity_score: 7,
+                        source_shard_updates: Vec::new(),
+                        ..Default::default()
+                    }),
+                })
+            });
+
+        ingester_pool.insert(
+            "test-ingester-0".into(),
+            IngesterPoolEntry {
+                client: IngesterServiceClient::from_mock(mock_ingester),
+                status: IngesterStatus::Ready,
+                availability_zone: None,
+            },
+        );
+
+        let response = router
+            .ingest(IngestRequestV2 {
+                subrequests: vec![IngestSubrequest {
+                    subrequest_id: 0,
+                    index_id: "test-index".to_string(),
+                    source_id: "test-source".to_string(),
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc"])),
+                }],
+                commit_type: CommitTypeV2::Auto as i32,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(response.successes.len(), 1);
+        assert_eq!(response.failures.len(), 0);
     }
 }
