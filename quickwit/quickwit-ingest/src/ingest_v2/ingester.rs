@@ -551,7 +551,7 @@ impl Ingester {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
                         source_id: subrequest.source_id,
-                        reason: PersistFailureReason::NoShardsAvailable as i32,
+                        reason: PersistFailureReason::ShardRateLimited as i32,
                     };
                     persist_failures.push(persist_failure);
                     continue;
@@ -2155,7 +2155,7 @@ mod tests {
         let persist_failure = &persist_response.failures[0];
         assert_eq!(
             persist_failure.reason(),
-            PersistFailureReason::NoShardsAvailable
+            PersistFailureReason::ShardRateLimited
         );
     }
 
@@ -2777,7 +2777,7 @@ mod tests {
         assert_eq!(persist_failure.source_id, "test-source");
         assert_eq!(
             persist_failure.reason(),
-            PersistFailureReason::NoShardsAvailable
+            PersistFailureReason::ShardRateLimited
         );
 
         let state_guard = ingester.state.lock_fully().await.unwrap();

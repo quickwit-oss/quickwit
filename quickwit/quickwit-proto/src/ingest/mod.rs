@@ -318,6 +318,7 @@ impl From<PersistFailureReason> for IngestFailureReason {
             PersistFailureReason::WalFull => IngestFailureReason::WalFull,
             PersistFailureReason::Timeout => IngestFailureReason::Timeout,
             PersistFailureReason::NodeUnavailable => IngestFailureReason::NoShardsAvailable,
+            PersistFailureReason::ShardRateLimited => IngestFailureReason::ShardRateLimited,
         }
     }
 }

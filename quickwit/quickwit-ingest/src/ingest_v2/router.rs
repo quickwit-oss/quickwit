@@ -308,6 +308,10 @@ impl IngestRouter {
                             | PersistFailureReason::Timeout => {
                                 unavailable_leaders.insert(leader_id.clone());
                             }
+                            // The ingester has open shards but they're rate-limited. The
+                            // piggybacked routing update reflects the real state, so no
+                            // routing table intervention is needed here.
+                            PersistFailureReason::ShardRateLimited => {}
                             _ => {}
                         }
                     }
