@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{IntCounter, IntGauge, new_counter, new_counter_vec, new_gauge};
 
 pub struct IngestMetrics {
@@ -78,4 +79,4 @@ impl Default for IngestMetrics {
     }
 }
 
-pub static INGEST_METRICS: Lazy<IngestMetrics> = Lazy::new(IngestMetrics::default);
+pub static INGEST_METRICS: LazyLock<IngestMetrics> = LazyLock::new(IngestMetrics::default);

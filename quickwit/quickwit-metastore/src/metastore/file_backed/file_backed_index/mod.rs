@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! [`FileBackedIndex`] module. It is public so that the crate `quickwit-backward-compat` can
-//! import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to import
+//! `FileBackedIndex` module. It is public so that the crate `quickwit-backward-compat` can
+//! import `FileBackedIndex` and run backward-compatibility tests. You should not have to import
 //! anything from here directly.
 
 mod serialize;
@@ -28,6 +28,7 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_config::{
     DocMapping, IndexingSettings, IngestSettings, RetentionPolicy, SearchSettings, SourceConfig,
 };
+use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteTask, EntityKind, IndexStats, ListShardsSubrequest,
@@ -43,8 +44,38 @@ use tracing::{info, warn};
 
 use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::metastore::{SortBy, use_shard_api};
+use crate::metastore::{ListParquetSplitsQuery, SortBy, use_shard_api};
 use crate::{IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState, split_tag_filter};
+
+/// A stored parquet split (metrics or sketch) with its state.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct StoredParquetSplit {
+    /// The split metadata.
+    pub metadata: ParquetSplitMetadata,
+    /// The split state.
+    pub state: SplitState,
+    /// Update timestamp (Unix epoch seconds).
+    pub update_timestamp: i64,
+    /// Create timestamp (Unix epoch seconds).
+    #[serde(default)]
+    pub create_timestamp: i64,
+    /// Node that produced this split.
+    #[serde(default)]
+    pub node_id: String,
+    /// Delete opstamp.
+    #[serde(default)]
+    pub delete_opstamp: u64,
+    /// Maturity timestamp (Unix epoch seconds). Splits with
+    /// maturity_timestamp <= now are considered mature.
+    /// Defaults to 0 (epoch), meaning mature immediately.
+    #[serde(default)]
+    pub maturity_timestamp: i64,
+}
+
+/// Backwards-compatible alias.
+pub(crate) type StoredMetricsSplit = StoredParquetSplit;
+/// Backwards-compatible alias.
+pub(crate) type StoredSketchSplit = StoredParquetSplit;
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
 // This struct is meant to be used only within the [`FileBackedMetastore`]. The public visibility is
@@ -60,6 +91,10 @@ pub(crate) struct FileBackedIndex {
     per_source_shards: HashMap<SourceId, Shards>,
     /// Delete tasks.
     delete_tasks: Vec<DeleteTask>,
+    /// Metrics splits (for metrics pipeline).
+    metrics_splits: HashMap<String, StoredMetricsSplit>,
+    /// Sketch splits (for DDSketch pipeline).
+    sketch_splits: HashMap<String, StoredSketchSplit>,
     /// Stamper.
     stamper: Stamper,
     /// Flag used to avoid polling the metastore if
@@ -148,6 +183,8 @@ impl From<IndexMetadata> for FileBackedIndex {
             splits: Default::default(),
             per_source_shards,
             delete_tasks: Default::default(),
+            metrics_splits: Default::default(),
+            sketch_splits: Default::default(),
             stamper: Default::default(),
             recently_modified: false,
             discarded: false,
@@ -164,11 +201,31 @@ enum DeleteSplitOutcome {
 
 impl FileBackedIndex {
     /// Constructor.
+    #[allow(dead_code)]
     pub fn new(
         metadata: IndexMetadata,
         splits: Vec<Split>,
         per_source_shards: HashMap<SourceId, Shards>,
         delete_tasks: Vec<DeleteTask>,
+    ) -> Self {
+        Self::new_with_metrics_splits(
+            metadata,
+            splits,
+            per_source_shards,
+            delete_tasks,
+            vec![],
+            vec![],
+        )
+    }
+
+    /// Constructor with metrics and sketch splits.
+    pub fn new_with_metrics_splits(
+        metadata: IndexMetadata,
+        splits: Vec<Split>,
+        per_source_shards: HashMap<SourceId, Shards>,
+        delete_tasks: Vec<DeleteTask>,
+        metrics_splits: Vec<StoredMetricsSplit>,
+        sketch_splits: Vec<StoredSketchSplit>,
     ) -> Self {
         let last_opstamp = delete_tasks
             .iter()
@@ -179,11 +236,21 @@ impl FileBackedIndex {
             .into_iter()
             .map(|split| (split.split_id().to_string(), split))
             .collect();
+        let metrics_splits = metrics_splits
+            .into_iter()
+            .map(|split| (split.metadata.split_id.to_string(), split))
+            .collect();
+        let sketch_splits = sketch_splits
+            .into_iter()
+            .map(|split| (split.metadata.split_id.as_str().to_string(), split))
+            .collect();
         Self {
             metadata,
             splits,
             per_source_shards,
             delete_tasks,
+            metrics_splits,
+            sketch_splits,
             stamper: Stamper::new(last_opstamp),
             recently_modified: false,
             discarded: false,
@@ -697,6 +764,441 @@ impl FileBackedIndex {
         self.get_shards_for_source_mut(&checkpoint_delta.source_id)?
             .try_apply_delta(checkpoint_delta.source_delta, publish_token)
     }
+
+    // Parquet Splits API
+
+    /// Stages metrics splits.
+    pub(crate) fn stage_metrics_splits(
+        &mut self,
+        splits_metadata: Vec<ParquetSplitMetadata>,
+    ) -> MetastoreResult<bool> {
+        stage_parquet_splits(&mut self.metrics_splits, splits_metadata)
+    }
+
+    /// Publishes metrics splits (transitions from Staged to Published).
+    pub(crate) fn publish_metrics_splits(
+        &mut self,
+        staged_split_ids: &[String],
+        replaced_split_ids: &[String],
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
+    ) -> MetastoreResult<bool> {
+        self.apply_checkpoint_delta(checkpoint_delta_opt, publish_token_opt)?;
+        publish_parquet_splits(
+            &mut self.metrics_splits,
+            staged_split_ids,
+            replaced_split_ids,
+        )
+    }
+
+    /// Lists metrics splits matching the query.
+    pub(crate) fn list_metrics_splits(
+        &self,
+        query: &ListParquetSplitsQuery,
+    ) -> Vec<StoredParquetSplit> {
+        list_parquet_splits(&self.metrics_splits, query)
+    }
+
+    /// Marks metrics splits for deletion.
+    pub(crate) fn mark_metrics_splits_for_deletion(
+        &mut self,
+        split_ids: &[String],
+    ) -> MetastoreResult<bool> {
+        mark_parquet_splits_for_deletion(&mut self.metrics_splits, split_ids)
+    }
+
+    /// Deletes metrics splits (must be MarkedForDeletion).
+    pub(crate) fn delete_metrics_splits(&mut self, split_ids: &[String]) -> MetastoreResult<bool> {
+        delete_parquet_splits(&mut self.metrics_splits, split_ids)
+    }
+
+    /// Stages sketch splits.
+    pub(crate) fn stage_sketch_splits(
+        &mut self,
+        splits_metadata: Vec<ParquetSplitMetadata>,
+    ) -> MetastoreResult<bool> {
+        stage_parquet_splits(&mut self.sketch_splits, splits_metadata)
+    }
+
+    /// Publishes sketch splits (transitions from Staged to Published).
+    pub(crate) fn publish_sketch_splits(
+        &mut self,
+        staged_split_ids: &[String],
+        replaced_split_ids: &[String],
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
+    ) -> MetastoreResult<bool> {
+        self.apply_checkpoint_delta(checkpoint_delta_opt, publish_token_opt)?;
+        publish_parquet_splits(
+            &mut self.sketch_splits,
+            staged_split_ids,
+            replaced_split_ids,
+        )
+    }
+
+    /// Lists sketch splits matching the query.
+    pub(crate) fn list_sketch_splits(
+        &self,
+        query: &ListParquetSplitsQuery,
+    ) -> Vec<StoredParquetSplit> {
+        list_parquet_splits(&self.sketch_splits, query)
+    }
+
+    /// Marks sketch splits for deletion.
+    pub(crate) fn mark_sketch_splits_for_deletion(
+        &mut self,
+        split_ids: &[String],
+    ) -> MetastoreResult<bool> {
+        mark_parquet_splits_for_deletion(&mut self.sketch_splits, split_ids)
+    }
+
+    /// Deletes sketch splits (must be MarkedForDeletion).
+    pub(crate) fn delete_sketch_splits(&mut self, split_ids: &[String]) -> MetastoreResult<bool> {
+        delete_parquet_splits(&mut self.sketch_splits, split_ids)
+    }
+
+    /// Apply checkpoint delta for parquet split publishing
+    fn apply_checkpoint_delta(
+        &mut self,
+        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
+    ) -> MetastoreResult<()> {
+        if let Some(checkpoint_delta) = checkpoint_delta_opt {
+            let source_id = checkpoint_delta.source_id.clone();
+            let source = self.metadata.sources.get(&source_id).ok_or_else(|| {
+                MetastoreError::NotFound(EntityKind::Source {
+                    index_id: self.index_id().to_string(),
+                    source_id: source_id.clone(),
+                })
+            })?;
+
+            if use_shard_api(&source.source_params) {
+                let publish_token = publish_token_opt.ok_or_else(|| {
+                    let message = format!(
+                        "publish token is required for publishing splits for source `{source_id}`"
+                    );
+                    MetastoreError::InvalidArgument { message }
+                })?;
+                self.try_apply_delta_v2(checkpoint_delta, publish_token)?;
+            } else {
+                self.metadata
+                    .checkpoint
+                    .try_apply_delta(checkpoint_delta)
+                    .map_err(|error| {
+                        quickwit_common::rate_limited_error!(
+                            limit_per_min = 6,
+                            index = self.index_id(),
+                            "failed to apply checkpoint delta"
+                        );
+                        let entity = EntityKind::CheckpointDelta {
+                            index_id: self.index_id().to_string(),
+                            source_id,
+                        };
+                        let message = error.to_string();
+                        MetastoreError::FailedPrecondition { entity, message }
+                    })?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn stage_parquet_splits(
+    splits_map: &mut HashMap<String, StoredParquetSplit>,
+    splits_metadata: Vec<ParquetSplitMetadata>,
+) -> MetastoreResult<bool> {
+    if splits_metadata.is_empty() {
+        return Ok(false);
+    }
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    for metadata in splits_metadata {
+        let split_id = metadata.split_id.as_str().to_string();
+
+        if let Some(existing) = splits_map.get(&split_id)
+            && existing.state != SplitState::Staged
+        {
+            let entity = EntityKind::Split {
+                split_id: split_id.clone(),
+            };
+            let message = "split is not in Staged state".to_string();
+            return Err(MetastoreError::FailedPrecondition { entity, message });
+        }
+
+        let stored = StoredParquetSplit {
+            metadata,
+            state: SplitState::Staged,
+            update_timestamp: now,
+            create_timestamp: now,
+            node_id: String::new(),
+            delete_opstamp: 0,
+            maturity_timestamp: 0,
+        };
+        splits_map.insert(split_id, stored);
+    }
+    Ok(true)
+}
+
+fn publish_parquet_splits(
+    splits_map: &mut HashMap<String, StoredParquetSplit>,
+    staged_split_ids: &[String],
+    replaced_split_ids: &[String],
+) -> MetastoreResult<bool> {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+
+    // Verify all staged splits exist and are in Staged state
+    for split_id in staged_split_ids {
+        let split = splits_map.get(split_id).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Splits {
+                split_ids: vec![split_id.clone()],
+            })
+        })?;
+        if split.state != SplitState::Staged {
+            return Err(MetastoreError::FailedPrecondition {
+                entity: EntityKind::Splits {
+                    split_ids: vec![split_id.clone()],
+                },
+                message: format!("split {} is not in Staged state", split_id),
+            });
+        }
+    }
+
+    // Transition staged splits to Published
+    for split_id in staged_split_ids {
+        if let Some(split) = splits_map.get_mut(split_id) {
+            split.state = SplitState::Published;
+            split.update_timestamp = now;
+        }
+    }
+
+    // Mark replaced splits for deletion
+    for split_id in replaced_split_ids {
+        if let Some(split) = splits_map.get_mut(split_id) {
+            split.state = SplitState::MarkedForDeletion;
+            split.update_timestamp = now;
+        }
+    }
+
+    Ok(true)
+}
+
+fn list_parquet_splits(
+    splits_map: &HashMap<String, StoredParquetSplit>,
+    query: &ListParquetSplitsQuery,
+) -> Vec<StoredParquetSplit> {
+    let mut results: Vec<StoredParquetSplit> = splits_map
+        .values()
+        .filter(|split| parquet_split_matches_query(split, query))
+        .cloned()
+        .collect();
+
+    // Sort by split_id for deterministic pagination.
+    results.sort_by(|a, b| {
+        a.metadata
+            .split_id
+            .as_str()
+            .cmp(b.metadata.split_id.as_str())
+    });
+
+    // Apply cursor: skip splits up to and including after_split_id.
+    if let Some(ref after_id) = query.after_split_id {
+        if let Some(pos) = results
+            .iter()
+            .position(|s| s.metadata.split_id.as_str() > after_id.as_str())
+        {
+            results = results.split_off(pos);
+        } else {
+            results.clear();
+        }
+    }
+
+    // Apply limit.
+    if let Some(limit) = query.limit {
+        results.truncate(limit);
+    }
+
+    results
+}
+
+fn mark_parquet_splits_for_deletion(
+    splits_map: &mut HashMap<String, StoredParquetSplit>,
+    split_ids: &[String],
+) -> MetastoreResult<bool> {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let mut mutated = false;
+    for split_id in split_ids {
+        if let Some(split) = splits_map.get_mut(split_id) {
+            split.state = SplitState::MarkedForDeletion;
+            split.update_timestamp = now;
+            mutated = true;
+        }
+    }
+    Ok(mutated)
+}
+
+fn delete_parquet_splits(
+    splits_map: &mut HashMap<String, StoredParquetSplit>,
+    split_ids: &[String],
+) -> MetastoreResult<bool> {
+    for split_id in split_ids {
+        if let Some(split) = splits_map.get(split_id)
+            && split.state != SplitState::MarkedForDeletion
+        {
+            return Err(MetastoreError::FailedPrecondition {
+                entity: EntityKind::Splits {
+                    split_ids: vec![split_id.clone()],
+                },
+                message: format!("split {} is not marked for deletion", split_id),
+            });
+        }
+    }
+    let mut mutated = false;
+    for split_id in split_ids {
+        if splits_map.remove(split_id).is_some() {
+            mutated = true;
+        }
+    }
+    Ok(mutated)
+}
+
+/// Checks if a parquet split matches the query criteria.
+fn parquet_split_matches_query(split: &StoredParquetSplit, query: &ListParquetSplitsQuery) -> bool {
+    // Filter by state
+    if !query.split_states.is_empty() {
+        let state_str = split.state.as_str();
+        if !query.split_states.iter().any(|s| s.as_str() == state_str) {
+            return false;
+        }
+    }
+
+    // Filter by time range.
+    // When sort_fields is set this is a compaction query and time_range
+    // refers to the compaction window; otherwise it refers to the data
+    // time range. Both use intersection semantics via FilterRange.
+    if !query.time_range.is_unbounded() {
+        if query.sort_fields.is_some() {
+            // Compaction path: intersect against the split's window.
+            let split_start = split.metadata.window_start();
+            let split_duration = split.metadata.window_duration_secs() as i64;
+            match split_start {
+                Some(split_start) if split_duration > 0 => {
+                    let split_end = split_start + split_duration - 1;
+                    if !query.time_range.overlaps_with(split_start..=split_end) {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        } else {
+            // Read path: intersect against the split's data time range.
+            let data_range = split.metadata.time_range.start_secs as i64
+                ..=split.metadata.time_range.end_secs as i64;
+            if !query.time_range.overlaps_with(data_range) {
+                return false;
+            }
+        }
+    }
+
+    // Filter by metric names
+    if !query.metric_names.is_empty() {
+        let has_match = query
+            .metric_names
+            .iter()
+            .any(|name| split.metadata.metric_names.contains(name));
+        if !has_match {
+            return false;
+        }
+    }
+
+    // Filter by tags (service, env, datacenter, region, host)
+    if let Some(service) = &query.tag_service {
+        match split.metadata.service_names() {
+            Some(services) if services.contains(service) => {}
+            _ => return false,
+        }
+    }
+    if let Some(env) = &query.tag_env {
+        if let Some(envs) = split.metadata.low_cardinality_tags.get("env") {
+            if !envs.contains(env) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    if let Some(datacenter) = &query.tag_datacenter {
+        if let Some(dcs) = split.metadata.low_cardinality_tags.get("datacenter") {
+            if !dcs.contains(datacenter) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    if let Some(region) = &query.tag_region {
+        if let Some(regions) = split.metadata.low_cardinality_tags.get("region") {
+            if !regions.contains(region) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+    if let Some(host) = &query.tag_host {
+        if let Some(hosts) = split.metadata.low_cardinality_tags.get("host") {
+            if !hosts.contains(host) {
+                return false;
+            }
+        } else {
+            return false;
+        }
+    }
+
+    if let Some(ref sort_fields) = query.sort_fields
+        && split.metadata.sort_fields != *sort_fields
+    {
+        return false;
+    }
+
+    if let Some(node_id) = &query.node_id
+        && split.node_id != *node_id
+    {
+        return false;
+    }
+
+    if !query.delete_opstamp.contains(&split.delete_opstamp) {
+        return false;
+    }
+
+    if !query.update_timestamp.contains(&split.update_timestamp) {
+        return false;
+    }
+
+    if !query.create_timestamp.contains(&split.create_timestamp) {
+        return false;
+    }
+
+    match &query.mature {
+        Bound::Included(evaluation_datetime) => {
+            if split.maturity_timestamp > evaluation_datetime.unix_timestamp() {
+                return false;
+            }
+        }
+        Bound::Excluded(evaluation_datetime) => {
+            if split.maturity_timestamp <= evaluation_datetime.unix_timestamp() {
+                return false;
+            }
+        }
+        Bound::Unbounded => {}
+    }
+
+    // Filter by max time_range_end (retention policy: splits whose data ends before cutoff)
+    if let Some(max_time_range_end) = query.max_time_range_end
+        && (split.metadata.time_range.end_secs as i64) > max_time_range_end
+    {
+        return false;
+    }
+
+    true
 }
 
 /// Stamper provides Opstamps, which is just an auto-increment id to label

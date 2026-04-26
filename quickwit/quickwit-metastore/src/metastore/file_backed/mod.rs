@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Module for [`FileBackedMetastore`]. It is public so that the crate `quickwit-backward-compat`
-//! can import [`FileBackedIndex`] and run backward-compatibility tests. You should not have to
+//! can import `FileBackedIndex` and run backward-compatibility tests. You should not have to
 //! import anything from here directly.
 
 pub mod file_backed_index;
@@ -42,21 +42,26 @@ use quickwit_config::IndexTemplate;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, CreateIndexTemplateRequest, DeleteIndexRequest,
-    DeleteIndexTemplatesRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
-    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, EntityKind,
-    FindIndexTemplateMatchesRequest, FindIndexTemplateMatchesResponse, GetClusterIdentityRequest,
-    GetClusterIdentityResponse, GetIndexTemplateRequest, GetIndexTemplateResponse,
-    IndexMetadataFailure, IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse,
-    IndexTemplateMatch, IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
+    DeleteIndexTemplatesRequest, DeleteMetricsSplitsRequest, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteSketchSplitsRequest, DeleteSourceRequest, DeleteSplitsRequest,
+    DeleteTask, EmptyResponse, EntityKind, FindIndexTemplateMatchesRequest,
+    FindIndexTemplateMatchesResponse, GetClusterIdentityRequest, GetClusterIdentityResponse,
+    GetIndexTemplateRequest, GetIndexTemplateResponse, IndexMetadataFailure,
+    IndexMetadataFailureReason, IndexMetadataRequest, IndexMetadataResponse, IndexTemplateMatch,
+    IndexesMetadataRequest, IndexesMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
     ListIndexStatsRequest, ListIndexStatsResponse, ListIndexTemplatesRequest,
     ListIndexTemplatesResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceStream, OpenShardSubrequest, OpenShardsRequest,
-    OpenShardsResponse, PruneShardsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateIndexRequest, UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse, serde_utils,
+    ListMetricsSplitsRequest, ListMetricsSplitsResponse, ListShardsRequest, ListShardsResponse,
+    ListSketchSplitsRequest, ListSketchSplitsResponse, ListSplitsRequest, ListSplitsResponse,
+    ListStaleSplitsRequest, MarkMetricsSplitsForDeletionRequest,
+    MarkSketchSplitsForDeletionRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreResult, MetastoreService, MetastoreServiceStream, OpenShardSubrequest,
+    OpenShardsRequest, OpenShardsResponse, PruneShardsRequest, PublishMetricsSplitsRequest,
+    PublishSketchSplitsRequest, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageMetricsSplitsRequest, StageSketchSplitsRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateIndexRequest, UpdateSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse, serde_utils,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::Storage;
@@ -74,9 +79,11 @@ use self::state::MetastoreState;
 use self::store_operations::{delete_index, index_exists, load_index, put_index};
 use super::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadataResponseExt,
-    IndexesMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsRequestExt,
-    ListSplitsResponseExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
-    StageSplitsRequestExt, UpdateIndexRequestExt, UpdateSourceRequestExt,
+    IndexesMetadataResponseExt, ListIndexesMetadataResponseExt, ListParquetSplitsRequestExt,
+    ListParquetSplitsResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
+    PublishParquetSplitsRequestExt, PublishSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
+    StageParquetSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
+    UpdateSourceRequestExt,
 };
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListSplitsQuery, MetastoreServiceExt, Split, SplitState};
@@ -112,9 +119,9 @@ impl From<bool> for MutationOccurred<()> {
 /// into as many files and stores a map of indexes
 /// (index_id, index_status) in a dedicated file `manifest.json`.
 ///
-/// A [`LazyIndexStatus`] describes the lifecycle of an index: [`LazyIndexStatus::Creating`] and
-/// [`LazyIndexStatus::Deleting`] are transitioning states that indicates that the index is not
-/// yet available. On the contrary, the [`LazyIndexStatus::Active`] status indicates the index is
+/// A `LazyIndexStatus` describes the lifecycle of an index: `LazyIndexStatus::Creating` and
+/// `LazyIndexStatus::Deleting` are transitioning states that indicates that the index is not
+/// yet available. On the contrary, the `LazyIndexStatus::Active` status indicates the index is
 /// ready to be fetched and updated.
 ///
 /// Transitioning states are useful to track inconsistencies between the in-memory and on-disk data
@@ -1275,6 +1282,260 @@ impl MetastoreService for FileBackedMetastore {
             uuid: state_wlock_guard.identity.hyphenated().to_string(),
         })
     }
+
+    // Metrics Splits API
+
+    async fn stage_metrics_splits(
+        &self,
+        request: StageMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
+        let splits_metadata = request.deserialize_splits_metadata()?;
+
+        if splits_metadata.is_empty() {
+            return Ok(EmptyResponse {});
+        }
+
+        self.mutate(&index_uid, |index| {
+            let mutated = index.stage_metrics_splits(splits_metadata)?;
+            if mutated {
+                Ok(MutationOccurred::Yes(()))
+            } else {
+                Ok(MutationOccurred::No(()))
+            }
+        })
+        .await?;
+
+        Ok(EmptyResponse {})
+    }
+
+    async fn publish_metrics_splits(
+        &self,
+        request: PublishMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_checkpoint_delta: Option<IndexCheckpointDelta> =
+            request.deserialize_index_checkpoint()?;
+        let index_uid = request.index_uid().clone();
+        let staged_split_ids = request.staged_split_ids;
+        let replaced_split_ids = request.replaced_split_ids;
+        let publish_token_opt = request.publish_token_opt;
+
+        self.mutate(&index_uid, |index| {
+            let mutated = index.publish_metrics_splits(
+                &staged_split_ids,
+                &replaced_split_ids,
+                index_checkpoint_delta,
+                publish_token_opt,
+            )?;
+            if mutated {
+                Ok(MutationOccurred::Yes(()))
+            } else {
+                Ok(MutationOccurred::No(()))
+            }
+        })
+        .await?;
+
+        Ok(EmptyResponse {})
+    }
+
+    async fn list_metrics_splits(
+        &self,
+        request: ListMetricsSplitsRequest,
+    ) -> MetastoreResult<ListMetricsSplitsResponse> {
+        use crate::metastore::ParquetSplitRecord;
+
+        let index_uid = request.index_uid().clone();
+        let query = request.deserialize_query()?;
+
+        let stored_splits = self
+            .read(&index_uid, |index| Ok(index.list_metrics_splits(&query)))
+            .await?;
+
+        let split_records: Vec<ParquetSplitRecord> = stored_splits
+            .into_iter()
+            .map(|s| ParquetSplitRecord {
+                state: s.state,
+                update_timestamp: s.update_timestamp,
+                metadata: s.metadata,
+            })
+            .collect();
+
+        ListMetricsSplitsResponse::try_from_splits(&split_records)
+    }
+
+    async fn mark_metrics_splits_for_deletion(
+        &self,
+        request: MarkMetricsSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
+        let split_ids = request.split_ids;
+
+        if split_ids.is_empty() {
+            return Ok(EmptyResponse {});
+        }
+
+        self.mutate(&index_uid, |index| {
+            let mutated = index.mark_metrics_splits_for_deletion(&split_ids)?;
+            if mutated {
+                Ok(MutationOccurred::Yes(()))
+            } else {
+                Ok(MutationOccurred::No(()))
+            }
+        })
+        .await?;
+
+        Ok(EmptyResponse {})
+    }
+
+    async fn delete_metrics_splits(
+        &self,
+        request: DeleteMetricsSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
+        let split_ids = request.split_ids;
+
+        if split_ids.is_empty() {
+            return Ok(EmptyResponse {});
+        }
+
+        self.mutate(&index_uid, |index| {
+            let mutated = index.delete_metrics_splits(&split_ids)?;
+            if mutated {
+                Ok(MutationOccurred::Yes(()))
+            } else {
+                Ok(MutationOccurred::No(()))
+            }
+        })
+        .await?;
+
+        Ok(EmptyResponse {})
+    }
+
+    async fn stage_sketch_splits(
+        &self,
+        request: StageSketchSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
+        let splits_metadata = request.deserialize_splits_metadata()?;
+
+        if splits_metadata.is_empty() {
+            return Ok(EmptyResponse {});
+        }
+
+        self.mutate(&index_uid, |index| {
+            let mutated = index.stage_sketch_splits(splits_metadata)?;
+            if mutated {
+                Ok(MutationOccurred::Yes(()))
+            } else {
+                Ok(MutationOccurred::No(()))
+            }
+        })
+        .await?;
+
+        Ok(EmptyResponse {})
+    }
+
+    async fn publish_sketch_splits(
+        &self,
+        request: PublishSketchSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_checkpoint_delta: Option<IndexCheckpointDelta> =
+            request.deserialize_index_checkpoint()?;
+        let index_uid = request.index_uid().clone();
+        let staged_split_ids = request.staged_split_ids;
+        let replaced_split_ids = request.replaced_split_ids;
+        let publish_token_opt = request.publish_token_opt;
+
+        self.mutate(&index_uid, |index| {
+            let mutated = index.publish_sketch_splits(
+                &staged_split_ids,
+                &replaced_split_ids,
+                index_checkpoint_delta,
+                publish_token_opt,
+            )?;
+            if mutated {
+                Ok(MutationOccurred::Yes(()))
+            } else {
+                Ok(MutationOccurred::No(()))
+            }
+        })
+        .await?;
+
+        Ok(EmptyResponse {})
+    }
+
+    async fn list_sketch_splits(
+        &self,
+        request: ListSketchSplitsRequest,
+    ) -> MetastoreResult<ListSketchSplitsResponse> {
+        use crate::metastore::ParquetSplitRecord;
+
+        let index_uid = request.index_uid().clone();
+        let query = request.deserialize_query()?;
+
+        let stored_splits = self
+            .read(&index_uid, |index| Ok(index.list_sketch_splits(&query)))
+            .await?;
+
+        let split_records: Vec<ParquetSplitRecord> = stored_splits
+            .into_iter()
+            .map(|s| ParquetSplitRecord {
+                state: s.state,
+                update_timestamp: s.update_timestamp,
+                metadata: s.metadata,
+            })
+            .collect();
+
+        ListSketchSplitsResponse::try_from_splits(&split_records)
+    }
+
+    async fn mark_sketch_splits_for_deletion(
+        &self,
+        request: MarkSketchSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
+        let split_ids = request.split_ids;
+
+        if split_ids.is_empty() {
+            return Ok(EmptyResponse {});
+        }
+
+        self.mutate(&index_uid, |index| {
+            let mutated = index.mark_sketch_splits_for_deletion(&split_ids)?;
+            if mutated {
+                Ok(MutationOccurred::Yes(()))
+            } else {
+                Ok(MutationOccurred::No(()))
+            }
+        })
+        .await?;
+
+        Ok(EmptyResponse {})
+    }
+
+    async fn delete_sketch_splits(
+        &self,
+        request: DeleteSketchSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        let index_uid = request.index_uid().clone();
+        let split_ids = request.split_ids;
+
+        if split_ids.is_empty() {
+            return Ok(EmptyResponse {});
+        }
+
+        self.mutate(&index_uid, |index| {
+            let mutated = index.delete_sketch_splits(&split_ids)?;
+            if mutated {
+                Ok(MutationOccurred::Yes(()))
+            } else {
+                Ok(MutationOccurred::No(()))
+            }
+        })
+        .await?;
+
+        Ok(EmptyResponse {})
+    }
 }
 
 impl MetastoreServiceExt for FileBackedMetastore {}
@@ -1351,7 +1612,7 @@ mod tests {
     use quickwit_proto::types::SourceId;
     use quickwit_query::query_ast::qast_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
-    use rand::Rng;
+    use rand::RngExt;
     use tests::manifest::{IndexStatus, Manifest};
     use time::OffsetDateTime;
     use tokio::time::Duration;

@@ -19,7 +19,6 @@ env:
   AWS_ACCESS_KEY_ID: "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
   CARGO_INCREMENTAL: 0
-  LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT: 1
   PUBSUB_EMULATOR_HOST: "localhost:8681"
   QW_DISABLE_TELEMETRY: 1
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
@@ -38,7 +37,7 @@ jobs:
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
-        image: localstack/localstack:latest
+        image: localstack/localstack:4.14.0
         ports:
           - "4566:4566"
           - "4571:4571"
@@ -116,12 +115,13 @@ jobs:
           sudo apt update
           sudo apt install libsasl2-dev
           sudo apt install libsasl2-2
+          sudo apt install libcurl4-openssl-dev
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v.6.2.0
         with:
           python-version: '3.11'
 
-      - uses: actions/cache@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
+      - uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/git

@@ -21,7 +21,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use itertools::Itertools;
 use oneshot;
-use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_actors::ActorExitStatus;
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::metastore::SourceType;
@@ -40,11 +40,10 @@ use tokio::task::{JoinHandle, spawn_blocking};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
 use crate::source::{
     BATCH_NUM_BYTES_LIMIT, BatchBuilder, EMIT_BATCHES_TIMEOUT, Source, SourceContext,
-    SourceRuntime, TypedSourceFactory,
+    SourceRuntime, SourceSink, TypedSourceFactory,
 };
 
 type GroupId = String;
@@ -394,7 +393,7 @@ impl KafkaSource {
     async fn process_revoke_partitions(
         &mut self,
         ctx: &SourceContext,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        source_sink: &SourceSink,
         batch: &mut BatchBuilder,
         ack_tx: oneshot::Sender<()>,
     ) -> anyhow::Result<()> {
@@ -406,11 +405,9 @@ impl KafkaSource {
         batch.clear();
         self.publish_lock = PublishLock::default();
         self.state.num_rebalances += 1;
-        ctx.send_message(
-            doc_processor_mailbox,
-            NewPublishLock(self.publish_lock.clone()),
-        )
-        .await?;
+        source_sink
+            .send_publish_lock(NewPublishLock(self.publish_lock.clone()), ctx)
+            .await?;
         Ok(())
     }
 
@@ -444,18 +441,19 @@ impl KafkaSource {
 impl Source for KafkaSource {
     async fn initialize(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
         let publish_lock = self.publish_lock.clone();
-        ctx.send_message(doc_processor_mailbox, NewPublishLock(publish_lock))
+        source_sink
+            .send_publish_lock(NewPublishLock(publish_lock), ctx)
             .await?;
         Ok(())
     }
 
     async fn emit_batches(
         &mut self,
-        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        source_sink: &SourceSink,
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
@@ -470,7 +468,7 @@ impl Source for KafkaSource {
                     match event {
                         KafkaEvent::Message(message) => self.process_message(message, &mut batch_builder).await?,
                         KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
-                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, doc_processor_mailbox, &mut batch_builder, ack_tx).await?,
+                        KafkaEvent::RevokePartitions { ack_tx } => self.process_revoke_partitions(ctx, source_sink, &mut batch_builder, ack_tx).await?,
                         KafkaEvent::PartitionEOF(partition) => self.process_partition_eof(partition),
                         KafkaEvent::Error(error) => Err(ActorExitStatus::from(error))?,
                     }
@@ -492,11 +490,11 @@ impl Source for KafkaSource {
                 "sending doc batch to indexer"
             );
             let message = batch_builder.build();
-            ctx.send_message(doc_processor_mailbox, message).await?;
+            source_sink.send_raw_doc_batch(message, ctx).await?;
         }
         if self.should_exit() {
             info!(topic = %self.topic, "reached end of topic");
-            ctx.send_exit_with_success(doc_processor_mailbox).await?;
+            source_sink.send_exit_with_success(ctx).await?;
             return Err(ActorExitStatus::Success);
         }
         Ok(Duration::default())
@@ -772,9 +770,10 @@ mod kafka_broker_tests {
     use tokio::sync::watch;
 
     use super::*;
+    use crate::actors::DocProcessor;
     use crate::source::test_setup_helper::setup_index;
     use crate::source::tests::SourceRuntimeBuilder;
-    use crate::source::{RawDocBatch, SourceActor, quickwit_supported_sources};
+    use crate::source::{RawDocBatch, SourceActor, SourceSink, quickwit_supported_sources};
 
     fn create_base_consumer(group_id: &str) -> BaseConsumer {
         ClientConfig::new()
@@ -1110,7 +1109,7 @@ mod kafka_broker_tests {
 
         let universe = Universe::with_accelerated_time();
         let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
-        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox();
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox::<DocProcessor>();
         let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
         let ctx: ActorContext<SourceActor> =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
@@ -1123,8 +1122,9 @@ mod kafka_broker_tests {
         assert!(publish_lock.is_alive());
         assert_eq!(kafka_source.state.num_rebalances, 0);
 
+        let source_sink = SourceSink::from(indexer_mailbox);
         kafka_source
-            .process_revoke_partitions(&ctx, &indexer_mailbox, &mut batch_builder, ack_tx)
+            .process_revoke_partitions(&ctx, &source_sink, &mut batch_builder, ack_tx)
             .await
             .unwrap();
 
@@ -1272,11 +1272,9 @@ mod kafka_broker_tests {
                 .with_metastore(metastore)
                 .build();
             let source = source_loader.load_source(source_runtime).await?;
-            let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-            let source_actor = SourceActor {
-                source,
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
-            };
+            let (doc_processor_mailbox, doc_processor_inbox) =
+                universe.create_test_mailbox::<DocProcessor>();
+            let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
@@ -1323,12 +1321,10 @@ mod kafka_broker_tests {
             let source_runtime = SourceRuntimeBuilder::new(index_uid, source_config)
                 .with_metastore(metastore)
                 .build();
-            let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+            let (doc_processor_mailbox, doc_processor_inbox) =
+                universe.create_test_mailbox::<DocProcessor>();
             let source = source_loader.load_source(source_runtime).await?;
-            let source_actor = SourceActor {
-                source,
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
-            };
+            let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
@@ -1398,11 +1394,9 @@ mod kafka_broker_tests {
                 .with_metastore(metastore)
                 .build();
             let source = source_loader.load_source(source_runtime).await?;
-            let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-            let source_actor = SourceActor {
-                source,
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
-            };
+            let (doc_processor_mailbox, doc_processor_inbox) =
+                universe.create_test_mailbox::<DocProcessor>();
+            let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());
@@ -1451,11 +1445,9 @@ mod kafka_broker_tests {
                 .with_metastore(metastore)
                 .build();
             let source = source_loader.load_source(source_runtime).await?;
-            let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-            let source_actor = SourceActor {
-                source,
-                doc_processor_mailbox: doc_processor_mailbox.clone(),
-            };
+            let (doc_processor_mailbox, doc_processor_inbox) =
+                universe.create_test_mailbox::<DocProcessor>();
+            let source_actor = SourceActor::new(source, doc_processor_mailbox);
             let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
             let (exit_status, exit_state) = source_handle.join().await;
             assert!(exit_status.is_success());

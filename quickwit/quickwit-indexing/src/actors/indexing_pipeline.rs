@@ -15,7 +15,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use async_trait::async_trait;
 use quickwit_actors::{
@@ -36,14 +36,14 @@ use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
-use super::MergePlanner;
+use super::{DocProcessor, IndexSerializer, Indexer, MergePlanner, Packager};
 use crate::SplitsUpdateMailbox;
-use crate::actors::doc_processor::DocProcessor;
-use crate::actors::index_serializer::IndexSerializer;
-use crate::actors::publisher::PublisherType;
+use crate::actors::pipeline_shared::{
+    SPAWN_PIPELINE_SEMAPHORE, SUPERVISE_INTERVAL, Spawn, SuperviseLoop, wait_duration_before_retry,
+};
 use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
-use crate::actors::{Indexer, Packager, Publisher, Uploader};
+use crate::actors::{Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
 use crate::source::{
@@ -51,33 +51,7 @@ use crate::source::{
 };
 use crate::split_store::IndexingSplitStore;
 
-const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
-
-const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
-
-#[derive(Debug)]
-struct SuperviseLoop;
-
-/// Calculates the wait time based on retry count.
-// retry_count, wait_time
-// 0   1s
-// 1   2s
-// 2   4s
-// 3   8s
-// ...
-// >=8   5mn
-pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
-    // Protect against a `retry_count` that will lead to an overflow.
-    let max_power = (retry_count as u32).min(31);
-    Duration::from_secs(2u64.pow(max_power)).min(MAX_RETRY_DELAY)
-}
-
-/// Spawning an indexing pipeline puts a lot of pressure on the file system, metastore, etc. so
-/// we rely on this semaphore to limit the number of indexing pipelines that can be spawned
-/// concurrently.
-/// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
-static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
-
+/// Handles for standard Tantivy-based indexing pipeline.
 struct IndexingPipelineHandles {
     source_mailbox: Mailbox<SourceActor>,
     source_handle: ActorHandle<SourceActor>,
@@ -100,13 +74,6 @@ impl IndexingPipelineHandles {
         }
         check_for_progress
     }
-}
-
-// Messages
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Spawn {
-    retry_count: usize,
 }
 
 pub struct IndexingPipeline {
@@ -176,20 +143,20 @@ impl IndexingPipeline {
     }
 
     fn supervisables(&self) -> Vec<&dyn Supervisable> {
-        if let Some(handles) = &self.handles_opt {
-            let supervisables: Vec<&dyn Supervisable> = vec![
-                &handles.source_handle,
-                &handles.doc_processor,
-                &handles.indexer,
-                &handles.index_serializer,
-                &handles.packager,
-                &handles.uploader,
-                &handles.sequencer,
-                &handles.publisher,
-            ];
-            supervisables
-        } else {
-            Vec::new()
+        match &self.handles_opt {
+            Some(handles) => {
+                vec![
+                    &handles.source_handle,
+                    &handles.doc_processor,
+                    &handles.indexer,
+                    &handles.index_serializer,
+                    &handles.packager,
+                    &handles.uploader,
+                    &handles.sequencer,
+                    &handles.publisher,
+                ]
+            }
+            None => Vec::new(),
         }
     }
 
@@ -251,26 +218,27 @@ impl IndexingPipeline {
     }
 
     fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
-        let Some(handles) = &self.handles_opt else {
-            return;
-        };
-        handles.doc_processor.refresh_observe();
-        handles.indexer.refresh_observe();
-        handles.uploader.refresh_observe();
-        handles.publisher.refresh_observe();
-        self.statistics = self
-            .previous_generations_statistics
-            .clone()
-            .add_actor_counters(
-                &handles.doc_processor.last_observation(),
-                &handles.indexer.last_observation(),
-                &handles.uploader.last_observation(),
-                &handles.publisher.last_observation(),
-            )
-            .set_generation(self.statistics.generation)
-            .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
-        let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
-        self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        if let Some(handles) = &self.handles_opt {
+            handles.doc_processor.refresh_observe();
+            handles.indexer.refresh_observe();
+            handles.uploader.refresh_observe();
+            handles.publisher.refresh_observe();
+            self.statistics = self
+                .previous_generations_statistics
+                .clone()
+                .add_actor_counters(
+                    &handles.doc_processor.last_observation(),
+                    &handles.indexer.last_observation(),
+                    &handles.uploader.last_observation(),
+                    &handles.publisher.last_observation(),
+                )
+                .set_generation(self.statistics.generation)
+                .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+            let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
+            self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        }
+        // Always update params_fingerprint, shard_ids, and emit observation.
+        // This ensures shard assignments are reported to the control plane via chitchat.
         self.statistics.params_fingerprint = self.params.params_fingerprint;
         self.statistics.shard_ids.clone_from(&self.shard_ids);
         ctx.observe(self);
@@ -281,14 +249,10 @@ impl IndexingPipeline {
         &mut self,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let Some(handles) = self.handles_opt.as_mut() else {
-            return Ok(());
+        let check_for_progress = match &mut self.handles_opt {
+            Some(handles) => handles.should_check_for_progress(),
+            None => return Ok(()),
         };
-
-        // While we check if the actor has terminated or not, we do not check for progress
-        // at every single loop. Instead, we wait for the `HEARTBEAT` duration to have elapsed,
-        // since our last check.
-        let check_for_progress = handles.should_check_for_progress();
         let health = self.healthcheck(check_for_progress);
         match health {
             Health::Healthy => {}
@@ -338,7 +302,8 @@ impl IndexingPipeline {
 
         // Publisher
         let publisher = Publisher::new(
-            PublisherType::MainPublisher,
+            super::PUBLISHER_NAME,
+            QueueCapacity::Bounded(1),
             self.params.metastore.clone(),
             Some(self.params.merge_planner_mailbox.clone()),
             Some(source_mailbox.clone()),
@@ -450,10 +415,7 @@ impl IndexingPipeline {
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(source_runtime))
             .await?;
-        let actor_source = SourceActor {
-            source,
-            doc_processor_mailbox,
-        };
+        let actor_source = SourceActor::new(source, doc_processor_mailbox);
         let (source_mailbox, source_handle) = ctx
             .spawn_actor()
             .set_mailboxes(source_mailbox, source_inbox)
@@ -557,7 +519,7 @@ impl Handler<AssignShards> for IndexingPipeline {
             .clone_from(&assign_shards_message.0.shard_ids);
         // If the pipeline is running, we forward the message to its source.
         // If it is not, it will be respawned soon, and the shards will be assigned afterward.
-        if let Some(handles) = &mut self.handles_opt {
+        if let Some(handles) = &self.handles_opt {
             info!(
                 shard_ids=?assign_shards_message.0.shard_ids,
                 "assigning shards to indexing pipeline"
@@ -607,6 +569,7 @@ mod tests {
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::time::Duration;
 
     use quickwit_actors::{Command, Universe};
     use quickwit_common::ServiceStream;
@@ -622,7 +585,7 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
-    use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
+    use crate::actors::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::default_merge_policy;
 
     #[test]
@@ -632,7 +595,7 @@ mod tests {
         assert_eq!(wait_duration_before_retry(2), Duration::from_secs(4));
         assert_eq!(wait_duration_before_retry(3), Duration::from_secs(8));
         assert_eq!(wait_duration_before_retry(9), Duration::from_secs(512));
-        assert_eq!(wait_duration_before_retry(10), MAX_RETRY_DELAY);
+        assert_eq!(wait_duration_before_retry(10), Duration::from_secs(600));
     }
 
     async fn test_indexing_pipeline_num_fails_before_success(

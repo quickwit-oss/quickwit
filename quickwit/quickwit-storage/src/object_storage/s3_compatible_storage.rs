@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::LazyLock;
 use std::task::{Context, Poll};
 use std::{fmt, io};
 
@@ -23,7 +24,9 @@ use anyhow::{Context as AnyhhowContext, anyhow};
 use async_trait::async_trait;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_sdk_s3::Client as S3Client;
-use aws_sdk_s3::config::{Credentials, Region};
+use aws_sdk_s3::config::{
+    Credentials, Region, RequestChecksumCalculation, ResponseChecksumValidation,
+};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
@@ -32,7 +35,6 @@ use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
 use base64::prelude::{BASE64_STANDARD, Engine};
 use futures::{StreamExt, stream};
-use once_cell::sync::{Lazy, OnceCell};
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
 use quickwit_common::retry::{Retry, RetryParams};
@@ -54,7 +56,7 @@ use crate::{
 
 /// Semaphore to limit the number of concurrent requests to the object store. Some object stores
 /// (R2, SeaweedFs...) return errors when too many concurrent requests are emitted.
-static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
+static REQUEST_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| {
     let num_permits: usize =
         quickwit_common::get_from_env("QW_S3_MAX_CONCURRENCY", 10_000usize, false);
     Semaphore::new(num_permits)
@@ -144,6 +146,11 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_stalled_stream_protection(aws_config.stalled_stream_protection());
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
+    if s3_storage_config.disable_checksums {
+        s3_config.set_request_checksum_calculation(Some(RequestChecksumCalculation::WhenRequired));
+        s3_config.set_response_checksum_validation(Some(ResponseChecksumValidation::WhenRequired));
+    }
+
     if let Some(endpoint) = s3_storage_config.endpoint() {
         info!(endpoint=%endpoint, "using S3 endpoint defined in storage config or environment variable");
         s3_config.set_endpoint_url(Some(endpoint));
@@ -213,15 +220,13 @@ impl S3CompatibleObjectStorage {
 }
 
 pub fn parse_s3_uri(uri: &Uri) -> Option<(String, PathBuf)> {
-    static S3_URI_PTN: OnceCell<Regex> = OnceCell::new();
+    static S3_URI_PTN: LazyLock<Regex> = LazyLock::new(|| {
+        // s3://bucket/path/to/object
+        Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.+))?")
+            .expect("The regular expression should compile.")
+    });
 
-    let captures = S3_URI_PTN
-        .get_or_init(|| {
-            // s3://bucket/path/to/object
-            Regex::new(r"s3(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.+))?")
-                .expect("The regular expression should compile.")
-        })
-        .captures(uri.as_str())?;
+    let captures = S3_URI_PTN.captures(uri.as_str())?;
 
     let bucket = captures.name("bucket")?.as_str().to_string();
     let prefix = captures

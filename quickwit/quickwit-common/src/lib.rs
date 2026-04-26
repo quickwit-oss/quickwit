@@ -49,6 +49,9 @@ pub mod tower;
 pub mod type_map;
 pub mod uri;
 
+mod metrics_specific;
+pub use metrics_specific::*;
+
 mod socket_addr_legacy_hash;
 
 use std::env;

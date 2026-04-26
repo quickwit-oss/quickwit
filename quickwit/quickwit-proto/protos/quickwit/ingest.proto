@@ -48,10 +48,20 @@ enum CommitTypeV2 {
   COMMIT_TYPE_V2_FORCE = 3;
 }
 
+// Format of documents in DocBatchV2.doc_buffer
+enum DocFormat {
+  // JSON documents, one per entry in doc_lengths (default for backward compatibility)
+  DOC_FORMAT_JSON = 0;
+  // Arrow IPC stream format containing a single RecordBatch
+  DOC_FORMAT_ARROW_IPC = 1;
+}
+
 message DocBatchV2 {
   bytes doc_buffer = 1;
   repeated uint32 doc_lengths = 2;
   repeated quickwit.common.DocUid doc_uids = 3;
+  // Format of the documents in doc_buffer. Defaults to JSON for backward compatibility.
+  DocFormat doc_format = 4;
 }
 
 message MRecordBatch {
