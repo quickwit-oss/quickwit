@@ -69,7 +69,10 @@ pub(crate) fn build_compaction_key_value_metadata(
     // but belt-and-suspenders at the serialization boundary).
     quickwit_dst::check_invariant!(
         quickwit_dst::invariants::InvariantId::TW2,
-        metadata.window_duration_secs() == 0 || 3600 % metadata.window_duration_secs() == 0,
+        metadata.window_duration_secs() == 0
+            || quickwit_dst::invariants::window::is_valid_window_duration(
+                metadata.window_duration_secs()
+            ),
         " at Parquet write: window_duration_secs={} does not divide 3600",
         metadata.window_duration_secs()
     );

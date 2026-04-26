@@ -532,7 +532,10 @@ impl ParquetSplitMetadataBuilder {
         // Enforced at build time so no invalid metadata propagates to storage.
         quickwit_dst::check_invariant!(
             quickwit_dst::invariants::InvariantId::TW2,
-            self.window_duration_secs == 0 || 3600 % self.window_duration_secs == 0,
+            self.window_duration_secs == 0
+                || quickwit_dst::invariants::window::is_valid_window_duration(
+                    self.window_duration_secs
+                ),
             ": window_duration_secs={} does not divide 3600",
             self.window_duration_secs
         );
