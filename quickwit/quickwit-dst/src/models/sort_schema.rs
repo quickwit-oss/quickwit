@@ -616,6 +616,64 @@ mod tests {
         );
     }
 
+    /// Verify that the model detects null ordering violations.
+    /// Construct rows where a null appears before a non-null value in a
+    /// descending column. With nulls-always-last, this is wrong — the
+    /// model's `is_sorted` and `row_leq` must reject it.
+    #[test]
+    fn ss2_detects_null_before_non_null_in_descending() {
+        let schema = vec![SortColumn {
+            column: Column::C1,
+            direction: Direction::Desc,
+        }];
+
+        // WRONG order: null before non-null
+        let bad_rows = vec![
+            Row {
+                cells: BTreeMap::new(), // C1 missing = null
+            },
+            Row {
+                cells: [(Column::C1, Value::Val(5))].into(),
+            },
+        ];
+
+        // row_leq(null, non-null) must be false (null sorts after non-null).
+        assert!(
+            !row_leq(&bad_rows[0], &bad_rows[1], &schema),
+            "null row must not be <= non-null row (nulls always last)"
+        );
+
+        // is_sorted must reject this ordering.
+        assert!(
+            !is_sorted(&bad_rows, &schema),
+            "rows with null before non-null must not be considered sorted"
+        );
+    }
+
+    /// Verify the model accepts correct null ordering: non-null before null.
+    #[test]
+    fn ss2_accepts_non_null_before_null_in_descending() {
+        let schema = vec![SortColumn {
+            column: Column::C1,
+            direction: Direction::Desc,
+        }];
+
+        // CORRECT order: value before null (nulls last)
+        let good_rows = vec![
+            Row {
+                cells: [(Column::C1, Value::Val(5))].into(),
+            },
+            Row {
+                cells: BTreeMap::new(), // null
+            },
+        ];
+
+        assert!(
+            is_sorted(&good_rows, &schema),
+            "non-null before null must be accepted (nulls always last)"
+        );
+    }
+
     #[test]
     fn is_sorted_basic() {
         let schema = vec![SortColumn {
