@@ -353,11 +353,14 @@ fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
             }
             std::cmp::Ordering::Equal => {
                 // Within same series, timestamp must respect the schema direction.
-                let order_ok = if ts_descending {
-                    ts_values[i] >= ts_values[i + 1]
-                } else {
-                    ts_values[i] <= ts_values[i + 1]
-                };
+                // Use the shared compare_with_null_ordering — same function the
+                // Stateright model uses — so production and model agree.
+                let ts_ascending = !ts_descending;
+                let cmp = quickwit_dst::invariants::sort::compare_with_null_ordering(
+                    Some(&ts_values[i]),
+                    Some(&ts_values[i + 1]),
+                    ts_ascending,
+                );
                 let direction_str = if ts_descending {
                     "descending"
                 } else {
@@ -365,7 +368,7 @@ fn verify_sort_order(batch: &RecordBatch, sort_fields_str: &str) {
                 };
                 quickwit_dst::check_invariant!(
                     quickwit_dst::invariants::InvariantId::MC3,
-                    order_ok,
+                    cmp != std::cmp::Ordering::Greater,
                     ": timestamp_secs not {} within series at row {}: {} vs {}",
                     direction_str,
                     i,
