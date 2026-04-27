@@ -32,7 +32,7 @@ use std::fmt;
 pub enum InvariantId {
     /// SS-1: all rows within a split are sorted according to the split's schema
     SS1,
-    /// SS-2: null values sort correctly per direction (nulls last asc, first desc)
+    /// SS-2: null values always sort after non-null (nulls last, regardless of direction)
     SS2,
     /// SS-3: missing sort columns are treated as NULL
     SS3,
@@ -113,7 +113,7 @@ impl InvariantId {
     pub fn description(self) -> &'static str {
         match self {
             Self::SS1 => "rows sorted by split schema",
-            Self::SS2 => "null ordering correct per direction",
+            Self::SS2 => "nulls always sort after non-null",
             Self::SS3 => "missing sort columns treated as NULL",
             Self::SS4 => "sort schema immutable after write",
             Self::SS5 => "three copies of sort schema identical",

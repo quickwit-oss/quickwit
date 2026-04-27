@@ -24,6 +24,8 @@ mod cluster_api;
 pub mod datadog_api;
 #[cfg(not(any(test, feature = "testsuite")))]
 pub(crate) mod datadog_api;
+#[cfg(feature = "datafusion")]
+mod datafusion_api;
 mod decompression;
 mod delete_task_api;
 mod developer_api;
@@ -81,9 +83,7 @@ use quickwit_common::tower::{
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{
-    ClusterConfig, IndexConfig, IngestApiConfig, IngestSettings, NodeConfig, RetentionPolicy,
-};
+use quickwit_config::{ClusterConfig, IngestApiConfig, IngestSettings, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -211,6 +211,7 @@ struct QuickwitServices {
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
+
     pub otlp_traces_service_opt: Option<OtlpGrpcTracesService>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
@@ -218,6 +219,12 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
 
     pub env_filter_reload_fn: EnvFilterReloadFn,
+
+    /// Generic DataFusion session builder (present if searcher role is active
+    /// and the `datafusion` feature + `QW_ENABLE_DATAFUSION_ENDPOINT` env var
+    /// are both enabled).
+    #[cfg(feature = "datafusion")]
+    pub datafusion_session_builder: Option<Arc<quickwit_datafusion::DataFusionSessionBuilder>>,
 
     /// The control plane listens to various events.
     /// We must maintain a reference to the subscription handles to continue receiving
@@ -662,7 +669,7 @@ pub async fn serve_quickwit(
         ))
     };
 
-    let (search_job_placer, search_service) = setup_searcher(
+    let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
         cluster.change_stream(),
         // search remains available without a control plane because not all
@@ -674,8 +681,26 @@ pub async fn serve_quickwit(
     .await
     .context("failed to start searcher service")?;
 
+    // Build the generic DataFusion session builder if this node is a searcher
+    // and the DataFusion endpoint is enabled. The whole code path is absent
+    // when the `datafusion` feature is off. A runtime setup failure (e.g.
+    // failing to install the object store registry) propagates — DataFusion
+    // should fail the node startup loudly rather than silently disabling
+    // itself.
+    #[cfg(feature = "datafusion")]
+    let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
+        &node_config,
+        cluster.change_stream(),
+        metastore_through_control_plane.clone(),
+        storage_resolver.clone(),
+    )?;
+    // The search job placer owns a clone of this pool; the local binding is not
+    // needed after the searcher and DataFusion setup paths have registered
+    // their listeners.
+    drop(searcher_pool);
+
     // The control plane listens for local shards updates to learn about each shard's ingestion
-    // throughput.
+    // throughput. Ingesters (routers) do so to update their shard table.
     let local_shards_update_listener_handle_opt =
         if node_config.is_service_enabled(QuickwitService::ControlPlane) {
             Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
@@ -765,6 +790,8 @@ pub async fn serve_quickwit(
         otlp_traces_service_opt,
         search_service,
         env_filter_reload_fn,
+        #[cfg(feature = "datafusion")]
+        datafusion_session_builder,
     });
     // Setup and start gRPC server.
     let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
@@ -1138,7 +1165,7 @@ async fn setup_searcher(
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     searcher_context: Arc<SearcherContext>,
-) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>)> {
+) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>, SearcherPool)> {
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
 
@@ -1195,7 +1222,7 @@ async fn setup_searcher(
         })
     });
     searcher_pool.listen_for_changes(searcher_change_stream);
-    Ok((search_job_placer, search_service))
+    Ok((search_job_placer, search_service, searcher_pool))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1577,7 +1604,7 @@ async fn create_or_update_datadog_indexes(
     Ok(())
 }
 
-/// Creates the Datadog index if it doesn't exist, or updates its retention policy if necessary.
+/// Creates the Datadog index if it doesn't exist, or updates it if necessary.
 async fn create_or_update_datadog_index(
     default_index_root_uri: &Uri,
     index_manager: &mut IndexManager,
@@ -1611,7 +1638,7 @@ async fn create_or_update_datadog_index(
     {
         Some(index_metadata) => index_metadata,
         None => {
-            patch_index_config(&mut desired_index_config);
+            patch_ingest_settings(&mut desired_index_config.ingest_settings);
 
             info!("creating Datadog {index_type} index `{index_id}`");
             index_manager
@@ -1620,14 +1647,20 @@ async fn create_or_update_datadog_index(
             return Ok(());
         }
     };
+    // Ignore retention policy changes. Customers manage retention policies via UI.
+    let current_retention_policy_opt = current_index_metadata
+        .index_config
+        .retention_policy_opt
+        .clone();
     let mut mutation_occurred: bool = current_index_metadata.update_index_config(
         desired_index_config.doc_mapping,
         desired_index_config.indexing_settings,
         desired_index_config.ingest_settings,
         desired_index_config.search_settings,
-        desired_index_config.retention_policy_opt,
+        current_retention_policy_opt,
     )?;
-    mutation_occurred |= patch_index_config(&mut current_index_metadata.index_config);
+    mutation_occurred |=
+        patch_ingest_settings(&mut current_index_metadata.index_config.ingest_settings);
 
     if !mutation_occurred {
         return Ok(());
@@ -1640,12 +1673,6 @@ async fn create_or_update_datadog_index(
         )
         .await?;
     Ok(())
-}
-
-fn patch_index_config(index_config: &mut IndexConfig) -> bool {
-    let mut mutation_occurred = patch_ingest_settings(&mut index_config.ingest_settings);
-    mutation_occurred |= patch_retention_policy(&mut index_config.retention_policy_opt);
-    mutation_occurred
 }
 
 /// Reads the min number of shards from the environment variable `CP_MIN_SHARDS` and patches the
@@ -1663,44 +1690,6 @@ fn patch_ingest_settings(ingest_settings: &mut IngestSettings) -> bool {
         return false;
     }
     ingest_settings.min_shards = non_zero_min_shards;
-    true
-}
-
-/// Reads the retention period from the environment variable `CP_RETENTION_PERIOD` and patches the
-/// retention policy. Returns whether the retention policy was updated.
-fn patch_retention_policy(retention_policy_opt: &mut Option<RetentionPolicy>) -> bool {
-    let Some(retention_period) = quickwit_common::get_from_env_opt("CP_RETENTION_PERIOD", false)
-    else {
-        return false;
-    };
-    match retention_policy_opt {
-        Some(retention_policy) if retention_policy.retention_period == retention_period => {
-            return false;
-        }
-        Some(retention_policy) => {
-            retention_policy.retention_period = retention_period;
-        }
-        None => {
-            let retention_policy = RetentionPolicy {
-                retention_period,
-                evaluation_schedule: RetentionPolicy::default_schedule(),
-            };
-            *retention_policy_opt = Some(retention_policy);
-        }
-    };
-    let retention_policy = retention_policy_opt
-        .as_ref()
-        .expect("retention policy should be set");
-
-    if let Err(error) = retention_policy.validate() {
-        // We don't want to crash the node if the user-provided retention period cannot be parsed,
-        // so we just log an error and return false.
-        error!(
-            "failed to update Datadog index: retention period `{}` is invalid: {error}",
-            retention_policy.retention_period
-        );
-        return false;
-    }
     true
 }
 
@@ -1894,7 +1883,7 @@ mod tests {
         let metastore = metastore_for_test();
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();
-        let (search_job_placer, _searcher_service) = setup_searcher(
+        let (search_job_placer, _searcher_service, _searcher_pool) = setup_searcher(
             &node_config,
             change_stream,
             metastore,

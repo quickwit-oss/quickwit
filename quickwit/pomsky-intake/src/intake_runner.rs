@@ -113,13 +113,18 @@ transforms:
     org_id: "{org_id}"
     metadata_svc_url: "{metadata_svc_url}"
 
-  explode_dd_trace_spans:
-    type: explode_trace_spans
+  preprocess_dd_traces:
+    type: preprocess_dd_trace
     inputs:
       - datadog_agent.traces
 
-  preprocess_traces:
-    type: preprocess_trace
+  explode_dd_trace_spans:
+    type: explode_trace_spans
+    inputs:
+      - preprocess_dd_traces
+
+  preprocess_spans:
+    type: preprocess_span
     inputs:
       - explode_dd_trace_spans
       - otlp.traces
@@ -137,7 +142,7 @@ transforms:
   add_trace_host_tags:
     type: add_host_tags
     inputs:
-      - preprocess_traces
+      - preprocess_spans
 
 sinks:
   logs_out:

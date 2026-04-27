@@ -21,8 +21,9 @@ use std::cmp::Ordering;
 
 /// Compare two optional values with null ordering per SS-2.
 ///
-/// - Ascending:  nulls sort AFTER non-null (nulls last).
-/// - Descending: nulls sort BEFORE non-null (nulls first).
+/// Nulls always sort AFTER non-null values, regardless of sort direction.
+/// This matches the writer's `nulls_first: false` and enables nulls to be
+/// implicit in the sorted_series key (absent columns are simply omitted).
 ///
 /// For two non-null values, the natural ordering is used (reversed for
 /// descending). Two nulls compare as equal.
@@ -33,20 +34,8 @@ pub fn compare_with_null_ordering<T: Ord>(
 ) -> Ordering {
     match (a, b) {
         (None, None) => Ordering::Equal,
-        (None, Some(_)) => {
-            if ascending {
-                Ordering::Greater // null after non-null
-            } else {
-                Ordering::Less // null before non-null
-            }
-        }
-        (Some(_), None) => {
-            if ascending {
-                Ordering::Less // non-null before null
-            } else {
-                Ordering::Greater // non-null after null
-            }
-        }
+        (None, Some(_)) => Ordering::Greater, // null always after non-null
+        (Some(_), None) => Ordering::Less,    // non-null always before null
         (Some(va), Some(vb)) => {
             if ascending {
                 va.cmp(vb)
@@ -86,14 +75,14 @@ mod tests {
 
     #[test]
     fn descending_null_ordering() {
-        // null < non-null in descending
+        // null always after non-null, even in descending
         assert_eq!(
             compare_with_null_ordering(None::<&i32>, Some(&1), false),
-            Ordering::Less
+            Ordering::Greater
         );
         assert_eq!(
             compare_with_null_ordering(Some(&1), None::<&i32>, false),
-            Ordering::Greater
+            Ordering::Less
         );
         // non-null comparison reversed
         assert_eq!(
