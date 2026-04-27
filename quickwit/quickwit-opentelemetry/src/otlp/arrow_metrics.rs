@@ -72,8 +72,9 @@ impl ArrowMetricsBatchBuilder {
         let mut tag_keys: BTreeSet<&str> = BTreeSet::new();
         for dp in &self.data_points {
             for key in dp.tags.keys() {
-                // Exclude any user-provided tag named "timeseries_id" to prevent collision with the computed column.
-                // TODO: if user sets "timeseries_id" as a tag, we are excluding it.
+                // Exclude any user-provided tag named "timeseries_id" to prevent collision with the
+                // computed column. TODO: if user sets "timeseries_id" as a tag, we
+                // are excluding it.
                 if key != COMPUTED_TIMESERIES_ID_FIELD {
                     tag_keys.insert(key.as_str());
                 }
@@ -191,7 +192,8 @@ impl ArrowMetricsBatchBuilder {
     }
 }
 
-// Computes timeseries_id for a metric data point. If the user provided a timeseries_id tag, we will remove it.
+// Computes timeseries_id for a metric data point. If the user provided a timeseries_id tag, we will
+// remove it.
 fn compute_metric_timeseries_id(
     metric_name: &str,
     metric_type: MetricType,
