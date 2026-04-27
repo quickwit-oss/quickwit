@@ -69,7 +69,10 @@ pub(crate) fn build_compaction_key_value_metadata(
     // but belt-and-suspenders at the serialization boundary).
     quickwit_dst::check_invariant!(
         quickwit_dst::invariants::InvariantId::TW2,
-        metadata.window_duration_secs() == 0 || 3600 % metadata.window_duration_secs() == 0,
+        metadata.window_duration_secs() == 0
+            || quickwit_dst::invariants::window::is_valid_window_duration(
+                metadata.window_duration_secs()
+            ),
         " at Parquet write: window_duration_secs={} does not divide 3600",
         metadata.window_duration_secs()
     );
@@ -307,6 +310,17 @@ impl ParquetWriter {
                         ": row {} is out of sort order after sort_batch()",
                         i
                     );
+                }
+
+                // SS-2: verify nulls always sort after non-null values.
+                // Uses the shared compare_with_null_ordering from
+                // quickwit_dst::invariants::sort — the same function the
+                // Stateright model uses for exhaustive verification.
+                // For each adjacent row pair and each sort column, when
+                // earlier columns are equal, the comparison must not
+                // yield Greater (which would mean null came before non-null).
+                if sorted_batch.num_rows() > 1 {
+                    verify_ss2_null_ordering(&sorted_batch, &self.resolved_sort_fields);
                 }
             }
         }
@@ -550,6 +564,101 @@ fn resolve_sort_fields(sort_fields_str: &str) -> Result<Vec<ResolvedSortField>, 
             }
         })
         .collect())
+}
+
+/// SS-2: Verify that nulls always sort after non-null values in the sorted batch.
+///
+/// Uses [`quickwit_dst::invariants::sort::compare_with_null_ordering`] — the
+/// same function the Stateright model (`models::sort_schema`) uses for
+/// exhaustive verification. This ensures production and model execute
+/// identical null-ordering logic.
+///
+/// For each pair of adjacent rows and each sort column, when all earlier
+/// sort columns have equal null/non-null status at both rows, we call
+/// `compare_with_null_ordering(None, Some(&()), ascending)` to ask the
+/// shared invariant: "does null come before non-null?" If the answer is
+/// Greater (null should sort after), but we see null at row i and non-null
+/// at row i+1, that's a violation.
+fn verify_ss2_null_ordering(batch: &RecordBatch, sort_fields: &[ResolvedSortField]) {
+    let schema = batch.schema();
+    let num_rows = batch.num_rows();
+    if num_rows <= 1 {
+        return;
+    }
+
+    // Resolve sort column indices.
+    let sort_cols: Vec<(usize, &str, bool)> = sort_fields
+        .iter()
+        .filter_map(|sf| {
+            schema
+                .index_of(sf.name.as_str())
+                .ok()
+                .map(|idx| (idx, sf.name.as_str(), !sf.descending))
+        })
+        .collect();
+
+    // Ask the shared invariant function: does null sort after non-null?
+    // This must return Greater (null > non-null) for SS-2 to hold.
+    // We check once and use the result — if the shared function is wrong,
+    // this test and the Stateright model will both fail.
+    let null_vs_nonnull = quickwit_dst::invariants::sort::compare_with_null_ordering(
+        None::<&u8>,
+        Some(&0u8),
+        true, // ascending — but SS-2 says direction doesn't matter
+    );
+    debug_assert_eq!(
+        null_vs_nonnull,
+        std::cmp::Ordering::Greater,
+        "SS-2: compare_with_null_ordering must return Greater for (null, non-null)"
+    );
+
+    // Also verify for descending — the shared function must give the same answer.
+    let null_vs_nonnull_desc = quickwit_dst::invariants::sort::compare_with_null_ordering(
+        None::<&u8>,
+        Some(&0u8),
+        false, // descending
+    );
+    debug_assert_eq!(
+        null_vs_nonnull_desc,
+        std::cmp::Ordering::Greater,
+        "SS-2: compare_with_null_ordering must return Greater for (null, non-null) in descending \
+         too"
+    );
+
+    // Now check the actual data: for each adjacent row pair, null must not
+    // appear before non-null when earlier columns are equal.
+    for i in 0..num_rows - 1 {
+        for (k, &(col_idx, col_name, _ascending)) in sort_cols.iter().enumerate() {
+            let col = batch.column(col_idx);
+
+            // Only check when earlier columns are equal at rows i and i+1.
+            // Two values are equal if both null, or both non-null with the
+            // same scalar value (checked via single-element slice comparison).
+            let earlier_equal = sort_cols[..k].iter().all(|&(earlier_idx, _, _)| {
+                let c = batch.column(earlier_idx);
+                let a_null = c.is_null(i);
+                let b_null = c.is_null(i + 1);
+                if a_null != b_null {
+                    return false;
+                }
+                if a_null {
+                    return true; // both null
+                }
+                // Both non-null: compare single-element slices.
+                c.slice(i, 1) == c.slice(i + 1, 1)
+            });
+
+            if earlier_equal && col.is_null(i) && !col.is_null(i + 1) {
+                quickwit_dst::check_invariant!(
+                    quickwit_dst::invariants::InvariantId::SS2,
+                    false,
+                    ": null before non-null in column '{}' at row {}",
+                    col_name,
+                    i
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]

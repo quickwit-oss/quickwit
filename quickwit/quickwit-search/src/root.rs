@@ -778,10 +778,11 @@ pub(crate) async fn search_partial_hits_phase(
         .map_err(|error: TantivyError| crate::SearchError::Internal(error.to_string()))?;
     debug!(
         num_hits = leaf_search_response.num_hits,
-        failed_splits = ?leaf_search_response.failed_splits,
+        num_failed_splits = leaf_search_response.failed_splits.len(),
+        failed_splits = ?PrettySample::new(&leaf_search_response.failed_splits, 5),
         num_attempted_splits = leaf_search_response.num_attempted_splits,
         has_intermediate_aggregation_result = leaf_search_response.intermediate_aggregation_result.is_some(),
-        "Merged leaf search response."
+        "merged leaf search response"
     );
 
     if let Some(resource_stats) = &leaf_search_response.resource_stats
@@ -800,7 +801,7 @@ pub(crate) async fn search_partial_hits_phase(
     }
 
     if !leaf_search_response.failed_splits.is_empty() {
-        quickwit_common::rate_limited_error!(limit_per_min=6, failed_splits = ?leaf_search_response.failed_splits, "leaf search response contains at least one failed split");
+        quickwit_common::rate_limited_error!(limit_per_min=6, num_failed_splits = leaf_search_response.failed_splits.len(), failed_splits = ?PrettySample::new(&leaf_search_response.failed_splits, 5), "leaf search response contains failed splits");
     }
 
     Ok(leaf_search_response)

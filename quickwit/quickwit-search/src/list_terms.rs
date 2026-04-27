@@ -141,7 +141,7 @@ pub async fn root_list_terms(
         .collect();
 
     if !failed_splits.is_empty() {
-        error!(failed_splits = ?failed_splits, "leaf search response contains at least one failed split");
+        error!(num_failed_splits = failed_splits.len(), failed_splits = ?PrettySample::new(&failed_splits, 5), "leaf search response contains failed splits");
         let errors: String = failed_splits
             .iter()
             .map(|splits| splits.to_string())

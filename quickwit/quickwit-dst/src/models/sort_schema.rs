@@ -145,8 +145,7 @@ impl SortSchemaModel {
 
 /// Compare two values with null ordering (SS-2).
 /// Returns `Ordering`: Less, Equal, Greater.
-/// Ascending: nulls sort AFTER non-null.
-/// Descending: nulls sort BEFORE non-null.
+/// Nulls always sort AFTER non-null, regardless of direction.
 ///
 /// Delegates to the shared [`crate::invariants::sort::compare_with_null_ordering`]
 /// for the null ordering logic, converting model-specific `Value` to `Option`.
@@ -502,9 +501,9 @@ impl Model for SortSchemaModel {
                 },
             ),
             // SS-2: Null values ordered correctly per direction.
-            // Ascending: null must NOT appear before non-null.
-            // Descending: non-null must NOT appear before null.
-            // Mirrors SortSchema.tla lines 228-247
+            // Nulls must never appear before non-null values, regardless of
+            // sort direction. This matches the writer's nulls_first=false.
+            // Mirrors SortSchema.tla SS-2.
             Property::always(
                 "SS-2: null ordering",
                 |_model: &SortSchemaModel, state: &SortSchemaState| {
@@ -522,18 +521,9 @@ impl Model for SortSchemaModel {
                                 });
 
                                 if earlier_equal {
-                                    // Ascending: null must not appear before non-null.
-                                    if sc.direction == Direction::Asc
-                                        && v_curr.is_null()
-                                        && !v_next.is_null()
-                                    {
-                                        return false;
-                                    }
-                                    // Descending: non-null must not appear before null.
-                                    if sc.direction == Direction::Desc
-                                        && !v_curr.is_null()
-                                        && v_next.is_null()
-                                    {
+                                    // Null must not appear before non-null,
+                                    // regardless of direction (nulls always last).
+                                    if v_curr.is_null() && !v_next.is_null() {
                                         return false;
                                     }
                                 }
@@ -615,14 +605,72 @@ mod tests {
             std::cmp::Ordering::Less
         );
 
-        // Descending: null < non-null
+        // Descending: null still after non-null (nulls always last)
         assert_eq!(
             compare_values(Value::Null, Value::Val(1), Direction::Desc),
-            std::cmp::Ordering::Less
+            std::cmp::Ordering::Greater
         );
         assert_eq!(
             compare_values(Value::Val(1), Value::Null, Direction::Desc),
-            std::cmp::Ordering::Greater
+            std::cmp::Ordering::Less
+        );
+    }
+
+    /// Verify that the model detects null ordering violations.
+    /// Construct rows where a null appears before a non-null value in a
+    /// descending column. With nulls-always-last, this is wrong — the
+    /// model's `is_sorted` and `row_leq` must reject it.
+    #[test]
+    fn ss2_detects_null_before_non_null_in_descending() {
+        let schema = vec![SortColumn {
+            column: Column::C1,
+            direction: Direction::Desc,
+        }];
+
+        // WRONG order: null before non-null
+        let bad_rows = vec![
+            Row {
+                cells: BTreeMap::new(), // C1 missing = null
+            },
+            Row {
+                cells: [(Column::C1, Value::Val(5))].into(),
+            },
+        ];
+
+        // row_leq(null, non-null) must be false (null sorts after non-null).
+        assert!(
+            !row_leq(&bad_rows[0], &bad_rows[1], &schema),
+            "null row must not be <= non-null row (nulls always last)"
+        );
+
+        // is_sorted must reject this ordering.
+        assert!(
+            !is_sorted(&bad_rows, &schema),
+            "rows with null before non-null must not be considered sorted"
+        );
+    }
+
+    /// Verify the model accepts correct null ordering: non-null before null.
+    #[test]
+    fn ss2_accepts_non_null_before_null_in_descending() {
+        let schema = vec![SortColumn {
+            column: Column::C1,
+            direction: Direction::Desc,
+        }];
+
+        // CORRECT order: value before null (nulls last)
+        let good_rows = vec![
+            Row {
+                cells: [(Column::C1, Value::Val(5))].into(),
+            },
+            Row {
+                cells: BTreeMap::new(), // null
+            },
+        ];
+
+        assert!(
+            is_sorted(&good_rows, &schema),
+            "non-null before null must be accepted (nulls always last)"
         );
     }
 
