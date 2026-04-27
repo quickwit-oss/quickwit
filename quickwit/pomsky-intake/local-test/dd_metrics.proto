@@ -1,0 +1,76 @@
+// Copyright 2021-Present Datadog, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+
+// Standalone Datadog metrics v2 protobuf definitions for test tooling.
+// Extracted from domains/metrics/shared/libs/proto/apiv2/apiv2.proto
+// with only the messages needed for submitting metrics and sketches.
+syntax = "proto3";
+package dd_metrics;
+
+enum MetricType {
+    UNSPECIFIED = 0;
+    COUNT = 1;
+    RATE = 2;
+    GAUGE = 3;
+}
+
+message MetricPoint {
+    double value = 1;
+    int64 timestamp = 2;
+}
+
+message Resource {
+    string type = 1;
+    string name = 2;
+}
+
+message MetricSeries {
+    repeated Resource resources = 1;
+    string metric = 2;
+    repeated string tags = 3;
+    repeated MetricPoint points = 4;
+    MetricType type = 5;
+    string unit = 6;
+    string source_type_name = 7;
+    int64 interval = 8;
+}
+
+message MetricPayload {
+    repeated MetricSeries series = 1;
+}
+
+// SketchPayload for distribution metrics (sent to /api/beta/sketches).
+// Extracted from apiv2.proto SketchPayload definition.
+message SketchPayload {
+    message Sketch {
+        message Dogsketch {
+            int64 ts = 1;
+            int64 cnt = 2;
+            double min = 3;
+            double max = 4;
+            double avg = 5;
+            double sum = 6;
+            repeated sint32 k = 7;
+            repeated uint32 n = 8;
+        }
+        string metric = 1;
+        string host = 2;
+        // field 3 (distributions) is deprecated
+        repeated string tags = 4;
+        // fields 5, 6 reserved
+        repeated Dogsketch dogsketches = 7;
+    }
+    repeated Sketch sketches = 1;
+}

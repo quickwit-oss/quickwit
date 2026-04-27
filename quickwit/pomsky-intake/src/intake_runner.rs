@@ -31,6 +31,8 @@ fn build_vector_config(data_dir: &Path, config: &IntakeConfig, print: bool) -> S
     let logs_endpoint = &config.logs_endpoint;
     let metrics_endpoint = &config.metrics_endpoint;
     let traces_endpoint = &config.traces_endpoint;
+    let org_id = &config.org_id;
+    let metadata_svc_url = &config.metadata_svc_url;
 
     let print_sink = if print {
         r#"
@@ -104,6 +106,13 @@ transforms:
       - otlp.metrics
       - connections_to_apm_metrics
 
+  metric_metadata:
+    type: metric_metadata
+    inputs:
+      - add_metric_host_tags
+    org_id: "{org_id}"
+    metadata_svc_url: "{metadata_svc_url}"
+
   preprocess_dd_traces:
     type: preprocess_dd_trace
     inputs:
@@ -150,7 +159,7 @@ sinks:
   metrics_out:
     type: arrow_ipc_metrics
     inputs:
-      - add_metric_host_tags
+      - metric_metadata
     uri: "{metrics_endpoint}"
 
   traces_out:

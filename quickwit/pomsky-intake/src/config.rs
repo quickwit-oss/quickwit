@@ -49,6 +49,12 @@ pub struct IntakeConfig {
     pub metrics_endpoint: String,
     #[serde(default = "default_traces_endpoint")]
     pub traces_endpoint: String,
+    /// Organization identifier passed to transforms that call external services.
+    #[serde(default = "default_org_id")]
+    pub org_id: String,
+    /// Base URL of byoc-ingest-metadata-svc (e.g. "https://metadata.example.com").
+    #[serde(default = "default_metadata_svc_url")]
+    pub metadata_svc_url: String,
 
     #[serde(default)]
     pub host_tags: HostTagsConfig,
@@ -63,6 +69,8 @@ impl Default for IntakeConfig {
             logs_endpoint: default_logs_endpoint(),
             metrics_endpoint: default_metrics_endpoint(),
             traces_endpoint: default_traces_endpoint(),
+            org_id: default_org_id(),
+            metadata_svc_url: default_metadata_svc_url(),
             host_tags: HostTagsConfig::default(),
         }
     }
@@ -112,6 +120,14 @@ fn default_metrics_endpoint() -> String {
 
 fn default_traces_endpoint() -> String {
     "http://127.0.0.1:7280/api/datadog/v1/byoc/traces".to_string()
+}
+
+fn default_org_id() -> String {
+    "default".to_string()
+}
+
+fn default_metadata_svc_url() -> String {
+    "http://localhost:9999".to_string()
 }
 
 /// Configuration for the host-tags enrichment poller.
