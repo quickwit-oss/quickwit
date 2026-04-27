@@ -273,6 +273,27 @@ impl RoutingTable {
         entry.nodes.insert(node_id, ingester_node);
     }
 
+    /// Zeros out the open shard count for `node_id` on the (index, source) entry while preserving
+    /// its capacity score. Called when a persist response reports that the ingester no longer
+    /// holds a shard for this (index_uid, source_id), so the entry stops being picked until a
+    /// fresh routing update or control-plane response repopulates it.
+    ///
+    /// No-op when the entry is missing, the node is absent from the entry, or the entry is at a
+    /// different incarnation than `index_uid` — a narrowing signal must never roll the table back
+    /// or shadow a fresher state.
+    pub fn mark_node_no_shards(&mut self, node_id: &NodeId, index_uid: &IndexUid, source_id: &str) {
+        let key = (index_uid.index_id.to_string(), source_id.to_string());
+        let Some(entry) = self.table.get_mut(&key) else {
+            return;
+        };
+        if entry.index_uid != *index_uid {
+            return;
+        }
+        if let Some(node) = entry.nodes.get_mut(node_id) {
+            node.open_shard_count = 0;
+        }
+    }
+
     /// Merges routing updates from a GetOrCreateOpenShards control plane response into the
     /// table. For existing nodes, updates their open shard count, including if the count is 0, from
     /// the CP response while preserving capacity scores if they already exist.
@@ -855,5 +876,71 @@ mod tests {
         assert!(entry.nodes.contains_key("node-4"));
         assert!(!entry.nodes.contains_key("node-3"));
         assert_eq!(entry.index_uid, IndexUid::for_test("test-index", 2));
+    }
+
+    #[test]
+    fn test_mark_node_no_shards() {
+        let mut table = RoutingTable::default();
+        let index_uid = IndexUid::for_test("test-index", 1);
+        let key = ("test-index".to_string(), "test-source".to_string());
+
+        // Missing entry: no-op, no panic, nothing inserted.
+        table.mark_node_no_shards(&"node-1".into(), &index_uid, "test-source");
+        assert!(table.table.get(&key).is_none());
+
+        // Seed an entry with two nodes carrying real capacity scores.
+        table.apply_capacity_update(
+            "node-1".into(),
+            index_uid.clone(),
+            "test-source".into(),
+            8,
+            3,
+        );
+        table.apply_capacity_update(
+            "node-2".into(),
+            index_uid.clone(),
+            "test-source".into(),
+            6,
+            2,
+        );
+
+        // Missing node within the entry: no-op.
+        table.mark_node_no_shards(&"unknown".into(), &index_uid, "test-source");
+        let entry = table.table.get(&key).unwrap();
+        assert_eq!(entry.nodes.get("node-1").unwrap().open_shard_count, 3);
+        assert_eq!(entry.nodes.get("node-2").unwrap().open_shard_count, 2);
+
+        // Matching incarnation: zero only the open shard count, capacity score is preserved.
+        table.mark_node_no_shards(&"node-1".into(), &index_uid, "test-source");
+        let entry = table.table.get(&key).unwrap();
+        let node_1 = entry.nodes.get("node-1").unwrap();
+        assert_eq!(node_1.open_shard_count, 0);
+        assert_eq!(node_1.capacity_score, 8);
+        // Sibling node untouched.
+        let node_2 = entry.nodes.get("node-2").unwrap();
+        assert_eq!(node_2.open_shard_count, 2);
+        assert_eq!(node_2.capacity_score, 6);
+
+        // Older incarnation argument: no-op (must not roll the entry back).
+        let stale_index_uid = IndexUid::for_test("test-index", 0);
+        table.mark_node_no_shards(&"node-2".into(), &stale_index_uid, "test-source");
+        assert_eq!(
+            table
+                .table
+                .get(&key)
+                .unwrap()
+                .nodes
+                .get("node-2")
+                .unwrap()
+                .open_shard_count,
+            2
+        );
+
+        // Newer incarnation argument: no-op (don't shadow a fresher entry we don't know yet).
+        let newer_index_uid = IndexUid::for_test("test-index", 2);
+        table.mark_node_no_shards(&"node-2".into(), &newer_index_uid, "test-source");
+        let entry = table.table.get(&key).unwrap();
+        assert_eq!(entry.index_uid, index_uid);
+        assert_eq!(entry.nodes.get("node-2").unwrap().open_shard_count, 2);
     }
 }

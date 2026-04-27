@@ -327,14 +327,10 @@ impl IngestRouter {
                         // only returns routing_update=None on the NodeUnavailable fast path).
                         let mut state_guard = self.state.lock().await;
 
-                        for (index_uid, source_id) in no_shards_entries {
-                            state_guard.routing_table.apply_capacity_update(
-                                leader_id.clone(),
-                                index_uid,
-                                source_id,
-                                0,
-                                0,
-                            );
+                        for (index_uid, source_id) in &no_shards_entries {
+                            state_guard
+                                .routing_table
+                                .mark_node_no_shards(&leader_id, index_uid, source_id);
                         }
 
                         if let Some(routing_update) = persist_response.routing_update {
@@ -1930,11 +1926,12 @@ mod tests {
         // Sanity-check: the stale entry is currently considered valid for routing.
         {
             let state_guard = router.state.lock().await;
-            assert!(state_guard.routing_table.has_open_nodes(
+            let mut unavailable_leaders: HashSet<NodeId> = HashSet::new();
+            assert!(state_guard.routing_table.has_any_routing_candidate(
                 "test-index",
                 "test-source",
                 &ingester_pool,
-                &HashSet::new(),
+                &mut unavailable_leaders,
             ));
         }
 
@@ -1979,11 +1976,12 @@ mod tests {
         // The stale routing entry must no longer look routable — otherwise retries would
         // keep hammering the dead shard and surface as a 503.
         let state_guard = router.state.lock().await;
-        assert!(!state_guard.routing_table.has_open_nodes(
+        let mut unavailable_leaders: HashSet<NodeId> = HashSet::new();
+        assert!(!state_guard.routing_table.has_any_routing_candidate(
             "test-index",
             "test-source",
             &ingester_pool,
-            &HashSet::new(),
+            &mut unavailable_leaders,
         ));
     }
 
@@ -2063,11 +2061,12 @@ mod tests {
             .await;
 
         let state_guard = router.state.lock().await;
-        assert!(state_guard.routing_table.has_open_nodes(
+        let mut unavailable_leaders: HashSet<NodeId> = HashSet::new();
+        assert!(state_guard.routing_table.has_any_routing_candidate(
             "test-index",
             "test-source",
             &ingester_pool,
-            &HashSet::new(),
+            &mut unavailable_leaders,
         ));
     }
 }
