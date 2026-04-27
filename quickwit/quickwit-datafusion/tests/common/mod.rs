@@ -15,7 +15,9 @@
 //! Shared helpers for quickwit-datafusion integration tests.
 
 pub mod sandbox;
+#[allow(dead_code)]
 pub mod splits;
 
 pub use sandbox::TestSandbox;
-pub use splits::{create_metrics_index, publish_split};
+#[allow(unused_imports)]
+pub use splits::{create_metrics_index, publish_sketch_split, publish_split};

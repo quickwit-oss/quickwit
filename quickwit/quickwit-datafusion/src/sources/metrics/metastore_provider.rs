@@ -21,9 +21,9 @@ use datafusion::error::Result as DFResult;
 use quickwit_metastore::{
     ListParquetSplitsQuery, ListParquetSplitsRequestExt, ListParquetSplitsResponseExt,
 };
-use quickwit_parquet_engine::split::ParquetSplitMetadata;
+use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::metastore::{
-    ListMetricsSplitsRequest, MetastoreService, MetastoreServiceClient,
+    ListMetricsSplitsRequest, ListSketchSplitsRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::IndexUid;
 use tracing::{debug, instrument};
@@ -36,13 +36,19 @@ use super::table_provider::MetricsSplitProvider;
 pub struct MetastoreSplitProvider {
     metastore: MetastoreServiceClient,
     index_uid: IndexUid,
+    split_kind: ParquetSplitKind,
 }
 
 impl MetastoreSplitProvider {
-    pub fn new(metastore: MetastoreServiceClient, index_uid: IndexUid) -> Self {
+    pub fn new(
+        metastore: MetastoreServiceClient,
+        index_uid: IndexUid,
+        split_kind: ParquetSplitKind,
+    ) -> Self {
         Self {
             metastore,
             index_uid,
+            split_kind,
         }
     }
 }
@@ -56,26 +62,45 @@ impl MetricsSplitProvider for MetastoreSplitProvider {
             metric_names = ?query.metric_names,
             time_range_start = ?query.time_range_start,
             time_range_end = ?query.time_range_end,
+            split_kind = ?self.split_kind,
             num_splits,
         )
     )]
     async fn list_splits(&self, query: &MetricsSplitQuery) -> DFResult<Vec<ParquetSplitMetadata>> {
         let metastore_query = to_metastore_query(&self.index_uid, query);
 
-        let request =
-            ListMetricsSplitsRequest::try_from_query(self.index_uid.clone(), &metastore_query)
+        let records = match self.split_kind {
+            ParquetSplitKind::Metrics => {
+                let request = ListMetricsSplitsRequest::try_from_query(
+                    self.index_uid.clone(),
+                    &metastore_query,
+                )
                 .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
-        let response = self
-            .metastore
-            .clone()
-            .list_metrics_splits(request)
-            .await
-            .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
+                self.metastore
+                    .clone()
+                    .list_metrics_splits(request)
+                    .await
+                    .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?
+                    .deserialize_splits()
+                    .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?
+            }
+            ParquetSplitKind::Sketches => {
+                let request = ListSketchSplitsRequest::try_from_query(
+                    self.index_uid.clone(),
+                    &metastore_query,
+                )
+                .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
 
-        let records = response
-            .deserialize_splits()
-            .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
+                self.metastore
+                    .clone()
+                    .list_sketch_splits(request)
+                    .await
+                    .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?
+                    .deserialize_splits()
+                    .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?
+            }
+        };
 
         // The metastore guarantees only Published splits are returned because
         // `to_metastore_query` sets `split_states = vec![Published]`. No
