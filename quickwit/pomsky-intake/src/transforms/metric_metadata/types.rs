@@ -47,8 +47,8 @@ pub struct MetricTypeInfo {
 /// - `Counter` with `interval_ms = N` -> `rate`    with `interval = N / 1000`
 /// - `Gauge`                          -> `gauge`   with `interval = 0`
 /// - `Sketch`                         -> `ddsketch` with `interval = 0`
-/// - Any other variant (Set, Distribution, ...) -> `gauge` with `interval = 0`
-///   (conservative fallback; these are not expected from DD Agent / OTel sources)
+/// - Any other variant (Set, Distribution, ...) -> `gauge` with `interval = 0` (conservative
+///   fallback; these are not expected from DD Agent / OTel sources)
 ///
 /// Note: `interval_ms / 1000` is integer division -- sub-second intervals
 /// (< 1000 ms) round down to 0. This is intentional per D-04.

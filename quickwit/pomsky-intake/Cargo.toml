@@ -23,7 +23,6 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
-parquet = { workspace = true }
 http = { workspace = true }
 indexmap = { workspace = true }
 # `std` is required for protobuf map<> field support (generated code uses HashMap).
@@ -49,6 +48,7 @@ quickwit-parquet-engine = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
+serial_test = { workspace = true }
 wiremock = { workspace = true }
 
 [build-dependencies]

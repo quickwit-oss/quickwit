@@ -34,10 +34,9 @@ mod flush_client;
 mod known_metrics;
 pub mod types;
 
+use flush_client::FlushClient;
 pub use known_metrics::KnownMetrics;
 pub use types::{MetadataMetricType, MetricTypeInfo, map_metric_type};
-
-use flush_client::FlushClient;
 
 // ---------------------------------------------------------------------------
 // Serde default constants and functions (per D-01, CFG-03)
@@ -140,8 +139,8 @@ impl TransformConfig for MetricMetadataConfig {
     /// key (T-01-01: spoofing mitigation).
     async fn build(&self, _context: &TransformContext) -> vector::Result<Transform> {
         let api_key = std::env::var("DD_API_KEY").map_err(|_| {
-            "DD_API_KEY environment variable is not set; \
-             metric metadata transform cannot start without an API key"
+            "DD_API_KEY environment variable is not set; metric metadata transform cannot start \
+             without an API key"
         })?;
 
         // Fail-fast: validate persist_file_path parent directory exists and is
@@ -153,8 +152,8 @@ impl TransformConfig for MetricMetadataConfig {
         {
             std::fs::metadata(parent).map_err(|err| {
                 format!(
-                    "persist_file_path parent directory '{}' is not accessible: {err}; \
-                     ensure the directory exists and is writable",
+                    "persist_file_path parent directory '{}' is not accessible: {err}; ensure the \
+                     directory exists and is writable",
                     parent.display()
                 )
             })?;
@@ -331,17 +330,17 @@ impl TaskTransform<Event> for MetricMetadataTransform {
 
             // D-06: post-loop shutdown sequence
             // Step 1: wait for any in-flight background flush to complete
-            if flush_in_flight {
-                if let Some(result) = flush_result_rx.recv().await {
-                    match result {
-                        Ok(succeeded) => {
-                            for name in succeeded {
-                                known_metrics.insert(name);
-                            }
+            if flush_in_flight
+                && let Some(result) = flush_result_rx.recv().await
+            {
+                match result {
+                    Ok(succeeded) => {
+                        for name in succeeded {
+                            known_metrics.insert(name);
                         }
-                        Err(err) => {
-                            warn!(error = %err, "in-flight flush failed during shutdown");
-                        }
+                    }
+                    Err(err) => {
+                        warn!(error = %err, "in-flight flush failed during shutdown");
                     }
                 }
             }
@@ -384,20 +383,18 @@ impl TaskTransform<Event> for MetricMetadataTransform {
 mod tests {
     use std::collections::HashMap;
     use std::num::NonZeroU32;
-    use std::sync::Mutex;
     use std::time::Duration;
-
-    use super::flush_client::FlushClient;
 
     use futures::stream;
     use vector::event::{Metric, MetricKind, MetricValue};
 
+    use super::flush_client::FlushClient;
     use super::*;
 
-    /// Guards tests that mutate environment variables. `cargo test` runs tests
-    /// in parallel within a single process, so concurrent set_var/remove_var
-    /// calls race. Acquiring this lock serializes env-mutating tests.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    // Tests that mutate environment variables are serialized via
+    // `#[serial_test::serial(env)]` rather than an in-process Mutex. This avoids
+    // holding a sync lock across await points and integrates with serial_test's
+    // process-wide ordering for env-mutating tests.
 
     // ----- Config deserialization -----
 
@@ -466,8 +463,8 @@ metadata_svc_url: "http://localhost:9999"
     // ----- API key validation -----
 
     #[tokio::test]
+    #[serial_test::serial(env)]
     async fn test_build_fails_without_api_key() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let saved = std::env::var("DD_API_KEY").ok();
         // SAFETY: test is single-threaded in nextest isolation; env mutation is safe.
         unsafe {
@@ -743,8 +740,8 @@ metadata_svc_url: "http://localhost:9999"
     // ----- Build integration via TransformConfig (PERSIST-03) -----
 
     #[tokio::test]
+    #[serial_test::serial(env)]
     async fn test_build_succeeds_with_valid_config() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let persist_path = dir.path().join("known.csv");
 
@@ -1008,8 +1005,8 @@ metadata_svc_url: "http://localhost:9999"
     // ----- Parent directory validation -----
 
     #[tokio::test]
+    #[serial_test::serial(env)]
     async fn test_build_fails_with_missing_parent_directory() {
-        let _guard = ENV_LOCK.lock().unwrap();
         let saved = std::env::var("DD_API_KEY").ok();
         // SAFETY: test is single-threaded in nextest isolation; env mutation is safe.
         unsafe {
