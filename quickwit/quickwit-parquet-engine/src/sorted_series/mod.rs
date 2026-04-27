@@ -192,7 +192,7 @@ fn resolve_key_columns(
             });
             break;
         }
-        if col.name == "timestamp_secs" || col.name == "timestamp" {
+        if crate::sort_fields::is_timestamp_column_name(&col.name) {
             break;
         }
         let is_descending = col.sort_direction

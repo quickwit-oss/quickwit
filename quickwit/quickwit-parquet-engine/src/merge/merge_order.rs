@@ -32,14 +32,8 @@ use arrow::compute::SortOptions;
 use arrow::datatypes::DataType;
 use arrow::row::{RowConverter, Rows, SortField};
 
-use crate::sort_fields::parse_sort_fields;
+use crate::sort_fields::{TIMESTAMP_SECS, is_timestamp_column_name, parse_sort_fields};
 use crate::sorted_series::SORTED_SERIES_COLUMN;
-
-const TIMESTAMP_COLUMN: &str = "timestamp_secs";
-
-/// Legacy sort schemas may use "timestamp" instead of "timestamp_secs".
-/// Normalize to the physical column name.
-const TIMESTAMP_COLUMN_LEGACY: &str = "timestamp";
 
 /// A contiguous run of rows from a single input in the merged output.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,13 +132,11 @@ pub fn compute_merge_order(inputs: &[RecordBatch], sort_fields_str: &str) -> Res
     let ts_column = sort_schema
         .column
         .iter()
-        .find(|c| c.name == TIMESTAMP_COLUMN || c.name == TIMESTAMP_COLUMN_LEGACY)
+        .find(|c| is_timestamp_column_name(&c.name))
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "sort schema '{}' does not contain '{}' or '{}'",
+                "sort schema '{}' does not contain a timestamp column",
                 sort_fields_str,
-                TIMESTAMP_COLUMN,
-                TIMESTAMP_COLUMN_LEGACY,
             )
         })?;
 
@@ -158,7 +150,7 @@ pub fn compute_merge_order(inputs: &[RecordBatch], sort_fields_str: &str) -> Res
         .map(|b| {
             let schema = b.schema();
             let (_, field) = schema
-                .column_with_name(TIMESTAMP_COLUMN)
+                .column_with_name(TIMESTAMP_SECS)
                 .expect("timestamp_secs column must exist");
             field.data_type().clone()
         })
@@ -190,7 +182,7 @@ pub fn compute_merge_order(inputs: &[RecordBatch], sort_fields_str: &str) -> Res
         }
 
         let ss_col = get_column(batch, SORTED_SERIES_COLUMN, idx)?;
-        let ts_col = get_column(batch, TIMESTAMP_COLUMN, idx)?;
+        let ts_col = get_column(batch, TIMESTAMP_SECS, idx)?;
 
         let rows = converter.convert_columns(&[ss_col, ts_col])?;
         input_lengths.push(batch.num_rows());
