@@ -24,6 +24,7 @@ use tokio::io::{AsyncRead, AsyncWriteExt as TokioAsyncWriteExt};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 
 use crate::metrics::object_storage_get_slice_in_flight_guards;
+use crate::metrics_wrappers::{ActionLabel, opendal_helpers};
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, MultiPartPolicy, OwnedBytes, PutPayload, Storage, StorageError,
@@ -79,7 +80,8 @@ impl Storage for OpendalStorage {
     }
 
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
+        // we record one put even though it may involve multiple parts
+        opendal_helpers::record_request(ActionLabel::PutObject);
         let path = path.as_os_str().to_string_lossy();
         let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
@@ -92,9 +94,7 @@ impl Storage for OpendalStorage {
             .compat_write();
         tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
         storage_writer.get_mut().close().await?;
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .inc_by(payload.len());
+        opendal_helpers::record_upload(payload.len());
         Ok(())
     }
 
@@ -108,9 +108,7 @@ impl Storage for OpendalStorage {
             .await?
             .compat();
         let num_bytes_copied = tokio::io::copy(&mut storage_reader, output).await?;
-        crate::STORAGE_METRICS
-            .object_storage_download_num_bytes
-            .inc_by(num_bytes_copied);
+        opendal_helpers::record_download(num_bytes_copied);
         output.flush().await?;
         Ok(())
     }
@@ -122,7 +120,7 @@ impl Storage for OpendalStorage {
         // Unlike other object store implementations, in flight requests are
         // recorded before issuing the query to the object store.
         let _inflight_guards = object_storage_get_slice_in_flight_guards(size);
-        crate::STORAGE_METRICS.object_storage_get_total.inc();
+        opendal_helpers::record_request(ActionLabel::GetObject);
         let storage_content = self.op.read_with(&path).range(range).await?.to_vec();
         Ok(OwnedBytes::new(storage_content))
     }
@@ -152,12 +150,7 @@ impl Storage for OpendalStorage {
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
-        crate::STORAGE_METRICS
-            .object_storage_delete_requests_total
-            .inc();
-        let _timer = crate::STORAGE_METRICS
-            .object_storage_delete_request_duration
-            .start_timer();
+        let _timer = opendal_helpers::record_request_with_timer(ActionLabel::DeleteObject);
         self.op.delete(&path).await?;
         Ok(())
     }
@@ -171,12 +164,8 @@ impl Storage for OpendalStorage {
             if storage_info.name().starts_with("sample-bucket") && storage_info.scheme() == "gcs" {
                 let mut bulk_error = BulkDeleteError::default();
                 for (index, path) in paths.iter().enumerate() {
-                    crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_requests_total
-                        .inc();
-                    let _timer = crate::STORAGE_METRICS
-                        .object_storage_bulk_delete_request_duration
-                        .start_timer();
+                    let _timer =
+                        opendal_helpers::record_request_with_timer(ActionLabel::DeleteObjects);
                     let result = self.op.delete(&path.as_os_str().to_string_lossy()).await;
                     if let Err(err) = result {
                         let storage_error_kind = err.kind();
