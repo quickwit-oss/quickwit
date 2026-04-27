@@ -34,6 +34,7 @@ use crate::timeseries_id::compute_timeseries_id;
 /// are distribution summaries and because it does not collide with the
 /// discriminants used on the metrics path (`Gauge = 0`, `Sum = 1`).
 const SKETCH_METRIC_TYPE_DISCRIMINANT: u8 = 4;
+const COMPUTED_TIMESERIES_ID_FIELD: &str = "timeseries_id";
 
 /// A single DDSketch data point with tags.
 #[derive(Debug, Clone)]
@@ -84,7 +85,11 @@ impl ArrowSketchBatchBuilder {
         let mut tag_keys: BTreeSet<&str> = BTreeSet::new();
         for dp in &self.data_points {
             for key in dp.tags.keys() {
-                tag_keys.insert(key.as_str());
+                // Exclude any user-provided tag named "timeseries_id" to prevent collision with the computed column.
+                // TODO: if user sets "timeseries_id" as a tag, we are excluding it.
+                if key != COMPUTED_TIMESERIES_ID_FIELD {
+                    tag_keys.insert(key.as_str());
+                }
             }
         }
         let sorted_tag_keys: Vec<String> = tag_keys.into_iter().map(str::to_owned).collect();
@@ -111,9 +116,11 @@ impl ArrowSketchBatchBuilder {
             DataType::List(Arc::new(Field::new("item", DataType::UInt64, false))),
             false,
         ));
-        // TODO: customer could submit a timeseries_id tag, and I don't think we want to explicitly
-        // reserve it. Mirrors the same TODO on the metrics path (arrow_metrics.rs).
-        fields.push(Field::new("timeseries_id", DataType::Int64, false));
+        fields.push(Field::new(
+            COMPUTED_TIMESERIES_ID_FIELD,
+            DataType::Int64,
+            false,
+        ));
 
         for tag_key in &sorted_tag_keys {
             fields.push(Field::new(tag_key, dict_type.clone(), true));
@@ -168,11 +175,8 @@ impl ArrowSketchBatchBuilder {
             }
             counts_builder.append(true);
 
-            timeseries_id_builder.append_value(compute_timeseries_id(
-                &dp.metric_name,
-                SKETCH_METRIC_TYPE_DISCRIMINANT,
-                &dp.tags,
-            ));
+            let timeseries_id = compute_sketch_timeseries_id(&dp.metric_name, &dp.tags);
+            timeseries_id_builder.append_value(timeseries_id);
 
             for (tag_idx, tag_key) in sorted_tag_keys.iter().enumerate() {
                 match dp.tags.get(tag_key) {
@@ -213,6 +217,17 @@ impl ArrowSketchBatchBuilder {
     pub fn is_empty(&self) -> bool {
         self.data_points.is_empty()
     }
+}
+
+// Computes timeseries_id for a sketch. If the user provided a timeseries_id tag, we will remove it.
+fn compute_sketch_timeseries_id(metric_name: &str, tags: &HashMap<String, String>) -> i64 {
+    if !tags.contains_key(COMPUTED_TIMESERIES_ID_FIELD) {
+        return compute_timeseries_id(metric_name, SKETCH_METRIC_TYPE_DISCRIMINANT, tags);
+    }
+
+    let mut filtered_tags = tags.clone();
+    filtered_tags.remove(COMPUTED_TIMESERIES_ID_FIELD);
+    compute_timeseries_id(metric_name, SKETCH_METRIC_TYPE_DISCRIMINANT, &filtered_tags)
 }
 
 #[cfg(test)]
@@ -276,6 +291,35 @@ mod tests {
                 "service",
             ]
         );
+    }
+
+    #[test]
+    fn test_sketch_batch_filters_user_timeseries_id_tag() {
+        let mut dp = make_test_sketch_point();
+        dp.tags
+            .insert("timeseries_id".to_string(), "user-provided".to_string());
+
+        let mut builder = ArrowSketchBatchBuilder::with_capacity(1);
+        builder.append(dp);
+
+        let batch = builder.finish();
+        let schema = batch.schema();
+        assert_eq!(
+            schema
+                .fields()
+                .iter()
+                .filter(|field| field.name().as_str() == "timeseries_id")
+                .count(),
+            1
+        );
+        assert_eq!(schema.index_of("timeseries_id").unwrap(), 9);
+        assert!(schema.index_of("service").is_ok());
+
+        crate::sorted_series::append_sorted_series_column(
+            crate::table_config::ProductType::Sketches.default_sort_fields(),
+            &batch,
+        )
+        .unwrap();
     }
 
     #[test]
