@@ -36,6 +36,7 @@ mod vrl_processing;
 
 pub use doc_processor::{DocProcessor, DocProcessorCounters};
 pub use index_serializer::IndexSerializer;
+pub(crate) use indexer::OTHER_PARTITION_ID;
 pub use indexer::{Indexer, IndexerCounters};
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
 pub use indexing_service::{

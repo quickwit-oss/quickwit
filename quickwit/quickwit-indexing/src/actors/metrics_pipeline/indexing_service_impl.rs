@@ -82,6 +82,7 @@ impl IndexingService {
             event_broker: self.event_broker.clone(),
             use_sketch_processors,
             partition_key,
+            max_num_partitions: index_config.doc_mapping.max_num_partitions,
         };
         let pipeline = MetricsPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);

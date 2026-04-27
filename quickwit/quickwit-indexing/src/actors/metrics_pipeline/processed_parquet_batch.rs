@@ -23,15 +23,30 @@ use arrow::record_batch::RecordBatch;
 use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 
+/// A partition-local Arrow RecordBatch in a processed source batch.
+pub struct PartitionedParquetBatch {
+    /// The Arrow RecordBatch containing parquet pipeline data.
+    pub batch: RecordBatch,
+    /// Partition to which this batch belongs.
+    pub partition_id: u64,
+}
+
+impl PartitionedParquetBatch {
+    pub fn new(batch: RecordBatch, partition_id: u64) -> Self {
+        Self {
+            batch,
+            partition_id,
+        }
+    }
+}
+
 /// Batch of parquet data as Arrow RecordBatch for the parquet indexing pipeline.
 ///
 /// This message type is sent from ParquetDocProcessor to ParquetIndexer, carrying
 /// pre-processed Arrow data that can be directly accumulated and written to Parquet.
 pub struct ProcessedParquetBatch {
-    /// The Arrow RecordBatch containing parquet pipeline data.
-    pub batch: RecordBatch,
-    /// Partition to which this batch belongs.
-    pub partition_id: u64,
+    /// The partition-local Arrow RecordBatches in this source batch.
+    pub batches: Vec<PartitionedParquetBatch>,
     /// Checkpoint delta for this batch.
     pub checkpoint_delta: SourceCheckpointDelta,
     /// Force commit flag - when true, accumulator should flush immediately.
@@ -54,10 +69,22 @@ impl ProcessedParquetBatch {
         checkpoint_delta: SourceCheckpointDelta,
         force_commit: bool,
     ) -> Self {
-        // Estimate memory usage from the RecordBatch
-        let memory_size: i64 = batch
-            .columns()
+        Self::new_partitioned(
+            vec![PartitionedParquetBatch::new(batch, partition_id)],
+            checkpoint_delta,
+            force_commit,
+        )
+    }
+
+    /// Create a new ProcessedParquetBatch from already partitioned data.
+    pub fn new_partitioned(
+        batches: Vec<PartitionedParquetBatch>,
+        checkpoint_delta: SourceCheckpointDelta,
+        force_commit: bool,
+    ) -> Self {
+        let memory_size: i64 = batches
             .iter()
+            .flat_map(|partitioned_batch| partitioned_batch.batch.columns())
             .map(|col| col.get_array_memory_size() as i64)
             .sum();
 
@@ -65,8 +92,7 @@ impl ProcessedParquetBatch {
         gauge_guard.add(memory_size);
 
         Self {
-            batch,
-            partition_id,
+            batches,
             checkpoint_delta,
             force_commit,
             _gauge_guard: gauge_guard,
@@ -75,14 +101,17 @@ impl ProcessedParquetBatch {
 
     /// Returns the number of rows in the batch.
     pub fn num_rows(&self) -> usize {
-        self.batch.num_rows()
+        self.batches
+            .iter()
+            .map(|batch| batch.batch.num_rows())
+            .sum()
     }
 
     /// Returns the estimated memory size of the batch in bytes.
     pub fn memory_size(&self) -> usize {
-        self.batch
-            .columns()
+        self.batches
             .iter()
+            .flat_map(|partitioned_batch| partitioned_batch.batch.columns())
             .map(|col| col.get_array_memory_size())
             .sum()
     }
@@ -91,9 +120,16 @@ impl ProcessedParquetBatch {
 impl fmt::Debug for ProcessedParquetBatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProcessedParquetBatch")
-            .field("num_rows", &self.batch.num_rows())
-            .field("num_columns", &self.batch.num_columns())
-            .field("partition_id", &self.partition_id)
+            .field("num_rows", &self.num_rows())
+            .field("num_batches", &self.batches.len())
+            .field(
+                "partition_ids",
+                &self
+                    .batches
+                    .iter()
+                    .map(|batch| batch.partition_id)
+                    .collect::<Vec<_>>(),
+            )
             .field("checkpoint_delta", &self.checkpoint_delta)
             .field("force_commit", &self.force_commit)
             .finish()

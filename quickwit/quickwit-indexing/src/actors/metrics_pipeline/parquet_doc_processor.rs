@@ -27,7 +27,6 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_doc_mapper::ArrowRowContext;
-use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 use quickwit_parquet_engine::ingest::{
     IngestError, ParquetIngestProcessor, SketchParquetIngestProcessor,
 };
@@ -36,7 +35,7 @@ use serde::Serialize;
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument};
 
-use super::{ParquetIndexer, ProcessedParquetBatch};
+use super::{ParquetIndexer, PartitionedParquetBatch, ProcessedParquetBatch};
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock, RawDocBatch};
 
 /// Arrow IPC stream continuation marker (4 bytes of 0xFF).
@@ -247,9 +246,8 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
         }
 
         let force_commit = raw_doc_batch.force_commit;
-        let mut checkpoint_delta = raw_doc_batch.checkpoint_delta;
+        let checkpoint_delta = raw_doc_batch.checkpoint_delta;
         let num_docs = raw_doc_batch.docs.len();
-        let mut doc_index = 0;
 
         debug!(
             num_docs = num_docs,
@@ -257,17 +255,16 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
             "processing raw doc batch"
         );
 
-        // Track whether the checkpoint delta has been forwarded to the indexer.
-        // If all docs fail, we must still forward the checkpoint so the pipeline
-        // can advance past this batch.
-        let mut checkpoint_forwarded = false;
+        // Collect every partition-local batch from this source batch into a single
+        // indexer message. This mirrors the logs pipeline: the checkpoint covers the
+        // whole RawDocBatch, so the indexer must not be able to flush a prefix of it
+        // before seeing the checkpoint.
+        let mut partitioned_batches = Vec::new();
 
         // Process each raw document in the batch (expecting Arrow IPC format from OTLP gRPC)
         for raw_doc in &raw_doc_batch.docs {
             let _protected_zone_guard = ctx.protect_zone();
             let num_bytes = raw_doc.len();
-            doc_index += 1;
-            let is_last_doc = doc_index == num_docs;
 
             // Verify Arrow IPC format
             if !is_arrow_ipc(raw_doc) {
@@ -287,45 +284,11 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                     let num_rows = batch.num_rows();
                     self.counters.record_valid(num_rows, num_bytes);
 
-                    let should_force_commit = force_commit && is_last_doc;
-                    let mut batch_checkpoint = if is_last_doc {
-                        std::mem::take(&mut checkpoint_delta)
-                    } else {
-                        SourceCheckpointDelta::default()
-                    };
-
                     // Split the batch by partition_id.
                     let partitioned = partition_batch(&batch, &self.partition_key);
-
-                    let num_partitions = partitioned.len();
-                    for (part_idx, (partition_id, sub_batch)) in partitioned.into_iter().enumerate()
-                    {
-                        let is_last_partition = part_idx + 1 == num_partitions;
-                        // Attach checkpoint and force_commit only to the last
-                        // sub-batch so progress is tracked exactly once.
-                        let sub_checkpoint = if is_last_partition {
-                            std::mem::replace(
-                                &mut batch_checkpoint,
-                                SourceCheckpointDelta::default(),
-                            )
-                        } else {
-                            SourceCheckpointDelta::default()
-                        };
-                        let sub_force = should_force_commit && is_last_partition;
-
-                        let processed_batch = ProcessedParquetBatch::new(
-                            sub_batch,
-                            partition_id,
-                            sub_checkpoint,
-                            sub_force,
-                        );
-                        ctx.send_message(&self.indexer_mailbox, processed_batch)
-                            .await?;
-                    }
-
-                    if is_last_doc {
-                        checkpoint_forwarded = true;
-                    }
+                    partitioned_batches.extend(partitioned.into_iter().map(
+                        |(partition_id, batch)| PartitionedParquetBatch::new(batch, partition_id),
+                    ));
                 }
                 Err(error) => {
                     rate_limited_warn!(
@@ -341,15 +304,15 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
             ctx.record_progress();
         }
 
-        // If no successful doc forwarded the checkpoint (all docs failed), we must
-        // still send the checkpoint delta so the pipeline advances past this batch.
-        // Without this, a batch of consistently malformed data blocks offset progress
-        // forever.
-        if !checkpoint_forwarded && !checkpoint_delta.is_empty() {
-            let empty_batch =
-                RecordBatch::new_empty(std::sync::Arc::new(arrow::datatypes::Schema::empty()));
-            let processed_batch =
-                ProcessedParquetBatch::new(empty_batch, 0, checkpoint_delta, force_commit);
+        // Even when all docs fail, forward the checkpoint so the pipeline can
+        // advance past this batch. A force commit with no new rows must also reach
+        // the indexer so buffered work is flushed.
+        if !partitioned_batches.is_empty() || !checkpoint_delta.is_empty() || force_commit {
+            let processed_batch = ProcessedParquetBatch::new_partitioned(
+                partitioned_batches,
+                checkpoint_delta,
+                force_commit,
+            );
             ctx.send_message(&self.indexer_mailbox, processed_batch)
                 .await?;
         }
@@ -438,6 +401,7 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     use quickwit_actors::Universe;
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_parquet_engine::ingest::record_batch_to_ipc;
     use quickwit_proto::types::IndexUid;
 
@@ -522,6 +486,61 @@ mod tests {
         assert_eq!(counters.valid_rows, 3);
         assert_eq!(counters.parse_errors, 0);
         assert_eq!(counters.format_errors, 0);
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_doc_processor_sends_one_message_per_raw_doc_batch() {
+        use quickwit_parquet_engine::test_helpers::create_test_batch_with_tags;
+
+        let universe = Universe::with_accelerated_time();
+
+        let (indexer_mailbox, indexer_inbox) = universe.create_test_mailbox::<ParquetIndexer>();
+        let metrics_doc_processor = ParquetDocProcessor::new(
+            IngestProcessor::Metrics(ParquetIngestProcessor),
+            quickwit_doc_mapper::RoutingExpr::default(),
+            "test-metrics-index".to_string(),
+            "test-source".to_string(),
+            indexer_mailbox,
+        );
+
+        let (metrics_doc_processor_mailbox, metrics_doc_processor_handle) =
+            universe.spawn_builder().spawn(metrics_doc_processor);
+
+        let first_batch = create_test_batch_with_tags(3, &["service"]);
+        let second_batch = create_test_batch_with_tags(5, &["service"]);
+        let first_ipc_bytes = record_batch_to_ipc(&first_batch).unwrap();
+        let second_ipc_bytes = record_batch_to_ipc(&second_batch).unwrap();
+
+        let mut raw_doc_batch =
+            RawDocBatch::for_test(&[&first_ipc_bytes, &second_ipc_bytes], 0..2);
+        raw_doc_batch.force_commit = true;
+
+        metrics_doc_processor_mailbox
+            .send_message(raw_doc_batch)
+            .await
+            .unwrap();
+
+        let counters = metrics_doc_processor_handle
+            .process_pending_and_observe()
+            .await
+            .state;
+
+        assert_eq!(counters.valid_batches, 2);
+        assert_eq!(counters.valid_rows, 8);
+
+        let processed_batches: Vec<ProcessedParquetBatch> = indexer_inbox.drain_for_test_typed();
+        assert_eq!(processed_batches.len(), 1);
+
+        let processed_batch = &processed_batches[0];
+        assert_eq!(processed_batch.num_rows(), 8);
+        assert_eq!(processed_batch.batches.len(), 2);
+        assert_eq!(
+            processed_batch.checkpoint_delta,
+            SourceCheckpointDelta::from_range(0..2)
+        );
+        assert!(processed_batch.force_commit);
 
         universe.assert_quit().await;
     }
@@ -646,7 +665,8 @@ mod tests {
             writer_config,
             temp_dir.path(),
             &table_config,
-        );
+        )
+        .unwrap();
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = universe.spawn_builder().spawn(packager);
 

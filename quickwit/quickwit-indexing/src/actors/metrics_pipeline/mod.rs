@@ -48,7 +48,7 @@ pub use parquet_packager::{ParquetBatchForPackager, ParquetPackager, ParquetPack
 pub use parquet_splits_update::ParquetSplitsUpdate;
 pub use parquet_uploader::ParquetUploader;
 pub use pipeline::{MetricsPipeline, MetricsPipelineParams};
-pub use processed_parquet_batch::ProcessedParquetBatch;
+pub use processed_parquet_batch::{PartitionedParquetBatch, ProcessedParquetBatch};
 pub(crate) use publisher_impl::METRICS_PUBLISHER_NAME;
 
 #[cfg(test)]

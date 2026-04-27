@@ -22,6 +22,7 @@
 //! ```
 
 use std::collections::BTreeSet;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
@@ -93,6 +94,8 @@ pub struct MetricsPipelineParams {
     pub use_sketch_processors: bool,
     /// Routing expression for partitioning incoming data.
     pub partition_key: quickwit_doc_mapper::RoutingExpr,
+    /// Maximum number of index partitions allowed in a workbench.
+    pub max_num_partitions: NonZeroU32,
 }
 
 pub struct MetricsPipeline {
@@ -356,7 +359,7 @@ impl MetricsPipeline {
             writer_config,
             self.params.indexing_directory.path(),
             &table_config,
-        );
+        )?;
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         let (packager_mailbox, packager_handle) = ctx
             .spawn_actor()
@@ -366,11 +369,12 @@ impl MetricsPipeline {
         // ParquetIndexer
         let commit_timeout =
             Duration::from_secs(self.params.indexing_settings.commit_timeout_secs as u64);
-        let indexer = ParquetIndexer::new(
+        let indexer = ParquetIndexer::new_with_max_num_partitions(
             self.params.pipeline_id.index_uid.clone(),
             source_id.to_string(),
             None,
             packager_mailbox,
+            self.params.max_num_partitions,
             Some(commit_timeout),
         );
         let (indexer_mailbox, indexer_handle) = ctx
