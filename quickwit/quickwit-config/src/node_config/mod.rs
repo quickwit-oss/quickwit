@@ -909,7 +909,7 @@ pub struct CloudPremConfig {
     pub create_dd_metrics_index: bool,
     #[serde(default)]
     pub create_dd_sketches_index: bool,
-    #[serde(default)]
+    #[serde(default = "CloudPremConfig::default_create_dd_traces_index")]
     pub create_dd_traces_index: bool,
 }
 
@@ -972,6 +972,17 @@ impl CloudPremConfig {
             true
         }
     }
+
+    fn default_create_dd_traces_index() -> bool {
+        #[cfg(any(test, feature = "testsuite"))]
+        {
+            false
+        }
+        #[cfg(not(any(test, feature = "testsuite")))]
+        {
+            true
+        }
+    }
 }
 
 impl Default for CloudPremConfig {
@@ -984,7 +995,7 @@ impl Default for CloudPremConfig {
             create_dd_logs_index: Self::default_create_dd_logs_index(),
             create_dd_metrics_index: false,
             create_dd_sketches_index: false,
-            create_dd_traces_index: false,
+            create_dd_traces_index: Self::default_create_dd_traces_index(),
         }
     }
 }
