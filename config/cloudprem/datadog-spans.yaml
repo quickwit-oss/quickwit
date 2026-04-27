@@ -20,7 +20,7 @@ doc_mapping:
   # CAUTION: Update this UID (this is actually an ULID) when you modify the doc mapping.
   # It has no semantic meaning. The Datadog index doc mapping is only updated
   # if and only if this UID differs from the current doc mapping UID.
-  doc_mapping_uid: "01KQ8K4SZ4VQ62BKMJTJ28RMDC"
+  doc_mapping_uid: "01KQ8K95FM72398T5AFYXWWX13"
   mode: lenient
 
   field_mappings:
@@ -78,10 +78,6 @@ doc_mapping:
       tokenizer: raw
 
     - name: trace_id_low
-      type: text
-      tokenizer: raw
-
-    - name: id
       type: text
       tokenizer: raw
 
