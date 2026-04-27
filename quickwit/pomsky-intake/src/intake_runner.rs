@@ -129,20 +129,35 @@ transforms:
       - explode_dd_trace_spans
       - otlp.traces
 
+  normalize_log_names:
+    type: name_normalizer
+    inputs:
+      - preprocess_logs
+
+  normalize_metric_names:
+    type: name_normalizer
+    inputs:
+      - preprocess_metrics
+
+  normalize_trace_names:
+    type: name_normalizer
+    inputs:
+      - preprocess_traces
+
   add_log_host_tags:
     type: add_host_tags
     inputs:
-      - preprocess_logs
+      - normalize_log_names
 
   add_metric_host_tags:
     type: add_host_tags
     inputs:
-      - preprocess_metrics
+      - normalize_metric_names
 
   add_trace_host_tags:
     type: add_host_tags
     inputs:
-      - preprocess_spans
+      - normalize_trace_names
 
 sinks:
   logs_out:
