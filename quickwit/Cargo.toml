@@ -10,7 +10,9 @@ members = [
   "quickwit-common",
   "quickwit-config",
   "quickwit-control-plane",
+  "quickwit-datafusion",
   "quickwit-datetime",
+  "quickwit-df-core",
   "quickwit-directories",
   "quickwit-doc-mapper",
   "quickwit-dst",
@@ -41,6 +43,9 @@ members = [
 
 # The following list excludes `quickwit-metastore-utils`
 # from the default member to ease build/deps.
+#
+# DataFusion crates are opt-in and covered by their own CI lane. Keep them out
+# of the default members so a plain `cargo build` does not pull DataFusion in.
 default-members = [
   "quickwit-actors",
   "quickwit-aws",
@@ -354,7 +359,9 @@ quickwit-codegen-example = { path = "quickwit-codegen/example" }
 quickwit-common = { path = "quickwit-common" }
 quickwit-config = { path = "quickwit-config" }
 quickwit-control-plane = { path = "quickwit-control-plane" }
+quickwit-datafusion = { path = "quickwit-datafusion" }
 quickwit-datetime = { path = "quickwit-datetime" }
+quickwit-df-core = { path = "quickwit-df-core" }
 quickwit-directories = { path = "quickwit-directories" }
 quickwit-doc-mapper = { path = "quickwit-doc-mapper" }
 quickwit-dst = { path = "quickwit-dst" }
