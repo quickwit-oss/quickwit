@@ -114,7 +114,8 @@ pub async fn publish_split(
         .index_uid(index_uid.to_string())
         .time_range(TimeRange::new(min_ts, max_ts + 1))
         .num_rows(batch.num_rows() as u64)
-        .size_bytes(size_bytes);
+        .size_bytes(size_bytes)
+        .sort_fields(TableConfig::default().effective_sort_fields());
     for name in &metric_names {
         builder = builder.add_metric_name(name.clone());
     }

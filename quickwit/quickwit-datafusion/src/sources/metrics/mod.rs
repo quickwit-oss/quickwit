@@ -23,6 +23,7 @@
 pub(crate) mod factory;
 pub(crate) mod index_resolver;
 pub(crate) mod metastore_provider;
+pub(crate) mod optimizer;
 pub(crate) mod predicate;
 pub(crate) mod table_provider;
 
@@ -46,6 +47,7 @@ use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 
 use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
+use self::optimizer::SortedSeriesStreamingAggregateRule;
 use self::table_provider::MetricsTableProvider;
 
 /// Returns `true` when `err` wraps a [`MetastoreError::NotFound`].
@@ -210,7 +212,16 @@ impl QuickwitRuntimePlugin for MetricsDataSource {
         let factory: Arc<dyn TableProviderFactory> = Arc::new(MetricsTableProviderFactory::new(
             Arc::clone(&self.index_resolver),
         ));
-        QuickwitRuntimeRegistration::default().with_table_factory(METRICS_FILE_TYPE, factory)
+        QuickwitRuntimeRegistration::default()
+            .with_session_config_setter(|config| {
+                config
+                    .options_mut()
+                    .optimizer
+                    .enable_round_robin_repartition = false;
+                config.options_mut().optimizer.repartition_file_scans = false;
+            })
+            .with_physical_optimizer_rule(Arc::new(SortedSeriesStreamingAggregateRule))
+            .with_table_factory(METRICS_FILE_TYPE, factory)
     }
 }
 
