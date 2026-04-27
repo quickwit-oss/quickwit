@@ -206,6 +206,9 @@ async fn handle_request(server: CloudPremServiceClient, full_request: AnyRequest
         Request::EsQuery(es_query) => {
             Response::EsQuery(handle_err!(server.es_query(es_query).await))
         }
+        Request::SubstraitSearch(substrait_search) => {
+            Response::SubstraitSearch(handle_err!(server.substrait_search(substrait_search).await))
+        }
 
         _ => return unimplemented("Unimplemented request"),
     };

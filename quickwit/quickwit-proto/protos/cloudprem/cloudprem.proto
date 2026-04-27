@@ -54,6 +54,10 @@ service CloudPremService {
   // Elasticsearch HTTP passthrough for Trino ES connector.
   rpc EsQuery(EsHttpRequest) returns (EsHttpResponse);
 
+  // Executes a DataFusion SQL or Substrait query via the OSS DataFusion session builder.
+  // Requires QW_ENABLE_DATAFUSION_ENDPOINT=true and the Searcher role.
+  rpc SubstraitSearch(CloudpremSubstraitRequest) returns (CloudpremSubstraitResponse);
+
   // Response are sent to the bridge by the front, which initialised the connection
   rpc InvertedRequestStream(stream AnyResponse) returns (stream AnyRequest);
 }
@@ -81,6 +85,7 @@ message AnyRequest {
         quickwit.search.ListFieldsRequest root_list_fields = 26;
         GetIndexRoutingTableRequest get_index_routing_table = 27;
         SetIndexRoutingTableRequest set_index_routing_table = 28;
+        CloudpremSubstraitRequest substrait_search = 29;
         EsHttpRequest es_query = 30;
         GetClusterDiagnosticsRequest get_cluster_diagnostics = 31;
 
@@ -117,6 +122,7 @@ message AnyResponse {
         quickwit.search.ListFieldsResponse root_list_fields = 26;
         GetIndexRoutingTableResponse get_index_routing_table = 27;
         SetIndexRoutingTableResponse set_index_routing_table = 28;
+        CloudpremSubstraitResponse substrait_search = 29;
         EsHttpResponse es_query = 30;
         GetClusterDiagnosticsResponse get_cluster_diagnostics = 31;
 
@@ -564,4 +570,33 @@ message EsHttpRequest {
 message EsHttpResponse {
     uint32 status_code = 1;
     bytes body = 2;
+}
+
+message CloudpremSubstraitRequest {
+  int64 org_id = 1;
+  Scope scope = 2;
+
+  oneof query {
+    bytes substrait_plan = 3;
+    string string_query = 4;
+  }
+
+  message QuerySource {
+    string source = 1;
+    string query_name = 2;
+    string client_id = 3;
+  }
+  QuerySource source = 5;
+
+  message Tag {
+    string key = 1;
+    string value = 2;
+  }
+  repeated Tag tags = 6;
+
+  map<string, string> settings = 7;
+}
+
+message CloudpremSubstraitResponse {
+  bytes arrow_ipc_bytes = 1;
 }

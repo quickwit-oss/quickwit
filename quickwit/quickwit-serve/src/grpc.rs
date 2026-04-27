@@ -245,6 +245,8 @@ pub(crate) async fn start_grpc_server(
             services.metastore_client.clone(),
             services.cluster.clone(),
             services.node_config.clone(),
+            #[cfg(feature = "datafusion")]
+            services.datafusion_session_builder.clone(),
         );
         Some(
             CloudPremServiceClient::tower()
