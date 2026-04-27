@@ -24,6 +24,7 @@ quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
+quickwit-parquet-engine = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 

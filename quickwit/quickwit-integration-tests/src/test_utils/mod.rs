@@ -13,6 +13,10 @@
 // limitations under the License.
 
 mod cluster_sandbox;
+#[cfg(feature = "datafusion")]
+mod datafusion_splits;
 mod shutdown;
 
 pub(crate) use cluster_sandbox::{ClusterSandbox, ClusterSandboxBuilder, ingest};
+#[cfg(feature = "datafusion")]
+pub(crate) use datafusion_splits::publish_split;

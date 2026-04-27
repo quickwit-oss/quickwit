@@ -26,7 +26,7 @@ http = { workspace = true }
 http-body = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
-hyper-util = {workspace = true}
+hyper-util = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 opentelemetry = { workspace = true }
@@ -63,6 +63,7 @@ quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
+quickwit-datafusion = { workspace = true, optional = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
@@ -110,6 +111,7 @@ quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
+datafusion = ["dep:quickwit-datafusion"]
 pprof = [
   "dep:pprof"
 ]
