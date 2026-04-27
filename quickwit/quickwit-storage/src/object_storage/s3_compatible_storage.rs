@@ -30,10 +30,11 @@ use aws_sdk_s3::config::{
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::delete_objects::DeleteObjectsOutput;
 use aws_sdk_s3::operation::get_object::{GetObjectError, GetObjectOutput};
-use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::primitives::{AggregatedBytes, ByteStream};
 use aws_sdk_s3::types::builders::ObjectIdentifierBuilder;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart, Delete, ObjectIdentifier};
 use base64::prelude::{BASE64_STANDARD, Engine};
+use bytes::Bytes;
 use futures::{StreamExt, stream};
 use quickwit_aws::retry::{AwsRetryable, aws_retry};
 use quickwit_aws::{aws_behavior_version, get_aws_config};
@@ -48,6 +49,7 @@ use tracing::{info, instrument, warn};
 
 use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::object_storage::MultiPartPolicy;
+use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DeleteFailure, OwnedBytes, STORAGE_METRICS, Storage, StorageError,
@@ -445,11 +447,11 @@ impl S3CompatibleObjectStorage {
             .upload_id(upload_id.0)
             .send()
             .await
-            .map_err(|s3_err| {
-                if s3_err.is_retryable() {
-                    Retry::Transient(StorageError::from(s3_err))
+            .map_err(|sdk_error| {
+                if sdk_error.is_retryable() {
+                    Retry::Transient(StorageError::from(sdk_error))
                 } else {
-                    Retry::Permanent(StorageError::from(s3_err))
+                    Retry::Permanent(StorageError::from(sdk_error))
                 }
             })?;
 
@@ -484,7 +486,7 @@ impl S3CompatibleObjectStorage {
             .collect::<Vec<_>>()
             .await
             .into_iter()
-            .map(|res| res.map_err(|e| e.into_inner()))
+            .map(|res| res.map_err(|error| error.into_inner()))
             .collect();
         match completed_parts_res {
             Ok(completed_parts) => {
@@ -564,12 +566,11 @@ impl S3CompatibleObjectStorage {
         Ok(get_object_output)
     }
 
-    async fn get_to_vec(
+    async fn get_to_bytes(
         &self,
         path: &Path,
         range_opt: Option<Range<usize>>,
-    ) -> StorageResult<Vec<u8>> {
-        let cap = range_opt.as_ref().map(Range::len).unwrap_or(0);
+    ) -> StorageResult<Bytes> {
         let get_object_output = aws_retry(&self.retry_params, || {
             self.get_object(path, range_opt.clone())
         })
@@ -577,9 +578,7 @@ impl S3CompatibleObjectStorage {
         // only record ranged get request as being in flight
         let _in_flight_guards =
             range_opt.map(|range| object_storage_get_slice_in_flight_guards(range.len()));
-        let mut buf: Vec<u8> = Vec::with_capacity(cap);
-        download_all(get_object_output.body, &mut buf).await?;
-        Ok(buf)
+        download_all(get_object_output.body).await
     }
 
     /// Bulk delete implementation based on the DeleteObject API:
@@ -720,16 +719,35 @@ impl S3CompatibleObjectStorage {
     }
 }
 
-async fn download_all(byte_stream: ByteStream, output: &mut Vec<u8>) -> io::Result<()> {
-    output.clear();
-    let mut body_stream_reader = BufReader::new(byte_stream.into_async_read());
-    let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
+async fn download_all(byte_stream: ByteStream) -> StorageResult<Bytes> {
+    let aggregated: AggregatedBytes = byte_stream
+        .collect()
+        .await
+        .map_err(byte_stream_to_storage_error)?;
+    // `AggregatedBytes::into_bytes` returns the underlying `Bytes` without copying when the body
+    // was received as a single segment, and concatenates into a fresh `Bytes` otherwise.
+    let bytes = aggregated.into_bytes();
     STORAGE_METRICS
         .object_storage_download_num_bytes
-        .inc_by(num_bytes_copied);
-    // When calling `get_all`, the Vec capacity is not properly set.
-    output.shrink_to_fit();
-    Ok(())
+        .inc_by(bytes.len() as u64);
+    Ok(bytes)
+}
+
+/// Classifies a `ByteStream::collect` failure. The response headers were already received
+/// successfully at this point; what fails here is draining the body. The underlying cause can be a
+/// local `io::Error` (which we classify as `Io`) or a transport-level streaming failure — stalled
+/// stream, malformed body, checksum mismatch — which we classify as `Internal` and report with the
+/// original error preserved as source.
+fn byte_stream_to_storage_error(error: aws_sdk_s3::primitives::ByteStreamError) -> StorageError {
+    let is_io_error = std::error::Error::source(&error)
+        .and_then(|source| source.downcast_ref::<io::Error>())
+        .is_some();
+    let kind = if is_io_error {
+        StorageErrorKind::Io
+    } else {
+        StorageErrorKind::Internal
+    };
+    kind.with_error(error)
 }
 
 #[async_trait]
@@ -816,9 +834,9 @@ impl Storage for S3CompatibleObjectStorage {
     #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
-        self.get_to_vec(path, Some(range.clone()))
+        self.get_to_bytes(path, Some(range.clone()))
             .await
-            .map(OwnedBytes::new)
+            .map(into_owned_bytes)
             .map_err(|err| {
                 err.add_context(format!(
                     "failed to fetch slice {:?} for object: {}/{}",
@@ -850,9 +868,9 @@ impl Storage for S3CompatibleObjectStorage {
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bytes = self
-            .get_to_vec(path, None)
+            .get_to_bytes(path, None)
             .await
-            .map(OwnedBytes::new)
+            .map(into_owned_bytes)
             .map_err(|err| {
                 err.add_context(format!(
                     "failed to fetch object: {}/{}",

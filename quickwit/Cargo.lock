@@ -9174,6 +9174,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "stable_deref_trait",
  "tantivy",
  "tempfile",
  "thiserror 2.0.18",
