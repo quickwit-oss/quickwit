@@ -17,5 +17,67 @@ mod compaction_planner;
 mod compaction_state;
 #[allow(dead_code)]
 mod index_config_metastore;
+pub(crate) mod metrics;
+
+use std::collections::VecDeque;
 
 pub use compaction_planner::CompactionPlanner;
+use quickwit_indexing::merge_policy::MergeOperation;
+
+use crate::planner::compaction_state::CompactionPartitionKey;
+use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
+use crate::source_uid_metrics_label;
+
+/// Queue of merge operations awaiting assignment, with the
+/// `pending_merge_operations` gauge maintained inline. Push/pop are the only
+/// mutation paths so the metric stays consistent with `len()`.
+struct PendingOperations {
+    inner: VecDeque<(CompactionPartitionKey, MergeOperation)>,
+}
+
+impl PendingOperations {
+    fn new() -> Self {
+        Self {
+            inner: VecDeque::new(),
+        }
+    }
+
+    fn push(&mut self, partition_key: CompactionPartitionKey, operation: MergeOperation) {
+        Self::adjust_gauge(&partition_key, &operation, 1);
+        self.inner.push_back((partition_key, operation));
+    }
+
+    fn pop(&mut self) -> Option<(CompactionPartitionKey, MergeOperation)> {
+        let (partition_key, operation) = self.inner.pop_front()?;
+        Self::adjust_gauge(&partition_key, &operation, -1);
+        Some((partition_key, operation))
+    }
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+
+    #[cfg(test)]
+    fn iter(&self) -> impl Iterator<Item = &(CompactionPartitionKey, MergeOperation)> {
+        self.inner.iter()
+    }
+
+    fn adjust_gauge(
+        partition_key: &CompactionPartitionKey,
+        operation: &MergeOperation,
+        delta: i64,
+    ) {
+        let source_uid_label =
+            source_uid_metrics_label(&partition_key.index_uid, &partition_key.source_id);
+        let merge_level = operation.merge_level().to_string();
+        COMPACTION_PLANNER_METRICS
+            .pending_merge_operations
+            .with_label_values([source_uid_label.as_str(), merge_level.as_str()])
+            .add(delta);
+    }
+}

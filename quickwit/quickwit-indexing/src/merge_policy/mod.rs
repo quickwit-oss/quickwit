@@ -121,6 +121,14 @@ impl MergeOperation {
     pub fn splits_as_slice(&self) -> &[SplitMetadata] {
         self.splits.as_slice()
     }
+
+    pub fn merge_level(&self) -> usize {
+        self.splits
+            .iter()
+            .map(|s| s.num_merge_ops)
+            .max()
+            .unwrap_or(0)
+    }
 }
 
 impl fmt::Debug for MergeOperation {

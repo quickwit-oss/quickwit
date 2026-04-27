@@ -66,6 +66,8 @@ pub struct MergeTaskAssignment {
     pub source_id: ::prost::alloc::string::String,
     #[prost(string, tag = "9")]
     pub index_storage_uri: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "10")]
+    pub merge_level: u64,
 }
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]

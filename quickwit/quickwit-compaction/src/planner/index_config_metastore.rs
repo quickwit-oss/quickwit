@@ -21,6 +21,9 @@ use quickwit_indexing::merge_policy::{MergePolicy, merge_policy_from_settings};
 use quickwit_metastore::{IndexMetadataResponseExt, SplitMaturity, SplitMetadata};
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{DocMappingUid, IndexUid};
+use tracing::error;
+
+use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 
 /// Everything the planner needs to know about a single index.
 pub struct IndexEntry {
@@ -99,7 +102,15 @@ impl IndexConfigMetastore {
                 index_uid: Some(index_uid.clone()),
                 index_id: None,
             })
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(%error, "[compaction-planner] error getting index metadata from metastore");
+                COMPACTION_PLANNER_METRICS
+                    .metastore_errors
+                    .with_label_values(["index_metadata"])
+                    .inc();
+            })?;
+
         let index_metadata = response.deserialize_index_metadata()?;
 
         let doc_mapper = build_doc_mapper(
