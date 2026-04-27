@@ -20,8 +20,8 @@ Metrics:
   otlp.metrics ─────────┴─► preprocess_metric ──► add_host_tags ────────► metrics_out (Arrow IPC)
 
 Traces:
-  datadog_agent.traces ───► explode_trace_spans ─┐
-  otlp.traces ──────────────────────────────────-┴► preprocess_trace ──► add_host_tags ──► traces_out (HTTP/JSON)
+  datadog_agent.traces ───► preprocess_dd_trace ──► explode_trace_spans ─┐
+  otlp.traces ───────────────────────────────────────────────────────────┴► preprocess_span ──► add_host_tags ──► traces_out (HTTP/JSON)
 ```
 
 ### Ports

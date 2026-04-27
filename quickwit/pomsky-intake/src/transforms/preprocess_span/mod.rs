@@ -21,29 +21,30 @@ use vector::schema::Definition;
 use vector::transforms::{FunctionTransform, OutputBuffer, Transform};
 use vector_lib::config::clone_input_definitions;
 
-/// Preprocesses trace events before indexing. Dispatches to a
-/// source-specific handler based on the event's `source_type` metadata.
+/// Preprocesses span events (post-explode for Datadog agent, native for
+/// OTLP). Dispatches to a source-specific handler based on the event's
+/// `source_type` metadata.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct PreprocessTraceConfig;
+pub struct PreprocessSpanConfig;
 
-impl vector_lib::configurable::NamedComponent for PreprocessTraceConfig {
+impl vector_lib::configurable::NamedComponent for PreprocessSpanConfig {
     fn get_component_name(&self) -> &'static str {
-        "preprocess_trace"
+        "preprocess_span"
     }
 }
 
-impl GenerateConfig for PreprocessTraceConfig {
+impl GenerateConfig for PreprocessSpanConfig {
     fn generate_config() -> toml::Value {
         toml::Value::Table(Default::default())
     }
 }
 
 #[async_trait::async_trait]
-#[typetag::serde(name = "preprocess_trace")]
-impl TransformConfig for PreprocessTraceConfig {
+#[typetag::serde(name = "preprocess_span")]
+impl TransformConfig for PreprocessSpanConfig {
     async fn build(&self, _context: &TransformContext) -> vector::Result<Transform> {
-        Ok(Transform::function(PreprocessTrace))
+        Ok(Transform::function(PreprocessSpan))
     }
 
     fn input(&self) -> Input {
@@ -67,9 +68,9 @@ impl TransformConfig for PreprocessTraceConfig {
 }
 
 #[derive(Clone)]
-struct PreprocessTrace;
+struct PreprocessSpan;
 
-impl FunctionTransform for PreprocessTrace {
+impl FunctionTransform for PreprocessSpan {
     fn transform(&mut self, output: &mut OutputBuffer, mut event: Event) {
         if let Event::Trace(ref mut trace) = event {
             let source_type = trace.metadata().source_type().unwrap_or("unknown");
@@ -132,7 +133,7 @@ mod tests {
     use super::*;
 
     fn run_transform(event: Event) -> Vec<Event> {
-        let mut transform = PreprocessTrace;
+        let mut transform = PreprocessSpan;
         let mut output = OutputBuffer::with_capacity(1);
         transform.transform(&mut output, event);
         output.into_events().collect()
