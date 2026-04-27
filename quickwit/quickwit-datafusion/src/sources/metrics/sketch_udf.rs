@@ -133,17 +133,11 @@ impl DdSketchAccumulator {
         }
 
         let mut bucket_total = 0u64;
-        for (key, cnt) in keys.iter().zip(counts.iter()) {
+        for cnt in counts {
             bucket_total = bucket_total.checked_add(*cnt).ok_or_else(|| {
                 DataFusionError::Execution(
                     "dd_sketch: bucket count overflow while validating row".to_string(),
                 )
-            })?;
-            let current = self.merged_buckets.entry(*key).or_insert(0);
-            *current = current.checked_add(*cnt).ok_or_else(|| {
-                DataFusionError::Execution(format!(
-                    "dd_sketch: bucket count overflow while merging key {key}"
-                ))
             })?;
         }
 
@@ -151,6 +145,19 @@ impl DdSketchAccumulator {
             return Err(DataFusionError::Execution(format!(
                 "dd_sketch: row count {count} does not match sum(counts) {bucket_total}"
             )));
+        }
+
+        if count == 0 {
+            return Ok(());
+        }
+
+        for (key, cnt) in keys.iter().zip(counts.iter()) {
+            let current = self.merged_buckets.entry(*key).or_insert(0);
+            *current = current.checked_add(*cnt).ok_or_else(|| {
+                DataFusionError::Execution(format!(
+                    "dd_sketch: bucket count overflow while merging key {key}"
+                ))
+            })?;
         }
 
         self.total_count = self.total_count.checked_add(count).ok_or_else(|| {
@@ -505,6 +512,20 @@ mod tests {
         assert_eq!(acc.total_count, 131_205);
         assert_eq!(acc.merged_buckets[&1338], 131_200);
         assert_eq!(acc.merged_buckets[&1784], 5);
+    }
+
+    #[test]
+    fn merge_accumulator_ignores_empty_sketch_bounds() {
+        let mut acc = DdSketchAccumulator::new();
+        acc.update_single(&[], &[], 0, -999.0, 999.0).unwrap();
+        acc.update_single(&[1338], &[2], 2, 1.0, 2.0).unwrap();
+        acc.update_single(&[999], &[0], 0, -123.0, 456.0).unwrap();
+
+        assert_eq!(acc.total_count, 2);
+        assert_eq!(acc.global_min, 1.0);
+        assert_eq!(acc.global_max, 2.0);
+        assert_eq!(acc.merged_buckets[&1338], 2);
+        assert!(!acc.merged_buckets.contains_key(&999));
     }
 
     #[test]
