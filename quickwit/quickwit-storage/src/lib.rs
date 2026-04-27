@@ -50,6 +50,7 @@ mod prefix_storage;
 mod ram_storage;
 mod split;
 mod split_cache;
+mod stable_deref_bytes;
 mod storage_factory;
 mod storage_resolver;
 mod versioned_component;

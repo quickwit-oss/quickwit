@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use quickwit_actors::{Actor, ActorContext, Handler};
+use quickwit_common::is_parquet_pipeline_index;
 use quickwit_common::shared_consts::split_deletion_grace_period;
-use quickwit_index_management::{GcMetrics, run_garbage_collect};
+use quickwit_index_management::{GcMetrics, run_garbage_collect, run_parquet_garbage_collect};
 use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
@@ -34,6 +34,42 @@ use tracing::{debug, error, info};
 use crate::metrics::JANITOR_METRICS;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
+
+/// Result of a GC run (tantivy or parquet).
+struct GcRunResult {
+    num_deleted_splits: usize,
+    num_deleted_bytes: usize,
+    num_failed: usize,
+    sample_deleted_files: Vec<String>,
+}
+
+impl GcRunResult {
+    fn failed() -> Self {
+        Self {
+            num_deleted_splits: 0,
+            num_deleted_bytes: 0,
+            num_failed: 0,
+            sample_deleted_files: Vec::new(),
+        }
+    }
+}
+
+fn gc_metrics(split_type: &str) -> GcMetrics {
+    GcMetrics {
+        deleted_splits: JANITOR_METRICS
+            .gc_deleted_splits
+            .with_label_values(["success", split_type])
+            .clone(),
+        deleted_bytes: JANITOR_METRICS
+            .gc_deleted_bytes
+            .with_label_values([split_type])
+            .clone(),
+        failed_splits: JANITOR_METRICS
+            .gc_deleted_splits
+            .with_label_values(["error", split_type])
+            .clone(),
+    }
+}
 
 /// Staged files needs to be deleted if there was a failure.
 /// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
@@ -77,13 +113,23 @@ impl GarbageCollector {
         }
     }
 
+    fn record_gc_result(&mut self, result: &GcRunResult, split_type: &str) {
+        self.counters.num_failed_splits += result.num_failed;
+        if result.num_deleted_splits > 0 {
+            info!(
+                "Janitor deleted {:?} and {} other {} splits.",
+                result.sample_deleted_files, result.num_deleted_splits, split_type,
+            );
+            self.counters.num_deleted_files += result.num_deleted_splits;
+            self.counters.num_deleted_bytes += result.num_deleted_bytes;
+        }
+    }
+
     /// Gc Loop handler logic.
     /// Should not return an error to prevent the actor from crashing.
     async fn handle_inner(&mut self, ctx: &ActorContext<Self>) {
         debug!("loading indexes from the metastore");
         self.counters.num_passes += 1;
-
-        let start = Instant::now();
 
         let response = match self
             .metastore
@@ -106,7 +152,12 @@ impl GarbageCollector {
         info!("loaded {} indexes from the metastore", indexes.len());
 
         let expected_count = indexes.len();
-        let index_storages: HashMap<IndexUid, Arc<dyn Storage>> = stream::iter(indexes).filter_map(|index| {
+
+        // Resolve storages and split into tantivy vs parquet indexes.
+        let mut tantivy_storages: HashMap<IndexUid, Arc<dyn Storage>> = HashMap::new();
+        let mut parquet_storages: HashMap<IndexUid, Arc<dyn Storage>> = HashMap::new();
+
+        let resolved: Vec<_> = stream::iter(indexes).filter_map(|index| {
             let storage_resolver = self.storage_resolver.clone();
             async move {
                 let index_uid = index.index_uid.clone();
@@ -114,7 +165,7 @@ impl GarbageCollector {
                 let storage = match storage_resolver.resolve(index_uri).await {
                     Ok(storage) => storage,
                     Err(error) => {
-                        error!(index=%index.index_id(), error=?error, "failed to resolve the index storage Uri");
+                        error!(index=%index_uid.index_id, error=?error, "failed to resolve the index storage Uri");
                         return None;
                     }
                 };
@@ -122,68 +173,126 @@ impl GarbageCollector {
             }}).collect()
             .await;
 
-        let storage_got_count = index_storages.len();
-        self.counters.num_failed_storage_resolution += expected_count - storage_got_count;
+        self.counters.num_failed_storage_resolution += expected_count - resolved.len();
 
-        if index_storages.is_empty() {
+        for (index_uid, storage) in resolved {
+            if is_parquet_pipeline_index(&index_uid.index_id) {
+                parquet_storages.insert(index_uid, storage);
+            } else {
+                tantivy_storages.insert(index_uid, storage);
+            }
+        }
+
+        if tantivy_storages.is_empty() && parquet_storages.is_empty() {
             return;
         }
 
-        let gc_res = run_garbage_collect(
-            index_storages,
-            self.metastore.clone(),
-            STAGED_GRACE_PERIOD,
-            split_deletion_grace_period(),
-            false,
-            Some(ctx.progress()),
-            Some(GcMetrics {
-                deleted_splits: JANITOR_METRICS
-                    .gc_deleted_splits
-                    .with_label_values(["success"])
-                    .clone(),
-                deleted_bytes: JANITOR_METRICS.gc_deleted_bytes.clone(),
-                failed_splits: JANITOR_METRICS
-                    .gc_deleted_splits
-                    .with_label_values(["error"])
-                    .clone(),
-            }),
-        )
-        .await;
+        // Run Tantivy GC
+        if !tantivy_storages.is_empty() {
+            let tantivy_start = Instant::now();
+            let gc_res = run_garbage_collect(
+                tantivy_storages,
+                self.metastore.clone(),
+                STAGED_GRACE_PERIOD,
+                split_deletion_grace_period(),
+                false,
+                Some(ctx.progress()),
+                Some(gc_metrics("tantivy")),
+            )
+            .await;
 
-        let run_duration = start.elapsed().as_secs();
-        JANITOR_METRICS.gc_seconds_total.inc_by(run_duration);
+            let tantivy_run_duration = tantivy_start.elapsed().as_secs();
+            JANITOR_METRICS
+                .gc_seconds_total
+                .with_label_values(["tantivy"])
+                .inc_by(tantivy_run_duration);
 
-        let deleted_file_entries = match gc_res {
-            Ok(removal_info) => {
-                self.counters.num_successful_gc_run += 1;
-                JANITOR_METRICS.gc_runs.with_label_values(["success"]).inc();
-                self.counters.num_failed_splits += removal_info.failed_splits.len();
-                removal_info.removed_split_entries
-            }
-            Err(error) => {
-                self.counters.num_failed_gc_run += 1;
-                JANITOR_METRICS.gc_runs.with_label_values(["error"]).inc();
-                error!(error=?error, "failed to run garbage collection");
-                return;
-            }
-        };
-        if !deleted_file_entries.is_empty() {
-            let num_deleted_splits = deleted_file_entries.len();
-            let num_deleted_bytes = deleted_file_entries
-                .iter()
-                .map(|entry| entry.file_size_bytes.as_u64() as usize)
-                .sum::<usize>();
-            let deleted_files: HashSet<&Path> = deleted_file_entries
-                .iter()
-                .map(|deleted_entry| deleted_entry.file_name.as_path())
-                .take(5)
-                .collect();
-            info!(
-                num_deleted_splits = num_deleted_splits,
-                "Janitor deleted {:?} and {} other splits.", deleted_files, num_deleted_splits,
-            );
-            self.counters.num_deleted_files += num_deleted_splits;
-            self.counters.num_deleted_bytes += num_deleted_bytes;
+            let result = match gc_res {
+                Ok(removal_info) => {
+                    self.counters.num_successful_gc_run += 1;
+                    JANITOR_METRICS
+                        .gc_runs
+                        .with_label_values(["success", "tantivy"])
+                        .inc();
+                    GcRunResult {
+                        num_deleted_splits: removal_info.removed_split_entries.len(),
+                        num_deleted_bytes: removal_info
+                            .removed_split_entries
+                            .iter()
+                            .map(|e| e.file_size_bytes.as_u64() as usize)
+                            .sum(),
+                        num_failed: removal_info.failed_splits.len(),
+                        sample_deleted_files: removal_info
+                            .removed_split_entries
+                            .iter()
+                            .take(5)
+                            .map(|e| e.file_name.display().to_string())
+                            .collect(),
+                    }
+                }
+                Err(error) => {
+                    self.counters.num_failed_gc_run += 1;
+                    JANITOR_METRICS
+                        .gc_runs
+                        .with_label_values(["error", "tantivy"])
+                        .inc();
+                    error!(error=?error, "failed to run garbage collection");
+                    GcRunResult::failed()
+                }
+            };
+            self.record_gc_result(&result, "tantivy");
+        }
+
+        // Run Parquet GC
+        if !parquet_storages.is_empty() {
+            let parquet_start = Instant::now();
+            let gc_res = run_parquet_garbage_collect(
+                parquet_storages,
+                self.metastore.clone(),
+                STAGED_GRACE_PERIOD,
+                split_deletion_grace_period(),
+                false,
+                Some(ctx.progress()),
+                Some(gc_metrics("parquet")),
+            )
+            .await;
+
+            let parquet_run_duration = parquet_start.elapsed().as_secs();
+            JANITOR_METRICS
+                .gc_seconds_total
+                .with_label_values(["parquet"])
+                .inc_by(parquet_run_duration);
+
+            let result = match gc_res {
+                Ok(removal_info) => {
+                    self.counters.num_successful_gc_run += 1;
+                    JANITOR_METRICS
+                        .gc_runs
+                        .with_label_values(["success", "parquet"])
+                        .inc();
+                    GcRunResult {
+                        num_deleted_splits: removal_info.removed_split_count(),
+                        num_deleted_bytes: removal_info.removed_bytes() as usize,
+                        num_failed: removal_info.failed_split_count(),
+                        sample_deleted_files: removal_info
+                            .removed_parquet_splits_entries
+                            .iter()
+                            .take(5)
+                            .map(|e| format!("{}.parquet", e.split_id))
+                            .collect(),
+                    }
+                }
+                Err(error) => {
+                    self.counters.num_failed_gc_run += 1;
+                    JANITOR_METRICS
+                        .gc_runs
+                        .with_label_values(["error", "parquet"])
+                        .inc();
+                    error!(error=?error, "failed to run parquet garbage collection");
+                    GcRunResult::failed()
+                }
+            };
+            self.record_gc_result(&result, "parquet");
         }
     }
 }
@@ -226,6 +335,7 @@ impl Handler<Loop> for GarbageCollector {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::ops::Bound;
     use std::path::Path;
     use std::sync::Arc;
@@ -754,6 +864,65 @@ mod tests {
         assert_eq!(counters.num_failed_storage_resolution, 0);
         assert_eq!(counters.num_failed_gc_run, 0);
         assert_eq!(counters.num_failed_splits, 2000);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_garbage_collect_parquet_index() {
+        use quickwit_metastore::{ListParquetSplitsResponseExt, ParquetSplitRecord, SplitState};
+        use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
+        use quickwit_proto::metastore::ListMetricsSplitsResponse;
+
+        let storage_resolver = StorageResolver::unconfigured();
+        let mut mock = MockMetastoreService::new();
+
+        mock.expect_list_indexes_metadata().times(1).returning(|_| {
+            let indexes = vec![IndexMetadata::for_test(
+                "otel-metrics-v0_1",
+                "ram://indexes/otel-metrics-v0_1",
+            )];
+            Ok(ListIndexesMetadataResponse::for_test(indexes))
+        });
+
+        let marked_split = ParquetSplitRecord {
+            state: SplitState::MarkedForDeletion,
+            update_timestamp: 0,
+            metadata: ParquetSplitMetadata::metrics_builder()
+                .split_id(ParquetSplitId::new("metrics_aaa"))
+                .index_uid("otel-metrics-v0_1:00000000000000000000000000")
+                .time_range(TimeRange::new(1000, 2000))
+                .num_rows(10)
+                .size_bytes(512)
+                .build(),
+        };
+
+        // Phase 1 (staged): empty
+        mock.expect_list_metrics_splits()
+            .times(1)
+            .returning(|_| Ok(ListMetricsSplitsResponse::empty()));
+        // Phase 2 (marked): one split to delete
+        let marked_resp = ListMetricsSplitsResponse::try_from_splits(&[marked_split]).unwrap();
+        mock.expect_list_metrics_splits()
+            .times(1)
+            .returning(move |_| Ok(marked_resp.clone()));
+        mock.expect_delete_metrics_splits()
+            .times(1)
+            .returning(|req| {
+                assert_eq!(req.split_ids, ["metrics_aaa"]);
+                Ok(EmptyResponse {})
+            });
+
+        let garbage_collect_actor =
+            GarbageCollector::new(MetastoreServiceClient::from_mock(mock), storage_resolver);
+        let universe = Universe::with_accelerated_time();
+        let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
+
+        let counters = handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.num_passes, 1);
+        assert_eq!(counters.num_successful_gc_run, 1);
+        assert_eq!(counters.num_failed_gc_run, 0);
+        assert_eq!(counters.num_deleted_files, 1);
+        assert_eq!(counters.num_failed_splits, 0);
         universe.assert_quit().await;
     }
 }
