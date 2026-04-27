@@ -83,9 +83,7 @@ use quickwit_common::tower::{
 use quickwit_common::uri::Uri;
 use quickwit_common::{get_bool_from_env, spawn_named_task};
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{
-    ClusterConfig, IndexConfig, IngestApiConfig, IngestSettings, NodeConfig, RetentionPolicy,
-};
+use quickwit_config::{ClusterConfig, IngestApiConfig, IngestSettings, NodeConfig};
 use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -1606,7 +1604,7 @@ async fn create_or_update_datadog_indexes(
     Ok(())
 }
 
-/// Creates the Datadog index if it doesn't exist, or updates its retention policy if necessary.
+/// Creates the Datadog index if it doesn't exist, or updates it if necessary.
 async fn create_or_update_datadog_index(
     default_index_root_uri: &Uri,
     index_manager: &mut IndexManager,
@@ -1640,7 +1638,7 @@ async fn create_or_update_datadog_index(
     {
         Some(index_metadata) => index_metadata,
         None => {
-            patch_index_config(&mut desired_index_config);
+            patch_ingest_settings(&mut desired_index_config.ingest_settings);
 
             info!("creating Datadog {index_type} index `{index_id}`");
             index_manager
@@ -1649,14 +1647,20 @@ async fn create_or_update_datadog_index(
             return Ok(());
         }
     };
+    // Ignore retention policy changes. Customers manage retention policies via UI.
+    let current_retention_policy_opt = current_index_metadata
+        .index_config
+        .retention_policy_opt
+        .clone();
     let mut mutation_occurred: bool = current_index_metadata.update_index_config(
         desired_index_config.doc_mapping,
         desired_index_config.indexing_settings,
         desired_index_config.ingest_settings,
         desired_index_config.search_settings,
-        desired_index_config.retention_policy_opt,
+        current_retention_policy_opt,
     )?;
-    mutation_occurred |= patch_index_config(&mut current_index_metadata.index_config);
+    mutation_occurred |=
+        patch_ingest_settings(&mut current_index_metadata.index_config.ingest_settings);
 
     if !mutation_occurred {
         return Ok(());
@@ -1669,12 +1673,6 @@ async fn create_or_update_datadog_index(
         )
         .await?;
     Ok(())
-}
-
-fn patch_index_config(index_config: &mut IndexConfig) -> bool {
-    let mut mutation_occurred = patch_ingest_settings(&mut index_config.ingest_settings);
-    mutation_occurred |= patch_retention_policy(&mut index_config.retention_policy_opt);
-    mutation_occurred
 }
 
 /// Reads the min number of shards from the environment variable `CP_MIN_SHARDS` and patches the
@@ -1692,44 +1690,6 @@ fn patch_ingest_settings(ingest_settings: &mut IngestSettings) -> bool {
         return false;
     }
     ingest_settings.min_shards = non_zero_min_shards;
-    true
-}
-
-/// Reads the retention period from the environment variable `CP_RETENTION_PERIOD` and patches the
-/// retention policy. Returns whether the retention policy was updated.
-fn patch_retention_policy(retention_policy_opt: &mut Option<RetentionPolicy>) -> bool {
-    let Some(retention_period) = quickwit_common::get_from_env_opt("CP_RETENTION_PERIOD", false)
-    else {
-        return false;
-    };
-    match retention_policy_opt {
-        Some(retention_policy) if retention_policy.retention_period == retention_period => {
-            return false;
-        }
-        Some(retention_policy) => {
-            retention_policy.retention_period = retention_period;
-        }
-        None => {
-            let retention_policy = RetentionPolicy {
-                retention_period,
-                evaluation_schedule: RetentionPolicy::default_schedule(),
-            };
-            *retention_policy_opt = Some(retention_policy);
-        }
-    };
-    let retention_policy = retention_policy_opt
-        .as_ref()
-        .expect("retention policy should be set");
-
-    if let Err(error) = retention_policy.validate() {
-        // We don't want to crash the node if the user-provided retention period cannot be parsed,
-        // so we just log an error and return false.
-        error!(
-            "failed to update Datadog index: retention period `{}` is invalid: {error}",
-            retention_policy.retention_period
-        );
-        return false;
-    }
     true
 }
 
