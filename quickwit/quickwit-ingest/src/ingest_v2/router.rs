@@ -324,14 +324,10 @@ impl IngestRouter {
                         // only returns routing_update=None on the NodeUnavailable fast path).
                         let mut state_guard = self.state.lock().await;
 
-                        for (index_uid, source_id) in no_shards_entries {
-                            state_guard.routing_table.apply_capacity_update(
-                                leader_id.clone(),
-                                index_uid,
-                                source_id,
-                                0,
-                                0,
-                            );
+                        for (index_uid, source_id) in &no_shards_entries {
+                            state_guard
+                                .routing_table
+                                .mark_node_no_shards(&leader_id, index_uid, source_id);
                         }
 
                         if let Some(routing_update) = persist_response.routing_update {
