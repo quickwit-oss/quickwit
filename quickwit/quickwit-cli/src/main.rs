@@ -150,7 +150,7 @@ mod tests {
     };
     use quickwit_cli::split::{DescribeSplitArgs, SplitCliCommand};
     use quickwit_cli::tool::{
-        ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, LocalSearchArgs, MergeArgs,
+        ExtractSplitArgs, GarbageCollectIndexArgs, LocalIngestDocsArgs, LocalSearchArgs,
         ToolCliCommand,
     };
     use quickwit_common::uri::Uri;
@@ -736,31 +736,6 @@ mod tests {
                 config_uri,
                 dry_run: true,
             })) if &index_id == "wikipedia" && grace_period == Duration::from_secs(5 * 60) && config_uri == expected_config_uri
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn test_parse_merge_args() -> anyhow::Result<()> {
-        let app = build_cli().no_binary_name(true);
-        let matches = app.try_get_matches_from([
-            "tool",
-            "merge",
-            "--index",
-            "wikipedia",
-            "--source",
-            "ingest-source",
-            "--config",
-            "/config.yaml",
-        ])?;
-        let command = CliCommand::parse_cli_args(matches)?;
-        assert!(matches!(
-            command,
-            CliCommand::Tool(ToolCliCommand::Merge(MergeArgs {
-                index_id,
-                source_id,
-                ..
-            })) if &index_id == "wikipedia" && source_id == "ingest-source"
         ));
         Ok(())
     }
