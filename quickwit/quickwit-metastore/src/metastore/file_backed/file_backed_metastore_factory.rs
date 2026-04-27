@@ -14,11 +14,10 @@
 
 use std::collections::HashMap;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use once_cell::sync::OnceCell;
 use quickwit_common::uri::Uri;
 use quickwit_config::{MetastoreBackend, MetastoreConfig};
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
@@ -45,11 +44,9 @@ pub struct FileBackedMetastoreFactory {
 }
 
 fn extract_polling_interval_from_uri(uri: &str) -> (String, Option<Duration>) {
-    static URI_FRAGMENT_PATTERN: OnceCell<Regex> = OnceCell::new();
-    if let Some(captures) = URI_FRAGMENT_PATTERN
-        .get_or_init(|| Regex::new("(.*)#polling_interval=([1-9][0-9]{0,8})s").unwrap())
-        .captures(uri)
-    {
+    static URI_FRAGMENT_PATTERN: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new("(.*)#polling_interval=([1-9][0-9]{0,8})s").unwrap());
+    if let Some(captures) = URI_FRAGMENT_PATTERN.captures(uri) {
         let uri_without_fragment = captures.get(1).unwrap().as_str().to_string();
         let polling_interval_in_secs: u64 =
             captures.get(2).unwrap().as_str().parse::<u64>().unwrap();

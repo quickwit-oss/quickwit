@@ -17,10 +17,10 @@ use std::fmt::Display;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener};
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 use anyhow::{Context, bail};
 use itertools::Itertools;
-use once_cell::sync::OnceCell;
 use pnet::datalink::{self, NetworkInterface};
 use pnet::ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize, Serializer};
@@ -275,44 +275,42 @@ pub async fn get_socket_addr<T: ToSocketAddrs + std::fmt::Debug>(
 }
 
 fn is_forwardable_ip(ip_addr: &IpAddr) -> bool {
-    static NON_FORWARDABLE_NETWORKS: OnceCell<Vec<IpNetwork>> = OnceCell::new();
+    static NON_FORWARDABLE_NETWORKS: LazyLock<Vec<IpNetwork>> = LazyLock::new(|| {
+        // Blacklist of non-forwardable IP blocks taken from RFC6890
+        [
+            "0.0.0.0/8",
+            "127.0.0.0/8",
+            "169.254.0.0/16",
+            "192.0.0.0/24",
+            "192.0.2.0/24",
+            "198.51.100.0/24",
+            "2001:10::/28",
+            "2001:db8::/32",
+            "203.0.113.0/24",
+            "240.0.0.0/4",
+            "255.255.255.255/32",
+            "::/128",
+            "::1/128",
+            "::ffff:0:0/96",
+            "fe80::/10",
+        ]
+        .iter()
+        .map(|network| network.parse().expect("IP range should parse"))
+        .collect()
+    });
     NON_FORWARDABLE_NETWORKS
-        .get_or_init(|| {
-            // Blacklist of non-forwardable IP blocks taken from RFC6890
-            [
-                "0.0.0.0/8",
-                "127.0.0.0/8",
-                "169.254.0.0/16",
-                "192.0.0.0/24",
-                "192.0.2.0/24",
-                "198.51.100.0/24",
-                "2001:10::/28",
-                "2001:db8::/32",
-                "203.0.113.0/24",
-                "240.0.0.0/4",
-                "255.255.255.255/32",
-                "::/128",
-                "::1/128",
-                "::ffff:0:0/96",
-                "fe80::/10",
-            ]
-            .iter()
-            .map(|network| network.parse().expect("Failed to parse network range. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-            .collect()
-        })
         .iter()
         .all(|network| !network.contains(*ip_addr))
 }
 
 fn is_private_ip(ip_addr: &IpAddr) -> bool {
-    static PRIVATE_NETWORKS: OnceCell<Vec<IpNetwork>> = OnceCell::new();
+    static PRIVATE_NETWORKS: LazyLock<Vec<IpNetwork>> = LazyLock::new(|| {
+        ["192.168.0.0/16", "172.16.0.0/12", "10.0.0.0/8", "fc00::/7"]
+            .iter()
+            .map(|network| network.parse().expect("IP range should parse"))
+            .collect()
+    });
     PRIVATE_NETWORKS
-        .get_or_init(|| {
-            ["192.168.0.0/16", "172.16.0.0/12", "10.0.0.0/8", "fc00::/7"]
-                .iter()
-                .map(|network| network.parse().expect("Failed to parse network range. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-                .collect()
-        })
         .iter()
         .any(|network| network.contains(*ip_addr))
 }

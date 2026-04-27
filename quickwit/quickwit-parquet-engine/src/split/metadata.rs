@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Metrics split metadata definitions.
+//! Unified parquet split metadata definitions for both metrics and sketch splits.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 use std::time::SystemTime;
 
 use serde::{Deserialize, Serialize};
@@ -26,20 +27,62 @@ pub const TAG_DATACENTER: &str = "datacenter";
 pub const TAG_REGION: &str = "region";
 pub const TAG_HOST: &str = "host";
 
-/// Unique identifier for a metrics split.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct SplitId(String);
+/// Distinguishes between metrics and sketch parquet splits.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ParquetSplitKind {
+    #[default]
+    Metrics,
+    Sketches,
+}
 
-impl SplitId {
-    /// Create a new SplitId from a string.
+impl ParquetSplitKind {
+    /// Returns the prefix used when generating split IDs.
+    pub fn split_id_prefix(&self) -> &'static str {
+        match self {
+            Self::Metrics => "metrics_",
+            Self::Sketches => "sketches_",
+        }
+    }
+
+    /// Returns the Postgres table name for this split kind.
+    pub fn table_name(&self) -> &'static str {
+        match self {
+            Self::Metrics => "metrics_splits",
+            Self::Sketches => "sketch_splits",
+        }
+    }
+
+    /// Returns a human-readable label for logging and metrics.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Metrics => "metrics",
+            Self::Sketches => "sketch",
+        }
+    }
+}
+
+impl std::fmt::Display for ParquetSplitKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+/// Unique identifier for a parquet split (metrics or sketch).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ParquetSplitId(String);
+
+impl ParquetSplitId {
+    /// Create a new ParquetSplitId from a string.
     pub fn new(id: impl Into<String>) -> Self {
         Self(id.into())
     }
 
-    /// Generates a new unique SplitId using a ULID (timestamp + randomness).
-    pub fn generate() -> Self {
+    /// Generates a new unique split ID using a ULID (timestamp + randomness),
+    /// prefixed according to the split kind.
+    pub fn generate(kind: ParquetSplitKind) -> Self {
         Self(format!(
-            "metrics_{}",
+            "{}{}",
+            kind.split_id_prefix(),
             ulid::Ulid::new().to_string().to_lowercase()
         ))
     }
@@ -50,13 +93,13 @@ impl SplitId {
     }
 }
 
-impl std::fmt::Display for SplitId {
+impl std::fmt::Display for ParquetSplitId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-/// Time range covered by a metrics split.
+/// Time range covered by a split.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeRange {
     /// Start timestamp in seconds (inclusive).
@@ -91,39 +134,19 @@ impl TimeRange {
     }
 }
 
-/// State of a metrics split in the metastore.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum MetricsSplitState {
-    /// Split is staged (being written, not yet queryable).
-    Staged,
-    /// Split is published (queryable).
-    Published,
-    /// Split is marked for deletion.
-    MarkedForDeletion,
-}
-
-impl MetricsSplitState {
-    /// Returns a string representation for database storage.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            MetricsSplitState::Staged => "Staged",
-            MetricsSplitState::Published => "Published",
-            MetricsSplitState::MarkedForDeletion => "MarkedForDeletion",
-        }
-    }
-}
-
-impl std::fmt::Display for MetricsSplitState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-/// Metadata for a metrics split.
+/// Metadata for a parquet split.
+///
+/// The `window` field stores the time window as `[start, start + duration)`.
+/// For JSON serialization, it is decomposed into `window_start` and
+/// `window_duration_secs` for backward compatibility with pre-Phase-31 code.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MetricsSplitMetadata {
+#[serde(from = "ParquetSplitMetadataSerde", into = "ParquetSplitMetadataSerde")]
+pub struct ParquetSplitMetadata {
+    /// What kind of split this is (metrics or sketches).
+    pub kind: ParquetSplitKind,
+
     /// Unique split identifier.
-    pub split_id: SplitId,
+    pub split_id: ParquetSplitId,
 
     /// Index unique identifier for Postgres foreign key relationship.
     pub index_uid: String,
@@ -153,13 +176,141 @@ pub struct MetricsSplitMetadata {
 
     /// When this split was created.
     pub created_at: SystemTime,
+
+    /// Parquet file path relative to storage root.
+    pub parquet_file: String,
+
+    /// Time window as `[start, start + duration)` in epoch seconds.
+    /// None for pre-Phase-31 splits (backward compat).
+    pub window: Option<Range<i64>>,
+
+    /// Sort schema as Husky-style string (e.g., "metric_name|host|timestamp/V2").
+    /// Empty string for pre-Phase-31 splits.
+    pub sort_fields: String,
+
+    /// Number of merge operations this split has been through.
+    /// 0 for newly ingested splits.
+    pub num_merge_ops: u32,
+
+    /// RowKeys (sort-key min/max boundaries) as serialized proto bytes
+    /// (`sortschema::RowKeys` in `event_store_sortschema.proto`).
+    /// None for pre-Phase-31 splits or splits without sort schema.
+    pub row_keys_proto: Option<Vec<u8>>,
+
+    /// Per-column zonemap regex strings, keyed by column name.
+    /// Empty for pre-Phase-31 splits.
+    pub zonemap_regexes: HashMap<String, String>,
 }
 
-impl MetricsSplitMetadata {
+/// Serde helper struct that uses `window_start` / `window_duration_secs` field
+/// names for JSON backward compatibility while the in-memory representation uses
+/// `Option<Range<i64>>`.
+#[derive(Serialize, Deserialize)]
+struct ParquetSplitMetadataSerde {
+    #[serde(default)]
+    kind: ParquetSplitKind,
+    split_id: ParquetSplitId,
+    index_uid: String,
+    time_range: TimeRange,
+    num_rows: u64,
+    size_bytes: u64,
+    metric_names: HashSet<String>,
+    low_cardinality_tags: HashMap<String, HashSet<String>>,
+    high_cardinality_tag_keys: HashSet<String>,
+    created_at: SystemTime,
+
+    #[serde(default)]
+    parquet_file: String,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    window_start: Option<i64>,
+
+    #[serde(default)]
+    window_duration_secs: u32,
+
+    #[serde(default)]
+    sort_fields: String,
+
+    #[serde(default)]
+    num_merge_ops: u32,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    row_keys_proto: Option<Vec<u8>>,
+
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    zonemap_regexes: HashMap<String, String>,
+}
+
+impl From<ParquetSplitMetadataSerde> for ParquetSplitMetadata {
+    fn from(s: ParquetSplitMetadataSerde) -> Self {
+        let window = match (s.window_start, s.window_duration_secs) {
+            (Some(start), dur) if dur > 0 => Some(start..start + dur as i64),
+            _ => None,
+        };
+        Self {
+            kind: s.kind,
+            split_id: s.split_id,
+            index_uid: s.index_uid,
+            time_range: s.time_range,
+            num_rows: s.num_rows,
+            size_bytes: s.size_bytes,
+            metric_names: s.metric_names,
+            low_cardinality_tags: s.low_cardinality_tags,
+            high_cardinality_tag_keys: s.high_cardinality_tag_keys,
+            created_at: s.created_at,
+            parquet_file: s.parquet_file,
+            window,
+            sort_fields: s.sort_fields,
+            num_merge_ops: s.num_merge_ops,
+            row_keys_proto: s.row_keys_proto,
+            zonemap_regexes: s.zonemap_regexes,
+        }
+    }
+}
+
+impl From<ParquetSplitMetadata> for ParquetSplitMetadataSerde {
+    fn from(m: ParquetSplitMetadata) -> Self {
+        let (window_start, window_duration_secs) = match &m.window {
+            Some(w) => (Some(w.start), (w.end - w.start) as u32),
+            None => (None, 0),
+        };
+        Self {
+            kind: m.kind,
+            split_id: m.split_id,
+            index_uid: m.index_uid,
+            time_range: m.time_range,
+            num_rows: m.num_rows,
+            size_bytes: m.size_bytes,
+            metric_names: m.metric_names,
+            low_cardinality_tags: m.low_cardinality_tags,
+            high_cardinality_tag_keys: m.high_cardinality_tag_keys,
+            created_at: m.created_at,
+            parquet_file: m.parquet_file,
+            window_start,
+            window_duration_secs,
+            sort_fields: m.sort_fields,
+            num_merge_ops: m.num_merge_ops,
+            row_keys_proto: m.row_keys_proto,
+            zonemap_regexes: m.zonemap_regexes,
+        }
+    }
+}
+
+impl ParquetSplitMetadata {
     /// Returns the parquet filename for this split, relative to the storage root.
     /// Always `{split_id}.parquet`.
     pub fn parquet_filename(&self) -> String {
         format!("{}.parquet", self.split_id)
+    }
+
+    /// Returns the split ID as a string.
+    pub fn split_id_str(&self) -> &str {
+        self.split_id.as_str()
+    }
+
+    /// Returns the size in bytes.
+    pub fn size_bytes(&self) -> u64 {
+        self.size_bytes
     }
 
     /// Cardinality threshold for routing tags to Postgres vs Parquet.
@@ -167,9 +318,27 @@ impl MetricsSplitMetadata {
     /// Tags with >= CARDINALITY_THRESHOLD unique values use Parquet bloom filters.
     pub const CARDINALITY_THRESHOLD: usize = 1000;
 
-    /// Create a new MetricsSplitMetadata builder.
-    pub fn builder() -> MetricsSplitMetadataBuilder {
-        MetricsSplitMetadataBuilder::default()
+    /// Returns the window start in epoch seconds, or `None` for pre-Phase-31 splits.
+    pub fn window_start(&self) -> Option<i64> {
+        self.window.as_ref().map(|w| w.start)
+    }
+
+    /// Returns the window duration in seconds, or 0 for pre-Phase-31 splits.
+    pub fn window_duration_secs(&self) -> u32 {
+        match &self.window {
+            Some(w) => (w.end - w.start) as u32,
+            None => 0,
+        }
+    }
+
+    /// Create a builder for metrics splits.
+    pub fn metrics_builder() -> ParquetSplitMetadataBuilder {
+        ParquetSplitMetadataBuilder::new(ParquetSplitKind::Metrics)
+    }
+
+    /// Create a builder for sketch splits.
+    pub fn sketches_builder() -> ParquetSplitMetadataBuilder {
+        ParquetSplitMetadataBuilder::new(ParquetSplitKind::Sketches)
     }
 
     /// Check if a tag key exceeds the cardinality threshold.
@@ -210,10 +379,13 @@ impl MetricsSplitMetadata {
     }
 }
 
-/// Builder for MetricsSplitMetadata.
-#[derive(Default)]
-pub struct MetricsSplitMetadataBuilder {
-    split_id: Option<SplitId>,
+/// Builder for ParquetSplitMetadata.
+///
+/// Use [`ParquetSplitMetadata::metrics_builder`] or
+/// [`ParquetSplitMetadata::sketches_builder`] to create an instance.
+pub struct ParquetSplitMetadataBuilder {
+    kind: ParquetSplitKind,
+    split_id: Option<ParquetSplitId>,
     index_uid: Option<String>,
     time_range: Option<TimeRange>,
     num_rows: u64,
@@ -221,10 +393,42 @@ pub struct MetricsSplitMetadataBuilder {
     metric_names: HashSet<String>,
     low_cardinality_tags: HashMap<String, HashSet<String>>,
     high_cardinality_tag_keys: HashSet<String>,
+    parquet_file: String,
+    window_start: Option<i64>,
+    window_duration_secs: u32,
+    sort_fields: String,
+    num_merge_ops: u32,
+    row_keys_proto: Option<Vec<u8>>,
+    zonemap_regexes: HashMap<String, String>,
 }
 
-impl MetricsSplitMetadataBuilder {
-    pub fn split_id(mut self, id: SplitId) -> Self {
+// The builder still accepts window_start and window_duration_secs separately
+// to remain compatible with callers that compute them independently (e.g.,
+// split_writer). The `build()` method fuses them into `Option<Range<i64>>`.
+
+impl ParquetSplitMetadataBuilder {
+    fn new(kind: ParquetSplitKind) -> Self {
+        Self {
+            kind,
+            split_id: None,
+            index_uid: None,
+            time_range: None,
+            num_rows: 0,
+            size_bytes: 0,
+            metric_names: HashSet::new(),
+            low_cardinality_tags: HashMap::new(),
+            high_cardinality_tag_keys: HashSet::new(),
+            parquet_file: String::new(),
+            window_start: None,
+            window_duration_secs: 0,
+            sort_fields: String::new(),
+            num_merge_ops: 0,
+            row_keys_proto: None,
+            zonemap_regexes: HashMap::new(),
+        }
+    }
+
+    pub fn split_id(mut self, id: ParquetSplitId) -> Self {
         self.split_id = Some(id);
         self
     }
@@ -284,9 +488,81 @@ impl MetricsSplitMetadataBuilder {
         self
     }
 
-    pub fn build(self) -> MetricsSplitMetadata {
-        MetricsSplitMetadata {
-            split_id: self.split_id.unwrap_or_else(SplitId::generate),
+    pub fn parquet_file(mut self, path: impl Into<String>) -> Self {
+        self.parquet_file = path.into();
+        self
+    }
+
+    pub fn window_start_secs(mut self, epoch_secs: i64) -> Self {
+        self.window_start = Some(epoch_secs);
+        self
+    }
+
+    pub fn window_duration_secs(mut self, dur: u32) -> Self {
+        self.window_duration_secs = dur;
+        self
+    }
+
+    pub fn sort_fields(mut self, schema: impl Into<String>) -> Self {
+        self.sort_fields = schema.into();
+        self
+    }
+
+    pub fn num_merge_ops(mut self, ops: u32) -> Self {
+        self.num_merge_ops = ops;
+        self
+    }
+
+    pub fn row_keys_proto(mut self, bytes: Vec<u8>) -> Self {
+        self.row_keys_proto = Some(bytes);
+        self
+    }
+
+    pub fn add_zonemap_regex(
+        mut self,
+        column: impl Into<String>,
+        regex: impl Into<String>,
+    ) -> Self {
+        self.zonemap_regexes.insert(column.into(), regex.into());
+        self
+    }
+
+    pub fn build(self) -> ParquetSplitMetadata {
+        // TW-2 (ADR-003): window_duration must evenly divide 3600.
+        // Enforced at build time so no invalid metadata propagates to storage.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::TW2,
+            self.window_duration_secs == 0
+                || quickwit_dst::invariants::window::is_valid_window_duration(
+                    self.window_duration_secs
+                ),
+            ": window_duration_secs={} does not divide 3600",
+            self.window_duration_secs
+        );
+
+        // TW-1 (ADR-003, partial): window_start and window_duration_secs are paired.
+        // If one is set, the other must be too. Pre-Phase-31 splits have both at defaults.
+        quickwit_dst::check_invariant!(
+            quickwit_dst::invariants::InvariantId::TW1,
+            (self.window_start.is_none() && self.window_duration_secs == 0)
+                || (self.window_start.is_some() && self.window_duration_secs > 0),
+            ": window_start and window_duration_secs must be set together (window_start={:?}, \
+             window_duration_secs={})",
+            self.window_start,
+            self.window_duration_secs
+        );
+
+        // Fuse the two builder fields into a single Range.
+        let window = match (self.window_start, self.window_duration_secs) {
+            (Some(start), dur) if dur > 0 => Some(start..start + dur as i64),
+            _ => None,
+        };
+
+        ParquetSplitMetadata {
+            kind: self.kind,
+            split_id: self
+                .split_id
+                .unwrap_or_else(|| ParquetSplitId::generate(self.kind)),
             index_uid: self.index_uid.expect("index_uid is required"),
             time_range: self.time_range.expect("time_range is required"),
             num_rows: self.num_rows,
@@ -295,6 +571,12 @@ impl MetricsSplitMetadataBuilder {
             low_cardinality_tags: self.low_cardinality_tags,
             high_cardinality_tag_keys: self.high_cardinality_tag_keys,
             created_at: SystemTime::now(),
+            parquet_file: self.parquet_file,
+            window,
+            sort_fields: self.sort_fields,
+            num_merge_ops: self.num_merge_ops,
+            row_keys_proto: self.row_keys_proto,
+            zonemap_regexes: self.zonemap_regexes,
         }
     }
 }
@@ -305,12 +587,26 @@ mod tests {
 
     #[test]
     fn test_split_id_generation() {
-        let id1 = SplitId::generate();
+        let id1 = ParquetSplitId::generate(ParquetSplitKind::Metrics);
         // Sleep 1ms to ensure different timestamp
         std::thread::sleep(std::time::Duration::from_millis(1));
-        let id2 = SplitId::generate();
+        let id2 = ParquetSplitId::generate(ParquetSplitKind::Metrics);
         assert_ne!(id1.as_str(), id2.as_str());
         assert!(id1.as_str().starts_with("metrics_"));
+    }
+
+    #[test]
+    fn test_sketch_split_id_generation() {
+        let id = ParquetSplitId::generate(ParquetSplitKind::Sketches);
+        assert!(id.as_str().starts_with("sketches_"));
+    }
+
+    #[test]
+    fn test_sketch_split_id_uniqueness() {
+        let id1 = ParquetSplitId::generate(ParquetSplitKind::Sketches);
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        let id2 = ParquetSplitId::generate(ParquetSplitKind::Sketches);
+        assert_ne!(id1.as_str(), id2.as_str());
     }
 
     #[test]
@@ -327,7 +623,7 @@ mod tests {
 
     #[test]
     fn test_metadata_builder_with_tags() {
-        let metadata = MetricsSplitMetadata::builder()
+        let metadata = ParquetSplitMetadata::metrics_builder()
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .add_metric_name("cpu.usage")
@@ -337,6 +633,7 @@ mod tests {
             .add_high_cardinality_tag_key(TAG_HOST)
             .build();
 
+        assert_eq!(metadata.kind, ParquetSplitKind::Metrics);
         assert_eq!(metadata.index_uid, "test-index:00000000000000000000000000");
         assert!(metadata.metric_names.contains("cpu.usage"));
         assert_eq!(metadata.get_tag_values(TAG_SERVICE).unwrap().len(), 2);
@@ -352,8 +649,58 @@ mod tests {
     }
 
     #[test]
+    fn test_sketch_metadata_builder() {
+        let metadata = ParquetSplitMetadata::sketches_builder()
+            .index_uid("sketch-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .add_metric_name("req.latency")
+            .add_low_cardinality_tag(TAG_SERVICE, "api")
+            .build();
+
+        assert_eq!(metadata.kind, ParquetSplitKind::Sketches);
+        assert!(metadata.split_id.as_str().starts_with("sketches_"));
+        assert!(metadata.metric_names.contains("req.latency"));
+        assert_eq!(metadata.time_range.start_secs, 1000);
+    }
+
+    #[test]
+    fn test_sketch_metadata_serialization_roundtrip() {
+        let metadata = ParquetSplitMetadata::sketches_builder()
+            .index_uid("test:00000000000000000000000000")
+            .time_range(TimeRange::new(100, 200))
+            .num_rows(500)
+            .size_bytes(1024)
+            .add_metric_name("latency")
+            .build();
+
+        let json = serde_json::to_string(&metadata).unwrap();
+        let recovered: ParquetSplitMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(recovered.split_id.as_str(), metadata.split_id.as_str());
+        assert_eq!(recovered.num_rows, 500);
+        assert_eq!(recovered.kind, ParquetSplitKind::Sketches);
+    }
+
+    #[test]
+    fn test_backwards_compatible_deserialization() {
+        // Simulate JSON without the "kind" field (old format)
+        let json = r#"{
+            "split_id": "metrics_test123",
+            "index_uid": "test:00000000000000000000000000",
+            "time_range": {"start_secs": 100, "end_secs": 200},
+            "num_rows": 42,
+            "size_bytes": 1024,
+            "metric_names": [],
+            "low_cardinality_tags": {},
+            "high_cardinality_tag_keys": [],
+            "created_at": {"secs_since_epoch": 0, "nanos_since_epoch": 0}
+        }"#;
+        let recovered: ParquetSplitMetadata = serde_json::from_str(json).unwrap();
+        assert_eq!(recovered.kind, ParquetSplitKind::Metrics);
+    }
+
+    #[test]
     fn test_cardinality_promotion() {
-        let mut metadata = MetricsSplitMetadata::builder()
+        let mut metadata = ParquetSplitMetadata::metrics_builder()
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .build();
@@ -378,7 +725,7 @@ mod tests {
 
     #[test]
     fn test_service_names_convenience() {
-        let metadata = MetricsSplitMetadata::builder()
+        let metadata = ParquetSplitMetadata::metrics_builder()
             .index_uid("test-index:00000000000000000000000000")
             .time_range(TimeRange::new(1000, 2000))
             .add_low_cardinality_tag(TAG_SERVICE, "web")
@@ -392,13 +739,106 @@ mod tests {
     }
 
     #[test]
-    fn test_metrics_split_state() {
-        assert_eq!(MetricsSplitState::Staged.as_str(), "Staged");
-        assert_eq!(MetricsSplitState::Published.as_str(), "Published");
+    fn test_split_kind_properties() {
+        assert_eq!(ParquetSplitKind::Metrics.split_id_prefix(), "metrics_");
+        assert_eq!(ParquetSplitKind::Sketches.split_id_prefix(), "sketches_");
+        assert_eq!(ParquetSplitKind::Metrics.table_name(), "metrics_splits");
+        assert_eq!(ParquetSplitKind::Sketches.table_name(), "sketch_splits");
+        assert_eq!(ParquetSplitKind::Metrics.label(), "metrics");
+        assert_eq!(ParquetSplitKind::Sketches.label(), "sketch");
+    }
+
+    #[test]
+    fn test_backward_compat_deserialize_pre_phase31_json() {
+        // Simulate a JSON string from pre-Phase-31 code (no compaction fields).
+        let pre_phase31_json = r#"{
+            "split_id": "metrics_abc123",
+            "index_uid": "test-index:00000000000000000000000000",
+            "time_range": {"start_secs": 1000, "end_secs": 2000},
+            "num_rows": 500,
+            "size_bytes": 1024,
+            "metric_names": ["cpu.usage"],
+            "low_cardinality_tags": {},
+            "high_cardinality_tag_keys": [],
+            "created_at": {"secs_since_epoch": 1700000000, "nanos_since_epoch": 0},
+            "parquet_file": "split1.parquet"
+        }"#;
+
+        let metadata: ParquetSplitMetadata =
+            serde_json::from_str(pre_phase31_json).expect("should deserialize pre-Phase-31 JSON");
+
+        // New fields should be at their defaults.
+        assert!(metadata.window.is_none());
+        assert!(metadata.window_start().is_none());
+        assert_eq!(metadata.window_duration_secs(), 0);
+        assert_eq!(metadata.sort_fields, "");
+        assert_eq!(metadata.num_merge_ops, 0);
+        assert!(metadata.row_keys_proto.is_none());
+        assert!(metadata.zonemap_regexes.is_empty());
+
+        // Existing fields should be intact.
+        assert_eq!(metadata.split_id.as_str(), "metrics_abc123");
+        assert_eq!(metadata.index_uid, "test-index:00000000000000000000000000");
+        assert_eq!(metadata.num_rows, 500);
+    }
+
+    #[test]
+    fn test_round_trip_with_compaction_fields() {
+        let metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("roundtrip-compaction"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .num_rows(100)
+            .size_bytes(500)
+            .window_start_secs(1700000000)
+            .window_duration_secs(3600)
+            .sort_fields("metric_name|host|timestamp/V2")
+            .num_merge_ops(3)
+            .row_keys_proto(vec![0x08, 0x01, 0x10, 0x02])
+            .add_zonemap_regex("metric_name", "cpu\\..*")
+            .add_zonemap_regex("host", "host-\\d+")
+            .build();
+
+        let json = serde_json::to_string(&metadata).expect("should serialize");
+        let recovered: ParquetSplitMetadata =
+            serde_json::from_str(&json).expect("should deserialize");
+
+        assert_eq!(recovered.window, Some(1700000000..1700003600));
+        assert_eq!(recovered.window_start(), Some(1700000000));
+        assert_eq!(recovered.window_duration_secs(), 3600);
+        assert_eq!(recovered.sort_fields, "metric_name|host|timestamp/V2");
+        assert_eq!(recovered.num_merge_ops, 3);
+        assert_eq!(recovered.row_keys_proto, Some(vec![0x08, 0x01, 0x10, 0x02]));
+        assert_eq!(recovered.zonemap_regexes.len(), 2);
         assert_eq!(
-            MetricsSplitState::MarkedForDeletion.as_str(),
-            "MarkedForDeletion"
+            recovered.zonemap_regexes.get("metric_name").unwrap(),
+            "cpu\\..*"
         );
-        assert_eq!(format!("{}", MetricsSplitState::Published), "Published");
+        assert_eq!(recovered.zonemap_regexes.get("host").unwrap(), "host-\\d+");
+    }
+
+    #[test]
+    fn test_skip_serializing_empty_compaction_fields() {
+        let metadata = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new("skip-test"))
+            .index_uid("test-index:00000000000000000000000000")
+            .time_range(TimeRange::new(1000, 2000))
+            .build();
+
+        let json = serde_json::to_string(&metadata).expect("should serialize");
+
+        // Optional fields with skip_serializing_if should be absent.
+        assert!(
+            !json.contains("\"window_start\""),
+            "window_start should not appear when None"
+        );
+        assert!(
+            !json.contains("\"row_keys_proto\""),
+            "row_keys_proto should not appear when None"
+        );
+        assert!(
+            !json.contains("\"zonemap_regexes\""),
+            "zonemap_regexes should not appear when empty"
+        );
     }
 }

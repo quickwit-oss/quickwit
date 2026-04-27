@@ -25,12 +25,18 @@ use tracing::{debug, info, instrument};
 
 use super::config::ParquetWriterConfig;
 use super::writer::{ParquetWriteError, ParquetWriter};
-use crate::split::{MetricsSplitMetadata, ParquetSplit, SplitId, TAG_SERVICE, TimeRange};
+use crate::sort_fields::window_start;
+use crate::split::{
+    ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, TAG_SERVICE, TimeRange,
+};
+use crate::table_config::TableConfig;
 
-/// Writer that produces complete ParquetSplit with metadata from RecordBatch data.
+/// Writer that produces Parquet split files with metadata from RecordBatch data.
 pub struct ParquetSplitWriter {
-    /// The underlying Parquet writer.
+    kind: ParquetSplitKind,
     writer: ParquetWriter,
+    /// Table configuration (sort fields, window duration, product type).
+    table_config: TableConfig,
     /// Base directory for split files.
     base_path: PathBuf,
 }
@@ -39,13 +45,22 @@ impl ParquetSplitWriter {
     /// Create a new ParquetSplitWriter.
     ///
     /// # Arguments
+    /// * `kind` - Parquet writer kind (metrics or sketches)
     /// * `config` - Parquet writer configuration
     /// * `base_path` - Directory where split files will be written
-    pub fn new(config: ParquetWriterConfig, base_path: impl Into<PathBuf>) -> Self {
-        Self {
-            writer: ParquetWriter::new(config),
+    /// * `table_config` - Table-level config (sort fields, window duration)
+    pub fn new(
+        kind: ParquetSplitKind,
+        config: ParquetWriterConfig,
+        base_path: impl Into<PathBuf>,
+        table_config: &TableConfig,
+    ) -> Result<Self, super::ParquetWriteError> {
+        Ok(Self {
+            kind,
+            writer: ParquetWriter::new(config, table_config)?,
             base_path: base_path.into(),
-        }
+            table_config: table_config.clone(),
+        })
     }
 
     /// Get the base path for split files.
@@ -54,6 +69,10 @@ impl ParquetSplitWriter {
     }
 
     /// Write a RecordBatch to a Parquet file and return a ParquetSplit with metadata.
+    ///
+    /// Builds metadata (including sort fields, window_start, window_duration from
+    /// table_config) before writing, then embeds compaction KV metadata into the
+    /// Parquet file. size_bytes is updated after the write completes.
     ///
     /// # Arguments
     /// * `batch` - The RecordBatch to write
@@ -66,19 +85,14 @@ impl ParquetSplitWriter {
         &self,
         batch: &RecordBatch,
         index_uid: &str,
-    ) -> Result<ParquetSplit, ParquetWriteError> {
-        // Generate unique split ID
-        let split_id = SplitId::generate();
+    ) -> Result<ParquetSplitMetadata, ParquetWriteError> {
+        let split_id = ParquetSplitId::generate(self.kind);
+        let filename = format!("{}.parquet", split_id);
+        let file_path = self.base_path.join(&filename);
 
-        let file_path = self.base_path.join(format!("{}.parquet", split_id));
-
-        // Ensure the base directory exists
         std::fs::create_dir_all(&self.base_path)?;
 
-        // Write batch to file
-        let size_bytes = self.writer.write_to_file(batch, &file_path)?;
-
-        // Extract time range from batch
+        // Extract batch-level metadata before writing.
         let time_range = extract_time_range(batch)?;
         debug!(
             start_secs = time_range.start_secs,
@@ -86,40 +100,72 @@ impl ParquetSplitWriter {
             "extracted time range from batch"
         );
 
-        // Extract distinct metric names from batch
         let metric_names = extract_metric_names(batch)?;
-
-        // Extract distinct service names from batch
         let service_names = extract_service_names(batch)?;
 
-        // Build metadata
-        let metadata = MetricsSplitMetadata::builder()
+        // Compute window_start from the earliest timestamp in the batch.
+        let window_duration = self.table_config.window_duration_secs;
+        let window_start_secs = if window_duration > 0 {
+            match window_start(time_range.start_secs as i64, window_duration as i64) {
+                Ok(dt) => Some(dt.timestamp()),
+                Err(e) => {
+                    tracing::warn!(error = %e, "failed to compute window_start, omitting");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Build metadata with sort fields and window from table_config.
+        // size_bytes is set to 0 here and updated after write.
+        let mut builder = match self.kind {
+            ParquetSplitKind::Metrics => ParquetSplitMetadata::metrics_builder(),
+            ParquetSplitKind::Sketches => ParquetSplitMetadata::sketches_builder(),
+        };
+        builder = builder
             .split_id(split_id.clone())
             .index_uid(index_uid)
             .time_range(time_range)
             .num_rows(batch.num_rows() as u64)
-            .size_bytes(size_bytes);
+            .size_bytes(0)
+            .sort_fields(self.writer.sort_fields_string())
+            .window_duration_secs(window_duration)
+            .parquet_file(filename);
 
-        // Add metric names
-        let metadata = metric_names
-            .into_iter()
-            .fold(metadata, |m, name| m.add_metric_name(name));
+        if let Some(ws) = window_start_secs {
+            builder = builder.window_start_secs(ws);
+        }
 
-        // Add service names as low-cardinality tags
-        let metadata = service_names.into_iter().fold(metadata, |m, name| {
-            m.add_low_cardinality_tag(TAG_SERVICE, name)
-        });
+        for name in metric_names {
+            builder = builder.add_metric_name(name);
+        }
+        for name in service_names {
+            builder = builder.add_low_cardinality_tag(TAG_SERVICE, name);
+        }
 
-        let metadata = metadata.build();
+        let mut metadata = builder.build();
+
+        // Write with compaction metadata embedded in Parquet KV metadata.
+        // The writer sorts the batch and extracts RowKeys + zonemap regexes
+        // from the sorted data, returning them alongside the byte count.
+        let (size_bytes, (row_keys_proto, zonemap_regexes)) = self
+            .writer
+            .write_to_file_with_metadata(batch, &file_path, Some(&metadata))?;
+
+        metadata.size_bytes = size_bytes;
+        metadata.row_keys_proto = row_keys_proto;
+        metadata.zonemap_regexes = zonemap_regexes;
 
         info!(
             split_id = %split_id,
             file_path = %file_path.display(),
             size_bytes,
+            sort_fields = %self.writer.sort_fields_string(),
             "split file written successfully"
         );
 
-        Ok(ParquetSplit::new(metadata))
+        Ok(metadata)
     }
 }
 
@@ -217,7 +263,7 @@ fn extract_service_names(batch: &RecordBatch) -> Result<HashSet<String>, Parquet
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::{ArrayRef, Float64Array, UInt8Array, UInt64Array};
+    use arrow::array::{ArrayRef, Float64Array, Int64Array, UInt8Array, UInt64Array};
     use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 
     use super::*;
@@ -239,6 +285,7 @@ mod tests {
             Field::new("metric_type", DataType::UInt8, false),
             Field::new("timestamp_secs", DataType::UInt64, false),
             Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
         ];
         if service_names.is_some() {
             fields.push(Field::new("service", dict_type.clone(), true));
@@ -253,8 +300,16 @@ mod tests {
         let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps.to_vec()));
         let values: Vec<f64> = (0..num_rows).map(|i| 42.0 + i as f64).collect();
         let value: ArrayRef = Arc::new(Float64Array::from(values));
+        let timeseries_ids: Vec<i64> = (0..num_rows).map(|i| 1000 + i as i64).collect();
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(timeseries_ids));
 
-        let mut columns: Vec<ArrayRef> = vec![metric_name, metric_type, timestamp_secs, value];
+        let mut columns: Vec<ArrayRef> = vec![
+            metric_name,
+            metric_type,
+            timestamp_secs,
+            value,
+            timeseries_id,
+        ];
 
         if let Some(svc_names) = service_names {
             columns.push(create_dict_array(svc_names));
@@ -296,21 +351,27 @@ mod tests {
         let config = ParquetWriterConfig::default();
         let temp_dir = tempfile::tempdir().unwrap();
 
-        let writer = ParquetSplitWriter::new(config, temp_dir.path());
+        let writer = ParquetSplitWriter::new(
+            ParquetSplitKind::Metrics,
+            config,
+            temp_dir.path(),
+            &TableConfig::default(),
+        )
+        .unwrap();
 
         let batch = create_test_batch(10);
-        let split = writer.write_split(&batch, "test-index").unwrap();
+        let metadata = writer.write_split(&batch, "test-index").unwrap();
 
         // Verify file exists
-        let file_path = temp_dir.path().join(split.metadata.parquet_filename());
+        let file_path = temp_dir.path().join(metadata.parquet_filename());
         assert!(
             std::fs::metadata(&file_path).is_ok(),
             "Parquet file should exist"
         );
 
         // Verify metadata
-        assert_eq!(split.metadata.num_rows, 10);
-        assert!(split.metadata.size_bytes > 0);
+        assert_eq!(metadata.num_rows, 10);
+        assert!(metadata.size_bytes > 0);
     }
 
     #[test]
@@ -318,7 +379,13 @@ mod tests {
         let config = ParquetWriterConfig::default();
         let temp_dir = tempfile::tempdir().unwrap();
 
-        let writer = ParquetSplitWriter::new(config, temp_dir.path());
+        let writer = ParquetSplitWriter::new(
+            ParquetSplitKind::Metrics,
+            config,
+            temp_dir.path(),
+            &TableConfig::default(),
+        )
+        .unwrap();
 
         // Create batch with timestamps [100, 150, 200]
         let batch = create_test_batch_with_options(
@@ -328,11 +395,10 @@ mod tests {
             Some(&["my-service", "my-service", "my-service"]),
             &[],
         );
-        let split = writer.write_split(&batch, "test-index").unwrap();
+        let metadata = writer.write_split(&batch, "test-index").unwrap();
 
-        // Verify time range
-        assert_eq!(split.metadata.time_range.start_secs, 100);
-        assert_eq!(split.metadata.time_range.end_secs, 201); // exclusive
+        assert_eq!(metadata.time_range.start_secs, 100);
+        assert_eq!(metadata.time_range.end_secs, 201); // exclusive
     }
 
     #[test]
@@ -340,7 +406,13 @@ mod tests {
         let config = ParquetWriterConfig::default();
         let temp_dir = tempfile::tempdir().unwrap();
 
-        let writer = ParquetSplitWriter::new(config, temp_dir.path());
+        let writer = ParquetSplitWriter::new(
+            ParquetSplitKind::Metrics,
+            config,
+            temp_dir.path(),
+            &TableConfig::default(),
+        )
+        .unwrap();
 
         // Create batch with specific metric names
         let batch = create_test_batch_with_options(
@@ -350,11 +422,10 @@ mod tests {
             Some(&["my-service", "my-service", "my-service"]),
             &[],
         );
-        let split = writer.write_split(&batch, "test-index").unwrap();
+        let metadata = writer.write_split(&batch, "test-index").unwrap();
 
-        // Verify metric names (distinct values)
-        assert!(split.metadata.metric_names.contains("cpu.usage"));
-        assert!(split.metadata.metric_names.contains("memory.used"));
-        assert_eq!(split.metadata.metric_names.len(), 2);
+        assert!(metadata.metric_names.contains("cpu.usage"));
+        assert!(metadata.metric_names.contains("memory.used"));
+        assert_eq!(metadata.metric_names.len(), 2);
     }
 }

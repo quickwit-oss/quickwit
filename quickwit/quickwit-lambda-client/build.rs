@@ -20,17 +20,18 @@
 //! The Lambda binary is built separately in CI and published as a GitHub release.
 
 use std::env;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
 /// URL to download the pre-built Lambda zip from GitHub releases.
 /// This should be updated when a new Lambda binary is released.
-const LAMBDA_ZIP_URL: &str = "https://github.com/quickwit-oss/quickwit/releases/download/lambda-ff6fdfa5/quickwit-aws-lambda--aarch64.zip";
+const LAMBDA_ZIP_URL: &str = "https://github.com/quickwit-oss/quickwit/releases/download/lambda-11587c00/quickwit-aws-lambda--aarch64.zip";
 
 /// Expected SHA256 hash of the Lambda zip artifact.
 /// Must be updated alongside LAMBDA_ZIP_URL when a new Lambda binary is released.
-const LAMBDA_ZIP_SHA256: &str = "fa940f44178e28460c21e44bb2610b776542b9b97db66a53bc65b10cad653b90";
+const LAMBDA_ZIP_SHA256: &str = "c8159220962bf5b6c1f5d485b44b8e548f668ab4ffe5f93accd0279bbd619ad6";
 
 /// AWS Lambda direct upload limit is 50MB.
 /// Larger artifacts must be uploaded via S3.
@@ -95,7 +96,12 @@ fn fetch_lambda_zip(local_cache_path: &Path) {
 }
 
 fn sha256_hex(data: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(data))
+    let hash = Sha256::digest(data);
+    let mut hex = String::with_capacity(64);
+    for byte in hash {
+        write!(hex, "{byte:02x}").unwrap();
+    }
+    hex
 }
 
 fn download_lambda_zip(url: &str) -> Result<Vec<u8>, String> {

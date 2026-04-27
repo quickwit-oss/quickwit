@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
@@ -61,8 +61,7 @@ use crate::{
 
 /// Maximum accepted scroll TTL.
 fn max_scroll_ttl() -> Duration {
-    static MAX_SCROLL_TTL_LOCK: OnceLock<Duration> = OnceLock::new();
-    *MAX_SCROLL_TTL_LOCK.get_or_init(|| {
+    static MAX_SCROLL_TTL_LOCK: LazyLock<Duration> = LazyLock::new(|| {
         let split_deletion_grace_period = shared_consts::split_deletion_grace_period();
         assert!(
             split_deletion_grace_period >= shared_consts::MINIMUM_DELETION_GRACE_PERIOD,
@@ -71,7 +70,8 @@ fn max_scroll_ttl() -> Duration {
         );
         // We remove an extra margin of 2minutes from the split deletion grace period.
         split_deletion_grace_period - Duration::from_secs(60 * 2)
-    })
+    });
+    *MAX_SCROLL_TTL_LOCK
 }
 
 const SORT_DOC_FIELD_NAMES: &[&str] = &["_shard_doc", "_doc"];
@@ -778,10 +778,11 @@ pub(crate) async fn search_partial_hits_phase(
         .map_err(|error: TantivyError| crate::SearchError::Internal(error.to_string()))?;
     debug!(
         num_hits = leaf_search_response.num_hits,
-        failed_splits = ?leaf_search_response.failed_splits,
+        num_failed_splits = leaf_search_response.failed_splits.len(),
+        failed_splits = ?PrettySample::new(&leaf_search_response.failed_splits, 5),
         num_attempted_splits = leaf_search_response.num_attempted_splits,
         has_intermediate_aggregation_result = leaf_search_response.intermediate_aggregation_result.is_some(),
-        "Merged leaf search response."
+        "merged leaf search response"
     );
 
     if let Some(resource_stats) = &leaf_search_response.resource_stats
@@ -800,7 +801,7 @@ pub(crate) async fn search_partial_hits_phase(
     }
 
     if !leaf_search_response.failed_splits.is_empty() {
-        quickwit_common::rate_limited_error!(limit_per_min=6, failed_splits = ?leaf_search_response.failed_splits, "leaf search response contains at least one failed split");
+        quickwit_common::rate_limited_error!(limit_per_min=6, num_failed_splits = leaf_search_response.failed_splits.len(), failed_splits = ?PrettySample::new(&leaf_search_response.failed_splits, 5), "leaf search response contains failed splits");
     }
 
     Ok(leaf_search_response)

@@ -14,7 +14,8 @@
 
 // See https://prometheus.io/docs/practices/naming/
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
+
 use quickwit_common::metrics::{
     Histogram, HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram,
     new_histogram_vec,
@@ -71,4 +72,4 @@ impl Default for LambdaMetrics {
     }
 }
 
-pub static LAMBDA_METRICS: Lazy<LambdaMetrics> = Lazy::new(LambdaMetrics::default);
+pub static LAMBDA_METRICS: LazyLock<LambdaMetrics> = LazyLock::new(LambdaMetrics::default);

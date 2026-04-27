@@ -28,7 +28,6 @@ http = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true, optional = true }
 itertools = { workspace = true }
-once_cell = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
