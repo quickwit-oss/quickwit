@@ -38,7 +38,7 @@ use ulid::Ulid;
 
 use super::ProcessedParquetBatch;
 use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager, PartitionedRecordBatch};
-use crate::actors::OTHER_PARTITION_ID;
+use crate::actors::indexer::OTHER_PARTITION_ID;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).
@@ -494,10 +494,7 @@ impl Actor for ParquetIndexer {
             | ActorExitStatus::Failure(_)
             | ActorExitStatus::Panicked => return Ok(()),
             ActorExitStatus::Quit | ActorExitStatus::Success => {
-                let flushed_partitions = match self.flush_workbench(Vec::new()) {
-                    Ok(partitions) => partitions,
-                    Err(_) => Vec::new(),
-                };
+                let flushed_partitions = self.flush_workbench(Vec::new()).unwrap_or_default();
                 let _ = self
                     .send_workbench_to_packager(
                         flushed_partitions,
@@ -642,8 +639,9 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::metrics_pipeline::PartitionedParquetBatch;
-    use crate::actors::metrics_pipeline::{ParquetPackager, ParquetUploader};
+    use crate::actors::metrics_pipeline::{
+        ParquetPackager, ParquetUploader, PartitionedParquetBatch,
+    };
     use crate::actors::{Publisher, UploaderType};
 
     /// Create a test ParquetUploader and return its mailbox.
@@ -963,8 +961,7 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_indexer_threshold_flush_waits_for_full_partitioned_batch() {
         let universe = Universe::with_accelerated_time();
-        let (packager_mailbox, packager_inbox) =
-            universe.create_test_mailbox::<ParquetPackager>();
+        let (packager_mailbox, packager_inbox) = universe.create_test_mailbox::<ParquetPackager>();
 
         let config = ParquetIndexingConfig::default().with_max_rows(50);
         let indexer = ParquetIndexer::new(
@@ -994,8 +991,7 @@ mod tests {
         assert_eq!(counters.rows_indexed, 110);
         assert_eq!(counters.batches_flushed, 2);
 
-        let packager_batches: Vec<ParquetBatchForPackager> =
-            packager_inbox.drain_for_test_typed();
+        let packager_batches: Vec<ParquetBatchForPackager> = packager_inbox.drain_for_test_typed();
         assert_eq!(packager_batches.len(), 1);
         assert_eq!(
             packager_batches[0]
@@ -1158,8 +1154,7 @@ mod tests {
         assert_eq!(counters.rows_indexed, 30);
         assert_eq!(counters.batches_flushed, 2);
 
-        let packager_batches: Vec<ParquetBatchForPackager> =
-            packager_inbox.drain_for_test_typed();
+        let packager_batches: Vec<ParquetBatchForPackager> = packager_inbox.drain_for_test_typed();
         assert_eq!(packager_batches.len(), 1);
         assert_eq!(packager_batches[0].batches.len(), 2);
         assert_eq!(

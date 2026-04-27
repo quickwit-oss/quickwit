@@ -17,12 +17,12 @@ use std::hash::Hasher;
 use arrow::array::{Array, AsArray};
 use arrow::datatypes::{DataType, Int32Type};
 use arrow::record_batch::RecordBatch;
-
-use super::RoutingExprContext;
-#[cfg(test)]
-use super::RoutingExpr;
 #[cfg(test)]
 use serde_json::Value as JsonValue;
+
+#[cfg(test)]
+use super::RoutingExpr;
+use super::RoutingExprContext;
 
 /// Context for evaluating routing expressions against a single row of an Arrow `RecordBatch`.
 ///

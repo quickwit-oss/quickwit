@@ -513,8 +513,7 @@ mod tests {
         let first_ipc_bytes = record_batch_to_ipc(&first_batch).unwrap();
         let second_ipc_bytes = record_batch_to_ipc(&second_batch).unwrap();
 
-        let mut raw_doc_batch =
-            RawDocBatch::for_test(&[&first_ipc_bytes, &second_ipc_bytes], 0..2);
+        let mut raw_doc_batch = RawDocBatch::for_test(&[&first_ipc_bytes, &second_ipc_bytes], 0..2);
         raw_doc_batch.force_commit = true;
 
         metrics_doc_processor_mailbox
