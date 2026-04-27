@@ -23,7 +23,7 @@ retention:
 doc_mapping:
   mode: dynamic
   field_mappings:
-    - name: timestamp
+    - name: timestamp_secs
       type: datetime
       fast: true
-  timestamp_field: timestamp
+  timestamp_field: timestamp_secs

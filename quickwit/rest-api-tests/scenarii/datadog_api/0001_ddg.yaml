@@ -2,13 +2,13 @@ endpoint: api/v1/datadog/search
 params:
   query: "service:*"
 expected:
-  num_hits: 5
+  num_hits: 6
 ---
 endpoint: api/v1/datadog/search
 params:
   query: "service:service123"
 expected:
-  num_hits: 4
+  num_hits: 5
 ---
 endpoint: api/v1/datadog/search
 params:

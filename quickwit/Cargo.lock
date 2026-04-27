@@ -941,9 +941,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-lambda"
-version = "1.121.0"
+version = "1.122.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13b84b01daefb9e3e9b657d74eb2255b64c826801f2c87db02c38848b2280460"
+checksum = "6e231021d78da565357c3a53466215114fb4e8e4fd1289e285abbc3968bb6c4d"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -966,9 +966,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-s3"
-version = "1.130.0"
+version = "1.131.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "221e06508938be90c370333cb61978b7bd9526473b7fb9b9ac2e33507fc09d85"
+checksum = "fe1b8c5282bf859170836045296b3cd710b7573aceb909498366bb508a41058e"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -1214,7 +1214,7 @@ dependencies = [
  "indexmap 2.14.0",
  "pin-project-lite",
  "rustls 0.21.12",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "rustls-native-certs 0.8.3",
  "rustls-pki-types",
  "serde",
@@ -3952,9 +3952,9 @@ dependencies = [
 
 [[package]]
 name = "fraction"
-version = "0.15.3"
+version = "0.15.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f158e3ff0a1b334408dc9fb811cd99b446986f4d8b741bb08f9df1604085ae7"
+checksum = "e076045bb43dac435333ed5f04caf35c7463631d0dae2deb2638d94dd0a5b872"
 dependencies = [
  "lazy_static",
  "num",
@@ -4977,7 +4977,7 @@ dependencies = [
  "http 1.4.0",
  "hyper 1.9.0",
  "hyper-util",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "rustls-native-certs 0.8.3",
  "tokio",
  "tokio-rustls 0.26.4",
@@ -7411,9 +7411,9 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "pastey"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b867cad97c0791bbd3aaa6472142568c6c9e8f71937e98379f584cfb0cf35bec"
+checksum = "c5a797f0e07bdf071d15742978fc3128ec6c22891c31a3a931513263904c982a"
 
 [[package]]
 name = "pbkdf2"
@@ -7866,7 +7866,7 @@ dependencies = [
 [[package]]
 name = "pomchi"
 version = "0.1.0"
-source = "git+ssh://git@github.com/DataDog/PomChi.git?rev=bfd96dc#bfd96dc90f18f6d47831a73bb1a368fb7eacd057"
+source = "git+ssh://git@github.com/DataDog/PomChi.git?rev=7f8ee73#7f8ee7334fbd7ca44e3dc6124dd5486112a5402a"
 dependencies = [
  "event-percolation",
  "fnv",
@@ -8728,7 +8728,7 @@ dependencies = [
  "quickwit-serve",
  "quickwit-storage",
  "reqwest 0.12.28",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "serde_json",
  "sysinfo 0.38.4",
  "tabled",
@@ -9159,7 +9159,7 @@ dependencies = [
  "quickwit-storage",
  "rand 0.10.1",
  "reqwest 0.12.28",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "serde_json",
  "tempfile",
  "tokio",
@@ -9377,12 +9377,13 @@ dependencies = [
  "quickwit-common",
  "quickwit-dst",
  "quickwit-proto",
+ "regex",
  "serde",
  "serde_json",
  "siphasher",
+ "storekey",
  "tempfile",
  "thiserror 2.0.18",
- "tokio",
  "tracing 0.1.44",
  "ulid",
 ]
@@ -9606,6 +9607,7 @@ dependencies = [
  "quickwit-lambda-client",
  "quickwit-metastore",
  "quickwit-opentelemetry",
+ "quickwit-parquet-engine",
  "quickwit-proto",
  "quickwit-query",
  "quickwit-search",
@@ -9613,7 +9615,7 @@ dependencies = [
  "rand 0.10.1",
  "regex",
  "rust-embed",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "rustls-pemfile 2.2.0",
  "serde",
  "serde_json",
@@ -9705,7 +9707,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash 2.1.2",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
@@ -9725,7 +9727,7 @@ dependencies = [
  "rand 0.9.4",
  "ring",
  "rustc-hash 2.1.2",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "rustls-pki-types",
  "slab",
  "thiserror 2.0.18",
@@ -10242,7 +10244,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "quinn",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "rustls-native-certs 0.8.3",
  "rustls-pki-types",
  "serde",
@@ -10593,9 +10595,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.38"
+version = "0.23.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69f9466fb2c14ea04357e91413efb882e2a6d4a406e625449bc0a5d360d53a21"
+checksum = "7c2c118cb077cca2822033836dfb1b975355dfb784b5e8da48f7b6c5db74e60e"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -11624,7 +11626,7 @@ dependencies = [
  "memchr",
  "once_cell",
  "percent-encoding",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -11819,6 +11821,12 @@ name = "static_assertions_next"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7beae5182595e9a8b683fa98c4317f956c9a2dec3b9716990d20023cc60c766"
+
+[[package]]
+name = "storekey"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd9a94571bde7369ecaac47cec2e6844642d99166bd452fbd8def74b5b917b2f"
 
 [[package]]
 name = "str_stack"
@@ -12670,7 +12678,7 @@ version = "0.26.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1729aa945f29d91ba541258c8df89027d5792d85a8841fb65e8bf0f4ede4ef61"
 dependencies = [
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "tokio",
 ]
 
@@ -13528,7 +13536,7 @@ dependencies = [
  "flate2",
  "log",
  "percent-encoding",
- "rustls 0.23.38",
+ "rustls 0.23.39",
  "rustls-pki-types",
  "ureq-proto",
  "utf8-zero",
@@ -14300,7 +14308,7 @@ dependencies = [
 [[package]]
 name = "vrl"
 version = "0.32.0"
-source = "git+https://github.com/vectordotdev/vrl.git?branch=main#2294868348e119a919a812c0faa7955c23a8d73d"
+source = "git+https://github.com/vectordotdev/vrl.git?branch=main#43146d74d4cf04ae8de0f7f6b62f57b60a34c332"
 dependencies = [
  "arbitrary",
  "base16",

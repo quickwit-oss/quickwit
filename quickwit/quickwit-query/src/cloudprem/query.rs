@@ -21,7 +21,7 @@ const EVP_DEFAULT_FIELD: &str = "_default_";
 const EVP_RANDOM_DRAW: &str = "random_draw";
 const EVP_WES_FIELD: &str = "*";
 
-const QW_ERROR_FIELD: &str = "error";
+const QW_EXTRA_FTS: &str = "extra_fts";
 const QW_MESSAGE_FIELD: &str = "message";
 const QW_TIEBREAKER: &str = "tiebreaker";
 const QW_WES_FIELD: &str = "all";
@@ -29,7 +29,10 @@ const QW_WES_FIELD: &str = "all";
 /// Returns true for fields indexed with the DatadogTokenizer (see
 /// config/cloudprem/datadog-logs.yaml).
 fn is_datadog_tokenized(field: &str) -> bool {
-    field == QW_MESSAGE_FIELD || field == QW_ERROR_FIELD || field.starts_with("error.")
+    field == QW_MESSAGE_FIELD
+        || field == QW_EXTRA_FTS
+        || field.starts_with("error.")
+        || field == "title"
 }
 
 pub fn parse_query(raw_message: prost_types::Any) -> Result<QueryNode, DecodeError> {
@@ -623,7 +626,10 @@ fn wildcard_pattern_to_string(pattern: &WildcardPattern) -> String {
 /// - because duplicating the indexing of `message` took a significant amount of space.
 fn expand_virtual_fields(field_name: String) -> Vec<String> {
     if field_name == EVP_DEFAULT_FIELD {
-        vec![QW_MESSAGE_FIELD.to_string(), QW_ERROR_FIELD.to_string()]
+        // FTS: message + extra_fts (concatenate field combining error.message,
+        // error.stack, and title). Keep in sync with default_search_fields
+        // in config/cloudprem/datadog-logs.yaml
+        vec![QW_MESSAGE_FIELD.to_string(), QW_EXTRA_FTS.to_string()]
     } else if field_name == EVP_WES_FIELD {
         vec![QW_MESSAGE_FIELD.to_string(), QW_WES_FIELD.to_string()]
     } else {
@@ -822,30 +828,25 @@ mod tests {
             }),
         };
         let term_ast: QueryAst = super::build_term_query(term_query_node).unwrap();
+        let fts_params = FullTextParams {
+            tokenizer: None,
+            mode: FullTextMode::Bool {
+                operator: crate::BooleanOperand::And,
+            },
+            zero_terms_query: crate::MatchAllOrNone::MatchNone,
+        };
         let expected_ast: QueryAst = QueryAst::Bool(BoolQuery {
             should: vec![
                 QueryAst::FullText(FullTextQuery {
                     field: "message".to_string(),
                     text: "hello".to_string(),
-                    params: FullTextParams {
-                        tokenizer: None,
-                        mode: FullTextMode::Bool {
-                            operator: crate::BooleanOperand::And,
-                        },
-                        zero_terms_query: crate::MatchAllOrNone::MatchNone,
-                    },
+                    params: fts_params.clone(),
                     lenient: false,
                 }),
                 QueryAst::FullText(FullTextQuery {
-                    field: "error".to_string(),
+                    field: "extra_fts".to_string(),
                     text: "hello".to_string(),
-                    params: FullTextParams {
-                        tokenizer: None,
-                        mode: FullTextMode::Bool {
-                            operator: crate::BooleanOperand::And,
-                        },
-                        zero_terms_query: crate::MatchAllOrNone::MatchNone,
-                    },
+                    params: fts_params,
                     lenient: false,
                 }),
             ],
@@ -1119,5 +1120,35 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(ast, expected_ast);
+    }
+
+    #[test]
+    fn test_expand_virtual_fields_fts_default() {
+        let fields = super::expand_virtual_fields(super::EVP_DEFAULT_FIELD.to_string());
+        assert_eq!(fields, vec!["message", "extra_fts"]);
+    }
+
+    #[test]
+    fn test_expand_virtual_fields_wes() {
+        let fields = super::expand_virtual_fields(super::EVP_WES_FIELD.to_string());
+        assert_eq!(fields, vec!["message", "all"]);
+    }
+
+    #[test]
+    fn test_expand_virtual_fields_regular_field() {
+        let fields = super::expand_virtual_fields("service".to_string());
+        assert_eq!(fields, vec!["service"]);
+    }
+
+    #[test]
+    fn test_is_datadog_tokenized() {
+        assert!(super::is_datadog_tokenized("message"));
+        assert!(super::is_datadog_tokenized("extra_fts"));
+        assert!(super::is_datadog_tokenized("error.message"));
+        assert!(super::is_datadog_tokenized("error.stack"));
+        assert!(super::is_datadog_tokenized("title"));
+        assert!(!super::is_datadog_tokenized("custom"));
+        assert!(!super::is_datadog_tokenized("service"));
+        assert!(!super::is_datadog_tokenized("tag"));
     }
 }

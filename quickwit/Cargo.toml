@@ -244,6 +244,7 @@ serial_test = { version = "3.2", features = ["file_locks"] }
 sha2 = "0.11"
 siphasher = "1.0"
 stateright = "0.31"
+storekey = { version = "0.11", default-features = false }
 smallvec = "1"
 sqlx = { version = "0.8", features = [
   "migrate",
@@ -407,7 +408,7 @@ chrono-tz = "0.10"
 either = "1.13"
 httparse = "1.10"
 pem = "3.0.5"
-pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "bfd96dc" }
+pomchi = { git = "ssh://git@github.com/DataDog/PomChi.git", rev = "7f8ee73" }
 ryu = "1.0.20"
 tokio-tungstenite = { version = "0.27.0", features = ["native-tls"] }
 uaparser = "0.6.4"

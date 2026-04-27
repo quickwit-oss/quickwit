@@ -479,9 +479,12 @@ fn build_request_for_es_api(
         };
         user_text_query.into()
     } else if let Some(query_dsl) = search_body.query {
-        query_dsl
+        tracing::info!(query_dsl = ?query_dsl, "ES query DSL received");
+        let ast: QueryAst = query_dsl
             .try_into()
-            .map_err(|err: anyhow::Error| SearchError::InvalidQuery(err.to_string()))?
+            .map_err(|err: anyhow::Error| SearchError::InvalidQuery(err.to_string()))?;
+        tracing::info!(query_ast = ?ast, "parsed QueryAst");
+        ast
     } else {
         QueryAst::MatchAll
     };
