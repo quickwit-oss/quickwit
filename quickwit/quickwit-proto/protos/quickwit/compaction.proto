@@ -60,4 +60,5 @@ message MergeTaskAssignment {
   quickwit.common.IndexUid index_uid = 7;
   string source_id = 8;
   string index_storage_uri = 9;
+  uint64 merge_level = 10;
 }

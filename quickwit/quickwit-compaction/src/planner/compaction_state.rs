@@ -13,16 +13,19 @@
 // limitations under the License.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use itertools::Itertools;
 use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::compaction::{CompactionFailure, CompactionInProgress, CompactionSuccess};
 use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
 use tracing::{error, info, warn};
 
-use crate::TaskId;
+use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
+use crate::{TaskId, source_uid_metrics_label};
 
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -177,6 +180,7 @@ impl CompactionState {
         for task_id in timed_out_task_ids {
             if let Some(inflight) = self.in_flight.remove(&task_id) {
                 error!(%task_id, node_id=%inflight.node_id, "compaction task timed out");
+                COMPACTION_PLANNER_METRICS.timed_out_operations.inc();
                 for split_id in &inflight.split_ids {
                     self.in_flight_split_ids.remove(split_id.as_str());
                 }
@@ -205,6 +209,56 @@ impl CompactionState {
                 last_heartbeat: Instant::now(),
             },
         );
+    }
+
+    pub fn emit_metrics(&self) {
+        // total number of splits that need to be merged by compaction partition key
+        self.needs_compaction
+            .iter()
+            .map(|(compaction_partition_key, splits)| {
+                (
+                    source_uid_metrics_label(
+                        &compaction_partition_key.index_uid,
+                        &compaction_partition_key.source_id,
+                    ),
+                    splits.len() as i64,
+                )
+            })
+            .into_grouping_map()
+            .sum()
+            .iter()
+            .for_each(|(partition_key, &total_splits)| {
+                COMPACTION_PLANNER_METRICS
+                    .splits_needing_compaction
+                    .with_label_values([partition_key.as_str()])
+                    .set(total_splits)
+            });
+
+        // merge operations by index_uid/merge level
+        self.pending_operations
+            .iter()
+            .map(|(compaction_partition_key, merge_operation)| {
+                // The 1s get summed up to give the total number of operations per index per level.
+                (
+                    (
+                        source_uid_metrics_label(
+                            &compaction_partition_key.index_uid,
+                            &compaction_partition_key.source_id,
+                        ),
+                        merge_operation.merge_level() as i64,
+                    ),
+                    1,
+                )
+            })
+            .into_grouping_map()
+            .sum()
+            .iter()
+            .for_each(|((partition_key, merge_level), &count)| {
+                COMPACTION_PLANNER_METRICS
+                    .pending_merge_operations
+                    .with_label_values([partition_key.as_str(), &merge_level.to_string()])
+                    .set(count);
+            });
     }
 }
 

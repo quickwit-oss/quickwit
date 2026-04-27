@@ -17,5 +17,6 @@ mod compaction_planner;
 mod compaction_state;
 #[allow(dead_code)]
 mod index_config_metastore;
+pub(crate) mod metrics;
 
 pub use compaction_planner::CompactionPlanner;

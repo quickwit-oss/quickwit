@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{
@@ -28,11 +29,12 @@ use quickwit_proto::compaction::{
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId, SourceId};
 use time::OffsetDateTime;
-use tracing::error;
+use tracing::{error, info};
 use ulid::Ulid;
 
 use super::compaction_state::CompactionState;
 use super::index_config_metastore::{IndexConfigMetastore, IndexEntry};
+use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 
 pub struct CompactionPlanner {
     state: CompactionState,
@@ -68,7 +70,7 @@ impl Actor for CompactionPlanner {
     fn observable_state(&self) -> Self::ObservableState {}
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        tracing::info!("compaction planner starting, scanning metastore for immature splits");
+        info!("compaction planner starting, scanning metastore for immature splits");
         ctx.schedule_self_msg(INITIAL_SCAN_AND_PLAN_INTERVAL, ScanAndPlan);
         Ok(())
     }
@@ -140,6 +142,7 @@ impl CompactionPlanner {
                 continue;
             }
             self.cursor = self.cursor.max(split.update_timestamp);
+            info!(max_timestamp=%self.cursor, "[compaction planner] update metastore cursor min_timestamp cursor");
             self.state.track_split(split.split_metadata);
         }
     }
@@ -153,9 +156,24 @@ impl CompactionPlanner {
         let splits = self
             .metastore
             .list_splits(request)
-            .await?
+            .await
+            .inspect_err(|error| {
+                error!(%error, "[compaction-planner] error calling metastore list_splits");
+                COMPACTION_PLANNER_METRICS
+                    .metastore_errors
+                    .with_label_values(["scan"])
+                    .inc();
+            })?
             .collect_splits()
-            .await?;
+            .await
+            .inspect_err(|error| {
+                error!(%error, "[compaction-planner] error collecting metastore splits");
+                COMPACTION_PLANNER_METRICS
+                    .metastore_errors
+                    .with_label_values(["collect_splits"])
+                    .inc();
+            })?;
+        emit_metastore_scan_metrics(&splits);
         Ok(splits)
     }
 
@@ -163,6 +181,7 @@ impl CompactionPlanner {
         let splits = self.scan_metastore().await?;
         self.ingest_splits(splits).await;
         self.run_merge_policies();
+        self.state.emit_metrics();
         Ok(())
     }
 
@@ -208,6 +227,20 @@ impl CompactionPlanner {
     }
 }
 
+fn emit_metastore_scan_metrics(new_splits: &[Split]) {
+    let size = new_splits.len();
+    info!(%size, "[compaction planner] new splits scanned from metastore");
+    let counts = new_splits
+        .iter()
+        .counts_by(|split| &split.split_metadata.index_uid);
+    for (&index_uid, &count) in counts.iter() {
+        COMPACTION_PLANNER_METRICS
+            .new_splits_scanned
+            .with_label_values([&index_uid.to_string()])
+            .set(count as i64);
+    }
+}
+
 fn build_task_assignment(
     task_id: &str,
     index_entry: &IndexEntry,
@@ -231,6 +264,7 @@ fn build_task_assignment(
         index_uid: Some(index_uid.clone()),
         source_id: source_id.to_string(),
         index_storage_uri: index_entry.index_storage_uri(),
+        merge_level: operation.merge_level() as u64,
     }
 }
 

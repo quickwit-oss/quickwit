@@ -35,9 +35,11 @@ use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::NodeId;
 use quickwit_storage::StorageResolver;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::compaction_pipeline::{CompactionPipeline, PipelineStatus, PipelineStatusUpdate};
+use crate::metrics::COMPACTOR_METRICS;
+use crate::source_uid_metrics_label;
 
 const CHECK_PIPELINE_STATUSES_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -207,15 +209,24 @@ impl CompactorSupervisor {
             .iter()
             .filter(|s| matches!(s.status, PipelineStatus::InProgress))
             .count();
-        let available_slots = (self.pipelines.len() - in_progress_count) as u32;
+        let available_slots = (self.pipelines.len() - in_progress_count) as i64;
+        COMPACTOR_METRICS.available_slots.set(available_slots);
 
         let mut in_progress = Vec::new();
         let mut successes = Vec::new();
         let mut failures = Vec::new();
 
         for update in statuses {
+            let merge_level = update.merge_level;
+            let index_label = source_uid_metrics_label(&update.index_uid, &update.source_id);
+            let label_values = [index_label.as_str(), &merge_level.to_string()];
+
             match &update.status {
                 PipelineStatus::InProgress => {
+                    COMPACTOR_METRICS
+                        .compactions_in_progress
+                        .with_label_values(label_values)
+                        .inc();
                     in_progress.push(CompactionInProgress {
                         task_id: update.task_id.clone(),
                         index_uid: Some(update.index_uid.clone()),
@@ -224,11 +235,27 @@ impl CompactorSupervisor {
                     });
                 }
                 PipelineStatus::Completed => {
+                    COMPACTOR_METRICS
+                        .compactions_in_progress
+                        .with_label_values(label_values)
+                        .dec();
+                    COMPACTOR_METRICS
+                        .compactions_succeeded
+                        .with_label_values(label_values)
+                        .inc();
                     successes.push(CompactionSuccess {
                         task_id: update.task_id.clone(),
                     });
                 }
                 PipelineStatus::Failed { error } => {
+                    COMPACTOR_METRICS
+                        .compactions_in_progress
+                        .with_label_values(label_values)
+                        .dec();
+                    COMPACTOR_METRICS
+                        .compactions_failed
+                        .with_label_values(label_values)
+                        .inc();
                     failures.push(CompactionFailure {
                         task_id: update.task_id.clone(),
                         error_message: error.clone(),
@@ -239,7 +266,7 @@ impl CompactorSupervisor {
 
         ReportStatusRequest {
             node_id: self.node_id.to_string(),
-            available_slots,
+            available_slots: available_slots as u32,
             in_progress,
             successes,
             failures,
@@ -287,7 +314,7 @@ impl Handler<CheckPipelineStatuses> for CompactorSupervisor {
                     .await;
             }
             Err(error) => {
-                warn!(%error, "failed to report status to compaction planner");
+                error!(%error, "failed to report status to compaction planner");
             }
         }
         ctx.schedule_self_msg(CHECK_PIPELINE_STATUSES_INTERVAL, CheckPipelineStatuses);
@@ -413,6 +440,7 @@ mod tests {
             index_uid: Some(index_metadata.index_uid.clone()),
             source_id: "test-source".to_string(),
             index_storage_uri: config.index_uri.to_string(),
+            merge_level: 1,
         }
     }
 
@@ -572,6 +600,7 @@ mod tests {
                 source_id: "src".to_string(),
                 split_ids: vec!["s1".to_string(), "s2".to_string()],
                 status: PipelineStatus::InProgress,
+                merge_level: 1,
             },
             PipelineStatusUpdate {
                 task_id: "task-2".to_string(),
@@ -579,6 +608,7 @@ mod tests {
                 source_id: "src".to_string(),
                 split_ids: vec!["s3".to_string()],
                 status: PipelineStatus::Completed,
+                merge_level: 1,
             },
             PipelineStatusUpdate {
                 task_id: "task-3".to_string(),
@@ -588,6 +618,7 @@ mod tests {
                 status: PipelineStatus::Failed {
                     error: "boom".to_string(),
                 },
+                merge_level: 1,
             },
         ];
 
