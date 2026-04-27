@@ -25,7 +25,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::tonic::transport::Channel;
 use quickwit_proto::types::IndexUid;
 
-use crate::metastore::{ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt};
+use crate::metastore::{ListParquetSplitsRequestExt, ListParquetSplitsResponseExt};
 
 pub(crate) mod delete_task;
 pub(crate) mod get_identity;
@@ -157,7 +157,7 @@ async fn cleanup_index(metastore: &mut dyn MetastoreServiceExt, index_uid: Index
             .unwrap();
     }
     // Also clean up any metrics splits (they have a separate FK constraint).
-    let metrics_query = crate::metastore::ListMetricsSplitsQuery::for_index(index_uid.clone())
+    let metrics_query = crate::metastore::ListParquetSplitsQuery::for_index(index_uid.clone())
         .with_split_states([
             SplitState::Staged,
             SplitState::Published,

@@ -12,10 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Storage layer for metrics Parquet files.
-//!
-//! Provides configurable Parquet writer with compression options
-//! optimized for metrics workloads.
+//! Storage layer for Parquet files.
 
 mod config;
 mod split_writer;
@@ -23,4 +20,6 @@ mod writer;
 
 pub use config::{Compression, ParquetWriterConfig};
 pub use split_writer::ParquetSplitWriter;
+#[cfg(test)]
+pub(crate) use writer::PARQUET_META_ZONEMAP_REGEXES;
 pub use writer::{ParquetWriteError, ParquetWriter};

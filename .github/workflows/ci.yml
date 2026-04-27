@@ -102,13 +102,17 @@ jobs:
         uses: taiki-e/install-action@aba36d755ec7ca22d38b12111787c26115943952
         with:
           tool: cargo-nextest
-      - name: cargo build
+      - name: cargo check without metrics
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo build --features=postgres --tests --bin quickwit
+        run: cargo check --features=postgres --tests --bin quickwit
+        working-directory: ./quickwit
+      - name: cargo check with metrics
+        if: always() && steps.modified.outputs.rust_src == 'true'
+        run: cargo check --features=postgres,metrics --tests --bin quickwit
         working-directory: ./quickwit
       - name: cargo nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        run: cargo nextest run --features=postgres --retries 1
+        run: cargo nextest run --features=postgres,metrics --retries 1
         working-directory: ./quickwit
       - name: Install python packages
         if: always() && steps.modified.outputs.rust_src == 'true'
@@ -139,6 +143,10 @@ jobs:
               - quickwit/**/*.toml
               - quickwit/**/*.proto
               - .github/workflows/ci.yml
+            migrations:
+              - quickwit/quickwit-metastore/migrations/**
+              - quickwit/diesel-guard.toml
+              - .github/workflows/ci.yml
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: |
@@ -165,13 +173,17 @@ jobs:
         if: always() && steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/cache-cargo-install-action@59027ebf20a9617c4e819eb53ccd2673cb162b89 # v3.0.3
         with:
-          # 0.18 requires rustc 1.85
-          tool: cargo-deny@0.17.0
+          tool: cargo-deny@0.19.4
       - name: Install cargo machete
         if: always() && steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/cache-cargo-install-action@59027ebf20a9617c4e819eb53ccd2673cb162b89 # v3.0.3
         with:
           tool: cargo-machete
+      - name: Install diesel-guard
+        if: always() && steps.modified.outputs.migrations == 'true'
+        uses: taiki-e/cache-cargo-install-action@59027ebf20a9617c4e819eb53ccd2673cb162b89 # v3.0.3
+        with:
+          tool: diesel-guard@0.10.0
       - name: cargo clippy
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo clippy --workspace --tests --all-features
@@ -195,6 +207,10 @@ jobs:
       - name: rustfmt
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo +nightly fmt --all -- --check
+        working-directory: ./quickwit
+      - name: diesel-guard (Postgres migrations lint)
+        if: always() && steps.modified.outputs.migrations == 'true'
+        run: make migrations-lint
         working-directory: ./quickwit
 
   thirdparty-license:

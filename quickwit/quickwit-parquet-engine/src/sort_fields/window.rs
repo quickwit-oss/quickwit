@@ -48,7 +48,7 @@ pub fn validate_window_duration(duration_secs: u32) -> Result<(), SortFieldsErro
             reason: "must be positive",
         });
     }
-    if 3600 % duration_secs != 0 {
+    if !quickwit_dst::invariants::window::is_valid_window_duration(duration_secs) {
         return Err(SortFieldsError::InvalidWindowDuration {
             duration_secs,
             reason: "must evenly divide 3600 (one hour)",
@@ -87,7 +87,8 @@ pub fn window_start(
     );
     check_invariant!(
         InvariantId::TW2,
-        3600 % duration_secs == 0,
+        duration_secs > 0
+            && quickwit_dst::invariants::window::is_valid_window_duration(duration_secs as u32),
         ": duration_secs={} does not divide 3600",
         duration_secs
     );

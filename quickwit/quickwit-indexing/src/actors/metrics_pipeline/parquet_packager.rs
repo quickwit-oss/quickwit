@@ -35,8 +35,8 @@ use serde::Serialize;
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 
-use crate::actors::ParquetUploader;
-use crate::actors::parquet_indexer::ParquetSplitBatch;
+use super::ParquetUploader;
+use super::parquet_indexer::ParquetSplitBatch;
 use crate::models::PublishLock;
 
 /// A concatenated RecordBatch ready to be written to a Parquet file.
@@ -87,8 +87,8 @@ impl ParquetPackagerCounters {
 ///
 /// This actor:
 /// - Receives ParquetBatchForPackager messages from ParquetIndexer
-/// - Writes the RecordBatch to a Parquet file via ParquetSplitWriter (sort + encode + compress)
-/// - Extracts split metadata (time range, metric names, service names)
+/// - Writes the RecordBatch to a Parquet file via the configured split writer
+/// - Extracts split metadata (time range, metric names)
 /// - Forwards the completed ParquetSplitBatch to ParquetUploader
 ///
 /// Runs on the blocking runtime since Parquet encoding and file IO are CPU/IO-bound.
@@ -184,17 +184,17 @@ impl Handler<ParquetBatchForPackager> for ParquetPackager {
 
             // Write the batch to a Parquet file
             match self.split_writer.write_split(&batch, &index_uid_str) {
-                Ok(split) => {
-                    let size_bytes = split.metadata.size_bytes;
+                Ok(split_metadata) => {
+                    let size_bytes = split_metadata.size_bytes();
                     self.counters.record_split(size_bytes);
 
                     info!(
-                        split_id = %split.metadata.split_id,
+                        split_id = %split_metadata.split_id_str(),
                         num_rows,
                         size_bytes,
                         "ParquetPackager wrote split"
                     );
-                    vec![split]
+                    vec![split_metadata]
                 }
                 Err(error) => {
                     warn!(error = %error, num_rows, "ParquetPackager failed to write split");
@@ -244,7 +244,7 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::{ParquetPublisher, SplitsUpdateMailbox, UploaderType};
+    use crate::actors::{Publisher, UploaderType};
 
     fn create_test_uploader(
         universe: &Universe,
@@ -255,14 +255,14 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
 
         let ram_storage = Arc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox = super::super::spawn_sequencer_for_test(universe, publisher_mailbox);
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage,
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
         universe.spawn_builder().spawn(uploader)
@@ -275,7 +275,13 @@ mod tests {
     ) -> (Mailbox<ParquetPackager>, ActorHandle<ParquetPackager>) {
         let writer_config = ParquetWriterConfig::default();
         let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
-        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir, &table_config);
+        let split_writer = ParquetSplitWriter::new(
+            quickwit_parquet_engine::split::ParquetSplitKind::Metrics,
+            writer_config,
+            temp_dir,
+            &table_config,
+        )
+        .unwrap();
 
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)

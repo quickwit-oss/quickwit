@@ -157,7 +157,7 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
-    // Mount gRPC OpenTelemetry OTLP services if present.
+
     let otlp_trace_grpc_service =
         if let Some(otlp_traces_service) = services.otlp_traces_service_opt.clone() {
             enabled_grpc_services.insert("otlp-traces");
@@ -226,6 +226,18 @@ pub(crate) async fn start_grpc_server(
         DeveloperServiceClient::new(developer_service)
             .as_grpc_service(DeveloperApiServer::MAX_GRPC_MESSAGE_SIZE)
     };
+    // DataFusion descriptor + service names must be registered before the
+    // reflection service is built. The mount closure is applied to the
+    // assembled router below so the worker service type does not leak into
+    // this file.
+    #[cfg(feature = "datafusion")]
+    let datafusion_mount = crate::datafusion_api::setup::build_datafusion_mount(
+        &services,
+        grpc_config.max_message_size.0 as usize,
+        &mut file_descriptor_sets,
+        &mut enabled_grpc_services,
+    );
+
     enabled_grpc_services.insert("health");
     file_descriptor_sets.push(HEALTH_FILE_DESCRIPTOR_SET);
 
@@ -249,6 +261,9 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(otlp_log_grpc_service)
         .add_optional_service(otlp_trace_grpc_service)
         .add_optional_service(search_grpc_service);
+
+    #[cfg(feature = "datafusion")]
+    let server_router = datafusion_mount.apply(server_router);
 
     let grpc_listen_addr = tcp_listener.local_addr()?;
     info!(

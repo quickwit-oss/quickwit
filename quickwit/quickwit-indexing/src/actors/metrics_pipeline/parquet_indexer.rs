@@ -27,15 +27,16 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_parquet_engine::index::{ParquetBatchAccumulator, ParquetIndexingConfig};
-use quickwit_parquet_engine::split::ParquetSplit;
+use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_proto::types::{IndexUid, PublishToken, SourceId};
 use serde::Serialize;
 use tokio::runtime::Handle;
 use tracing::{debug, info, info_span, warn};
 use ulid::Ulid;
 
-use crate::actors::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
-use crate::models::{NewPublishLock, NewPublishToken, ProcessedParquetBatch, PublishLock};
+use super::ProcessedParquetBatch;
+use super::parquet_packager::{ParquetBatchForPackager, ParquetPackager};
+use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
 
 /// Default commit timeout for ParquetIndexer (60 seconds).
 // TODO: read from index config commit_timeout_secs.
@@ -86,7 +87,7 @@ pub struct ParquetSplitBatch {
     /// Index unique identifier for the splits in this batch.
     pub index_uid: IndexUid,
     /// The splits produced.
-    pub splits: Vec<ParquetSplit>,
+    pub splits: Vec<ParquetSplitMetadata>,
     /// Directory containing the Parquet files referenced by splits.
     /// The uploader uses this to locate and upload the actual file content.
     pub output_dir: PathBuf,
@@ -552,9 +553,8 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::{
-        ParquetPackager, ParquetPublisher, ParquetUploader, SplitsUpdateMailbox, UploaderType,
-    };
+    use crate::actors::metrics_pipeline::{ParquetPackager, ParquetUploader};
+    use crate::actors::{Publisher, UploaderType};
 
     /// Create a test ParquetUploader and return its mailbox.
     fn create_test_uploader(
@@ -562,14 +562,14 @@ mod tests {
     ) -> (Mailbox<ParquetUploader>, ActorHandle<ParquetUploader>) {
         let mock_metastore = MockMetastoreService::new();
         let ram_storage = Arc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox = super::super::spawn_sequencer_for_test(universe, publisher_mailbox);
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage,
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
         universe.spawn_builder().spawn(uploader)
@@ -587,14 +587,14 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
 
         let ram_storage = Arc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox = super::super::spawn_sequencer_for_test(universe, publisher_mailbox);
 
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage,
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
         universe.spawn_builder().spawn(uploader)
@@ -608,7 +608,13 @@ mod tests {
     ) -> (Mailbox<ParquetPackager>, ActorHandle<ParquetPackager>) {
         let writer_config = ParquetWriterConfig::default();
         let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
-        let split_writer = ParquetSplitWriter::new(writer_config, temp_dir, &table_config);
+        let split_writer = ParquetSplitWriter::new(
+            quickwit_parquet_engine::split::ParquetSplitKind::Metrics,
+            writer_config,
+            temp_dir,
+            &table_config,
+        )
+        .unwrap();
 
         let packager = ParquetPackager::new(split_writer, uploader_mailbox);
         universe.spawn_builder().spawn(packager)
@@ -917,13 +923,14 @@ mod tests {
             .returning(|_| Ok(EmptyResponse {}));
 
         let ram_storage = Arc::new(RamStorage::default());
-        let (publisher_mailbox, _publisher_inbox) =
-            universe.create_test_mailbox::<ParquetPublisher>();
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox::<Publisher>();
+        let sequencer_mailbox =
+            super::super::spawn_sequencer_for_test(&universe, publisher_mailbox);
         let uploader = ParquetUploader::new(
             UploaderType::IndexUploader,
             quickwit_proto::metastore::MetastoreServiceClient::from_mock(mock_metastore),
             ram_storage,
-            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            sequencer_mailbox,
             4,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);

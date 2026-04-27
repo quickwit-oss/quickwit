@@ -50,6 +50,9 @@ fmt:
 fix:
 	@$(MAKE) -C $(QUICKWIT_SRC) fix
 
+migrations-lint:
+	@$(MAKE) -C $(QUICKWIT_SRC) migrations-lint
+
 typos:
 	typos
 

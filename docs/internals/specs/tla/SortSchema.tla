@@ -11,7 +11,7 @@
 \*
 \* Key Invariants (from ADR-002):
 \*   - SS-1: All rows within a split are sorted according to its recorded sort schema
-\*   - SS-2: Nulls sort after non-null for ascending, before non-null for descending
+\*   - SS-2: Nulls always sort after non-null values (nulls last, regardless of direction)
 \*   - SS-3: Missing sort columns in a split are treated as null (not an error)
 \*   - SS-4: A split's sort schema never changes after it is written
 \*   - SS-5: The three copies of sort schema (metastore, KV metadata, sorting_columns)
@@ -37,7 +37,7 @@
 \* | ChangeSchema action          | Metastore update_index() changing sort_schema                |
 \* | CompactSplits action         | Parquet merge executor (sorted k-way merge, ADR-003)         |
 \* | RowsSorted property          | debug_assert! after lexsort_to_indices in sort_batch()       |
-\* | NullOrdering property        | SortColumn nulls_first field per direction                   |
+\* | NullOrdering property        | SortColumn nulls_first=false (nulls always last)             |
 \* | Columns                      | ParquetField enum variants in schema/fields.rs               |
 
 EXTENDS Integers, Sequences, FiniteSets, TLC
@@ -132,16 +132,13 @@ GetValue(row, col, columns_present) ==
 \* Compare two values for a single column with null ordering rules (SS-2)
 \* Returns: -1 (less), 0 (equal), 1 (greater)
 \*
-\* For ascending: nulls sort AFTER non-null (nulls are "greater")
-\* For descending: nulls sort BEFORE non-null (nulls are "lesser")
+\* Nulls always sort AFTER non-null values, regardless of direction.
+\* This matches the writer's nulls_first=false and enables nulls to be
+\* implicit in the sorted_series key.
 CompareValues(v1, v2, direction) ==
     CASE v1 = NULL /\ v2 = NULL -> 0
-      [] v1 = NULL /\ v2 /= NULL ->
-            IF direction = "asc" THEN 1    \* null after non-null for ascending
-            ELSE -1                         \* null before non-null for descending
-      [] v1 /= NULL /\ v2 = NULL ->
-            IF direction = "asc" THEN -1   \* non-null before null for ascending
-            ELSE 1                          \* non-null after null for descending
+      [] v1 = NULL /\ v2 /= NULL -> 1     \* null always after non-null
+      [] v1 /= NULL /\ v2 = NULL -> -1    \* non-null always before null
       [] v1 /= NULL /\ v2 /= NULL ->
             IF direction = "asc"
             THEN (CASE v1 < v2 -> -1 [] v1 = v2 -> 0 [] v1 > v2 -> 1)
@@ -218,13 +215,12 @@ SS1_RowsSorted ==
     \A s \in splits :
         IsSorted(s.rows, s.sort_schema, s.columns_present)
 
-\* SS-2: Null values are ordered correctly per column direction
+\* SS-2: Null values always sort after non-null (nulls last, regardless of direction)
 \* This is enforced by the CompareValues function used in IsSorted.
 \* We verify it explicitly: for every adjacent pair of rows, when all
 \* earlier sort columns are equal, if one value is NULL and the other
-\* is not, the NULL must be in the correct position:
-\*   - Ascending:  NULL comes AFTER non-null (nulls last)
-\*   - Descending: NULL comes BEFORE non-null (nulls first)
+\* is not, the NULL must come after the non-null value.
+\* This matches the writer's nulls_first=false.
 SS2_NullOrdering ==
     \A s \in splits :
         \A i \in 1..(Len(s.rows) - 1) :
@@ -241,10 +237,8 @@ SS2_NullOrdering ==
                         IN ev1 = ev2
                 IN
                 earlier_equal =>
-                    \* Ascending: null must NOT appear before non-null
-                    /\ ~(dir = "asc" /\ v_curr = NULL /\ v_next /= NULL)
-                    \* Descending: non-null must NOT appear before null
-                    /\ ~(dir = "desc" /\ v_curr /= NULL /\ v_next = NULL)
+                    \* Null must NOT appear before non-null (regardless of direction)
+                    ~(v_curr = NULL /\ v_next /= NULL)
 
 \* SS-3: If a sort column is missing from a split's data, all rows in that
 \*       split are treated as null for that column. This is not an error.
