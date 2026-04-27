@@ -169,3 +169,89 @@ async fn test_sketch_merge_and_quantile_sql() {
     let ddl_p50 = float_value(&ddl_batches[0], "p50");
     assert!((ddl_p50 - 1.0).abs() < f64::EPSILON, "p50={ddl_p50}");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_sketch_merge_and_quantile_substrait() {
+    use datafusion_substrait::logical_plan::producer::to_substrait_plan;
+    use datafusion_substrait::substrait::proto::extensions::simple_extension_declaration::MappingType;
+    use prost::Message;
+
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
+
+    let index_uid = create_metrics_index(&metastore, "sketches-substrait", data_dir.path()).await;
+    let batch = make_doc_example_batch();
+    publish_sketch_split(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "sketch_split_1",
+        &batch,
+    )
+    .await;
+
+    let ctx = builder.build_session().unwrap();
+    ctx.sql(
+        r#"
+        CREATE OR REPLACE EXTERNAL TABLE "sketches-substrait" (
+            metric_name VARCHAR NOT NULL,
+            timestamp_secs BIGINT UNSIGNED NOT NULL,
+            count BIGINT UNSIGNED NOT NULL,
+            sum DOUBLE NOT NULL,
+            min DOUBLE NOT NULL,
+            max DOUBLE NOT NULL,
+            flags INT UNSIGNED NOT NULL,
+            keys ARRAY<SMALLINT> NOT NULL,
+            counts ARRAY<BIGINT UNSIGNED> NOT NULL
+        ) STORED AS sketches LOCATION 'sketches-substrait'
+        "#,
+    )
+    .await
+    .unwrap()
+    .collect()
+    .await
+    .unwrap();
+
+    let df = ctx
+        .sql(
+            r#"
+            SELECT
+                dd_quantile(dd_sketch(keys, counts, "count", "min", "max"), 0.50) AS p50
+            FROM "sketches-substrait"
+            WHERE metric_name = 'req.latency' AND timestamp_secs = 600
+            "#,
+        )
+        .await
+        .unwrap();
+    let plan = df.into_optimized_plan().unwrap();
+    let substrait_plan = to_substrait_plan(&plan, &ctx.state()).unwrap();
+    let extension_functions: Vec<&str> = substrait_plan
+        .extensions
+        .iter()
+        .filter_map(|extension| match &extension.mapping_type {
+            Some(MappingType::ExtensionFunction(function)) => Some(function.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        extension_functions.contains(&"dd_sketch"),
+        "Substrait plan must declare dd_sketch aggregate UDF; got {extension_functions:?}"
+    );
+    assert!(
+        extension_functions.contains(&"dd_quantile"),
+        "Substrait plan must declare dd_quantile scalar UDF; got {extension_functions:?}"
+    );
+
+    let plan_bytes = substrait_plan.encode_to_vec();
+    let stream = builder.execute_substrait(&plan_bytes).await.unwrap();
+    let batches = datafusion::physical_plan::common::collect(stream)
+        .await
+        .unwrap();
+
+    assert_eq!(batches.len(), 1);
+    assert_eq!(batches[0].num_rows(), 1);
+    let p50 = float_value(&batches[0], "p50");
+    assert!((p50 - 1.0).abs() < f64::EPSILON, "p50={p50}");
+}
