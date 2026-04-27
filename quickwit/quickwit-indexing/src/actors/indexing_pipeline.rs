@@ -869,8 +869,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
-    use quickwit_actors::{Command, Universe};
-    use quickwit_common::ServiceStream;
+    use quickwit_actors::Universe;
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams};
     use quickwit_doc_mapper::{DocMapper, default_doc_mapper_for_test};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
@@ -883,7 +882,6 @@ mod tests {
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
-    use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::default_merge_policy;
 
     #[test]
