@@ -9604,6 +9604,7 @@ dependencies = [
  "quickwit-lambda-client",
  "quickwit-metastore",
  "quickwit-opentelemetry",
+ "quickwit-parquet-engine",
  "quickwit-proto",
  "quickwit-query",
  "quickwit-search",
