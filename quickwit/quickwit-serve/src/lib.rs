@@ -16,6 +16,8 @@
 
 mod build_info;
 mod cluster_api;
+#[cfg(feature = "datafusion")]
+mod datafusion_api;
 mod decompression;
 mod delete_task_api;
 mod developer_api;
@@ -198,6 +200,7 @@ struct QuickwitServices {
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
     pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
+
     pub otlp_traces_service_opt: Option<OtlpGrpcTracesService>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
@@ -205,6 +208,12 @@ struct QuickwitServices {
     pub search_service: Arc<dyn SearchService>,
 
     pub env_filter_reload_fn: EnvFilterReloadFn,
+
+    /// Generic DataFusion session builder (present if searcher role is active
+    /// and the `datafusion` feature + `QW_ENABLE_DATAFUSION_ENDPOINT` env var
+    /// are both enabled).
+    #[cfg(feature = "datafusion")]
+    pub datafusion_session_builder: Option<Arc<quickwit_datafusion::DataFusionSessionBuilder>>,
 
     /// The control plane listens to various events.
     /// We must maintain a reference to the subscription handles to continue receiving
@@ -604,7 +613,6 @@ pub async fn serve_quickwit(
             let otel_traces_index_config =
                 OtlpGrpcTracesService::index_config(&node_config.default_index_root_uri)
                     .context("failed to load OTEL traces index config")?;
-
             for (index_name, index_config) in [
                 ("OTEL logs", otel_logs_index_config),
                 ("OTEL traces", otel_traces_index_config),
@@ -666,7 +674,7 @@ pub async fn serve_quickwit(
         ))
     };
 
-    let (search_job_placer, search_service) = setup_searcher(
+    let (search_job_placer, search_service, searcher_pool) = setup_searcher(
         &node_config,
         cluster.change_stream(),
         // search remains available without a control plane because not all
@@ -678,8 +686,26 @@ pub async fn serve_quickwit(
     .await
     .context("failed to start searcher service")?;
 
+    // Build the generic DataFusion session builder if this node is a searcher
+    // and the DataFusion endpoint is enabled. The whole code path is absent
+    // when the `datafusion` feature is off. A runtime setup failure (e.g.
+    // failing to install the object store registry) propagates — DataFusion
+    // should fail the node startup loudly rather than silently disabling
+    // itself.
+    #[cfg(feature = "datafusion")]
+    let datafusion_session_builder = datafusion_api::setup::build_datafusion_session_builder(
+        &node_config,
+        cluster.change_stream(),
+        metastore_through_control_plane.clone(),
+        storage_resolver.clone(),
+    )?;
+    // The search job placer owns a clone of this pool; the local binding is not
+    // needed after the searcher and DataFusion setup paths have registered
+    // their listeners.
+    drop(searcher_pool);
+
     // The control plane listens for local shards updates to learn about each shard's ingestion
-    // throughput.
+    // throughput. Ingesters (routers) do so to update their shard table.
     let local_shards_update_listener_handle_opt =
         if node_config.is_service_enabled(QuickwitService::ControlPlane) {
             Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
@@ -768,6 +794,8 @@ pub async fn serve_quickwit(
         otlp_traces_service_opt,
         search_service,
         env_filter_reload_fn,
+        #[cfg(feature = "datafusion")]
+        datafusion_session_builder,
     });
     // Setup and start gRPC server.
     let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
@@ -1111,7 +1139,7 @@ async fn setup_searcher(
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     searcher_context: Arc<SearcherContext>,
-) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>)> {
+) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>, SearcherPool)> {
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
 
@@ -1168,7 +1196,7 @@ async fn setup_searcher(
         })
     });
     searcher_pool.listen_for_changes(searcher_change_stream);
-    Ok((search_job_placer, search_service))
+    Ok((search_job_placer, search_service, searcher_pool))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1650,7 +1678,7 @@ mod tests {
         let metastore = metastore_for_test();
         let (change_stream, change_stream_tx) = ClusterChangeStream::new_unbounded();
         let storage_resolver = StorageResolver::unconfigured();
-        let (search_job_placer, _searcher_service) = setup_searcher(
+        let (search_job_placer, _searcher_service, _searcher_pool) = setup_searcher(
             &node_config,
             change_stream,
             metastore,

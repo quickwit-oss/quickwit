@@ -870,6 +870,8 @@ mod tests {
             search_service: Arc::new(MockSearchService::new()),
             jaeger_service_opt: None,
             env_filter_reload_fn: crate::do_nothing_env_filter_reload_fn(),
+            #[cfg(feature = "datafusion")]
+            datafusion_session_builder: None,
         };
 
         let handler = api_v1_routes(Arc::new(quickwit_services))
