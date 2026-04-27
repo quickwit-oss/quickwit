@@ -985,11 +985,38 @@ fn list_parquet_splits(
     splits_map: &HashMap<String, StoredParquetSplit>,
     query: &ListParquetSplitsQuery,
 ) -> Vec<StoredParquetSplit> {
-    splits_map
+    let mut results: Vec<StoredParquetSplit> = splits_map
         .values()
         .filter(|split| parquet_split_matches_query(split, query))
         .cloned()
-        .collect()
+        .collect();
+
+    // Sort by split_id for deterministic pagination.
+    results.sort_by(|a, b| {
+        a.metadata
+            .split_id
+            .as_str()
+            .cmp(b.metadata.split_id.as_str())
+    });
+
+    // Apply cursor: skip splits up to and including after_split_id.
+    if let Some(ref after_id) = query.after_split_id {
+        if let Some(pos) = results
+            .iter()
+            .position(|s| s.metadata.split_id.as_str() > after_id.as_str())
+        {
+            results = results.split_off(pos);
+        } else {
+            results.clear();
+        }
+    }
+
+    // Apply limit.
+    if let Some(limit) = query.limit {
+        results.truncate(limit);
+    }
+
+    results
 }
 
 fn mark_parquet_splits_for_deletion(
@@ -1162,6 +1189,13 @@ fn parquet_split_matches_query(split: &StoredParquetSplit, query: &ListParquetSp
             }
         }
         Bound::Unbounded => {}
+    }
+
+    // Filter by max time_range_end (retention policy: splits whose data ends before cutoff)
+    if let Some(max_time_range_end) = query.max_time_range_end
+        && (split.metadata.time_range.end_secs as i64) > max_time_range_end
+    {
+        return false;
     }
 
     true

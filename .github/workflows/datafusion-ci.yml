@@ -1,0 +1,70 @@
+name: DataFusion CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+      - trigger-ci-workflow
+    paths:
+      - "quickwit/**"
+      - ".github/workflows/datafusion-ci.yml"
+      - "!quickwit/quickwit-ui/**"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  QW_DISABLE_TELEMETRY: 1
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: -Dwarnings --cfg tokio_unstable
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: DataFusion feature lane
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: modified
+        with:
+          filters: |
+            rust_src:
+              - quickwit/**/*.rs
+              - quickwit/**/*.toml
+              - quickwit/**/*.proto
+              - .github/workflows/datafusion-ci.yml
+      - name: Install Ubuntu packages
+        if: steps.modified.outputs.rust_src == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get -y install protobuf-compiler
+      - name: Setup stable Rust Toolchain
+        if: steps.modified.outputs.rust_src == 'true'
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
+        with:
+          toolchain: stable
+      - name: Setup cache
+        if: steps.modified.outputs.rust_src == 'true'
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: "./quickwit -> target"
+          shared-key: "quickwit-cargo"
+      - name: cargo test quickwit-datafusion
+        if: always() && steps.modified.outputs.rust_src == 'true'
+        run: cargo test -p quickwit-datafusion --tests
+        working-directory: ./quickwit
+      - name: cargo test quickwit-integration-tests with datafusion
+        if: always() && steps.modified.outputs.rust_src == 'true'
+        run: cargo test -p quickwit-integration-tests --features datafusion metrics_distributed_tests -- --test-threads=1
+        working-directory: ./quickwit

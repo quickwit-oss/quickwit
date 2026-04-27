@@ -1,0 +1,7 @@
+# diesel-guard: lint dangerous Postgres migration patterns.
+# https://github.com/ayarotsky/diesel-guard
+#
+# Migrations at or before number 28 pre-date diesel-guard adoption and are
+# grandfathered in. Only newer migrations are checked.
+framework = "sqlx"
+start_after = "28"

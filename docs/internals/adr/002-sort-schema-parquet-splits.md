@@ -119,7 +119,7 @@ These invariants must hold across all code paths (ingestion, compaction, query).
 | ID | Invariant | Rationale |
 |----|-----------|-----------|
 | **SS-1** | All rows within a split are sorted according to the sort schema recorded in that split's metadata | Foundation for page-level pruning and sorted merge. Violated data produces incorrect merge results |
-| **SS-2** | Nulls sort after non-null values for ascending columns and before non-null values for descending columns | Consistent null ordering across ingestion and merge. Matches Husky convention |
+| **SS-2** | Nulls always sort after non-null values, regardless of sort direction (nulls last) | Consistent null ordering across ingestion and merge. Enables nulls to be implicit in sorted_series key encoding |
 | **SS-3** | If a sort column is missing from a split, all rows in that split are treated as null for that column. This is not an error | Enables schema evolution — columns can be added to the sort schema without rewriting existing splits |
 | **SS-4** | The sort schema stored in a split's metadata is the schema that was in effect when that split was written. Already-written splits are never re-sorted | Changes propagate forward only. Old splits age out via retention |
 | **SS-5** | The sort schema string is the same in the metastore (per-split metadata), the Parquet `key_value_metadata`, and the Parquet `sorting_columns` field for a given split | Three representations of the same truth. Inconsistency between them would cause incorrect merge or pruning behavior |
