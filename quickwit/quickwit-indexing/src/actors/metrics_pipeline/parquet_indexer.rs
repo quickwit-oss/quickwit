@@ -114,7 +114,8 @@ pub struct ParquetSplitBatch {
     /// The uploader uses this to locate and upload the actual file content.
     pub output_dir: PathBuf,
     /// Checkpoint delta covering all data in these splits.
-    pub checkpoint_delta: IndexCheckpointDelta,
+    /// `None` for merge operations (data was already checkpointed at ingest).
+    pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     /// Publish lock for coordinating with sources.
     pub publish_lock: PublishLock,
     /// Optional publish token.
@@ -122,6 +123,10 @@ pub struct ParquetSplitBatch {
     /// Split IDs being replaced by this batch (non-empty for merges).
     /// Empty for the ingest path.
     pub replaced_split_ids: Vec<String>,
+    /// Holds the temp directory alive until the uploader finishes reading.
+    /// `None` for the ingest path (packager manages its own temp dir).
+    /// `Some` for the merge path (executor's scratch directory).
+    pub _scratch_directory_opt: Option<quickwit_common::temp_dir::TempDirectory>,
 }
 
 /// ParquetIndexer actor that accumulates RecordBatches and forwards them to ParquetPackager.
