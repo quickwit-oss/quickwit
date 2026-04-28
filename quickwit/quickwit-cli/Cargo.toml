@@ -86,6 +86,7 @@ quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
+datafusion = ["quickwit-serve/datafusion"]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
 jemalloc-profiled = [
   "dep:backtrace",

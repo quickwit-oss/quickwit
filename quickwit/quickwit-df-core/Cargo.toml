@@ -1,0 +1,54 @@
+[package]
+name = "quickwit-df-core"
+description = "Generic DataFusion runtime framework: distributed execution, Substrait consumer, connector trait. No Quickwit domain types."
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+futures = { workspace = true }
+prost = { workspace = true }            # substrait Plan::decode (runtime only)
+serde_json = { workspace = true }
+tracing = { workspace = true }
+url = "2"
+
+arrow = { workspace = true }
+datafusion = "53"
+datafusion-substrait = "53"
+datafusion-distributed = "1.0"
+object_store = "0.13"
+
+# gRPC surface is opt-in. The extension traits + session builder do not need
+# tonic or the generated proto; downstream crates that only implement runtime
+# plugins / Substrait extensions should depend on this crate without `grpc`.
+tonic = { workspace = true, optional = true }
+tonic-prost = { workspace = true, optional = true }
+
+[build-dependencies]
+# Only run when `grpc` is enabled — see build.rs. Kept optional so a plain
+# `cargo build -p quickwit-df-core` without the feature does not even pull
+# the codegen toolchains.
+prost-build = { workspace = true, optional = true }
+tonic-prost-build = { workspace = true, optional = true }
+
+[features]
+# Compile the `proto` + `grpc` modules (the tonic server adapter for
+# `DataFusionService`). The long-term home for this adapter is
+# `quickwit-serve`; keeping it here is a short-term isolation, and gating it
+# off by default lets external connector consumers skip the proto compile
+# and the tonic server deps entirely.
+grpc = [
+    "dep:tonic",
+    "dep:tonic-prost",
+    "dep:prost-build",
+    "dep:tonic-prost-build",
+]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util", "macros"] }
