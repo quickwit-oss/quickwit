@@ -18,7 +18,6 @@ hex = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }
 nom = { workspace = true }
-once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

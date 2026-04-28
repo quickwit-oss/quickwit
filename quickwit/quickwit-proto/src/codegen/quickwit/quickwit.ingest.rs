@@ -19,6 +19,9 @@ pub struct DocBatchV2 {
     pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
     #[prost(message, repeated, tag = "3")]
     pub doc_uids: ::prost::alloc::vec::Vec<crate::types::DocUid>,
+    /// Format of the documents in doc_buffer. Defaults to JSON for backward compatibility.
+    #[prost(enumeration = "DocFormat", tag = "4")]
+    pub doc_format: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -137,6 +140,37 @@ impl CommitTypeV2 {
             "COMMIT_TYPE_V2_AUTO" => Some(Self::Auto),
             "COMMIT_TYPE_V2_WAIT_FOR" => Some(Self::WaitFor),
             "COMMIT_TYPE_V2_FORCE" => Some(Self::Force),
+            _ => None,
+        }
+    }
+}
+/// Format of documents in DocBatchV2.doc_buffer
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum DocFormat {
+    /// JSON documents, one per entry in doc_lengths (default for backward compatibility)
+    Json = 0,
+    /// Arrow IPC stream format containing a single RecordBatch
+    ArrowIpc = 1,
+}
+impl DocFormat {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Json => "DOC_FORMAT_JSON",
+            Self::ArrowIpc => "DOC_FORMAT_ARROW_IPC",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "DOC_FORMAT_JSON" => Some(Self::Json),
+            "DOC_FORMAT_ARROW_IPC" => Some(Self::ArrowIpc),
             _ => None,
         }
     }

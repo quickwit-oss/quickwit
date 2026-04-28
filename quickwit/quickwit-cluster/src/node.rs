@@ -50,6 +50,7 @@ impl ClusterNode {
             ingester_status: member.ingester_status,
             is_ready: member.is_ready,
             is_self_node,
+            availability_zone: member.availability_zone,
         };
         let node = ClusterNode {
             inner: Arc::new(inner),
@@ -141,6 +142,10 @@ impl ClusterNode {
     pub fn is_self_node(&self) -> bool {
         self.inner.is_self_node
     }
+
+    pub fn availability_zone(&self) -> Option<&str> {
+        self.inner.availability_zone.as_deref()
+    }
 }
 
 impl Debug for ClusterNode {
@@ -162,6 +167,7 @@ impl PartialEq for ClusterNode {
             && self.inner.indexing_tasks == other.inner.indexing_tasks
             && self.inner.is_ready == other.inner.is_ready
             && self.inner.is_self_node == other.inner.is_self_node
+            && self.inner.availability_zone == other.inner.availability_zone
     }
 }
 
@@ -175,4 +181,5 @@ struct InnerNode {
     ingester_status: IngesterStatus,
     is_ready: bool,
     is_self_node: bool,
+    availability_zone: Option<String>,
 }

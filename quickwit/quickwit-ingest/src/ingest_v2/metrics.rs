@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::LazyLock;
+
 use mrecordlog::ResourceUsage;
-use once_cell::sync::Lazy;
 use quickwit_common::metrics::{
     Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, exponential_buckets,
     linear_buckets, new_counter_vec, new_gauge, new_gauge_vec, new_histogram, new_histogram_vec,
@@ -82,12 +83,20 @@ pub(super) struct IngestV2Metrics {
     pub wal_disk_used_bytes: IntGauge,
     pub wal_memory_used_bytes: IntGauge,
     pub ingest_results: IngestResultMetrics,
+    pub ingest_attempts: IntCounterVec<1>,
 }
 
 impl Default for IngestV2Metrics {
     fn default() -> Self {
         Self {
             ingest_results: IngestResultMetrics::default(),
+            ingest_attempts: new_counter_vec::<1>(
+                "ingest_attempts",
+                "Number of routing attempts by AZ locality",
+                "ingest",
+                &[],
+                ["az_routing"],
+            ),
             reset_shards_operations_total: new_counter_vec(
                 "reset_shards_operations_total",
                 "Total number of reset shards operations performed.",
@@ -163,4 +172,5 @@ pub(super) fn report_wal_usage(wal_usage: ResourceUsage) {
         .set(wal_usage.memory_used_bytes as i64);
 }
 
-pub(super) static INGEST_V2_METRICS: Lazy<IngestV2Metrics> = Lazy::new(IngestV2Metrics::default);
+pub(super) static INGEST_V2_METRICS: LazyLock<IngestV2Metrics> =
+    LazyLock::new(IngestV2Metrics::default);

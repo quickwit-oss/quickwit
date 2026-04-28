@@ -86,7 +86,7 @@ impl NodeStateExt for NodeState {
     fn ingester_status(&self) -> IngesterStatus {
         self.get(INGESTER_STATUS_KEY)
             .and_then(IngesterStatus::from_json_str_name)
-            .unwrap_or_default()
+            .unwrap_or(IngesterStatus::Ready)
     }
 
     fn availability_zone(&self) -> Option<String> {
@@ -220,4 +220,18 @@ fn parse_enabled_services_str(
         )
     }
     enabled_services
+}
+
+#[cfg(test)]
+mod tests {
+    use chitchat::NodeState;
+    use quickwit_proto::ingest::ingester::IngesterStatus;
+
+    use super::NodeStateExt;
+
+    #[test]
+    fn test_ingester_status_defaults_to_ready_when_key_absent() {
+        let node_state = NodeState::for_test();
+        assert_eq!(node_state.ingester_status(), IngesterStatus::Ready);
+    }
 }

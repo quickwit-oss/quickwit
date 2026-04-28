@@ -14,7 +14,6 @@ license.workspace = true
 async-trait = { workspace = true }
 hostname = { workspace = true }
 md5 = { workspace = true }
-once_cell = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 tokio = { workspace = true }

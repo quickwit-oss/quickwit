@@ -18,12 +18,16 @@ mod index_serializer;
 mod indexer;
 mod indexing_pipeline;
 mod indexing_service;
+mod log_publisher_impl;
 mod merge_executor;
-mod merge_pipeline;
+pub(crate) mod merge_pipeline;
 mod merge_planner;
 mod merge_scheduler_service;
 mod merge_split_downloader;
+#[cfg(feature = "metrics")]
+pub(crate) mod metrics_pipeline;
 mod packager;
+pub(crate) mod pipeline_shared;
 mod publisher;
 mod sequencer;
 mod uploader;
@@ -34,14 +38,23 @@ pub use doc_processor::{DocProcessor, DocProcessorCounters};
 pub use index_serializer::IndexSerializer;
 pub use indexer::{Indexer, IndexerCounters};
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
-pub use indexing_service::{INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters};
+pub use indexing_service::{
+    BoxedPipelineHandle, INDEXING_DIR_NAME, IndexingService, IndexingServiceCounters,
+};
+pub(crate) use log_publisher_impl::{MERGE_PUBLISHER_NAME, PUBLISHER_NAME};
 pub use merge_executor::{MergeExecutor, combine_partition_ids, merge_split_attrs};
-pub use merge_pipeline::{FinishPendingMergesAndShutdownPipeline, MergePipeline};
-pub(crate) use merge_planner::{MergePlanner, RunFinalizeMergePolicyAndQuit};
+pub use merge_pipeline::{
+    FinishPendingMergesAndShutdownPipeline, MergePipeline, MergePipelineParams,
+};
+pub(crate) use merge_planner::MergePlanner;
+#[cfg(test)]
+pub(crate) use merge_planner::RunFinalizeMergePolicyAndQuit;
 pub use merge_scheduler_service::{MergePermit, MergeSchedulerService, schedule_merge};
 pub use merge_split_downloader::MergeSplitDownloader;
+#[cfg(feature = "metrics")]
+pub use metrics_pipeline::*;
 pub use packager::Packager;
-pub use publisher::{Publisher, PublisherCounters, PublisherType};
+pub use publisher::{Publisher, PublisherCounters};
 pub use quickwit_proto::indexing::IndexingError;
 pub use sequencer::Sequencer;
 pub use uploader::{SplitsUpdateMailbox, Uploader, UploaderCounters, UploaderType};

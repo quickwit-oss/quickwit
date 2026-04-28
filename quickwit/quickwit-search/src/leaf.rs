@@ -1920,7 +1920,7 @@ mod tests {
     use quickwit_config::{LambdaConfig, SearcherConfig};
     use quickwit_directories::write_hotcache;
     use quickwit_proto::search::LambdaSingleSplitResult;
-    use rand::Rng;
+    use rand::RngExt;
     use tantivy::TantivyDocument;
     use tantivy::directory::RamDirectory;
     use tantivy::schema::{

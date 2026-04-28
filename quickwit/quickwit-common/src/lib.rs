@@ -36,6 +36,7 @@ pub mod rate_limited_tracing;
 pub mod rate_limiter;
 pub mod rendezvous_hasher;
 pub mod retry;
+pub mod ring_buffer;
 pub mod runtimes;
 pub mod shared_consts;
 pub mod sorted_iter;
@@ -47,6 +48,9 @@ pub mod thread_pool;
 pub mod tower;
 pub mod type_map;
 pub mod uri;
+
+mod metrics_specific;
+pub use metrics_specific::*;
 
 mod socket_addr_legacy_hash;
 

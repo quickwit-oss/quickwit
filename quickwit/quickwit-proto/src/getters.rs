@@ -111,6 +111,7 @@ generate_getters! {
     ShardIds,
     ShardPKey,
     TruncateShardsSubrequest,
+    SourceShardUpdate,
 
     // Metastore API
     AcquireShardsRequest,
@@ -136,7 +137,21 @@ generate_getters! {
     ToggleSourceRequest,
     UpdateIndexRequest,
     UpdateSourceRequest,
-    UpdateSplitsDeleteOpstampRequest
+    UpdateSplitsDeleteOpstampRequest,
+
+    // Metrics Split API
+    StageMetricsSplitsRequest,
+    PublishMetricsSplitsRequest,
+    ListMetricsSplitsRequest,
+    MarkMetricsSplitsForDeletionRequest,
+    DeleteMetricsSplitsRequest,
+
+    // Sketch Split API
+    StageSketchSplitsRequest,
+    PublishSketchSplitsRequest,
+    ListSketchSplitsRequest,
+    MarkSketchSplitsForDeletionRequest,
+    DeleteSketchSplitsRequest
 }
 
 // [`PipelineUid`] getters
@@ -209,8 +224,6 @@ generate_getters! {
     InitShardFailure,
     OpenFetchStreamRequest,
     OpenShardSubrequest,
-    PersistFailure,
-    PersistSubrequest,
     PersistSuccess,
     ReplicateFailure,
     ReplicateSubrequest,

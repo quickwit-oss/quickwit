@@ -223,6 +223,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
         )?;
 
+    // Event Store sort schema proto (vendored from dd-source).
+    let sortschema_prost_config = prost_build::Config::default();
+    tonic_prost_build::configure()
+        .type_attribute(".", "#[derive(serde::Serialize, serde::Deserialize)]")
+        .out_dir("src/codegen/sortschema")
+        .compile_with_config(
+            sortschema_prost_config,
+            &[std::path::PathBuf::from(
+                "protos/event_store_sortschema/event_store_sortschema.proto",
+            )],
+            &[std::path::PathBuf::from("protos/event_store_sortschema")],
+        )?;
+
     // OTEL proto
     let mut prost_config = prost_build::Config::default();
     prost_config.protoc_arg("--experimental_allow_proto3_optional");

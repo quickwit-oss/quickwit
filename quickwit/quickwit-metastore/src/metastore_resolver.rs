@@ -14,10 +14,9 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use anyhow::ensure;
-use once_cell::sync::Lazy;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{MetastoreBackend, MetastoreConfig, MetastoreConfigs};
 use quickwit_proto::metastore::MetastoreServiceClient;
@@ -45,7 +44,7 @@ impl fmt::Debug for MetastoreResolver {
 }
 
 impl MetastoreResolver {
-    /// Creates an empty [`MetastoreResolverBuilder`].
+    /// Creates an empty `MetastoreResolverBuilder`.
     pub fn builder() -> MetastoreResolverBuilder {
         MetastoreResolverBuilder::default()
     }
@@ -83,7 +82,7 @@ impl MetastoreResolver {
     /// to provide the necessary credentials, the default Azure or S3 file-backed metastores
     /// returned by this resolver will not work.
     pub fn unconfigured() -> Self {
-        static METASTORE_RESOLVER: Lazy<MetastoreResolver> = Lazy::new(|| {
+        static METASTORE_RESOLVER: LazyLock<MetastoreResolver> = LazyLock::new(|| {
             MetastoreResolver::configured(
                 StorageResolver::unconfigured(),
                 &MetastoreConfigs::default(),

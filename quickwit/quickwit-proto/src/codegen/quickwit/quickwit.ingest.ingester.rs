@@ -37,8 +37,6 @@ pub struct PersistSubrequest {
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
@@ -51,6 +49,28 @@ pub struct PersistResponse {
     pub successes: ::prost::alloc::vec::Vec<PersistSuccess>,
     #[prost(message, repeated, tag = "3")]
     pub failures: ::prost::alloc::vec::Vec<PersistFailure>,
+    #[prost(message, optional, tag = "4")]
+    pub routing_update: ::core::option::Option<RoutingUpdate>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RoutingUpdate {
+    #[prost(uint32, tag = "1")]
+    pub capacity_score: u32,
+    #[prost(message, repeated, tag = "2")]
+    pub source_shard_updates: ::prost::alloc::vec::Vec<SourceShardUpdate>,
+    #[prost(message, repeated, tag = "3")]
+    pub closed_shards: ::prost::alloc::vec::Vec<super::ShardIds>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SourceShardUpdate {
+    #[prost(message, optional, tag = "1")]
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "3")]
+    pub open_shard_count: u32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -79,8 +99,6 @@ pub struct PersistFailure {
     pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "4")]
-    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(enumeration = "PersistFailureReason", tag = "5")]
     pub reason: i32,
 }
@@ -397,11 +415,10 @@ pub struct ObservationMessage {
 #[repr(i32)]
 pub enum PersistFailureReason {
     Unspecified = 0,
-    ShardNotFound = 1,
-    ShardClosed = 2,
-    ShardRateLimited = 3,
     WalFull = 4,
     Timeout = 5,
+    NoShardsAvailable = 6,
+    NodeUnavailable = 7,
 }
 impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -411,22 +428,20 @@ impl PersistFailureReason {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Unspecified => "PERSIST_FAILURE_REASON_UNSPECIFIED",
-            Self::ShardNotFound => "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND",
-            Self::ShardClosed => "PERSIST_FAILURE_REASON_SHARD_CLOSED",
-            Self::ShardRateLimited => "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED",
             Self::WalFull => "PERSIST_FAILURE_REASON_WAL_FULL",
             Self::Timeout => "PERSIST_FAILURE_REASON_TIMEOUT",
+            Self::NoShardsAvailable => "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE",
+            Self::NodeUnavailable => "PERSIST_FAILURE_REASON_NODE_UNAVAILABLE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "PERSIST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
-            "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND" => Some(Self::ShardNotFound),
-            "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
-            "PERSIST_FAILURE_REASON_SHARD_RATE_LIMITED" => Some(Self::ShardRateLimited),
             "PERSIST_FAILURE_REASON_WAL_FULL" => Some(Self::WalFull),
             "PERSIST_FAILURE_REASON_TIMEOUT" => Some(Self::Timeout),
+            "PERSIST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
+            "PERSIST_FAILURE_REASON_NODE_UNAVAILABLE" => Some(Self::NodeUnavailable),
             _ => None,
         }
     }
@@ -470,9 +485,8 @@ impl ReplicateFailureReason {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum IngesterStatus {
-    /// For nodes without an ingester.
     Unspecified = 0,
-    /// The ingester is live but not ready yet to accept requests (i.e. the Write-Ahead Log is not loaded yet).
+    /// The ingester is live but not ready yet to accept requests.
     Initializing = 1,
     /// The ingester is ready and accepts read and write requests.
     Ready = 2,

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use bytesize::ByteSize;
@@ -35,8 +35,7 @@ const MAXIMUM_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(2 * 24 * 360
 pub fn split_deletion_grace_period() -> Duration {
     const DEFAULT_DELETION_GRACE_PERIOD: Duration = Duration::from_secs(60 * 32); // 32 min
 
-    static SPLIT_DELETION_GRACE_PERIOD_SECS_LOCK: OnceLock<Duration> = std::sync::OnceLock::new();
-    *SPLIT_DELETION_GRACE_PERIOD_SECS_LOCK.get_or_init(|| {
+    static SPLIT_DELETION_GRACE_PERIOD_SECS_LOCK: LazyLock<Duration> = LazyLock::new(|| {
         let deletion_grace_period_secs: u64 = crate::get_from_env(
             "QW_SPLIT_DELETION_GRACE_PERIOD_SECS",
             DEFAULT_DELETION_GRACE_PERIOD.as_secs(),
@@ -54,7 +53,8 @@ pub fn split_deletion_grace_period() -> Duration {
             );
         }
         Duration::from_secs(deletion_grace_period_secs_clamped)
-    })
+    });
+    *SPLIT_DELETION_GRACE_PERIOD_SECS_LOCK
 }
 
 /// In order to amortized search with scroll, we fetch more documents than are
@@ -66,6 +66,9 @@ pub const INGESTER_PRIMARY_SHARDS_PREFIX: &str = "ingester.primary_shards:";
 
 /// Key used in chitchat to broadcast the status of an ingester.
 pub const INGESTER_STATUS_KEY: &str = "ingester.status";
+
+/// Prefix used in chitchat to broadcast per-source ingester capacity scores and open shard counts.
+pub const INGESTER_CAPACITY_SCORE_PREFIX: &str = "ingester.capacity_score:";
 
 /// File name for the encoded list of fields in the split
 pub const SPLIT_FIELDS_FILE_NAME: &str = "split_fields";

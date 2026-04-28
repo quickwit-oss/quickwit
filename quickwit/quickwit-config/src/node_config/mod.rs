@@ -295,6 +295,8 @@ pub struct SearcherConfig {
     pub split_cache: Option<SplitCacheLimits>,
     #[serde(default = "SearcherConfig::default_request_timeout_secs")]
     request_timeout_secs: NonZeroU64,
+    #[serde(default = "SearcherConfig::default_request_timeout_secs")]
+    leaf_request_timeout_secs: NonZeroU64,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage_timeout_policy: Option<StorageTimeoutPolicy>,
@@ -519,18 +521,23 @@ impl Default for SearcherConfig {
             aggregation_bucket_limit: 65000,
             split_cache: None,
             request_timeout_secs: Self::default_request_timeout_secs(),
+            leaf_request_timeout_secs: Self::default_request_timeout_secs(),
             storage_timeout_policy: None,
             warmup_memory_budget: ByteSize::gb(100),
-            warmup_single_split_initial_allocation: ByteSize::gb(1),
+            warmup_single_split_initial_allocation: ByteSize::mb(300),
             lambda: None,
         }
     }
 }
 
 impl SearcherConfig {
-    /// The timeout after which a search should be cancelled
+    /// The timeout applied at the gRPC layer for search requests
     pub fn request_timeout(&self) -> Duration {
         Duration::from_secs(self.request_timeout_secs.get())
+    }
+    /// The timeout applied at the leaf search layer
+    pub fn leaf_request_timeout(&self) -> Duration {
+        Duration::from_secs(self.leaf_request_timeout_secs.get())
     }
     fn default_request_timeout_secs() -> NonZeroU64 {
         NonZeroU64::new(30).unwrap()

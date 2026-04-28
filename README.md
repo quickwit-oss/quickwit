@@ -93,18 +93,6 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 - [Youtube channel](https://www.youtube.com/@quickwit8103)
 - [Discord](https://discord.quickwit.io)
 
-# 🔮 Roadmap
-
-- Quickwit 0.9 (July 2024)
-  - Indexing and search performance improvements
-  - Index configuration updates (retention policy, indexing and search settings)
-  - Concatenated field
-
-- Quickwit 0.10 (October 2024)
-  - Schema (doc mapping) updates
-  - Native distributed ingestion
-  - Index templates
-
 # 🙋 FAQ
 
 ### How can I switch from Elasticsearch or OpenSearch to Quickwit?
