@@ -14,7 +14,7 @@
 
 //! DataFusion UDFs for querying DDSketch parquet rows.
 //!
-//! `dd_sketch(keys, counts, count, min, max)` is the decomposable aggregate:
+//! `dd_sketch(keys, counts, count, min, max, flags)` is the decomposable aggregate:
 //! it merges sparse DDSketch bucket arrays and scalar bounds into a single
 //! struct. `dd_quantile(sketch, q)` is the final scalar projection over that
 //! merged sketch.
@@ -25,15 +25,19 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use arrow::array::{
-    Array, ArrayRef, AsArray, Float64Array, Int16Array, ListArray, StructArray, UInt64Array,
+    Array, ArrayRef, AsArray, Float64Array, Float64Builder, Int16Array, ListArray, StructArray,
+    UInt32Array, UInt64Array,
 };
 use arrow::buffer::OffsetBuffer;
-use arrow::datatypes::{DataType, Field, Fields, Float64Type, Int16Type, UInt64Type};
+use arrow::datatypes::{DataType, Field, Fields, Float64Type, Int16Type, UInt32Type, UInt64Type};
 use datafusion::common::{DataFusionError, Result as DFResult, ScalarValue};
+use datafusion::logical_expr::utils::format_state_name;
 use datafusion::logical_expr::{
     Accumulator, AggregateUDF, AggregateUDFImpl, ColumnarValue, ScalarFunctionArgs, ScalarUDF,
     ScalarUDFImpl, Signature, TypeSignature, Volatility,
 };
+
+const SUPPORTED_SKETCH_FLAGS: u32 = 0;
 
 #[derive(Debug, Clone)]
 pub(crate) struct SketchConfig {
@@ -79,7 +83,94 @@ pub(crate) fn merged_sketch_type() -> DataType {
         Field::new("total_count", DataType::UInt64, false),
         Field::new("global_min", DataType::Float64, false),
         Field::new("global_max", DataType::Float64, false),
+        Field::new("flags", DataType::UInt32, false),
     ]))
+}
+
+fn validate_flags(context: &str, flags: u32) -> DFResult<()> {
+    if flags == SUPPORTED_SKETCH_FLAGS {
+        Ok(())
+    } else {
+        Err(DataFusionError::Execution(format!(
+            "{context}: unsupported sketch flags {flags}"
+        )))
+    }
+}
+
+fn validate_bounds(context: &str, min: f64, max: f64) -> DFResult<()> {
+    if min.is_finite() && max.is_finite() && min <= max {
+        Ok(())
+    } else {
+        Err(DataFusionError::Execution(format!(
+            "{context}: invalid sketch bounds: min={min}, max={max}"
+        )))
+    }
+}
+
+fn quantile_for_row(
+    config: &SketchConfig,
+    keys: &[i16],
+    counts: &[u64],
+    total_count: u64,
+    global_min: f64,
+    global_max: f64,
+    flags: u32,
+    quantile: f64,
+) -> DFResult<Option<f64>> {
+    if !(0.0..=1.0).contains(&quantile) {
+        return Err(DataFusionError::Execution(format!(
+            "dd_quantile: quantile must be between 0.0 and 1.0, got {quantile}"
+        )));
+    }
+    validate_flags("dd_quantile", flags)?;
+
+    if keys.len() != counts.len() {
+        return Err(DataFusionError::Execution(format!(
+            "dd_quantile: keys/counts length mismatch: keys has {} elements but counts has {}",
+            keys.len(),
+            counts.len()
+        )));
+    }
+    let mut bucket_total = 0u64;
+    for count in counts {
+        bucket_total = bucket_total.checked_add(*count).ok_or_else(|| {
+            DataFusionError::Execution("dd_quantile: total bucket count overflow".to_string())
+        })?;
+    }
+    if bucket_total != total_count {
+        return Err(DataFusionError::Execution(format!(
+            "dd_quantile: total_count {total_count} does not match sum(counts) {bucket_total}"
+        )));
+    }
+
+    if total_count == 0 {
+        return Ok(None);
+    }
+    validate_bounds("dd_quantile", global_min, global_max)?;
+
+    if quantile == 0.0 {
+        return Ok(Some(global_min));
+    }
+    if quantile == 1.0 {
+        return Ok(Some(global_max));
+    }
+
+    let rank = (quantile * (total_count as f64 - 1.0)).floor() as u64 + 1;
+    let mut cumulative = 0u64;
+    for (key, count) in keys.iter().zip(counts.iter()) {
+        cumulative = cumulative.checked_add(*count).ok_or_else(|| {
+            DataFusionError::Execution("dd_quantile: cumulative count overflow".to_string())
+        })?;
+        if cumulative >= rank {
+            return Ok(Some(
+                config.quantile_for_key(*key).clamp(global_min, global_max),
+            ));
+        }
+    }
+
+    Err(DataFusionError::Execution(format!(
+        "dd_quantile: bucket counts do not reach rank {rank}"
+    )))
 }
 
 pub(crate) struct DdSketchAccumulator {
@@ -87,6 +178,7 @@ pub(crate) struct DdSketchAccumulator {
     total_count: u64,
     global_min: f64,
     global_max: f64,
+    flags: u32,
 }
 
 impl Debug for DdSketchAccumulator {
@@ -113,6 +205,7 @@ impl DdSketchAccumulator {
             total_count: 0,
             global_min: f64::INFINITY,
             global_max: f64::NEG_INFINITY,
+            flags: SUPPORTED_SKETCH_FLAGS,
         }
     }
 
@@ -123,6 +216,7 @@ impl DdSketchAccumulator {
         count: u64,
         min: f64,
         max: f64,
+        flags: u32,
     ) -> DFResult<()> {
         if keys.len() != counts.len() {
             return Err(DataFusionError::Execution(format!(
@@ -147,9 +241,11 @@ impl DdSketchAccumulator {
             )));
         }
 
+        validate_flags("dd_sketch", flags)?;
         if count == 0 {
             return Ok(());
         }
+        validate_bounds("dd_sketch", min, max)?;
 
         for (key, cnt) in keys.iter().zip(counts.iter()) {
             let current = self.merged_buckets.entry(*key).or_insert(0);
@@ -167,12 +263,17 @@ impl DdSketchAccumulator {
         })?;
         self.global_min = self.global_min.min(min);
         self.global_max = self.global_max.max(max);
+        self.flags = flags;
         Ok(())
     }
 
-    fn state_arrays(&self) -> (ArrayRef, ArrayRef, ArrayRef, ArrayRef, ArrayRef) {
-        let keys: Vec<i16> = self.merged_buckets.keys().copied().collect();
-        let counts: Vec<u64> = self.merged_buckets.values().copied().collect();
+    fn state_arrays(&self) -> (ArrayRef, ArrayRef, ArrayRef, ArrayRef, ArrayRef, ArrayRef) {
+        let mut keys = Vec::with_capacity(self.merged_buckets.len());
+        let mut counts = Vec::with_capacity(self.merged_buckets.len());
+        for (key, count) in &self.merged_buckets {
+            keys.push(*key);
+            counts.push(*count);
+        }
 
         let keys_array = Arc::new(Int16Array::from(keys)) as ArrayRef;
         let counts_array = Arc::new(UInt64Array::from(counts)) as ArrayRef;
@@ -196,6 +297,7 @@ impl DdSketchAccumulator {
             Arc::new(UInt64Array::from(vec![self.total_count])) as ArrayRef,
             Arc::new(Float64Array::from(vec![self.global_min])) as ArrayRef,
             Arc::new(Float64Array::from(vec![self.global_max])) as ArrayRef,
+            Arc::new(UInt32Array::from(vec![self.flags])) as ArrayRef,
         )
     }
 }
@@ -207,6 +309,12 @@ impl Accumulator for DdSketchAccumulator {
         let count_array = values[2].as_primitive::<UInt64Type>();
         let min_array = values[3].as_primitive::<Float64Type>();
         let max_array = values[4].as_primitive::<Float64Type>();
+        let flags_array = values[5].as_primitive::<UInt32Type>();
+
+        let key_offsets = keys_list.value_offsets();
+        let key_values = keys_list.values().as_primitive::<Int16Type>().values();
+        let count_offsets = counts_list.value_offsets();
+        let count_values = counts_list.values().as_primitive::<UInt64Type>().values();
 
         for row_idx in 0..keys_list.len() {
             if keys_list.is_null(row_idx)
@@ -214,21 +322,23 @@ impl Accumulator for DdSketchAccumulator {
                 || count_array.is_null(row_idx)
                 || min_array.is_null(row_idx)
                 || max_array.is_null(row_idx)
+                || flags_array.is_null(row_idx)
             {
                 continue;
             }
 
-            let keys_arr = keys_list.value(row_idx);
-            let keys = keys_arr.as_primitive::<Int16Type>();
-            let counts_arr = counts_list.value(row_idx);
-            let counts = counts_arr.as_primitive::<UInt64Type>();
+            let key_start = key_offsets[row_idx] as usize;
+            let key_end = key_offsets[row_idx + 1] as usize;
+            let count_start = count_offsets[row_idx] as usize;
+            let count_end = count_offsets[row_idx + 1] as usize;
 
             self.update_single(
-                keys.values(),
-                counts.values(),
+                &key_values[key_start..key_end],
+                &count_values[count_start..count_end],
                 count_array.value(row_idx),
                 min_array.value(row_idx),
                 max_array.value(row_idx),
+                flags_array.value(row_idx),
             )?;
         }
 
@@ -236,30 +346,41 @@ impl Accumulator for DdSketchAccumulator {
     }
 
     fn evaluate(&mut self) -> DFResult<ScalarValue> {
-        let (keys_list, counts_list, total_count_arr, min_arr, max_arr) = self.state_arrays();
+        let (keys_list, counts_list, total_count_arr, min_arr, max_arr, flags_arr) =
+            self.state_arrays();
         let fields = Fields::from(vec![
             Field::new("keys", keys_list.data_type().clone(), false),
             Field::new("counts", counts_list.data_type().clone(), false),
             Field::new("total_count", DataType::UInt64, false),
             Field::new("global_min", DataType::Float64, false),
             Field::new("global_max", DataType::Float64, false),
+            Field::new("flags", DataType::UInt32, false),
         ]);
 
         Ok(ScalarValue::Struct(Arc::new(StructArray::try_new(
             fields,
-            vec![keys_list, counts_list, total_count_arr, min_arr, max_arr],
+            vec![
+                keys_list,
+                counts_list,
+                total_count_arr,
+                min_arr,
+                max_arr,
+                flags_arr,
+            ],
             None,
         )?)))
     }
 
     fn state(&mut self) -> DFResult<Vec<ScalarValue>> {
-        let (keys_list, counts_list, total_count_arr, min_arr, max_arr) = self.state_arrays();
+        let (keys_list, counts_list, total_count_arr, min_arr, max_arr, flags_arr) =
+            self.state_arrays();
         Ok(vec![
             ScalarValue::List(Arc::new(keys_list.as_list::<i32>().clone())),
             ScalarValue::List(Arc::new(counts_list.as_list::<i32>().clone())),
             ScalarValue::UInt64(Some(total_count_arr.as_primitive::<UInt64Type>().value(0))),
             ScalarValue::Float64(Some(min_arr.as_primitive::<Float64Type>().value(0))),
             ScalarValue::Float64(Some(max_arr.as_primitive::<Float64Type>().value(0))),
+            ScalarValue::UInt32(Some(flags_arr.as_primitive::<UInt32Type>().value(0))),
         ])
     }
 
@@ -301,6 +422,7 @@ impl DdSketchUdaf {
                     DataType::UInt64,
                     DataType::Float64,
                     DataType::Float64,
+                    DataType::UInt32,
                 ],
                 Volatility::Immutable,
             ),
@@ -334,22 +456,39 @@ impl AggregateUDFImpl for DdSketchUdaf {
 
     fn state_fields(
         &self,
-        _args: datafusion::logical_expr::function::StateFieldsArgs,
+        args: datafusion::logical_expr::function::StateFieldsArgs,
     ) -> DFResult<Vec<Arc<Field>>> {
         Ok(vec![
             Arc::new(Field::new(
-                "merged_keys",
+                format_state_name(args.name, "merged_keys"),
                 DataType::List(Arc::new(Field::new("item", DataType::Int16, false))),
                 true,
             )),
             Arc::new(Field::new(
-                "merged_counts",
+                format_state_name(args.name, "merged_counts"),
                 DataType::List(Arc::new(Field::new("item", DataType::UInt64, false))),
                 true,
             )),
-            Arc::new(Field::new("total_count", DataType::UInt64, true)),
-            Arc::new(Field::new("global_min", DataType::Float64, true)),
-            Arc::new(Field::new("global_max", DataType::Float64, true)),
+            Arc::new(Field::new(
+                format_state_name(args.name, "total_count"),
+                DataType::UInt64,
+                true,
+            )),
+            Arc::new(Field::new(
+                format_state_name(args.name, "global_min"),
+                DataType::Float64,
+                true,
+            )),
+            Arc::new(Field::new(
+                format_state_name(args.name, "global_max"),
+                DataType::Float64,
+                true,
+            )),
+            Arc::new(Field::new(
+                format_state_name(args.name, "flags"),
+                DataType::UInt32,
+                true,
+            )),
         ])
     }
 }
@@ -416,8 +555,14 @@ impl ScalarUDFImpl for DdQuantileUdf {
         let total_count_col = sketches.column(2).as_primitive::<UInt64Type>();
         let min_col = sketches.column(3).as_primitive::<Float64Type>();
         let max_col = sketches.column(4).as_primitive::<Float64Type>();
+        let flags_col = sketches.column(5).as_primitive::<UInt32Type>();
 
-        let mut results = Vec::with_capacity(args.number_rows);
+        let key_offsets = keys_col.value_offsets();
+        let key_values = keys_col.values().as_primitive::<Int16Type>().values();
+        let count_offsets = counts_col.value_offsets();
+        let count_values = counts_col.values().as_primitive::<UInt64Type>().values();
+
+        let mut results = Float64Builder::with_capacity(args.number_rows);
         for row in 0..args.number_rows {
             if sketches.is_null(row)
                 || keys_col.is_null(row)
@@ -425,67 +570,34 @@ impl ScalarUDFImpl for DdQuantileUdf {
                 || total_count_col.is_null(row)
                 || min_col.is_null(row)
                 || max_col.is_null(row)
+                || flags_col.is_null(row)
                 || quantiles.is_null(row)
             {
-                results.push(None);
+                results.append_null();
                 continue;
             }
 
-            let quantile = quantiles.value(row);
-            if !(0.0..=1.0).contains(&quantile) {
-                return Err(DataFusionError::Execution(format!(
-                    "dd_quantile: quantile must be between 0.0 and 1.0, got {quantile}"
-                )));
-            }
+            let key_start = key_offsets[row] as usize;
+            let key_end = key_offsets[row + 1] as usize;
+            let count_start = count_offsets[row] as usize;
+            let count_end = count_offsets[row + 1] as usize;
 
-            let total_count = total_count_col.value(row);
-            if total_count == 0 {
-                results.push(None);
-                continue;
+            match quantile_for_row(
+                &self.config,
+                &key_values[key_start..key_end],
+                &count_values[count_start..count_end],
+                total_count_col.value(row),
+                min_col.value(row),
+                max_col.value(row),
+                flags_col.value(row),
+                quantiles.value(row),
+            )? {
+                Some(value) => results.append_value(value),
+                None => results.append_null(),
             }
-
-            let global_min = min_col.value(row);
-            let global_max = max_col.value(row);
-            if quantile == 0.0 {
-                results.push(Some(global_min));
-                continue;
-            }
-            if quantile == 1.0 {
-                results.push(Some(global_max));
-                continue;
-            }
-
-            let rank = (quantile * (total_count as f64 - 1.0)).floor() as u64 + 1;
-            let keys_arr = keys_col.value(row);
-            let keys = keys_arr.as_primitive::<Int16Type>();
-            let counts_arr = counts_col.value(row);
-            let counts = counts_arr.as_primitive::<UInt64Type>();
-            if keys.len() != counts.len() {
-                return Err(DataFusionError::Execution(format!(
-                    "dd_quantile: keys/counts length mismatch: keys has {} elements but counts has {}",
-                    keys.len(),
-                    counts.len()
-                )));
-            }
-
-            let mut cumulative = 0u64;
-            let mut value = global_max;
-            for idx in 0..keys.len() {
-                cumulative = cumulative.checked_add(counts.value(idx)).ok_or_else(|| {
-                    DataFusionError::Execution("dd_quantile: cumulative count overflow".to_string())
-                })?;
-                if cumulative >= rank {
-                    value = self
-                        .config
-                        .quantile_for_key(keys.value(idx))
-                        .clamp(global_min, global_max);
-                    break;
-                }
-            }
-            results.push(Some(value));
         }
 
-        Ok(ColumnarValue::Array(Arc::new(Float64Array::from(results))))
+        Ok(ColumnarValue::Array(Arc::new(results.finish())))
     }
 }
 
@@ -504,9 +616,9 @@ mod tests {
     #[test]
     fn merge_accumulator_coalesces_keys() {
         let mut acc = DdSketchAccumulator::new();
-        acc.update_single(&[1338, 1784], &[131_072, 1], 131_073, 1.0, 1000.0)
+        acc.update_single(&[1338, 1784], &[131_072, 1], 131_073, 1.0, 1000.0, 0)
             .unwrap();
-        acc.update_single(&[1338, 1784], &[128, 4], 132, 1.0, 1000.0)
+        acc.update_single(&[1338, 1784], &[128, 4], 132, 1.0, 1000.0, 0)
             .unwrap();
 
         assert_eq!(acc.total_count, 131_205);
@@ -515,11 +627,49 @@ mod tests {
     }
 
     #[test]
+    fn merge_batch_combines_partial_states() {
+        let mut left = DdSketchAccumulator::new();
+        left.update_single(&[1338, 1400], &[3, 1], 4, 1.0, 2.0, 0)
+            .unwrap();
+        let mut right = DdSketchAccumulator::new();
+        right
+            .update_single(&[1338, 1450], &[2, 1], 3, 1.0, 6.0, 0)
+            .unwrap();
+
+        let left_state = left.state().unwrap();
+        let right_state = right.state().unwrap();
+        let state_arrays = (0..left_state.len())
+            .map(|idx| {
+                ScalarValue::iter_to_array(vec![left_state[idx].clone(), right_state[idx].clone()])
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let mut merged = DdSketchAccumulator::new();
+        merged.merge_batch(&state_arrays).unwrap();
+
+        let mut one_pass = DdSketchAccumulator::new();
+        one_pass
+            .update_single(&[1338, 1400], &[3, 1], 4, 1.0, 2.0, 0)
+            .unwrap();
+        one_pass
+            .update_single(&[1338, 1450], &[2, 1], 3, 1.0, 6.0, 0)
+            .unwrap();
+
+        assert_eq!(merged.total_count, one_pass.total_count);
+        assert_eq!(merged.global_min, one_pass.global_min);
+        assert_eq!(merged.global_max, one_pass.global_max);
+        assert_eq!(merged.flags, one_pass.flags);
+        assert_eq!(merged.merged_buckets, one_pass.merged_buckets);
+    }
+
+    #[test]
     fn merge_accumulator_ignores_empty_sketch_bounds() {
         let mut acc = DdSketchAccumulator::new();
-        acc.update_single(&[], &[], 0, -999.0, 999.0).unwrap();
-        acc.update_single(&[1338], &[2], 2, 1.0, 2.0).unwrap();
-        acc.update_single(&[999], &[0], 0, -123.0, 456.0).unwrap();
+        acc.update_single(&[], &[], 0, -999.0, 999.0, 0).unwrap();
+        acc.update_single(&[1338], &[2], 2, 1.0, 2.0, 0).unwrap();
+        acc.update_single(&[999], &[0], 0, -123.0, 456.0, 0)
+            .unwrap();
 
         assert_eq!(acc.total_count, 2);
         assert_eq!(acc.global_min, 1.0);
@@ -529,10 +679,29 @@ mod tests {
     }
 
     #[test]
+    fn merge_accumulator_rejects_invalid_bounds_for_non_empty_sketch() {
+        let mut acc = DdSketchAccumulator::new();
+        let reversed = acc.update_single(&[1], &[1], 1, 2.0, 1.0, 0).unwrap_err();
+        assert!(reversed.to_string().contains("invalid sketch bounds"));
+
+        let nan = acc
+            .update_single(&[1], &[1], 1, f64::NAN, 1.0, 0)
+            .unwrap_err();
+        assert!(nan.to_string().contains("invalid sketch bounds"));
+    }
+
+    #[test]
+    fn merge_accumulator_rejects_unsupported_flags() {
+        let mut acc = DdSketchAccumulator::new();
+        let err = acc.update_single(&[1], &[1], 1, 1.0, 1.0, 1).unwrap_err();
+        assert!(err.to_string().contains("unsupported sketch flags"));
+    }
+
+    #[test]
     fn merge_accumulator_rejects_inconsistent_summary_count() {
         let mut acc = DdSketchAccumulator::new();
         let err = acc
-            .update_single(&[1, 2], &[3, 4], 99, 1.0, 2.0)
+            .update_single(&[1, 2], &[3, 4], 99, 1.0, 2.0, 0)
             .unwrap_err();
 
         assert!(
@@ -548,5 +717,67 @@ mod tests {
         assert!((config.quantile_for_key(1338) - 1.0).abs() < f64::EPSILON);
         assert!((config.quantile_for_key(1784) - 1000.0).abs() < 10.0);
         assert_eq!(config.quantile_for_key(0), 0.0);
+    }
+
+    #[test]
+    fn quantile_for_row_validates_inputs() {
+        let config = SketchConfig::default();
+        let invalid_q = quantile_for_row(&config, &[1], &[1], 1, 1.0, 1.0, 0, 1.5).unwrap_err();
+        assert!(invalid_q.to_string().contains("quantile must be"));
+
+        let reversed_bounds =
+            quantile_for_row(&config, &[1], &[1], 1, 2.0, 1.0, 0, 0.5).unwrap_err();
+        assert!(
+            reversed_bounds
+                .to_string()
+                .contains("invalid sketch bounds")
+        );
+
+        let nan_bounds =
+            quantile_for_row(&config, &[1], &[1], 1, f64::NAN, 1.0, 0, 0.5).unwrap_err();
+        assert!(nan_bounds.to_string().contains("invalid sketch bounds"));
+
+        let flags = quantile_for_row(&config, &[1], &[1], 1, 1.0, 1.0, 1, 0.5).unwrap_err();
+        assert!(flags.to_string().contains("unsupported sketch flags"));
+
+        let mismatched_lengths =
+            quantile_for_row(&config, &[1, 2], &[1], 1, 1.0, 1.0, 0, 0.5).unwrap_err();
+        assert!(
+            mismatched_lengths
+                .to_string()
+                .contains("keys/counts length mismatch")
+        );
+
+        let mismatched_total =
+            quantile_for_row(&config, &[1], &[2], 1, 1.0, 1.0, 0, 0.5).unwrap_err();
+        assert!(mismatched_total.to_string().contains("does not match"));
+    }
+
+    #[test]
+    fn quantile_for_row_handles_bounds_and_empty_sketches() {
+        let config = SketchConfig::default();
+
+        assert_eq!(
+            quantile_for_row(
+                &config,
+                &[],
+                &[],
+                0,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                0,
+                0.5
+            )
+            .unwrap(),
+            None
+        );
+        assert_eq!(
+            quantile_for_row(&config, &[1338], &[2], 2, 1.0, 2.0, 0, 0.0).unwrap(),
+            Some(1.0)
+        );
+        assert_eq!(
+            quantile_for_row(&config, &[1338], &[2], 2, 1.0, 2.0, 0, 1.0).unwrap(),
+            Some(2.0)
+        );
     }
 }

@@ -126,8 +126,8 @@ async fn test_sketch_merge_and_quantile_sql() {
             SUM("sum") AS total_sum,
             MIN("min") AS global_min,
             MAX("max") AS global_max,
-            dd_quantile(dd_sketch(keys, counts, "count", "min", "max"), 0.50) AS p50,
-            dd_quantile(dd_sketch(keys, counts, "count", "min", "max"), 0.99) AS p99
+            dd_quantile(dd_sketch(keys, counts, "count", "min", "max", flags), 0.50) AS p50,
+            dd_quantile(dd_sketch(keys, counts, "count", "min", "max", flags), 0.99) AS p99
         FROM "sketches-latency"
         WHERE metric_name = 'req.latency' AND timestamp_secs = 600
     "#;
@@ -145,6 +145,31 @@ async fn test_sketch_merge_and_quantile_sql() {
     assert!((p50 - 1.0).abs() < f64::EPSILON, "p50={p50}");
     assert!((p99 - 5.677260965422914).abs() < 1e-12, "p99={p99}");
 
+    let multiple_sketch_states_sql = r#"
+        SELECT
+            dd_quantile(dd_sketch(keys, counts, "count", "min", "max", flags), 0.99) AS p99_all,
+            dd_quantile(
+                dd_sketch(keys, counts, "count", "min", "max", flags)
+                    FILTER (WHERE "max" <= 20.0),
+                0.99
+            ) AS p99_filtered
+        FROM "sketches-latency"
+        WHERE metric_name = 'req.latency' AND timestamp_secs = 600
+    "#;
+    let multiple_state_batches = run_sql(&builder, multiple_sketch_states_sql).await;
+    assert_eq!(multiple_state_batches.len(), 1);
+    assert_eq!(multiple_state_batches[0].num_rows(), 1);
+    let p99_all = float_value(&multiple_state_batches[0], "p99_all");
+    let p99_filtered = float_value(&multiple_state_batches[0], "p99_filtered");
+    assert!(
+        (p99_all - 5.677260965422914).abs() < 1e-12,
+        "p99_all={p99_all}"
+    );
+    assert!(
+        (p99_filtered - 2.614988148096247).abs() < 1e-12,
+        "p99_filtered={p99_filtered}"
+    );
+
     let ddl_sql = r#"
         CREATE EXTERNAL TABLE "sketches_explicit" (
             metric_name VARCHAR NOT NULL,
@@ -159,7 +184,7 @@ async fn test_sketch_merge_and_quantile_sql() {
         ) STORED AS sketches LOCATION 'sketches-latency';
 
         SELECT
-            dd_quantile(dd_sketch(keys, counts, "count", "min", "max"), 0.50) AS p50
+            dd_quantile(dd_sketch(keys, counts, "count", "min", "max", flags), 0.50) AS p50
         FROM "sketches_explicit"
         WHERE metric_name = 'req.latency' AND timestamp_secs = 600
     "#;
@@ -218,7 +243,7 @@ async fn test_sketch_merge_and_quantile_substrait() {
         .sql(
             r#"
             SELECT
-                dd_quantile(dd_sketch(keys, counts, "count", "min", "max"), 0.50) AS p50
+                dd_quantile(dd_sketch(keys, counts, "count", "min", "max", flags), 0.50) AS p50
             FROM "sketches-substrait"
             WHERE metric_name = 'req.latency' AND timestamp_secs = 600
             "#,
