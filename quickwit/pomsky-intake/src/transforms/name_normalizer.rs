@@ -107,12 +107,24 @@ impl FunctionTransform for NameNormalizer {
 // ---------------------------------------------------------------------------
 
 fn normalize_log(log: &mut LogEvent) {
+    // TODO(name-normalization): hostname normalization rewrites the lookup
+    // key used by `add_host_tags` against `HostTagsStore`. Lookups assume the
+    // metadata service returns hostnames in the same normalized form.
+    // Awaiting confirmation from the metadata-service team before relying on
+    // this in production.
     if let Some(host) = log.get("hostname").and_then(|v| v.as_str())
         && let Some(new_host) = normalize_hostname(&host)
     {
         log.insert("hostname", new_host);
     }
 
+    normalize_log_ddtags(log);
+
+    // The `tags.*` object isn't populated for Datadog Agent logs at this
+    // stage (those tags ride in `ddtags`, handled above) but may exist for
+    // other sources or after future pipeline rewires. Normalize it
+    // defensively so the contract — "after this transform, all tag keys and
+    // values are normalized" — holds regardless of source shape.
     let Some(tags_value) = log.get_mut("tags") else {
         return;
     };
@@ -129,6 +141,12 @@ fn normalize_metric(metric: &mut Metric) {
     let Some(tags_mut) = metric.tags_mut() else {
         return;
     };
+    // TODO(name-normalization): `into_iter_single` flattens multi-valued
+    // tags to their last value (silently losing the rest) and drops bare
+    // (no-value) tags entirely. Pre-existing single-valued tag handling is
+    // unchanged. Awaiting reviewer feedback on whether to preserve
+    // multi-value tag sets, surface a metric/log when one is observed, or
+    // keep the current "last value wins" behavior.
     let original = std::mem::take(tags_mut);
     for (key, value) in original.into_iter_single() {
         if key == "host" {
@@ -137,11 +155,20 @@ fn normalize_metric(metric: &mut Metric) {
             metric.replace_tag(key, value);
             continue;
         }
-        let new_key = normalize_tag(&key);
-        if new_key.is_empty() {
-            continue;
-        }
-        let new_value = normalize_tag_value(&value);
+        let new_key = if is_normalized_tag_key(&key) {
+            key
+        } else {
+            let n = normalize_tag(&key);
+            if n.is_empty() {
+                continue;
+            }
+            n
+        };
+        let new_value = if is_normalized_tag_value(&value) {
+            value
+        } else {
+            normalize_tag_value(&value)
+        };
         metric.replace_tag(new_key, new_value);
     }
 }
@@ -156,6 +183,12 @@ fn normalize_trace(trace: &mut TraceEvent) {
     let Some(meta_value) = trace.get_mut("meta") else {
         return;
     };
+    // TODO(name-normalization): `_dd` is the only top-level reserved
+    // namespace we currently treat as pass-through. Other potentially
+    // reserved or protocol-significant keys under `meta` (e.g. `env`,
+    // `version`, `service`, span-link metadata) are still normalized,
+    // which may rewrite them. Awaiting reviewer feedback on which keys
+    // should be added to the skip-list.
     normalize_object_map(meta_value, |key| {
         // Skip the hostname (already normalized above) and the Datadog-internal
         // `_dd` namespace. Vector parses dots in target paths as separators, so
@@ -179,15 +212,116 @@ fn normalize_object_map(value: &mut Value, skip: impl Fn(&str) -> bool) {
             map.insert(key, val);
             continue;
         }
-        let new_key = normalize_tag(key.as_str());
-        if new_key.is_empty() {
-            continue;
-        }
-        let new_val = match val.as_str() {
-            Some(s) => Value::from(normalize_tag_value(&s)),
+        // Fast path: if the key is already normalized, reuse the existing
+        // KeyString and skip the slow-path allocation. Falls through only
+        // when normalization would mutate the key (or the input contains
+        // non-ASCII characters that require Unicode lowercasing).
+        let new_key = if is_normalized_tag_key(key.as_str()) {
+            key
+        } else {
+            let n = normalize_tag(key.as_str());
+            if n.is_empty() {
+                continue;
+            }
+            KeyString::from(n)
+        };
+        // Fast path on the value mirrors the key path: if the existing
+        // string is already normalized (or the value isn't a string at all),
+        // reuse the original `Value` without constructing a new one. This
+        // matters for high-cardinality telemetry where most tag values pass
+        // through unchanged.
+        let value_change: Option<String> = match val.as_str() {
+            Some(s) if !is_normalized_tag_value(&s) => Some(normalize_tag_value(&s)),
+            _ => None,
+        };
+        let new_val = match value_change {
+            Some(new) => Value::from(new),
             None => val,
         };
-        map.insert(KeyString::from(new_key), new_val);
+        map.insert(new_key, new_val);
+    }
+}
+
+/// Normalizes the `ddtags` field on a Datadog Agent log. By default the
+/// agent emits a comma-separated string ("env:prod,team:foo"); when the
+/// upstream `datadog_agent` source has `parse_ddtags = true`, the field
+/// arrives as a `Value::Array` of strings instead. We handle both shapes.
+fn normalize_log_ddtags(log: &mut LogEvent) {
+    // CSV path: read once, write only on change. Borrow ends at the
+    // `and_then` boundary because `normalize_ddtags_csv` returns an owned
+    // `Option<String>`, freeing `log` for the subsequent `insert`.
+    let csv_replacement = log
+        .get("ddtags")
+        .and_then(|v| v.as_str())
+        .and_then(|s| normalize_ddtags_csv(&s));
+    if let Some(new) = csv_replacement {
+        log.insert("ddtags", new);
+        return;
+    }
+    // Array path: mutate in place. Only reached when `ddtags` is not a
+    // string (so the CSV branch was a no-op).
+    if let Some(Value::Array(arr)) = log.get_mut("ddtags") {
+        normalize_ddtags_array(arr);
+    }
+}
+
+/// Normalizes a comma-separated `ddtags` CSV string. Returns `Some(new)`
+/// when at least one tag was rewritten or dropped, or `None` when every
+/// entry was already in normalized form (no allocation in the common case).
+fn normalize_ddtags_csv(input: &str) -> Option<String> {
+    if input.is_empty() {
+        return None;
+    }
+    let mut output = String::new();
+    let mut any_change = false;
+    let mut wrote_first = false;
+    for tag in input.split(',') {
+        if is_normalized_tag_key(tag) {
+            if !wrote_first {
+                output.reserve(input.len());
+            }
+            if wrote_first {
+                output.push(',');
+            }
+            output.push_str(tag);
+            wrote_first = true;
+            continue;
+        }
+        any_change = true;
+        let normalized = normalize_tag(tag);
+        if normalized.is_empty() {
+            continue;
+        }
+        if !wrote_first {
+            output.reserve(input.len());
+        }
+        if wrote_first {
+            output.push(',');
+        }
+        output.push_str(&normalized);
+        wrote_first = true;
+    }
+    if any_change { Some(output) } else { None }
+}
+
+/// In-place normalization of a `parse_ddtags = true`-shaped array of tag
+/// strings. Non-string entries pass through; entries that are already
+/// normalized are reused without allocation.
+fn normalize_ddtags_array(arr: &mut Vec<Value>) {
+    let original = std::mem::take(arr);
+    arr.reserve(original.len());
+    for v in original {
+        // Decide what to do without holding a borrow into `v`, so we can
+        // freely move it into `arr` afterwards.
+        let replacement: Option<String> = match v.as_str() {
+            Some(s) if !is_normalized_tag_key(&s) => Some(normalize_tag(&s)),
+            _ => None,
+        };
+        match replacement {
+            Some(n) if n.is_empty() => {} // drop
+            Some(n) => arr.push(Value::from(n)),
+            None => arr.push(v),
+        }
     }
 }
 
@@ -243,6 +377,69 @@ fn normalize_tag(input: &str) -> String {
 /// matching `dd-go/model/tags.go::NormalizeTagValue`.
 fn normalize_tag_value(input: &str) -> String {
     normalize_tag_value_with_max(input, MAX_TAG_LENGTH)
+}
+
+/// Fast path: returns `true` iff `normalize_tag(input) == input`. Limited to
+/// pure-ASCII inputs because non-ASCII characters require Unicode-aware
+/// lowercasing (handled by the slow path). When this returns `true` the
+/// caller can reuse the existing `String`/`KeyString` without allocating.
+fn is_normalized_tag_key(input: &str) -> bool {
+    if input.is_empty() || input.len() > MAX_TAG_LENGTH || !input.is_ascii() {
+        return false;
+    }
+    let bytes = input.as_bytes();
+    if !matches!(bytes[0], b'a'..=b'z' | b':') {
+        return false;
+    }
+    let mut last_was_underscore = false;
+    for &b in bytes {
+        match b {
+            b'a'..=b'z' | b'0'..=b'9' | b':' | b'.' | b'/' | b'-' => {
+                last_was_underscore = false;
+            }
+            b'_' => {
+                if last_was_underscore {
+                    return false;
+                }
+                last_was_underscore = true;
+            }
+            _ => return false,
+        }
+    }
+    !last_was_underscore
+}
+
+/// Fast path mirror of [`is_normalized_tag_key`] for tag *values*. Differs
+/// from the key check by also accepting leading digits / `.` / `/` / `-`,
+/// matching `normalize_tag_value`'s relaxed leading-character rule. Empty
+/// input is considered already normalized (empty values are valid).
+fn is_normalized_tag_value(input: &str) -> bool {
+    if input.is_empty() {
+        return true;
+    }
+    if input.len() > MAX_TAG_LENGTH || !input.is_ascii() {
+        return false;
+    }
+    let bytes = input.as_bytes();
+    if !matches!(bytes[0], b'a'..=b'z' | b':' | b'0'..=b'9' | b'.' | b'/' | b'-') {
+        return false;
+    }
+    let mut last_was_underscore = false;
+    for &b in bytes {
+        match b {
+            b'a'..=b'z' | b'0'..=b'9' | b':' | b'.' | b'/' | b'-' => {
+                last_was_underscore = false;
+            }
+            b'_' => {
+                if last_was_underscore {
+                    return false;
+                }
+                last_was_underscore = true;
+            }
+            _ => return false,
+        }
+    }
+    !last_was_underscore
 }
 
 fn normalize_tag_with_max(input: &str, max_tag_length: usize) -> String {
@@ -548,6 +745,181 @@ mod tests {
         assert!(m.tag_value("ENV").is_none());
         // Empty-key tag dropped.
         assert!(m.tag_value("!!!").is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // Fast-path helper tests
+    // -----------------------------------------------------------------------
+
+    /// Property-style sanity check: when `is_normalized_tag_key` returns true,
+    /// the slow path must produce the input verbatim. When it returns false,
+    /// the slow path may or may not differ (Unicode-only inputs always return
+    /// false even when already lowercase).
+    #[test]
+    fn fast_path_key_is_consistent_with_slow_path() {
+        let already_normalized = [
+            "env:prod",
+            "region:us-east-1",
+            "foo",
+            "foo:bar:baz",
+            "service",
+            "k8s.io/cluster",
+        ];
+        for input in already_normalized {
+            assert!(
+                is_normalized_tag_key(input),
+                "expected fast path to accept {input:?}",
+            );
+            assert_eq!(
+                normalize_tag(input),
+                input,
+                "slow path should be a no-op for {input:?}",
+            );
+        }
+
+        let needs_change = [
+            "",         // empty (treated as not-normalized so caller can drop)
+            "ENV:PROD", // uppercase
+            "foo bar",  // space
+            "foo!",     // trailing non-alnum
+            "foo__bar", // contiguous underscore
+            "foo_",     // trailing underscore
+            "123foo",   // leading digit
+            "Ωmega",    // non-ASCII
+        ];
+        for input in needs_change {
+            assert!(
+                !is_normalized_tag_key(input),
+                "expected fast path to reject {input:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn fast_path_value_is_consistent_with_slow_path() {
+        let already_normalized = [
+            "", // empty value is allowed
+            "prod",
+            "1.2.3",
+            "-foo",
+            "/var/log",
+            "us-east-1",
+        ];
+        for input in already_normalized {
+            assert!(
+                is_normalized_tag_value(input),
+                "expected fast path to accept {input:?}",
+            );
+            assert_eq!(
+                normalize_tag_value(input),
+                input,
+                "slow path should be a no-op for {input:?}",
+            );
+        }
+
+        let needs_change = [
+            "Prod",          // uppercase
+            "my service",    // space
+            "value!",        // trailing non-alnum
+            "trail_",        // trailing underscore
+            "double__under", // contiguous underscore
+        ];
+        for input in needs_change {
+            assert!(
+                !is_normalized_tag_value(input),
+                "expected fast path to reject {input:?}",
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // ddtags — unit tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn ddtags_csv_already_normalized_is_noop() {
+        assert_eq!(normalize_ddtags_csv("env:prod,team:foo"), None);
+        assert_eq!(normalize_ddtags_csv(""), None);
+    }
+
+    #[test]
+    fn ddtags_csv_rewrites_uppercase_and_spaces() {
+        assert_eq!(
+            normalize_ddtags_csv("ENV:PROD,Service:My Service").as_deref(),
+            Some("env:prod,service:my_service"),
+        );
+    }
+
+    #[test]
+    fn ddtags_csv_drops_empty_normalized_entries() {
+        // `123` and `!!!` both normalize to "" and are dropped; surviving
+        // entries are joined with commas (no leading/trailing comma).
+        assert_eq!(
+            normalize_ddtags_csv("123,env:prod,!!!").as_deref(),
+            Some("env:prod"),
+        );
+    }
+
+    #[test]
+    fn ddtags_csv_dropping_only_entry_yields_empty_string() {
+        assert_eq!(normalize_ddtags_csv("123").as_deref(), Some(""));
+    }
+
+    #[test]
+    fn log_ddtags_csv_string_is_normalized() {
+        let mut log = LogEvent::default();
+        log.insert("hostname", "web-01");
+        log.insert("ddtags", "ENV:PROD,Service:My Service");
+
+        let events = run(Event::Log(log));
+        let log = events[0].as_log();
+        assert_eq!(
+            log.get("ddtags"),
+            Some(&Value::from("env:prod,service:my_service")),
+        );
+    }
+
+    #[test]
+    fn log_ddtags_csv_string_unchanged_is_not_rewritten() {
+        let mut log = LogEvent::default();
+        log.insert("hostname", "web-01");
+        log.insert("ddtags", "env:prod,team:foo");
+
+        let events = run(Event::Log(log));
+        let log = events[0].as_log();
+        assert_eq!(log.get("ddtags"), Some(&Value::from("env:prod,team:foo")));
+    }
+
+    #[test]
+    fn log_ddtags_array_is_normalized_in_place() {
+        // Simulates the shape produced when the `datadog_agent` source has
+        // `parse_ddtags = true`: ddtags arrives as `Value::Array`.
+        let mut log = LogEvent::default();
+        log.insert("hostname", "web-01");
+        log.insert(
+            "ddtags",
+            Value::Array(vec![
+                Value::from("ENV:PROD"),
+                Value::from("Service:My Service"),
+                Value::from("123"), // normalizes to empty → dropped
+                Value::from("env:already_clean"),
+            ]),
+        );
+
+        let events = run(Event::Log(log));
+        let log = events[0].as_log();
+        let arr = match log.get("ddtags") {
+            Some(Value::Array(a)) => a,
+            other => panic!("expected ddtags array, got {other:?}"),
+        };
+        let strings: Vec<String> = arr
+            .iter()
+            .filter_map(|v| v.as_str().map(|c| c.into_owned()))
+            .collect();
+        assert_eq!(
+            strings,
+            vec!["env:prod", "service:my_service", "env:already_clean"],
+        );
     }
 
     #[test]
