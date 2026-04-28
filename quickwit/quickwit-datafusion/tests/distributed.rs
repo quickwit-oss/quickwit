@@ -204,6 +204,11 @@ async fn test_distributed_tasks_not_shuffles() {
         "expected sorted-series worker streams to be merge-sorted:\n{plan_str}"
     );
     assert!(
+        !plan_str.contains("SortExec: expr=[sorted_series"),
+        "expected sorted-series worker streams to use preserved ordering without an explicit \
+         sort:\n{plan_str}"
+    );
+    assert!(
         !plan_str.contains("NetworkShuffleExec"),
         "expected no network shuffle for sorted-series finalization:\n{plan_str}"
     );

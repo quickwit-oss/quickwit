@@ -657,11 +657,17 @@ async fn test_rollup_nested_aggregation() {
     );
     assert!(
         plan_str.contains("AggregateExec: mode=Final, gby=[sorted_series"),
-        "expected sorted_series finalization to be single-partition streaming after merge:\n{plan_str}"
+        "expected sorted_series finalization to be single-partition streaming after \
+         merge:\n{plan_str}"
     );
     assert!(
         plan_str.contains("SortPreservingMergeExec: [sorted_series"),
         "expected sorted_series partials to be merge-sorted before finalization:\n{plan_str}"
+    );
+    assert!(
+        !plan_str.contains("SortExec: expr=[sorted_series"),
+        "expected sorted_series partials to use preserved ordering without an explicit \
+         sort:\n{plan_str}"
     );
     assert!(
         !plan_str.contains("Hash([sorted_series"),

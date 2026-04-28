@@ -22,11 +22,11 @@ use datafusion::error::Result as DFResult;
 use datafusion::physical_expr::expressions::Column;
 use datafusion::physical_expr::{LexOrdering, Partitioning};
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
-use datafusion::physical_plan::ExecutionPlan;
 use datafusion::physical_plan::aggregates::{AggregateExec, AggregateMode};
 use datafusion::physical_plan::repartition::RepartitionExec;
 use datafusion::physical_plan::sorts::sort::SortExec;
 use datafusion::physical_plan::sorts::sort_preserving_merge::SortPreservingMergeExec;
+use datafusion::physical_plan::{ExecutionPlan, ExecutionPlanProperties};
 use quickwit_parquet_engine::sorted_series::SORTED_SERIES_COLUMN;
 
 /// Replaces the inner sorted-series hash repartition in rollup plans with a
@@ -93,10 +93,17 @@ fn rewrite_sorted_series_final_aggregate(
     }
 
     let ordering = sort.expr().clone();
-    let partition_sort: Arc<dyn ExecutionPlan> = Arc::new(
-        SortExec::new(ordering.clone(), Arc::clone(repartition.input()))
-            .with_preserve_partitioning(true),
-    );
+    let repartition_input = Arc::clone(repartition.input());
+    let partition_sort: Arc<dyn ExecutionPlan> = if repartition_input
+        .equivalence_properties()
+        .ordering_satisfy(ordering.clone())?
+    {
+        repartition_input
+    } else {
+        Arc::new(
+            SortExec::new(ordering.clone(), repartition_input).with_preserve_partitioning(true),
+        )
+    };
     let merged: Arc<dyn ExecutionPlan> =
         Arc::new(SortPreservingMergeExec::new(ordering, partition_sort));
 
@@ -133,7 +140,8 @@ fn ordering_starts_with_sorted_series(ordering: &LexOrdering) -> bool {
 }
 
 fn is_sorted_series_column(expr: &Arc<dyn datafusion::physical_expr::PhysicalExpr>) -> bool {
-    expr.as_any()
-        .downcast_ref::<Column>()
-        .is_some_and(|column| column.name() == SORTED_SERIES_COLUMN)
+    match expr.as_any().downcast_ref::<Column>() {
+        Some(column) => column.name() == SORTED_SERIES_COLUMN,
+        None => false,
+    }
 }
