@@ -83,9 +83,8 @@ pub fn group_by_compaction_scope(
 
 #[cfg(test)]
 mod tests {
-    use crate::split::{ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, TimeRange};
-
     use super::*;
+    use crate::split::{ParquetSplitId, ParquetSplitKind, ParquetSplitMetadata, TimeRange};
 
     /// Build a test split with the given scope fields.
     fn test_split(

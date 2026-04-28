@@ -23,8 +23,8 @@
 //!
 //! 1. Separate mature splits from immature.
 //! 2. Group immature splits by `num_merge_ops` (the merge level).
-//! 3. Within each level, sort by creation time (oldest first) and greedily
-//!    accumulate splits until `merge_factor` or `target_split_size_bytes`.
+//! 3. Within each level, sort by creation time (oldest first) and greedily accumulate splits until
+//!    `merge_factor` or `target_split_size_bytes`.
 //! 4. Each merge operation contains splits from exactly one level.
 //!
 //! This bounds write amplification: each byte is rewritten at most
