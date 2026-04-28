@@ -58,8 +58,7 @@ impl ParquetMergeOperation {
     /// - **MP-3**: all splits share the same compaction scope (sort_fields + window)
     pub fn new(splits: Vec<ParquetSplitMetadata>) -> Self {
         use quickwit_dst::check_invariant;
-        use quickwit_dst::invariants::InvariantId;
-        use quickwit_dst::invariants::merge_policy;
+        use quickwit_dst::invariants::{InvariantId, merge_policy};
 
         // MP-2: minimum split count.
         check_invariant!(
@@ -79,8 +78,7 @@ impl ParquetMergeOperation {
         );
 
         // MP-3: scope homogeneity (sort_fields + window).
-        let sort_fields_vec: Vec<&str> =
-            splits.iter().map(|s| s.sort_fields.as_str()).collect();
+        let sort_fields_vec: Vec<&str> = splits.iter().map(|s| s.sort_fields.as_str()).collect();
         let windows: Vec<(i64, i64)> = splits
             .iter()
             .map(|s| match &s.window {
@@ -254,4 +252,3 @@ mod tests {
         assert_eq!(op.splits.len(), 2);
     }
 }
-
