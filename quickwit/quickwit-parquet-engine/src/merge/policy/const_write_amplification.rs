@@ -230,37 +230,41 @@ impl ParquetMergePolicy for ConstWriteAmplificationParquetMergePolicy {
         }
 
         // Separate mature splits — don't touch them.
+        let mut group_by_level: HashMap<u32, Vec<ParquetSplitMetadata>> = HashMap::new();
         let mut mature_splits = Vec::new();
-        let mut young_splits = Vec::new();
         for split in splits.drain(..) {
             if self.is_split_mature(&split) {
                 mature_splits.push(split);
             } else {
-                young_splits.push(split);
+                group_by_level
+                    .entry(split.num_merge_ops)
+                    .or_default()
+                    .push(split);
             }
         }
         splits.extend(mature_splits);
 
-        // Sort youngest/smallest first. If we limit the number of finalize
-        // merges, we focus on the young/small ones for maximum compaction.
-        sort_splits_newest_first(&mut young_splits);
-
         let min_merge_factor = FINALIZE_MIN_MERGE_FACTOR.min(self.config.max_merge_factor);
         let merge_factor_range = min_merge_factor..=self.config.max_merge_factor;
 
+        // Within each level, sort youngest/smallest first. If we limit the
+        // number of finalize merges, we focus on the young/small ones for
+        // maximum compaction.
         let mut merge_operations = Vec::new();
-        while merge_operations.len() < self.config.max_finalize_merge_operations {
-            if let Some(op) =
-                self.single_merge_operation(&mut young_splits, merge_factor_range.clone())
-            {
-                merge_operations.push(op);
-            } else {
-                break;
+        for level_splits in group_by_level.values_mut() {
+            sort_splits_newest_first(level_splits);
+            while merge_operations.len() < self.config.max_finalize_merge_operations {
+                if let Some(op) =
+                    self.single_merge_operation(level_splits, merge_factor_range.clone())
+                {
+                    merge_operations.push(op);
+                } else {
+                    break;
+                }
             }
+            // Un-merged splits at this level go back.
+            splits.append(level_splits);
         }
-
-        // Un-merged young splits go back.
-        splits.extend(young_splits);
 
         let num_splits_per_op: Vec<usize> =
             merge_operations.iter().map(|op| op.splits.len()).collect();
@@ -695,6 +699,34 @@ mod tests {
         assert!(splits.iter().all(|s| s.num_merge_ops >= 3));
     }
 
+    #[test]
+    fn test_finalize_respects_mc_level_invariant() {
+        // Bug: finalize_operations() did not group by num_merge_ops level,
+        // so splits from different levels could be merged together. This
+        // violates MC-LEVEL and causes the merged output to be stamped with
+        // max(num_merge_ops) + 1, prematurely maturing lower-level data.
+        let policy = test_policy(); // merge_factor=3, max_merge_ops=3
+        let mut splits = vec![
+            // Two level-0 splits
+            make_split("l0_a", 1_000_000, 0, now()),
+            make_split("l0_b", 1_000_000, 0, now()),
+            // One level-1 split
+            make_split("l1_a", 1_000_000, 1, now()),
+        ];
+        let ops = policy.finalize_operations(&mut splits);
+
+        // MC-LEVEL: every operation must contain splits from exactly one level.
+        for op in &ops {
+            let levels: HashSet<u32> = op.splits.iter().map(|s| s.num_merge_ops).collect();
+            assert_eq!(
+                levels.len(),
+                1,
+                "finalize produced a merge mixing levels: {:?}",
+                levels
+            );
+        }
+    }
+
     // ── Property Tests ──────────────────────────────────────────────
 
     prop_compose! {
@@ -819,6 +851,60 @@ mod tests {
 
                 // Validate policy-specific invariants.
                 policy.check_is_valid(op, &splits);
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_finalize_respects_mc_level(
+            mut splits in prop::collection::vec(parquet_split_strategy(), 0..80)
+        ) {
+            let policy = test_policy();
+            let original_count = splits.len();
+            let original_total_bytes: u64 = splits.iter().map(|s| s.size_bytes).sum();
+
+            let ops = policy.finalize_operations(&mut splits);
+
+            // MC-CONSERVE for finalize.
+            let ops_bytes: u64 = ops.iter()
+                .flat_map(|op| op.splits.iter())
+                .map(|s| s.size_bytes)
+                .sum();
+            let remaining_bytes: u64 = splits.iter().map(|s| s.size_bytes).sum();
+            prop_assert_eq!(
+                ops_bytes + remaining_bytes,
+                original_total_bytes,
+                "finalize byte conservation violated"
+            );
+
+            let ops_count: usize = ops.iter().map(|op| op.splits.len()).sum();
+            prop_assert_eq!(
+                ops_count + splits.len(),
+                original_count,
+                "finalize split count conservation violated"
+            );
+
+            for op in &ops {
+                prop_assert!(
+                    op.splits.len() >= 2,
+                    "finalize merge op must have >= 2 splits"
+                );
+
+                // MC-LEVEL: all splits in op have same num_merge_ops.
+                let levels: HashSet<u32> = op.splits.iter().map(|s| s.num_merge_ops).collect();
+                prop_assert_eq!(
+                    levels.len(), 1,
+                    "finalize mixed levels: {:?}", levels
+                );
+
+                // MC-WA: no mature splits.
+                for split in &op.splits {
+                    prop_assert!(
+                        !policy.is_split_mature(split),
+                        "mature split in finalize merge"
+                    );
+                }
             }
         }
     }
