@@ -221,6 +221,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         let publish_lock = batch.publish_lock;
         let publish_token_opt = batch.publish_token_opt;
         let splits = batch.splits;
+        let replaced_split_ids = batch.replaced_split_ids;
         debug!(
             index_uid = %index_uid,
             num_splits = splits.len(),
@@ -321,7 +322,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                 let update = ParquetSplitsUpdate {
                     index_uid,
                     new_splits: splits,
-                    replaced_split_ids: Vec::new(), // No merging yet
+                    replaced_split_ids,
                     checkpoint_delta_opt: Some(checkpoint_delta),
                     publish_lock,
                     publish_token_opt,
@@ -427,6 +428,7 @@ mod tests {
             checkpoint_delta,
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
+            replaced_split_ids: Vec::new(),
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -520,6 +522,7 @@ mod tests {
             checkpoint_delta,
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
+            replaced_split_ids: Vec::new(),
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -594,6 +597,7 @@ mod tests {
             checkpoint_delta,
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
+            replaced_split_ids: Vec::new(),
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -664,6 +668,7 @@ mod tests {
                 checkpoint_delta,
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,
+                replaced_split_ids: Vec::new(),
             };
             uploader_mailbox.send_message(batch).await.unwrap();
         }

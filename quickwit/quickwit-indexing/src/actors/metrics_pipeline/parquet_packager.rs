@@ -236,6 +236,7 @@ impl Handler<ParquetBatchForPackager> for ParquetPackager {
             checkpoint_delta,
             publish_lock,
             publish_token_opt,
+            replaced_split_ids: Vec::new(),
         };
 
         ctx.send_message(&self.uploader_mailbox, split_batch)

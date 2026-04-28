@@ -25,6 +25,7 @@
 mod indexing_service_impl;
 mod parquet_doc_processor;
 mod parquet_indexer;
+pub(crate) mod parquet_merge_messages;
 mod parquet_packager;
 mod parquet_splits_update;
 mod parquet_uploader;
@@ -44,6 +45,7 @@ pub use parquet_doc_processor::{
     ParquetDocProcessor, ParquetDocProcessorCounters, ParquetDocProcessorError, is_arrow_ipc,
 };
 pub use parquet_indexer::{ParquetIndexer, ParquetIndexerCounters, ParquetSplitBatch};
+pub use parquet_merge_messages::{ParquetMergeScratch, ParquetMergeTask, ParquetNewSplits};
 pub use parquet_packager::{ParquetBatchForPackager, ParquetPackager, ParquetPackagerCounters};
 pub use parquet_splits_update::ParquetSplitsUpdate;
 pub use parquet_uploader::ParquetUploader;

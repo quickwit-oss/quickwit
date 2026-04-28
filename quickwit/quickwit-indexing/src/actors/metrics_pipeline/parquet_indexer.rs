@@ -119,6 +119,9 @@ pub struct ParquetSplitBatch {
     pub publish_lock: PublishLock,
     /// Optional publish token.
     pub publish_token_opt: Option<PublishToken>,
+    /// Split IDs being replaced by this batch (non-empty for merges).
+    /// Empty for the ingest path.
+    pub replaced_split_ids: Vec<String>,
 }
 
 /// ParquetIndexer actor that accumulates RecordBatches and forwards them to ParquetPackager.
