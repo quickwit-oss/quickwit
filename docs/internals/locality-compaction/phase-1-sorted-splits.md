@@ -85,7 +85,7 @@ Each column in the schema has:
   - **String/binary:** Sorted lexicographically by byte value.  
   - **Integer types** (i8, i16, i32, i64, u8, u16, u32, u64): Sorted numerically.  
   - **Float types** (f32, f64): Sorted numerically, with NaN handling matching IEEE 754 total order (NaN sorts after all other values).  
-- **Null handling:** Null values sort **after** all non-null values for ascending columns, and **before** all non-null values for descending columns. This matches Husky's behavior and ensures nulls cluster at the end of each column's range.
+- **Null handling:** Null values always sort **after** all non-null values, regardless of sort direction (`nulls_first: false`). This enables nulls to be implicit in the sorted_series key encoding — absent columns are simply omitted from the key, and their keys naturally sort after keys that include those columns.
 
 ### Timeseries ID (Optional Locality Tiebreaker)
 
@@ -286,7 +286,7 @@ The Parquet reader always reads the file footer first \-- the footer contains th
 
 Input splits may not have identical column sets. Schema evolution (adding or removing columns over time) means that splits from different time periods may have different columns. The merge handles this as follows:
 
-- **Sort columns.** If a sort column is missing from an input split, all rows from that split are treated as having null values for that column. Nulls sort after non-null values (ascending) or before non-null values (descending), as specified in the sort schema. The k-way merge handles this naturally.  
+- **Sort columns.** If a sort column is missing from an input split, all rows from that split are treated as having null values for that column. Nulls always sort after non-null values (`nulls_first: false`), regardless of direction. The k-way merge handles this naturally.  
     
 - **Non-sort columns.** The merge computes the **union** of all column names across all input splits. The output split contains every column that appears in at least one input. When streaming a column through the merge, rows originating from inputs that lack that column are filled with nulls. The output Parquet schema uses the type from whichever input(s) contain the column; if multiple inputs have the same column name with different types, the merge fails with an error (this indicates a schema evolution conflict that must be resolved at the index configuration level).
 

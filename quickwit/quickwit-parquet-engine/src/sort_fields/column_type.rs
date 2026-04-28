@@ -22,8 +22,30 @@ use std::str::FromStr;
 
 use super::SortFieldsError;
 
-/// Well-known column name for timestamps.
+/// Well-known column name for timestamps (legacy schema name).
 pub const TIMESTAMP: &str = "timestamp";
+
+/// Physical column name for timestamps in the Parquet schema.
+pub const TIMESTAMP_SECS: &str = "timestamp_secs";
+
+/// Normalize a sort schema column name to its physical column name.
+///
+/// Legacy sort schemas use "timestamp" but the physical Parquet column is
+/// "timestamp_secs". All code that resolves sort schema column names against
+/// physical schemas must call this function.
+pub fn normalize_column_name(name: &str) -> &str {
+    if name == TIMESTAMP {
+        TIMESTAMP_SECS
+    } else {
+        name
+    }
+}
+
+/// Returns true if the column name refers to the timestamp column
+/// (either legacy "timestamp" or physical "timestamp_secs").
+pub fn is_timestamp_column_name(name: &str) -> bool {
+    name == TIMESTAMP || name == TIMESTAMP_SECS
+}
 
 /// Well-known column name for tiebreaker.
 pub const TIEBREAKER: &str = "tiebreaker";
