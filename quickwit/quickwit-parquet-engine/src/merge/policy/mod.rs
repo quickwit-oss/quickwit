@@ -50,7 +50,49 @@ impl ParquetMergeOperation {
     ///
     /// Generates a fresh split ID for the merged output. The `kind` is inferred
     /// from the first split (all splits in a merge share the same kind).
+    ///
+    /// # Invariant checks (debug builds panic, all builds emit metrics)
+    ///
+    /// - **MP-1**: all splits share the same `num_merge_ops` level
+    /// - **MP-2**: at least 2 input splits
+    /// - **MP-3**: all splits share the same compaction scope (sort_fields + window)
     pub fn new(splits: Vec<ParquetSplitMetadata>) -> Self {
+        use quickwit_dst::check_invariant;
+        use quickwit_dst::invariants::InvariantId;
+        use quickwit_dst::invariants::merge_policy;
+
+        // MP-2: minimum split count.
+        check_invariant!(
+            InvariantId::MP2,
+            merge_policy::has_minimum_splits(splits.len()),
+            ": got {} splits",
+            splits.len()
+        );
+
+        // MP-1: level homogeneity.
+        let levels: Vec<u32> = splits.iter().map(|s| s.num_merge_ops).collect();
+        check_invariant!(
+            InvariantId::MP1,
+            merge_policy::all_same_merge_level(&levels),
+            ": levels={:?}",
+            levels
+        );
+
+        // MP-3: scope homogeneity (sort_fields + window).
+        let sort_fields_vec: Vec<&str> =
+            splits.iter().map(|s| s.sort_fields.as_str()).collect();
+        let windows: Vec<(i64, i64)> = splits
+            .iter()
+            .map(|s| match &s.window {
+                Some(w) => (w.start, w.end - w.start),
+                None => (0, 0),
+            })
+            .collect();
+        check_invariant!(
+            InvariantId::MP3,
+            merge_policy::all_same_compaction_scope(&sort_fields_vec, &windows)
+        );
+
         let kind = splits
             .first()
             .map(|s| s.kind)
@@ -123,3 +165,93 @@ pub trait ParquetMergePolicy: Send + Sync + fmt::Debug {
     ) {
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+    use std::time::SystemTime;
+
+    use super::*;
+    use crate::split::{ParquetSplitId, ParquetSplitKind, TimeRange};
+
+    fn make_split(
+        split_id: &str,
+        num_merge_ops: u32,
+        sort_fields: &str,
+        window: Option<(i64, i64)>,
+    ) -> ParquetSplitMetadata {
+        ParquetSplitMetadata {
+            kind: ParquetSplitKind::Metrics,
+            split_id: ParquetSplitId::new(split_id),
+            index_uid: "test:001".to_string(),
+            partition_id: 0,
+            time_range: TimeRange::new(1000, 2000),
+            num_rows: 100,
+            size_bytes: 1_000_000,
+            metric_names: HashSet::new(),
+            low_cardinality_tags: Default::default(),
+            high_cardinality_tag_keys: Default::default(),
+            created_at: SystemTime::now(),
+            parquet_file: format!("{split_id}.parquet"),
+            window: window.map(|(start, dur)| start..start + dur),
+            sort_fields: sort_fields.to_string(),
+            num_merge_ops,
+            row_keys_proto: None,
+            zonemap_regexes: Default::default(),
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "MP-1 violated")]
+    fn test_mp1_mixed_merge_levels_panics() {
+        // MP-1: constructing a merge op with splits at different levels
+        // must panic in debug builds.
+        let splits = vec![
+            make_split("l0", 0, "a|ts/V2", Some((0, 3600))),
+            make_split("l1", 1, "a|ts/V2", Some((0, 3600))),
+        ];
+        ParquetMergeOperation::new(splits);
+    }
+
+    #[test]
+    #[should_panic(expected = "MP-2 violated")]
+    fn test_mp2_single_split_panics() {
+        // MP-2: constructing a merge op with < 2 splits must panic.
+        let splits = vec![make_split("s0", 0, "a|ts/V2", Some((0, 3600)))];
+        ParquetMergeOperation::new(splits);
+    }
+
+    #[test]
+    #[should_panic(expected = "MP-3 violated")]
+    fn test_mp3_mixed_sort_fields_panics() {
+        // MP-3: constructing a merge op with different sort_fields must panic.
+        let splits = vec![
+            make_split("s0", 0, "a|b|ts/V2", Some((0, 3600))),
+            make_split("s1", 0, "a|ts/V2", Some((0, 3600))),
+        ];
+        ParquetMergeOperation::new(splits);
+    }
+
+    #[test]
+    #[should_panic(expected = "MP-3 violated")]
+    fn test_mp3_mixed_window_duration_panics() {
+        // MP-3: same start but different duration must panic.
+        let splits = vec![
+            make_split("s0", 0, "a|ts/V2", Some((0, 900))),
+            make_split("s1", 0, "a|ts/V2", Some((0, 1800))),
+        ];
+        ParquetMergeOperation::new(splits);
+    }
+
+    #[test]
+    fn test_valid_merge_operation_succeeds() {
+        // A well-formed merge op should not panic.
+        let splits = vec![
+            make_split("s0", 0, "a|ts/V2", Some((0, 3600))),
+            make_split("s1", 0, "a|ts/V2", Some((0, 3600))),
+        ];
+        let op = ParquetMergeOperation::new(splits);
+        assert_eq!(op.splits.len(), 2);
+    }
+}
+
