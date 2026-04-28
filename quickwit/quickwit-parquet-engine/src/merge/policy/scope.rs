@@ -15,11 +15,11 @@
 //! Compaction scope grouping for Parquet splits.
 //!
 //! Splits are eligible for merging only when they share the same compaction
-//! scope. A scope captures the key dimensions that must match: index, sort
-//! schema, and time window.
+//! scope. A scope captures the key dimensions that must match: index,
+//! partition, sort schema, and time window.
 //!
-//! Future extensions (Phase 3+) will add `source_id` and `partition_id` to
-//! the scope when those fields are populated on `ParquetSplitMetadata`.
+//! Future extensions (Phase 3+) will add `source_id` to the scope when
+//! that field is populated on `ParquetSplitMetadata`.
 
 use std::collections::HashMap;
 
@@ -38,6 +38,9 @@ use crate::split::ParquetSplitMetadata;
 pub struct CompactionScope {
     /// Index unique identifier (includes incarnation).
     pub index_uid: String,
+    /// Partition ID computed from the index's routing expression.
+    /// Splits with different partition IDs must not be merged.
+    pub partition_id: u64,
     /// Husky-style sort schema string (e.g., "metric_name|host|timestamp/V2").
     pub sort_fields: String,
     /// Window start in epoch seconds.
@@ -53,6 +56,7 @@ impl CompactionScope {
         let window = split.window.as_ref()?;
         Some(Self {
             index_uid: split.index_uid.clone(),
+            partition_id: split.partition_id,
             sort_fields: split.sort_fields.clone(),
             window_start_secs: window.start,
         })
@@ -90,9 +94,20 @@ mod tests {
         window_start: Option<i64>,
         window_duration: u32,
     ) -> ParquetSplitMetadata {
+        test_split_with_partition(index_uid, 0, sort_fields, window_start, window_duration)
+    }
+
+    fn test_split_with_partition(
+        index_uid: &str,
+        partition_id: u64,
+        sort_fields: &str,
+        window_start: Option<i64>,
+        window_duration: u32,
+    ) -> ParquetSplitMetadata {
         let mut builder = ParquetSplitMetadata::metrics_builder()
             .split_id(ParquetSplitId::generate(ParquetSplitKind::Metrics))
             .index_uid(index_uid)
+            .partition_id(partition_id)
             .time_range(TimeRange::new(1000, 2000))
             .sort_fields(sort_fields);
 
@@ -210,17 +225,46 @@ mod tests {
 
         let scope_a = CompactionScope {
             index_uid: "idx:001".to_string(),
+            partition_id: 0,
             sort_fields: "metric_name|host|timestamp/V2".to_string(),
             window_start_secs: 1000,
         };
         let scope_b = CompactionScope {
             index_uid: "idx:001".to_string(),
+            partition_id: 0,
             sort_fields: "metric_name|host|timestamp/V2".to_string(),
             window_start_secs: 4600,
         };
 
         assert_eq!(result[&scope_a].len(), 3);
         assert_eq!(result[&scope_b].len(), 2);
+    }
+
+    #[test]
+    fn test_different_partition_id() {
+        let sort = "metric_name|host|timestamp/V2";
+        let splits = vec![
+            test_split_with_partition("idx:001", 1, sort, Some(1000), 3600),
+            test_split_with_partition("idx:001", 2, sort, Some(1000), 3600),
+        ];
+        let result = group_by_compaction_scope(splits);
+        assert!(
+            result.is_empty(),
+            "different partition_ids should not be grouped"
+        );
+    }
+
+    #[test]
+    fn test_same_partition_id() {
+        let sort = "metric_name|host|timestamp/V2";
+        let splits = vec![
+            test_split_with_partition("idx:001", 42, sort, Some(1000), 3600),
+            test_split_with_partition("idx:001", 42, sort, Some(1000), 3600),
+        ];
+        let result = group_by_compaction_scope(splits);
+        assert_eq!(result.len(), 1);
+        let group = result.values().next().unwrap();
+        assert_eq!(group.len(), 2);
     }
 
     #[test]
@@ -231,9 +275,16 @@ mod tests {
 
     #[test]
     fn test_from_split_returns_scope() {
-        let split = test_split("idx:001", "metric_name|host|timestamp/V2", Some(7200), 3600);
+        let split = test_split_with_partition(
+            "idx:001",
+            7,
+            "metric_name|host|timestamp/V2",
+            Some(7200),
+            3600,
+        );
         let scope = CompactionScope::from_split(&split).unwrap();
         assert_eq!(scope.index_uid, "idx:001");
+        assert_eq!(scope.partition_id, 7);
         assert_eq!(scope.sort_fields, "metric_name|host|timestamp/V2");
         assert_eq!(scope.window_start_secs, 7200);
     }
