@@ -31,7 +31,8 @@ pub use crate::actors::{
 pub use crate::controlled_directory::ControlledDirectory;
 use crate::models::IndexingStatistics;
 pub use crate::split_store::{
-    IndexingSplitCache, IndexingSplitStore, get_tantivy_directory_from_split_bundle,
+    IndexingSplitCache, IndexingSplitStore, SplitStoreQuota,
+    get_tantivy_directory_from_split_bundle,
 };
 
 pub mod actors;
