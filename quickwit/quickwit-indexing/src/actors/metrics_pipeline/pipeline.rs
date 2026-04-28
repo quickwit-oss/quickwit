@@ -392,9 +392,10 @@ impl MetricsPipeline {
                 quickwit_parquet_engine::ingest::ParquetIngestProcessor,
             )
         };
-        let doc_processor = ParquetDocProcessor::new(
+        let doc_processor = ParquetDocProcessor::new_with_max_num_partitions(
             processor,
             self.params.partition_key.clone(),
+            self.params.max_num_partitions,
             index_id.to_string(),
             source_id.to_string(),
             indexer_mailbox,

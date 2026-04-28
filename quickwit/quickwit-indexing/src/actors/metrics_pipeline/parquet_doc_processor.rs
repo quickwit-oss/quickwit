@@ -18,6 +18,7 @@
 //! them directly to the metrics engine, bypassing Tantivy document conversion.
 
 use std::collections::HashMap;
+use std::num::NonZeroU32;
 
 use arrow::array::UInt32Array;
 use arrow::compute::take_record_batch;
@@ -36,6 +37,7 @@ use tokio::runtime::Handle;
 use tracing::{debug, info, instrument};
 
 use super::{ParquetIndexer, PartitionedParquetBatch, ProcessedParquetBatch};
+use crate::actors::indexer::OTHER_PARTITION_ID;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock, RawDocBatch};
 
 /// Arrow IPC stream continuation marker (4 bytes of 0xFF).
@@ -148,6 +150,8 @@ pub struct ParquetDocProcessor {
     processor: IngestProcessor,
     /// Routing expression for computing partition_id per row.
     partition_key: quickwit_doc_mapper::RoutingExpr,
+    /// Maximum number of regular partitions emitted per Arrow batch.
+    max_num_partitions: NonZeroU32,
     /// Processing counters.
     counters: ParquetDocProcessorCounters,
     /// Publish lock for coordinating with sources.
@@ -165,18 +169,39 @@ impl ParquetDocProcessor {
         source_id: SourceId,
         indexer_mailbox: Mailbox<ParquetIndexer>,
     ) -> Self {
+        Self::new_with_max_num_partitions(
+            processor,
+            partition_key,
+            quickwit_doc_mapper::DocMapping::default_max_num_partitions(),
+            index_id,
+            source_id,
+            indexer_mailbox,
+        )
+    }
+
+    /// Creates a new ParquetDocProcessor with an explicit partition cap.
+    pub fn new_with_max_num_partitions(
+        processor: IngestProcessor,
+        partition_key: quickwit_doc_mapper::RoutingExpr,
+        max_num_partitions: NonZeroU32,
+        index_id: IndexId,
+        source_id: SourceId,
+        indexer_mailbox: Mailbox<ParquetIndexer>,
+    ) -> Self {
         let counters = ParquetDocProcessorCounters::new(index_id.clone(), source_id.clone());
 
         info!(
             index_id = %index_id,
             source_id = %source_id,
             partition_key = %partition_key,
+            max_num_partitions = max_num_partitions.get(),
             "ParquetDocProcessor created"
         );
 
         Self {
             processor,
             partition_key,
+            max_num_partitions,
             counters,
             publish_lock: PublishLock::default(),
             indexer_mailbox,
@@ -285,7 +310,8 @@ impl Handler<RawDocBatch> for ParquetDocProcessor {
                     self.counters.record_valid(num_rows, num_bytes);
 
                     // Split the batch by partition_id.
-                    let partitioned = partition_batch(&batch, &self.partition_key);
+                    let partitioned =
+                        partition_batch(&batch, &self.partition_key, self.max_num_partitions);
                     partitioned_batches.extend(partitioned.into_iter().map(
                         |(partition_id, batch)| PartitionedParquetBatch::new(batch, partition_id),
                     ));
@@ -360,6 +386,7 @@ impl Handler<NewPublishToken> for ParquetDocProcessor {
 fn partition_batch(
     batch: &RecordBatch,
     partition_key: &quickwit_doc_mapper::RoutingExpr,
+    max_num_partitions: NonZeroU32,
 ) -> Vec<(u64, RecordBatch)> {
     let num_rows = batch.num_rows();
     if num_rows == 0 {
@@ -371,41 +398,112 @@ fn partition_batch(
         return vec![(0, batch.clone())];
     }
 
-    // Group row indices by partition_id.
+    // Group row indices by partition_id, preserving first-seen order so the
+    // choice of regular vs OTHER partitions is deterministic.
+    let max_num_partitions = max_num_partitions.get() as usize;
     let mut partition_rows: HashMap<u64, Vec<u32>> = HashMap::new();
+    let mut partition_order = Vec::new();
+    let mut other_rows = Vec::new();
     for row_idx in 0..num_rows {
         let ctx = ArrowRowContext::new(batch, row_idx);
         let pid = partition_key.eval_hash(&ctx);
-        partition_rows.entry(pid).or_default().push(row_idx as u32);
+        let row_idx = row_idx as u32;
+
+        if let Some(rows) = partition_rows.get_mut(&pid) {
+            rows.push(row_idx);
+        } else if partition_order.len() < max_num_partitions {
+            partition_rows.insert(pid, vec![row_idx]);
+            partition_order.push(pid);
+        } else if let Some(rows) = partition_rows.get_mut(&OTHER_PARTITION_ID) {
+            rows.push(row_idx);
+        } else {
+            other_rows.push(row_idx);
+        }
     }
 
     // If all rows ended up in the same partition, return the batch as-is.
-    if partition_rows.len() == 1 {
-        let (pid, _) = partition_rows.into_iter().next().unwrap();
-        return vec![(pid, batch.clone())];
+    if partition_order.len() == 1 && other_rows.is_empty() {
+        return vec![(partition_order[0], batch.clone())];
     }
 
     // Split the batch using take_record_batch.
-    let mut result = Vec::with_capacity(partition_rows.len());
-    for (pid, indices) in partition_rows {
+    let mut result =
+        Vec::with_capacity(partition_order.len() + usize::from(!other_rows.is_empty()));
+    for pid in partition_order {
+        let indices = partition_rows
+            .remove(&pid)
+            .expect("partition_order should reference existing row indices");
         let indices_arr = UInt32Array::from(indices);
         let sub_batch = take_record_batch(batch, &indices_arr)
             .expect("take_record_batch should not fail on valid indices");
         result.push((pid, sub_batch));
+    }
+    if !other_rows.is_empty() {
+        let indices_arr = UInt32Array::from(other_rows);
+        let sub_batch = take_record_batch(batch, &indices_arr)
+            .expect("take_record_batch should not fail on valid indices");
+        result.push((OTHER_PARTITION_ID, sub_batch));
     }
     result
 }
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroU32;
+    use std::sync::Arc;
     use std::sync::atomic::Ordering;
 
+    use arrow::array::{ArrayRef, Float64Array, Int64Array, UInt8Array, UInt64Array};
+    use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_parquet_engine::ingest::record_batch_to_ipc;
     use quickwit_proto::types::IndexUid;
 
     use super::*;
+
+    fn create_test_batch_with_service_values(service_values: &[&str]) -> RecordBatch {
+        use quickwit_parquet_engine::test_helpers::{
+            create_dict_array, create_nullable_dict_array,
+        };
+
+        let num_rows = service_values.len();
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("service", dict_type, true),
+        ]));
+
+        let metric_names: Vec<&str> = vec!["cpu.usage"; num_rows];
+        let metric_name = create_dict_array(&metric_names);
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; num_rows]));
+        let timestamps: Vec<u64> = (0..num_rows).map(|idx| 100 + idx as u64).collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let values: Vec<f64> = (0..num_rows).map(|idx| 42.0 + idx as f64).collect();
+        let value: ArrayRef = Arc::new(Float64Array::from(values));
+        let timeseries_ids: Vec<i64> = (0..num_rows).map(|idx| 1000 + idx as i64).collect();
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(timeseries_ids));
+        let service_values: Vec<Option<&str>> =
+            service_values.iter().map(|value| Some(*value)).collect();
+        let service = create_nullable_dict_array(&service_values);
+
+        RecordBatch::try_new(
+            schema,
+            vec![
+                metric_name,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+                service,
+            ],
+        )
+        .unwrap()
+    }
 
     #[test]
     fn test_is_arrow_ipc() {
@@ -443,6 +541,25 @@ mod tests {
         assert_eq!(counters.bytes_total, 1920);
         assert_eq!(counters.num_processed_batches(), 4);
         assert_eq!(counters.num_errors(), 2);
+    }
+
+    #[test]
+    fn test_partition_batch_caps_partitions_before_materializing_batches() {
+        let partition_key = quickwit_doc_mapper::RoutingExpr::new("service").unwrap();
+        let batch = create_test_batch_with_service_values(&["a", "b", "c", "d", "a", "c"]);
+
+        let partitions = partition_batch(&batch, &partition_key, NonZeroU32::new(2).unwrap());
+
+        let partition_a = partition_key.eval_hash(&ArrowRowContext::new(&batch, 0));
+        let partition_b = partition_key.eval_hash(&ArrowRowContext::new(&batch, 1));
+        assert_ne!(partition_a, partition_b);
+        assert_eq!(
+            partitions
+                .iter()
+                .map(|(partition_id, batch)| (*partition_id, batch.num_rows()))
+                .collect::<Vec<_>>(),
+            vec![(partition_a, 2), (partition_b, 1), (OTHER_PARTITION_ID, 3)]
+        );
     }
 
     #[tokio::test]
