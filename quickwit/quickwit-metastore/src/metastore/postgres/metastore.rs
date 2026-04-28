@@ -2592,7 +2592,19 @@ impl PostgresqlMetastore {
             Bound::Unbounded => {}
         }
 
-        sql.push_str(" ORDER BY time_range_start ASC");
+        // Add max_time_range_end filter for retention policy
+        if query.max_time_range_end.is_some() {
+            sql.push_str(&format!(" AND time_range_end <= ${}", param_idx));
+            param_idx += 1;
+        }
+
+        // Add pagination cursor
+        if query.after_split_id.is_some() {
+            sql.push_str(&format!(" AND split_id > ${}", param_idx));
+            param_idx += 1;
+        }
+
+        sql.push_str(" ORDER BY split_id ASC");
 
         // Add limit
         if query.limit.is_some() {
@@ -2689,6 +2701,12 @@ impl PostgresqlMetastore {
                 query_builder = query_builder.bind(evaluation_datetime.unix_timestamp() as f64);
             }
             Bound::Unbounded => {}
+        }
+        if let Some(max_time_range_end) = query.max_time_range_end {
+            query_builder = query_builder.bind(max_time_range_end);
+        }
+        if let Some(ref after_split_id) = query.after_split_id {
+            query_builder = query_builder.bind(after_split_id);
         }
         if let Some(limit) = query.limit {
             query_builder = query_builder.bind(limit as i64);

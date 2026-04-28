@@ -1,0 +1,58 @@
+[package]
+name = "quickwit-datafusion"
+description = "DataFusion-based query execution for Quickwit parquet metrics"
+
+version.workspace = true
+edition.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+repository.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+futures = { workspace = true }
+prost = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+url = "2"
+
+quickwit-common = { workspace = true }
+quickwit-df-core = { workspace = true, features = ["grpc"] }
+quickwit-metastore = { workspace = true }
+quickwit-parquet-engine = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-search = { workspace = true }
+quickwit-storage = { workspace = true }
+
+arrow = { workspace = true }
+datafusion = "53"
+datafusion-substrait = "53"
+datafusion-datasource = "53"
+datafusion-physical-plan = "53"
+datafusion-datasource-parquet = "53"
+datafusion-distributed = "1.0"
+object_store = "0.13"
+
+[dev-dependencies]
+bytesize = { workspace = true }
+datafusion = "53"
+datafusion-substrait = "53"
+prost = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }
+
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-config = { workspace = true, features = ["testsuite"] }
+quickwit-datafusion = { path = ".", features = ["testsuite"] }
+quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
+
+[features]
+testsuite = []
