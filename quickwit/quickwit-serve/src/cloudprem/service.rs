@@ -546,9 +546,7 @@ impl CloudPremService for CloudPremServiceImpl {
                 mut settings,
                 query,
             } = request;
-            let explain = settings
-                .remove("explain")
-                .is_some_and(|value| value == "true");
+            let explain = matches!(settings.remove("explain"), Some(value) if value == "true");
             debug!(
                 org_id,
                 included_indices = ?scope.as_ref().map(|scope| &scope.included_indices),
@@ -579,7 +577,7 @@ impl CloudPremService for CloudPremServiceImpl {
                     };
                     let ipc_buf = collect_stream_as_arrow_ipc(stream).await?;
                     return Ok(CloudpremSubstraitResponse {
-                        arrow_ipc_bytes: ipc_buf.into(),
+                        arrow_ipc_bytes: ipc_buf,
                     });
                 }
                 None => return Err(CloudPremError::Internal("missing query".to_string())),
@@ -635,7 +633,7 @@ impl CloudPremService for CloudPremServiceImpl {
                 })?;
                 let ipc_buf = encode_record_batches_as_arrow_ipc(&[batch])?;
                 return Ok(CloudpremSubstraitResponse {
-                    arrow_ipc_bytes: ipc_buf.into(),
+                    arrow_ipc_bytes: ipc_buf,
                 });
             }
 
@@ -645,7 +643,7 @@ impl CloudPremService for CloudPremServiceImpl {
                 .map_err(|error| CloudPremError::Internal(format!("execution error: {error}")))?;
             let ipc_buf = encode_record_batches_as_arrow_ipc(&batches)?;
             Ok(CloudpremSubstraitResponse {
-                arrow_ipc_bytes: ipc_buf.into(),
+                arrow_ipc_bytes: ipc_buf,
             })
         }
     }

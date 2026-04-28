@@ -384,16 +384,26 @@ pub(crate) async fn maintain_websocket(
 ) {
     let mut metastore_cool_down = tokio::time::interval(Duration::from_secs(3));
 
-    // we try to get the cluster id in a loop: in case we start before a metastore is available,
-    // we don't want to disable reverse connection, or crashloop for so little
-    let cluster_remote_uid = loop {
-        metastore_cool_down.tick().await;
-        match metastore
-            .get_cluster_identity(GetClusterIdentityRequest {})
-            .await
-        {
-            Ok(response) => break response.uuid,
-            Err(e) => warn!("failed to get cluster identity from metastore: {e:?}"),
+    let cluster_remote_uid = if let Ok(cluster_remote_uid) =
+        std::env::var("CLOUDPREM_CLUSTER_REMOTE_UID")
+    {
+        info!(
+            cluster_remote_uid,
+            "using environment override for cluster remote uid"
+        );
+        cluster_remote_uid
+    } else {
+        // We try to get the cluster id in a loop: in case we start before a metastore is available,
+        // we don't want to disable reverse connection, or crashloop for so little.
+        loop {
+            metastore_cool_down.tick().await;
+            match metastore
+                .get_cluster_identity(GetClusterIdentityRequest {})
+                .await
+            {
+                Ok(response) => break response.uuid,
+                Err(e) => warn!("failed to get cluster identity from metastore: {e:?}"),
+            }
         }
     };
 
