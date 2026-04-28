@@ -205,7 +205,6 @@ async fn test_metrics_pipeline_e2e() {
         super::parquet_doc_processor::IngestProcessor::Metrics(
             quickwit_parquet_engine::ingest::ParquetIngestProcessor,
         ),
-        quickwit_doc_mapper::RoutingExpr::default(),
         "test-metrics-index".to_string(),
         "test-source".to_string(),
         indexer_mailbox,
@@ -554,7 +553,6 @@ async fn test_sketch_pipeline_e2e() {
     );
     let doc_processor = ParquetDocProcessor::new(
         sketch_processor,
-        quickwit_doc_mapper::RoutingExpr::default(),
         "sketches-test-index".to_string(),
         "test-source".to_string(),
         indexer_mailbox,

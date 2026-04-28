@@ -369,11 +369,12 @@ impl MetricsPipeline {
         // ParquetIndexer
         let commit_timeout =
             Duration::from_secs(self.params.indexing_settings.commit_timeout_secs as u64);
-        let indexer = ParquetIndexer::new_with_max_num_partitions(
+        let indexer = ParquetIndexer::new_with_partition_key_and_max_num_partitions(
             self.params.pipeline_id.index_uid.clone(),
             source_id.to_string(),
             None,
             packager_mailbox,
+            self.params.partition_key.clone(),
             self.params.max_num_partitions,
             Some(commit_timeout),
         );
@@ -392,10 +393,8 @@ impl MetricsPipeline {
                 quickwit_parquet_engine::ingest::ParquetIngestProcessor,
             )
         };
-        let doc_processor = ParquetDocProcessor::new_with_max_num_partitions(
+        let doc_processor = ParquetDocProcessor::new(
             processor,
-            self.params.partition_key.clone(),
-            self.params.max_num_partitions,
             index_id.to_string(),
             source_id.to_string(),
             indexer_mailbox,

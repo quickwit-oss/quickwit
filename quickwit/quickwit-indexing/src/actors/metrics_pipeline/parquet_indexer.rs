@@ -23,10 +23,13 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use arrow::array::UInt32Array;
+use arrow::compute::take_record_batch;
 use arrow::record_batch::RecordBatch;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::runtimes::RuntimeType;
+use quickwit_doc_mapper::{ArrowRowContext, RoutingExpr};
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_parquet_engine::index::{ParquetBatchAccumulator, ParquetIndexingConfig};
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
@@ -49,6 +52,22 @@ const DEFAULT_COMMIT_TIMEOUT: Duration = Duration::from_secs(60);
 #[derive(Debug)]
 struct CommitTimeout {
     workbench_id: Ulid,
+}
+
+/// Identifies the accumulator selected for a routed row.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+enum AccumulatorKey {
+    Regular(u64),
+    Other,
+}
+
+impl AccumulatorKey {
+    fn partition_id(self) -> u64 {
+        match self {
+            Self::Regular(partition_id) => partition_id,
+            Self::Other => OTHER_PARTITION_ID,
+        }
+    }
 }
 
 /// Counters for ParquetIndexer observability.
@@ -123,6 +142,8 @@ pub struct ParquetIndexer {
     accumulators: HashMap<u64, ParquetBatchAccumulator>,
     /// Accumulator for rows whose partition would exceed max_num_partitions.
     other_accumulator_opt: Option<ParquetBatchAccumulator>,
+    /// Routing expression for computing the true partition of each row.
+    partition_key: RoutingExpr,
     /// Maximum number of regular partition accumulators allowed in a workbench.
     max_num_partitions: NonZeroU32,
     /// Config for creating new accumulators.
@@ -161,11 +182,12 @@ impl ParquetIndexer {
         packager_mailbox: Mailbox<ParquetPackager>,
         commit_timeout: Option<Duration>,
     ) -> Self {
-        Self::new_with_max_num_partitions(
+        Self::new_with_partition_key_and_max_num_partitions(
             index_uid,
             source_id,
             config,
             packager_mailbox,
+            RoutingExpr::default(),
             quickwit_doc_mapper::DocMapping::default_max_num_partitions(),
             commit_timeout,
         )
@@ -180,6 +202,27 @@ impl ParquetIndexer {
         max_num_partitions: NonZeroU32,
         commit_timeout: Option<Duration>,
     ) -> Self {
+        Self::new_with_partition_key_and_max_num_partitions(
+            index_uid,
+            source_id,
+            config,
+            packager_mailbox,
+            RoutingExpr::default(),
+            max_num_partitions,
+            commit_timeout,
+        )
+    }
+
+    /// Create a new ParquetIndexer with an explicit routing expression and max partition cap.
+    pub fn new_with_partition_key_and_max_num_partitions(
+        index_uid: IndexUid,
+        source_id: SourceId,
+        config: Option<ParquetIndexingConfig>,
+        packager_mailbox: Mailbox<ParquetPackager>,
+        partition_key: RoutingExpr,
+        max_num_partitions: NonZeroU32,
+        commit_timeout: Option<Duration>,
+    ) -> Self {
         let accumulator_config = config.unwrap_or_default();
         let counters = ParquetIndexerCounters::default();
         let commit_timeout = commit_timeout.unwrap_or(DEFAULT_COMMIT_TIMEOUT);
@@ -188,6 +231,7 @@ impl ParquetIndexer {
             index_uid = %index_uid,
             source_id = %source_id,
             commit_timeout_secs = commit_timeout.as_secs(),
+            partition_key = %partition_key,
             max_num_partitions = max_num_partitions.get(),
             "ParquetIndexer created"
         );
@@ -197,6 +241,7 @@ impl ParquetIndexer {
             source_id,
             accumulators: HashMap::new(),
             other_accumulator_opt: None,
+            partition_key,
             max_num_partitions,
             accumulator_config,
             checkpoint_delta: SourceCheckpointDelta::default(),
@@ -254,28 +299,32 @@ impl ParquetIndexer {
         let force_commit = batch.force_commit;
         let mut threshold_flushed_partitions = Vec::new();
 
-        for partitioned_batch in batch.batches {
-            let incoming_partition_id = partitioned_batch.partition_id;
-            let (partition_id, accumulator) = self.get_or_create_accumulator(incoming_partition_id);
+        for record_batch in batch.batches {
+            let routed_batches = self.route_record_batch(record_batch);
 
-            // Add the batch to the partition accumulator. If this partition crosses its threshold,
-            // the returned batch becomes one member of a workbench-wide flush.
-            match accumulator.add_batch(partitioned_batch.batch) {
-                Ok(Some(flushed_batch)) => {
-                    debug!(
-                        partition_id,
-                        num_rows = flushed_batch.num_rows(),
-                        "threshold exceeded, marking workbench for flush"
-                    );
-                    threshold_flushed_partitions.push((partition_id, flushed_batch));
-                }
-                Ok(None) => {}
-                Err(error) => {
-                    warn!(error = %error, "failed to add batch to accumulator");
-                    self.counters.record_error();
-                    return Err(ActorExitStatus::Failure(
-                        anyhow::anyhow!("{}", error).into(),
-                    ));
+            for (accumulator_key, routed_batch) in routed_batches {
+                let partition_id = accumulator_key.partition_id();
+                let accumulator = self.accumulator_mut(accumulator_key);
+
+                // Add the batch to the partition accumulator. If this partition crosses its
+                // threshold, the returned batch becomes one member of a workbench-wide flush.
+                match accumulator.add_batch(routed_batch) {
+                    Ok(Some(flushed_batch)) => {
+                        debug!(
+                            partition_id,
+                            num_rows = flushed_batch.num_rows(),
+                            "threshold exceeded, marking workbench for flush"
+                        );
+                        threshold_flushed_partitions.push((partition_id, flushed_batch));
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        warn!(error = %error, "failed to add batch to accumulator");
+                        self.counters.record_error();
+                        return Err(ActorExitStatus::Failure(
+                            anyhow::anyhow!("{}", error).into(),
+                        ));
+                    }
                 }
             }
         }
@@ -299,22 +348,55 @@ impl ParquetIndexer {
         Ok(Vec::new())
     }
 
-    /// Get or create an accumulator for a partition, routing overflow partitions into OTHER.
-    fn get_or_create_accumulator(
-        &mut self,
-        partition_id: u64,
-    ) -> (u64, &mut ParquetBatchAccumulator) {
+    /// Split one processed Arrow batch into accumulator-local batches.
+    fn route_record_batch(&mut self, batch: RecordBatch) -> Vec<(AccumulatorKey, RecordBatch)> {
+        let num_rows = batch.num_rows();
+        if num_rows == 0 {
+            return Vec::new();
+        }
+
+        if self.partition_key.is_empty() {
+            let accumulator_key = self.get_or_create_accumulator_key(0);
+            return vec![(accumulator_key, batch)];
+        }
+
+        let mut accumulator_rows: HashMap<AccumulatorKey, Vec<u32>> = HashMap::new();
+        for row_idx in 0..num_rows {
+            let ctx = ArrowRowContext::new(&batch, row_idx);
+            let partition_id = self.partition_key.eval_hash(&ctx);
+            let accumulator_key = self.get_or_create_accumulator_key(partition_id);
+            accumulator_rows
+                .entry(accumulator_key)
+                .or_default()
+                .push(row_idx as u32);
+        }
+
+        if accumulator_rows.len() == 1 {
+            let accumulator_key = accumulator_rows.into_keys().next().unwrap();
+            return vec![(accumulator_key, batch)];
+        }
+
+        let mut routed_batches = Vec::with_capacity(accumulator_rows.len());
+        for (accumulator_key, row_indices) in accumulator_rows {
+            let row_indices = UInt32Array::from(row_indices);
+            let routed_batch = take_record_batch(&batch, &row_indices)
+                .expect("take_record_batch should not fail on valid row indices");
+            routed_batches.push((accumulator_key, routed_batch));
+        }
+        routed_batches
+    }
+
+    /// Get or create the accumulator key for a true partition.
+    fn get_or_create_accumulator_key(&mut self, partition_id: u64) -> AccumulatorKey {
         if self.accumulators.contains_key(&partition_id) {
-            let accumulator = self.accumulators.get_mut(&partition_id).unwrap();
-            return (partition_id, accumulator);
+            return AccumulatorKey::Regular(partition_id);
         }
 
         if self.accumulators.len() < self.max_num_partitions.get() as usize {
-            let accumulator = self
-                .accumulators
+            self.accumulators
                 .entry(partition_id)
                 .or_insert_with(|| ParquetBatchAccumulator::new(self.accumulator_config.clone()));
-            return (partition_id, accumulator);
+            return AccumulatorKey::Regular(partition_id);
         }
 
         if self.other_accumulator_opt.is_none() {
@@ -329,10 +411,21 @@ impl ParquetIndexer {
             ));
         }
 
-        (
-            OTHER_PARTITION_ID,
-            self.other_accumulator_opt.as_mut().unwrap(),
-        )
+        AccumulatorKey::Other
+    }
+
+    /// Returns the accumulator for a previously selected key.
+    fn accumulator_mut(&mut self, accumulator_key: AccumulatorKey) -> &mut ParquetBatchAccumulator {
+        match accumulator_key {
+            AccumulatorKey::Regular(partition_id) => self
+                .accumulators
+                .get_mut(&partition_id)
+                .expect("regular accumulator should have been created while routing"),
+            AccumulatorKey::Other => self
+                .other_accumulator_opt
+                .as_mut()
+                .expect("OTHER accumulator should have been created while routing"),
+        }
     }
 
     /// Flush the entire workbench and reset timeout state.
@@ -626,23 +719,70 @@ impl Handler<CommitTimeout> for ParquetIndexer {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap as StdHashMap;
     use std::num::NonZeroU32;
     use std::sync::Arc;
     use std::sync::atomic::Ordering;
     use std::time::Duration;
 
+    use arrow::array::{ArrayRef, Float64Array, Int64Array, UInt8Array, UInt64Array};
+    use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
     use quickwit_actors::{ActorHandle, Universe};
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_parquet_engine::storage::{ParquetSplitWriter, ParquetWriterConfig};
-    use quickwit_parquet_engine::test_helpers::create_test_batch;
+    use quickwit_parquet_engine::test_helpers::{
+        create_dict_array, create_nullable_dict_array, create_test_batch,
+    };
     use quickwit_proto::metastore::{EmptyResponse, MockMetastoreService};
     use quickwit_storage::RamStorage;
 
     use super::*;
-    use crate::actors::metrics_pipeline::{
-        ParquetPackager, ParquetUploader, PartitionedParquetBatch,
-    };
+    use crate::actors::metrics_pipeline::{ParquetPackager, ParquetUploader};
     use crate::actors::{Publisher, UploaderType};
+
+    fn create_test_batch_with_service_values(service_values: &[&str]) -> RecordBatch {
+        let num_rows = service_values.len();
+        let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
+        let schema = Arc::new(ArrowSchema::new(vec![
+            Field::new("metric_name", dict_type.clone(), false),
+            Field::new("metric_type", DataType::UInt8, false),
+            Field::new("timestamp_secs", DataType::UInt64, false),
+            Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
+            Field::new("service", dict_type, true),
+        ]));
+
+        let metric_names: Vec<&str> = vec!["cpu.usage"; num_rows];
+        let metric_name = create_dict_array(&metric_names);
+        let metric_type: ArrayRef = Arc::new(UInt8Array::from(vec![0u8; num_rows]));
+        let timestamps: Vec<u64> = (0..num_rows).map(|idx| 100 + idx as u64).collect();
+        let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps));
+        let values: Vec<f64> = (0..num_rows).map(|idx| 42.0 + idx as f64).collect();
+        let value: ArrayRef = Arc::new(Float64Array::from(values));
+        let timeseries_ids: Vec<i64> = (0..num_rows).map(|idx| 1000 + idx as i64).collect();
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(timeseries_ids));
+        let service_values: Vec<Option<&str>> =
+            service_values.iter().map(|value| Some(*value)).collect();
+        let service = create_nullable_dict_array(&service_values);
+
+        RecordBatch::try_new(
+            schema,
+            vec![
+                metric_name,
+                metric_type,
+                timestamp_secs,
+                value,
+                timeseries_id,
+                service,
+            ],
+        )
+        .unwrap()
+    }
+
+    fn partition_id_for_service(partition_key: &RoutingExpr, service_value: &str) -> u64 {
+        let batch = create_test_batch_with_service_values(&[service_value]);
+        partition_key.eval_hash(&ArrowRowContext::new(&batch, 0))
+    }
 
     /// Create a test ParquetUploader and return its mailbox.
     fn create_test_uploader(
@@ -749,7 +889,7 @@ mod tests {
         // Send a batch
         let batch = create_test_batch(10);
         let processed =
-            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..10), false);
+            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..10), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
 
@@ -785,7 +925,6 @@ mod tests {
         let batch = create_test_batch(5);
         let processed = ProcessedParquetBatch::new(
             batch,
-            0,
             SourceCheckpointDelta::from_range(0..5),
             true, // force_commit
         );
@@ -840,7 +979,7 @@ mod tests {
         // Send batch after lock is dead
         let batch = create_test_batch(10);
         let processed =
-            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..10), false);
+            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..10), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
 
@@ -878,7 +1017,7 @@ mod tests {
         // Send batch that exceeds threshold
         let batch = create_test_batch(100);
         let processed =
-            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..100), false);
+            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..100), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
 
@@ -911,22 +1050,25 @@ mod tests {
         let (packager_mailbox, packager_handle) =
             create_test_packager(&universe, temp_dir.path(), uploader_mailbox);
 
-        let indexer = ParquetIndexer::new(
+        let partition_key = RoutingExpr::new("service").unwrap();
+        let indexer = ParquetIndexer::new_with_partition_key_and_max_num_partitions(
             IndexUid::for_test("test-index", 0),
             "test-source".to_string(),
             Some(config),
             packager_mailbox,
+            partition_key,
+            quickwit_doc_mapper::DocMapping::default_max_num_partitions(),
             None,
         );
 
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         // First partition stays buffered in the workbench.
-        let partition_one_batch = create_test_batch(10);
+        let partition_one_values = vec!["a"; 10];
+        let partition_one_batch = create_test_batch_with_service_values(&partition_one_values);
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
                 partition_one_batch,
-                1,
                 SourceCheckpointDelta::from_range(0..10),
                 false,
             ))
@@ -937,11 +1079,11 @@ mod tests {
 
         // Second partition crosses the threshold and should commit the full workbench,
         // including the buffered rows from partition 1.
-        let partition_two_batch = create_test_batch(100);
+        let partition_two_values = vec!["b"; 100];
+        let partition_two_batch = create_test_batch_with_service_values(&partition_two_values);
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
                 partition_two_batch,
-                2,
                 SourceCheckpointDelta::from_range(10..110),
                 false,
             ))
@@ -964,21 +1106,29 @@ mod tests {
         let (packager_mailbox, packager_inbox) = universe.create_test_mailbox::<ParquetPackager>();
 
         let config = ParquetIndexingConfig::default().with_max_rows(50);
-        let indexer = ParquetIndexer::new(
+        let partition_key = RoutingExpr::new("service").unwrap();
+        let mut expected_partition_ids = vec![
+            partition_id_for_service(&partition_key, "a"),
+            partition_id_for_service(&partition_key, "b"),
+        ];
+        expected_partition_ids.sort();
+        let indexer = ParquetIndexer::new_with_partition_key_and_max_num_partitions(
             IndexUid::for_test("test-index", 0),
             "test-source".to_string(),
             Some(config),
             packager_mailbox,
+            partition_key,
+            quickwit_doc_mapper::DocMapping::default_max_num_partitions(),
             None,
         );
 
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
         indexer_mailbox
-            .send_message(ProcessedParquetBatch::new_partitioned(
+            .send_message(ProcessedParquetBatch::new_batches(
                 vec![
-                    PartitionedParquetBatch::new(create_test_batch(100), 1),
-                    PartitionedParquetBatch::new(create_test_batch(10), 2),
+                    create_test_batch_with_service_values(&vec!["a"; 100]),
+                    create_test_batch_with_service_values(&vec!["b"; 10]),
                 ],
                 SourceCheckpointDelta::from_range(0..110),
                 false,
@@ -999,7 +1149,7 @@ mod tests {
                 .iter()
                 .map(|batch| batch.partition_id)
                 .collect::<Vec<_>>(),
-            vec![1, 2]
+            expected_partition_ids
         );
         assert_eq!(
             packager_batches[0].checkpoint_delta.source_delta,
@@ -1032,7 +1182,7 @@ mod tests {
         // Send batch without force_commit
         let batch = create_test_batch(10);
         let processed =
-            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..10), false);
+            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..10), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
         indexer_handle.process_pending_and_observe().await;
@@ -1065,11 +1215,14 @@ mod tests {
         let (packager_mailbox, packager_handle) =
             create_test_packager(&universe, temp_dir.path(), uploader_mailbox);
 
-        let indexer = ParquetIndexer::new(
+        let partition_key = RoutingExpr::new("service").unwrap();
+        let indexer = ParquetIndexer::new_with_partition_key_and_max_num_partitions(
             IndexUid::for_test("test-index", 0),
             "test-source".to_string(),
             None,
             packager_mailbox,
+            partition_key,
+            quickwit_doc_mapper::DocMapping::default_max_num_partitions(),
             None,
         );
 
@@ -1077,8 +1230,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch(10),
-                1,
+                create_test_batch_with_service_values(&vec!["a"; 10]),
                 SourceCheckpointDelta::from_range(0..10),
                 false,
             ))
@@ -1088,8 +1240,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch(20),
-                2,
+                create_test_batch_with_service_values(&vec!["b"; 20]),
                 SourceCheckpointDelta::from_range(10..30),
                 true,
             ))
@@ -1111,11 +1262,19 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (packager_mailbox, packager_inbox) = universe.create_test_mailbox::<ParquetPackager>();
 
-        let indexer = ParquetIndexer::new(
+        let partition_key = RoutingExpr::new("service").unwrap();
+        let mut expected_partition_ids = vec![
+            partition_id_for_service(&partition_key, "a"),
+            partition_id_for_service(&partition_key, "b"),
+        ];
+        expected_partition_ids.sort();
+        let indexer = ParquetIndexer::new_with_partition_key_and_max_num_partitions(
             IndexUid::for_test("test-index", 0),
             "test-source".to_string(),
             None,
             packager_mailbox,
+            partition_key,
+            quickwit_doc_mapper::DocMapping::default_max_num_partitions(),
             None,
         );
 
@@ -1123,8 +1282,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch(10),
-                1,
+                create_test_batch_with_service_values(&vec!["a"; 10]),
                 SourceCheckpointDelta::from_range(0..10),
                 false,
             ))
@@ -1134,8 +1292,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch(20),
-                3,
+                create_test_batch_with_service_values(&vec!["b"; 20]),
                 SourceCheckpointDelta::from_range(10..30),
                 false,
             ))
@@ -1163,7 +1320,7 @@ mod tests {
                 .iter()
                 .map(|batch| batch.partition_id)
                 .collect::<Vec<_>>(),
-            vec![1, 3]
+            expected_partition_ids
         );
         assert_eq!(
             packager_batches[0].checkpoint_delta.source_delta,
@@ -1178,23 +1335,26 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (packager_mailbox, packager_inbox) = universe.create_test_mailbox::<ParquetPackager>();
 
-        let indexer = ParquetIndexer::new_with_max_num_partitions(
+        let partition_key = RoutingExpr::new("service").unwrap();
+        let partition_a = partition_id_for_service(&partition_key, "a");
+        let partition_b = partition_id_for_service(&partition_key, "b");
+        let indexer = ParquetIndexer::new_with_partition_key_and_max_num_partitions(
             IndexUid::for_test("test-index", 0),
             "test-source".to_string(),
             None,
             packager_mailbox,
+            partition_key,
             NonZeroU32::new(2).unwrap(),
             None,
         );
 
         let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
 
-        for (idx, partition_id) in [1, 2, 3].into_iter().enumerate() {
+        for (idx, service_value) in ["a", "b", "c"].into_iter().enumerate() {
             let offset = idx as u64;
             indexer_mailbox
                 .send_message(ProcessedParquetBatch::new(
-                    create_test_batch(10),
-                    partition_id,
+                    create_test_batch_with_service_values(&vec![service_value; 10]),
                     SourceCheckpointDelta::from_range(offset..offset + 1),
                     idx == 2,
                 ))
@@ -1210,17 +1370,81 @@ mod tests {
 
         let packager_batches: Vec<ParquetBatchForPackager> = packager_inbox.drain_for_test_typed();
         assert_eq!(packager_batches.len(), 1);
-        assert_eq!(
-            packager_batches[0]
-                .batches
-                .iter()
-                .map(|batch| batch.partition_id)
-                .collect::<Vec<_>>(),
-            vec![1, 2, OTHER_PARTITION_ID]
-        );
+        let partition_ids = packager_batches[0]
+            .batches
+            .iter()
+            .map(|batch| batch.partition_id)
+            .collect::<Vec<_>>();
+        assert_eq!(partition_ids.len(), 3);
+        assert!(partition_ids.contains(&partition_a));
+        assert!(partition_ids.contains(&partition_b));
+        assert!(partition_ids.contains(&OTHER_PARTITION_ID));
         assert_eq!(
             packager_batches[0].checkpoint_delta.source_delta,
             SourceCheckpointDelta::from_range(0..3)
+        );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_indexer_overflow_keeps_rows_for_already_open_partition() {
+        let universe = Universe::with_accelerated_time();
+        let (packager_mailbox, packager_inbox) = universe.create_test_mailbox::<ParquetPackager>();
+
+        let partition_key = RoutingExpr::new("service").unwrap();
+        let partition_a = partition_id_for_service(&partition_key, "a");
+        let partition_b = partition_id_for_service(&partition_key, "b");
+        let indexer = ParquetIndexer::new_with_partition_key_and_max_num_partitions(
+            IndexUid::for_test("test-index", 0),
+            "test-source".to_string(),
+            None,
+            packager_mailbox,
+            partition_key,
+            NonZeroU32::new(2).unwrap(),
+            None,
+        );
+
+        let (indexer_mailbox, indexer_handle) = universe.spawn_builder().spawn(indexer);
+
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                create_test_batch_with_service_values(&["a", "b"]),
+                SourceCheckpointDelta::from_range(0..2),
+                false,
+            ))
+            .await
+            .unwrap();
+        let counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.batches_flushed, 0);
+
+        indexer_mailbox
+            .send_message(ProcessedParquetBatch::new(
+                create_test_batch_with_service_values(&["c", "d", "a"]),
+                SourceCheckpointDelta::from_range(2..5),
+                true,
+            ))
+            .await
+            .unwrap();
+
+        let counters = indexer_handle.process_pending_and_observe().await.state;
+        assert_eq!(counters.batches_received, 2);
+        assert_eq!(counters.rows_indexed, 5);
+        assert_eq!(counters.batches_flushed, 3);
+
+        let packager_batches: Vec<ParquetBatchForPackager> = packager_inbox.drain_for_test_typed();
+        assert_eq!(packager_batches.len(), 1);
+        let row_counts: StdHashMap<u64, usize> = packager_batches[0]
+            .batches
+            .iter()
+            .map(|batch| (batch.partition_id, batch.batch.num_rows()))
+            .collect();
+        assert_eq!(row_counts.get(&partition_a), Some(&2));
+        assert_eq!(row_counts.get(&partition_b), Some(&1));
+        assert_eq!(row_counts.get(&OTHER_PARTITION_ID), Some(&2));
+        assert_eq!(
+            packager_batches[0].checkpoint_delta.source_delta,
+            SourceCheckpointDelta::from_range(0..5)
         );
 
         universe.assert_quit().await;
@@ -1231,11 +1455,19 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (packager_mailbox, packager_inbox) = universe.create_test_mailbox::<ParquetPackager>();
 
-        let indexer = ParquetIndexer::new(
+        let partition_key = RoutingExpr::new("service").unwrap();
+        let mut expected_partition_ids = vec![
+            partition_id_for_service(&partition_key, "a"),
+            partition_id_for_service(&partition_key, "b"),
+        ];
+        expected_partition_ids.sort();
+        let indexer = ParquetIndexer::new_with_partition_key_and_max_num_partitions(
             IndexUid::for_test("test-index", 0),
             "test-source".to_string(),
             None,
             packager_mailbox,
+            partition_key,
+            quickwit_doc_mapper::DocMapping::default_max_num_partitions(),
             None,
         );
 
@@ -1243,8 +1475,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch(10),
-                1,
+                create_test_batch_with_service_values(&vec!["a"; 10]),
                 SourceCheckpointDelta::from_range(0..10),
                 false,
             ))
@@ -1254,8 +1485,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch(20),
-                2,
+                create_test_batch_with_service_values(&vec!["b"; 20]),
                 SourceCheckpointDelta::from_range(10..30),
                 true,
             ))
@@ -1275,7 +1505,7 @@ mod tests {
                 .iter()
                 .map(|batch| batch.partition_id)
                 .collect::<Vec<_>>(),
-            vec![1, 2]
+            expected_partition_ids
         );
         assert_eq!(
             packager_batches[0].checkpoint_delta.source_delta,
@@ -1310,7 +1540,7 @@ mod tests {
         // Send batch without force_commit
         let batch = create_test_batch(10);
         let processed =
-            ProcessedParquetBatch::new(batch, 0, SourceCheckpointDelta::from_range(0..10), false);
+            ProcessedParquetBatch::new(batch, SourceCheckpointDelta::from_range(0..10), false);
 
         indexer_mailbox.send_message(processed).await.unwrap();
         indexer_handle.process_pending_and_observe().await;
@@ -1380,7 +1610,6 @@ mod tests {
         let batch = create_test_batch(20);
         let processed = ProcessedParquetBatch::new(
             batch,
-            0,
             SourceCheckpointDelta::from_range(0..20),
             true, // force_commit
         );
