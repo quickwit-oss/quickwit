@@ -45,6 +45,10 @@ pub struct CompactionScope {
     pub sort_fields: String,
     /// Window start in epoch seconds.
     pub window_start_secs: i64,
+    /// Window duration in seconds. The merge engine requires all inputs to
+    /// agree on both start and duration, so a config change that alters the
+    /// window size must not cause old and new splits to be merged.
+    pub window_duration_secs: i64,
 }
 
 impl CompactionScope {
@@ -59,6 +63,7 @@ impl CompactionScope {
             partition_id: split.partition_id,
             sort_fields: split.sort_fields.clone(),
             window_start_secs: window.start,
+            window_duration_secs: window.end - window.start,
         })
     }
 }
@@ -171,6 +176,24 @@ mod tests {
     }
 
     #[test]
+    fn test_different_window_duration() {
+        // Bug: only window_start was in the scope key, so splits with the
+        // same start but different durations (e.g. after a config change)
+        // would be grouped together. The merge engine requires all inputs
+        // to agree on both window_start and window_duration.
+        let sort = "metric_name|host|timestamp/V2";
+        let splits = vec![
+            test_split("idx:001", sort, Some(0), 900),  // 0..900
+            test_split("idx:001", sort, Some(0), 1800), // 0..1800
+        ];
+        let result = group_by_compaction_scope(splits);
+        assert!(
+            result.is_empty(),
+            "different window durations must not be grouped together"
+        );
+    }
+
+    #[test]
     fn test_different_window_start() {
         let splits = vec![
             test_split("idx:001", "metric_name|host|timestamp/V2", Some(1000), 3600),
@@ -227,12 +250,14 @@ mod tests {
             partition_id: 0,
             sort_fields: "metric_name|host|timestamp/V2".to_string(),
             window_start_secs: 1000,
+            window_duration_secs: 3600,
         };
         let scope_b = CompactionScope {
             index_uid: "idx:001".to_string(),
             partition_id: 0,
             sort_fields: "metric_name|host|timestamp/V2".to_string(),
             window_start_secs: 4600,
+            window_duration_secs: 3600,
         };
 
         assert_eq!(result[&scope_a].len(), 3);
@@ -286,5 +311,6 @@ mod tests {
         assert_eq!(scope.partition_id, 7);
         assert_eq!(scope.sort_fields, "metric_name|host|timestamp/V2");
         assert_eq!(scope.window_start_secs, 7200);
+        assert_eq!(scope.window_duration_secs, 3600);
     }
 }
