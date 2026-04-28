@@ -43,7 +43,9 @@ pub mod window;
 mod tests;
 
 // Public API re-exports.
-pub use column_type::ColumnTypeId;
+pub use column_type::{
+    ColumnTypeId, TIMESTAMP_SECS, is_timestamp_column_name, normalize_column_name,
+};
 pub use display::{schema_to_string, schema_to_string_short};
 pub use equivalence::{equivalent_schemas, equivalent_schemas_for_compaction};
 pub use parser::parse_sort_fields;

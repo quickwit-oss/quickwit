@@ -19,7 +19,7 @@ use std::collections::HashSet;
 use quickwit_proto::sortschema::{SortColumnDirection, SortSchema};
 
 use super::SortFieldsError;
-use super::column_type::{ColumnTypeId, TIEBREAKER, default_is_descending};
+use super::column_type::{ColumnTypeId, TIEBREAKER, TIMESERIES_ID, default_is_descending};
 
 /// Name used for the special skip-builder schema that does not require timestamp.
 const DEFAULT_SKIP_BUILDER_SCHEMA_NAME: &str = "defaultSkipBuilderSchema";
