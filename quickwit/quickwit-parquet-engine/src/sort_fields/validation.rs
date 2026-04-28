@@ -24,8 +24,6 @@ use super::column_type::{ColumnTypeId, TIEBREAKER, TIMESERIES_ID, default_is_des
 /// Name used for the special skip-builder schema that does not require timestamp.
 const DEFAULT_SKIP_BUILDER_SCHEMA_NAME: &str = "defaultSkipBuilderSchema";
 
-const TIMESERIES_ID: &str = "timeseries_id";
-
 /// Check if a bare column name is a timestamp column (defaults to descending).
 fn is_timestamp_column(name: &str) -> bool {
     default_is_descending(name)
