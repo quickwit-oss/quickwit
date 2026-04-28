@@ -30,7 +30,7 @@ use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::types::{IndexUid, SourceId, SplitId};
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 use crate::metrics::COMPACTOR_METRICS;
 use crate::{TaskId, source_uid_metrics_label};
@@ -205,7 +205,7 @@ impl CompactionPipeline {
         }
         if !has_healthy {
             self.record_pipeline_duration();
-            debug!(task_id=%self.task_id, "all compaction pipeline actors completed");
+            info!(task_id=%self.task_id, "all compaction pipeline actors completed");
             self.status = PipelineStatus::Completed;
         }
     }
