@@ -26,6 +26,8 @@ mod indexing_service_impl;
 mod parquet_doc_processor;
 mod parquet_indexer;
 pub(crate) mod parquet_merge_messages;
+mod parquet_merge_planner;
+mod parquet_merge_split_downloader;
 mod parquet_packager;
 mod parquet_splits_update;
 mod parquet_uploader;
@@ -46,6 +48,8 @@ pub use parquet_doc_processor::{
 };
 pub use parquet_indexer::{ParquetIndexer, ParquetIndexerCounters, ParquetSplitBatch};
 pub use parquet_merge_messages::{ParquetMergeScratch, ParquetMergeTask, ParquetNewSplits};
+pub use parquet_merge_planner::ParquetMergePlanner;
+pub use parquet_merge_split_downloader::ParquetMergeSplitDownloader;
 pub use parquet_packager::{ParquetBatchForPackager, ParquetPackager, ParquetPackagerCounters};
 pub use parquet_splits_update::ParquetSplitsUpdate;
 pub use parquet_uploader::ParquetUploader;
