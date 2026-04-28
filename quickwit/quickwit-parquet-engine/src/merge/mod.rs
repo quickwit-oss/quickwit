@@ -21,6 +21,7 @@
 //! file has non-overlapping key ranges.
 
 mod merge_order;
+pub mod policy;
 mod schema;
 mod writer;
 
