@@ -206,7 +206,7 @@ async fn test_sketch_merge_and_quantile_substrait() {
     let data_dir = &sandbox.data_dir;
     let builder = session_builder(&sandbox);
 
-    let index_uid = create_metrics_index(&metastore, "sketches-substrait", data_dir.path()).await;
+    let index_uid = create_metrics_index(&metastore, "datadog-sketches", data_dir.path()).await;
     let batch = make_doc_example_batch();
     publish_sketch_split(
         &metastore,
@@ -220,7 +220,7 @@ async fn test_sketch_merge_and_quantile_substrait() {
     let ctx = builder.build_session().unwrap();
     ctx.sql(
         r#"
-        CREATE OR REPLACE EXTERNAL TABLE "sketches-substrait" (
+        CREATE OR REPLACE EXTERNAL TABLE "datadog-sketches" (
             metric_name VARCHAR NOT NULL,
             timestamp_secs BIGINT UNSIGNED NOT NULL,
             count BIGINT UNSIGNED NOT NULL,
@@ -230,7 +230,7 @@ async fn test_sketch_merge_and_quantile_substrait() {
             flags INT UNSIGNED NOT NULL,
             keys ARRAY<SMALLINT> NOT NULL,
             counts ARRAY<BIGINT UNSIGNED> NOT NULL
-        ) STORED AS sketches LOCATION 'sketches-substrait'
+        ) STORED AS sketches LOCATION 'datadog-sketches'
         "#,
     )
     .await
@@ -244,7 +244,7 @@ async fn test_sketch_merge_and_quantile_substrait() {
             r#"
             SELECT
                 dd_quantile(dd_sketch(keys, counts, "count", "min", "max", flags), 0.50) AS p50
-            FROM "sketches-substrait"
+            FROM "datadog-sketches"
             WHERE metric_name = 'req.latency' AND timestamp_secs = 600
             "#,
         )
