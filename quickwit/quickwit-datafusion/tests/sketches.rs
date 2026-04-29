@@ -25,8 +25,11 @@ use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry}
 use quickwit_parquet_engine::ingest::{ArrowSketchBatchBuilder, SketchDataPoint};
 
 mod common;
+#[path = "common/sketch_splits.rs"]
+mod sketch_splits;
 
-use common::{TestSandbox, create_metrics_index, publish_sketch_split};
+use common::{TestSandbox, create_metrics_index};
+use sketch_splits::publish_sketch_split;
 
 async fn start_sandbox() -> TestSandbox {
     quickwit_common::setup_logging_for_tests();

@@ -37,9 +37,14 @@ use quickwit_datafusion::{
 use quickwit_search::{SearcherPool, create_search_client_from_grpc_addr};
 
 mod common;
+#[path = "common/metrics_splits.rs"]
+mod metrics_splits;
+#[path = "common/worker.rs"]
+mod worker;
 
-use common::sandbox::spawn_df_worker;
-use common::{TestSandbox, create_metrics_index, publish_split};
+use common::{TestSandbox, create_metrics_index};
+use metrics_splits::publish_split;
+use worker::spawn_df_worker;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_distributed_tasks_not_shuffles() {
