@@ -318,22 +318,28 @@ struct ScheduleMerge {
     split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
 }
 
-/// The higher, the sooner we will execute the merge operation.
-/// A good merge operation
-/// - strongly reduces the number splits
-/// - is light.
-fn score_merge_operation(merge_operation: &MergeOperation) -> u64 {
-    let total_num_bytes: u64 = merge_operation.total_num_bytes();
+/// Scores a merge operation for priority scheduling.
+///
+/// Higher score = scheduled sooner. Prefers merges that strongly reduce
+/// split count relative to their total byte cost. Used by both Tantivy
+/// and Parquet merge scheduling.
+fn score_merge(num_splits: usize, total_num_bytes: u64) -> u64 {
     if total_num_bytes == 0 {
-        // Silly corner case that should never happen.
         return u64::MAX;
     }
-    // We will remove splits.len() and add 1 merge splits.
-    let delta_num_splits = (merge_operation.splits.len() - 1) as u64;
-    // We use integer arithmetic to avoid `f64 are not ordered` silliness.
+    // We will remove num_splits and add 1 merged split.
+    let delta_num_splits = (num_splits - 1) as u64;
+    // Integer arithmetic to avoid `f64 are not ordered` silliness.
     (delta_num_splits << 48)
         .checked_div(total_num_bytes)
         .unwrap_or(1u64)
+}
+
+fn score_merge_operation(merge_operation: &MergeOperation) -> u64 {
+    score_merge(
+        merge_operation.splits.len(),
+        merge_operation.total_num_bytes(),
+    )
 }
 
 impl ScheduleMerge {
@@ -406,14 +412,10 @@ impl Handler<PermitReleased> for MergeSchedulerService {
 
 #[cfg(feature = "metrics")]
 fn score_parquet_merge_operation(merge_operation: &ParquetMergeOperation) -> u64 {
-    let total_num_bytes = merge_operation.total_size_bytes();
-    if total_num_bytes == 0 {
-        return u64::MAX;
-    }
-    let delta_num_splits = (merge_operation.splits.len() - 1) as u64;
-    (delta_num_splits << 48)
-        .checked_div(total_num_bytes)
-        .unwrap_or(1u64)
+    score_merge(
+        merge_operation.splits.len(),
+        merge_operation.total_size_bytes(),
+    )
 }
 
 #[cfg(feature = "metrics")]
