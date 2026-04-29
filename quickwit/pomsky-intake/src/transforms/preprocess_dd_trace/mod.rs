@@ -16,14 +16,14 @@ use serde::{Deserialize, Serialize};
 use vector::config::{
     DataType, GenerateConfig, Input, OutputId, TransformConfig, TransformContext, TransformOutput,
 };
-use vector::event::Event;
+use vector::event::{Event, ObjectMap, TraceEvent, Value};
 use vector::schema::Definition;
 use vector::transforms::{FunctionTransform, OutputBuffer, Transform};
 use vector_lib::config::clone_input_definitions;
 
 /// Preprocesses Datadog agent trace chunks before they are exploded into
-/// individual spans. Currently a pass-through; processors will be added
-/// here as the trace-level pipeline grows.
+/// individual spans. Propagates chunk-level fields onto each span so they
+/// survive `explode_trace_spans`, which only carries span-local data.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PreprocessDdTraceConfig;
@@ -71,7 +71,49 @@ impl TransformConfig for PreprocessDdTraceConfig {
 struct PreprocessDdTrace;
 
 impl FunctionTransform for PreprocessDdTrace {
-    fn transform(&mut self, output: &mut OutputBuffer, event: Event) {
+    fn transform(&mut self, output: &mut OutputBuffer, mut event: Event) {
+        if let Event::Trace(trace) = &mut event {
+            propagate_chunk_meta(trace);
+        }
         output.push(event);
+    }
+}
+
+/// Mirrors `SpansV07Parser.populateSpanTags` in logs-backend: copies the
+/// chunk-event's `host` and `env` into each span's `meta` map under
+/// `_dd.hostname` and `env` respectively. Existing keys are preserved so
+/// per-span overrides win. Without this, both fall off when
+/// `explode_trace_spans` strips chunk-level fields.
+fn propagate_chunk_meta(trace: &mut TraceEvent) {
+    // Cheap pre-check so we don't clone host/env when there are no spans.
+    if !matches!(trace.get("spans"), Some(Value::Array(_))) {
+        return;
+    }
+    let host_opt = trace.get("host").cloned();
+    let env_opt = trace.get("env").cloned();
+    let Some(Value::Array(spans)) = trace.get_mut("spans") else {
+        return;
+    };
+    for span in spans {
+        let Value::Object(span_fields) = span else {
+            continue;
+        };
+        ensure_meta(span_fields, "_dd.hostname", host_opt.as_ref());
+        ensure_meta(span_fields, "env", env_opt.as_ref());
+    }
+}
+
+fn ensure_meta(span_fields: &mut ObjectMap, key: &str, value_opt: Option<&Value>) {
+    let Some(value) = value_opt else {
+        return;
+    };
+    let meta_value = span_fields
+        .entry("meta".into())
+        .or_insert_with(|| Value::Object(ObjectMap::new()));
+    let Value::Object(meta) = meta_value else {
+        return;
+    };
+    if !meta.contains_key(key) {
+        meta.insert(key.into(), value.clone());
     }
 }
