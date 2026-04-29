@@ -107,63 +107,68 @@ fn validate_bounds(context: &str, min: f64, max: f64) -> DFResult<()> {
     }
 }
 
-fn quantile_for_row(
-    config: &SketchConfig,
-    keys: &[i16],
-    counts: &[u64],
+struct QuantileRow<'a> {
+    keys: &'a [i16],
+    counts: &'a [u64],
     total_count: u64,
     global_min: f64,
     global_max: f64,
     flags: u32,
     quantile: f64,
-) -> DFResult<Option<f64>> {
-    if !(0.0..=1.0).contains(&quantile) {
+}
+
+fn quantile_for_row(config: &SketchConfig, row: QuantileRow<'_>) -> DFResult<Option<f64>> {
+    if !(0.0..=1.0).contains(&row.quantile) {
         return Err(DataFusionError::Execution(format!(
-            "dd_quantile: quantile must be between 0.0 and 1.0, got {quantile}"
+            "dd_quantile: quantile must be between 0.0 and 1.0, got {}",
+            row.quantile
         )));
     }
-    validate_flags("dd_quantile", flags)?;
+    validate_flags("dd_quantile", row.flags)?;
 
-    if keys.len() != counts.len() {
+    if row.keys.len() != row.counts.len() {
         return Err(DataFusionError::Execution(format!(
             "dd_quantile: keys/counts length mismatch: keys has {} elements but counts has {}",
-            keys.len(),
-            counts.len()
+            row.keys.len(),
+            row.counts.len()
         )));
     }
     let mut bucket_total = 0u64;
-    for count in counts {
+    for count in row.counts {
         bucket_total = bucket_total.checked_add(*count).ok_or_else(|| {
             DataFusionError::Execution("dd_quantile: total bucket count overflow".to_string())
         })?;
     }
-    if bucket_total != total_count {
+    if bucket_total != row.total_count {
         return Err(DataFusionError::Execution(format!(
-            "dd_quantile: total_count {total_count} does not match sum(counts) {bucket_total}"
+            "dd_quantile: total_count {} does not match sum(counts) {bucket_total}",
+            row.total_count
         )));
     }
 
-    if total_count == 0 {
+    if row.total_count == 0 {
         return Ok(None);
     }
-    validate_bounds("dd_quantile", global_min, global_max)?;
+    validate_bounds("dd_quantile", row.global_min, row.global_max)?;
 
-    if quantile == 0.0 {
-        return Ok(Some(global_min));
+    if row.quantile == 0.0 {
+        return Ok(Some(row.global_min));
     }
-    if quantile == 1.0 {
-        return Ok(Some(global_max));
+    if row.quantile == 1.0 {
+        return Ok(Some(row.global_max));
     }
 
-    let rank = (quantile * (total_count as f64 - 1.0)).floor() as u64 + 1;
+    let rank = (row.quantile * (row.total_count as f64 - 1.0)).floor() as u64 + 1;
     let mut cumulative = 0u64;
-    for (key, count) in keys.iter().zip(counts.iter()) {
+    for (key, count) in row.keys.iter().zip(row.counts.iter()) {
         cumulative = cumulative.checked_add(*count).ok_or_else(|| {
             DataFusionError::Execution("dd_quantile: cumulative count overflow".to_string())
         })?;
         if cumulative >= rank {
             return Ok(Some(
-                config.quantile_for_key(*key).clamp(global_min, global_max),
+                config
+                    .quantile_for_key(*key)
+                    .clamp(row.global_min, row.global_max),
             ));
         }
     }
@@ -582,16 +587,16 @@ impl ScalarUDFImpl for DdQuantileUdf {
             let count_start = count_offsets[row] as usize;
             let count_end = count_offsets[row + 1] as usize;
 
-            match quantile_for_row(
-                &self.config,
-                &key_values[key_start..key_end],
-                &count_values[count_start..count_end],
-                total_count_col.value(row),
-                min_col.value(row),
-                max_col.value(row),
-                flags_col.value(row),
-                quantiles.value(row),
-            )? {
+            let quantile_row = QuantileRow {
+                keys: &key_values[key_start..key_end],
+                counts: &count_values[count_start..count_end],
+                total_count: total_count_col.value(row),
+                global_min: min_col.value(row),
+                global_max: max_col.value(row),
+                flags: flags_col.value(row),
+                quantile: quantiles.value(row),
+            };
+            match quantile_for_row(&self.config, quantile_row)? {
                 Some(value) => results.append_value(value),
                 None => results.append_null(),
             }
@@ -612,6 +617,26 @@ pub(crate) fn create_dd_quantile_udf() -> ScalarUDF {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn qrow<'a>(
+        keys: &'a [i16],
+        counts: &'a [u64],
+        total_count: u64,
+        global_min: f64,
+        global_max: f64,
+        flags: u32,
+        quantile: f64,
+    ) -> QuantileRow<'a> {
+        QuantileRow {
+            keys,
+            counts,
+            total_count,
+            global_min,
+            global_max,
+            flags,
+            quantile,
+        }
+    }
 
     #[test]
     fn merge_accumulator_coalesces_keys() {
@@ -722,11 +747,12 @@ mod tests {
     #[test]
     fn quantile_for_row_validates_inputs() {
         let config = SketchConfig::default();
-        let invalid_q = quantile_for_row(&config, &[1], &[1], 1, 1.0, 1.0, 0, 1.5).unwrap_err();
+        let invalid_q =
+            quantile_for_row(&config, qrow(&[1], &[1], 1, 1.0, 1.0, 0, 1.5)).unwrap_err();
         assert!(invalid_q.to_string().contains("quantile must be"));
 
         let reversed_bounds =
-            quantile_for_row(&config, &[1], &[1], 1, 2.0, 1.0, 0, 0.5).unwrap_err();
+            quantile_for_row(&config, qrow(&[1], &[1], 1, 2.0, 1.0, 0, 0.5)).unwrap_err();
         assert!(
             reversed_bounds
                 .to_string()
@@ -734,14 +760,14 @@ mod tests {
         );
 
         let nan_bounds =
-            quantile_for_row(&config, &[1], &[1], 1, f64::NAN, 1.0, 0, 0.5).unwrap_err();
+            quantile_for_row(&config, qrow(&[1], &[1], 1, f64::NAN, 1.0, 0, 0.5)).unwrap_err();
         assert!(nan_bounds.to_string().contains("invalid sketch bounds"));
 
-        let flags = quantile_for_row(&config, &[1], &[1], 1, 1.0, 1.0, 1, 0.5).unwrap_err();
+        let flags = quantile_for_row(&config, qrow(&[1], &[1], 1, 1.0, 1.0, 1, 0.5)).unwrap_err();
         assert!(flags.to_string().contains("unsupported sketch flags"));
 
         let mismatched_lengths =
-            quantile_for_row(&config, &[1, 2], &[1], 1, 1.0, 1.0, 0, 0.5).unwrap_err();
+            quantile_for_row(&config, qrow(&[1, 2], &[1], 1, 1.0, 1.0, 0, 0.5)).unwrap_err();
         assert!(
             mismatched_lengths
                 .to_string()
@@ -749,7 +775,7 @@ mod tests {
         );
 
         let mismatched_total =
-            quantile_for_row(&config, &[1], &[2], 1, 1.0, 1.0, 0, 0.5).unwrap_err();
+            quantile_for_row(&config, qrow(&[1], &[2], 1, 1.0, 1.0, 0, 0.5)).unwrap_err();
         assert!(mismatched_total.to_string().contains("does not match"));
     }
 
@@ -760,23 +786,17 @@ mod tests {
         assert_eq!(
             quantile_for_row(
                 &config,
-                &[],
-                &[],
-                0,
-                f64::INFINITY,
-                f64::NEG_INFINITY,
-                0,
-                0.5
+                qrow(&[], &[], 0, f64::INFINITY, f64::NEG_INFINITY, 0, 0.5)
             )
             .unwrap(),
             None
         );
         assert_eq!(
-            quantile_for_row(&config, &[1338], &[2], 2, 1.0, 2.0, 0, 0.0).unwrap(),
+            quantile_for_row(&config, qrow(&[1338], &[2], 2, 1.0, 2.0, 0, 0.0)).unwrap(),
             Some(1.0)
         );
         assert_eq!(
-            quantile_for_row(&config, &[1338], &[2], 2, 1.0, 2.0, 0, 1.0).unwrap(),
+            quantile_for_row(&config, qrow(&[1338], &[2], 2, 1.0, 2.0, 0, 1.0)).unwrap(),
             Some(2.0)
         );
     }
