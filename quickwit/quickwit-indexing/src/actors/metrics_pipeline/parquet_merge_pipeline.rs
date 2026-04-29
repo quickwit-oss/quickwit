@@ -54,6 +54,7 @@ use super::{METRICS_PUBLISHER_NAME, ParquetUploader};
 use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Sequencer, UploaderType};
+use crate::models::MergeStatistics;
 
 /// Limits concurrent Parquet merge pipeline spawns to avoid overwhelming the
 /// metastore. This is a separate semaphore from the Tantivy merge pipeline's.
@@ -108,13 +109,12 @@ pub struct ParquetMergePipeline {
     /// the new planner instance.
     merge_planner_mailbox: Mailbox<ParquetMergePlanner>,
     merge_planner_inbox: Inbox<ParquetMergePlanner>,
+    previous_generations_statistics: MergeStatistics,
+    statistics: MergeStatistics,
     handles_opt: Option<ParquetMergePipelineHandles>,
     /// Child kill switch — killing this kills all actors in the pipeline
     /// without affecting the supervisor itself.
     kill_switch: KillSwitch,
-    /// Increments on each spawn. Used for log correlation.
-    generation: usize,
-    num_spawn_attempts: usize,
     /// Immature splits passed to the planner on first spawn. On subsequent
     /// spawns (after crash/respawn), the planner starts empty and picks up
     /// new splits from the feedback loop.
@@ -124,9 +124,11 @@ pub struct ParquetMergePipeline {
 
 #[async_trait]
 impl Actor for ParquetMergePipeline {
-    type ObservableState = ();
+    type ObservableState = MergeStatistics;
 
-    fn observable_state(&self) {}
+    fn observable_state(&self) -> Self::ObservableState {
+        self.statistics.clone()
+    }
 
     fn name(&self) -> String {
         "ParquetMergePipeline".to_string()
@@ -154,10 +156,10 @@ impl ParquetMergePipeline {
             );
         Self {
             params,
+            previous_generations_statistics: MergeStatistics::default(),
+            statistics: MergeStatistics::default(),
             handles_opt: None,
             kill_switch: KillSwitch::default(),
-            generation: 0,
-            num_spawn_attempts: 0,
             merge_planner_inbox,
             merge_planner_mailbox,
             initial_immature_splits_opt,
@@ -206,7 +208,7 @@ impl ParquetMergePipeline {
         }
         if !failure_or_unhealthy_actors.is_empty() {
             error!(
-                generation = self.generation,
+                generation = self.generation(),
                 healthy_actors = ?healthy_actors,
                 failed_or_unhealthy_actors = ?failure_or_unhealthy_actors,
                 success_actors = ?success_actors,
@@ -216,13 +218,13 @@ impl ParquetMergePipeline {
         }
         if healthy_actors.is_empty() {
             info!(
-                generation = self.generation,
+                generation = self.generation(),
                 "parquet merge pipeline completed successfully"
             );
             return Health::Success;
         }
         debug!(
-            generation = self.generation,
+            generation = self.generation(),
             healthy_actors = ?healthy_actors,
             success_actors = ?success_actors,
             "parquet merge pipeline is running and healthy"
@@ -230,18 +232,22 @@ impl ParquetMergePipeline {
         Health::Healthy
     }
 
-    #[instrument(name="spawn_parquet_merge_pipeline", level="info", skip_all, fields(generation=self.generation))]
+    fn generation(&self) -> usize {
+        self.statistics.generation
+    }
+
+    #[instrument(name="spawn_parquet_merge_pipeline", level="info", skip_all, fields(generation=self.generation()))]
     async fn spawn_pipeline(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _spawn_permit = ctx
             .protect_future(SPAWN_PIPELINE_SEMAPHORE.acquire())
             .await
             .expect("semaphore should not be closed");
 
-        self.num_spawn_attempts += 1;
+        self.statistics.num_spawn_attempts += 1;
         self.kill_switch = ctx.kill_switch().child();
 
         info!(
-            generation = self.generation,
+            generation = self.generation(),
             root_dir = %self.params.indexing_directory.path().display(),
             "spawning parquet merge pipeline"
         );
@@ -326,7 +332,8 @@ impl ParquetMergePipeline {
             )
             .spawn(merge_planner);
 
-        self.generation += 1;
+        self.previous_generations_statistics = self.statistics.clone();
+        self.statistics.generation += 1;
         self.handles_opt = Some(ParquetMergePipelineHandles {
             merge_planner: merge_planner_handle,
             merge_split_downloader: merge_split_downloader_handle,
@@ -351,6 +358,28 @@ impl ParquetMergePipeline {
                 handles.merge_publisher.kill(),
             );
         }
+    }
+
+    async fn perform_observe(&mut self) {
+        let Some(handles) = &self.handles_opt else {
+            return;
+        };
+        handles.merge_planner.refresh_observe();
+        handles.merge_uploader.refresh_observe();
+        handles.merge_publisher.refresh_observe();
+        let num_ongoing_merges = crate::metrics::INDEXER_METRICS
+            .ongoing_merge_operations
+            .get();
+        self.statistics = self
+            .previous_generations_statistics
+            .clone()
+            .add_actor_counters(
+                &handles.merge_uploader.last_observation(),
+                &handles.merge_publisher.last_observation(),
+            )
+            .set_generation(self.statistics.generation)
+            .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
+            .set_ongoing_merges(usize::try_from(num_ongoing_merges).unwrap_or(0));
     }
 
     async fn perform_health_check(
@@ -425,6 +454,7 @@ impl Handler<SuperviseLoop> for ParquetMergePipeline {
         supervise_loop_token: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        self.perform_observe().await;
         self.perform_health_check(ctx).await?;
         ctx.schedule_self_msg(SUPERVISE_LOOP_INTERVAL, supervise_loop_token);
         Ok(())
