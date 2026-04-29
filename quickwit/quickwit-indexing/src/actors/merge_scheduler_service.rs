@@ -267,6 +267,7 @@ impl MergeSchedulerService {
             } = PeekMut::pop(next_merge);
             // The permit is owned by the task and released via Drop when
             // the executor finishes, triggering PermitReleased back here.
+            // Drop-based release ensures the semaphore is freed even on panic.
             let parquet_merge_task = ParquetMergeTask {
                 merge_operation,
                 merge_permit,
