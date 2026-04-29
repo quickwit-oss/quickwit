@@ -45,6 +45,10 @@ mod publisher_impl;
 )]
 mod parquet_e2e_test;
 
+#[cfg(test)]
+#[allow(clippy::disallowed_methods)]
+mod parquet_merge_pipeline_test;
+
 pub use parquet_doc_processor::{
     ParquetDocProcessor, ParquetDocProcessorCounters, ParquetDocProcessorError, is_arrow_ipc,
 };
