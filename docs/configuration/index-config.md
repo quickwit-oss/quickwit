@@ -596,6 +596,7 @@ This section describes indexing settings for a given index.
 | `split_num_docs_target` | Target number of docs per split.   | `10000000` |
 | `merge_policy` | Describes the strategy used to trigger split merge operations for logs/traces (see [Merge policies](#merge-policies) section below). |
 | `parquet_merge_policy` | Describes the merge policy for Parquet (metrics/sketches) splits (see [Parquet merge policy](#parquet-merge-policy) section below). |
+| `parquet_indexing` | Parquet-specific indexing settings: sort schema, window duration (see [Parquet indexing settings](#parquet-indexing-settings) section below). |
 | `resources.heap_size`      | Indexer heap size per source per index.   | `2000000000` |
 | `docstore_compression_level` | Level of compression used by zstd for the docstore. Lower values may increase ingest speed, at the cost of index size | `8` |
 | `docstore_blocksize` | Size of blocks in the docstore, in bytes. Lower values may improve doc retrieval speed, at the cost of index size | `1000000` |
@@ -687,6 +688,57 @@ indexing_settings:
     merge_policy:
         type: "no_merge"
 ```
+
+### Parquet indexing settings
+
+*For indexes using the Parquet indexing pipeline (metrics, sketches).*
+
+These settings control how the Parquet pipeline sorts, windows, and writes incoming data. They affect both ingest-time performance and downstream query/compaction efficiency.
+
+```yaml
+version: 0.7
+index_id: "my-metrics-index"
+# ...
+indexing_settings:
+  parquet_indexing:
+    sort_fields: "metric_name|service|env|host|timeseries_id|timestamp_secs/V2"
+    window_duration_secs: 900
+```
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `sort_fields` | Sort schema for row ordering in Parquet files (see syntax below). When omitted, the product-type default is used. | `metric_name\|service\|env\|datacenter\|region\|host\|timeseries_id\|timestamp_secs/V2` |
+| `window_duration_secs` | Time window duration in seconds for split partitioning. Must evenly divide 3600. Larger values = fewer splits but coarser time pruning. | `900` (15 minutes) |
+
+#### Sort schema syntax
+
+The sort schema uses pipe-delimited column names with a `/V2` version suffix:
+
+```text
+column1|column2|...|timestamp_secs/V2
+```
+
+**Column types** are inferred from name suffixes:
+- `__s` → string (e.g., `custom_tag__s`)
+- `__i` → int64 (e.g., `priority__i`)
+- Well-known names like `metric_name`, `service`, `env`, `host`, `timestamp_secs`, and `timeseries_id` have built-in type mappings and don't need suffixes.
+
+**Sort direction** defaults to ascending for most columns and descending for timestamp columns. Override with `+` (ascending) or `-` (descending) as a prefix or suffix on the column name:
+
+```text
+# Explicit descending timestamp
+metric_name|host|-timestamp_secs/V2
+
+# Ascending host (default), descending timestamp (default)
+metric_name|host|timestamp_secs/V2
+```
+
+**How the sort schema affects behavior:**
+- **Query pruning**: queries filtering on leading columns (e.g., `metric_name`) can skip entire splits whose row key ranges don't match.
+- **Compression**: grouping similar values together (e.g., all rows for the same metric name) improves columnar compression ratios.
+- **Compaction scope**: splits with different sort schemas are never merged together. Changing the sort schema on an existing index creates a new compaction scope — old splits are not re-sorted.
+
+**The `&` marker** (advanced) sets the LSM comparison cutoff: columns after `&` are used for sort order but not for compaction locality decisions. For example, `metric_name|&host|timestamp_secs/V2` sorts by metric_name then host, but only metric_name determines which splits can be merged.
 
 #### Parquet merge policy
 
