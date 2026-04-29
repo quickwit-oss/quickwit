@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 --->
 
+# qw-airmail-20260429 (2026-04-29)
+
+### Bug Fixes
+
+- **chitchat**: Fix monotonic property assertion failure during delta application
+  ([#179](https://github.com/quickwit-oss/chitchat/pull/179)). This panic could occur
+  during gossip delta application and cause nodes to crash.
+
 # [0.9.0]
 
 ### Added
