@@ -346,9 +346,14 @@ impl MetricsPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
 
-        // ParquetPackager
+        // ParquetPackager — read sort schema and window duration from index config.
         let writer_config = quickwit_parquet_engine::storage::ParquetWriterConfig::default();
-        let table_config = quickwit_parquet_engine::table_config::TableConfig::default();
+        let parquet_indexing_config = self.params.indexing_settings.parquet_indexing();
+        let mut table_config = quickwit_parquet_engine::table_config::TableConfig::default();
+        if let Some(ref sort_fields) = parquet_indexing_config.sort_fields {
+            table_config.sort_fields = Some(sort_fields.clone());
+        }
+        table_config.window_duration_secs = parquet_indexing_config.window_duration_secs;
         let split_kind = if self.params.use_sketch_processors {
             quickwit_parquet_engine::split::ParquetSplitKind::Sketches
         } else {

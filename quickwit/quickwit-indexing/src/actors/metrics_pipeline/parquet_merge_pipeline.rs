@@ -38,8 +38,8 @@ use quickwit_actors::{
 use quickwit_common::KillSwitch;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
-use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_metastore::{ListParquetSplitsRequestExt, ListParquetSplitsResponseExt};
+use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::IndexUid;
@@ -424,19 +424,16 @@ impl ParquetMergePipeline {
         }
         // On subsequent spawns, query the metastore for published splits.
         let index_uid = self.params.index_uid.clone();
-        let query =
-            quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone());
-        let list_request =
-            quickwit_proto::metastore::ListMetricsSplitsRequest::try_from_query(
-                index_uid.clone(),
-                &query,
-            )?;
+        let query = quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone());
+        let list_request = quickwit_proto::metastore::ListMetricsSplitsRequest::try_from_query(
+            index_uid.clone(),
+            &query,
+        )?;
         let response = ctx
             .protect_future(self.params.metastore.list_metrics_splits(list_request))
             .await?;
         let records = response.deserialize_splits()?;
-        let splits: Vec<ParquetSplitMetadata> =
-            records.into_iter().map(|r| r.metadata).collect();
+        let splits: Vec<ParquetSplitMetadata> = records.into_iter().map(|r| r.metadata).collect();
         info!(
             num_splits = splits.len(),
             "fetched published parquet splits for merge planning on respawn"
@@ -587,13 +584,11 @@ mod tests {
     fn make_pipeline_params(universe: &Universe) -> ParquetMergePipelineParams {
         let mut mock_metastore = MockMetastoreService::new();
         // Allow list_metrics_splits for respawn seeding (returns empty).
-        mock_metastore
-            .expect_list_metrics_splits()
-            .returning(|_| {
-                Ok(quickwit_proto::metastore::ListMetricsSplitsResponse {
-                    splits_serialized_json: Vec::new(),
-                })
-            });
+        mock_metastore.expect_list_metrics_splits().returning(|_| {
+            Ok(quickwit_proto::metastore::ListMetricsSplitsResponse {
+                splits_serialized_json: Vec::new(),
+            })
+        });
         let storage = Arc::new(quickwit_storage::RamStorage::default());
         let merge_policy = Arc::new(ConstWriteAmplificationParquetMergePolicy::new(
             ParquetMergePolicyConfig {
