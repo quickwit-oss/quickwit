@@ -87,9 +87,13 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
         info!("publish-metrics-splits");
         suggest_truncate(ctx, &self.source_mailbox_opt, checkpoint_delta_opt).await;
 
-        // Feedback: notify the Parquet merge planner about newly published splits
-        // so it can plan merges. Only for non-empty, non-replace operations (i.e.,
-        // new ingested splits, not merge outputs which would cause infinite loops).
+        // Feedback loop: notify the merge planner about newly ingested splits so
+        // it can plan compaction merges.
+        //
+        // Guard: only feed back splits from ingest (replaced_split_ids is empty).
+        // Merge outputs have non-empty replaced_split_ids — feeding those back
+        // would create an infinite loop where each merge triggers another merge.
+        // The DisconnectMergePlanner message breaks this loop during shutdown.
         if let Some(planner_mailbox) = &self.parquet_merge_planner_mailbox_opt
             && !new_splits.is_empty()
             && replaced_split_ids.is_empty()

@@ -67,7 +67,9 @@ impl Publisher {
         }
     }
 
-    /// Set the Parquet merge planner mailbox for merge feedback.
+    /// Sets the Parquet merge planner mailbox for merge feedback.
+    /// Post-construction setter because the Publisher is created before the
+    /// planner mailbox is available (bottom-up actor spawn order).
     #[cfg(feature = "metrics")]
     pub fn set_parquet_merge_planner_mailbox(
         mut self,

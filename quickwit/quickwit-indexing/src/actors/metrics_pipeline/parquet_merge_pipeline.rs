@@ -41,6 +41,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_storage::Storage;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
@@ -51,14 +52,16 @@ use super::{METRICS_PUBLISHER_NAME, ParquetUploader};
 use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Sequencer, UploaderType};
-use quickwit_storage::Storage;
 
-/// Spawning a merge pipeline puts pressure on the metastore, so we limit
-/// concurrent spawns (shared with Tantivy merge pipelines).
+/// Limits concurrent Parquet merge pipeline spawns to avoid overwhelming the
+/// metastore. This is a separate semaphore from the Tantivy merge pipeline's.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
 pub const SUPERVISE_LOOP_INTERVAL: Duration = Duration::from_secs(1);
 
+/// Holds actor handles for health-checking and lifecycle management.
+/// When `None` in the parent pipeline, no actors are running (pre-spawn or
+/// post-terminate). The supervisor checks these on each `SuperviseLoop` tick.
 struct ParquetMergePipelineHandles {
     merge_planner: ActorHandle<ParquetMergePlanner>,
     merge_split_downloader: ActorHandle<ParquetMergeSplitDownloader>,
@@ -69,6 +72,9 @@ struct ParquetMergePipelineHandles {
 }
 
 impl ParquetMergePipelineHandles {
+    /// Rate-limits progress checks to once per HEARTBEAT interval.
+    /// Without this, every supervision tick would check progress, which
+    /// is wasteful — actors only need to demonstrate liveness periodically.
     fn should_check_for_progress(&mut self) -> bool {
         let now = Instant::now();
         let check_for_progress = now > self.next_check_for_progress;
@@ -94,10 +100,17 @@ struct Spawn {
 /// shutdown, in-flight merges drain to completion.
 pub struct ParquetMergePipeline {
     params: ParquetMergePipelineParams,
+    /// The planner's mailbox and inbox are created once and recycled across
+    /// pipeline restarts. This lets the publisher's feedback loop survive a
+    /// respawn — messages sent to the old planner's mailbox are delivered to
+    /// the new planner instance.
     merge_planner_mailbox: Mailbox<ParquetMergePlanner>,
     merge_planner_inbox: Inbox<ParquetMergePlanner>,
     handles_opt: Option<ParquetMergePipelineHandles>,
+    /// Child kill switch — killing this kills all actors in the pipeline
+    /// without affecting the supervisor itself.
     kill_switch: KillSwitch,
+    /// Increments on each spawn. Used for log correlation.
     generation: usize,
     num_spawn_attempts: usize,
     /// Immature splits passed to the planner on first spawn. On subsequent
@@ -117,6 +130,8 @@ impl Actor for ParquetMergePipeline {
         "ParquetMergePipeline".to_string()
     }
 
+    /// Kicks off the pipeline by sending Spawn (which spawns all actors)
+    /// followed by SuperviseLoop (which starts periodic health checks).
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.handle(Spawn::default(), ctx).await?;
         self.handle(SuperviseLoop, ctx).await?;
@@ -165,6 +180,10 @@ impl ParquetMergePipeline {
         ]
     }
 
+    /// Consolidates health from all supervised actors into a single verdict.
+    /// Any single actor failure makes the whole pipeline unhealthy (triggers
+    /// terminate + respawn). All actors exiting with Success means the pipeline
+    /// completed (e.g., after shutdown drain).
     fn healthcheck(&self, check_for_progress: bool) -> Health {
         let mut healthy_actors: Vec<&str> = Vec::new();
         let mut failure_or_unhealthy_actors: Vec<&str> = Vec::new();
@@ -227,9 +246,12 @@ impl ParquetMergePipeline {
 
         let immature_splits = self.initial_immature_splits_opt.take().unwrap_or_default();
 
-        // Spawn actors bottom-up so downstream mailboxes are available.
+        // Spawn actors bottom-up: each actor's constructor needs a mailbox
+        // for the actor below it in the chain, so we start from the publisher
+        // (bottom) and work up to the planner (top).
 
-        // 1. Merge publisher
+        // 1. Merge publisher — publishes merged splits to the metastore and feeds back
+        //    ParquetNewSplits to the planner for further merging.
         let merge_publisher = Publisher::new(
             METRICS_PUBLISHER_NAME,
             QueueCapacity::Unbounded,
@@ -244,7 +266,8 @@ impl ParquetMergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_publisher);
 
-        // 2. Sequencer (preserves publish ordering)
+        // 2. Sequencer — ensures merged splits are published in the order they were uploaded, even
+        //    if uploads complete out of order.
         let sequencer = Sequencer::new(merge_publisher_mailbox.clone());
         let (sequencer_mailbox, _sequencer_handle) = ctx
             .spawn_actor()
@@ -282,7 +305,9 @@ impl ParquetMergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_split_downloader);
 
-        // 6. Merge planner (uses recycled mailbox)
+        // 6. Merge planner — uses recycled mailbox/inbox so the publisher's
+        //    feedback loop (which holds a clone of the planner mailbox) survives
+        //    pipeline restarts without needing to be re-wired.
         let merge_planner = ParquetMergePlanner::new(
             immature_splits,
             self.params.merge_policy.clone(),
@@ -310,6 +335,8 @@ impl ParquetMergePipeline {
         Ok(())
     }
 
+    /// Kills all actors in the pipeline immediately. Used when the health check
+    /// detects a failure — we tear everything down and schedule a respawn.
     async fn terminate(&mut self) {
         self.kill_switch.kill();
         if let Some(handles) = self.handles_opt.take() {
@@ -378,17 +405,24 @@ impl Handler<FinishPendingMergesAndShutdownPipeline> for ParquetMergePipeline {
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         info!("shutdown parquet merge pipeline initiated");
+        // Prevent respawn on failure from this point forward.
         self.shutdown_initiated = true;
         if let Some(handles) = &self.handles_opt {
-            // Break the feedback loop: publisher stops sending ParquetNewSplits
-            // to the planner.
+            // Two-phase graceful shutdown:
+            //
+            // Phase 1: Break the feedback loop so completed merges don't
+            // trigger new merge planning. Without this, the pipeline would
+            // never drain — each completed merge feeds back new splits that
+            // trigger more merges.
             let _ = handles
                 .merge_publisher
                 .mailbox()
                 .send_message(DisconnectMergePlanner)
                 .await;
 
-            // Run finalize policy for cold windows, then planner exits.
+            // Phase 2: Run the finalize policy (merges cold-window stragglers
+            // with a lower merge factor), then the planner exits. Downstream
+            // actors drain naturally as their inboxes empty.
             let _ = handles
                 .merge_planner
                 .mailbox()
@@ -408,9 +442,11 @@ impl Handler<Spawn> for ParquetMergePipeline {
         spawn: Spawn,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        // Don't respawn after graceful shutdown was requested.
         if self.shutdown_initiated {
             return Ok(());
         }
+        // Don't spawn if actors are already running (duplicate Spawn message).
         if self.handles_opt.is_some() {
             return Ok(());
         }
@@ -434,12 +470,23 @@ impl Handler<Spawn> for ParquetMergePipeline {
 }
 
 /// Parameters for spawning a `ParquetMergePipeline`.
+///
+/// Constructed by the IndexingService from `IndexConfig` + node-level settings.
+/// All actors in the pipeline share these resources via `Arc`/`Clone`.
 #[derive(Clone)]
 pub struct ParquetMergePipelineParams {
+    /// Root temp directory for scratch files (downloads, merge output).
     pub indexing_directory: TempDirectory,
+    /// Metastore client for staging/publishing merged splits and for
+    /// re-seeding the planner with immature splits on respawn.
     pub metastore: MetastoreServiceClient,
+    /// Object storage for downloading input splits and uploading merge output.
     pub storage: Arc<dyn Storage>,
+    /// Determines which splits to merge and when. Read from the index's
+    /// `parquet_merge_policy` config section.
     pub merge_policy: Arc<dyn ParquetMergePolicy>,
+    /// Node-wide merge scheduler — shared with Tantivy merge pipelines for
+    /// global concurrency control via a single semaphore.
     pub merge_scheduler_service: Mailbox<MergeSchedulerService>,
     pub max_concurrent_split_uploads: usize,
     pub event_broker: EventBroker,
