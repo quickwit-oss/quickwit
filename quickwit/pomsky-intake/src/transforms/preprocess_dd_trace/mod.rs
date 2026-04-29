@@ -72,7 +72,7 @@ struct PreprocessDdTrace;
 
 impl FunctionTransform for PreprocessDdTrace {
     fn transform(&mut self, output: &mut OutputBuffer, mut event: Event) {
-        if let Event::Trace(ref mut trace) = event {
+        if let Event::Trace(trace) = &mut event {
             propagate_chunk_meta(trace);
         }
         output.push(event);
@@ -85,8 +85,12 @@ impl FunctionTransform for PreprocessDdTrace {
 /// per-span overrides win. Without this, both fall off when
 /// `explode_trace_spans` strips chunk-level fields.
 fn propagate_chunk_meta(trace: &mut TraceEvent) {
-    let host = trace.get("host").cloned();
-    let env = trace.get("env").cloned();
+    // Cheap pre-check so we don't clone host/env when there are no spans.
+    if !matches!(trace.get("spans"), Some(Value::Array(_))) {
+        return;
+    }
+    let host_opt = trace.get("host").cloned();
+    let env_opt = trace.get("env").cloned();
     let Some(Value::Array(spans)) = trace.get_mut("spans") else {
         return;
     };
@@ -94,13 +98,13 @@ fn propagate_chunk_meta(trace: &mut TraceEvent) {
         let Value::Object(span_fields) = span else {
             continue;
         };
-        ensure_meta(span_fields, "_dd.hostname", host.as_ref());
-        ensure_meta(span_fields, "env", env.as_ref());
+        ensure_meta(span_fields, "_dd.hostname", host_opt.as_ref());
+        ensure_meta(span_fields, "env", env_opt.as_ref());
     }
 }
 
-fn ensure_meta(span_fields: &mut ObjectMap, key: &str, value: Option<&Value>) {
-    let Some(value) = value else {
+fn ensure_meta(span_fields: &mut ObjectMap, key: &str, value_opt: Option<&Value>) {
+    let Some(value) = value_opt else {
         return;
     };
     let meta_value = span_fields
