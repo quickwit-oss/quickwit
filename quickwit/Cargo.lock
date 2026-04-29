@@ -8915,6 +8915,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-dst",
  "quickwit-proto",
+ "rand 0.10.1",
  "regex",
  "serde",
  "serde_json",
