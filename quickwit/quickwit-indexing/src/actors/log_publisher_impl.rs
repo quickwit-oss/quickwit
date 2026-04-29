@@ -41,6 +41,10 @@ impl Handler<DisconnectMergePlanner> for Publisher {
     ) -> Result<(), ActorExitStatus> {
         info!("disconnecting merge planner mailbox");
         self.merge_planner_mailbox_opt = None;
+        #[cfg(feature = "metrics")]
+        {
+            self.parquet_merge_planner_mailbox_opt = None;
+        }
         Ok(())
     }
 }

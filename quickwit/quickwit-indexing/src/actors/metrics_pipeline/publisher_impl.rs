@@ -87,6 +87,18 @@ impl Handler<ParquetSplitsUpdate> for Publisher {
         info!("publish-metrics-splits");
         suggest_truncate(ctx, &self.source_mailbox_opt, checkpoint_delta_opt).await;
 
+        // Feedback: notify the Parquet merge planner about newly published splits
+        // so it can plan merges. Only for non-empty, non-replace operations (i.e.,
+        // new ingested splits, not merge outputs which would cause infinite loops).
+        if let Some(planner_mailbox) = &self.parquet_merge_planner_mailbox_opt
+            && !new_splits.is_empty()
+            && replaced_split_ids.is_empty()
+        {
+            let _ = ctx
+                .send_message(planner_mailbox, super::ParquetNewSplits { new_splits })
+                .await;
+        }
+
         if split_ids.is_empty() {
             self.counters.num_empty_splits += 1;
         } else if replaced_split_ids.is_empty() {
