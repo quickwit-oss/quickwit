@@ -36,7 +36,7 @@ use siphasher::sip::SipHasher;
 use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;
-use crate::merge_policy_config::MergePolicyConfig;
+use crate::merge_policy_config::{MergePolicyConfig, ParquetMergePolicyConfig};
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -118,6 +118,11 @@ pub struct IndexingSettings {
     pub split_num_docs_target: usize,
     #[serde(default)]
     pub merge_policy: MergePolicyConfig,
+    /// Merge policy for Parquet (metrics/sketches) splits. Controls how
+    /// Parquet splits are compacted within time windows. Only used by
+    /// indexes that use the Parquet indexing pipeline.
+    #[serde(default)]
+    pub parquet_merge_policy: ParquetMergePolicyConfig,
     #[serde(default)]
     pub resources: IndexingResources,
 }
@@ -160,6 +165,7 @@ impl Default for IndexingSettings {
             docstore_compression_level: Self::default_docstore_compression_level(),
             split_num_docs_target: Self::default_split_num_docs_target(),
             merge_policy: MergePolicyConfig::default(),
+            parquet_merge_policy: ParquetMergePolicyConfig::default(),
             resources: IndexingResources::default(),
         }
     }

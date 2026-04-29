@@ -67,7 +67,8 @@ use tracing::warn;
 use crate::index_template::IndexTemplateV0_8;
 pub use crate::index_template::{IndexTemplate, IndexTemplateId, VersionedIndexTemplate};
 use crate::merge_policy_config::{
-    ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
+    ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, ParquetMergePolicyConfig,
+    StableLogMergePolicyConfig,
 };
 pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
@@ -113,6 +114,7 @@ pub fn disable_ingest_v1() -> bool {
     KafkaSourceParams,
     KinesisSourceParams,
     MergePolicyConfig,
+    ParquetMergePolicyConfig,
     PubSubSourceParams,
     PulsarSourceAuth,
     PulsarSourceParams,

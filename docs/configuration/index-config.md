@@ -594,7 +594,8 @@ This section describes indexing settings for a given index.
 | ------------- | ------------- | ------------- |
 | `commit_timeout_secs`      | Maximum number of seconds before committing a split since its creation.   | `60` |
 | `split_num_docs_target` | Target number of docs per split.   | `10000000` |
-| `merge_policy` | Describes the strategy used to trigger split merge operations (see [Merge policies](#merge-policies) section below). |
+| `merge_policy` | Describes the strategy used to trigger split merge operations for logs/traces (see [Merge policies](#merge-policies) section below). |
+| `parquet_merge_policy` | Describes the merge policy for Parquet (metrics/sketches) splits (see [Parquet merge policy](#parquet-merge-policy) section below). |
 | `resources.heap_size`      | Indexer heap size per source per index.   | `2000000000` |
 | `docstore_compression_level` | Level of compression used by zstd for the docstore. Lower values may increase ingest speed, at the cost of index size | `8` |
 | `docstore_blocksize` | Size of blocks in the docstore, in bytes. Lower values may improve doc retrieval speed, at the cost of index size | `1000000` |
@@ -687,6 +688,35 @@ indexing_settings:
         type: "no_merge"
 ```
 
+#### Parquet merge policy
+
+*For indexes using the Parquet indexing pipeline (metrics, sketches).*
+
+The Parquet merge policy controls how Parquet splits within a compaction scope (same time window, partition, and sort schema) are merged. It uses a constant write amplification strategy: splits at the same merge level are greedily accumulated until reaching `max_merge_factor` or `target_split_size_bytes`.
+
+```yaml
+version: 0.7
+index_id: "my-metrics-index"
+# ...
+indexing_settings:
+  parquet_merge_policy:
+    merge_factor: 10
+    max_merge_factor: 12
+    max_merge_ops: 4
+    target_split_size_bytes: 268435456
+    maturation_period: 48h
+    max_finalize_merge_operations: 3
+```
+
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `merge_factor` | Minimum number of splits to trigger a merge. | `10` |
+| `max_merge_factor` | Maximum number of splits in a single merge operation. | `12` |
+| `max_merge_ops` | Maximum number of merges a split can undergo before becoming mature. Bounds total write amplification. | `4` |
+| `target_split_size_bytes` | Target size for merged output splits in bytes. Merges trigger when accumulated bytes reach this threshold, even if `merge_factor` is not reached. | `268435456` (256 MiB) |
+| `maturation_period` | Duration after creation when a split becomes mature (never merged again). | `48h` |
+| `max_finalize_merge_operations` | *(advanced)* Maximum number of merge operations emitted during cold-window finalization at pipeline shutdown. Set to `0` to disable. | `3` |
 
 
 ### Indexer memory usage
