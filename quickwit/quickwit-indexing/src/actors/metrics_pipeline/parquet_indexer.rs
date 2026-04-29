@@ -1127,8 +1127,8 @@ mod tests {
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new_batches(
                 vec![
-                    create_test_batch_with_service_values(&vec!["a"; 100]),
-                    create_test_batch_with_service_values(&vec!["b"; 10]),
+                    create_test_batch_with_service_values(&["a"; 100]),
+                    create_test_batch_with_service_values(&["b"; 10]),
                 ],
                 SourceCheckpointDelta::from_range(0..110),
                 false,
@@ -1230,7 +1230,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch_with_service_values(&vec!["a"; 10]),
+                create_test_batch_with_service_values(&["a"; 10]),
                 SourceCheckpointDelta::from_range(0..10),
                 false,
             ))
@@ -1240,7 +1240,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch_with_service_values(&vec!["b"; 20]),
+                create_test_batch_with_service_values(&["b"; 20]),
                 SourceCheckpointDelta::from_range(10..30),
                 true,
             ))
@@ -1282,7 +1282,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch_with_service_values(&vec!["a"; 10]),
+                create_test_batch_with_service_values(&["a"; 10]),
                 SourceCheckpointDelta::from_range(0..10),
                 false,
             ))
@@ -1292,7 +1292,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch_with_service_values(&vec!["b"; 20]),
+                create_test_batch_with_service_values(&["b"; 20]),
                 SourceCheckpointDelta::from_range(10..30),
                 false,
             ))
@@ -1354,7 +1354,7 @@ mod tests {
             let offset = idx as u64;
             indexer_mailbox
                 .send_message(ProcessedParquetBatch::new(
-                    create_test_batch_with_service_values(&vec![service_value; 10]),
+                    create_test_batch_with_service_values(&[service_value; 10]),
                     SourceCheckpointDelta::from_range(offset..offset + 1),
                     idx == 2,
                 ))
@@ -1475,7 +1475,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch_with_service_values(&vec!["a"; 10]),
+                create_test_batch_with_service_values(&["a"; 10]),
                 SourceCheckpointDelta::from_range(0..10),
                 false,
             ))
@@ -1485,7 +1485,7 @@ mod tests {
 
         indexer_mailbox
             .send_message(ProcessedParquetBatch::new(
-                create_test_batch_with_service_values(&vec!["b"; 20]),
+                create_test_batch_with_service_values(&["b"; 20]),
                 SourceCheckpointDelta::from_range(10..30),
                 true,
             ))
