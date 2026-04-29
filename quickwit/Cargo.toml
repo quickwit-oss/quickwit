@@ -97,6 +97,7 @@ assert-json-diff = "2"
 async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
+atomic_float = "1.1"
 backtrace = "0.3"
 base64 = "0.22"
 binggan = { version = "0.15" }
@@ -113,6 +114,7 @@ clap = { version = "4.5", features = ["env", "string"] }
 coarsetime = "0.1"
 colored = "3.0"
 console-subscriber = "0.5"
+const_format = "0.2"
 criterion = { version = "0.8", features = ["async_tokio"] }
 cron = "0.16"
 dialoguer = { version = "0.12", default-features = false }
@@ -154,6 +156,7 @@ hyper-util = { version = "0.1", default-features = false, features = [
 ] }
 indexmap = { version = "2.12", features = ["serde"] }
 indicatif = "0.18"
+inventory = "0.3"
 itertools = "0.14"
 lambda_runtime = "0.13"
 json_comments = "0.2"
@@ -163,6 +166,9 @@ matches = "0.1"
 md5 = "0.8"
 metrics = "0.24"
 metrics-exporter-dogstatsd = "0.9"
+metrics-exporter-otel = "0.3"
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
+metrics-util = "0.20"
 mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
