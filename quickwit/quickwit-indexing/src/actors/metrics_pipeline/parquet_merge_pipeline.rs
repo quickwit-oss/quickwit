@@ -244,6 +244,11 @@ impl ParquetMergePipeline {
             "spawning parquet merge pipeline"
         );
 
+        // On first spawn, use the initial splits provided by the IndexingService.
+        // On subsequent spawns (after crash/respawn), we start empty.
+        // TODO: implement fetch_immature_parquet_splits() to re-query the
+        // metastore on respawn, matching the Tantivy MergePipeline pattern
+        // (see merge_pipeline.rs:441-471).
         let immature_splits = self.initial_immature_splits_opt.take().unwrap_or_default();
 
         // Spawn actors bottom-up: each actor's constructor needs a mailbox
@@ -288,7 +293,8 @@ impl ParquetMergePipeline {
             .spawn(merge_uploader);
 
         // 4. Merge executor
-        let merge_executor = ParquetMergeExecutor::new(merge_uploader_mailbox);
+        let merge_executor =
+            ParquetMergeExecutor::new(merge_uploader_mailbox, self.params.writer_config.clone());
         let (merge_executor_mailbox, merge_executor_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
@@ -490,6 +496,10 @@ pub struct ParquetMergePipelineParams {
     pub merge_scheduler_service: Mailbox<MergeSchedulerService>,
     pub max_concurrent_split_uploads: usize,
     pub event_broker: EventBroker,
+    /// Parquet writer config for merge output (compression, page size, etc.).
+    /// Should match the ingest pipeline's writer config so merged files have
+    /// consistent compression.
+    pub writer_config: quickwit_parquet_engine::storage::ParquetWriterConfig,
 }
 
 #[cfg(test)]
@@ -527,6 +537,7 @@ mod tests {
             merge_scheduler_service: universe.get_or_spawn_one(),
             max_concurrent_split_uploads: 4,
             event_broker: EventBroker::default(),
+            writer_config: quickwit_parquet_engine::storage::ParquetWriterConfig::default(),
         }
     }
 

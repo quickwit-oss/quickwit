@@ -43,11 +43,18 @@ use crate::models::PublishLock;
 /// ready-to-upload Parquet files with complete metadata.
 pub struct ParquetMergeExecutor {
     uploader_mailbox: Mailbox<ParquetUploader>,
+    writer_config: ParquetWriterConfig,
 }
 
 impl ParquetMergeExecutor {
-    pub fn new(uploader_mailbox: Mailbox<ParquetUploader>) -> Self {
-        Self { uploader_mailbox }
+    pub fn new(
+        uploader_mailbox: Mailbox<ParquetUploader>,
+        writer_config: ParquetWriterConfig,
+    ) -> Self {
+        Self {
+            uploader_mailbox,
+            writer_config,
+        }
     }
 }
 
@@ -99,36 +106,38 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
         // Run the CPU-intensive merge on the dedicated thread pool.
         let input_paths = scratch.downloaded_parquet_files.clone();
         let output_dir_clone = output_dir.clone();
+        let writer_config = self.writer_config.clone();
         let merge_result = run_cpu_intensive(move || {
             let config = MergeConfig {
                 num_outputs: 1,
-                writer_config: ParquetWriterConfig::default(),
+                writer_config,
             };
             merge_sorted_parquet_files(&input_paths, &output_dir_clone, &config)
         })
         .await;
 
-        // We return Ok(()) on merge failure rather than Err to keep the actor
-        // alive — same strategy as Tantivy's MergeExecutor. This prevents a
-        // single "split of death" from crash-looping the entire pipeline.
-        // The trade-off: failed splits aren't retried until pipeline respawn.
         let outputs: Vec<MergeOutputFile> = match merge_result {
             Ok(Ok(outputs)) => outputs,
             Ok(Err(merge_err)) => {
                 warn!(
                     error = %merge_err,
                     merge_split_id = %merge_split_id,
-                    "parquet merge failed"
+                    "parquet merge failed — input splits will not be retried until \
+                     the pipeline restarts with metastore re-seeding"
                 );
-                // Input splits were drained from the planner by operations().
-                // They remain published but won't be re-planned until respawn.
+                // The input splits were drained from the planner by operations().
+                // They remain published in the metastore but won't be re-planned
+                // until the pipeline restarts and re-seeds from the metastore.
+                // TODO: implement fetch_immature_parquet_splits() for respawn
+                // (same as Tantivy's fetch_immature_splits pattern).
                 return Ok(());
             }
             Err(panicked) => {
                 warn!(
                     error = %panicked,
                     merge_split_id = %merge_split_id,
-                    "parquet merge panicked"
+                    "parquet merge panicked — input splits will not be retried until \
+                     the pipeline restarts with metastore re-seeding"
                 );
                 return Ok(());
             }
