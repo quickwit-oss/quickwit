@@ -81,6 +81,10 @@ doc_mapping:
     # populated; the optional upper 64 bits live in `meta._dd.p.tid` (or
     # `trace_id_high` upstream). Kept for compatibility with 64-bit-only
     # trace consumers. See logs-backend ResolvedTracePayloadDecoder.
+    #
+    # When a user queries by trace_id, the original query is translated
+    # to match against both trace_id (128-bit hex) and trace_id_low
+    # (64-bit decimal), so spans from either world can be found.
     - name: trace_id_low
       type: text
       tokenizer: raw
