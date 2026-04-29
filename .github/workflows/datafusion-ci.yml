@@ -18,6 +18,7 @@ permissions:
 
 env:
   CARGO_INCREMENTAL: 0
+  CARGO_NET_GIT_FETCH_WITH_CLI: true
   QW_DISABLE_TELEMETRY: 1
   RUST_BACKTRACE: 1
   RUSTFLAGS: -Dwarnings --cfg tokio_unstable
@@ -35,6 +36,7 @@ jobs:
       contents: read
       pull-requests: read
       actions: write
+      id-token: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - name: Override ADMS registry for GitHub Actions
@@ -57,6 +59,32 @@ jobs:
               - quickwit/**/*.toml
               - quickwit/**/*.proto
               - .github/workflows/datafusion-ci.yml
+      - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a
+        if: steps.modified.outputs.rust_src == 'true'
+        id: octo-sts-pomchi
+        with:
+          scope: DataDog/PomChi
+          policy: access
+
+      - uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a
+        if: steps.modified.outputs.rust_src == 'true'
+        id: octo-sts-event-percolation
+        with:
+          scope: DataDog/event-percolation
+          policy: access_pomsky
+
+      - name: Configure git rewrite (STS tokens)
+        if: steps.modified.outputs.rust_src == 'true'
+        env:
+          POMCHI_TOKEN: ${{ steps.octo-sts-pomchi.outputs.token }}
+          EP_TOKEN: ${{ steps.octo-sts-event-percolation.outputs.token }}
+        run: |
+          echo "::add-mask::${POMCHI_TOKEN}"
+          echo "::add-mask::${EP_TOKEN}"
+          git config --global url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "ssh://git@github.com/DataDog/PomChi"
+          git config --global --add url."https://x-access-token:${POMCHI_TOKEN}@github.com/DataDog/PomChi".insteadOf "[email protected]:DataDog/PomChi"
+          git config --global url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "ssh://git@github.com/DataDog/event-percolation"
+          git config --global --add url."https://x-access-token:${EP_TOKEN}@github.com/DataDog/event-percolation".insteadOf "[email protected]:DataDog/event-percolation"
       - name: Install Ubuntu packages
         if: steps.modified.outputs.rust_src == 'true'
         run: |
