@@ -21,10 +21,20 @@ use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use arrow::array::{
-    ArrayRef, Float64Builder, Int16Builder, ListBuilder, RecordBatch, StringDictionaryBuilder,
-    UInt32Builder, UInt64Builder,
+    ArrayRef, Float64Builder, Int16Builder, Int64Builder, ListBuilder, RecordBatch,
+    StringDictionaryBuilder, UInt32Builder, UInt64Builder,
 };
 use arrow::datatypes::{DataType, Field, Int32Type, Schema as ArrowSchema};
+
+use crate::timeseries_id::compute_timeseries_id;
+
+/// `metric_type` discriminant fed into [`compute_timeseries_id`] for sketch
+/// data points. Mirrors `MetricType::Summary as u8` in
+/// `quickwit-opentelemetry::otlp::otel_metrics` — chosen because DDSketches
+/// are distribution summaries and because it does not collide with the
+/// discriminants used on the metrics path (`Gauge = 0`, `Sum = 1`).
+const SKETCH_METRIC_TYPE_DISCRIMINANT: u8 = 4;
+const COMPUTED_TIMESERIES_ID_FIELD: &str = "timeseries_id";
 
 /// A single DDSketch data point with tags.
 #[derive(Debug, Clone)]
@@ -75,14 +85,21 @@ impl ArrowSketchBatchBuilder {
         let mut tag_keys: BTreeSet<&str> = BTreeSet::new();
         for dp in &self.data_points {
             for key in dp.tags.keys() {
-                tag_keys.insert(key.as_str());
+                // Exclude any user-provided tag named "timeseries_id" to prevent collision with the
+                // computed column. TODO: if user sets "timeseries_id" as a tag, we
+                // are excluding it.
+                if key != COMPUTED_TIMESERIES_ID_FIELD {
+                    tag_keys.insert(key.as_str());
+                }
             }
         }
         let sorted_tag_keys: Vec<String> = tag_keys.into_iter().map(str::to_owned).collect();
 
-        // Build the Arrow schema dynamically
+        // Build the Arrow schema dynamically.
+        // 10 fixed columns: metric_name, timestamp_secs, count, sum, min, max,
+        // flags, keys, counts, timeseries_id.
         let dict_type = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
-        let mut fields = Vec::with_capacity(9 + sorted_tag_keys.len());
+        let mut fields = Vec::with_capacity(10 + sorted_tag_keys.len());
         fields.push(Field::new("metric_name", dict_type.clone(), false));
         fields.push(Field::new("timestamp_secs", DataType::UInt64, false));
         fields.push(Field::new("count", DataType::UInt64, false));
@@ -98,6 +115,11 @@ impl ArrowSketchBatchBuilder {
         fields.push(Field::new(
             "counts",
             DataType::List(Arc::new(Field::new("item", DataType::UInt64, false))),
+            false,
+        ));
+        fields.push(Field::new(
+            COMPUTED_TIMESERIES_ID_FIELD,
+            DataType::Int64,
             false,
         ));
 
@@ -126,6 +148,7 @@ impl ArrowSketchBatchBuilder {
             DataType::UInt64,
             false,
         ));
+        let mut timeseries_id_builder = Int64Builder::with_capacity(num_rows);
 
         let mut tag_builders: Vec<StringDictionaryBuilder<Int32Type>> = sorted_tag_keys
             .iter()
@@ -153,6 +176,9 @@ impl ArrowSketchBatchBuilder {
             }
             counts_builder.append(true);
 
+            let timeseries_id = compute_sketch_timeseries_id(&dp.metric_name, &dp.tags);
+            timeseries_id_builder.append_value(timeseries_id);
+
             for (tag_idx, tag_key) in sorted_tag_keys.iter().enumerate() {
                 match dp.tags.get(tag_key) {
                     Some(tag_val) => tag_builders[tag_idx].append_value(tag_val),
@@ -161,7 +187,7 @@ impl ArrowSketchBatchBuilder {
             }
         }
 
-        let mut arrays: Vec<ArrayRef> = Vec::with_capacity(9 + sorted_tag_keys.len());
+        let mut arrays: Vec<ArrayRef> = Vec::with_capacity(10 + sorted_tag_keys.len());
         arrays.push(Arc::new(metric_name_builder.finish()));
         arrays.push(Arc::new(timestamp_secs_builder.finish()));
         arrays.push(Arc::new(count_builder.finish()));
@@ -171,6 +197,7 @@ impl ArrowSketchBatchBuilder {
         arrays.push(Arc::new(flags_builder.finish()));
         arrays.push(Arc::new(keys_builder.finish()));
         arrays.push(Arc::new(counts_builder.finish()));
+        arrays.push(Arc::new(timeseries_id_builder.finish()));
 
         for tag_builder in &mut tag_builders {
             arrays.push(Arc::new(tag_builder.finish()));
@@ -191,6 +218,17 @@ impl ArrowSketchBatchBuilder {
     pub fn is_empty(&self) -> bool {
         self.data_points.is_empty()
     }
+}
+
+// Computes timeseries_id for a sketch. If the user provided a timeseries_id tag, we will remove it.
+fn compute_sketch_timeseries_id(metric_name: &str, tags: &HashMap<String, String>) -> i64 {
+    if !tags.contains_key(COMPUTED_TIMESERIES_ID_FIELD) {
+        return compute_timeseries_id(metric_name, SKETCH_METRIC_TYPE_DISCRIMINANT, tags);
+    }
+
+    let mut filtered_tags = tags.clone();
+    filtered_tags.remove(COMPUTED_TIMESERIES_ID_FIELD);
+    compute_timeseries_id(metric_name, SKETCH_METRIC_TYPE_DISCRIMINANT, &filtered_tags)
 }
 
 #[cfg(test)]
@@ -230,8 +268,8 @@ mod tests {
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 1);
-        // 9 fixed columns + 3 tag columns (env, host, service)
-        assert_eq!(batch.num_columns(), 12);
+        // 10 fixed columns + 3 tag columns (env, host, service)
+        assert_eq!(batch.num_columns(), 13);
 
         // Verify schema field names
         let schema = batch.schema();
@@ -248,11 +286,41 @@ mod tests {
                 "flags",
                 "keys",
                 "counts",
+                "timeseries_id",
                 "env",
                 "host",
                 "service",
             ]
         );
+    }
+
+    #[test]
+    fn test_sketch_batch_filters_user_timeseries_id_tag() {
+        let mut dp = make_test_sketch_point();
+        dp.tags
+            .insert("timeseries_id".to_string(), "user-provided".to_string());
+
+        let mut builder = ArrowSketchBatchBuilder::with_capacity(1);
+        builder.append(dp);
+
+        let batch = builder.finish();
+        let schema = batch.schema();
+        assert_eq!(
+            schema
+                .fields()
+                .iter()
+                .filter(|field| field.name().as_str() == "timeseries_id")
+                .count(),
+            1
+        );
+        assert_eq!(schema.index_of("timeseries_id").unwrap(), 9);
+        assert!(schema.index_of("service").is_ok());
+
+        crate::sorted_series::append_sorted_series_column(
+            crate::table_config::ProductType::Sketches.default_sort_fields(),
+            &batch,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -281,8 +349,8 @@ mod tests {
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 100);
-        // 9 fixed + 2 tags
-        assert_eq!(batch.num_columns(), 11);
+        // 10 fixed + 2 tags
+        assert_eq!(batch.num_columns(), 12);
     }
 
     #[test]
@@ -325,14 +393,14 @@ mod tests {
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 2);
-        // 9 fixed + 3 tags (env, host, region)
-        assert_eq!(batch.num_columns(), 12);
+        // 10 fixed + 3 tags (env, host, region)
+        assert_eq!(batch.num_columns(), 13);
 
         let schema = batch.schema();
         let tag_names: Vec<&str> = schema
             .fields()
             .iter()
-            .skip(9)
+            .skip(10)
             .map(|f| f.name().as_str())
             .collect();
         assert_eq!(tag_names, vec!["env", "host", "region"]);
@@ -345,8 +413,8 @@ mod tests {
 
         let batch = builder.finish();
         assert_eq!(batch.num_rows(), 0);
-        // 9 fixed columns, no tags
-        assert_eq!(batch.num_columns(), 9);
+        // 10 fixed columns, no tags
+        assert_eq!(batch.num_columns(), 10);
     }
 
     #[test]

@@ -23,6 +23,7 @@
 pub(crate) mod factory;
 pub(crate) mod index_resolver;
 pub(crate) mod metastore_provider;
+pub(crate) mod optimizer;
 pub(crate) mod predicate;
 pub(crate) mod sketch_udf;
 pub(crate) mod table_provider;
@@ -48,6 +49,7 @@ use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 
 use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory, SKETCHES_FILE_TYPE};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
+use self::optimizer::SortedSeriesStreamingAggregateRule;
 use self::sketch_udf::{create_dd_quantile_udf, create_dd_sketch_udaf};
 use self::table_provider::MetricsTableProvider;
 
@@ -256,6 +258,14 @@ impl QuickwitRuntimePlugin for MetricsDataSource {
                 ParquetSplitKind::Sketches,
             ));
         QuickwitRuntimeRegistration::default()
+            .with_session_config_setter(|config| {
+                config
+                    .options_mut()
+                    .optimizer
+                    .enable_round_robin_repartition = false;
+                config.options_mut().optimizer.repartition_file_scans = false;
+            })
+            .with_physical_optimizer_rule(Arc::new(SortedSeriesStreamingAggregateRule))
             .with_table_factory(METRICS_FILE_TYPE, factory)
             .with_table_factory(SKETCHES_FILE_TYPE, sketches_factory)
             .with_udaf(Arc::new(create_dd_sketch_udaf()))
