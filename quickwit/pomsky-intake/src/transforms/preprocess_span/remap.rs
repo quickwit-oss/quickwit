@@ -41,21 +41,21 @@ pub(super) fn remap_dd_span_to_schema(trace: &mut TraceEvent) {
     // stored with literal dots (e.g. "_dd.hostname"), so we read them
     // directly off the inner ObjectMap rather than through Vector's
     // path-traversal API which would split on the dot.
-    let host_value;
-    let env_value;
+    let host_opt;
+    let env_opt;
     {
         let empty = ObjectMap::new();
         let meta = match trace.get("meta") {
             Some(Value::Object(m)) => m,
             _ => &empty,
         };
-        host_value = meta.get("_dd.hostname").cloned();
-        env_value = meta.get("env").cloned();
+        host_opt = meta.get("_dd.hostname").cloned();
+        env_opt = meta.get("env").cloned();
     }
-    if let Some(host) = host_value {
+    if let Some(host) = host_opt {
         trace.insert("host", host);
     }
-    if let Some(env) = env_value {
+    if let Some(env) = env_opt {
         trace.insert("env", env);
     }
 

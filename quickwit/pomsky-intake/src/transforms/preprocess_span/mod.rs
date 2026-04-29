@@ -77,7 +77,7 @@ struct PreprocessSpan;
 
 impl FunctionTransform for PreprocessSpan {
     fn transform(&mut self, output: &mut OutputBuffer, mut event: Event) {
-        if let Event::Trace(ref mut trace) = event {
+        if let Event::Trace(trace) = &mut event {
             let source_type = trace.metadata().source_type().unwrap_or("unknown");
             match source_type {
                 "datadog_agent" => preprocess_datadog_trace(trace),
@@ -111,7 +111,7 @@ impl FunctionTransform for PreprocessSpan {
 /// so we emit only what we have — the lower 64 bits — in a single canonical
 /// decimal form.
 fn preprocess_datadog_trace(trace: &mut TraceEvent) {
-    let start_dt: Option<DateTime<Utc>> = match trace.get("start") {
+    let start_dt_opt: Option<DateTime<Utc>> = match trace.get("start") {
         Some(Value::Timestamp(dt)) => Some(*dt),
         _ => None,
     };
@@ -120,7 +120,7 @@ fn preprocess_datadog_trace(trace: &mut TraceEvent) {
         _ => 0,
     };
 
-    if let Some(dt) = start_dt
+    if let Some(dt) = start_dt_opt
         && let Some(start_ns) = dt.timestamp_nanos_opt()
     {
         trace.insert("start_time", start_ns);
@@ -255,7 +255,7 @@ mod tests {
     fn test_dd_parent_id() {
         // parent_id u64 → decimal string. Root spans have parent_id = 0.
         let mut event = make_dd_trace(1, 1, 0);
-        let Event::Trace(ref mut trace) = event else {
+        let Event::Trace(trace) = &mut event else {
             unreachable!();
         };
         trace.insert("parent_id", 4242i64);
