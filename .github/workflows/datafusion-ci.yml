@@ -30,7 +30,7 @@ concurrency:
 jobs:
   tests:
     name: DataFusion feature lane
-    runs-on: "ubuntu-latest"
+    runs-on: ubuntu-16-core-latest
     timeout-minutes: 60
     permissions:
       contents: read
