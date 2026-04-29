@@ -13,14 +13,29 @@
 // limitations under the License.
 
 use std::fmt;
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 use futures::{Future, TryFutureExt};
-use prometheus::IntGauge;
 use tokio::sync::oneshot;
 use tracing::error;
 
-use crate::metrics::{GaugeGuard, IntGaugeVec, OwnedGaugeGuard, new_gauge_vec};
+use crate::metrics::{Gauge, GaugeGuard, gauge};
+
+static THREAD_POOL_ONGOING_TASKS: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
+    gauge!(
+        name: "ongoing_tasks",
+        description: "number of tasks being currently processed by threads in the thread pool",
+        subsystem: "thread_pool",
+    )
+});
+
+static THREAD_POOL_PENDING_TASKS: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
+    gauge!(
+        name: "pending_tasks",
+        description: "number of tasks waiting in the queue before being processed by the thread pool",
+        subsystem: "thread_pool",
+    )
+});
 
 /// An executor backed by a thread pool to run CPU-intensive tasks.
 ///
@@ -29,8 +44,8 @@ use crate::metrics::{GaugeGuard, IntGaugeVec, OwnedGaugeGuard, new_gauge_vec};
 #[derive(Clone)]
 pub struct ThreadPool {
     thread_pool: Arc<rayon::ThreadPool>,
-    ongoing_tasks: IntGauge,
-    pending_tasks: IntGauge,
+    ongoing_tasks: Gauge,
+    pending_tasks: Gauge,
 }
 
 impl ThreadPool {
@@ -46,8 +61,8 @@ impl ThreadPool {
         let thread_pool = rayon_pool_builder
             .build()
             .expect("failed to spawn thread pool");
-        let ongoing_tasks = THREAD_POOL_METRICS.ongoing_tasks.with_label_values([name]);
-        let pending_tasks = THREAD_POOL_METRICS.pending_tasks.with_label_values([name]);
+        let ongoing_tasks = gauge!(parent: &*THREAD_POOL_ONGOING_TASKS, "pool" => name);
+        let pending_tasks = gauge!(parent: &*THREAD_POOL_PENDING_TASKS, "pool" => name);
         ThreadPool {
             thread_pool: Arc::new(thread_pool),
             ongoing_tasks,
@@ -84,8 +99,7 @@ impl ThreadPool {
     {
         let span = tracing::Span::current();
         let ongoing_tasks = self.ongoing_tasks.clone();
-        let mut pending_tasks_guard: OwnedGaugeGuard =
-            OwnedGaugeGuard::from_gauge(self.pending_tasks.clone());
+        let mut pending_tasks_guard = GaugeGuard::from_gauge(&self.pending_tasks);
         pending_tasks_guard.add(1i64);
         let (tx, rx) = oneshot::channel();
         self.thread_pool.spawn(move || {
@@ -133,34 +147,6 @@ impl fmt::Display for Panicked {
 }
 
 impl std::error::Error for Panicked {}
-
-struct ThreadPoolMetrics {
-    ongoing_tasks: IntGaugeVec<1>,
-    pending_tasks: IntGaugeVec<1>,
-}
-
-impl Default for ThreadPoolMetrics {
-    fn default() -> Self {
-        ThreadPoolMetrics {
-            ongoing_tasks: new_gauge_vec(
-                "ongoing_tasks",
-                "number of tasks being currently processed by threads in the thread pool",
-                "thread_pool",
-                &[],
-                ["pool"],
-            ),
-            pending_tasks: new_gauge_vec(
-                "pending_tasks",
-                "number of tasks waiting in the queue before being processed by the thread pool",
-                "thread_pool",
-                &[],
-                ["pool"],
-            ),
-        }
-    }
-}
-
-static THREAD_POOL_METRICS: LazyLock<ThreadPoolMetrics> = LazyLock::new(ThreadPoolMetrics::default);
 
 #[cfg(test)]
 mod tests {

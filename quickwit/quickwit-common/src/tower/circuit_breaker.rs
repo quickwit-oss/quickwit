@@ -19,9 +19,10 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use pin_project::pin_project;
-use prometheus::IntCounter;
 use tokio::time::Instant;
 use tower::{Layer, Service};
+
+use crate::metrics::Counter;
 
 /// The circuit breaker layer implements the [circuit breaker pattern](https://martinfowler.com/bliki/CircuitBreaker.html).
 ///
@@ -49,7 +50,7 @@ pub struct CircuitBreakerLayer<Evaluator> {
     time_window: Duration,
     timeout: Duration,
     evaluator: Evaluator,
-    circuit_break_total: prometheus::IntCounter,
+    circuit_break_total: Counter,
 }
 
 pub trait CircuitBreakerEvaluator: Clone {
@@ -61,7 +62,7 @@ pub trait CircuitBreakerEvaluator: Clone {
         self,
         max_num_errors_per_secs: u32,
         timeout: Duration,
-        circuit_break_total: prometheus::IntCounter,
+        circuit_break_total: Counter,
     ) -> CircuitBreakerLayer<Self> {
         CircuitBreakerLayer {
             max_error_count_per_time_window: max_num_errors_per_secs,
@@ -102,7 +103,7 @@ struct CircuitBreakerInner<Evaluator> {
     timeout: Duration,
     evaluator: Evaluator,
     state: CircuitBreakerState,
-    circuit_break_total: IntCounter,
+    circuit_break_total: Counter,
 }
 
 impl<Evaluator> CircuitBreakerInner<Evaluator> {
@@ -125,7 +126,7 @@ impl<Evaluator> CircuitBreakerInner<Evaluator> {
     fn receive_error(&mut self) {
         match self.state {
             CircuitBreakerState::HalfOpen => {
-                self.circuit_break_total.inc();
+                self.circuit_break_total.increment(1);
                 self.state = CircuitBreakerState::Open {
                     until: Instant::now() + self.timeout,
                 }
@@ -144,7 +145,7 @@ impl<Evaluator> CircuitBreakerInner<Evaluator> {
                 }
                 let now = Instant::now();
                 if now < error_window_end {
-                    self.circuit_break_total.inc();
+                    self.circuit_break_total.increment(1);
                     self.state = CircuitBreakerState::Open {
                         until: now + self.timeout,
                     };
@@ -301,8 +302,11 @@ mod tests {
 
         const TIMEOUT: Duration = Duration::from_millis(500);
 
-        let int_counter: prometheus::IntCounter =
-            IntCounter::new("circuit_break_total_test", "test circuit breaker counter").unwrap();
+        let int_counter = crate::metrics::counter!(
+            name: "circuit_break_total_test",
+            description: "test circuit breaker counter",
+            subsystem: "",
+        );
         let mut service = ServiceBuilder::new()
             .layer(TestCircuitBreakerEvaluator.make_layer(10, TIMEOUT, int_counter))
             .service_fn(|_| async {

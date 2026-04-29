@@ -34,10 +34,9 @@ use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
 use bytesize::ByteSize;
 use pin_project::pin_project;
-use prometheus::IntCounter;
 use tokio::io::AsyncWrite;
 
-use crate::metrics::{IntCounterVec, new_counter_vec};
+use crate::metrics::{Counter, counter};
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
 // Max 1MB at a time.
@@ -48,25 +47,14 @@ fn truncate_bytes(bytes: &[u8]) -> &[u8] {
     &bytes[..num_bytes]
 }
 
-struct IoMetrics {
-    write_bytes: IntCounterVec<1>,
-}
-
-impl Default for IoMetrics {
-    fn default() -> Self {
-        let write_bytes = new_counter_vec(
-            "write_bytes",
-            "Number of bytes written by a given component in [indexer, merger, deleter, \
-             split_downloader_{merge,delete}]",
-            "",
-            &[],
-            ["component"],
-        );
-        Self { write_bytes }
-    }
-}
-
-static IO_METRICS: LazyLock<IoMetrics> = LazyLock::new(IoMetrics::default);
+static WRITE_BYTES: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "write_bytes",
+        description: "Number of bytes written by a given component in [indexer, merger, deleter, split_downloader_{merge,delete}]",
+        subsystem: "",
+        observable: true,
+    )
+});
 
 /// Parameter used in `async_speed_limit`.
 ///
@@ -91,20 +79,18 @@ pub fn limiter(throughput: ByteSize) -> Limiter {
 #[derive(Clone)]
 pub struct IoControls {
     throughput_limiter_opt: Option<Limiter>,
-    bytes_counter: IntCounter,
+    bytes_counter: Counter,
     progress: Progress,
     kill_switch: KillSwitch,
 }
 
 impl Default for IoControls {
     fn default() -> Self {
-        let default_bytes_counter =
-            IntCounter::new("default_write_num_bytes", "Default write counter.").unwrap();
         IoControls {
             throughput_limiter_opt: None,
             progress: Progress::default(),
             kill_switch: KillSwitch::default(),
-            bytes_counter: default_bytes_counter,
+            bytes_counter: DEFAULT_WRITE_BYTES.clone(),
         }
     }
 }
@@ -132,7 +118,10 @@ impl IoControls {
     }
 
     pub fn set_component(mut self, component: &str) -> Self {
-        self.bytes_counter = IO_METRICS.write_bytes.with_label_values([component]);
+        self.bytes_counter = counter!(
+            parent: &*WRITE_BYTES,
+            "component" => component.to_string(),
+        );
         self
     }
 
@@ -148,7 +137,7 @@ impl IoControls {
         self
     }
 
-    pub fn set_bytes_counter(mut self, bytes_counter: IntCounter) -> Self {
+    pub fn set_bytes_counter(mut self, bytes_counter: Counter) -> Self {
         self.bytes_counter = bytes_counter;
         self
     }
@@ -167,10 +156,19 @@ impl IoControls {
         if let Some(throughput_limiter) = &self.throughput_limiter_opt {
             throughput_limiter.blocking_consume(num_bytes);
         }
-        self.bytes_counter.inc_by(num_bytes as u64);
+        self.bytes_counter.increment(num_bytes as u64);
         Ok(())
     }
 }
+
+static DEFAULT_WRITE_BYTES: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "default_write_num_bytes",
+        description: "Default write counter.",
+        subsystem: "",
+        observable: true,
+    )
+});
 
 #[pin_project]
 pub struct ControlledWrite<A: IoControlsAccess, W> {
@@ -220,7 +218,7 @@ impl<A: IoControlsAccess, W: AsyncWrite> ControlledWrite<A, W> {
             let len = *obj.as_ref().unwrap_or(&0);
             if len > 0 {
                 let waiter = this.io_controls_access.apply(|io_controls| {
-                    io_controls.bytes_counter.inc_by(len as u64);
+                    io_controls.bytes_counter.increment(len as u64);
                     io_controls
                         .throughput_limiter_opt
                         .as_ref()

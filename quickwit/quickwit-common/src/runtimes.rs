@@ -17,13 +17,45 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use prometheus::{Gauge, IntCounter, IntGauge};
 use tokio::runtime::Runtime;
 use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 
-use crate::metrics::{new_counter, new_float_gauge, new_gauge};
+use crate::metrics::{Counter, Gauge, counter, gauge};
 
 static RUNTIMES: OnceLock<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceLock::new();
+
+static TOKIO_SCHEDULED_TASKS: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
+    gauge!(
+        name: "tokio_scheduled_tasks",
+        description: "The total number of tasks currently scheduled in workers' local queues.",
+        subsystem: "runtime",
+    )
+});
+
+static TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL: std::sync::LazyLock<Counter> =
+    std::sync::LazyLock::new(|| {
+        counter!(
+            name: "tokio_worker_busy_duration_milliseconds_total",
+            description: " The total amount of time worker threads were busy.",
+            subsystem: "runtime",
+        )
+    });
+
+static TOKIO_WORKER_BUSY_RATIO: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
+    gauge!(
+        name: "tokio_worker_busy_ratio",
+        description: "The ratio of time worker threads were busy since the last time runtime metrics were collected.",
+        subsystem: "runtime",
+    )
+});
+
+static TOKIO_WORKER_THREADS: std::sync::LazyLock<Gauge> = std::sync::LazyLock::new(|| {
+    gauge!(
+        name: "tokio_worker_threads",
+        description: "The number of worker threads used by the runtime.",
+        subsystem: "runtime",
+    )
+});
 
 /// Describes which runtime an actor should run on.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
@@ -165,61 +197,43 @@ pub fn scrape_tokio_runtime_metrics(handle: &tokio::runtime::Handle, label: &'st
     let runtime_monitor = RuntimeMonitor::new(handle);
     handle.spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(1));
-        let mut prometheus_runtime_metrics = PrometheusRuntimeMetrics::new(label);
+        let mut runtime_metrics_recorder = RuntimeMetricsRecorder::new(label);
 
         for tokio_runtime_metrics in runtime_monitor.intervals() {
             interval.tick().await;
-            prometheus_runtime_metrics.update(&tokio_runtime_metrics);
+            runtime_metrics_recorder.update(&tokio_runtime_metrics);
         }
     });
 }
 
-struct PrometheusRuntimeMetrics {
-    scheduled_tasks: IntGauge,
-    worker_busy_duration_milliseconds_total: IntCounter,
+struct RuntimeMetricsRecorder {
+    scheduled_tasks: Gauge,
+    worker_busy_duration_milliseconds_total: Counter,
     worker_busy_ratio: Gauge,
-    worker_threads: IntGauge,
+    worker_threads: Gauge,
 }
 
-impl PrometheusRuntimeMetrics {
+impl RuntimeMetricsRecorder {
     pub fn new(label: &'static str) -> Self {
         Self {
-            scheduled_tasks: new_gauge(
-                "tokio_scheduled_tasks",
-                "The total number of tasks currently scheduled in workers' local queues.",
-                "runtime",
-                &[("runtime_type", label)],
+            scheduled_tasks: gauge!(parent: &*TOKIO_SCHEDULED_TASKS, "runtime_type" => label),
+            worker_busy_duration_milliseconds_total: counter!(
+                parent: &*TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL,
+                "runtime_type" => label,
             ),
-            worker_busy_duration_milliseconds_total: new_counter(
-                "tokio_worker_busy_duration_milliseconds_total",
-                " The total amount of time worker threads were busy.",
-                "runtime",
-                &[("runtime_type", label)],
-            ),
-            worker_busy_ratio: new_float_gauge(
-                "tokio_worker_busy_ratio",
-                "The ratio of time worker threads were busy since the last time runtime metrics \
-                 were collected.",
-                "runtime",
-                &[("runtime_type", label)],
-            ),
-            worker_threads: new_gauge(
-                "tokio_worker_threads",
-                "The number of worker threads used by the runtime.",
-                "runtime",
-                &[("runtime_type", label)],
-            ),
+            worker_busy_ratio: gauge!(parent: &*TOKIO_WORKER_BUSY_RATIO, "runtime_type" => label),
+            worker_threads: gauge!(parent: &*TOKIO_WORKER_THREADS, "runtime_type" => label),
         }
     }
 
     pub fn update(&mut self, runtime_metrics: &RuntimeMetrics) {
         self.scheduled_tasks
-            .set(runtime_metrics.total_local_queue_depth as i64);
+            .set(runtime_metrics.total_local_queue_depth as f64);
         self.worker_busy_duration_milliseconds_total
-            .inc_by(runtime_metrics.total_busy_duration.as_millis() as u64);
+            .increment(runtime_metrics.total_busy_duration.as_millis() as u64);
         self.worker_busy_ratio.set(runtime_metrics.busy_ratio());
         self.worker_threads
-            .set(runtime_metrics.workers_count as i64);
+            .set(runtime_metrics.workers_count as f64);
     }
 }
 
