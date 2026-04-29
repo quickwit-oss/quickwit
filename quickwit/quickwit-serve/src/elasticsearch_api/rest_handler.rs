@@ -58,9 +58,9 @@ use super::model::{
     CatIndexQueryParams, DeleteQueryParams, ElasticsearchCatIndexResponse, ElasticsearchError,
     ElasticsearchResolveIndexEntryResponse, ElasticsearchResolveIndexResponse,
     ElasticsearchResponse, ElasticsearchStatsResponse, FieldCapabilityQueryParams,
-    FieldCapabilityRequestBody, FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams,
-    MultiSearchResponse, MultiSearchSingleResponse, ScrollQueryParams, SearchBody,
-    SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
+    FieldCapabilityRequestBody, FieldCapabilityResponse, IndexMappingQueryParams,
+    MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
+    ScrollQueryParams, SearchBody, SearchQueryParams, SearchQueryParamsCount, StatsResponseEntry,
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
 };
 use super::{TrackTotalHits, make_elastic_api_response};
@@ -201,6 +201,7 @@ async fn get_index_metadata(
 
 pub(crate) async fn es_compat_index_mapping(
     index_id: String,
+    params: IndexMappingQueryParams,
     mut metastore: MetastoreServiceClient,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticsearchMappingsResponse, ElasticsearchError> {
@@ -217,8 +218,8 @@ pub(crate) async fn es_compat_index_mapping(
     let list_fields_request = quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
         fields: Vec::new(),
-        start_timestamp: None,
-        end_timestamp: None,
+        start_timestamp: params.start_timestamp,
+        end_timestamp: params.end_timestamp,
         query_ast: None,
     };
     let list_fields_response = search_service
