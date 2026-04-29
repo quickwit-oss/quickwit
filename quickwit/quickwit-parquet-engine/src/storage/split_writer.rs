@@ -170,7 +170,7 @@ impl ParquetSplitWriter {
 }
 
 /// Extracts the time range (min/max timestamp_secs) from a RecordBatch.
-fn extract_time_range(batch: &RecordBatch) -> Result<TimeRange, ParquetWriteError> {
+pub(crate) fn extract_time_range(batch: &RecordBatch) -> Result<TimeRange, ParquetWriteError> {
     let timestamp_idx = batch
         .schema()
         .index_of("timestamp_secs")
@@ -194,7 +194,7 @@ fn extract_time_range(batch: &RecordBatch) -> Result<TimeRange, ParquetWriteErro
 }
 
 /// Extracts distinct metric names from a RecordBatch.
-fn extract_metric_names(batch: &RecordBatch) -> Result<HashSet<String>, ParquetWriteError> {
+pub(crate) fn extract_metric_names(batch: &RecordBatch) -> Result<HashSet<String>, ParquetWriteError> {
     let metric_idx = batch
         .schema()
         .index_of("metric_name")
@@ -227,7 +227,7 @@ fn extract_metric_names(batch: &RecordBatch) -> Result<HashSet<String>, ParquetW
 }
 
 /// Extracts distinct service names from a RecordBatch.
-fn extract_service_names(batch: &RecordBatch) -> Result<HashSet<String>, ParquetWriteError> {
+pub(crate) fn extract_service_names(batch: &RecordBatch) -> Result<HashSet<String>, ParquetWriteError> {
     let service_idx = match batch.schema().index_of("service").ok() {
         Some(idx) => idx,
         None => return Ok(HashSet::new()),
