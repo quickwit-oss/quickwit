@@ -29,7 +29,6 @@ use quickwit_datafusion::test_utils::make_batch;
 use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry};
 
 mod common;
-#[path = "common/metrics_splits.rs"]
 mod metrics_splits;
 
 use common::{TestSandbox, create_metrics_index};

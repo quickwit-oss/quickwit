@@ -37,9 +37,7 @@ use quickwit_datafusion::{
 use quickwit_search::{SearcherPool, create_search_client_from_grpc_addr};
 
 mod common;
-#[path = "common/metrics_splits.rs"]
 mod metrics_splits;
-#[path = "common/worker.rs"]
 mod worker;
 
 use common::{TestSandbox, create_metrics_index};

@@ -32,7 +32,6 @@ use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry}
 use quickwit_parquet_engine::timeseries_id::compute_timeseries_id;
 
 mod common;
-#[path = "common/metrics_splits.rs"]
 mod metrics_splits;
 
 use common::{TestSandbox, create_metrics_index};
