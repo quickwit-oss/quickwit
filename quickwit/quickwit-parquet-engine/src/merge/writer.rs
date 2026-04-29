@@ -40,7 +40,9 @@ use crate::row_keys;
 use crate::sort_fields::parse_sort_fields;
 use crate::sorted_series::SORTED_SERIES_COLUMN;
 use crate::split::TAG_SERVICE;
-use crate::storage::split_writer::{extract_metric_names, extract_service_names, extract_time_range};
+use crate::storage::split_writer::{
+    extract_metric_names, extract_service_names, extract_time_range,
+};
 use crate::storage::{
     PARQUET_META_NUM_MERGE_OPS, PARQUET_META_ROW_KEYS, PARQUET_META_ROW_KEYS_JSON,
     PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION, PARQUET_META_WINDOW_START,
@@ -119,8 +121,8 @@ pub fn write_merge_outputs(
         // Extract per-output logical metadata from the actual rows.
         let metric_names = extract_metric_names(&sorted_batch)
             .context("extracting metric names from merge output")?;
-        let time_range = extract_time_range(&sorted_batch)
-            .context("extracting time range from merge output")?;
+        let time_range =
+            extract_time_range(&sorted_batch).context("extracting time range from merge output")?;
         let service_names = extract_service_names(&sorted_batch)
             .context("extracting service names from merge output")?;
 

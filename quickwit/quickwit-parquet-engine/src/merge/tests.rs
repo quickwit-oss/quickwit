@@ -323,7 +323,9 @@ fn test_merge_per_output_metadata_from_actual_rows() {
         num_outputs: 1,
         writer_config: ParquetWriterConfig::default(),
     };
-    let outputs = merge_sorted_parquet_files(&[input1.clone(), input2.clone()], &output_dir, &config).unwrap();
+    let outputs =
+        merge_sorted_parquet_files(&[input1.clone(), input2.clone()], &output_dir, &config)
+            .unwrap();
     assert_eq!(outputs.len(), 1);
     let output = &outputs[0];
     assert!(output.metric_names.contains("cpu"));
