@@ -39,8 +39,10 @@ use quickwit_common::KillSwitch;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_parquet_engine::merge::policy::ParquetMergePolicy;
+use quickwit_metastore::{ListParquetSplitsRequestExt, ListParquetSplitsResponseExt};
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
+use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
@@ -244,12 +246,7 @@ impl ParquetMergePipeline {
             "spawning parquet merge pipeline"
         );
 
-        // On first spawn, use the initial splits provided by the IndexingService.
-        // On subsequent spawns (after crash/respawn), we start empty.
-        // TODO: implement fetch_immature_parquet_splits() to re-query the
-        // metastore on respawn, matching the Tantivy MergePipeline pattern
-        // (see merge_pipeline.rs:441-471).
-        let immature_splits = self.initial_immature_splits_opt.take().unwrap_or_default();
+        let immature_splits = self.fetch_immature_splits(ctx).await?;
 
         // Spawn actors bottom-up: each actor's constructor needs a mailbox
         // for the actor below it in the chain, so we start from the publisher
@@ -378,6 +375,45 @@ impl ParquetMergePipeline {
         }
         Ok(())
     }
+
+    /// Fetch published Parquet splits from the metastore for merge planning.
+    ///
+    /// On first spawn, uses the initial splits provided by the IndexingService
+    /// (avoids per-pipeline metastore queries when many pipelines start).
+    /// On subsequent spawns (after crash/respawn), queries the metastore
+    /// directly to recover splits that were in-flight during the crash.
+    ///
+    /// The planner's `record_splits_if_necessary` filters out mature splits,
+    /// so we don't need to filter here.
+    async fn fetch_immature_splits(
+        &mut self,
+        ctx: &ActorContext<Self>,
+    ) -> anyhow::Result<Vec<ParquetSplitMetadata>> {
+        // On first spawn, use the initial splits provided by the IndexingService.
+        if let Some(immature_splits) = self.initial_immature_splits_opt.take() {
+            return Ok(immature_splits);
+        }
+        // On subsequent spawns, query the metastore for published splits.
+        let index_uid = self.params.index_uid.clone();
+        let query =
+            quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone());
+        let list_request =
+            quickwit_proto::metastore::ListMetricsSplitsRequest::try_from_query(
+                index_uid.clone(),
+                &query,
+            )?;
+        let response = ctx
+            .protect_future(self.params.metastore.list_metrics_splits(list_request))
+            .await?;
+        let records = response.deserialize_splits()?;
+        let splits: Vec<ParquetSplitMetadata> =
+            records.into_iter().map(|r| r.metadata).collect();
+        info!(
+            num_splits = splits.len(),
+            "fetched published parquet splits for merge planning on respawn"
+        );
+        Ok(splits)
+    }
 }
 
 #[async_trait]
@@ -481,6 +517,8 @@ impl Handler<Spawn> for ParquetMergePipeline {
 /// All actors in the pipeline share these resources via `Arc`/`Clone`.
 #[derive(Clone)]
 pub struct ParquetMergePipelineParams {
+    /// Index UID for metastore queries when re-seeding on respawn.
+    pub index_uid: IndexUid,
     /// Root temp directory for scratch files (downloads, merge output).
     pub indexing_directory: TempDirectory,
     /// Metastore client for staging/publishing merged splits and for
@@ -517,7 +555,15 @@ mod tests {
     use super::*;
 
     fn make_pipeline_params(universe: &Universe) -> ParquetMergePipelineParams {
-        let mock_metastore = MockMetastoreService::new();
+        let mut mock_metastore = MockMetastoreService::new();
+        // Allow list_metrics_splits for respawn seeding (returns empty).
+        mock_metastore
+            .expect_list_metrics_splits()
+            .returning(|_| {
+                Ok(quickwit_proto::metastore::ListMetricsSplitsResponse {
+                    splits_serialized_json: Vec::new(),
+                })
+            });
         let storage = Arc::new(quickwit_storage::RamStorage::default());
         let merge_policy = Arc::new(ConstWriteAmplificationParquetMergePolicy::new(
             ParquetMergePolicyConfig {
@@ -530,6 +576,7 @@ mod tests {
             },
         ));
         ParquetMergePipelineParams {
+            index_uid: quickwit_proto::types::IndexUid::for_test("test-merge-index", 0),
             indexing_directory: TempDirectory::for_test(),
             metastore: MetastoreServiceClient::from_mock(mock_metastore),
             storage,

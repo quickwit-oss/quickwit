@@ -171,6 +171,7 @@ async fn test_merge_pipeline_end_to_end() {
     ));
 
     let params = ParquetMergePipelineParams {
+        index_uid: quickwit_proto::types::IndexUid::for_test("test-merge-index", 0),
         indexing_directory: TempDirectory::for_test(),
         metastore,
         storage: ram_storage.clone(),
