@@ -21,13 +21,17 @@ arc-swap = { workspace = true }
 arrow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 indexmap = { workspace = true }
 # `std` is required for protobuf map<> field support (generated code uses HashMap).
 prost = { workspace = true, features = ["std"] }
+quickwit-opentelemetry = { workspace = true }
+quickwit-parquet-engine = { workspace = true }
 rand = { workspace = true }
+regex = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -43,11 +47,7 @@ vector-lib = { workspace = true }
 warp = { workspace = true }
 zstd = { workspace = true }
 
-quickwit-opentelemetry = { workspace = true }
-quickwit-parquet-engine = { workspace = true }
-
 [dev-dependencies]
-chrono = { workspace = true }
 serial_test = { workspace = true }
 wiremock = { workspace = true }
 

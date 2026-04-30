@@ -8918,6 +8918,7 @@ dependencies = [
  "quickwit-opentelemetry",
  "quickwit-parquet-engine",
  "rand 0.10.1",
+ "regex",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
