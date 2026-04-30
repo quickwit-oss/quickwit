@@ -28,14 +28,45 @@
 //! restores the files on exit. The `build.rs` ensures the linker pulls in
 //! all inventory submissions even without explicit symbol references.
 
+use std::collections::BTreeMap;
+
+fn format_key(info: &quickwit_metrics::MetricInfo) -> String {
+    if info.static_labels.is_empty() {
+        info.key_name.to_string()
+    } else {
+        let pairs: Vec<String> = info
+            .static_labels
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect();
+        format!("{}{{{}}}", info.key_name, pairs.join(", "))
+    }
+}
+
 fn main() {
+    let mut by_module: BTreeMap<&str, BTreeMap<String, &quickwit_metrics::MetricInfo>> =
+        BTreeMap::new();
+
     for info in quickwit_metrics::metrics_info() {
-        println!(
-            "[{:<9}] {}: {} (observable: {})",
-            format!("{:?}", info.kind),
-            info.key_name,
-            info.description,
-            info.observable
-        );
+        let module = info.metadata.module_path().unwrap_or("<unknown>");
+        by_module
+            .entry(module)
+            .or_default()
+            .insert(format_key(info), info);
+    }
+
+    for (module, metrics) in &by_module {
+        let max_key_len = metrics.keys().map(|k| k.len()).max().unwrap_or(0);
+        println!("{module}");
+        for (key, info) in metrics {
+            println!(
+                "  {key:<width$}    kind: {}, observable: {}",
+                format!("{:?}", info.kind).to_lowercase(),
+                info.observable,
+                width = max_key_len
+            );
+            println!("    {}", info.description);
+        }
+        println!();
     }
 }

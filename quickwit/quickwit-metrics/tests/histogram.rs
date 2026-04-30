@@ -110,9 +110,8 @@ fn config_stored() {
     });
 
     let config = h.__info();
-    assert_eq!(config.info.name, "h_cfg");
-    assert_eq!(config.info.subsystem, "sub");
     assert_eq!(config.info.key_name, "quickwit_sub_h_cfg");
     assert_eq!(config.info.description, "config test");
+    assert_eq!(config.info.metadata.target(), "sub");
     assert_eq!((config.buckets_fn)(), vec![1.0, 2.0]);
 }

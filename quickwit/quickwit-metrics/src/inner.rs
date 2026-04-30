@@ -76,13 +76,14 @@ macro_rules! __key_info_metadata {
         $(, $label:literal => $value:literal)* $(,)?
     ) => {
         const KEY_NAME: &str = $crate::__key_name!($subsystem, $name);
+        static METADATA: $crate::__metrics::Metadata<'static> = $crate::__metadata!($subsystem);
         static INFO: $crate::MetricInfo = $crate::MetricInfo {
-            name: $name,
-            subsystem: $subsystem,
             key_name: KEY_NAME,
             description: $description,
             kind: $kind,
             observable: $observable,
+            metadata: &METADATA,
+            static_labels: &[$(($label, $value)),*],
         };
         $crate::__inventory::submit!(INFO);
 
@@ -90,7 +91,6 @@ macro_rules! __key_info_metadata {
             $($crate::__metrics::Label::from_static_parts($label, $value)),*
         ];
         static KEY: $crate::__metrics::Key = $crate::__metrics::Key::from_static_parts(KEY_NAME, &LABELS);
-        static METADATA: $crate::__metrics::Metadata<'static> = $crate::__metadata!($subsystem);
     };
 }
 
@@ -226,9 +226,8 @@ macro_rules! __metric_extension {
 
                 let mi = $metric_info;
                 let key = $crate::__metrics::Key::from_parts(mi.key_name, all_labels);
-                let metadata = $crate::__metadata!(mi.subsystem);
 
-                ($parent.__info(), key, metadata)
+                ($parent.__info(), key, mi.metadata.clone())
             });
             *slot = Some((hash, metric.clone()));
             metric

@@ -325,10 +325,6 @@ pub use metrics_util::MetricKind;
 /// be enumerated without a global registry at runtime.
 #[derive(Clone, Copy)]
 pub struct MetricInfo {
-    /// Short metric name as provided by the caller (e.g. `"requests_total"`).
-    pub name: &'static str,
-    /// Subsystem the metric belongs to (e.g. `"http"`, `"db"`).
-    pub subsystem: &'static str,
     /// Fully-qualified metric name composed at compile time as
     /// `{SYSTEM}_{subsystem}_{name}` (e.g. `"quickwit_http_requests_total"`).
     pub key_name: &'static str,
@@ -338,6 +334,12 @@ pub struct MetricInfo {
     pub kind: MetricKind,
     /// Whether this metric was declared with `observable: true`.
     pub observable: bool,
+    /// Recorder metadata capturing the subsystem (target), verbosity level,
+    /// and module path where the metric was declared.
+    pub metadata: &'static metrics::Metadata<'static>,
+    /// Label name/value pairs from the base declaration (compile-time constants).
+    /// Parent-extension labels are dynamic and not captured here.
+    pub static_labels: &'static [(&'static str, &'static str)],
 }
 
 inventory::collect!(MetricInfo);
