@@ -94,17 +94,16 @@ impl FunctionTransform for PreprocessSpan {
 ///
 /// Emits the three timestamp fields the `datadog-spans` index expects:
 /// - `start_time` — span start, full nanosecond precision (i64, unix ns)
-/// - `timestamp` — span end = `floor((start + duration) / 1e6)` as rfc3339
-///   with millisecond precision and a `Z` suffix; this is the index's
-///   `timestamp_field`, so the doc is dropped without it
+/// - `timestamp` — span end = `floor((start + duration) / 1e6)` as rfc3339 with millisecond
+///   precision and a `Z` suffix; this is the index's `timestamp_field`, so the doc is dropped
+///   without it
 /// - `discovery_timestamp` — when intake observed the span (i64, unix ms)
 ///
 /// Also normalizes the IDs to unsigned 64-bit decimal strings:
 /// - `trace_id`, `span_id`, `parent_id` (i64, really u64) → decimal string
-/// - `trace_id_low` — copy of `trace_id` (the lower 64 bits as decimal).
-///   Kept for compatibility with SaaS docs where `trace_id` may be a
-///   128-bit hex string and `trace_id_low` carries the lower 64 bits
-///   separately. From intake, both fields hold the same value.
+/// - `trace_id_low` — copy of `trace_id` (the lower 64 bits as decimal). Kept for compatibility
+///   with SaaS docs where `trace_id` may be a 128-bit hex string and `trace_id_low` carries the
+///   lower 64 bits separately. From intake, both fields hold the same value.
 ///
 /// The upper 64 bits of 128-bit Datadog trace IDs aren't reliably
 /// available on the wire (the SaaS pipeline assembles them downstream),
@@ -339,5 +338,4 @@ mod tests {
         assert!(trace.get("timestamp").is_none());
         assert!(trace.get("discovery_timestamp").is_none());
     }
-
 }

@@ -25,17 +25,16 @@ use vector::event::{ObjectMap, TraceEvent, Value};
 /// Remaps a normalized Datadog span event to the schema's field shape:
 /// - rename `name` → `operation_name`, `resource` → `resource_name`
 /// - derive `status` from the wire `error` flag (0 → "ok", else "error")
-/// - lift `meta.error.type` to top-level `error.type` (matches SaaS shape;
-///   the rest of `error.*` stays only under `custom.error.*`)
+/// - lift `meta.error.type` to top-level `error.type` (matches SaaS shape; the rest of `error.*`
+///   stays only under `custom.error.*`)
 /// - promote `meta._dd.hostname` and `meta.env` to top-level `host`/`env`
 /// - compute `resource_hash` (lower 64 bits of murmur3_x64_128, hex)
 /// - hardcode `single_span` and `analytics_enabled` to `false`
 /// - emit a random positive `tiebreaker`
 /// - drop the leftover `start` Timestamp (already extracted into `start_time`)
-/// - fold `meta`, `metrics`, `meta_struct` (msgpack-decoded), `duration`,
-///   `span_links`, and `span_events` into the catch-all `custom` JSON field.
-///   Schema's `custom` declares `expand_dots: true`, so dotted keys like
-///   `_dd.agent_version` get nested at indexing time.
+/// - fold `meta`, `metrics`, `meta_struct` (msgpack-decoded), `duration`, `span_links`, and
+///   `span_events` into the catch-all `custom` JSON field. Schema's `custom` declares `expand_dots:
+///   true`, so dotted keys like `_dd.agent_version` get nested at indexing time.
 pub(super) fn remap_dd_span_to_schema(trace: &mut TraceEvent) {
     // Promote host/env from `meta` to top-level fields. Keys in `meta` are
     // stored with literal dots (e.g. "_dd.hostname"), so we read them
@@ -288,10 +287,7 @@ mod tests {
         assert_eq!(trace.get("host"), Some(&Value::from("host-1")));
         assert_eq!(trace.get("env"), Some(&Value::from("prod")));
         let Some(Value::Object(custom)) = trace.get("custom") else {
-            panic!(
-                "custom should be an object, got {:?}",
-                trace.get("custom"),
-            );
+            panic!("custom should be an object, got {:?}", trace.get("custom"),);
         };
         assert_eq!(custom.get("_dd.hostname"), Some(&Value::from("host-1")));
         assert_eq!(custom.get("env"), Some(&Value::from("prod")));
@@ -319,10 +315,7 @@ mod tests {
             panic!("custom should be an object");
         };
         assert_eq!(custom.get("user.id"), Some(&Value::from("42")));
-        assert_eq!(
-            custom.get("_sampling_priority_v1"),
-            Some(&Value::from(1.0)),
-        );
+        assert_eq!(custom.get("_sampling_priority_v1"), Some(&Value::from(1.0)),);
         assert_eq!(custom.get("duration"), Some(&Value::from(3_764_100i64)));
     }
 
