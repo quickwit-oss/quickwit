@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use datafusion::error::Result as DFResult;
 use quickwit_common::uri::Uri;
 use quickwit_metastore::{IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
+use quickwit_parquet_engine::split::ParquetSplitKind;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -40,7 +41,11 @@ pub trait MetricsIndexResolver: Send + Sync + std::fmt::Debug {
     /// Returns the split provider and storage URI for `index_name`. The
     /// `ObjectStore` for that URI is built on demand by the registry the
     /// first time DataFusion reads from it.
-    async fn resolve(&self, index_name: &str) -> DFResult<(Arc<dyn MetricsSplitProvider>, Uri)>;
+    async fn resolve(
+        &self,
+        index_name: &str,
+        split_kind: ParquetSplitKind,
+    ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Uri)>;
 
     async fn list_index_names(&self) -> DFResult<Vec<String>>;
 }
@@ -71,8 +76,12 @@ impl std::fmt::Debug for MetastoreIndexResolver {
 
 #[async_trait]
 impl MetricsIndexResolver for MetastoreIndexResolver {
-    async fn resolve(&self, index_name: &str) -> DFResult<(Arc<dyn MetricsSplitProvider>, Uri)> {
-        debug!(index_name, "resolving metrics index");
+    async fn resolve(
+        &self,
+        index_name: &str,
+        split_kind: ParquetSplitKind,
+    ) -> DFResult<(Arc<dyn MetricsSplitProvider>, Uri)> {
+        debug!(index_name, ?split_kind, "resolving parquet index");
 
         let response = self
             .metastore
@@ -93,6 +102,7 @@ impl MetricsIndexResolver for MetastoreIndexResolver {
         let split_provider: Arc<dyn MetricsSplitProvider> = Arc::new(MetastoreSplitProvider::new(
             self.metastore.clone(),
             index_uid,
+            split_kind,
         ));
 
         Ok((split_provider, index_uri))

@@ -29,8 +29,10 @@ use quickwit_datafusion::test_utils::make_batch;
 use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry};
 
 mod common;
+mod metrics_splits;
 
-use common::{TestSandbox, create_metrics_index, publish_split};
+use common::{TestSandbox, create_metrics_index};
+use metrics_splits::publish_split;
 
 // ── Setup ──────────────────────────────────────────────────────────
 
@@ -486,10 +488,11 @@ async fn test_in_list_tag_filter_returns_all_matching_rows() {
 /// is compiled to SQL over two tables joined on `bhandle` (a tag hash).
 ///
 /// With our wide-format parquet model every data point carries its own tags
-/// as columns, so the same query is a single two-level aggregation:
+/// as columns, and `sorted_series` carries the per-series handle, so the same
+/// query is a single two-level aggregation:
 ///
-///   1. Inner GROUP BY (service, host, time_bin) → MAX(value) per series per bin
-///   2. Outer GROUP BY (service, time_bin)       → AVG(max) across hosts per bin
+///   1. Inner GROUP BY (sorted_series, service, time_bin) → MAX(value) per series per bin
+///   2. Outer GROUP BY (service, time_bin)                → AVG(max) across series per bin
 ///
 /// Three prod series, one staging series (must be filtered out):
 ///   web / host=web-01: values 1,2,3,4,5,6 at t=0,15,30,45,60,75
@@ -594,7 +597,7 @@ async fn test_rollup_nested_aggregation() {
     // The query mirrors the Datadog rollup pattern without a context/points join:
     //   avg:cpu.usage{env:prod} by {service}.rollup(max, 30)
     //
-    // Step 1 (inner): MAX per series (service + host) per 30-second bin.
+    // Step 1 (inner): MAX per sorted_series per 30-second bin.
     // Step 2 (outer): AVG of those per-series maxes, grouped by service.
     //
     // to_timestamp_seconds() converts the stored epoch-seconds UInt64 to a
@@ -605,14 +608,15 @@ async fn test_rollup_nested_aggregation() {
             metric_type    TINYINT,
             timestamp_secs BIGINT  NOT NULL,
             value          DOUBLE  NOT NULL,
+            sorted_series  BYTEA   NOT NULL,
             service        VARCHAR,
             env            VARCHAR,
             host           VARCHAR
         ) STORED AS metrics LOCATION 'rollup-test';
         WITH bin_max AS (
             SELECT
+                sorted_series AS bhdl,
                 service,
-                host,
                 date_bin(
                     INTERVAL '30 seconds',
                     to_timestamp_seconds(timestamp_secs)
@@ -621,7 +625,7 @@ async fn test_rollup_nested_aggregation() {
             FROM "rollup-test"
             WHERE metric_name = 'cpu.usage'
               AND env = 'prod'
-            GROUP BY service, host, time_bin
+            GROUP BY bhdl, time_bin, service
         )
         SELECT
             service,
@@ -632,7 +636,55 @@ async fn test_rollup_nested_aggregation() {
         ORDER BY time_bin, service
     "#;
 
-    let batches = run_sql(&builder, sql).await;
+    let ctx = builder.build_session().unwrap();
+    let mut statements = split_sql_statements(&ctx, sql).unwrap();
+    let query = statements.pop().unwrap();
+    for statement in statements {
+        ctx.sql(&statement).await.unwrap().collect().await.unwrap();
+    }
+    let df = ctx.sql(&query).await.unwrap();
+    let plan = df.clone().create_physical_plan().await.unwrap();
+    let plan_str = format!(
+        "{}",
+        datafusion::physical_plan::displayable(plan.as_ref()).indent(true)
+    );
+    assert!(
+        plan_str.contains("sorted_series"),
+        "expected the rollup plan to group on sorted_series:\n{plan_str}"
+    );
+    assert!(
+        plan_str.contains("ordering_mode=PartiallySorted")
+            || plan_str.contains("ordering_mode=Sorted"),
+        "expected sorted_series ordering to reach AggregateExec:\n{plan_str}"
+    );
+    assert!(
+        plan_str.contains("AggregateExec: mode=Final, gby=[sorted_series"),
+        "expected sorted_series finalization to be single-partition streaming after \
+         merge:\n{plan_str}"
+    );
+    assert!(
+        plan_str.contains("SortPreservingMergeExec: [sorted_series"),
+        "expected sorted_series partials to be merge-sorted before finalization:\n{plan_str}"
+    );
+    assert!(
+        !plan_str.contains("SortExec: expr=[sorted_series"),
+        "expected sorted_series partials to use preserved ordering without an explicit \
+         sort:\n{plan_str}"
+    );
+    assert!(
+        !plan_str.contains("Hash([sorted_series"),
+        "expected no hash repartition by sorted_series:\n{plan_str}"
+    );
+    assert!(
+        !plan_str.contains("RoundRobinBatch"),
+        "expected scan/partial stage parallelism to stay split-bounded:\n{plan_str}"
+    );
+    assert!(
+        plan_str.contains("file_groups={4 groups"),
+        "expected one scan partition per split, not byte-range split partitions:\n{plan_str}"
+    );
+
+    let batches = df.collect().await.unwrap();
 
     // 3 bins × 2 services (web, api) = 6 result rows.
     assert_eq!(

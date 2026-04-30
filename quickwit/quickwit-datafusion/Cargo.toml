@@ -43,6 +43,7 @@ object_store = "0.13"
 bytesize = { workspace = true }
 datafusion = "53"
 datafusion-substrait = "53"
+parquet = { workspace = true }
 prost = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

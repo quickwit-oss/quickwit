@@ -12,70 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Helpers for creating metrics indexes and publishing parquet splits against a
-//! file-backed metastore — lifted from the former `quickwit-integration-tests`
-//! test helpers and retargeted at [`super::TestSandbox`].
-
 use std::collections::HashSet;
 
 use arrow::array::{Array, RecordBatch};
 use arrow::datatypes::Int32Type;
-use quickwit_metastore::{CreateIndexRequestExt, StageParquetSplitsRequestExt};
+use quickwit_metastore::StageParquetSplitsRequestExt;
 use quickwit_parquet_engine::split::{ParquetSplitId, ParquetSplitMetadata, TimeRange};
-use quickwit_parquet_engine::storage::{ParquetWriter, ParquetWriterConfig};
-use quickwit_parquet_engine::table_config::TableConfig;
 use quickwit_proto::metastore::{
-    CreateIndexRequest, MetastoreService, MetastoreServiceClient, PublishMetricsSplitsRequest,
-    StageMetricsSplitsRequest,
+    MetastoreService, MetastoreServiceClient, PublishSketchSplitsRequest, StageSketchSplitsRequest,
 };
 use quickwit_proto::types::IndexUid;
 
-/// Create a metrics index rooted at `data_dir` and return its `IndexUid`.
-pub async fn create_metrics_index(
-    metastore: &MetastoreServiceClient,
-    index_id: &str,
-    data_dir: &std::path::Path,
-) -> IndexUid {
-    let index_uri = format!("file://{}", data_dir.display());
-    let index_config: quickwit_config::IndexConfig = serde_json::from_value(serde_json::json!({
-        "version": "0.8",
-        "index_id": index_id,
-        "index_uri": index_uri,
-        "doc_mapping": { "field_mappings": [] },
-    }))
-    .expect("valid metrics index config");
-
-    let response = metastore
-        .clone()
-        .create_index(CreateIndexRequest::try_from_index_config(&index_config).unwrap())
-        .await
-        .expect("create_index");
-    response.index_uid().clone()
-}
-
-/// Write `batch` as a parquet file under `data_dir`, stage it in the metastore,
+/// Write `batch` as a sketch parquet file, stage it in the sketch split table,
 /// and publish it.
 ///
-/// Tag columns (`service`, `env`, `datacenter`, `region`, `host`) present in
-/// the batch schema are indexed for split-level pruning.
-pub async fn publish_split(
+/// This intentionally writes the Arrow batch directly through Parquet's
+/// `ArrowWriter`: the production split writer still assumes metrics rows have
+/// a `timeseries_id` sort key, while the sketch schema under test stores only
+/// the DDSketch payload columns plus tags.
+pub async fn publish_sketch_split(
     metastore: &MetastoreServiceClient,
     index_uid: &IndexUid,
     data_dir: &std::path::Path,
     split_name: &str,
     batch: &RecordBatch,
 ) {
-    let (parquet_bytes, _) =
-        ParquetWriter::new(ParquetWriterConfig::default(), &TableConfig::default())
-            .unwrap()
-            .write_to_bytes(batch, None)
-            .expect("parquet encode");
-    let size_bytes = parquet_bytes.len() as u64;
-    std::fs::write(
-        data_dir.join(format!("{split_name}.parquet")),
-        &parquet_bytes,
-    )
-    .expect("write parquet file");
+    let file_path = data_dir.join(format!("{split_name}.parquet"));
+    let file = std::fs::File::create(&file_path).expect("create sketch parquet file");
+    let mut writer =
+        parquet::arrow::ArrowWriter::try_new(file, batch.schema(), None).expect("arrow writer");
+    writer.write(batch).expect("write sketch parquet batch");
+    writer.close().expect("close sketch parquet writer");
+    let size_bytes = std::fs::metadata(&file_path)
+        .expect("sketch parquet metadata")
+        .len();
 
     let batch_schema = batch.schema();
     let ts_idx = batch_schema.index_of("timestamp_secs").unwrap();
@@ -109,7 +79,7 @@ pub async fn publish_split(
         .map(|i| values.value(i).to_string())
         .collect();
 
-    let mut builder = ParquetSplitMetadata::metrics_builder()
+    let mut builder = ParquetSplitMetadata::sketches_builder()
         .split_id(ParquetSplitId::new(split_name))
         .index_uid(index_uid.to_string())
         .time_range(TimeRange::new(min_ts, max_ts + 1))
@@ -151,18 +121,18 @@ pub async fn publish_split(
 
     metastore
         .clone()
-        .stage_metrics_splits(
-            StageMetricsSplitsRequest::try_from_splits_metadata(
+        .stage_sketch_splits(
+            StageSketchSplitsRequest::try_from_splits_metadata(
                 index_uid.clone(),
                 &[builder.build()],
             )
             .unwrap(),
         )
         .await
-        .expect("stage_metrics_splits");
+        .expect("stage_sketch_splits");
     metastore
         .clone()
-        .publish_metrics_splits(PublishMetricsSplitsRequest {
+        .publish_sketch_splits(PublishSketchSplitsRequest {
             index_uid: Some(index_uid.clone()),
             staged_split_ids: vec![split_name.to_string()],
             replaced_split_ids: vec![],
@@ -170,5 +140,5 @@ pub async fn publish_split(
             publish_token_opt: None,
         })
         .await
-        .expect("publish_metrics_splits");
+        .expect("publish_sketch_splits");
 }

@@ -24,6 +24,18 @@
 //!     service      VARCHAR,
 //!     env          VARCHAR
 //! ) STORED AS metrics LOCATION 'my-metrics';
+//!
+//! CREATE EXTERNAL TABLE "my-sketches" (
+//!     metric_name    VARCHAR NOT NULL,
+//!     timestamp_secs BIGINT UNSIGNED NOT NULL,
+//!     count          BIGINT UNSIGNED NOT NULL,
+//!     sum            DOUBLE  NOT NULL,
+//!     min            DOUBLE  NOT NULL,
+//!     max            DOUBLE  NOT NULL,
+//!     flags          INT UNSIGNED NOT NULL,
+//!     keys           ARRAY<SMALLINT> NOT NULL,
+//!     counts         ARRAY<BIGINT UNSIGNED> NOT NULL
+//! ) STORED AS sketches LOCATION 'my-sketches';
 //! ```
 
 use std::sync::Arc;
@@ -34,22 +46,32 @@ use datafusion::arrow;
 use datafusion::catalog::{Session, TableProviderFactory};
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::logical_expr::CreateExternalTable;
+use quickwit_parquet_engine::split::ParquetSplitKind;
 
 use super::index_resolver::MetricsIndexResolver;
 use super::table_provider::MetricsTableProvider;
 
 /// The file type string used in `STORED AS metrics`.
 pub const METRICS_FILE_TYPE: &str = "metrics";
+/// The file type string used in `STORED AS sketches`.
+pub const SKETCHES_FILE_TYPE: &str = "sketches";
 
 /// Creates `MetricsTableProvider` instances from `CREATE EXTERNAL TABLE` DDL.
 #[derive(Debug)]
 pub struct MetricsTableProviderFactory {
     index_resolver: Arc<dyn MetricsIndexResolver>,
+    split_kind: ParquetSplitKind,
 }
 
 impl MetricsTableProviderFactory {
-    pub fn new(index_resolver: Arc<dyn MetricsIndexResolver>) -> Self {
-        Self { index_resolver }
+    pub fn new(
+        index_resolver: Arc<dyn MetricsIndexResolver>,
+        split_kind: ParquetSplitKind,
+    ) -> Self {
+        Self {
+            index_resolver,
+            split_kind,
+        }
     }
 }
 
@@ -66,7 +88,10 @@ impl TableProviderFactory for MetricsTableProviderFactory {
             cmd.location.clone()
         };
 
-        let (split_provider, index_uri) = self.index_resolver.resolve(&index_name).await?;
+        let (split_provider, index_uri) = self
+            .index_resolver
+            .resolve(&index_name, self.split_kind)
+            .await?;
 
         let arrow_schema: SchemaRef = Arc::new(cmd.schema.as_arrow().clone());
 
