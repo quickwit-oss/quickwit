@@ -19,10 +19,9 @@ mod compaction_state;
 mod index_config_metastore;
 pub(crate) mod metrics;
 
-pub use compaction_planner::CompactionPlanner;
-
 use std::collections::VecDeque;
 
+pub use compaction_planner::CompactionPlanner;
 use quickwit_indexing::merge_policy::MergeOperation;
 
 use crate::planner::compaction_state::CompactionPartitionKey;
@@ -58,6 +57,7 @@ impl PendingOperations {
         self.inner.len()
     }
 
+    #[cfg(test)]
     fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }

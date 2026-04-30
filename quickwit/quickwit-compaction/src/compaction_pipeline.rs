@@ -44,7 +44,10 @@ pub enum PipelineStatus {
 
 impl PipelineStatus {
     pub fn is_terminal(&self) -> bool {
-        matches!(self, PipelineStatus::Completed | PipelineStatus::Failed { .. })
+        matches!(
+            self,
+            PipelineStatus::Completed | PipelineStatus::Failed { .. }
+        )
     }
 }
 

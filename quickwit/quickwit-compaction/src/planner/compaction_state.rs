@@ -114,7 +114,8 @@ impl CompactionState {
                 self.in_flight_split_ids
                     .insert(split.split_id().to_string());
             }
-            self.pending_operations.push(partition_key.clone(), operation);
+            self.pending_operations
+                .push(partition_key.clone(), operation);
         }
         if splits.is_empty() {
             self.needs_compaction.remove(partition_key);
