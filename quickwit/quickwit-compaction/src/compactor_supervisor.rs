@@ -112,6 +112,12 @@ impl CompactorSupervisor {
         assignments: Vec<MergeTaskAssignment>,
         spawn_ctx: &SpawnContext,
     ) {
+        // The planner has acknowledged the statuses we just sent — drop any
+        // Completed/Failed pipelines so their scratch directories and actor
+        // handles are released.
+        for slot in &mut self.pipelines {
+            slot.take_if(|p| p.status().is_terminal());
+        }
         for assignment in assignments {
             let task_id = assignment.task_id.clone();
             if let Err(error) = self.spawn_task(assignment, spawn_ctx).await {
@@ -125,16 +131,17 @@ impl CompactorSupervisor {
         assignment: MergeTaskAssignment,
         spawn_ctx: &SpawnContext,
     ) -> anyhow::Result<()> {
+        let source_uid_label = source_uid_metrics_label(
+            assignment.index_uid.as_ref().unwrap(),
+            &assignment.source_id,
+        );
+        let merge_level = assignment.merge_level.to_string();
+        let label_values = [source_uid_label.as_str(), merge_level.as_str()];
+
         let slot_idx = self
             .pipelines
             .iter()
-            .position(|slot| match slot {
-                None => true,
-                Some(p) => matches!(
-                    p.status(),
-                    PipelineStatus::Completed | PipelineStatus::Failed { .. }
-                ),
-            })
+            .position(Option::is_none)
             .ok_or_else(|| anyhow::anyhow!("no free pipeline slot"))?;
         let scratch_directory = self
             .compaction_root_directory
@@ -144,6 +151,10 @@ impl CompactorSupervisor {
             .await?;
         pipeline.spawn_pipeline(spawn_ctx)?;
         self.pipelines[slot_idx] = Some(pipeline);
+        COMPACTOR_METRICS
+            .compactions_in_progress
+            .with_label_values(label_values)
+            .inc();
         Ok(())
     }
 
@@ -217,16 +228,8 @@ impl CompactorSupervisor {
         let mut failures = Vec::new();
 
         for update in statuses {
-            let merge_level = update.merge_level;
-            let index_label = source_uid_metrics_label(&update.index_uid, &update.source_id);
-            let label_values = [index_label.as_str(), &merge_level.to_string()];
-
             match &update.status {
                 PipelineStatus::InProgress => {
-                    COMPACTOR_METRICS
-                        .compactions_in_progress
-                        .with_label_values(label_values)
-                        .inc();
                     in_progress.push(CompactionInProgress {
                         task_id: update.task_id.clone(),
                         index_uid: Some(update.index_uid.clone()),
@@ -235,27 +238,11 @@ impl CompactorSupervisor {
                     });
                 }
                 PipelineStatus::Completed => {
-                    COMPACTOR_METRICS
-                        .compactions_in_progress
-                        .with_label_values(label_values)
-                        .dec();
-                    COMPACTOR_METRICS
-                        .compactions_succeeded
-                        .with_label_values(label_values)
-                        .inc();
                     successes.push(CompactionSuccess {
                         task_id: update.task_id.clone(),
                     });
                 }
                 PipelineStatus::Failed { error } => {
-                    COMPACTOR_METRICS
-                        .compactions_in_progress
-                        .with_label_values(label_values)
-                        .dec();
-                    COMPACTOR_METRICS
-                        .compactions_failed
-                        .with_label_values(label_values)
-                        .inc();
                     failures.push(CompactionFailure {
                         task_id: update.task_id.clone(),
                         error_message: error.clone(),

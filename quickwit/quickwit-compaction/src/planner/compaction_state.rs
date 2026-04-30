@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -24,6 +24,7 @@ use quickwit_proto::compaction::{CompactionFailure, CompactionInProgress, Compac
 use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
 use tracing::{error, info, warn};
 
+use crate::planner::PendingOperations;
 use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 use crate::{TaskId, source_uid_metrics_label};
 
@@ -65,7 +66,7 @@ pub struct CompactionState {
     in_flight_split_ids: HashSet<SplitId>,
     /// TODO: add index_uid and source_id to MergeOperation so we don't need the partition key
     /// here.
-    pending_operations: VecDeque<(CompactionPartitionKey, MergeOperation)>,
+    pending_operations: PendingOperations,
 }
 
 impl CompactionState {
@@ -75,7 +76,7 @@ impl CompactionState {
             needs_compaction_split_ids: HashSet::new(),
             in_flight: HashMap::new(),
             in_flight_split_ids: HashSet::new(),
-            pending_operations: VecDeque::new(),
+            pending_operations: PendingOperations::new(),
         }
     }
 
@@ -113,8 +114,7 @@ impl CompactionState {
                 self.in_flight_split_ids
                     .insert(split.split_id().to_string());
             }
-            self.pending_operations
-                .push_back((partition_key.clone(), operation));
+            self.pending_operations.push(partition_key.clone(), operation);
         }
         if splits.is_empty() {
             self.needs_compaction.remove(partition_key);
@@ -193,7 +193,7 @@ impl CompactionState {
         let count = count.min(self.pending_operations.len());
         let mut operations = Vec::with_capacity(count);
         for _ in 0..count {
-            operations.push(self.pending_operations.pop_front().unwrap());
+            operations.push(self.pending_operations.pop().unwrap());
         }
         operations
     }
@@ -232,32 +232,6 @@ impl CompactionState {
                     .splits_needing_compaction
                     .with_label_values([partition_key.as_str()])
                     .set(total_splits)
-            });
-
-        // merge operations by index_uid/merge level
-        self.pending_operations
-            .iter()
-            .map(|(compaction_partition_key, merge_operation)| {
-                // The 1s get summed up to give the total number of operations per index per level.
-                (
-                    (
-                        source_uid_metrics_label(
-                            &compaction_partition_key.index_uid,
-                            &compaction_partition_key.source_id,
-                        ),
-                        merge_operation.merge_level() as i64,
-                    ),
-                    1,
-                )
-            })
-            .into_grouping_map()
-            .sum()
-            .iter()
-            .for_each(|((partition_key, merge_level), &count)| {
-                COMPACTION_PLANNER_METRICS
-                    .pending_merge_operations
-                    .with_label_values([partition_key.as_str(), &merge_level.to_string()])
-                    .set(count);
             });
     }
 }
@@ -343,7 +317,7 @@ mod tests {
 
         // Splits moved from needs_compaction to in_flight.
         assert!(!state.pending_operations.is_empty());
-        for (_, op) in &state.pending_operations {
+        for (_, op) in state.pending_operations.iter() {
             for split in op.splits_as_slice() {
                 assert!(!state.needs_compaction_split_ids.contains(split.split_id()));
                 assert!(state.in_flight_split_ids.contains(split.split_id()));

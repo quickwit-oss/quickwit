@@ -42,6 +42,12 @@ pub enum PipelineStatus {
     Failed { error: String },
 }
 
+impl PipelineStatus {
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, PipelineStatus::Completed | PipelineStatus::Failed { .. })
+    }
+}
+
 pub struct PipelineStatusUpdate {
     pub task_id: TaskId,
     pub index_uid: IndexUid,
@@ -201,12 +207,38 @@ impl CompactionPipeline {
             let error_msg = format!("failed actors: {:?}", failure_actor_names);
             error!(task_id=%self.task_id, "{error_msg}");
             self.status = PipelineStatus::Failed { error: error_msg };
+            self.record_terminal_metrics(false);
             return;
         }
         if !has_healthy {
             self.record_pipeline_duration();
             info!(task_id=%self.task_id, "all compaction pipeline actors completed");
             self.status = PipelineStatus::Completed;
+            self.record_terminal_metrics(true);
+        }
+    }
+
+    /// Fires once when the pipeline transitions from InProgress to a terminal state.
+    /// Pairs with the `compactions_in_progress.inc()` in `CompactorSupervisor::spawn_task`.
+    fn record_terminal_metrics(&self, succeeded: bool) {
+        let merge_level = self.merge_operation.merge_level();
+        let index_label =
+            source_uid_metrics_label(&self.pipeline_id.index_uid, &self.pipeline_id.source_id);
+        let label_values = [index_label.as_str(), &merge_level.to_string()];
+        COMPACTOR_METRICS
+            .compactions_in_progress
+            .with_label_values(label_values)
+            .dec();
+        if succeeded {
+            COMPACTOR_METRICS
+                .compactions_succeeded
+                .with_label_values(label_values)
+                .inc();
+        } else {
+            COMPACTOR_METRICS
+                .compactions_failed
+                .with_label_values(label_values)
+                .inc();
         }
     }
 
