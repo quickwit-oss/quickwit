@@ -37,7 +37,7 @@ use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 
 /// Page size for the initial pkey-paginated backfill scan. Each tick fetches
 /// at most this many splits; we drain the table over multiple ticks.
-const SCAN_PAGE_SIZE: usize = 20_000;
+const SCAN_PAGE_SIZE: usize = 5_000;
 
 /// Whether the planner is still doing its initial enumeration of every
 /// Published split, or has switched to delta scanning.
@@ -293,7 +293,7 @@ fn emit_metastore_scan_metrics(new_splits: &[Split]) {
         COMPACTION_PLANNER_METRICS
             .new_splits_scanned
             .with_label_values([&index_uid.to_string()])
-            .set(count as i64);
+            .inc_by(count as u64);
     }
 }
 

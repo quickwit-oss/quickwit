@@ -13,22 +13,24 @@
 // limitations under the License.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{IntGauge, IntGaugeVec, new_gauge, new_gauge_vec};
+use quickwit_common::metrics::{
+    IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec, new_gauge_vec,
+};
 
 pub struct CompactionPlannerMetrics {
-    pub new_splits_scanned: IntGaugeVec<1>,
+    pub new_splits_scanned: IntCounterVec<1>,
     pub splits_needing_compaction: IntGaugeVec<1>,
     pub pending_merge_operations: IntGaugeVec<2>,
-    pub timed_out_operations: IntGauge,
-    pub metastore_errors: IntGaugeVec<1>,
+    pub timed_out_operations: IntCounter,
+    pub metastore_errors: IntCounterVec<1>,
 }
 
 impl Default for CompactionPlannerMetrics {
     fn default() -> Self {
         CompactionPlannerMetrics {
-            new_splits_scanned: new_gauge_vec(
+            new_splits_scanned: new_counter_vec(
                 "new_splits_scanned",
-                "number of new immature splits scanned from the metastore on the last tick",
+                "cumulative number of immature splits scanned from the metastore",
                 "compaction_planner",
                 &[],
                 ["source_uid"],
@@ -47,15 +49,15 @@ impl Default for CompactionPlannerMetrics {
                 &[],
                 ["source_uid", "merge_level"],
             ),
-            timed_out_operations: new_gauge(
+            timed_out_operations: new_counter(
                 "timed_out_operations",
-                "number of merge operations that timed out waiting for a worker heartbeat",
+                "cumulative number of merge operations that timed out waiting for a worker heartbeat",
                 "compaction_planner",
                 &[],
             ),
-            metastore_errors: new_gauge_vec(
+            metastore_errors: new_counter_vec(
                 "metastore_errors",
-                "number of metastore errors encountered by the compaction planner",
+                "cumulative number of metastore errors encountered by the compaction planner",
                 "compaction_planner",
                 &[],
                 ["operation"],

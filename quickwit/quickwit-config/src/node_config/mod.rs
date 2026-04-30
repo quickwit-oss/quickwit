@@ -249,7 +249,7 @@ pub struct CompactorConfig {
 
 impl CompactorConfig {
     fn default_max_concurrent_pipelines() -> NonZeroUsize {
-        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3).unwrap_or(NonZeroUsize::MIN)
+        NonZeroUsize::new(quickwit_common::num_cpus()).unwrap_or(NonZeroUsize::MIN)
     }
 
     fn default_max_concurrent_split_uploads() -> usize {
