@@ -178,7 +178,8 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn slop_search_and_check(
+/// Search with "body" as default field and assert expected number of matches.
+async fn search_and_check(
     test_sandbox: &TestSandbox,
     index_id: &str,
     query: &str,
@@ -233,30 +234,95 @@ async fn test_slop_queries() {
     ];
     test_sandbox.add_documents(docs.clone()).await.unwrap();
 
-    slop_search_and_check(&test_sandbox, index_id, "\"small bird\"~2", 0)
+    search_and_check(&test_sandbox, index_id, "\"small bird\"~2", 0)
         .await
         .unwrap();
-    slop_search_and_check(&test_sandbox, index_id, "\"red bike\"~2", 1)
+    search_and_check(&test_sandbox, index_id, "\"red bike\"~2", 1)
         .await
         .unwrap();
-    slop_search_and_check(&test_sandbox, index_id, "\"small blue bike\"~3", 1)
+    search_and_check(&test_sandbox, index_id, "\"small blue bike\"~3", 1)
         .await
         .unwrap();
-    slop_search_and_check(&test_sandbox, index_id, "\"small bike\"", 1)
+    search_and_check(&test_sandbox, index_id, "\"small bike\"", 1)
         .await
         .unwrap();
-    slop_search_and_check(&test_sandbox, index_id, "\"small bike\"~1", 2)
+    search_and_check(&test_sandbox, index_id, "\"small bike\"~1", 2)
         .await
         .unwrap();
-    slop_search_and_check(&test_sandbox, index_id, "\"small bike\"~2", 2)
+    search_and_check(&test_sandbox, index_id, "\"small bike\"~2", 2)
         .await
         .unwrap();
-    slop_search_and_check(&test_sandbox, index_id, "\"small bike\"~3", 3)
+    search_and_check(&test_sandbox, index_id, "\"small bike\"~3", 3)
         .await
         .unwrap();
-    slop_search_and_check(&test_sandbox, index_id, "\"tiny shelter\"~3", 1)
+    search_and_check(&test_sandbox, index_id, "\"tiny shelter\"~3", 1)
         .await
         .unwrap();
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_multi_term_queries() {
+    let index_id = "multi-term-query";
+    let doc_mapping_yaml = r#"
+            field_mappings:
+              - name: title
+                type: text
+              - name: body
+                type: text
+                record: position
+        "#;
+
+    let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"])
+        .await
+        .unwrap();
+    let docs = vec![
+        json!({"title": "one", "body": "a red bike"}),
+        json!({"title": "two", "body": "a small blue bike"}),
+        json!({"title": "three", "body": "a small, rusty, and yellow bike"}),
+        json!({"title": "four", "body": "fred's small bike"}),
+        json!({"title": "five", "body": "a tiny shelter"}),
+    ];
+    test_sandbox.add_documents(docs.clone()).await.unwrap();
+
+    search_and_check(
+        &test_sandbox,
+        index_id,
+        "IN [red blue green yellow pink black]",
+        3,
+    )
+    .await
+    .unwrap();
+
+    search_and_check(&test_sandbox, index_id, "IN [aaaa]", 0)
+        .await
+        .unwrap();
+
+    search_and_check(&test_sandbox, index_id, "IN [red]", 1)
+        .await
+        .unwrap();
+
+    search_and_check(&test_sandbox, index_id, "IN [zzzz]", 0)
+        .await
+        .unwrap();
+
+    search_and_check(
+        &test_sandbox,
+        index_id,
+        "red OR blue OR green OR yellow OR pink OR black",
+        3,
+    )
+    .await
+    .unwrap();
+
+    search_and_check(&test_sandbox, index_id, "red AND \"small bike\"", 0)
+        .await
+        .unwrap();
+
+    search_and_check(&test_sandbox, index_id, "bike AND \"small bike\"", 1)
+        .await
+        .unwrap();
+
     test_sandbox.assert_quit().await;
 }
 

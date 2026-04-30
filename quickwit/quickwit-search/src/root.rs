@@ -1336,12 +1336,11 @@ pub async fn search_plan(
     } else {
         0
     };
-    let sstable_query_count = warmup_info.term_dict_fields.len()
-        + warmup_info
-            .terms_grouped_by_field
-            .values()
-            .map(|terms: &HashMap<tantivy::Term, bool>| terms.len())
-            .sum::<usize>()
+    let sstable_query_count = warmup_info
+        .terms_grouped_by_field
+        .values()
+        .map(|terms: &HashMap<tantivy::Term, bool>| terms.len())
+        .sum::<usize>()
         + warmup_info
             .term_ranges_grouped_by_field
             .values()
