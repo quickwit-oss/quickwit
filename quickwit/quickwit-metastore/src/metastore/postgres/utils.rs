@@ -211,6 +211,10 @@ pub(super) fn append_query_filters_and_order_by(
             sql.order_by(Splits::IndexUid, Order::Asc)
                 .order_by(Splits::SplitId, Order::Asc);
         }
+        SortBy::MaturityTimestamp => {
+            sql.order_by(Splits::MaturityTimestamp, Order::Asc)
+                .order_by(Splits::SplitId, Order::Asc);
+        }
         SortBy::None => (),
     }
 

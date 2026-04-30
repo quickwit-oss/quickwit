@@ -48,7 +48,7 @@ pub use metastore::{
     ListMetricsSplitsQuery, ListMetricsSplitsRequestExt, ListMetricsSplitsResponseExt,
     ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
     MetastoreServiceStreamSplitsExt, PublishMetricsSplitsRequestExt, PublishSplitsRequestExt,
-    StageMetricsSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
+    SortBy, StageMetricsSplitsRequestExt, StageSplitsRequestExt, UpdateIndexRequestExt,
     UpdateSourceRequestExt, file_backed,
 };
 pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};

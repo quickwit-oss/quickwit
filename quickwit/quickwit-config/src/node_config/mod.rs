@@ -239,29 +239,15 @@ pub struct CompactorConfig {
     /// Limits the IO throughput of the split downloader and the merge executor.
     #[serde(default)]
     pub max_merge_write_throughput: Option<ByteSize>,
-    /// Maximum size of the local split store cache in bytes.
-    #[serde(default = "CompactorConfig::default_split_store_max_num_bytes")]
-    pub split_store_max_num_bytes: ByteSize,
-    /// Maximum number of splits in the local split store cache.
-    #[serde(default = "CompactorConfig::default_split_store_max_num_splits")]
-    pub split_store_max_num_splits: usize,
 }
 
 impl CompactorConfig {
     fn default_max_concurrent_pipelines() -> NonZeroUsize {
-        NonZeroUsize::new(quickwit_common::num_cpus() * 2 / 3).unwrap_or(NonZeroUsize::MIN)
+        NonZeroUsize::new(quickwit_common::num_cpus()).unwrap_or(NonZeroUsize::MIN)
     }
 
     fn default_max_concurrent_split_uploads() -> usize {
         12
-    }
-
-    pub fn default_split_store_max_num_bytes() -> ByteSize {
-        ByteSize::gib(100)
-    }
-
-    pub fn default_split_store_max_num_splits() -> usize {
-        1_000
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -270,8 +256,6 @@ impl CompactorConfig {
             max_concurrent_pipelines: NonZeroUsize::new(2).unwrap(),
             max_concurrent_split_uploads: 4,
             max_merge_write_throughput: None,
-            split_store_max_num_bytes: ByteSize::mb(1),
-            split_store_max_num_splits: 3,
         }
     }
 }
@@ -282,8 +266,6 @@ impl Default for CompactorConfig {
             max_concurrent_pipelines: Self::default_max_concurrent_pipelines(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
             max_merge_write_throughput: None,
-            split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
-            split_store_max_num_splits: Self::default_split_store_max_num_splits(),
         }
     }
 }

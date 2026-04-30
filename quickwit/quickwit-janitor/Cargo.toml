@@ -27,6 +27,7 @@ utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-compaction = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-index-management = { workspace = true }
