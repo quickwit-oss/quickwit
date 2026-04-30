@@ -1312,8 +1312,7 @@ mod tests {
         per_msg_compressed_delta.sort();
         let median_delta = per_msg_compressed_delta[per_msg_compressed_delta.len() / 2];
         let p95_idx = (per_msg_compressed_delta.len() as f64 * 0.95) as usize;
-        let p95_delta =
-            per_msg_compressed_delta[p95_idx.min(per_msg_compressed_delta.len() - 1)];
+        let p95_delta = per_msg_compressed_delta[p95_idx.min(per_msg_compressed_delta.len() - 1)];
         let max_delta = *per_msg_compressed_delta.last().unwrap();
 
         fn pct(saved: i64, full: u64) -> f64 {
@@ -1375,22 +1374,21 @@ mod tests {
         );
         println!();
         println!(
-            "  per-message compressed delta: median={median_delta}  p95={p95_delta}  max={max_delta}",
+            "  per-message compressed delta: median={median_delta}  p95={p95_delta}  \
+             max={max_delta}",
         );
     }
 
     /// Estimates the customer-side bandwidth cost of splitting the agent's
     /// CollectorConnections payload into two separate streams:
     ///
-    /// - Stream A (existing connections stream, slim):
-    ///   the same CollectorConnections, but with USM aggregation bytes
-    ///   stripped from each connection.
-    /// - Stream B (new USM-only stream): a CollectorConnections-shaped
-    ///   payload carrying only USM-active connections, with NPM-only fields
-    ///   (byte/packet counters, retransmits, rtt, DNS stats, conntrack,
-    ///   routes, …) cleared and only the USM context preserved
-    ///   (5-tuple, container_id, direction, namespace, tag indices, USM
-    ///   aggregations, encoded_tags, encoded_connections_tags).
+    /// - Stream A (existing connections stream, slim): the same CollectorConnections, but with USM
+    ///   aggregation bytes stripped from each connection.
+    /// - Stream B (new USM-only stream): a CollectorConnections-shaped payload carrying only
+    ///   USM-active connections, with NPM-only fields (byte/packet counters, retransmits, rtt, DNS
+    ///   stats, conntrack, routes, …) cleared and only the USM context preserved (5-tuple,
+    ///   container_id, direction, namespace, tag indices, USM aggregations, encoded_tags,
+    ///   encoded_connections_tags).
     ///
     /// Cost = (Stream A + Stream B) − Original. Stream B duplicates the
     /// envelope-level metadata + per-USM-conn 5-tuple/container context,
@@ -1538,9 +1536,8 @@ mod tests {
             total_a_cmp += a_cmp.len() as u64;
             total_b_unc += b_bytes.len() as u64;
             total_b_cmp += b_cmp.len() as u64;
-            per_msg_cmp_delta.push(
-                (a_cmp.len() as i64 + b_cmp.len() as i64) - orig_cmp.len() as i64,
-            );
+            per_msg_cmp_delta
+                .push((a_cmp.len() as i64 + b_cmp.len() as i64) - orig_cmp.len() as i64);
         }
 
         if messages == 0 {
@@ -1596,7 +1593,10 @@ mod tests {
         println!(
             "  customer cost      : {:+} bytes total ({:+.1}%)",
             total_split_unc as i64 - total_orig_unc as i64,
-            ratio(total_split_unc as i64 - total_orig_unc as i64, total_orig_unc)
+            ratio(
+                total_split_unc as i64 - total_orig_unc as i64,
+                total_orig_unc
+            )
         );
         println!();
         println!("  -- zstd level {ZSTD_LEVEL} --");
@@ -1625,11 +1625,12 @@ mod tests {
         println!(
             "  customer cost      : {:+} bytes total ({:+.1}%)",
             total_split_cmp as i64 - total_orig_cmp as i64,
-            ratio(total_split_cmp as i64 - total_orig_cmp as i64, total_orig_cmp)
+            ratio(
+                total_split_cmp as i64 - total_orig_cmp as i64,
+                total_orig_cmp
+            )
         );
         println!();
-        println!(
-            "  per-message compressed delta: median={median}  p95={p95}  max={max}",
-        );
+        println!("  per-message compressed delta: median={median}  p95={p95}  max={max}",);
     }
 }
