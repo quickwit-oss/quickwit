@@ -36,7 +36,9 @@ use siphasher::sip::SipHasher;
 use tracing::warn;
 
 use crate::index_config::serialize::VersionedIndexConfig;
-use crate::merge_policy_config::{MergePolicyConfig, ParquetMergePolicyConfig};
+use crate::merge_policy_config::MergePolicyConfig;
+#[cfg(feature = "metrics")]
+use crate::merge_policy_config::ParquetMergePolicyConfig;
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
@@ -118,15 +120,14 @@ pub struct IndexingSettings {
     pub split_num_docs_target: usize,
     #[serde(default)]
     pub merge_policy: MergePolicyConfig,
-    /// Merge policy for Parquet (metrics/sketches) splits. Controls how
-    /// Parquet splits are compacted within time windows. Only used by
-    /// indexes that use the Parquet indexing pipeline.
-    #[serde(default)]
-    pub parquet_merge_policy: ParquetMergePolicyConfig,
-    /// Parquet-specific indexing settings (sort schema, window duration,
-    /// compression). Only used by indexes that use the Parquet pipeline.
-    #[serde(default)]
-    pub parquet_indexing: ParquetIndexingConfig,
+    /// Merge policy for Parquet (metrics/sketches) splits.
+    #[cfg(feature = "metrics")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parquet_merge_policy: Option<ParquetMergePolicyConfig>,
+    /// Parquet-specific indexing settings (sort schema, window duration).
+    #[cfg(feature = "metrics")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parquet_indexing: Option<ParquetIndexingConfig>,
     #[serde(default)]
     pub resources: IndexingResources,
 }
@@ -147,12 +148,11 @@ pub struct ParquetIndexingConfig {
     /// (`__s` = string, `__i` = int64, `_secs` = uint64 timestamp).
     ///
     /// The sort order determines:
-    /// - **Query pruning**: queries that filter on leading sort columns can
-    ///   skip entire splits whose row key ranges don't match.
-    /// - **Compression**: columns with good locality (e.g., metric_name first)
-    ///   compress better in Parquet's columnar format.
-    /// - **Compaction scope**: splits with different sort schemas are never
-    ///   merged together.
+    /// - **Query pruning**: queries that filter on leading sort columns can skip entire splits
+    ///   whose row key ranges don't match.
+    /// - **Compression**: columns with good locality (e.g., metric_name first) compress better in
+    ///   Parquet's columnar format.
+    /// - **Compaction scope**: splits with different sort schemas are never merged together.
     ///
     /// When `None`, the product-type default is used (see below).
     ///
@@ -208,6 +208,20 @@ impl IndexingSettings {
         Duration::from_secs(self.commit_timeout_secs as u64)
     }
 
+    /// Returns the Parquet merge policy config, using defaults if not
+    /// explicitly configured.
+    #[cfg(feature = "metrics")]
+    pub fn parquet_merge_policy(&self) -> ParquetMergePolicyConfig {
+        self.parquet_merge_policy.clone().unwrap_or_default()
+    }
+
+    /// Returns the Parquet indexing config, using defaults if not
+    /// explicitly configured.
+    #[cfg(feature = "metrics")]
+    pub fn parquet_indexing(&self) -> ParquetIndexingConfig {
+        self.parquet_indexing.clone().unwrap_or_default()
+    }
+
     fn default_commit_timeout_secs() -> usize {
         60
     }
@@ -241,8 +255,10 @@ impl Default for IndexingSettings {
             docstore_compression_level: Self::default_docstore_compression_level(),
             split_num_docs_target: Self::default_split_num_docs_target(),
             merge_policy: MergePolicyConfig::default(),
-            parquet_merge_policy: ParquetMergePolicyConfig::default(),
-            parquet_indexing: ParquetIndexingConfig::default(),
+            #[cfg(feature = "metrics")]
+            parquet_merge_policy: None,
+            #[cfg(feature = "metrics")]
+            parquet_indexing: None,
             resources: IndexingResources::default(),
         }
     }

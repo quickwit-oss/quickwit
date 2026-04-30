@@ -120,6 +120,10 @@ impl Default for StableLogMergePolicyConfig {
 }
 
 // --- Parquet merge policy config ---
+//
+// The types are always available (for OpenAPI schema generation in
+// quickwit-serve). The IndexingSettings fields that use them are
+// gated behind cfg(feature = "metrics").
 
 fn default_target_split_size_bytes() -> u64 {
     256 * 1024 * 1024 // 256 MiB
