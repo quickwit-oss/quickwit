@@ -40,6 +40,8 @@ fn get_main_runtime_num_threads() -> usize {
 }
 
 fn main() -> anyhow::Result<()> {
+    let (command, ansi_colors) = parse_cli_command();
+
     #[cfg(not(test))]
     let build_info = BuildInfo::get();
     #[cfg(not(test))]
@@ -57,7 +59,25 @@ fn main() -> anyhow::Result<()> {
 
     scrape_tokio_runtime_metrics(rt.handle(), "main");
 
-    rt.block_on(main_impl())
+    rt.block_on(main_impl(command, ansi_colors))
+}
+
+fn parse_cli_command() -> (CliCommand, bool) {
+    let about_text = about_text();
+    let version_text = BuildInfo::get_version_text();
+
+    let app = build_cli().about(about_text).version(version_text);
+    let matches = app.get_matches();
+    let ansi_colors = !matches.get_flag("no-color");
+
+    let command = match CliCommand::parse_cli_args(matches) {
+        Ok(command) => command,
+        Err(error) => {
+            eprintln!("failed to parse command line arguments: {error:?}");
+            std::process::exit(1);
+        }
+    };
+    (command, ansi_colors)
 }
 
 fn register_build_info_metric() {
@@ -75,27 +95,12 @@ fn register_build_info_metric() {
     quickwit_common::metrics::register_info("build_info", "Quickwit's build info", build_kvs);
 }
 
-async fn main_impl() -> anyhow::Result<()> {
+async fn main_impl(command: CliCommand, ansi_colors: bool) -> anyhow::Result<()> {
     #[cfg(feature = "openssl-support")]
     unsafe {
         openssl_probe::init_openssl_env_vars()
     };
     register_build_info_metric();
-
-    let about_text = about_text();
-    let version_text = BuildInfo::get_version_text();
-
-    let app = build_cli().about(about_text).version(version_text);
-    let matches = app.get_matches();
-    let ansi_colors = !matches.get_flag("no-color");
-
-    let command = match CliCommand::parse_cli_args(matches) {
-        Ok(command) => command,
-        Err(error) => {
-            eprintln!("failed to parse command line arguments: {error:?}");
-            std::process::exit(1);
-        }
-    };
 
     install_default_crypto_ring_provider();
 
