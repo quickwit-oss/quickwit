@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Enumerates all registered `MetricInfo` entries via [`inventory`].
+//! Enumerates all registered `MetricInfo` entries via `inventory`.
 //!
 //! **Do not run this binary directly** — it will only see metrics from
 //! crates listed in this crate's `Cargo.toml` dependencies. To discover

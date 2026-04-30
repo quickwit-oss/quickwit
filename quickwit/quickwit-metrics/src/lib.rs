@@ -264,7 +264,6 @@
 //! `hash(parent, [A,B]) == hash(hash(parent, [A]), [B])`, which is what
 //! makes the `parent:` extension pattern work correctly without rehashing
 //! all labels.
-//!
 
 #![deny(clippy::disallowed_methods)]
 
@@ -313,7 +312,6 @@ pub use counter::Counter;
 pub use gauge::{Gauge, GaugeGuard};
 pub use histogram::{Histogram, HistogramConfig};
 pub use labels::{LabelValues, Labels};
-
 // ─── metrics-rs re-exports ───
 pub use metrics::{CounterFn, GaugeFn, HistogramFn};
 pub use metrics_util::MetricKind;

@@ -28,8 +28,8 @@ fn main() {
         }
         other => {
             eprintln!(
-                "cargo:warning=quickwit-metrics-inventory: no whole-archive linker flag for target OS '{other}'; \
-                 inventory discovery from dependency crates may not work"
+                "cargo:warning=quickwit-metrics-inventory: no whole-archive linker flag for \
+                 target OS '{other}'; inventory discovery from dependency crates may not work"
             );
         }
     }

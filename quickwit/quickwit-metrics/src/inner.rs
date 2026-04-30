@@ -57,7 +57,11 @@ macro_rules! __count {
 #[macro_export]
 macro_rules! __metadata {
     ($subsystem:expr) => {
-        $crate::__metrics::Metadata::new($subsystem, $crate::__metrics::Level::INFO, Some(module_path!()))
+        $crate::__metrics::Metadata::new(
+            $subsystem,
+            $crate::__metrics::Level::INFO,
+            Some(module_path!()),
+        )
     };
 }
 
