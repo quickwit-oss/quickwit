@@ -52,9 +52,11 @@ pub struct IntakeConfig {
     /// Organization identifier passed to transforms that call external services.
     #[serde(default = "default_org_id")]
     pub org_id: String,
-    /// Base URL of byoc-ingest-metadata-svc (e.g. "https://metadata.example.com").
-    #[serde(default = "default_metadata_svc_url")]
-    pub metadata_svc_url: String,
+
+    /// Path to the CSV file used by the `metric_metadata` transform to
+    /// persist its known-metrics set across restarts.
+    #[serde(default = "default_metric_metadata_persist_file_path")]
+    pub metric_metadata_persist_file_path: PathBuf,
 
     #[serde(default)]
     pub host_tags: HostTagsConfig,
@@ -70,7 +72,7 @@ impl Default for IntakeConfig {
             metrics_endpoint: default_metrics_endpoint(),
             traces_endpoint: default_traces_endpoint(),
             org_id: default_org_id(),
-            metadata_svc_url: default_metadata_svc_url(),
+            metric_metadata_persist_file_path: default_metric_metadata_persist_file_path(),
             host_tags: HostTagsConfig::default(),
         }
     }
@@ -126,8 +128,8 @@ fn default_org_id() -> String {
     "default".to_string()
 }
 
-fn default_metadata_svc_url() -> String {
-    "http://localhost:9999".to_string()
+fn default_metric_metadata_persist_file_path() -> PathBuf {
+    PathBuf::from("qwdata/intake/metric_metadata_known.csv")
 }
 
 /// Configuration for the host-tags enrichment poller.
