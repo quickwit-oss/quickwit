@@ -40,6 +40,11 @@ fn get_main_runtime_num_threads() -> usize {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(not(test))]
+    let build_info = BuildInfo::get();
+    #[cfg(not(test))]
+    quickwit_cli::logger::setup_metrics(build_info)?;
+
     let main_runtime_num_threads: usize = get_main_runtime_num_threads();
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -100,9 +105,6 @@ async fn main_impl() -> anyhow::Result<()> {
     let build_info = BuildInfo::get();
     let (env_filter_reload_fn, tracer_provider_opt) =
         setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
-
-    #[cfg(not(test))]
-    quickwit_cli::logger::setup_metrics(build_info)?;
 
     let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
         error!(error=%command_error, "command failed");

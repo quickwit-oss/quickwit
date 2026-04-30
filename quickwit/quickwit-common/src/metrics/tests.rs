@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use metrics::with_local_recorder;
+use metrics_exporter_prometheus::PrometheusBuilder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
 
 use super::*;
@@ -365,4 +366,24 @@ fn describe_metrics_sets_debugging_recorder_description() {
         })
         .expect("described counter should be recorded");
     assert_eq!(description.as_deref(), Some("described counter"));
+}
+
+#[test]
+fn metrics_text_payload_renders_prometheus_handle() {
+    let recorder = PrometheusBuilder::new().build_recorder();
+    set_prometheus_handle(recorder.handle()).expect("Prometheus handle should be set once");
+
+    with_local_recorder(&recorder, || {
+        let counter = counter!(
+            name: "prometheus_payload_counter",
+            description: "prometheus payload counter",
+            subsystem: "metrics_tests",
+        );
+        describe_metrics();
+        counter.increment(1);
+    });
+
+    let payload = metrics_text_payload().expect("Prometheus payload should render");
+    assert!(payload.contains("# HELP quickwit_metrics_tests_prometheus_payload_counter"));
+    assert!(payload.contains("quickwit_metrics_tests_prometheus_payload_counter 1"));
 }

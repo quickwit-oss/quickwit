@@ -17,6 +17,12 @@ use std::sync::Arc;
 use std::{env, fmt};
 
 use anyhow::Context;
+#[cfg(not(test))]
+use metrics_exporter_dogstatsd::DogStatsDRecorder;
+#[cfg(not(test))]
+use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusRecorder};
+#[cfg(not(test))]
+use metrics_util::{MetricKindMask, layers::RouterBuilder};
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{KeyValue, global};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
@@ -238,9 +244,42 @@ pub fn setup_logging_and_tracing(
     ))
 }
 
-/// Set up DogStatsD metrics exporter and invariant recorder.
+/// Set up the global metrics recorder and invariant recorder.
 #[cfg(not(test))]
 pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
+    let prometheus_recorder = install_prometheus_recorder()?;
+    let dogstatsd_recorder = install_dogstatsd_recorder(build_info)?;
+
+    let mut router = RouterBuilder::from_recorder(metrics::NoopRecorder);
+    router
+        .add_route(MetricKindMask::ALL, "quickwit_", prometheus_recorder)
+        .add_route(MetricKindMask::ALL, "pomsky.invariant.", dogstatsd_recorder);
+    let recorder = router.build();
+    metrics::set_global_recorder(recorder)
+        .map_err(|_| anyhow::anyhow!("failed to install global metrics recorder"))?;
+    quickwit_common::metrics::describe_metrics();
+    Ok(())
+}
+
+#[cfg(not(test))]
+fn install_prometheus_recorder() -> anyhow::Result<PrometheusRecorder> {
+    let mut prometheus_builder = PrometheusBuilder::new();
+    for (name, buckets) in quickwit_common::metrics::histogram_buckets() {
+        prometheus_builder = prometheus_builder
+            .set_buckets_for_metric(Matcher::Full(name.to_string()), &buckets)
+            .with_context(|| {
+                format!("failed to configure Prometheus histogram buckets for `{name}`")
+            })?;
+    }
+    let prometheus_recorder = prometheus_builder.build_recorder();
+    let prometheus_handle = prometheus_recorder.handle();
+    quickwit_common::metrics::set_prometheus_handle(prometheus_handle.clone())
+        .map_err(anyhow::Error::msg)?;
+    Ok(prometheus_recorder)
+}
+
+#[cfg(not(test))]
+fn install_dogstatsd_recorder(build_info: &BuildInfo) -> anyhow::Result<DogStatsDRecorder> {
     // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
     // deprecated and can be removed after 2026-04-01.
     let host: String = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_HOST", false)
@@ -270,15 +309,15 @@ pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
             global_labels.push(::metrics::Label::new(label_key, label_val));
         }
     }
-    metrics_exporter_dogstatsd::DogStatsDBuilder::default()
+    let recorder = metrics_exporter_dogstatsd::DogStatsDBuilder::default()
         .set_global_prefix("cloudprem")
         .with_global_labels(global_labels)
         .with_remote_address(addr)
         .context("failed to parse DogStatsD server address")?
-        .install()
-        .context("failed to register DogStatsD exporter")?;
+        .build()
+        .context("failed to build DogStatsD exporter")?;
     quickwit_dst::invariants::set_invariant_recorder(invariant_recorder);
-    Ok(())
+    Ok(recorder)
 }
 
 #[cfg(not(test))]

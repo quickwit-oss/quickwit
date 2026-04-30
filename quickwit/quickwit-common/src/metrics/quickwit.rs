@@ -32,10 +32,6 @@ pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'sta
     });
 }
 
-pub fn metrics_text_payload() -> Result<String, String> {
-    Err("Prometheus metrics rendering is not installed yet".to_string())
-}
-
 #[derive(Clone)]
 pub struct MemoryMetrics {
     pub active_bytes: Gauge,

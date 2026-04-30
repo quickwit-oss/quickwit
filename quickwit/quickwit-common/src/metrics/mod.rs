@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub use ::prometheus::{exponential_buckets, linear_buckets};
 #[doc(hidden)]
 pub use atomic_float as __atomic_float;
 #[doc(hidden)]
@@ -22,11 +23,11 @@ pub use inventory as __inventory;
 pub use metrics as __metrics;
 pub use metrics::{CounterFn, GaugeFn, HistogramFn};
 pub use metrics_util::MetricKind;
-pub use prometheus::{exponential_buckets, linear_buckets};
 
 mod counter;
 mod gauge;
 mod histogram;
+mod prometheus;
 mod quickwit;
 
 pub use counter::Counter;
@@ -36,10 +37,8 @@ pub use counter::CounterShadow;
 pub use gauge::GaugeShadow;
 pub use gauge::{Gauge, GaugeGuard};
 pub use histogram::{Histogram, HistogramConfig, HistogramTimer};
-pub use quickwit::{
-    InFlightDataGauges, MEMORY_METRICS, MemoryMetrics, index_label, metrics_text_payload,
-    register_info,
-};
+pub use prometheus::{metrics_text_payload, set_prometheus_handle};
+pub use quickwit::{InFlightDataGauges, MEMORY_METRICS, MemoryMetrics, index_label, register_info};
 
 #[cfg(test)]
 mod tests;

@@ -32,6 +32,7 @@ hyper-util = { workspace = true, optional = true }
 itertools = { workspace = true }
 inventory = { workspace = true }
 metrics = { workspace = true }
+metrics-exporter-prometheus = { workspace = true }
 metrics-util = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
