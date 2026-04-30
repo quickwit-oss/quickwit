@@ -14,36 +14,45 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{IntGauge, new_gauge};
+use quickwit_common::metrics::{Gauge, gauge};
 
 #[derive(Clone)]
 pub(super) struct PostgresMetrics {
-    pub acquire_connections: IntGauge,
-    pub active_connections: IntGauge,
-    pub idle_connections: IntGauge,
+    pub acquire_connections: Gauge,
+    pub active_connections: Gauge,
+    pub idle_connections: Gauge,
 }
+
+static ACQUIRE_CONNECTIONS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "acquire_connections",
+        description: "Number of connections being acquired.",
+        subsystem: "metastore",
+    )
+});
+
+static ACTIVE_CONNECTIONS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "active_connections",
+        description: "Number of active (used + idle) connections.",
+        subsystem: "metastore",
+    )
+});
+
+static IDLE_CONNECTIONS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "idle_connections",
+        description: "Number of idle connections.",
+        subsystem: "metastore",
+    )
+});
 
 impl Default for PostgresMetrics {
     fn default() -> Self {
         Self {
-            acquire_connections: new_gauge(
-                "acquire_connections",
-                "Number of connections being acquired.",
-                "metastore",
-                &[],
-            ),
-            active_connections: new_gauge(
-                "active_connections",
-                "Number of active (used + idle) connections.",
-                "metastore",
-                &[],
-            ),
-            idle_connections: new_gauge(
-                "idle_connections",
-                "Number of idle connections.",
-                "metastore",
-                &[],
-            ),
+            acquire_connections: ACQUIRE_CONNECTIONS.clone(),
+            active_connections: ACTIVE_CONNECTIONS.clone(),
+            idle_connections: IDLE_CONNECTIONS.clone(),
         }
     }
 }

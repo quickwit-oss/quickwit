@@ -35,7 +35,7 @@ pub use counter::CounterShadow;
 #[doc(hidden)]
 pub use gauge::GaugeShadow;
 pub use gauge::{Gauge, GaugeGuard};
-pub use histogram::{Histogram, HistogramConfig};
+pub use histogram::{Histogram, HistogramConfig, HistogramTimer};
 pub use quickwit::{
     InFlightDataGauges, MEMORY_METRICS, MemoryMetrics, index_label, metrics_text_payload,
     register_info,

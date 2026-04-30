@@ -295,7 +295,9 @@ impl IndexingScheduler {
     // Prefer not calling this method directly, and instead call
     // `ControlPlane::rebuild_indexing_plan_debounced`.
     pub(crate) fn rebuild_plan(&mut self, model: &ControlPlaneModel) {
-        crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
+        crate::metrics::CONTROL_PLANE_METRICS
+            .schedule_total
+            .increment(1);
 
         let notify_on_drop = self.next_rebuild_tracker.start_rebuild();
 
@@ -397,7 +399,9 @@ impl IndexingScheduler {
         notify_on_drop: Option<Arc<NotifyChangeOnDrop>>,
     ) {
         debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
-        crate::metrics::CONTROL_PLANE_METRICS.apply_plan_total.inc();
+        crate::metrics::CONTROL_PLANE_METRICS
+            .apply_plan_total
+            .increment(1);
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation

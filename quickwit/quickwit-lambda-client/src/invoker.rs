@@ -23,6 +23,7 @@ use aws_sdk_lambda::primitives::Blob;
 use aws_sdk_lambda::types::InvocationType;
 use base64::prelude::*;
 use prost::Message;
+use quickwit_common::metrics::{counter, histogram};
 use quickwit_common::retry::RetryParams;
 use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePayload};
 use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest};
@@ -171,14 +172,16 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
         let result = self.invoke_leaf_search_with_retry(request).await;
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
-        LAMBDA_METRICS
-            .leaf_search_requests_total
-            .with_label_values([status])
-            .inc();
-        LAMBDA_METRICS
-            .leaf_search_duration_seconds
-            .with_label_values([status])
-            .observe(elapsed);
+        counter!(
+            parent: &LAMBDA_METRICS.leaf_search_requests_total,
+            "status" => status,
+        )
+        .increment(1);
+        histogram!(
+            parent: &LAMBDA_METRICS.leaf_search_duration_seconds,
+            "status" => status,
+        )
+        .record(elapsed);
         result
     }
 }
@@ -234,7 +237,7 @@ impl AwsLambdaInvoker {
 
         LAMBDA_METRICS
             .leaf_search_request_payload_size_bytes
-            .observe(payload_json.len() as f64);
+            .record(payload_json.len() as f64);
 
         debug!(
             payload_size = payload_json.len(),
@@ -276,7 +279,7 @@ impl AwsLambdaInvoker {
 
         LAMBDA_METRICS
             .leaf_search_response_payload_size_bytes
-            .observe(response_payload.as_ref().len() as f64);
+            .record(response_payload.as_ref().len() as f64);
 
         let lambda_response: LambdaSearchResponsePayload =
             serde_json::from_slice(response_payload.as_ref())

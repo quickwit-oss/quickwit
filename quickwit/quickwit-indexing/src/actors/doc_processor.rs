@@ -20,7 +20,7 @@ use anyhow::{Context, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
-use quickwit_common::metrics::IntCounter;
+use quickwit_common::metrics::{Counter, counter};
 use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
@@ -270,8 +270,8 @@ impl From<Result<JsonSpanIterator, OtlpTracesError>> for JsonDocIterator {
 #[derive(Debug)]
 pub struct DocProcessorCounter {
     pub num_docs: AtomicU64,
-    pub num_docs_metric: IntCounter,
-    pub num_bytes_metric: IntCounter,
+    pub num_docs_metric: Counter,
+    pub num_bytes_metric: Counter,
 }
 
 impl Serialize for DocProcessorCounter {
@@ -284,15 +284,18 @@ impl Serialize for DocProcessorCounter {
 impl DocProcessorCounter {
     fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
         let index_label = quickwit_common::metrics::index_label(index);
-        let labels = [index_label, outcome];
         DocProcessorCounter {
             num_docs: Default::default(),
-            num_docs_metric: crate::metrics::INDEXER_METRICS
-                .processed_docs_total
-                .with_label_values(labels),
-            num_bytes_metric: crate::metrics::INDEXER_METRICS
-                .processed_bytes
-                .with_label_values(labels),
+            num_docs_metric: counter!(
+                parent: &crate::metrics::INDEXER_METRICS.processed_docs_total,
+                "index" => index_label.to_string(),
+                "docs_processed_status" => outcome.to_string(),
+            ),
+            num_bytes_metric: counter!(
+                parent: &crate::metrics::INDEXER_METRICS.processed_bytes,
+                "index" => index_label.to_string(),
+                "docs_processed_status" => outcome.to_string(),
+            ),
         }
     }
 
@@ -303,8 +306,8 @@ impl DocProcessorCounter {
 
     fn record_doc(&self, num_bytes: u64) {
         self.num_docs.fetch_add(1, Ordering::Relaxed);
-        self.num_docs_metric.inc();
-        self.num_bytes_metric.inc_by(num_bytes);
+        self.num_docs_metric.increment(1);
+        self.num_bytes_metric.increment(num_bytes);
     }
 }
 

@@ -461,14 +461,16 @@ impl ShardTable {
         // can update the metrics for this specific index.
         if index_label == index_id {
             let shard_stats = table_entry.shards_stats();
-            crate::metrics::CONTROL_PLANE_METRICS
-                .open_shards
-                .with_label_values([index_label])
-                .set(shard_stats.num_open_shards as i64);
-            crate::metrics::CONTROL_PLANE_METRICS
-                .closed_shards
-                .with_label_values([index_label])
-                .set(shard_stats.num_closed_shards as i64);
+            quickwit_common::metrics::gauge!(
+                parent: &crate::metrics::CONTROL_PLANE_METRICS.open_shards,
+                "index_id" => index_label.to_string(),
+            )
+            .set(shard_stats.num_open_shards as f64);
+            quickwit_common::metrics::gauge!(
+                parent: &crate::metrics::CONTROL_PLANE_METRICS.closed_shards,
+                "index_id" => index_label.to_string(),
+            )
+            .set(shard_stats.num_closed_shards as f64);
             return;
         }
         // Per-index metrics are disabled, so we update the metrics for all sources.
@@ -482,14 +484,16 @@ impl ShardTable {
                 num_closed_shards += 1;
             }
         }
-        crate::metrics::CONTROL_PLANE_METRICS
-            .open_shards
-            .with_label_values([index_label])
-            .set(num_open_shards as i64);
-        crate::metrics::CONTROL_PLANE_METRICS
-            .closed_shards
-            .with_label_values([index_label])
-            .set(num_closed_shards as i64);
+        quickwit_common::metrics::gauge!(
+            parent: &crate::metrics::CONTROL_PLANE_METRICS.open_shards,
+            "index_id" => index_label.to_string(),
+        )
+        .set(num_open_shards as f64);
+        quickwit_common::metrics::gauge!(
+            parent: &crate::metrics::CONTROL_PLANE_METRICS.closed_shards,
+            "index_id" => index_label.to_string(),
+        )
+        .set(num_closed_shards as f64);
     }
 
     pub fn update_shards(

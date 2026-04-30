@@ -104,7 +104,7 @@ impl FileDescriptorCache {
         fd_cache_lock.push(split_id, split_file);
         self.fd_cache_metrics
             .in_cache_count
-            .set(fd_cache_lock.len() as i64);
+            .set(fd_cache_lock.len() as f64);
     }
 
     /// Evicts the given list of split ids from the file descriptor cache.
@@ -116,10 +116,10 @@ impl FileDescriptorCache {
         }
         self.fd_cache_metrics
             .in_cache_count
-            .set(fd_cache_lock.len() as i64);
+            .set(fd_cache_lock.len() as f64);
         self.fd_cache_metrics
             .evict_num_items
-            .inc_by(split_ids.len() as u64);
+            .increment(split_ids.len() as u64);
     }
 
     pub async fn get_or_open_split_file(
@@ -129,10 +129,10 @@ impl FileDescriptorCache {
         num_bytes: u64,
     ) -> std::io::Result<SplitFile> {
         if let Some(split_file) = self.get_split_file(split_id) {
-            self.fd_cache_metrics.hits_num_items.inc();
+            self.fd_cache_metrics.hits_num_items.increment(1);
             return Ok(split_file);
         } else {
-            self.fd_cache_metrics.misses_num_items.inc();
+            self.fd_cache_metrics.misses_num_items.increment(1);
         }
         let split_path = get_split_file_path(root_path, split_id);
         let fd_semaphore_guard = Semaphore::acquire_owned(self.fd_semaphore.clone())
@@ -220,7 +220,7 @@ mod tests {
                 .await
                 .unwrap();
         }
-        assert_eq!(cache_metrics.in_cache_count.get(), 10);
+        assert_eq!(cache_metrics.in_cache_count.get(), 10.0);
         assert_eq!(cache_metrics.hits_num_items.get(), 20);
         assert_eq!(cache_metrics.misses_num_items.get(), 10);
     }
@@ -252,7 +252,7 @@ mod tests {
                     .unwrap();
             }
         }
-        assert_eq!(cache_metrics.in_cache_count.get(), 10);
+        assert_eq!(cache_metrics.in_cache_count.get(), 10.0);
         assert_eq!(cache_metrics.hits_num_items.get(), 100 * 9);
         assert_eq!(cache_metrics.misses_num_items.get(), 100);
     }

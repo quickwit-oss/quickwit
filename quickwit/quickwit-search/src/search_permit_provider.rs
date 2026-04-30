@@ -352,12 +352,12 @@ impl SearchPermitActor {
         }
         crate::SEARCH_METRICS
             .leaf_search_single_split_tasks_pending
-            .set(self.permits_requests.len() as i64);
+            .set(self.permits_requests.len() as f64);
     }
 }
 
 pub struct SearchPermit {
-    _ongoing_gauge_guard: GaugeGuard<'static>,
+    _ongoing_gauge_guard: GaugeGuard,
     msg_sender: mpsc::WeakUnboundedSender<SearchPermitMessage>,
     memory_allocation: u64,
     warmup_slot_freed: bool,

@@ -15,58 +15,67 @@
 use std::sync::LazyLock;
 
 use quickwit_common::metrics::{
-    HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, new_counter, new_counter_vec,
-    new_gauge_vec, new_histogram_vec,
+    Counter, Gauge, Histogram, counter, exponential_buckets, gauge, histogram,
 };
 
 pub struct ServeMetrics {
-    pub http_requests_total: IntCounterVec<2>,
-    pub request_duration_secs: HistogramVec<2>,
-    pub ongoing_requests: IntGaugeVec<1>,
-    pub pending_requests: IntGaugeVec<1>,
-    pub circuit_break_total: IntCounter,
+    pub http_requests_total: Counter,
+    pub request_duration_secs: Histogram,
+    pub ongoing_requests: Gauge,
+    pub pending_requests: Gauge,
+    pub circuit_break_total: Counter,
 }
+
+static HTTP_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "http_requests_total",
+        description: "Total number of HTTP requests processed.",
+        subsystem: "",
+    )
+});
+
+static REQUEST_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "request_duration_secs",
+        description: "Response time in seconds",
+        subsystem: "",
+        // last bucket is 163.84s
+        buckets: exponential_buckets(0.02, 2.0, 14).unwrap(),
+    )
+});
+
+static ONGOING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "ongoing_requests",
+        description: "Number of ongoing requests.",
+        subsystem: "",
+    )
+});
+
+static PENDING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "pending_requests",
+        description: "Number of pending requests.",
+        subsystem: "",
+    )
+});
+
+static CIRCUIT_BREAK_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "circuit_break_total",
+        description: "Circuit breaker counter",
+        subsystem: "grpc",
+    )
+});
 
 impl Default for ServeMetrics {
     fn default() -> Self {
-        let circuit_break_total = new_counter(
-            "circuit_break_total",
-            "Circuit breaker counter",
-            "grpc",
-            &[],
-        );
         ServeMetrics {
-            http_requests_total: new_counter_vec(
-                "http_requests_total",
-                "Total number of HTTP requests processed.",
-                "",
-                &[],
-                ["method", "status_code"],
-            ),
-            request_duration_secs: new_histogram_vec(
-                "request_duration_secs",
-                "Response time in seconds",
-                "",
-                &[],
-                ["method", "status_code"],
-                // last bucket is 163.84s
-                quickwit_common::metrics::exponential_buckets(0.02, 2.0, 14).unwrap(),
-            ),
-            ongoing_requests: new_gauge_vec(
-                "ongoing_requests",
-                "Number of ongoing requests.",
-                "",
-                &[],
-                ["endpoint_group"],
-            ),
-            pending_requests: new_gauge_vec(
-                "pending_requests",
-                "Number of pending requests.",
-                "",
-                &[],
-                ["endpoint_group"],
-            ),
-            circuit_break_total,
+            http_requests_total: HTTP_REQUESTS_TOTAL.clone(),
+            request_duration_secs: REQUEST_DURATION_SECS.clone(),
+            ongoing_requests: ONGOING_REQUESTS.clone(),
+            pending_requests: PENDING_REQUESTS.clone(),
+            circuit_break_total: CIRCUIT_BREAK_TOTAL.clone(),
         }
     }
 }

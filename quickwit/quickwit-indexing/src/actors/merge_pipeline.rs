@@ -22,6 +22,7 @@ use quickwit_actors::{
 };
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
+use quickwit_common::metrics::counter;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::RetentionPolicy;
@@ -272,11 +273,10 @@ impl MergePipeline {
         let (merge_publisher_mailbox, merge_publisher_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["merge_publisher"]),
-            )
+            .set_backpressure_micros_counter(counter!(
+                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                "actor_name" => "merge_publisher",
+            ))
             .spawn(merge_publisher);
 
         // Merge uploader
@@ -322,11 +322,10 @@ impl MergePipeline {
         let (merge_executor_mailbox, merge_executor_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["merge_executor"]),
-            )
+            .set_backpressure_micros_counter(counter!(
+                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                "actor_name" => "merge_executor",
+            ))
             .spawn(merge_executor);
 
         let merge_split_downloader = MergeSplitDownloader {
@@ -338,11 +337,10 @@ impl MergePipeline {
         let (merge_split_downloader_mailbox, merge_split_downloader_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(
-                crate::metrics::INDEXER_METRICS
-                    .backpressure_micros
-                    .with_label_values(["merge_split_downloader"]),
-            )
+            .set_backpressure_micros_counter(counter!(
+                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                "actor_name" => "merge_split_downloader",
+            ))
             .spawn(merge_split_downloader);
 
         // Merge planner
@@ -409,7 +407,7 @@ impl MergePipeline {
             )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
-            .set_ongoing_merges(usize::try_from(num_ongoing_merges).unwrap_or(0));
+            .set_ongoing_merges(num_ongoing_merges.max(0.0) as usize);
     }
 
     async fn perform_health_check(

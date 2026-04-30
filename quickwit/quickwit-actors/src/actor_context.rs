@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use quickwit_common::metrics::IntCounter;
+use quickwit_common::metrics::Counter;
 use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
 use tokio::sync::{oneshot, watch};
 use tracing::{debug, error};
@@ -61,7 +61,7 @@ pub struct ActorContextInner<A: Actor> {
     self_mailbox: Mailbox<A>,
     progress: Progress,
     actor_state: AtomicState,
-    backpressure_micros_counter_opt: Option<IntCounter>,
+    backpressure_micros_counter_opt: Option<Counter>,
     observable_state_tx: watch::Sender<A::ObservableState>,
     // Boolean marking the presence of an observe message in the actor's high priority queue.
     observe_enqueued: AtomicBool,
@@ -72,7 +72,7 @@ impl<A: Actor> ActorContext<A> {
         self_mailbox: Mailbox<A>,
         spawn_ctx: SpawnContext,
         observable_state_tx: watch::Sender<A::ObservableState>,
-        backpressure_micros_counter_opt: Option<IntCounter>,
+        backpressure_micros_counter_opt: Option<Counter>,
     ) -> Self {
         ActorContext {
             inner: ActorContextInner {

@@ -25,6 +25,7 @@ use std::sync::{Arc, OnceLock};
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::metrics::gauge;
 use quickwit_common::spawn_named_task;
 use quickwit_metastore::StageParquetSplitsRequestExt;
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
@@ -122,10 +123,11 @@ impl ParquetUploader {
         let _guard = ctx.protect_zone();
         let concurrent_upload_permits = CONCURRENT_UPLOAD_PERMITS_METRICS
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_uploads));
-        let gauge = INDEXER_METRICS
-            .available_concurrent_upload_permits
-            .with_label_values(["metrics"]);
-        gauge.set(concurrent_upload_permits.available_permits() as i64);
+        let gauge = gauge!(
+            parent: &INDEXER_METRICS.available_concurrent_upload_permits,
+            "component" => "metrics",
+        );
+        gauge.set(concurrent_upload_permits.available_permits() as f64);
         concurrent_upload_permits
             .acquire()
             .await

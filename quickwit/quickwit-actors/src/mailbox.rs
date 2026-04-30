@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::Instant;
 
-use quickwit_common::metrics::{GaugeGuard, IntCounter, IntGauge};
+use quickwit_common::metrics::{Counter, Gauge, GaugeGuard, gauge};
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Receiver, Sender, TrySendError};
@@ -191,7 +191,7 @@ impl<A: Actor> Mailbox<A> {
     pub async fn send_message_with_backpressure_counter<M>(
         &self,
         message: M,
-        backpressure_micros_counter_opt: Option<&IntCounter>,
+        backpressure_micros_counter_opt: Option<&Counter>,
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: DeferableReplyHandler<M>,
@@ -205,7 +205,7 @@ impl<A: Actor> Mailbox<A> {
                     let now = Instant::now();
                     self.inner.tx.send_low_priority(envelope).await?;
                     let elapsed = now.elapsed();
-                    backpressure_micros_counter.inc_by(elapsed.as_micros() as u64);
+                    backpressure_micros_counter.increment(elapsed.as_micros() as u64);
                 } else {
                     self.inner.tx.send_low_priority(envelope).await?;
                 }
@@ -273,7 +273,7 @@ impl<A: Actor> Mailbox<A> {
     pub async fn ask_with_backpressure_counter<M, T>(
         &self,
         message: M,
-        backpressure_micros_counter_opt: Option<&IntCounter>,
+        backpressure_micros_counter_opt: Option<&Counter>,
     ) -> Result<T, AskError<Infallible>>
     where
         A: DeferableReplyHandler<M, Reply = T>,
@@ -308,8 +308,16 @@ impl<A: Actor> Mailbox<A> {
 
 struct InboxInner<A: Actor> {
     rx: Receiver<Envelope<A>>,
-    _inboxes_count_gauge_guard: GaugeGuard<'static>,
+    _inboxes_count_gauge_guard: GaugeGuard,
 }
+
+static INBOX_GAUGE: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "inboxes_count",
+        description: "overall count of actors",
+        subsystem: "actor",
+    )
+});
 
 pub struct Inbox<A: Actor> {
     inner: Arc<InboxInner<A>>,
@@ -385,15 +393,7 @@ impl<A: Actor> Inbox<A> {
     }
 }
 
-fn get_actor_inboxes_count_gauge_guard() -> GaugeGuard<'static> {
-    static INBOX_GAUGE: LazyLock<IntGauge> = LazyLock::new(|| {
-        quickwit_common::metrics::new_gauge(
-            "inboxes_count",
-            "overall count of actors",
-            "actor",
-            &[],
-        )
-    });
+fn get_actor_inboxes_count_gauge_guard() -> GaugeGuard {
     let mut gauge_guard = GaugeGuard::from_gauge(&INBOX_GAUGE);
     gauge_guard.add(1);
     gauge_guard
@@ -451,6 +451,8 @@ impl<A: Actor> WeakMailbox<A> {
 mod tests {
     use std::mem;
     use std::time::Duration;
+
+    use quickwit_common::metrics::counter;
 
     use super::*;
     use crate::tests::{Ping, PingReceiverActor};
@@ -519,8 +521,12 @@ mod tests {
             .await
             .unwrap();
         // At this point the actor was started and even processed a message entirely.
-        let backpressure_micros_counter =
-            IntCounter::new("test_counter", "help for test_counter").unwrap();
+        let backpressure_micros_counter = counter!(
+            name: "test_counter_low_backpressure",
+            description: "help for test_counter",
+            subsystem: "actor",
+            observable: true,
+        );
         let wait_duration = Duration::from_millis(1);
         let processed = mailbox
             .send_message_with_backpressure_counter(
@@ -546,8 +552,12 @@ mod tests {
             .ask_with_backpressure_counter(Duration::default(), None)
             .await
             .unwrap();
-        let backpressure_micros_counter =
-            IntCounter::new("test_counter", "help for test_counter").unwrap();
+        let backpressure_micros_counter = counter!(
+            name: "test_counter_backpressure",
+            description: "help for test_counter",
+            subsystem: "actor",
+            observable: true,
+        );
         let wait_duration = Duration::from_millis(1);
         mailbox
             .send_message_with_backpressure_counter(
@@ -578,8 +588,12 @@ mod tests {
             .ask_with_backpressure_counter(Duration::default(), None)
             .await
             .unwrap();
-        let backpressure_micros_counter =
-            IntCounter::new("test_counter", "help for test_counter").unwrap();
+        let backpressure_micros_counter = counter!(
+            name: "test_counter_no_waiting_backpressure",
+            description: "help for test_counter",
+            subsystem: "actor",
+            observable: true,
+        );
         let start = Instant::now();
         mailbox
             .ask_with_backpressure_counter(Duration::from_millis(1), None)

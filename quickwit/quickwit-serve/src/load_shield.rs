@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use quickwit_common::metrics::{GaugeGuard, IntGauge};
+use quickwit_common::metrics::{Gauge, GaugeGuard, gauge};
 use tokio::sync::{Semaphore, SemaphorePermit};
 
 use crate::rest::TooManyRequests;
@@ -22,14 +22,14 @@ use crate::rest::TooManyRequests;
 pub struct LoadShield {
     in_flight_semaphore_opt: Option<Semaphore>, // This one is doing the load shedding.
     concurrency_semaphore_opt: Option<Semaphore>,
-    ongoing_gauge: IntGauge,
-    pending_gauge: IntGauge,
+    ongoing_gauge: Gauge,
+    pending_gauge: Gauge,
 }
 
 pub struct LoadShieldPermit {
     _concurrency_permit_opt: Option<SemaphorePermit<'static>>,
     _in_flight_permit_opt: Option<SemaphorePermit<'static>>,
-    _ongoing_gauge_guard: GaugeGuard<'static>,
+    _ongoing_gauge_guard: GaugeGuard,
 }
 
 impl LoadShield {
@@ -43,12 +43,14 @@ impl LoadShield {
             quickwit_common::get_from_env_opt(&max_concurrency_env_key, false);
         let in_flight_semaphore_opt = max_in_flight_opt.map(Semaphore::new);
         let concurrency_semaphore_opt = max_concurrency_opt.map(Semaphore::new);
-        let pending_gauge = crate::metrics::SERVE_METRICS
-            .pending_requests
-            .with_label_values([endpoint_group]);
-        let ongoing_gauge = crate::metrics::SERVE_METRICS
-            .ongoing_requests
-            .with_label_values([endpoint_group]);
+        let pending_gauge = gauge!(
+            parent: &crate::metrics::SERVE_METRICS.pending_requests,
+            "endpoint_group" => endpoint_group,
+        );
+        let ongoing_gauge = gauge!(
+            parent: &crate::metrics::SERVE_METRICS.ongoing_requests,
+            "endpoint_group" => endpoint_group,
+        );
         LoadShield {
             in_flight_semaphore_opt,
             concurrency_semaphore_opt,

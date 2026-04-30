@@ -20,6 +20,7 @@ use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_common::is_parquet_pipeline_index;
+use quickwit_common::metrics::counter;
 use quickwit_common::shared_consts::split_deletion_grace_period;
 use quickwit_index_management::{GcMetrics, run_garbage_collect, run_parquet_garbage_collect};
 use quickwit_metastore::ListIndexesMetadataResponseExt;
@@ -55,19 +56,22 @@ impl GcRunResult {
 }
 
 fn gc_metrics(split_type: &str) -> GcMetrics {
+    let split_type = split_type.to_string();
     GcMetrics {
-        deleted_splits: JANITOR_METRICS
-            .gc_deleted_splits
-            .with_label_values(["success", split_type])
-            .clone(),
-        deleted_bytes: JANITOR_METRICS
-            .gc_deleted_bytes
-            .with_label_values([split_type])
-            .clone(),
-        failed_splits: JANITOR_METRICS
-            .gc_deleted_splits
-            .with_label_values(["error", split_type])
-            .clone(),
+        deleted_splits: counter!(
+            parent: &JANITOR_METRICS.gc_deleted_splits,
+            "result" => "success",
+            "split_type" => split_type.clone(),
+        ),
+        deleted_bytes: counter!(
+            parent: &JANITOR_METRICS.gc_deleted_bytes,
+            "split_type" => split_type.clone(),
+        ),
+        failed_splits: counter!(
+            parent: &JANITOR_METRICS.gc_deleted_splits,
+            "result" => "error",
+            "split_type" => split_type,
+        ),
     }
 }
 
@@ -202,18 +206,21 @@ impl GarbageCollector {
             .await;
 
             let tantivy_run_duration = tantivy_start.elapsed().as_secs();
-            JANITOR_METRICS
-                .gc_seconds_total
-                .with_label_values(["tantivy"])
-                .inc_by(tantivy_run_duration);
+            counter!(
+                parent: &JANITOR_METRICS.gc_seconds_total,
+                "split_type" => "tantivy",
+            )
+            .increment(tantivy_run_duration);
 
             let result = match gc_res {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run += 1;
-                    JANITOR_METRICS
-                        .gc_runs
-                        .with_label_values(["success", "tantivy"])
-                        .inc();
+                    counter!(
+                        parent: &JANITOR_METRICS.gc_runs,
+                        "result" => "success",
+                        "split_type" => "tantivy",
+                    )
+                    .increment(1);
                     GcRunResult {
                         num_deleted_splits: removal_info.removed_split_entries.len(),
                         num_deleted_bytes: removal_info
@@ -232,10 +239,12 @@ impl GarbageCollector {
                 }
                 Err(error) => {
                     self.counters.num_failed_gc_run += 1;
-                    JANITOR_METRICS
-                        .gc_runs
-                        .with_label_values(["error", "tantivy"])
-                        .inc();
+                    counter!(
+                        parent: &JANITOR_METRICS.gc_runs,
+                        "result" => "error",
+                        "split_type" => "tantivy",
+                    )
+                    .increment(1);
                     error!(error=?error, "failed to run garbage collection");
                     GcRunResult::failed()
                 }
@@ -258,18 +267,21 @@ impl GarbageCollector {
             .await;
 
             let parquet_run_duration = parquet_start.elapsed().as_secs();
-            JANITOR_METRICS
-                .gc_seconds_total
-                .with_label_values(["parquet"])
-                .inc_by(parquet_run_duration);
+            counter!(
+                parent: &JANITOR_METRICS.gc_seconds_total,
+                "split_type" => "parquet",
+            )
+            .increment(parquet_run_duration);
 
             let result = match gc_res {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run += 1;
-                    JANITOR_METRICS
-                        .gc_runs
-                        .with_label_values(["success", "parquet"])
-                        .inc();
+                    counter!(
+                        parent: &JANITOR_METRICS.gc_runs,
+                        "result" => "success",
+                        "split_type" => "parquet",
+                    )
+                    .increment(1);
                     GcRunResult {
                         num_deleted_splits: removal_info.removed_split_count(),
                         num_deleted_bytes: removal_info.removed_bytes() as usize,
@@ -284,10 +296,12 @@ impl GarbageCollector {
                 }
                 Err(error) => {
                     self.counters.num_failed_gc_run += 1;
-                    JANITOR_METRICS
-                        .gc_runs
-                        .with_label_values(["error", "parquet"])
-                        .inc();
+                    counter!(
+                        parent: &JANITOR_METRICS.gc_runs,
+                        "result" => "error",
+                        "split_type" => "parquet",
+                    )
+                    .increment(1);
                     error!(error=?error, "failed to run parquet garbage collection");
                     GcRunResult::failed()
                 }

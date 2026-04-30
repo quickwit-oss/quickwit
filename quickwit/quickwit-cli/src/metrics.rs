@@ -14,23 +14,25 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{HistogramVec, new_histogram_vec};
+use quickwit_common::metrics::{Histogram, exponential_buckets, histogram};
 
 pub struct CliMetrics {
-    pub thread_unpark_duration_microseconds: HistogramVec<0>,
+    pub thread_unpark_duration_microseconds: Histogram,
 }
+
+static THREAD_UNPARK_DURATION_MICROSECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "thread_unpark_duration_microseconds",
+        description: "Duration for which a thread of the main tokio runtime is unparked.",
+        subsystem: "cli",
+        buckets: exponential_buckets(5.0, 5.0, 5).unwrap(),
+    )
+});
 
 impl Default for CliMetrics {
     fn default() -> Self {
         CliMetrics {
-            thread_unpark_duration_microseconds: new_histogram_vec(
-                "thread_unpark_duration_microseconds",
-                "Duration for which a thread of the main tokio runtime is unparked.",
-                "cli",
-                &[],
-                [],
-                quickwit_common::metrics::exponential_buckets(5.0, 5.0, 5).unwrap(),
-            ),
+            thread_unpark_duration_microseconds: THREAD_UNPARK_DURATION_MICROSECONDS.clone(),
         }
     }
 }

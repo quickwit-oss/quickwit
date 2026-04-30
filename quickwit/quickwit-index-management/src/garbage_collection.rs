@@ -20,7 +20,7 @@ use std::time::Duration;
 use anyhow::Context;
 use futures::{Future, StreamExt};
 use itertools::Itertools;
-use quickwit_common::metrics::IntCounter;
+use quickwit_common::metrics::Counter;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::{Progress, rate_limited_info};
 use quickwit_metastore::{
@@ -41,9 +41,9 @@ use tracing::{error, instrument};
 const DELETE_SPLITS_BATCH_SIZE: usize = 10_000;
 
 pub struct GcMetrics {
-    pub deleted_splits: IntCounter,
-    pub deleted_bytes: IntCounter,
-    pub failed_splits: IntCounter,
+    pub deleted_splits: Counter,
+    pub deleted_bytes: Counter,
+    pub failed_splits: Counter,
 }
 
 pub(crate) trait RecordGcMetrics {
@@ -53,9 +53,9 @@ pub(crate) trait RecordGcMetrics {
 impl RecordGcMetrics for Option<GcMetrics> {
     fn record(&self, num_deleted_splits: usize, num_deleted_bytes: u64, num_failed_splits: usize) {
         if let Some(metrics) = self {
-            metrics.deleted_splits.inc_by(num_deleted_splits as u64);
-            metrics.deleted_bytes.inc_by(num_deleted_bytes);
-            metrics.failed_splits.inc_by(num_failed_splits as u64);
+            metrics.deleted_splits.increment(num_deleted_splits as u64);
+            metrics.deleted_bytes.increment(num_deleted_bytes);
+            metrics.failed_splits.increment(num_failed_splits as u64);
         }
     }
 }

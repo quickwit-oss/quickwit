@@ -24,7 +24,7 @@ pub struct RawDocBatch {
     pub docs: Vec<Bytes>,
     pub checkpoint_delta: SourceCheckpointDelta,
     pub force_commit: bool,
-    _gauge_guard: GaugeGuard<'static>,
+    _gauge_guard: GaugeGuard,
 }
 
 impl RawDocBatch {

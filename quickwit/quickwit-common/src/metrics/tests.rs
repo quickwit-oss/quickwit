@@ -116,6 +116,57 @@ fn histogram_records_value() {
 }
 
 #[test]
+fn histogram_timer_records_value_on_drop() {
+    let entries = with_recorder(|| {
+        let histogram = histogram!(
+            name: "test_histogram_timer_drop",
+            description: "test histogram timer drop",
+            subsystem: "metrics_tests",
+            buckets: vec![1.0, 5.0, 10.0],
+        );
+        let _timer = histogram.start_timer();
+    });
+
+    let (name, labels, value) = &entries[0];
+    assert_eq!(name, "quickwit_metrics_tests_test_histogram_timer_drop");
+    assert!(labels.is_empty());
+    match value {
+        DebugValue::Histogram(values) => {
+            assert_eq!(values.len(), 1);
+            assert!(values[0].into_inner() >= 0.0);
+        }
+        other => panic!("expected histogram, got {other:?}"),
+    }
+}
+
+#[test]
+fn histogram_timer_observe_duration_records_once() {
+    let entries = with_recorder(|| {
+        let histogram = histogram!(
+            name: "test_histogram_timer_observe_duration",
+            description: "test histogram timer observe duration",
+            subsystem: "metrics_tests",
+            buckets: vec![1.0, 5.0, 10.0],
+        );
+        histogram.start_timer().observe_duration();
+    });
+
+    let (name, labels, value) = &entries[0];
+    assert_eq!(
+        name,
+        "quickwit_metrics_tests_test_histogram_timer_observe_duration"
+    );
+    assert!(labels.is_empty());
+    match value {
+        DebugValue::Histogram(values) => {
+            assert_eq!(values.len(), 1);
+            assert!(values[0].into_inner() >= 0.0);
+        }
+        other => panic!("expected histogram, got {other:?}"),
+    }
+}
+
+#[test]
 fn empty_subsystem_omits_double_underscore() {
     let entries = with_recorder(|| {
         let counter = counter!(

@@ -15,18 +15,17 @@
 // See https://prometheus.io/docs/practices/naming/
 
 use std::fmt;
-use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 
 use bytesize::ByteSize;
 use quickwit_common::metrics::{
-    Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, exponential_buckets,
-    linear_buckets, new_counter, new_counter_vec, new_gauge, new_gauge_vec, new_histogram,
-    new_histogram_vec,
+    Counter, Gauge, Histogram, counter, exponential_buckets, gauge, histogram, linear_buckets,
 };
 
 fn print_if_not_null(
     field_name: &'static str,
-    counter: &IntCounter,
+    counter: &SplitSearchOutcomeCounter,
     f: &mut fmt::Formatter,
 ) -> fmt::Result {
     let val = counter.get();
@@ -36,15 +35,56 @@ fn print_if_not_null(
     Ok(())
 }
 
+#[derive(Clone)]
+pub struct SplitSearchOutcomeCounter {
+    inner: SplitSearchOutcomeCounterInner,
+}
+
+#[derive(Clone)]
+enum SplitSearchOutcomeCounterInner {
+    Registered(Counter),
+    Local(Arc<AtomicU64>),
+}
+
+impl SplitSearchOutcomeCounter {
+    fn registered(counter: Counter) -> Self {
+        Self {
+            inner: SplitSearchOutcomeCounterInner::Registered(counter),
+        }
+    }
+
+    fn local() -> Self {
+        Self {
+            inner: SplitSearchOutcomeCounterInner::Local(Arc::new(AtomicU64::new(0))),
+        }
+    }
+
+    pub fn increment(&self, value: u64) {
+        match &self.inner {
+            SplitSearchOutcomeCounterInner::Registered(counter) => counter.increment(value),
+            SplitSearchOutcomeCounterInner::Local(value_ref) => {
+                value_ref.fetch_add(value, Ordering::Relaxed);
+            }
+        }
+    }
+
+    pub fn get(&self) -> u64 {
+        match &self.inner {
+            SplitSearchOutcomeCounterInner::Registered(counter) => counter.get(),
+            SplitSearchOutcomeCounterInner::Local(value_ref) => value_ref.load(Ordering::Relaxed),
+        }
+    }
+}
+
 pub struct SplitSearchOutcomeCounters {
-    pub cancel_before_warmup: IntCounter,
-    pub cache_hit: IntCounter,
-    pub pruned_before_warmup: IntCounter,
-    pub cancel_warmup: IntCounter,
-    pub pruned_after_warmup: IntCounter,
-    pub cancel_cpu_queue: IntCounter,
-    pub cancel_cpu: IntCounter,
-    pub success: IntCounter,
+    pub cancel_before_warmup: SplitSearchOutcomeCounter,
+    pub cache_hit: SplitSearchOutcomeCounter,
+    pub pruned_before_warmup: SplitSearchOutcomeCounter,
+    pub cancel_warmup: SplitSearchOutcomeCounter,
+    pub pruned_after_warmup: SplitSearchOutcomeCounter,
+    pub cancel_cpu_queue: SplitSearchOutcomeCounter,
+    pub cancel_cpu: SplitSearchOutcomeCounter,
+    pub success: SplitSearchOutcomeCounter,
 }
 
 impl fmt::Display for SplitSearchOutcomeCounters {
@@ -64,61 +104,76 @@ impl fmt::Display for SplitSearchOutcomeCounters {
 impl SplitSearchOutcomeCounters {
     /// Create a new SplitSearchOutcomeCounters instance, registered in prometheus.
     pub fn new_registered() -> Self {
-        let search_split_outcome_vec = new_counter_vec(
-            "split_search_outcome",
-            "Count the state in which each leaf search split ended",
-            "search",
-            &[],
-            ["category"],
-        );
-        Self::new_from_counter_vec(search_split_outcome_vec)
+        Self::new_registered_from_counter(&*SPLIT_SEARCH_OUTCOME)
     }
 
-    /// Create a new SplitSearchOutcomeCounters instance, but this one won't be reported to
-    /// prometheus.
+    /// Create a new SplitSearchOutcomeCounters instance that is not reported.
     pub fn new_unregistered() -> Self {
-        let search_split_outcome_vec = IntCounterVec::new(
-            "split_search_outcome",
-            "Count the state in which each leaf search split ended",
-            "search",
-            &[],
-            ["category"],
-        );
-        Self::new_from_counter_vec(search_split_outcome_vec)
+        SplitSearchOutcomeCounters {
+            cancel_before_warmup: SplitSearchOutcomeCounter::local(),
+            cache_hit: SplitSearchOutcomeCounter::local(),
+            pruned_before_warmup: SplitSearchOutcomeCounter::local(),
+            cancel_warmup: SplitSearchOutcomeCounter::local(),
+            pruned_after_warmup: SplitSearchOutcomeCounter::local(),
+            cancel_cpu_queue: SplitSearchOutcomeCounter::local(),
+            cancel_cpu: SplitSearchOutcomeCounter::local(),
+            success: SplitSearchOutcomeCounter::local(),
+        }
     }
 
-    pub fn new_from_counter_vec(search_split_outcome_vec: IntCounterVec<1>) -> Self {
+    fn new_registered_from_counter(search_split_outcome: &Counter) -> Self {
         SplitSearchOutcomeCounters {
-            cancel_before_warmup: search_split_outcome_vec
-                .with_label_values(["cancel_before_warmup"]),
-            cache_hit: search_split_outcome_vec.with_label_values(["cache_hit"]),
-            pruned_before_warmup: search_split_outcome_vec
-                .with_label_values(["pruned_before_warmup"]),
-            cancel_warmup: search_split_outcome_vec.with_label_values(["cancel_warmup"]),
-            pruned_after_warmup: search_split_outcome_vec
-                .with_label_values(["pruned_after_warmup"]),
-            cancel_cpu_queue: search_split_outcome_vec.with_label_values(["cancel_cpu_queue"]),
-            cancel_cpu: search_split_outcome_vec.with_label_values(["cancel_cpu"]),
-            success: search_split_outcome_vec.with_label_values(["success"]),
+            cancel_before_warmup: SplitSearchOutcomeCounter::registered(counter!(
+                parent: search_split_outcome,
+                "category" => "cancel_before_warmup",
+            )),
+            cache_hit: SplitSearchOutcomeCounter::registered(counter!(
+                parent: search_split_outcome,
+                "category" => "cache_hit",
+            )),
+            pruned_before_warmup: SplitSearchOutcomeCounter::registered(counter!(
+                parent: search_split_outcome,
+                "category" => "pruned_before_warmup",
+            )),
+            cancel_warmup: SplitSearchOutcomeCounter::registered(counter!(
+                parent: search_split_outcome,
+                "category" => "cancel_warmup",
+            )),
+            pruned_after_warmup: SplitSearchOutcomeCounter::registered(counter!(
+                parent: search_split_outcome,
+                "category" => "pruned_after_warmup",
+            )),
+            cancel_cpu_queue: SplitSearchOutcomeCounter::registered(counter!(
+                parent: search_split_outcome,
+                "category" => "cancel_cpu_queue",
+            )),
+            cancel_cpu: SplitSearchOutcomeCounter::registered(counter!(
+                parent: search_split_outcome,
+                "category" => "cancel_cpu",
+            )),
+            success: SplitSearchOutcomeCounter::registered(counter!(
+                parent: search_split_outcome,
+                "category" => "success",
+            )),
         }
     }
 }
 
 pub struct SearchMetrics {
-    pub root_search_requests_total: IntCounterVec<1>,
-    pub root_search_request_duration_seconds: HistogramVec<1>,
-    pub root_search_targeted_splits: HistogramVec<1>,
-    pub leaf_search_requests_total: IntCounterVec<1>,
-    pub leaf_search_request_duration_seconds: HistogramVec<1>,
-    pub leaf_search_targeted_splits: HistogramVec<1>,
-    pub leaf_list_terms_splits_total: IntCounter,
+    pub root_search_requests_total: Counter,
+    pub root_search_request_duration_seconds: Histogram,
+    pub root_search_targeted_splits: Histogram,
+    pub leaf_search_requests_total: Counter,
+    pub leaf_search_request_duration_seconds: Histogram,
+    pub leaf_search_targeted_splits: Histogram,
+    pub leaf_list_terms_splits_total: Counter,
     pub split_search_outcome_total: SplitSearchOutcomeCounters,
     pub leaf_search_split_duration_secs: Histogram,
-    pub job_assigned_total: IntCounterVec<1>,
-    pub leaf_search_single_split_tasks_pending: IntGauge,
-    pub leaf_search_single_split_tasks_ongoing: IntGauge,
+    pub job_assigned_total: Counter,
+    pub leaf_search_single_split_tasks_pending: Gauge,
+    pub leaf_search_single_split_tasks_ongoing: Gauge,
     pub leaf_search_single_split_warmup_num_bytes: Histogram,
-    pub searcher_local_kv_store_size_bytes: IntGauge,
+    pub searcher_local_kv_store_size_bytes: Gauge,
 }
 
 /// From 0.008s to 131.072s
@@ -126,126 +181,182 @@ fn duration_buckets() -> Vec<f64> {
     exponential_buckets(0.008, 2.0, 15).unwrap()
 }
 
+fn targeted_splits_buckets() -> Vec<f64> {
+    [
+        linear_buckets(0.0, 10.0, 10).unwrap(),
+        linear_buckets(100.0, 100.0, 9).unwrap(),
+        linear_buckets(1000.0, 1000.0, 9).unwrap(),
+        linear_buckets(10000.0, 10000.0, 10).unwrap(),
+    ]
+    .iter()
+    .flatten()
+    .copied()
+    .collect()
+}
+
+fn pseudo_exponential_bytes_buckets() -> Vec<f64> {
+    vec![
+        ByteSize::mb(10).as_u64() as f64,
+        ByteSize::mb(20).as_u64() as f64,
+        ByteSize::mb(50).as_u64() as f64,
+        ByteSize::mb(100).as_u64() as f64,
+        ByteSize::mb(200).as_u64() as f64,
+        ByteSize::mb(500).as_u64() as f64,
+        ByteSize::gb(1).as_u64() as f64,
+        ByteSize::gb(2).as_u64() as f64,
+        ByteSize::gb(5).as_u64() as f64,
+    ]
+}
+
+static SPLIT_SEARCH_OUTCOME: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "split_search_outcome",
+        description: "Count the state in which each leaf search split ended",
+        subsystem: "search",
+        observable: true,
+    )
+});
+
+static LEAF_SEARCH_SINGLE_SPLIT_TASKS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "leaf_search_single_split_tasks",
+        description: "Number of single split search tasks pending or ongoing",
+        subsystem: "search",
+    )
+});
+
+static ROOT_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "root_search_requests_total",
+        description: "Total number of root search gRPC requests processed.",
+        subsystem: "search",
+    )
+});
+
+static ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "root_search_request_duration_seconds",
+        description: "Duration of root search gRPC requests in seconds.",
+        subsystem: "search",
+        buckets: duration_buckets(),
+    )
+});
+
+static ROOT_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "root_search_targeted_splits",
+        description: "Number of splits targeted per root search GRPC request.",
+        subsystem: "search",
+        buckets: targeted_splits_buckets(),
+    )
+});
+
+static LEAF_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "leaf_search_requests_total",
+        description: "Total number of leaf search gRPC requests processed.",
+        subsystem: "search",
+    )
+});
+
+static LEAF_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "leaf_search_request_duration_seconds",
+        description: "Duration of leaf search gRPC requests in seconds.",
+        subsystem: "search",
+        buckets: duration_buckets(),
+    )
+});
+
+static LEAF_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "leaf_search_targeted_splits",
+        description: "Number of splits targeted per leaf search GRPC request.",
+        subsystem: "search",
+        buckets: targeted_splits_buckets(),
+    )
+});
+
+static LEAF_LIST_TERMS_SPLITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "leaf_list_terms_splits_total",
+        description: "Number of list terms splits total",
+        subsystem: "search",
+    )
+});
+
+static LEAF_SEARCH_SPLIT_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "leaf_search_split_duration_secs",
+        description: "Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained.",
+        subsystem: "search",
+        buckets: duration_buckets(),
+    )
+});
+
+static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "leaf_search_single_split_warmup_num_bytes",
+        description: "Size of the short lived cache for a single split once the warmup is done.",
+        subsystem: "search",
+        buckets: pseudo_exponential_bytes_buckets(),
+    )
+});
+
+static JOB_ASSIGNED_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "job_assigned_total",
+        description: "Number of job assigned to searchers, per affinity rank.",
+        subsystem: "search",
+    )
+});
+
+static SEARCHER_LOCAL_KV_STORE_SIZE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "searcher_local_kv_store_size_bytes",
+        description: "Size of the searcher kv store in bytes. This store is used to cache scroll contexts.",
+        subsystem: "search",
+    )
+});
+
 impl Default for SearchMetrics {
     fn default() -> Self {
-        let targeted_splits_buckets: Vec<f64> = [
-            linear_buckets(0.0, 10.0, 10).unwrap(),
-            linear_buckets(100.0, 100.0, 9).unwrap(),
-            linear_buckets(1000.0, 1000.0, 9).unwrap(),
-            linear_buckets(10000.0, 10000.0, 10).unwrap(),
-        ]
-        .iter()
-        .flatten()
-        .copied()
-        .collect();
-
-        let pseudo_exponential_bytes_buckets = vec![
-            ByteSize::mb(10).as_u64() as f64,
-            ByteSize::mb(20).as_u64() as f64,
-            ByteSize::mb(50).as_u64() as f64,
-            ByteSize::mb(100).as_u64() as f64,
-            ByteSize::mb(200).as_u64() as f64,
-            ByteSize::mb(500).as_u64() as f64,
-            ByteSize::gb(1).as_u64() as f64,
-            ByteSize::gb(2).as_u64() as f64,
-            ByteSize::gb(5).as_u64() as f64,
-        ];
-
-        let leaf_search_single_split_tasks = new_gauge_vec::<1>(
-            "leaf_search_single_split_tasks",
-            "Number of single split search tasks pending or ongoing",
-            "search",
-            &[],
-            ["status"], // takes values "ongoing" or "pending"
-        );
-
         SearchMetrics {
-            root_search_requests_total: new_counter_vec(
-                "root_search_requests_total",
-                "Total number of root search gRPC requests processed.",
-                "search",
-                &[("kind", "server")],
-                ["status"],
+            root_search_requests_total: counter!(
+                parent: &*ROOT_SEARCH_REQUESTS_TOTAL,
+                "kind" => "server",
             ),
-            root_search_request_duration_seconds: new_histogram_vec(
-                "root_search_request_duration_seconds",
-                "Duration of root search gRPC requests in seconds.",
-                "search",
-                &[("kind", "server")],
-                ["status"],
-                duration_buckets(),
+            root_search_request_duration_seconds: histogram!(
+                parent: &*ROOT_SEARCH_REQUEST_DURATION_SECONDS,
+                "kind" => "server",
             ),
-            root_search_targeted_splits: new_histogram_vec(
-                "root_search_targeted_splits",
-                "Number of splits targeted per root search GRPC request.",
-                "search",
-                &[],
-                ["status"],
-                targeted_splits_buckets.clone(),
+            root_search_targeted_splits: ROOT_SEARCH_TARGETED_SPLITS.clone(),
+            leaf_search_requests_total: counter!(
+                parent: &*LEAF_SEARCH_REQUESTS_TOTAL,
+                "kind" => "server",
             ),
-            leaf_search_requests_total: new_counter_vec(
-                "leaf_search_requests_total",
-                "Total number of leaf search gRPC requests processed.",
-                "search",
-                &[("kind", "server")],
-                ["status"],
+            leaf_search_request_duration_seconds: histogram!(
+                parent: &*LEAF_SEARCH_REQUEST_DURATION_SECONDS,
+                "kind" => "server",
             ),
-            leaf_search_request_duration_seconds: new_histogram_vec(
-                "leaf_search_request_duration_seconds",
-                "Duration of leaf search gRPC requests in seconds.",
-                "search",
-                &[("kind", "server")],
-                ["status"],
-                duration_buckets(),
-            ),
-            leaf_search_targeted_splits: new_histogram_vec(
-                "leaf_search_targeted_splits",
-                "Number of splits targeted per leaf search GRPC request.",
-                "search",
-                &[],
-                ["status"],
-                targeted_splits_buckets,
-            ),
+            leaf_search_targeted_splits: LEAF_SEARCH_TARGETED_SPLITS.clone(),
 
-            leaf_list_terms_splits_total: new_counter(
-                "leaf_list_terms_splits_total",
-                "Number of list terms splits total",
-                "search",
-                &[],
-            ),
+            leaf_list_terms_splits_total: LEAF_LIST_TERMS_SPLITS_TOTAL.clone(),
             split_search_outcome_total: SplitSearchOutcomeCounters::new_registered(),
 
-            leaf_search_split_duration_secs: new_histogram(
-                "leaf_search_split_duration_secs",
-                "Number of seconds required to run a leaf search over a single split. The timer \
-                 starts after the semaphore is obtained.",
-                "search",
-                duration_buckets(),
+            leaf_search_split_duration_secs: LEAF_SEARCH_SPLIT_DURATION_SECS.clone(),
+            leaf_search_single_split_tasks_ongoing: gauge!(
+                parent: &*LEAF_SEARCH_SINGLE_SPLIT_TASKS,
+                "status" => "ongoing",
             ),
-            leaf_search_single_split_tasks_ongoing: leaf_search_single_split_tasks
-                .with_label_values(["ongoing"]),
-            leaf_search_single_split_tasks_pending: leaf_search_single_split_tasks
-                .with_label_values(["pending"]),
-            leaf_search_single_split_warmup_num_bytes: new_histogram(
-                "leaf_search_single_split_warmup_num_bytes",
-                "Size of the short lived cache for a single split once the warmup is done.",
-                "search",
-                pseudo_exponential_bytes_buckets,
+            leaf_search_single_split_tasks_pending: gauge!(
+                parent: &*LEAF_SEARCH_SINGLE_SPLIT_TASKS,
+                "status" => "pending",
             ),
-            job_assigned_total: new_counter_vec(
-                "job_assigned_total",
-                "Number of job assigned to searchers, per affinity rank.",
-                "search",
-                &[],
-                ["affinity"],
-            ),
-            searcher_local_kv_store_size_bytes: new_gauge(
-                "searcher_local_kv_store_size_bytes",
-                "Size of the searcher kv store in bytes. This store is used to cache scroll \
-                 contexts.",
-                "search",
-                &[],
-            ),
+            leaf_search_single_split_warmup_num_bytes: LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES
+                .clone(),
+            job_assigned_total: JOB_ASSIGNED_TOTAL.clone(),
+            searcher_local_kv_store_size_bytes: SEARCHER_LOCAL_KV_STORE_SIZE_BYTES.clone(),
         }
     }
 }

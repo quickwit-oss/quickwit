@@ -19,6 +19,7 @@ use std::task::{Context, Poll, ready};
 use std::time::Instant;
 
 use pin_project::{pin_project, pinned_drop};
+use quickwit_common::metrics::{counter, histogram};
 use quickwit_proto::search::LeafSearchResponse;
 
 use crate::SearchError;
@@ -69,19 +70,21 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
             ) => (*num_targeted_splits, "cancelled"),
         };
 
-        let label_values = [status];
-        SEARCH_METRICS
-            .root_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .root_search_request_duration_seconds
-            .with_label_values(label_values)
-            .observe(self.start.elapsed().as_secs_f64());
-        SEARCH_METRICS
-            .root_search_targeted_splits
-            .with_label_values(label_values)
-            .observe(num_targeted_splits as f64);
+        counter!(
+            parent: &SEARCH_METRICS.root_search_requests_total,
+            "status" => status,
+        )
+        .increment(1);
+        histogram!(
+            parent: &SEARCH_METRICS.root_search_request_duration_seconds,
+            "status" => status,
+        )
+        .record(self.start.elapsed().as_secs_f64());
+        histogram!(
+            parent: &SEARCH_METRICS.root_search_targeted_splits,
+            "status" => status,
+        )
+        .record(num_targeted_splits as f64);
     }
 }
 
@@ -117,19 +120,22 @@ impl<F> PinnedDrop for LeafSearchMetricsFuture<F>
 where F: Future<Output = Result<LeafSearchResponse, SearchError>>
 {
     fn drop(self: Pin<&mut Self>) {
-        let label_values = [self.status.unwrap_or("cancelled")];
-        SEARCH_METRICS
-            .leaf_search_requests_total
-            .with_label_values(label_values)
-            .inc();
-        SEARCH_METRICS
-            .leaf_search_request_duration_seconds
-            .with_label_values(label_values)
-            .observe(self.start.elapsed().as_secs_f64());
-        SEARCH_METRICS
-            .leaf_search_targeted_splits
-            .with_label_values(label_values)
-            .observe(self.targeted_splits as f64);
+        let status = self.status.unwrap_or("cancelled");
+        counter!(
+            parent: &SEARCH_METRICS.leaf_search_requests_total,
+            "status" => status,
+        )
+        .increment(1);
+        histogram!(
+            parent: &SEARCH_METRICS.leaf_search_request_duration_seconds,
+            "status" => status,
+        )
+        .record(self.start.elapsed().as_secs_f64());
+        histogram!(
+            parent: &SEARCH_METRICS.leaf_search_targeted_splits,
+            "status" => status,
+        )
+        .record(self.targeted_splits as f64);
     }
 }
 

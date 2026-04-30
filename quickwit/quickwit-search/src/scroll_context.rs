@@ -123,7 +123,7 @@ impl ScrollContext {
 
 struct TrackedValue {
     content: Vec<u8>,
-    _total_size_metric_guard: GaugeGuard<'static>,
+    _total_size_metric_guard: GaugeGuard,
 }
 
 /// In memory key value store with TTL and limited size.

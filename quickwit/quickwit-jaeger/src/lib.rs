@@ -21,6 +21,7 @@ use std::time::Instant;
 use itertools::{Either, Itertools};
 use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
+use quickwit_common::metrics::{counter, histogram};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
     Event as QwEvent, Link as QwLink, OTEL_TRACES_INDEX_ID, Span as QwSpan, SpanFingerprint,
@@ -415,43 +416,57 @@ impl JaegerService {
             current_span.record("num_spans", num_spans_total);
             current_span.record("num_bytes", num_bytes_total);
 
-            JAEGER_SERVICE_METRICS
-                .fetched_traces_total
-                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
-                .inc_by(num_traces);
+            counter!(
+                parent: &JAEGER_SERVICE_METRICS.fetched_traces_total,
+                "operation" => operation_name,
+                "index" => OTEL_TRACES_INDEX_ID,
+            )
+            .increment(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
-            JAEGER_SERVICE_METRICS
-                .request_duration_seconds
-                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "false"])
-                .observe(elapsed);
+            histogram!(
+                parent: &JAEGER_SERVICE_METRICS.request_duration_seconds,
+                "operation" => operation_name,
+                "index" => OTEL_TRACES_INDEX_ID,
+                "error" => "false",
+            )
+            .record(elapsed);
         });
         Ok(ReceiverStream::new(rx))
     }
 }
 
 pub(crate) fn record_error(operation_name: &'static str, request_start: Instant) {
-    JAEGER_SERVICE_METRICS
-        .request_errors_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
-        .inc();
+    counter!(
+        parent: &JAEGER_SERVICE_METRICS.request_errors_total,
+        "operation" => operation_name,
+        "index" => OTEL_TRACES_INDEX_ID,
+    )
+    .increment(1);
 
     let elapsed = request_start.elapsed().as_secs_f64();
-    JAEGER_SERVICE_METRICS
-        .request_duration_seconds
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "true"])
-        .observe(elapsed);
+    histogram!(
+        parent: &JAEGER_SERVICE_METRICS.request_duration_seconds,
+        "operation" => operation_name,
+        "index" => OTEL_TRACES_INDEX_ID,
+        "error" => "true",
+    )
+    .record(elapsed);
 }
 
 pub(crate) fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
-    JAEGER_SERVICE_METRICS
-        .fetched_spans_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
-        .inc_by(num_spans as u64);
-    JAEGER_SERVICE_METRICS
-        .transferred_bytes_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
-        .inc_by(num_bytes as u64);
+    counter!(
+        parent: &JAEGER_SERVICE_METRICS.fetched_spans_total,
+        "operation" => operation_name,
+        "index" => OTEL_TRACES_INDEX_ID,
+    )
+    .increment(num_spans as u64);
+    counter!(
+        parent: &JAEGER_SERVICE_METRICS.transferred_bytes_total,
+        "operation" => operation_name,
+        "index" => OTEL_TRACES_INDEX_ID,
+    )
+    .increment(num_bytes as u64);
 }
 
 #[allow(deprecated)]

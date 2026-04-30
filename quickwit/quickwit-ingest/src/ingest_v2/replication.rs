@@ -669,10 +669,10 @@ impl ReplicationTask {
 
             INGEST_METRICS
                 .replicated_num_bytes_total
-                .inc_by(batch_num_bytes);
+                .increment(batch_num_bytes);
             INGEST_METRICS
                 .replicated_num_docs_total
-                .inc_by(batch_num_docs);
+                .increment(batch_num_docs);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,

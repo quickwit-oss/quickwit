@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::time::Instant;
+
 use metrics::HistogramFn;
 
 use super::MetricInfo;
@@ -60,11 +62,46 @@ impl Histogram {
     pub fn record(&self, value: f64) {
         self.inner.record(value);
     }
+
+    pub fn start_timer(&self) -> HistogramTimer {
+        HistogramTimer::__new(self.clone())
+    }
 }
 
 impl HistogramFn for Histogram {
     fn record(&self, value: f64) {
         Self::record(self, value);
+    }
+}
+
+#[derive(Debug)]
+pub struct HistogramTimer {
+    histogram: Histogram,
+    start: Instant,
+    observed: bool,
+}
+
+impl HistogramTimer {
+    fn __new(histogram: Histogram) -> Self {
+        Self {
+            histogram,
+            start: Instant::now(),
+            observed: false,
+        }
+    }
+
+    pub fn observe_duration(self) {
+        let mut timer = self;
+        timer.observed = true;
+        timer.histogram.record(timer.start.elapsed().as_secs_f64());
+    }
+}
+
+impl Drop for HistogramTimer {
+    fn drop(&mut self) {
+        if !self.observed {
+            self.histogram.record(self.start.elapsed().as_secs_f64());
+        }
     }
 }
 

@@ -169,7 +169,7 @@ impl ControlPlaneModel {
     fn update_metrics(&self) {
         crate::metrics::CONTROL_PLANE_METRICS
             .indexes_total
-            .set(self.index_table.len() as i64);
+            .set(self.index_table.len() as f64);
     }
 
     pub(crate) fn source_configs(&self) -> impl Iterator<Item = (SourceUid, &SourceConfig)> + '_ {

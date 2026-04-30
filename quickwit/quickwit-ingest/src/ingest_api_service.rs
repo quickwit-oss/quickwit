@@ -20,6 +20,7 @@ use bytes::Bytes;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, DeferableReplyHandler, Handler, QueueCapacity,
 };
+use quickwit_common::metrics::counter;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::tower::Cost;
 use quickwit_proto::ingest::RateLimitingCause;
@@ -201,12 +202,13 @@ impl IngestApiService {
             }
 
             num_docs += batch_num_docs;
-            INGEST_METRICS
-                .ingested_docs_bytes_valid
-                .inc_by(batch_num_bytes as u64);
-            INGEST_METRICS
-                .ingested_docs_valid
-                .inc_by(batch_num_docs as u64);
+            counter!(
+                parent: &INGEST_METRICS.docs_bytes_total,
+                "validity" => "valid",
+            )
+            .increment(batch_num_bytes as u64);
+            counter!(parent: &INGEST_METRICS.docs_total, "validity" => "valid")
+                .increment(batch_num_docs as u64);
         }
         // TODO we could fsync here and disable autosync to have better i/o perfs.
         Ok((

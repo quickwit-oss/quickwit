@@ -21,6 +21,7 @@ use std::net::SocketAddr;
 use anyhow::bail;
 use async_trait::async_trait;
 use quickwit_common::SocketAddrLegacyHash;
+use quickwit_common::metrics::counter;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
@@ -217,10 +218,11 @@ impl SearchJobPlacer {
                 1 => "1",
                 _ => "> 1",
             };
-            SEARCH_METRICS
-                .job_assigned_total
-                .with_label_values([metric_node_idx])
-                .inc();
+            counter!(
+                parent: &SEARCH_METRICS.job_assigned_total,
+                "affinity" => metric_node_idx,
+            )
+            .increment(1);
             chosen_node.load += job.cost();
 
             job_assignments

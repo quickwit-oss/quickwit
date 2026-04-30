@@ -14,9 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{
-    IntCounter, IntGauge, IntGaugeVec, new_counter, new_gauge, new_gauge_vec,
-};
+use quickwit_common::metrics::{Counter, Gauge, counter, gauge};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShardLocalityMetrics {
@@ -26,107 +24,123 @@ pub struct ShardLocalityMetrics {
 
 pub struct ControlPlaneMetrics {
     // Indexes and shards tracked by the control plane.
-    pub indexes_total: IntGauge,
-    pub open_shards: IntGaugeVec<1>,
-    pub closed_shards: IntGaugeVec<1>,
+    pub indexes_total: Gauge,
+    pub open_shards: Gauge,
+    pub closed_shards: Gauge,
 
     // Operations performed by the control plane.
-    pub apply_plan_total: IntCounter,
-    pub rebalance_shards: IntGauge,
-    pub restart_total: IntCounter,
-    pub schedule_total: IntCounter,
+    pub apply_plan_total: Counter,
+    pub rebalance_shards: Gauge,
+    pub restart_total: Counter,
+    pub schedule_total: Counter,
 
     // Metastore errors.
-    pub metastore_error_aborted: IntCounter,
-    pub metastore_error_maybe_executed: IntCounter,
+    pub metastore_error_aborted: Counter,
+    pub metastore_error_maybe_executed: Counter,
 
     // Indexing plan metrics.
-    pub local_shards: IntGauge,
-    pub remote_shards: IntGauge,
+    pub local_shards: Gauge,
+    pub remote_shards: Gauge,
 }
 
 impl ControlPlaneMetrics {
     pub fn set_shard_locality_metrics(&self, shard_locality_metrics: ShardLocalityMetrics) {
         self.local_shards
-            .set(shard_locality_metrics.num_local_shards as i64);
+            .set(shard_locality_metrics.num_local_shards as f64);
         self.remote_shards
-            .set(shard_locality_metrics.num_remote_shards as i64);
+            .set(shard_locality_metrics.num_remote_shards as f64);
     }
 }
 
+static INDEXES_TOTAL: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "indexes_total",
+        description: "Number of indexes tracked by the control plane.",
+        subsystem: "control_plane",
+    )
+});
+
+static SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "shards",
+        description: "Number of open and closed shards tracked by the ingest controller",
+        subsystem: "control_plane",
+    )
+});
+
+static INDEXED_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "indexed_shards",
+        description: "Number of (remote/local) shards in the indexing plan",
+        subsystem: "control_plane",
+    )
+});
+
+static APPLY_PLAN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "apply_plan_total",
+        description: "Number of control plane `apply plan` operations.",
+        subsystem: "control_plane",
+    )
+});
+
+static REBALANCE_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "rebalance_shards",
+        description: "Number of shards rebalanced by the control plane.",
+        subsystem: "control_plane",
+    )
+});
+
+static RESTART_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "restart_total",
+        description: "Number of control plane restarts.",
+        subsystem: "control_plane",
+    )
+});
+
+static SCHEDULE_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "schedule_total",
+        description: "Number of control plane `schedule` operations.",
+        subsystem: "control_plane",
+    )
+});
+
+static METASTORE_ERROR_ABORTED: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "metastore_error_aborted",
+        description: "Number of aborted metastore transaction (= do not trigger a control plane restart)",
+        subsystem: "control_plane",
+    )
+});
+
+static METASTORE_ERROR_MAYBE_EXECUTED: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "metastore_error_maybe_executed",
+        description: "Number of metastore transaction with an uncertain outcome (= do trigger a control plane restart)",
+        subsystem: "control_plane",
+    )
+});
+
 impl Default for ControlPlaneMetrics {
     fn default() -> Self {
-        let open_shards = new_gauge_vec(
-            "shards",
-            "Number of open and closed shards tracked by the ingest controller",
-            "control_plane",
-            &[("state", "open")],
-            ["index_id"],
-        );
-        let closed_shards = new_gauge_vec(
-            "shards",
-            "Number of open and closed shards tracked by the ingest controller",
-            "control_plane",
-            &[("state", "closed")],
-            ["index_id"],
-        );
-        let indexed_shards = new_gauge_vec(
-            "indexed_shards",
-            "Number of (remote/local) shards in the indexing plan",
-            "control_plane",
-            &[],
-            ["locality"],
-        );
-        let local_shards = indexed_shards.with_label_values(["local"]);
-        let remote_shards = indexed_shards.with_label_values(["remote"]);
+        let open_shards = gauge!(parent: &*SHARDS, "state" => "open");
+        let closed_shards = gauge!(parent: &*SHARDS, "state" => "closed");
+        let local_shards = gauge!(parent: &*INDEXED_SHARDS, "locality" => "local");
+        let remote_shards = gauge!(parent: &*INDEXED_SHARDS, "locality" => "remote");
 
         ControlPlaneMetrics {
-            indexes_total: new_gauge(
-                "indexes_total",
-                "Number of indexes tracked by the control plane.",
-                "control_plane",
-                &[],
-            ),
+            indexes_total: INDEXES_TOTAL.clone(),
             open_shards,
             closed_shards,
-            apply_plan_total: new_counter(
-                "apply_plan_total",
-                "Number of control plane `apply plan` operations.",
-                "control_plane",
-                &[],
-            ),
-            rebalance_shards: new_gauge(
-                "rebalance_shards",
-                "Number of shards rebalanced by the control plane.",
-                "control_plane",
-                &[],
-            ),
-            restart_total: new_counter(
-                "restart_total",
-                "Number of control plane restarts.",
-                "control_plane",
-                &[],
-            ),
-            schedule_total: new_counter(
-                "schedule_total",
-                "Number of control plane `schedule` operations.",
-                "control_plane",
-                &[],
-            ),
-            metastore_error_aborted: new_counter(
-                "metastore_error_aborted",
-                "Number of aborted metastore transaction (= do not trigger a control plane \
-                 restart)",
-                "control_plane",
-                &[],
-            ),
-            metastore_error_maybe_executed: new_counter(
-                "metastore_error_maybe_executed",
-                "Number of metastore transaction with an uncertain outcome (= do trigger a \
-                 control plane restart)",
-                "control_plane",
-                &[],
-            ),
+            apply_plan_total: APPLY_PLAN_TOTAL.clone(),
+            rebalance_shards: REBALANCE_SHARDS.clone(),
+            restart_total: RESTART_TOTAL.clone(),
+            schedule_total: SCHEDULE_TOTAL.clone(),
+            metastore_error_aborted: METASTORE_ERROR_ABORTED.clone(),
+            metastore_error_maybe_executed: METASTORE_ERROR_MAYBE_EXECUTED.clone(),
             local_shards,
             remote_shards,
         }

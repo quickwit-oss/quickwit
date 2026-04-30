@@ -15,6 +15,7 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
+use quickwit_common::metrics::{counter, histogram};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
@@ -204,7 +205,6 @@ impl OtlpGrpcMetricsService {
         &mut self,
         request: ExportMetricsServiceRequest,
         index_id: IndexId,
-        labels: [&str; 4],
     ) -> Result<ExportMetricsServiceResponse, Status> {
         let ParsedMetrics {
             doc_batch,
@@ -234,16 +234,24 @@ impl OtlpGrpcMetricsService {
         }
 
         let num_bytes = doc_batch.num_bytes() as u64;
-        self.store_metrics(index_id, doc_batch).await?;
+        self.store_metrics(index_id.clone(), doc_batch).await?;
 
-        OTLP_SERVICE_METRICS
-            .ingested_data_points_total
-            .with_label_values(labels)
-            .inc_by(num_data_points - num_parse_errors);
-        OTLP_SERVICE_METRICS
-            .ingested_bytes_total
-            .with_label_values(labels)
-            .inc_by(num_bytes);
+        counter!(
+            parent: &OTLP_SERVICE_METRICS.ingested_data_points_total,
+            "service" => "metrics",
+            "index" => index_id.clone(),
+            "transport" => "grpc",
+            "format" => "protobuf",
+        )
+        .increment(num_data_points - num_parse_errors);
+        counter!(
+            parent: &OTLP_SERVICE_METRICS.ingested_bytes_total,
+            "service" => "metrics",
+            "index" => index_id,
+            "transport" => "grpc",
+            "format" => "protobuf",
+        )
+        .increment(num_bytes);
 
         let response = ExportMetricsServiceResponse {
             partial_success: Some(ExportMetricsPartialSuccess {
@@ -332,31 +340,40 @@ impl OtlpGrpcMetricsService {
     ) -> Result<ExportMetricsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = ["metrics", &index_id, "grpc", "protobuf"];
+        counter!(
+            parent: &OTLP_SERVICE_METRICS.requests_total,
+            "service" => "metrics",
+            "index" => index_id.clone(),
+            "transport" => "grpc",
+            "format" => "protobuf",
+        )
+        .increment(1);
 
-        OTLP_SERVICE_METRICS
-            .requests_total
-            .with_label_values(labels)
-            .inc();
-
-        let (export_res, is_error) =
-            match self.export_inner(request, index_id.clone(), labels).await {
-                ok @ Ok(_) => (ok, "false"),
-                err @ Err(_) => {
-                    OTLP_SERVICE_METRICS
-                        .request_errors_total
-                        .with_label_values(labels)
-                        .inc();
-                    (err, "true")
-                }
-            };
+        let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
+            ok @ Ok(_) => (ok, "false"),
+            err @ Err(_) => {
+                counter!(
+                    parent: &OTLP_SERVICE_METRICS.request_errors_total,
+                    "service" => "metrics",
+                    "index" => index_id.clone(),
+                    "transport" => "grpc",
+                    "format" => "protobuf",
+                )
+                .increment(1);
+                (err, "true")
+            }
+        };
 
         let elapsed = start.elapsed().as_secs_f64();
-        let labels = ["metrics", &index_id, "grpc", "protobuf", is_error];
-        OTLP_SERVICE_METRICS
-            .request_duration_seconds
-            .with_label_values(labels)
-            .observe(elapsed);
+        histogram!(
+            parent: &OTLP_SERVICE_METRICS.request_duration_seconds,
+            "service" => "metrics",
+            "index" => index_id,
+            "transport" => "grpc",
+            "format" => "protobuf",
+            "error" => is_error,
+        )
+        .record(elapsed);
 
         export_res
     }

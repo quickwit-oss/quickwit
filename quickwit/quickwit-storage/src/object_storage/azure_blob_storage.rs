@@ -240,10 +240,10 @@ impl AzureBlobStorage {
         name: &'a str,
         payload: Box<dyn crate::PutPayload>,
     ) -> StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_parts.inc();
+        crate::STORAGE_METRICS.object_storage_put_parts.increment(1);
         crate::STORAGE_METRICS
             .object_storage_upload_num_bytes
-            .inc_by(payload.len());
+            .increment(payload.len());
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
@@ -276,10 +276,10 @@ impl AzureBlobStorage {
             .map(|(num, range)| {
                 let moved_blob_client = blob_client.clone();
                 let moved_payload = payload.clone();
-                crate::STORAGE_METRICS.object_storage_put_parts.inc();
+                crate::STORAGE_METRICS.object_storage_put_parts.increment(1);
                 crate::STORAGE_METRICS
                     .object_storage_upload_num_bytes
-                    .inc_by(range.end - range.start);
+                    .increment(range.end - range.start);
                 async move {
                     retry(&self.retry_params, || async {
                         // zero pad block ids to make them sortable as strings
@@ -349,7 +349,7 @@ impl Storage for AzureBlobStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.inc();
+        crate::STORAGE_METRICS.object_storage_put_total.increment(1);
         let name = self.blob_name(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
@@ -378,7 +378,7 @@ impl Storage for AzureBlobStorage {
             let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
             STORAGE_METRICS
                 .object_storage_download_num_bytes
-                .inc_by(num_bytes_copied);
+                .increment(num_bytes_copied);
         }
         output.flush().await?;
         Ok(())
@@ -579,7 +579,7 @@ async fn download_all(
     }
     crate::STORAGE_METRICS
         .object_storage_download_num_bytes
-        .inc_by(total_num_bytes as u64);
+        .increment(total_num_bytes as u64);
     Ok(coalesce_segments(segments, total_num_bytes))
 }
 

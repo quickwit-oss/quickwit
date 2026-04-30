@@ -156,22 +156,22 @@ impl SplitTable {
                     .searcher_split_cache
                     .cache_metrics
                     .in_cache_count
-                    .dec();
+                    .decrement(1.0);
                 crate::metrics::STORAGE_METRICS
                     .searcher_split_cache
                     .cache_metrics
                     .in_cache_num_bytes
-                    .sub(num_bytes as i64);
+                    .decrement(num_bytes as f64);
                 crate::metrics::STORAGE_METRICS
                     .searcher_split_cache
                     .cache_metrics
                     .evict_num_items
-                    .inc();
+                    .increment(1);
                 crate::metrics::STORAGE_METRICS
                     .searcher_split_cache
                     .cache_metrics
                     .evict_num_bytes
-                    .inc_by(num_bytes);
+                    .increment(num_bytes);
                 &mut self.on_disk_splits
             }
         };
@@ -224,12 +224,12 @@ impl SplitTable {
                     .searcher_split_cache
                     .cache_metrics
                     .in_cache_count
-                    .inc();
+                    .increment(1.0);
                 crate::metrics::STORAGE_METRICS
                     .searcher_split_cache
                     .cache_metrics
                     .in_cache_num_bytes
-                    .add(num_bytes as i64);
+                    .increment(num_bytes as f64);
                 self.on_disk_splits.insert(split_info.split_key)
             }
         };

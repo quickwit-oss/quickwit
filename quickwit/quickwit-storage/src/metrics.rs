@@ -17,10 +17,7 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
-use quickwit_common::metrics::{
-    GaugeGuard, Histogram, IntCounter, IntCounterVec, IntGauge, new_counter, new_counter_vec,
-    new_gauge, new_histogram_vec,
-};
+use quickwit_common::metrics::{Counter, Gauge, GaugeGuard, Histogram, counter, gauge, histogram};
 use quickwit_config::CacheConfig;
 
 /// Counters associated to storage operations.
@@ -32,65 +29,150 @@ pub struct StorageMetrics {
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
     pub searcher_split_cache: CacheMetrics,
-    pub get_slice_timeout_successes: [IntCounter; 3],
-    pub get_slice_timeout_all_timeouts: IntCounter,
-    pub object_storage_get_total: IntCounter,
-    pub object_storage_get_errors_total: IntCounterVec<1>,
-    pub object_storage_get_slice_in_flight_count: IntGauge,
-    pub object_storage_get_slice_in_flight_num_bytes: IntGauge,
-    pub object_storage_put_total: IntCounter,
-    pub object_storage_put_parts: IntCounter,
-    pub object_storage_download_num_bytes: IntCounter,
-    pub object_storage_upload_num_bytes: IntCounter,
+    pub get_slice_timeout_successes: [Counter; 3],
+    pub get_slice_timeout_all_timeouts: Counter,
+    pub object_storage_get_total: Counter,
+    pub object_storage_get_errors_total: Counter,
+    pub object_storage_get_slice_in_flight_count: Gauge,
+    pub object_storage_get_slice_in_flight_num_bytes: Gauge,
+    pub object_storage_put_total: Counter,
+    pub object_storage_put_parts: Counter,
+    pub object_storage_download_num_bytes: Counter,
+    pub object_storage_upload_num_bytes: Counter,
 
-    pub object_storage_delete_requests_total: IntCounter,
-    pub object_storage_bulk_delete_requests_total: IntCounter,
+    pub object_storage_delete_requests_total: Counter,
+    pub object_storage_bulk_delete_requests_total: Counter,
     pub object_storage_delete_request_duration: Histogram,
     pub object_storage_bulk_delete_request_duration: Histogram,
 }
 
+static GET_SLICE_TIMEOUT_OUTCOME_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "get_slice_timeout_outcome",
+        description: "Outcome of get_slice operations. success_after_1_timeout means the operation succeeded after a retry caused by a timeout.",
+        subsystem: "storage",
+    )
+});
+
+static OBJECT_STORAGE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "object_storage_requests_total",
+        description: "Total number of object storage requests performed.",
+        subsystem: "storage",
+    )
+});
+
+static OBJECT_STORAGE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "object_storage_request_duration_seconds",
+        description: "Duration of object storage requests in seconds.",
+        subsystem: "storage",
+        buckets: vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
+    )
+});
+
+static OBJECT_STORAGE_GET_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "object_storage_gets_total",
+        description: "Number of objects fetched. Might be lower than get_slice_timeout_outcome if queries are debounced.",
+        subsystem: "storage",
+    )
+});
+
+static OBJECT_STORAGE_GET_ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "object_storage_get_errors_total",
+        description: "Number of GetObject errors.",
+        subsystem: "storage",
+    )
+});
+
+static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "object_storage_get_slice_in_flight_count",
+        description: "Number of GetObject for which the memory was allocated but the download is still in progress.",
+        subsystem: "storage",
+    )
+});
+
+static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "object_storage_get_slice_in_flight_num_bytes",
+        description: "Memory allocated for GetObject requests that are still in progress.",
+        subsystem: "storage",
+    )
+});
+
+static OBJECT_STORAGE_PUT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "object_storage_puts_total",
+        description: "Number of objects uploaded. May differ from object_storage_requests_parts due to multipart upload.",
+        subsystem: "storage",
+    )
+});
+
+static OBJECT_STORAGE_PUT_PARTS: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "object_storage_puts_parts",
+        description: "Number of object parts uploaded.",
+        subsystem: "",
+    )
+});
+
+static OBJECT_STORAGE_DOWNLOAD_NUM_BYTES: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "object_storage_download_num_bytes",
+        description: "Amount of data downloaded from an object storage.",
+        subsystem: "storage",
+    )
+});
+
+static OBJECT_STORAGE_UPLOAD_NUM_BYTES: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "object_storage_upload_num_bytes",
+        description: "Amount of data uploaded to an object storage.",
+        subsystem: "storage",
+    )
+});
+
 impl Default for StorageMetrics {
     fn default() -> Self {
-        let get_slice_timeout_outcome_total_vec = new_counter_vec(
-            "get_slice_timeout_outcome",
-            "Outcome of get_slice operations. success_after_1_timeout means the operation \
-             succeeded after a retry caused by a timeout.",
-            "storage",
-            &[],
-            ["outcome"],
-        );
         let get_slice_timeout_successes = [
-            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_0_timeout"]),
-            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_1_timeout"]),
-            get_slice_timeout_outcome_total_vec.with_label_values(["success_after_2+_timeout"]),
+            counter!(
+                parent: &*GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+                "outcome" => "success_after_0_timeout",
+            ),
+            counter!(
+                parent: &*GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+                "outcome" => "success_after_1_timeout",
+            ),
+            counter!(
+                parent: &*GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+                "outcome" => "success_after_2+_timeout",
+            ),
         ];
-        let get_slice_timeout_all_timeouts =
-            get_slice_timeout_outcome_total_vec.with_label_values(["all_timeouts"]);
-
-        let object_storage_requests_total = new_counter_vec(
-            "object_storage_requests_total",
-            "Total number of object storage requests performed.",
-            "storage",
-            &[],
-            ["action"],
+        let get_slice_timeout_all_timeouts = counter!(
+            parent: &*GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+            "outcome" => "all_timeouts",
         );
-        let object_storage_delete_requests_total =
-            object_storage_requests_total.with_label_values(["delete_object"]);
-        let object_storage_bulk_delete_requests_total =
-            object_storage_requests_total.with_label_values(["delete_objects"]);
 
-        let object_storage_request_duration = new_histogram_vec(
-            "object_storage_request_duration_seconds",
-            "Duration of object storage requests in seconds.",
-            "storage",
-            &[],
-            ["action"],
-            vec![0.1, 0.5, 1.0, 5.0, 10.0, 30.0, 60.0],
+        let object_storage_delete_requests_total = counter!(
+            parent: &*OBJECT_STORAGE_REQUESTS_TOTAL,
+            "action" => "delete_object",
         );
-        let object_storage_delete_request_duration =
-            object_storage_request_duration.with_label_values(["delete_object"]);
-        let object_storage_bulk_delete_request_duration =
-            object_storage_request_duration.with_label_values(["delete_objects"]);
+        let object_storage_bulk_delete_requests_total = counter!(
+            parent: &*OBJECT_STORAGE_REQUESTS_TOTAL,
+            "action" => "delete_objects",
+        );
+
+        let object_storage_delete_request_duration = histogram!(
+            parent: &*OBJECT_STORAGE_REQUEST_DURATION,
+            "action" => "delete_object",
+        );
+        let object_storage_bulk_delete_request_duration = histogram!(
+            parent: &*OBJECT_STORAGE_REQUEST_DURATION,
+            "action" => "delete_objects",
+        );
 
         StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
@@ -102,58 +184,16 @@ impl Default for StorageMetrics {
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
             get_slice_timeout_successes,
             get_slice_timeout_all_timeouts,
-            object_storage_get_total: new_counter(
-                "object_storage_gets_total",
-                "Number of objects fetched. Might be lower than get_slice_timeout_outcome if \
-                 queries are debounced.",
-                "storage",
-                &[],
-            ),
-            object_storage_get_errors_total: new_counter_vec::<1>(
-                "object_storage_get_errors_total",
-                "Number of GetObject errors.",
-                "storage",
-                &[],
-                ["code"],
-            ),
-            object_storage_get_slice_in_flight_count: new_gauge(
-                "object_storage_get_slice_in_flight_count",
-                "Number of GetObject for which the memory was allocated but the download is still \
-                 in progress.",
-                "storage",
-                &[],
-            ),
-            object_storage_get_slice_in_flight_num_bytes: new_gauge(
-                "object_storage_get_slice_in_flight_num_bytes",
-                "Memory allocated for GetObject requests that are still in progress.",
-                "storage",
-                &[],
-            ),
-            object_storage_put_total: new_counter(
-                "object_storage_puts_total",
-                "Number of objects uploaded. May differ from object_storage_requests_parts due to \
-                 multipart upload.",
-                "storage",
-                &[],
-            ),
-            object_storage_put_parts: new_counter(
-                "object_storage_puts_parts",
-                "Number of object parts uploaded.",
-                "",
-                &[],
-            ),
-            object_storage_download_num_bytes: new_counter(
-                "object_storage_download_num_bytes",
-                "Amount of data downloaded from an object storage.",
-                "storage",
-                &[],
-            ),
-            object_storage_upload_num_bytes: new_counter(
-                "object_storage_upload_num_bytes",
-                "Amount of data uploaded to an object storage.",
-                "storage",
-                &[],
-            ),
+            object_storage_get_total: OBJECT_STORAGE_GET_TOTAL.clone(),
+            object_storage_get_errors_total: OBJECT_STORAGE_GET_ERRORS_TOTAL.clone(),
+            object_storage_get_slice_in_flight_count: OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT
+                .clone(),
+            object_storage_get_slice_in_flight_num_bytes:
+                OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES.clone(),
+            object_storage_put_total: OBJECT_STORAGE_PUT_TOTAL.clone(),
+            object_storage_put_parts: OBJECT_STORAGE_PUT_PARTS.clone(),
+            object_storage_download_num_bytes: OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.clone(),
+            object_storage_upload_num_bytes: OBJECT_STORAGE_UPLOAD_NUM_BYTES.clone(),
             object_storage_delete_requests_total,
             object_storage_bulk_delete_requests_total,
             object_storage_delete_request_duration,
@@ -171,63 +211,47 @@ pub struct CacheMetrics {
 
 #[derive(Clone)]
 pub struct SingleCacheMetrics {
-    pub in_cache_count: IntGauge,
-    pub in_cache_num_bytes: IntGauge,
-    pub hits_num_items: IntCounter,
-    pub hits_num_bytes: IntCounter,
-    pub misses_num_items: IntCounter,
-    pub evict_num_items: IntCounter,
-    pub evict_num_bytes: IntCounter,
+    pub in_cache_count: Gauge,
+    pub in_cache_num_bytes: Gauge,
+    pub hits_num_items: Counter,
+    pub hits_num_bytes: Counter,
+    pub misses_num_items: Counter,
+    pub evict_num_items: Counter,
+    pub evict_num_bytes: Counter,
 }
 
 impl CacheMetrics {
     pub fn for_component(component_name: &str) -> Self {
-        const CACHE_METRICS_NAMESPACE: &str = "cache";
-        let labels = [("component_name", component_name)];
         CacheMetrics {
             component_name: component_name.to_string(),
             cache_metrics: SingleCacheMetrics {
-                in_cache_count: new_gauge(
-                    "in_cache_count",
-                    "Count of in cache by component",
-                    CACHE_METRICS_NAMESPACE,
-                    &labels,
+                in_cache_count: gauge!(
+                    parent: &*CACHE_IN_CACHE_COUNT,
+                    "component_name" => component_name.to_string(),
                 ),
-                in_cache_num_bytes: new_gauge(
-                    "in_cache_num_bytes",
-                    "Number of bytes in cache by component",
-                    CACHE_METRICS_NAMESPACE,
-                    &labels,
+                in_cache_num_bytes: gauge!(
+                    parent: &*CACHE_IN_CACHE_NUM_BYTES,
+                    "component_name" => component_name.to_string(),
                 ),
-                hits_num_items: new_counter(
-                    "cache_hits_total",
-                    "Number of cache hits by component",
-                    CACHE_METRICS_NAMESPACE,
-                    &labels,
+                hits_num_items: counter!(
+                    parent: &*CACHE_HITS_TOTAL,
+                    "component_name" => component_name.to_string(),
                 ),
-                hits_num_bytes: new_counter(
-                    "cache_hits_bytes",
-                    "Number of cache hits in bytes by component",
-                    CACHE_METRICS_NAMESPACE,
-                    &labels,
+                hits_num_bytes: counter!(
+                    parent: &*CACHE_HITS_BYTES,
+                    "component_name" => component_name.to_string(),
                 ),
-                misses_num_items: new_counter(
-                    "cache_misses_total",
-                    "Number of cache misses by component",
-                    CACHE_METRICS_NAMESPACE,
-                    &labels,
+                misses_num_items: counter!(
+                    parent: &*CACHE_MISSES_TOTAL,
+                    "component_name" => component_name.to_string(),
                 ),
-                evict_num_items: new_counter(
-                    "cache_evict_total",
-                    "Number of cache entry evicted by component",
-                    CACHE_METRICS_NAMESPACE,
-                    &labels,
+                evict_num_items: counter!(
+                    parent: &*CACHE_EVICT_TOTAL,
+                    "component_name" => component_name.to_string(),
                 ),
-                evict_num_bytes: new_counter(
-                    "cache_evict_bytes",
-                    "Number of cache entry evicted in bytes by component",
-                    CACHE_METRICS_NAMESPACE,
-                    &labels,
+                evict_num_bytes: counter!(
+                    parent: &*CACHE_EVICT_BYTES,
+                    "component_name" => component_name.to_string(),
                 ),
             },
             virtual_caches_metrics: RwLock::default(),
@@ -240,56 +264,50 @@ impl CacheMetrics {
             return virtual_cache_metrics.clone();
         }
 
-        const CACHE_METRICS_NAMESPACE: &str = "cache";
         let capacity = config.capacity().as_u64().to_string();
         let policy = config.policy().to_string();
-        let labels = [
-            ("component_name", self.component_name.as_str()),
-            ("capacity", &capacity),
-            ("policy", &policy),
-        ];
         let new_virtual_cache_metrics = SingleCacheMetrics {
-            in_cache_count: new_gauge(
-                "virtual_in_cache_count",
-                "Count of in cache by component",
-                CACHE_METRICS_NAMESPACE,
-                &labels,
+            in_cache_count: gauge!(
+                parent: &*VIRTUAL_CACHE_IN_CACHE_COUNT,
+                "component_name" => self.component_name.clone(),
+                "capacity" => capacity.clone(),
+                "policy" => policy.clone(),
             ),
-            in_cache_num_bytes: new_gauge(
-                "virtual_in_cache_num_bytes",
-                "Number of bytes in cache by component",
-                CACHE_METRICS_NAMESPACE,
-                &labels,
+            in_cache_num_bytes: gauge!(
+                parent: &*VIRTUAL_CACHE_IN_CACHE_NUM_BYTES,
+                "component_name" => self.component_name.clone(),
+                "capacity" => capacity.clone(),
+                "policy" => policy.clone(),
             ),
-            hits_num_items: new_counter(
-                "virtual_cache_hits_total",
-                "Number of cache hits by component",
-                CACHE_METRICS_NAMESPACE,
-                &labels,
+            hits_num_items: counter!(
+                parent: &*VIRTUAL_CACHE_HITS_TOTAL,
+                "component_name" => self.component_name.clone(),
+                "capacity" => capacity.clone(),
+                "policy" => policy.clone(),
             ),
-            hits_num_bytes: new_counter(
-                "virtual_cache_hits_bytes",
-                "Number of cache hits in bytes by component",
-                CACHE_METRICS_NAMESPACE,
-                &labels,
+            hits_num_bytes: counter!(
+                parent: &*VIRTUAL_CACHE_HITS_BYTES,
+                "component_name" => self.component_name.clone(),
+                "capacity" => capacity.clone(),
+                "policy" => policy.clone(),
             ),
-            misses_num_items: new_counter(
-                "virtual_cache_misses_total",
-                "Number of cache misses by component",
-                CACHE_METRICS_NAMESPACE,
-                &labels,
+            misses_num_items: counter!(
+                parent: &*VIRTUAL_CACHE_MISSES_TOTAL,
+                "component_name" => self.component_name.clone(),
+                "capacity" => capacity.clone(),
+                "policy" => policy.clone(),
             ),
-            evict_num_items: new_counter(
-                "virtual_cache_evict_total",
-                "Number of cache entry evicted by component",
-                CACHE_METRICS_NAMESPACE,
-                &labels,
+            evict_num_items: counter!(
+                parent: &*VIRTUAL_CACHE_EVICT_TOTAL,
+                "component_name" => self.component_name.clone(),
+                "capacity" => capacity.clone(),
+                "policy" => policy.clone(),
             ),
-            evict_num_bytes: new_counter(
-                "virtual_cache_evict_bytes",
-                "Number of cache entry evicted in bytes by component",
-                CACHE_METRICS_NAMESPACE,
-                &labels,
+            evict_num_bytes: counter!(
+                parent: &*VIRTUAL_CACHE_EVICT_BYTES,
+                "component_name" => self.component_name.clone(),
+                "capacity" => capacity,
+                "policy" => policy,
             ),
         };
 
@@ -302,6 +320,132 @@ impl CacheMetrics {
     }
 }
 
+static CACHE_IN_CACHE_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "in_cache_count",
+        description: "Count of in cache by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static CACHE_IN_CACHE_NUM_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "in_cache_num_bytes",
+        description: "Number of bytes in cache by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static CACHE_HITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "cache_hits_total",
+        description: "Number of cache hits by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static CACHE_HITS_BYTES: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "cache_hits_bytes",
+        description: "Number of cache hits in bytes by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static CACHE_MISSES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "cache_misses_total",
+        description: "Number of cache misses by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static CACHE_EVICT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "cache_evict_total",
+        description: "Number of cache entry evicted by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static CACHE_EVICT_BYTES: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "cache_evict_bytes",
+        description: "Number of cache entry evicted in bytes by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static VIRTUAL_CACHE_IN_CACHE_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "virtual_in_cache_count",
+        description: "Count of in cache by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static VIRTUAL_CACHE_IN_CACHE_NUM_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "virtual_in_cache_num_bytes",
+        description: "Number of bytes in cache by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static VIRTUAL_CACHE_HITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "virtual_cache_hits_total",
+        description: "Number of cache hits by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static VIRTUAL_CACHE_HITS_BYTES: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "virtual_cache_hits_bytes",
+        description: "Number of cache hits in bytes by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static VIRTUAL_CACHE_MISSES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "virtual_cache_misses_total",
+        description: "Number of cache misses by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static VIRTUAL_CACHE_EVICT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "virtual_cache_evict_total",
+        description: "Number of cache entry evicted by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
+static VIRTUAL_CACHE_EVICT_BYTES: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "virtual_cache_evict_bytes",
+        description: "Number of cache entry evicted in bytes by component",
+        subsystem: "cache",
+        observable: true,
+    )
+});
+
 /// Storage counters exposes a bunch a set of storage/cache related metrics through a prometheus
 /// endpoint.
 pub static STORAGE_METRICS: LazyLock<StorageMetrics> = LazyLock::new(StorageMetrics::default);
@@ -312,11 +456,11 @@ pub static CACHE_METRICS_FOR_TESTS: LazyLock<CacheMetrics> =
 
 pub fn object_storage_get_slice_in_flight_guards(
     get_request_size: usize,
-) -> (GaugeGuard<'static>, GaugeGuard<'static>) {
+) -> (GaugeGuard, GaugeGuard) {
     let mut bytes_guard = GaugeGuard::from_gauge(
         &crate::STORAGE_METRICS.object_storage_get_slice_in_flight_num_bytes,
     );
-    bytes_guard.add(get_request_size as i64);
+    bytes_guard.add_f64(get_request_size as f64);
     let mut count_guard =
         GaugeGuard::from_gauge(&crate::STORAGE_METRICS.object_storage_get_slice_in_flight_count);
     count_guard.add(1);

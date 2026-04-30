@@ -18,6 +18,7 @@ use std::io::Cursor;
 
 use arrow::ipc::reader::StreamReader;
 use arrow::record_batch::RecordBatch;
+use quickwit_common::metrics::counter;
 use tracing::{debug, instrument, warn};
 
 use crate::metrics::PARQUET_ENGINE_METRICS;
@@ -63,27 +64,32 @@ impl ParquetIngestProcessor {
     #[instrument(skip(self, ipc_bytes), fields(bytes_len = ipc_bytes.len()))]
     pub fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
         // Record bytes ingested
-        PARQUET_ENGINE_METRICS
-            .ingest_bytes_total
-            .with_label_values(["points"])
-            .inc_by(ipc_bytes.len() as u64);
+        counter!(
+            parent: &PARQUET_ENGINE_METRICS.ingest_bytes_total,
+            "kind" => "points",
+        )
+        .increment(ipc_bytes.len() as u64);
 
         let batch = match ipc_to_record_batch(ipc_bytes) {
             Ok(batch) => batch,
             Err(e) => {
-                PARQUET_ENGINE_METRICS
-                    .errors_total
-                    .with_label_values(["ingest", "points"])
-                    .inc();
+                counter!(
+                    parent: &PARQUET_ENGINE_METRICS.errors_total,
+                    "operation" => "ingest",
+                    "kind" => "points",
+                )
+                .increment(1);
                 return Err(e);
             }
         };
 
         if let Err(e) = self.validate_schema(&batch) {
-            PARQUET_ENGINE_METRICS
-                .errors_total
-                .with_label_values(["ingest", "points"])
-                .inc();
+            counter!(
+                parent: &PARQUET_ENGINE_METRICS.errors_total,
+                "operation" => "ingest",
+                "kind" => "points",
+            )
+            .increment(1);
             return Err(e);
         }
 

@@ -35,7 +35,7 @@ pub struct ProcessedParquetBatch {
     /// Force commit flag - when true, accumulator should flush immediately.
     pub force_commit: bool,
     /// Memory tracking gauge guard.
-    _gauge_guard: GaugeGuard<'static>,
+    _gauge_guard: GaugeGuard,
 }
 
 impl ProcessedParquetBatch {

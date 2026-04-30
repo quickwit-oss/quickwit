@@ -102,7 +102,7 @@ impl Storage for TimeoutAndRetryStorage {
                         .get(attempt_id)
                         .or(crate::STORAGE_METRICS.get_slice_timeout_successes.last())
                         .unwrap()
-                        .inc();
+                        .increment(1);
                     return result;
                 }
                 Err(_elapsed) => {
@@ -112,7 +112,9 @@ impl Storage for TimeoutAndRetryStorage {
             }
         }
         rate_limited_warn!(limit_per_min=60, num_bytes=num_bytes, path=%path.display(), "all get_slice attempts timeouted");
-        crate::STORAGE_METRICS.get_slice_timeout_all_timeouts.inc();
+        crate::STORAGE_METRICS
+            .get_slice_timeout_all_timeouts
+            .increment(1);
         return Err(
             StorageErrorKind::Timeout.with_error(anyhow::anyhow!("internal timeout on get_slice"))
         );

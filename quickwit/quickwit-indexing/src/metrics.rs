@@ -14,99 +14,117 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{
-    IntCounter, IntCounterVec, IntGauge, IntGaugeVec, new_counter, new_counter_vec, new_gauge,
-    new_gauge_vec,
-};
+use quickwit_common::metrics::{Counter, Gauge, counter, gauge};
 
 pub struct IndexerMetrics {
-    pub processed_docs_total: IntCounterVec<2>,
-    pub processed_bytes: IntCounterVec<2>,
-    pub indexing_pipelines: IntGaugeVec<1>,
-    pub backpressure_micros: IntCounterVec<1>,
-    pub available_concurrent_upload_permits: IntGaugeVec<1>,
-    pub split_builders: IntGauge,
-    pub ongoing_merge_operations: IntGauge,
-    pub pending_merge_operations: IntGauge,
-    pub pending_merge_bytes: IntGauge,
+    pub processed_docs_total: Counter,
+    pub processed_bytes: Counter,
+    pub indexing_pipelines: Gauge,
+    pub backpressure_micros: Counter,
+    pub available_concurrent_upload_permits: Gauge,
+    pub split_builders: Gauge,
+    pub ongoing_merge_operations: Gauge,
+    pub pending_merge_operations: Gauge,
+    pub pending_merge_bytes: Gauge,
     // We use a lazy counter, as most users do not use Kafka.
     #[cfg_attr(not(feature = "kafka"), allow(dead_code))]
-    pub kafka_rebalance_total: LazyLock<IntCounter>,
+    pub kafka_rebalance_total: LazyLock<Counter>,
 }
+
+static PROCESSED_DOCS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "processed_docs_total",
+        description: "Number of processed docs by index, source and processed status in [valid, schema_error, parse_error, transform_error]",
+        subsystem: "indexing",
+    )
+});
+
+static PROCESSED_BYTES: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "processed_bytes",
+        description: "Number of bytes of processed documents by index, source and processed status in [valid, schema_error, parse_error, transform_error]",
+        subsystem: "indexing",
+    )
+});
+
+static INDEXING_PIPELINES: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "indexing_pipelines",
+        description: "Number of running indexing pipelines",
+        subsystem: "indexing",
+    )
+});
+
+static BACKPRESSURE_MICROS: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "backpressure_micros",
+        description: "Amount of time spent in backpressure (in micros). This time only includes the amount of time spent waiting for a place in the queue of another actor.",
+        subsystem: "indexing",
+    )
+});
+
+static AVAILABLE_CONCURRENT_UPLOAD_PERMITS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "concurrent_upload_available_permits_num",
+        description: "Number of available concurrent upload permits by component in [merger, indexer]",
+        subsystem: "indexing",
+    )
+});
+
+static SPLIT_BUILDERS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "split_builders",
+        description: "Number of existing index writer instances.",
+        subsystem: "indexing",
+    )
+});
+
+static ONGOING_MERGE_OPERATIONS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "ongoing_merge_operations",
+        description: "Number of ongoing merge operations",
+        subsystem: "indexing",
+        observable: true,
+    )
+});
+
+static PENDING_MERGE_OPERATIONS: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "pending_merge_operations",
+        description: "Number of pending merge operations",
+        subsystem: "indexing",
+    )
+});
+
+static PENDING_MERGE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+    gauge!(
+        name: "pending_merge_bytes",
+        description: "Number of pending merge bytes",
+        subsystem: "indexing",
+    )
+});
+
+static KAFKA_REBALANCE_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "kafka_rebalance_total",
+        description: "Number of kafka rebalances",
+        subsystem: "indexing",
+    )
+});
 
 impl Default for IndexerMetrics {
     fn default() -> Self {
         IndexerMetrics {
-            processed_docs_total: new_counter_vec(
-                "processed_docs_total",
-                "Number of processed docs by index, source and processed status in [valid, \
-                 schema_error, parse_error, transform_error]",
-                "indexing",
-                &[],
-                ["index", "docs_processed_status"],
-            ),
-            processed_bytes: new_counter_vec(
-                "processed_bytes",
-                "Number of bytes of processed documents by index, source and processed status in \
-                 [valid, schema_error, parse_error, transform_error]",
-                "indexing",
-                &[],
-                ["index", "docs_processed_status"],
-            ),
-            indexing_pipelines: new_gauge_vec(
-                "indexing_pipelines",
-                "Number of running indexing pipelines",
-                "indexing",
-                &[],
-                ["index"],
-            ),
-            backpressure_micros: new_counter_vec(
-                "backpressure_micros",
-                "Amount of time spent in backpressure (in micros). This time only includes the \
-                 amount of time spent waiting for a place in the queue of another actor.",
-                "indexing",
-                &[],
-                ["actor_name"],
-            ),
-            available_concurrent_upload_permits: new_gauge_vec(
-                "concurrent_upload_available_permits_num",
-                "Number of available concurrent upload permits by component in [merger, indexer]",
-                "indexing",
-                &[],
-                ["component"],
-            ),
-            split_builders: new_gauge(
-                "split_builders",
-                "Number of existing index writer instances.",
-                "indexing",
-                &[],
-            ),
-            ongoing_merge_operations: new_gauge(
-                "ongoing_merge_operations",
-                "Number of ongoing merge operations",
-                "indexing",
-                &[],
-            ),
-            pending_merge_operations: new_gauge(
-                "pending_merge_operations",
-                "Number of pending merge operations",
-                "indexing",
-                &[],
-            ),
-            pending_merge_bytes: new_gauge(
-                "pending_merge_bytes",
-                "Number of pending merge bytes",
-                "indexing",
-                &[],
-            ),
-            kafka_rebalance_total: LazyLock::new(|| {
-                new_counter(
-                    "kafka_rebalance_total",
-                    "Number of kafka rebalances",
-                    "indexing",
-                    &[],
-                )
-            }),
+            processed_docs_total: PROCESSED_DOCS_TOTAL.clone(),
+            processed_bytes: PROCESSED_BYTES.clone(),
+            indexing_pipelines: INDEXING_PIPELINES.clone(),
+            backpressure_micros: BACKPRESSURE_MICROS.clone(),
+            available_concurrent_upload_permits: AVAILABLE_CONCURRENT_UPLOAD_PERMITS.clone(),
+            split_builders: SPLIT_BUILDERS.clone(),
+            ongoing_merge_operations: ONGOING_MERGE_OPERATIONS.clone(),
+            pending_merge_operations: PENDING_MERGE_OPERATIONS.clone(),
+            pending_merge_bytes: PENDING_MERGE_BYTES.clone(),
+            kafka_rebalance_total: LazyLock::new(|| KAFKA_REBALANCE_TOTAL.clone()),
         }
     }
 }

@@ -52,10 +52,10 @@ impl<'a, DB: Database> Acquire<'a> for &TrackedPool<DB> {
 
         POSTGRES_METRICS
             .active_connections
-            .set(self.inner_pool.size() as i64);
+            .set(self.inner_pool.size() as f64);
         POSTGRES_METRICS
             .idle_connections
-            .set(self.inner_pool.num_idle() as i64);
+            .set(self.inner_pool.num_idle() as f64);
 
         Box::pin(async move {
             let mut gauge_guard = GaugeGuard::from_gauge(&POSTGRES_METRICS.acquire_connections);

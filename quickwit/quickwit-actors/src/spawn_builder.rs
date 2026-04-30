@@ -16,7 +16,7 @@ use std::fmt;
 use std::time::Duration;
 
 use anyhow::Context;
-use quickwit_common::metrics::IntCounter;
+use quickwit_common::metrics::Counter;
 use sync_wrapper::SyncWrapper;
 use tokio::sync::watch;
 use tracing::{debug, error, info};
@@ -91,7 +91,7 @@ pub struct SpawnBuilder<A: Actor> {
     spawn_ctx: SpawnContext,
     #[allow(clippy::type_complexity)]
     mailboxes: Option<(Mailbox<A>, Inbox<A>)>,
-    backpressure_micros_counter_opt: Option<IntCounter>,
+    backpressure_micros_counter_opt: Option<Counter>,
 }
 
 impl<A: Actor> SpawnBuilder<A> {
@@ -129,10 +129,7 @@ impl<A: Actor> SpawnBuilder<A> {
     ///
     /// When using `.ask` the amount of time counted may be misleading.
     /// (See `Mailbox::ask_with_backpressure_counter` for more details)
-    pub fn set_backpressure_micros_counter(
-        mut self,
-        backpressure_micros_counter: IntCounter,
-    ) -> Self {
+    pub fn set_backpressure_micros_counter(mut self, backpressure_micros_counter: Counter) -> Self {
         self.backpressure_micros_counter_opt = Some(backpressure_micros_counter);
         self
     }

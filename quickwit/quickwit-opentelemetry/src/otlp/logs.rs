@@ -16,6 +16,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use prost::Message;
+use quickwit_common::metrics::{counter, histogram};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
@@ -218,7 +219,6 @@ impl OtlpGrpcLogsService {
         &mut self,
         request: ExportLogsServiceRequest,
         index_id: IndexId,
-        labels: [&str; 4],
     ) -> Result<ExportLogsServiceResponse, Status> {
         let ParsedLogRecords {
             doc_batch,
@@ -238,16 +238,24 @@ impl OtlpGrpcLogsService {
             return Err(tonic::Status::internal(error_message));
         }
         let num_bytes = doc_batch.num_bytes() as u64;
-        self.store_logs(index_id, doc_batch).await?;
+        self.store_logs(index_id.clone(), doc_batch).await?;
 
-        OTLP_SERVICE_METRICS
-            .ingested_log_records_total
-            .with_label_values(labels)
-            .inc_by(num_log_records);
-        OTLP_SERVICE_METRICS
-            .ingested_bytes_total
-            .with_label_values(labels)
-            .inc_by(num_bytes);
+        counter!(
+            parent: &OTLP_SERVICE_METRICS.ingested_log_records_total,
+            "service" => "logs",
+            "index" => index_id.clone(),
+            "transport" => "grpc",
+            "format" => "protobuf",
+        )
+        .increment(num_log_records);
+        counter!(
+            parent: &OTLP_SERVICE_METRICS.ingested_bytes_total,
+            "service" => "logs",
+            "index" => index_id,
+            "transport" => "grpc",
+            "format" => "protobuf",
+        )
+        .increment(num_bytes);
 
         let response = ExportLogsServiceResponse {
             // `rejected_log_records=0` and `error_message=""` is consided a "full" success.
@@ -318,29 +326,38 @@ impl OtlpGrpcLogsService {
     ) -> Result<ExportLogsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = ["logs", &index_id, "grpc", "protobuf"];
-
-        OTLP_SERVICE_METRICS
-            .requests_total
-            .with_label_values(labels)
-            .inc();
-        let (export_res, is_error) =
-            match self.export_inner(request, index_id.clone(), labels).await {
-                ok @ Ok(_) => (ok, "false"),
-                err @ Err(_) => {
-                    OTLP_SERVICE_METRICS
-                        .request_errors_total
-                        .with_label_values(labels)
-                        .inc();
-                    (err, "true")
-                }
-            };
+        counter!(
+            parent: &OTLP_SERVICE_METRICS.requests_total,
+            "service" => "logs",
+            "index" => index_id.clone(),
+            "transport" => "grpc",
+            "format" => "protobuf",
+        )
+        .increment(1);
+        let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
+            ok @ Ok(_) => (ok, "false"),
+            err @ Err(_) => {
+                counter!(
+                    parent: &OTLP_SERVICE_METRICS.request_errors_total,
+                    "service" => "logs",
+                    "index" => index_id.clone(),
+                    "transport" => "grpc",
+                    "format" => "protobuf",
+                )
+                .increment(1);
+                (err, "true")
+            }
+        };
         let elapsed = start.elapsed().as_secs_f64();
-        let labels = ["logs", &index_id, "grpc", "protobuf", is_error];
-        OTLP_SERVICE_METRICS
-            .request_duration_seconds
-            .with_label_values(labels)
-            .observe(elapsed);
+        histogram!(
+            parent: &OTLP_SERVICE_METRICS.request_duration_seconds,
+            "service" => "logs",
+            "index" => index_id,
+            "transport" => "grpc",
+            "format" => "protobuf",
+            "error" => is_error,
+        )
+        .record(elapsed);
 
         export_res
     }

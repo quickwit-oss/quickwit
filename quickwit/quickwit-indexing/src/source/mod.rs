@@ -519,7 +519,7 @@ pub(super) struct BatchBuilder {
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
     force_commit: bool,
-    gauge_guard: GaugeGuard<'static>,
+    gauge_guard: GaugeGuard,
 }
 
 impl BatchBuilder {

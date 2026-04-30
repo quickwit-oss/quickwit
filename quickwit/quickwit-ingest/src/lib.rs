@@ -107,12 +107,15 @@ pub async fn start_ingest_api_service(
 
 #[macro_export]
 macro_rules! with_lock_metrics {
-    ($future:expr, $($label:tt),*) => {
+    ($future:expr, $operation:expr, $kind:expr) => {
         {
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS
-                .wal_acquire_lock_requests_in_flight
-                .with_label_values([$($label),*])
-                .inc();
+            quickwit_common::metrics::gauge!(
+                parent: &$crate::ingest_v2::metrics::INGEST_V2_METRICS
+                    .wal_acquire_lock_requests_in_flight,
+                "operation" => $operation,
+                "type" => $kind,
+            )
+            .increment(1.0);
 
             let now = std::time::Instant::now();
             let guard = $future;
@@ -124,14 +127,20 @@ macro_rules! with_lock_metrics {
                     "lock acquisition took {}ms", elapsed.as_millis()
                 );
             }
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS
-                .wal_acquire_lock_requests_in_flight
-                .with_label_values([$($label),*])
-                .dec();
-            $crate::ingest_v2::metrics::INGEST_V2_METRICS
-                .wal_acquire_lock_request_duration_secs
-                .with_label_values([$($label),*])
-                .observe(elapsed.as_secs_f64());
+            quickwit_common::metrics::gauge!(
+                parent: &$crate::ingest_v2::metrics::INGEST_V2_METRICS
+                    .wal_acquire_lock_requests_in_flight,
+                "operation" => $operation,
+                "type" => $kind,
+            )
+            .decrement(1.0);
+            quickwit_common::metrics::histogram!(
+                parent: &$crate::ingest_v2::metrics::INGEST_V2_METRICS
+                    .wal_acquire_lock_request_duration_secs,
+                "operation" => $operation,
+                "type" => $kind,
+            )
+            .record(elapsed.as_secs_f64());
 
             guard
         }

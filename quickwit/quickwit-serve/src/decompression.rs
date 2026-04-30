@@ -108,7 +108,7 @@ pub(crate) fn get_body_bytes() -> impl Filter<Extract = (Body,), Error = warp::R
 
 pub(crate) struct Body {
     pub content: Bytes,
-    _gauge_guard: GaugeGuard<'static>,
+    _gauge_guard: GaugeGuard,
     _permit: LoadShieldPermit,
 }
 

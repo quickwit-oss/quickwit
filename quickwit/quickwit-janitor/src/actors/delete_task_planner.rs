@@ -21,6 +21,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::extract_time_range;
+use quickwit_common::metrics::gauge;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::actors::{MergeSchedulerService, MergeSplitDownloader, schedule_merge};
@@ -205,11 +206,13 @@ impl DeleteTaskPlanner {
                 )
                 .await?;
                 let index_label =
-                    quickwit_common::metrics::index_label(self.index_uid.index_id.as_str());
-                JANITOR_METRICS
-                    .ongoing_num_delete_operations_total
-                    .with_label_values([index_label])
-                    .set(self.ongoing_delete_operations_inventory.list().len() as i64);
+                    quickwit_common::metrics::index_label(self.index_uid.index_id.as_str())
+                        .to_string();
+                gauge!(
+                    parent: &JANITOR_METRICS.ongoing_num_delete_operations_total,
+                    "index" => index_label,
+                )
+                .set(self.ongoing_delete_operations_inventory.list().len() as f64);
             }
         }
 

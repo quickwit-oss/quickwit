@@ -25,7 +25,7 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use mrecordlog::error::CreateQueueError;
 use quickwit_cluster::Cluster;
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS, counter};
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -332,10 +332,11 @@ impl Ingester {
                     advise_reset_shards_response.shards_to_truncate.len(),
                     now.elapsed().pretty_display()
                 );
-                INGEST_V2_METRICS
-                    .reset_shards_operations_total
-                    .with_label_values(["success"])
-                    .inc();
+                counter!(
+                    parent: &INGEST_V2_METRICS.reset_shards_operations_total,
+                    "status" => "success",
+                )
+                .increment(1);
 
                 let wal_usage = state_guard.mrecordlog.resource_usage();
                 report_wal_usage(wal_usage);
@@ -343,18 +344,20 @@ impl Ingester {
             Ok(Err(error)) => {
                 warn!("advise reset shards request failed: {error}");
 
-                INGEST_V2_METRICS
-                    .reset_shards_operations_total
-                    .with_label_values(["error"])
-                    .inc();
+                counter!(
+                    parent: &INGEST_V2_METRICS.reset_shards_operations_total,
+                    "status" => "error",
+                )
+                .increment(1);
             }
             Err(_) => {
                 warn!("advise reset shards request timed out");
 
-                INGEST_V2_METRICS
-                    .reset_shards_operations_total
-                    .with_label_values(["timeout"])
-                    .inc();
+                counter!(
+                    parent: &INGEST_V2_METRICS.reset_shards_operations_total,
+                    "status" => "timeout",
+                )
+                .increment(1);
             }
         };
         // We still hold the permit while sleeping so we effectively rate limit the reset shards
@@ -567,12 +570,16 @@ impl Ingester {
                 };
 
                 if valid_doc_batch.is_empty() {
-                    crate::metrics::INGEST_METRICS
-                        .ingested_docs_invalid
-                        .inc_by(parse_failures.len() as u64);
-                    crate::metrics::INGEST_METRICS
-                        .ingested_docs_bytes_invalid
-                        .inc_by(original_batch_num_bytes);
+                    counter!(
+                        parent: &crate::metrics::INGEST_METRICS.docs_total,
+                        "validity" => "invalid",
+                    )
+                    .increment(parse_failures.len() as u64);
+                    counter!(
+                        parent: &crate::metrics::INGEST_METRICS.docs_bytes_total,
+                        "validity" => "invalid",
+                    )
+                    .increment(original_batch_num_bytes);
                     let persist_success = PersistSuccess {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
@@ -586,19 +593,27 @@ impl Ingester {
                     continue;
                 };
 
-                crate::metrics::INGEST_METRICS
-                    .ingested_docs_valid
-                    .inc_by(valid_doc_batch.num_docs() as u64);
-                crate::metrics::INGEST_METRICS
-                    .ingested_docs_bytes_valid
-                    .inc_by(valid_doc_batch.num_bytes() as u64);
+                counter!(
+                    parent: &crate::metrics::INGEST_METRICS.docs_total,
+                    "validity" => "valid",
+                )
+                .increment(valid_doc_batch.num_docs() as u64);
+                counter!(
+                    parent: &crate::metrics::INGEST_METRICS.docs_bytes_total,
+                    "validity" => "valid",
+                )
+                .increment(valid_doc_batch.num_bytes() as u64);
                 if !parse_failures.is_empty() {
-                    crate::metrics::INGEST_METRICS
-                        .ingested_docs_invalid
-                        .inc_by(parse_failures.len() as u64);
-                    crate::metrics::INGEST_METRICS
-                        .ingested_docs_bytes_invalid
-                        .inc_by(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
+                    counter!(
+                        parent: &crate::metrics::INGEST_METRICS.docs_total,
+                        "validity" => "invalid",
+                    )
+                    .increment(parse_failures.len() as u64);
+                    counter!(
+                        parent: &crate::metrics::INGEST_METRICS.docs_bytes_total,
+                        "validity" => "invalid",
+                    )
+                    .increment(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
                 }
                 let valid_batch_num_bytes = valid_doc_batch.num_bytes() as u64;
                 shard.rate_meter.update(valid_batch_num_bytes);

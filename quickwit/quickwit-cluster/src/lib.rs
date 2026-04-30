@@ -31,7 +31,7 @@ use chitchat::transport::{Socket, Transport, UdpSocket};
 use chitchat::{ChitchatMessage, Serializable};
 pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 pub use grpc_service::cluster_grpc_server;
-use quickwit_common::metrics::IntCounter;
+use quickwit_common::metrics::Counter;
 use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{GrpcConfig, NodeConfig, TlsConfig};
@@ -74,10 +74,10 @@ struct CountingUdpTransport;
 
 struct CountingUdpSocket {
     socket: UdpSocket,
-    gossip_recv: IntCounter,
-    gossip_recv_bytes: IntCounter,
-    gossip_send: IntCounter,
-    gossip_send_bytes: IntCounter,
+    gossip_recv: Counter,
+    gossip_recv_bytes: Counter,
+    gossip_send: Counter,
+    gossip_send_bytes: Counter,
 }
 
 #[async_trait]
@@ -85,16 +85,16 @@ impl Socket for CountingUdpSocket {
     async fn send(&mut self, to: SocketAddr, msg: ChitchatMessage) -> anyhow::Result<()> {
         let msg_len = msg.serialized_len() as u64;
         self.socket.send(to, msg).await?;
-        self.gossip_send.inc();
-        self.gossip_send_bytes.inc_by(msg_len);
+        self.gossip_send.increment(1);
+        self.gossip_send_bytes.increment(msg_len);
         Ok(())
     }
 
     async fn recv(&mut self) -> anyhow::Result<(SocketAddr, ChitchatMessage)> {
         let (socket_addr, msg) = self.socket.recv().await?;
-        self.gossip_recv.inc();
+        self.gossip_recv.increment(1);
         let msg_len = msg.serialized_len() as u64;
-        self.gossip_recv_bytes.inc_by(msg_len);
+        self.gossip_recv_bytes.increment(msg_len);
         Ok((socket_addr, msg))
     }
 }

@@ -20,7 +20,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS, counter};
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_proto::control_plane::{
@@ -371,10 +371,11 @@ impl IngestRouter {
             let az_locality = state_guard
                 .routing_table
                 .classify_az_locality(&ingester_node.node_id, &self.ingester_pool);
-            INGEST_V2_METRICS
-                .ingest_attempts
-                .with_label_values([az_locality])
-                .inc();
+            counter!(
+                parent: &INGEST_V2_METRICS.ingest_attempts,
+                "az_routing" => az_locality,
+            )
+            .increment(1);
             let persist_subrequest = PersistSubrequest {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: Some(ingester_node.index_uid.clone()),
@@ -497,32 +498,36 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
         Ok(ingest_response) => {
             ingest_results_metrics
                 .success
-                .inc_by(ingest_response.successes.len() as u64);
+                .increment(ingest_response.successes.len() as u64);
             for ingest_failure in &ingest_response.failures {
                 match ingest_failure.reason() {
                     IngestFailureReason::CircuitBreaker => {
-                        ingest_results_metrics.circuit_breaker.inc();
+                        ingest_results_metrics.circuit_breaker.increment(1);
                     }
-                    IngestFailureReason::Unspecified => ingest_results_metrics.unspecified.inc(),
+                    IngestFailureReason::Unspecified => {
+                        ingest_results_metrics.unspecified.increment(1)
+                    }
                     IngestFailureReason::IndexNotFound => {
-                        ingest_results_metrics.index_not_found.inc()
+                        ingest_results_metrics.index_not_found.increment(1)
                     }
                     IngestFailureReason::SourceNotFound => {
-                        ingest_results_metrics.source_not_found.inc()
+                        ingest_results_metrics.source_not_found.increment(1)
                     }
-                    IngestFailureReason::Internal => ingest_results_metrics.internal.inc(),
+                    IngestFailureReason::Internal => ingest_results_metrics.internal.increment(1),
                     IngestFailureReason::NoShardsAvailable => {
-                        ingest_results_metrics.no_shards_available.inc()
+                        ingest_results_metrics.no_shards_available.increment(1)
                     }
                     IngestFailureReason::ShardRateLimited => {
-                        ingest_results_metrics.shard_rate_limited.inc()
+                        ingest_results_metrics.shard_rate_limited.increment(1)
                     }
-                    IngestFailureReason::WalFull => ingest_results_metrics.wal_full.inc(),
-                    IngestFailureReason::Timeout => ingest_results_metrics.timeout.inc(),
+                    IngestFailureReason::WalFull => ingest_results_metrics.wal_full.increment(1),
+                    IngestFailureReason::Timeout => ingest_results_metrics.timeout.increment(1),
                     IngestFailureReason::RouterLoadShedding => {
-                        ingest_results_metrics.router_load_shedding.inc()
+                        ingest_results_metrics.router_load_shedding.increment(1)
                     }
-                    IngestFailureReason::LoadShedding => ingest_results_metrics.load_shedding.inc(),
+                    IngestFailureReason::LoadShedding => {
+                        ingest_results_metrics.load_shedding.increment(1)
+                    }
                 }
             }
         }
@@ -531,43 +536,47 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
                 RateLimitingCause::RouterLoadShedding => {
                     ingest_results_metrics
                         .router_load_shedding
-                        .inc_by(num_subrequests);
+                        .increment(num_subrequests);
                 }
-                RateLimitingCause::LoadShedding => {
-                    ingest_results_metrics.load_shedding.inc_by(num_subrequests)
-                }
+                RateLimitingCause::LoadShedding => ingest_results_metrics
+                    .load_shedding
+                    .increment(num_subrequests),
                 RateLimitingCause::WalFull => {
-                    ingest_results_metrics.wal_full.inc_by(num_subrequests);
+                    ingest_results_metrics.wal_full.increment(num_subrequests);
                 }
                 RateLimitingCause::CircuitBreaker => {
                     ingest_results_metrics
                         .circuit_breaker
-                        .inc_by(num_subrequests);
+                        .increment(num_subrequests);
                 }
                 RateLimitingCause::ShardRateLimiting => {
                     ingest_results_metrics
                         .shard_rate_limited
-                        .inc_by(num_subrequests);
+                        .increment(num_subrequests);
                 }
                 RateLimitingCause::Unknown => {
-                    ingest_results_metrics.unspecified.inc_by(num_subrequests);
+                    ingest_results_metrics
+                        .unspecified
+                        .increment(num_subrequests);
                 }
             },
             IngestV2Error::Timeout(_) => {
                 ingest_results_metrics
                     .router_timeout
-                    .inc_by(num_subrequests);
+                    .increment(num_subrequests);
             }
             IngestV2Error::ShardNotFound { .. } => {
                 ingest_results_metrics
                     .shard_not_found
-                    .inc_by(num_subrequests);
+                    .increment(num_subrequests);
             }
             IngestV2Error::Unavailable(_) => {
-                ingest_results_metrics.unavailable.inc_by(num_subrequests);
+                ingest_results_metrics
+                    .unavailable
+                    .increment(num_subrequests);
             }
             IngestV2Error::Internal(_) => {
-                ingest_results_metrics.internal.inc_by(num_subrequests);
+                ingest_results_metrics.internal.increment(num_subrequests);
             }
         },
     }

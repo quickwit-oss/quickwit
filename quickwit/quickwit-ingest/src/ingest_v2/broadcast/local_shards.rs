@@ -197,10 +197,10 @@ impl ShardThroughputTimeSeriesMap {
                 .div_ceil(ONE_MIB.as_u64());
             INGEST_V2_METRICS
                 .shard_st_throughput_mib
-                .observe(short_term_ingestion_rate_mib_per_sec_u64 as f64);
+                .record(short_term_ingestion_rate_mib_per_sec_u64 as f64);
             INGEST_V2_METRICS
                 .shard_lt_throughput_mib
-                .observe(long_term_ingestion_rate_mib_per_sec_u64 as f64);
+                .record(long_term_ingestion_rate_mib_per_sec_u64 as f64);
 
             let short_term_ingestion_rate =
                 RateMibPerSec(short_term_ingestion_rate_mib_per_sec_u64 as u16);
@@ -300,10 +300,10 @@ impl BroadcastLocalShardsTask {
                 }
             }
         }
-        INGEST_V2_METRICS.open_shards.set(num_open_shards as i64);
+        INGEST_V2_METRICS.open_shards.set(num_open_shards as f64);
         INGEST_V2_METRICS
             .closed_shards
-            .set(num_closed_shards as i64);
+            .set(num_closed_shards as f64);
 
         let snapshot = LocalShardsSnapshot {
             per_source_shard_infos,

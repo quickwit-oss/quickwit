@@ -23,6 +23,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::metrics::gauge;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
@@ -203,26 +204,29 @@ impl Uploader {
             match self.uploader_type {
                 UploaderType::IndexUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_INDEX,
-                    INDEXER_METRICS
-                        .available_concurrent_upload_permits
-                        .with_label_values(["indexer"]),
+                    gauge!(
+                        parent: &INDEXER_METRICS.available_concurrent_upload_permits,
+                        "component" => "indexer",
+                    ),
                 ),
                 UploaderType::MergeUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
-                    INDEXER_METRICS
-                        .available_concurrent_upload_permits
-                        .with_label_values(["merger"]),
+                    gauge!(
+                        parent: &INDEXER_METRICS.available_concurrent_upload_permits,
+                        "component" => "merger",
+                    ),
                 ),
                 UploaderType::DeleteUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
-                    INDEXER_METRICS
-                        .available_concurrent_upload_permits
-                        .with_label_values(["merger"]),
+                    gauge!(
+                        parent: &INDEXER_METRICS.available_concurrent_upload_permits,
+                        "component" => "merger",
+                    ),
                 ),
             };
         let concurrent_upload_permits = concurrent_upload_permits_once_cell
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_split_uploads));
-        concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as i64);
+        concurrent_upload_permits_gauge.set(concurrent_upload_permits.available_permits() as f64);
         concurrent_upload_permits
             .acquire()
             .await

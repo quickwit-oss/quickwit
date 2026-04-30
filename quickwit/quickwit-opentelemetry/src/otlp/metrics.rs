@@ -14,73 +14,85 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{
-    HistogramVec, IntCounterVec, exponential_buckets, new_counter_vec, new_histogram_vec,
-};
+use quickwit_common::metrics::{Counter, Histogram, counter, exponential_buckets, histogram};
 
 pub struct OtlpServiceMetrics {
-    pub requests_total: IntCounterVec<4>,
-    pub request_errors_total: IntCounterVec<4>,
-    pub request_duration_seconds: HistogramVec<5>,
-    pub ingested_log_records_total: IntCounterVec<4>,
-    pub ingested_spans_total: IntCounterVec<4>,
-    pub ingested_data_points_total: IntCounterVec<4>,
-    pub ingested_bytes_total: IntCounterVec<4>,
+    pub requests_total: Counter,
+    pub request_errors_total: Counter,
+    pub request_duration_seconds: Histogram,
+    pub ingested_log_records_total: Counter,
+    pub ingested_spans_total: Counter,
+    pub ingested_data_points_total: Counter,
+    pub ingested_bytes_total: Counter,
 }
+
+static REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "requests_total",
+        description: "Number of requests",
+        subsystem: "otlp",
+    )
+});
+
+static REQUEST_ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "request_errors_total",
+        description: "Number of failed requests",
+        subsystem: "otlp",
+    )
+});
+
+static REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        name: "request_duration_seconds",
+        description: "Duration of requests",
+        subsystem: "otlp",
+        buckets: exponential_buckets(0.02, 2.0, 8).unwrap(),
+    )
+});
+
+static INGESTED_LOG_RECORDS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "ingested_log_records_total",
+        description: "Number of log records ingested",
+        subsystem: "otlp",
+    )
+});
+
+static INGESTED_SPANS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "ingested_spans_total",
+        description: "Number of spans ingested",
+        subsystem: "otlp",
+    )
+});
+
+static INGESTED_DATA_POINTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "ingested_data_points_total",
+        description: "Number of metric data points ingested",
+        subsystem: "otlp",
+    )
+});
+
+static INGESTED_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
+        name: "ingested_bytes_total",
+        description: "Number of bytes ingested",
+        subsystem: "otlp",
+    )
+});
 
 impl Default for OtlpServiceMetrics {
     fn default() -> Self {
         Self {
-            requests_total: new_counter_vec(
-                "requests_total",
-                "Number of requests",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-            request_errors_total: new_counter_vec(
-                "request_errors_total",
-                "Number of failed requests",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-            request_duration_seconds: new_histogram_vec(
-                "request_duration_seconds",
-                "Duration of requests",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format", "error"],
-                exponential_buckets(0.02, 2.0, 8).unwrap(),
-            ),
-            ingested_log_records_total: new_counter_vec(
-                "ingested_log_records_total",
-                "Number of log records ingested",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-            ingested_spans_total: new_counter_vec(
-                "ingested_spans_total",
-                "Number of spans ingested",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-            ingested_data_points_total: new_counter_vec(
-                "ingested_data_points_total",
-                "Number of metric data points ingested",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
-            ingested_bytes_total: new_counter_vec(
-                "ingested_bytes_total",
-                "Number of bytes ingested",
-                "otlp",
-                &[],
-                ["service", "index", "transport", "format"],
-            ),
+            requests_total: REQUESTS_TOTAL.clone(),
+            request_errors_total: REQUEST_ERRORS_TOTAL.clone(),
+            request_duration_seconds: REQUEST_DURATION_SECONDS.clone(),
+            ingested_log_records_total: INGESTED_LOG_RECORDS_TOTAL.clone(),
+            ingested_spans_total: INGESTED_SPANS_TOTAL.clone(),
+            ingested_data_points_total: INGESTED_DATA_POINTS_TOTAL.clone(),
+            ingested_bytes_total: INGESTED_BYTES_TOTAL.clone(),
         }
     }
 }

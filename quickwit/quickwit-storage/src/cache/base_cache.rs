@@ -133,10 +133,12 @@ pub struct Lru<K: Hash + Eq, V> {
 impl<K: Hash + Eq, V> Drop for Lru<K, V> {
     fn drop(&mut self) {
         // we don't count this toward evicted entries, as we are clearing the whole cache
-        self.cache_metrics.in_cache_count.sub(self.num_items as i64);
+        self.cache_metrics
+            .in_cache_count
+            .decrement(self.num_items as f64);
         self.cache_metrics
             .in_cache_num_bytes
-            .sub(self.num_bytes as i64);
+            .decrement(self.num_bytes as f64);
     }
 }
 
@@ -158,17 +160,21 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
     fn record_item(&mut self, num_bytes: u64) {
         self.num_items += 1;
         self.num_bytes += num_bytes;
-        self.cache_metrics.in_cache_count.inc();
-        self.cache_metrics.in_cache_num_bytes.add(num_bytes as i64);
+        self.cache_metrics.in_cache_count.increment(1.0);
+        self.cache_metrics
+            .in_cache_num_bytes
+            .increment(num_bytes as f64);
     }
 
     fn drop_item(&mut self, num_bytes: u64) {
         self.num_items -= 1;
         self.num_bytes -= num_bytes;
-        self.cache_metrics.in_cache_count.dec();
-        self.cache_metrics.in_cache_num_bytes.sub(num_bytes as i64);
-        self.cache_metrics.evict_num_items.inc();
-        self.cache_metrics.evict_num_bytes.inc_by(num_bytes);
+        self.cache_metrics.in_cache_count.decrement(1.0);
+        self.cache_metrics
+            .in_cache_num_bytes
+            .decrement(num_bytes as f64);
+        self.cache_metrics.evict_num_items.increment(1);
+        self.cache_metrics.evict_num_bytes.increment(num_bytes);
     }
 
     pub fn get<Q>(&mut self, cache_key: &Q) -> Option<V>
@@ -178,11 +184,13 @@ impl<K: Hash + Eq, V: ValueLen + Clone> Lru<K, V> {
     {
         let item_opt = self.lru_cache.get_mut(cache_key);
         if let Some(item) = item_opt {
-            self.cache_metrics.hits_num_items.inc();
-            self.cache_metrics.hits_num_bytes.inc_by(item.len() as u64);
+            self.cache_metrics.hits_num_items.increment(1);
+            self.cache_metrics
+                .hits_num_bytes
+                .increment(item.len() as u64);
             Some(item.payload())
         } else {
-            self.cache_metrics.misses_num_items.inc();
+            self.cache_metrics.misses_num_items.increment(1);
             None
         }
     }
@@ -252,10 +260,10 @@ impl<K: Hash + Eq, V: ValueLen> Drop for S3Fifo<K, V> {
         // we don't count this toward evicted entries, as we are clearing the whole cache
         self.cache_metrics
             .in_cache_count
-            .sub(self.cache.len() as i64);
+            .decrement(self.cache.len() as f64);
         self.cache_metrics
             .in_cache_num_bytes
-            .sub(self.cache.weight() as i64);
+            .decrement(self.cache.weight() as f64);
     }
 }
 
@@ -307,11 +315,13 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
     {
         let item_opt = self.cache.get(cache_key);
         if let Some(item) = item_opt {
-            self.cache_metrics.hits_num_items.inc();
-            self.cache_metrics.hits_num_bytes.inc_by(item.len() as u64);
+            self.cache_metrics.hits_num_items.increment(1);
+            self.cache_metrics
+                .hits_num_bytes
+                .increment(item.len() as u64);
             Some(item.clone())
         } else {
-            self.cache_metrics.misses_num_items.inc();
+            self.cache_metrics.misses_num_items.increment(1);
             None
         }
     }
@@ -332,17 +342,19 @@ impl<K: Hash + Eq, V: ValueLen + Clone> S3Fifo<K, V> {
             return;
         }
 
-        self.cache_metrics.in_cache_count.inc();
+        self.cache_metrics.in_cache_count.increment(1.0);
         self.cache_metrics
             .in_cache_num_bytes
-            .add(value.len() as i64);
+            .increment(value.len() as f64);
         let evicted = self.cache.insert_with_lifecycle(key, value);
-        self.cache_metrics.in_cache_count.sub(evicted.count as i64);
+        self.cache_metrics
+            .in_cache_count
+            .decrement(evicted.count as f64);
         self.cache_metrics
             .in_cache_num_bytes
-            .sub(evicted.bytes as i64);
-        self.cache_metrics.evict_num_items.inc_by(evicted.count);
-        self.cache_metrics.evict_num_bytes.inc_by(evicted.bytes);
+            .decrement(evicted.bytes as f64);
+        self.cache_metrics.evict_num_items.increment(evicted.count);
+        self.cache_metrics.evict_num_bytes.increment(evicted.bytes);
     }
 }
 
@@ -355,10 +367,14 @@ struct CapacityTracker<V: ValueLen> {
 impl<V: ValueLen> Drop for CapacityTracker<V> {
     fn drop(&mut self) {
         if let Some(cache_metrics) = self.cache_metrics.upgrade() {
-            cache_metrics.in_cache_count.dec();
-            cache_metrics.in_cache_num_bytes.sub(self.item.len() as i64);
-            cache_metrics.evict_num_items.inc();
-            cache_metrics.evict_num_bytes.inc_by(self.item.len() as u64);
+            cache_metrics.in_cache_count.decrement(1.0);
+            cache_metrics
+                .in_cache_num_bytes
+                .decrement(self.item.len() as f64);
+            cache_metrics.evict_num_items.increment(1);
+            cache_metrics
+                .evict_num_bytes
+                .increment(self.item.len() as u64);
         }
     }
 }
@@ -380,10 +396,10 @@ impl<K: Hash + Eq, V: ValueLen> Drop for TinyLfu<K, V> {
         // we don't count this toward evicted entries, as we are clearing the whole cache
         self.cache_metrics
             .in_cache_count
-            .sub(self.cache.entry_count() as i64);
+            .decrement(self.cache.entry_count() as f64);
         self.cache_metrics
             .in_cache_num_bytes
-            .sub(self.cache.weighted_size() as i64);
+            .decrement(self.cache.weighted_size() as f64);
     }
 }
 
@@ -411,13 +427,13 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
     {
         let item_opt = self.cache.get(cache_key);
         if let Some(item) = item_opt {
-            self.cache_metrics.hits_num_items.inc();
+            self.cache_metrics.hits_num_items.increment(1);
             self.cache_metrics
                 .hits_num_bytes
-                .inc_by(item.item.len() as u64);
+                .increment(item.item.len() as u64);
             Some(item.item.clone())
         } else {
-            self.cache_metrics.misses_num_items.inc();
+            self.cache_metrics.misses_num_items.increment(1);
             None
         }
     }
@@ -438,10 +454,10 @@ impl<K: Hash + Eq + Send + Sync + 'static, V: ValueLen + Clone + Send + Sync + '
             return;
         }
 
-        self.cache_metrics.in_cache_count.inc();
+        self.cache_metrics.in_cache_count.increment(1.0);
         self.cache_metrics
             .in_cache_num_bytes
-            .add(value.len() as i64);
+            .increment(value.len() as f64);
         self.cache.insert(
             key,
             CapacityTracker {

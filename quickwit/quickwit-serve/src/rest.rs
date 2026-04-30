@@ -19,6 +19,7 @@ use std::sync::Arc;
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
+use quickwit_common::metrics::{counter, histogram};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
 use quickwit_search::SearchService;
@@ -137,15 +138,20 @@ pub(crate) async fn start_rest_server(
     let request_counter = warp::log::custom(|info: Info| {
         let elapsed = info.elapsed();
         let status = info.status();
-        let label_values: [&str; 2] = [info.method().as_str(), status.as_str()];
-        crate::SERVE_METRICS
-            .request_duration_secs
-            .with_label_values(label_values)
-            .observe(elapsed.as_secs_f64());
-        crate::SERVE_METRICS
-            .http_requests_total
-            .with_label_values(label_values)
-            .inc();
+        let method = info.method().as_str().to_string();
+        let status_code = status.as_str().to_string();
+        histogram!(
+            parent: &crate::SERVE_METRICS.request_duration_secs,
+            "method" => method.clone(),
+            "status_code" => status_code.clone(),
+        )
+        .record(elapsed.as_secs_f64());
+        counter!(
+            parent: &crate::SERVE_METRICS.http_requests_total,
+            "method" => method,
+            "status_code" => status_code,
+        )
+        .increment(1);
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")

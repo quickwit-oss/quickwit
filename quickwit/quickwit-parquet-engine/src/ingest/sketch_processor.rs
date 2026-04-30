@@ -16,6 +16,7 @@
 
 use arrow::array::AsArray;
 use arrow::record_batch::RecordBatch;
+use quickwit_common::metrics::counter;
 use tracing::{debug, instrument, warn};
 
 use super::processor::IngestError;
@@ -41,35 +42,42 @@ impl SketchParquetIngestProcessor {
     /// sketch arrays are inconsistent.
     #[instrument(skip(self, ipc_bytes), fields(bytes_len = ipc_bytes.len()))]
     pub fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
-        PARQUET_ENGINE_METRICS
-            .ingest_bytes_total
-            .with_label_values(["sketches"])
-            .inc_by(ipc_bytes.len() as u64);
+        counter!(
+            parent: &PARQUET_ENGINE_METRICS.ingest_bytes_total,
+            "kind" => "sketches",
+        )
+        .increment(ipc_bytes.len() as u64);
 
         let batch = match super::processor::ipc_to_record_batch(ipc_bytes) {
             Ok(batch) => batch,
             Err(err) => {
-                PARQUET_ENGINE_METRICS
-                    .errors_total
-                    .with_label_values(["ingest", "sketches"])
-                    .inc();
+                counter!(
+                    parent: &PARQUET_ENGINE_METRICS.errors_total,
+                    "operation" => "ingest",
+                    "kind" => "sketches",
+                )
+                .increment(1);
                 return Err(err);
             }
         };
 
         if let Err(err) = self.validate_schema(&batch) {
-            PARQUET_ENGINE_METRICS
-                .errors_total
-                .with_label_values(["ingest", "sketches"])
-                .inc();
+            counter!(
+                parent: &PARQUET_ENGINE_METRICS.errors_total,
+                "operation" => "ingest",
+                "kind" => "sketches",
+            )
+            .increment(1);
             return Err(err);
         }
 
         if let Err(err) = self.validate_sketch_arrays(&batch) {
-            PARQUET_ENGINE_METRICS
-                .errors_total
-                .with_label_values(["ingest", "sketches"])
-                .inc();
+            counter!(
+                parent: &PARQUET_ENGINE_METRICS.errors_total,
+                "operation" => "ingest",
+                "kind" => "sketches",
+            )
+            .increment(1);
             return Err(err);
         }
 
