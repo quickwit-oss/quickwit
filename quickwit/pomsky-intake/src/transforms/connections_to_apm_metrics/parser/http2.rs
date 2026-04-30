@@ -18,7 +18,7 @@
 //! Port of `parser/http.go::parseHTTP2Aggregations` and
 //! `parser/grpc.go::grpcPattern`.
 
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 
 use prost::Message;
 use regex::Regex;
@@ -32,7 +32,9 @@ use crate::protos::process::{Http2Aggregations, HttpMethod};
 
 /// Path regex the Go sidecar uses to classify gRPC traffic from the HTTP/2
 /// aggregation stream (`parser/grpc.go::grpcPattern`).
-const GRPC_REGEX: &str = r"^/([^./]+(\.[^./]+)*?)\.([^./]+(\.[^./]+)*?)/([^./]+?)$";
+static GRPC_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^/([^./]+(\.[^./]+)*?)\.([^./]+(\.[^./]+)*?)/([^./]+?)$").expect("static regex")
+});
 
 pub(in crate::transforms::connections_to_apm_metrics) fn parse_http2_aggregations(
     data: &[u8],
@@ -44,7 +46,6 @@ pub(in crate::transforms::connections_to_apm_metrics) fn parse_http2_aggregation
             return Vec::new();
         }
     };
-    let re = grpc_pattern();
     let mut out: Vec<ProtoStat> = Vec::new();
     for ep in agg.endpoint_aggregations {
         if is_method_unknown(ep.method) {
@@ -54,7 +55,7 @@ pub(in crate::transforms::connections_to_apm_metrics) fn parse_http2_aggregation
             continue;
         }
 
-        let is_grpc = ep.method == HttpMethod::Post as i32 && re.is_match(&ep.path);
+        let is_grpc = ep.method == HttpMethod::Post as i32 && GRPC_REGEX.is_match(&ep.path);
         let (operation, resource) = if is_grpc {
             (Operation::Grpc, ep.path.clone())
         } else {
@@ -103,11 +104,6 @@ pub(in crate::transforms::connections_to_apm_metrics) fn parse_http2_aggregation
         }
     }
     out
-}
-
-fn grpc_pattern() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| Regex::new(GRPC_REGEX).expect("static regex"))
 }
 
 #[cfg(test)]

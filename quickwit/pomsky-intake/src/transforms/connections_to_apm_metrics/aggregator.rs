@@ -20,6 +20,7 @@
 //! before merging so that sketch `sum()` is bit-identical across runs on
 //! the same input (Rust's `HashMap` iteration order is randomised).
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use tracing::warn;
@@ -43,28 +44,36 @@ pub(super) struct Buckets {
     pub(super) service_index: HashMap<ServiceIndexKey, Bucket>,
 }
 
-/// Sort key mirroring the fine-grained `BucketKey` exactly so that two
-/// stats landing in the same bucket arrive in a deterministic order.
-fn sort_key(stat: &UsmStat) -> (String, String, String, String, u8, u8) {
-    let env = stat.env.clone().unwrap_or_default();
-    let op = full_operation(stat.operation, stat.direction);
-    let status_class = status_class_from_code(stat.status)
-        .map(|c| c as u8)
-        .unwrap_or(255);
-    let is_err = u8::from(stat.errors > 0);
-    (
-        stat.service.clone(),
-        env,
-        op,
-        stat.resource.clone(),
-        status_class,
-        is_err,
-    )
+fn status_class_sort_value(status: i32) -> u8 {
+    match status_class_from_code(status) {
+        Some(status_class) => status_class as u8,
+        None => 255,
+    }
+}
+
+/// Compare stats by the fine-grained `BucketKey` fields without allocating
+/// temporary operation strings.
+fn cmp_by_bucket_key(left: &UsmStat, right: &UsmStat) -> Ordering {
+    left.service
+        .cmp(&right.service)
+        .then_with(|| {
+            left.env
+                .as_deref()
+                .unwrap_or("")
+                .cmp(right.env.as_deref().unwrap_or(""))
+        })
+        .then_with(|| left.operation.as_str().cmp(right.operation.as_str()))
+        .then_with(|| left.direction.as_str().cmp(right.direction.as_str()))
+        .then_with(|| left.resource.cmp(&right.resource))
+        .then_with(|| {
+            status_class_sort_value(left.status).cmp(&status_class_sort_value(right.status))
+        })
+        .then_with(|| (left.errors > 0).cmp(&(right.errors > 0)))
 }
 
 pub(super) fn aggregate(stats: &[UsmStat]) -> Buckets {
     let mut sorted: Vec<&UsmStat> = stats.iter().collect();
-    sorted.sort_by_key(|s| sort_key(s));
+    sorted.sort_unstable_by(|left, right| cmp_by_bucket_key(left, right));
 
     let mut fine_grained: HashMap<BucketKey, Bucket> = HashMap::new();
     let mut service_index: HashMap<ServiceIndexKey, Bucket> = HashMap::new();

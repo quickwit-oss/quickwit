@@ -65,7 +65,7 @@ const DEFAULT_PORT: u16 = 8585;
 /// malicious agent. Requests over this return 413 without consuming the
 /// body. Note: this is the compressed on-wire size; zstd expansion is
 /// bounded separately by the envelope decoder's inherent cost.
-const MAX_REQUEST_BODY_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_REQUEST_BODY_BYTES: u64 = 64 * 1024 * 1024; // 64 MiB
 
 fn default_address() -> SocketAddr {
     // Build from typed parts — no parsing, no possible panic.
@@ -183,7 +183,7 @@ async fn handle_connections(
     // Zstd decompression can take 100s of µs to ~1 ms on the largest agent
     // payloads; offload from the tokio worker thread to the blocking pool.
     let decoded = tokio::task::spawn_blocking(move || decode_envelope(&body)).await;
-    let (proto_bytes, timestamp) = match decoded {
+    let (proto_bytes, timestamp_opt) = match decoded {
         Ok(Ok(pair)) => pair,
         Ok(Err(err)) => {
             warn!(%err, body_len, "failed to decode connections envelope");
@@ -207,7 +207,7 @@ async fn handle_connections(
 
     let mut log = LogEvent::default();
     log.insert(CONNECTIONS_PROTO_FIELD, proto_bytes);
-    if let Some(ts) = timestamp {
+    if let Some(ts) = timestamp_opt {
         log.insert(CONNECTIONS_TIMESTAMP_FIELD, ts);
     }
 
@@ -260,11 +260,11 @@ const V8_PREFIX_LEN: usize = 1 + 2;
 pub(crate) fn decode_envelope(data: &Bytes) -> Result<(Bytes, Option<i64>), String> {
     let (header, body_start) = read_header(data)?;
     if body_start > data.len() {
-        return Err("payload too short for header".into());
+        return Err("payload too short for header".to_string());
     }
     let body = decompress(header.encoding, data.slice(body_start..));
-    let timestamp = preferred_timestamp(&header);
-    Ok((body, timestamp))
+    let timestamp_opt = preferred_timestamp(&header);
+    Ok((body, timestamp_opt))
 }
 
 /// Picks the best agent-side timestamp out of the parsed header: prefer the
@@ -283,7 +283,7 @@ fn preferred_timestamp(h: &MessageHeader) -> Option<i64> {
 
 fn read_header(data: &Bytes) -> Result<(MessageHeader, usize), String> {
     if data.is_empty() {
-        return Err("payload empty".into());
+        return Err("payload empty".to_string());
     }
     let version = data[0];
     if version == V8_VERSION_BYTE {
