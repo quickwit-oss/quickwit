@@ -237,7 +237,7 @@ macro_rules! histogram {
             info: &INFO,
             buckets_fn: || $buckets,
         };
-        inventory::submit!(HISTOGRAM_CONFIG);
+        $crate::__inventory::submit!(HISTOGRAM_CONFIG);
         // Thread-local cache + global DashMap registration.
         $crate::__metric_declaration!(
             metric_type: $crate::Histogram,
@@ -263,7 +263,7 @@ macro_rules! histogram {
             // Seed with parent hash, fold in each (name, value) pair.
             hash: $crate::__key_hash!($parent.get_hash(), $(($label, $value)),+),
             label_count: $crate::__count!($($label)*),
-            labels_iter: [$(metrics::Label::new($label, $value)),+].into_iter()
+            labels_iter: [$($crate::__metrics::Label::new($label, $value)),+].into_iter()
         )
     };
 

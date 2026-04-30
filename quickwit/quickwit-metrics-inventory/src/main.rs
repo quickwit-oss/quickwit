@@ -14,18 +14,19 @@
 
 //! Enumerates all registered `MetricInfo` entries via [`inventory`].
 //!
-//! **Do not run this binary directly** — it will only see metrics defined
-//! within `quickwit-metrics` itself. To discover metrics from all workspace
-//! crates, use the wrapper script which patches in reverse dependencies and
-//! configures linker flags:
+//! **Do not run this binary directly** — it will only see metrics from
+//! crates listed in this crate's `Cargo.toml` dependencies. To discover
+//! metrics from all workspace crates, use the wrapper script which patches
+//! in reverse dependencies:
 //!
 //! ```sh
-//! ./scripts/run_index.sh
+//! ./scripts/run_inventory.sh
 //! ```
 //!
 //! The script temporarily adds `extern crate` lines and `Cargo.toml`
 //! dependencies for every crate that depends on `quickwit-metrics`, then
-//! restores the files on exit.
+//! restores the files on exit. The `build.rs` ensures the linker pulls in
+//! all inventory submissions even without explicit symbol references.
 
 fn main() {
     for info in quickwit_metrics::metrics_info() {

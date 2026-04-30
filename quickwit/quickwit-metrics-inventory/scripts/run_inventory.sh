@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
 # Discovers quickwit-metrics reverse dependencies, patches Cargo.toml and
-# a temporary main.rs, builds and runs the metrics index, then restores both
+# src/main.rs, builds and runs the inventory binary, then restores both
 # files via git. Files are always restored — even on Ctrl-C or failure.
 #
 # Usage:
-#   ./scripts/run_index.sh
+#   ./scripts/run_inventory.sh
 
 set -euo pipefail
 
@@ -13,9 +13,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CRATE_DIR="$(dirname "$SCRIPT_DIR")"
 WORKSPACE_DIR="$(dirname "$CRATE_DIR")"
 CARGO_TOML="$CRATE_DIR/Cargo.toml"
-INVENTORY_RS="$CRATE_DIR/bin/inventory.rs"
+MAIN_RS="$CRATE_DIR/src/main.rs"
 
-trap 'git restore "$CARGO_TOML" "$INVENTORY_RS"' EXIT
+trap 'git restore "$CARGO_TOML" "$MAIN_RS"' EXIT
 
 # --format '{lib}' outputs the Rust crate name (underscores, no version/path).
 # --prefix none removes tree decorators. tail skips the root (quickwit-metrics itself).
@@ -27,7 +27,7 @@ REVERSE_DEPS=$(cargo tree --manifest-path "$WORKSPACE_DIR/Cargo.toml" \
 for rust_name in $REVERSE_DEPS; do
     pkg_name=$(echo "$rust_name" | tr '_' '-')
     echo "$pkg_name = { workspace = true }" >> "$CARGO_TOML"
-    echo "extern crate $rust_name;" >> "$INVENTORY_RS"
+    echo "extern crate $rust_name;" >> "$MAIN_RS"
 done
 
-cargo run --manifest-path "$CARGO_TOML" --bin inventory
+cargo run --manifest-path "$CARGO_TOML"

@@ -57,7 +57,7 @@ macro_rules! __count {
 #[macro_export]
 macro_rules! __metadata {
     ($subsystem:expr) => {
-        metrics::Metadata::new($subsystem, metrics::Level::INFO, Some(module_path!()))
+        $crate::__metrics::Metadata::new($subsystem, $crate::__metrics::Level::INFO, Some(module_path!()))
     };
 }
 
@@ -84,13 +84,13 @@ macro_rules! __key_info_metadata {
             kind: $kind,
             observable: $observable,
         };
-        inventory::submit!(INFO);
+        $crate::__inventory::submit!(INFO);
 
-        static LABELS: [metrics::Label; $crate::__count!($($label)*)] = [
-            $(metrics::Label::from_static_parts($label, $value)),*
+        static LABELS: [$crate::__metrics::Label; $crate::__count!($($label)*)] = [
+            $($crate::__metrics::Label::from_static_parts($label, $value)),*
         ];
-        static KEY: metrics::Key = metrics::Key::from_static_parts(KEY_NAME, &LABELS);
-        static METADATA: metrics::Metadata<'static> = $crate::__metadata!($subsystem);
+        static KEY: $crate::__metrics::Key = $crate::__metrics::Key::from_static_parts(KEY_NAME, &LABELS);
+        static METADATA: $crate::__metrics::Metadata<'static> = $crate::__metadata!($subsystem);
     };
 }
 
@@ -225,7 +225,7 @@ macro_rules! __metric_extension {
                 all_labels.extend($labels_iter);
 
                 let mi = $metric_info;
-                let key = metrics::Key::from_parts(mi.key_name, all_labels);
+                let key = $crate::__metrics::Key::from_parts(mi.key_name, all_labels);
                 let metadata = $crate::__metadata!(mi.subsystem);
 
                 ($parent.__info(), key, metadata)

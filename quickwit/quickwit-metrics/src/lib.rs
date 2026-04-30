@@ -285,6 +285,10 @@ mod inner;
 mod labels;
 
 // ─── Internal helpers (re-exported for macro expansion) ───
+//
+// These re-exports exist so that downstream crates only need
+// `quickwit-metrics` in their Cargo.toml — the macros reference
+// them via `$crate::__metrics_*` / `$crate::__inventory_*` paths.
 #[doc(hidden)]
 pub use counter::__counter_get_or_register;
 #[doc(hidden)]
@@ -293,6 +297,16 @@ pub use gauge::__gauge_get_or_register;
 pub use histogram::__histogram_get_or_register;
 #[doc(hidden)]
 pub use inner::{__concatcp, __key_hash};
+
+// Re-exports of `metrics` and `inventory` used inside macro expansions.
+#[doc(hidden)]
+pub mod __metrics {
+    pub use metrics::*;
+}
+#[doc(hidden)]
+pub mod __inventory {
+    pub use inventory::*;
+}
 
 // ─── Public types ───
 pub use counter::Counter;

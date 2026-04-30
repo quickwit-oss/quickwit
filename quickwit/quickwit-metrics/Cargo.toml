@@ -38,10 +38,6 @@ harness = false
 name = "cache"
 harness = false
 
-[[bin]]
-name = "inventory"
-path = "bin/inventory.rs"
-
 [[example]]
 name = "http_service"
 path = "examples/http_service.rs"

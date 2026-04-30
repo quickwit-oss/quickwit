@@ -9059,6 +9059,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickwit-metrics-inventory"
+version = "0.8.0"
+dependencies = [
+ "quickwit-metrics",
+]
+
+[[package]]
 name = "quickwit-opentelemetry"
 version = "0.8.0"
 dependencies = [

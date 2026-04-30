@@ -314,7 +314,7 @@ macro_rules! counter {
             // Seed with parent hash, fold in each (name, value) pair.
             hash: $crate::__key_hash!($parent.get_hash(), $(($label, $value)),+),
             label_count: $crate::__count!($($label)*),
-            labels_iter: [$(metrics::Label::new($label, $value)),+].into_iter()
+            labels_iter: [$($crate::__metrics::Label::new($label, $value)),+].into_iter()
         )
     };
 
