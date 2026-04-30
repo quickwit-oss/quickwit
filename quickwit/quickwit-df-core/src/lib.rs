@@ -43,7 +43,11 @@ pub use data_source::{
 };
 pub use datafusion::execution::SendableRecordBatchStream;
 pub use datafusion_distributed::{Worker, WorkerResolver};
-pub use service::DataFusionService;
+pub use service::{
+    DataFusionExecution, DataFusionExecutionMetadata, DataFusionInput, DataFusionInputMetadata,
+    DataFusionOutput, DataFusionRequest, DataFusionService, SubstraitExecution,
+    SubstraitExecutionMetadata,
+};
 pub use session::DataFusionSessionBuilder;
 pub use task_estimator::DataSourceExecPartitionEstimator;
 pub use worker::build_worker;

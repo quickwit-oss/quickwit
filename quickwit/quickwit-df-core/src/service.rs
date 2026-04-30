@@ -14,44 +14,184 @@
 
 //! Pure-Rust DataFusion query execution service.
 //!
-//! [`DataFusionService`] is the core query execution entry point: it holds an
-//! `Arc<DataFusionSessionBuilder>` and exposes `execute_substrait` and
-//! `execute_sql` methods that return streaming `RecordBatch` iterators.
+//! [`DataFusionService`] is the core query execution entry point. It has no
+//! tonic or gRPC dependencies: protocol adapters translate their request shape
+//! into a [`DataFusionRequest`] and call [`DataFusionService::execute`].
 //!
-//! ## No tonic / gRPC coupling
-//!
-//! This struct has zero gRPC dependencies. `quickwit_df_core::grpc`
-//! provides the tonic adapter that encodes batches as Arrow IPC, and
-//! `quickwit-serve/src/datafusion_api/setup.rs` mounts that service in OSS.
-//! A downstream caller can do the same from its own handler, calling
-//! `execute_substrait(&[u8])` and streaming the resulting batches in its own
-//! proto response format.
-//!
-//! ## Usage
-//!
-//! ```ignore
-//! use std::sync::Arc;
-//! use quickwit_datafusion::{DataFusionService, DataFusionSessionBuilder};
-//!
-//! let builder = Arc::new(DataFusionSessionBuilder::new().with_runtime_plugin(my_plugin));
-//! let service = DataFusionService::new(Arc::clone(&builder));
-//!
-//! let mut stream = service.execute_substrait(&plan_bytes).await?;
-//! while let Some(batch) = stream.next().await {
-//!     // handle batch
-//! }
-//! ```
+//! SQL/Substrait input, normal/explain output, and metadata collection all share
+//! the same planning path. This keeps the service API small and makes metadata a
+//! property of every execution instead of a second set of methods.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use arrow::array::{ArrayRef, StringArray};
+use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use arrow::record_batch::RecordBatch;
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::SendableRecordBatchStream;
+use datafusion::logical_expr::LogicalPlan;
+use datafusion::physical_plan::display::DisplayableExecutionPlan;
+use datafusion::physical_plan::stream::RecordBatchStreamAdapter;
+use datafusion::physical_plan::{ExecutionPlan, execute_stream};
 use datafusion::prelude::SessionContext;
 use datafusion::sql::sqlparser::dialect::dialect_from_str;
 use datafusion::sql::sqlparser::tokenizer::{Token, Tokenizer};
+use datafusion_distributed::{
+    DistributedExec, DistributedMetricsFormat, display_plan_ascii,
+    rewrite_distributed_plan_with_metrics,
+};
+use datafusion_substrait::substrait::proto::Plan as SubstraitPlan;
 
 use crate::session::DataFusionSessionBuilder;
+
+#[derive(Clone, Copy)]
+pub enum DataFusionInput<'a> {
+    Sql(&'a str),
+    SubstraitBytes(&'a [u8]),
+    SubstraitJson(&'a str),
+}
+
+impl DataFusionInput<'_> {
+    fn summary(self) -> (&'static str, usize) {
+        match self {
+            Self::Sql(sql) => ("sql", sql.len()),
+            Self::SubstraitBytes(plan_bytes) => ("substrait_bytes", plan_bytes.len()),
+            Self::SubstraitJson(plan_json) => ("substrait_json", plan_json.len()),
+        }
+    }
+}
+
+impl fmt::Debug for DataFusionInput<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (kind, len) = self.summary();
+        f.debug_struct("DataFusionInput")
+            .field("kind", &kind)
+            .field("len", &len)
+            .finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DataFusionOutput {
+    #[default]
+    Records,
+    Explain,
+}
+
+#[derive(Clone, Copy)]
+pub struct DataFusionRequest<'a> {
+    pub input: DataFusionInput<'a>,
+    pub output: DataFusionOutput,
+    pub properties: &'a HashMap<String, String>,
+}
+
+impl<'a> DataFusionRequest<'a> {
+    pub fn records(
+        input: DataFusionInput<'a>,
+        properties: &'a HashMap<String, String>,
+    ) -> DataFusionRequest<'a> {
+        Self {
+            input,
+            output: DataFusionOutput::Records,
+            properties,
+        }
+    }
+
+    pub fn explain(
+        input: DataFusionInput<'a>,
+        properties: &'a HashMap<String, String>,
+    ) -> DataFusionRequest<'a> {
+        Self {
+            input,
+            output: DataFusionOutput::Explain,
+            properties,
+        }
+    }
+}
+
+impl fmt::Debug for DataFusionRequest<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DataFusionRequest")
+            .field("input", &self.input)
+            .field("output", &self.output)
+            .field("num_properties", &self.properties.len())
+            .finish()
+    }
+}
+
+pub struct DataFusionExecution {
+    pub stream: SendableRecordBatchStream,
+    pub metadata: DataFusionExecutionMetadata,
+}
+
+pub struct SubstraitExecution {
+    pub stream: SendableRecordBatchStream,
+    pub metadata: SubstraitExecutionMetadata,
+}
+
+pub struct DataFusionExecutionMetadata {
+    pub input: DataFusionInputMetadata,
+    pub output: DataFusionOutput,
+    pub logical_plan: String,
+    pub physical_plan: Arc<dyn ExecutionPlan>,
+    pub input_decode_duration: Duration,
+    pub logical_planning_duration: Duration,
+    pub physical_planning_duration: Duration,
+    pub stream_creation_duration: Duration,
+}
+
+pub struct SubstraitExecutionMetadata {
+    pub substrait_plan_json: String,
+    pub logical_plan: String,
+    pub physical_plan: Arc<dyn ExecutionPlan>,
+    pub substrait_decode_duration: Duration,
+    pub substrait_to_logical_duration: Duration,
+    pub logical_to_physical_duration: Duration,
+    pub stream_creation_duration: Duration,
+}
+
+impl DataFusionExecutionMetadata {
+    pub fn physical_plan_display(&self) -> String {
+        physical_plan_display(&self.physical_plan)
+    }
+}
+
+impl SubstraitExecutionMetadata {
+    pub fn physical_plan_display(&self) -> String {
+        physical_plan_display(&self.physical_plan)
+    }
+}
+
+pub enum DataFusionInputMetadata {
+    Sql { sql: String },
+    Substrait { plan_json: String },
+}
+
+impl DataFusionInputMetadata {
+    pub fn sql(&self) -> Option<&str> {
+        match self {
+            Self::Sql { sql } => Some(sql.as_str()),
+            Self::Substrait { .. } => None,
+        }
+    }
+
+    pub fn substrait_plan_json(&self) -> Option<&str> {
+        match self {
+            Self::Sql { .. } => None,
+            Self::Substrait { plan_json } => Some(plan_json.as_str()),
+        }
+    }
+}
+
+struct PreparedLogicalPlan {
+    input: DataFusionInputMetadata,
+    logical_plan: LogicalPlan,
+    input_decode_duration: Duration,
+    logical_planning_duration: Duration,
+}
 
 /// Split a SQL string into top-level statements using the configured dialect's
 /// tokenizer rather than raw string splitting.
@@ -128,134 +268,231 @@ impl DataFusionService {
         Self { builder }
     }
 
+    /// Execute a SQL or Substrait query and return both the lazy output stream
+    /// and planning metadata.
+    #[tracing::instrument(skip(self, request), fields(output = ?request.output))]
+    pub async fn execute(&self, request: DataFusionRequest<'_>) -> DFResult<DataFusionExecution> {
+        let (input_kind, input_len) = request.input.summary();
+        tracing::info!(
+            input_kind,
+            input_len,
+            output = ?request.output,
+            num_properties = request.properties.len(),
+            "executing DataFusion query"
+        );
+
+        let ctx = self
+            .builder
+            .build_session_with_properties(request.properties)?;
+        let prepared = self.prepare_logical_plan(request.input, &ctx).await?;
+        let logical_plan_display = prepared.logical_plan.display_indent().to_string();
+
+        let physical_planning_start = Instant::now();
+        let physical_plan = ctx
+            .state()
+            .create_physical_plan(&prepared.logical_plan)
+            .await?;
+        let physical_planning_duration = physical_planning_start.elapsed();
+
+        let stream_creation_start = Instant::now();
+        let stream = match request.output {
+            DataFusionOutput::Records => {
+                execute_stream(Arc::clone(&physical_plan), ctx.task_ctx())?
+            }
+            DataFusionOutput::Explain => explain_stream(&logical_plan_display, &physical_plan)?,
+        };
+        let stream_creation_duration = stream_creation_start.elapsed();
+
+        Ok(DataFusionExecution {
+            stream,
+            metadata: DataFusionExecutionMetadata {
+                input: prepared.input,
+                output: request.output,
+                logical_plan: logical_plan_display,
+                physical_plan,
+                input_decode_duration: prepared.input_decode_duration,
+                logical_planning_duration: prepared.logical_planning_duration,
+                physical_planning_duration,
+                stream_creation_duration,
+            },
+        })
+    }
+
     /// Execute a Substrait plan encoded as protobuf bytes.
     ///
-    /// Builds a fresh session via the underlying `DataFusionSessionBuilder`,
-    /// decodes the plan, and returns a streaming `RecordBatch` iterator.
-    /// The caller decides whether to collect, send via gRPC, or pipe to Arrow
-    /// Flight — no materialization happens inside this method.
-    ///
-    /// `properties` flows from `ExecuteSubstraitRequest.properties` into
-    /// `SessionConfig` overrides (e.g. `execution.target_partitions`). Pass
-    /// an empty map when no overrides apply.
-    #[tracing::instrument(skip(self, plan_bytes, properties), fields(plan_bytes_len = plan_bytes.len()))]
+    /// Prefer [`DataFusionService::execute`] for new call sites.
     pub async fn execute_substrait(
         &self,
         plan_bytes: &[u8],
         properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
-        tracing::info!(
-            plan_bytes_len = plan_bytes.len(),
-            num_properties = properties.len(),
-            "executing substrait plan"
-        );
-        use datafusion_substrait::substrait::proto::Plan;
-        use prost::Message;
+        Ok(self
+            .execute(DataFusionRequest::records(
+                DataFusionInput::SubstraitBytes(plan_bytes),
+                properties,
+            ))
+            .await?
+            .stream)
+    }
 
-        let plan = Plan::decode(plan_bytes)
-            .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
-
-        self.execute_substrait_plan(&plan, properties).await
+    /// Execute a Substrait plan and return planning metadata.
+    ///
+    /// Prefer [`DataFusionService::execute`] for new call sites.
+    pub async fn execute_substrait_with_metadata(
+        &self,
+        plan_bytes: &[u8],
+        properties: &HashMap<String, String>,
+    ) -> DFResult<SubstraitExecution> {
+        substrait_execution_from_datafusion(
+            self.execute(DataFusionRequest::records(
+                DataFusionInput::SubstraitBytes(plan_bytes),
+                properties,
+            ))
+            .await?,
+        )
     }
 
     /// Execute a Substrait plan from its proto3 JSON representation.
     ///
-    /// Accepts the JSON format produced by DataFusion's `to_substrait_plan` +
-    /// `serde_json::to_string`, or the `rollup_substrait.json` format used in
-    /// integration tests and dev tooling.
-    ///
-    /// This is the dev/tooling path — grpcurl and Python scripts can pass the
-    /// plan as a JSON string without pre-encoding to binary protobuf.
+    /// Prefer [`DataFusionService::execute`] for new call sites.
     pub async fn execute_substrait_json(
         &self,
         plan_json: &str,
         properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
-        use datafusion_substrait::substrait::proto::Plan;
-
-        let plan: Plan = serde_json::from_str(plan_json).map_err(|e| {
-            datafusion::error::DataFusionError::Plan(format!("invalid Substrait plan JSON: {e}"))
-        })?;
-
-        self.execute_substrait_plan(&plan, properties).await
+        Ok(self
+            .execute(DataFusionRequest::records(
+                DataFusionInput::SubstraitJson(plan_json),
+                properties,
+            ))
+            .await?
+            .stream)
     }
 
-    async fn execute_substrait_plan(
+    /// Execute a proto3 JSON Substrait plan and return planning metadata.
+    ///
+    /// Prefer [`DataFusionService::execute`] for new call sites.
+    pub async fn execute_substrait_json_with_metadata(
         &self,
-        plan: &datafusion_substrait::substrait::proto::Plan,
+        plan_json: &str,
         properties: &HashMap<String, String>,
-    ) -> DFResult<SendableRecordBatchStream> {
-        let ctx = self.builder.build_session_with_properties(properties)?;
-        crate::substrait::execute_substrait_plan_streaming(
-            plan,
-            &ctx,
-            self.builder.substrait_extensions(),
+    ) -> DFResult<SubstraitExecution> {
+        substrait_execution_from_datafusion(
+            self.execute(DataFusionRequest::records(
+                DataFusionInput::SubstraitJson(plan_json),
+                properties,
+            ))
+            .await?,
         )
-        .await
     }
 
-    /// Like [`execute_substrait`], but returns the EXPLAIN output instead of
-    /// running the plan. The returned stream emits `(plan_type, plan)` rows
-    /// — same shape as a SQL `EXPLAIN VERBOSE`.
+    /// Return EXPLAIN output for a Substrait plan encoded as protobuf bytes.
+    ///
+    /// Prefer [`DataFusionService::execute`] for new call sites.
     pub async fn explain_substrait(
         &self,
         plan_bytes: &[u8],
         properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
-        use datafusion_substrait::substrait::proto::Plan;
-        use prost::Message;
-        let plan = Plan::decode(plan_bytes)
-            .map_err(|e| datafusion::error::DataFusionError::External(Box::new(e)))?;
-        self.explain_substrait_plan(&plan, properties).await
+        Ok(self
+            .execute(DataFusionRequest::explain(
+                DataFusionInput::SubstraitBytes(plan_bytes),
+                properties,
+            ))
+            .await?
+            .stream)
     }
 
-    /// JSON variant of [`explain_substrait`] — same semantics, proto3-JSON input.
+    /// Return EXPLAIN output and planning metadata for a Substrait plan.
+    ///
+    /// Prefer [`DataFusionService::execute`] for new call sites.
+    pub async fn explain_substrait_with_metadata(
+        &self,
+        plan_bytes: &[u8],
+        properties: &HashMap<String, String>,
+    ) -> DFResult<SubstraitExecution> {
+        substrait_execution_from_datafusion(
+            self.execute(DataFusionRequest::explain(
+                DataFusionInput::SubstraitBytes(plan_bytes),
+                properties,
+            ))
+            .await?,
+        )
+    }
+
+    /// Return EXPLAIN output for a proto3 JSON Substrait plan.
+    ///
+    /// Prefer [`DataFusionService::execute`] for new call sites.
     pub async fn explain_substrait_json(
         &self,
         plan_json: &str,
         properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
-        use datafusion_substrait::substrait::proto::Plan;
-        let plan: Plan = serde_json::from_str(plan_json).map_err(|e| {
-            datafusion::error::DataFusionError::Plan(format!("invalid Substrait plan JSON: {e}"))
-        })?;
-        self.explain_substrait_plan(&plan, properties).await
+        Ok(self
+            .execute(DataFusionRequest::explain(
+                DataFusionInput::SubstraitJson(plan_json),
+                properties,
+            ))
+            .await?
+            .stream)
     }
 
-    async fn explain_substrait_plan(
+    /// Return EXPLAIN output and planning metadata for a proto3 JSON Substrait
+    /// plan.
+    ///
+    /// Prefer [`DataFusionService::execute`] for new call sites.
+    pub async fn explain_substrait_json_with_metadata(
         &self,
-        plan: &datafusion_substrait::substrait::proto::Plan,
+        plan_json: &str,
         properties: &HashMap<String, String>,
-    ) -> DFResult<SendableRecordBatchStream> {
-        let ctx = self.builder.build_session_with_properties(properties)?;
-        crate::substrait::explain_substrait_plan_streaming(
-            plan,
-            &ctx,
-            self.builder.substrait_extensions(),
+    ) -> DFResult<SubstraitExecution> {
+        substrait_execution_from_datafusion(
+            self.execute(DataFusionRequest::explain(
+                DataFusionInput::SubstraitJson(plan_json),
+                properties,
+            ))
+            .await?,
         )
-        .await
     }
 
     /// Execute one or more SQL statements from a single SQL string.
     ///
-    /// DDL statements (e.g. `CREATE EXTERNAL TABLE`) are executed for side
-    /// effects.  The last statement produces the result stream.
-    ///
-    /// Returns an error if `sql` contains no statements, or if any statement
-    /// fails to parse or execute.
-    #[tracing::instrument(skip(self, sql, properties), fields(sql_len = sql.len()))]
+    /// Prefer [`DataFusionService::execute`] for new call sites.
     pub async fn execute_sql(
         &self,
         sql: &str,
         properties: &HashMap<String, String>,
     ) -> DFResult<SendableRecordBatchStream> {
-        tracing::info!(
-            sql_len = sql.len(),
-            num_properties = properties.len(),
-            "executing SQL query"
-        );
-        let ctx = self.builder.build_session_with_properties(properties)?;
-        let mut statements = split_sql_statements(&ctx, sql)?;
+        Ok(self
+            .execute(DataFusionRequest::records(
+                DataFusionInput::Sql(sql),
+                properties,
+            ))
+            .await?
+            .stream)
+    }
+
+    async fn prepare_logical_plan(
+        &self,
+        input: DataFusionInput<'_>,
+        ctx: &SessionContext,
+    ) -> DFResult<PreparedLogicalPlan> {
+        match input {
+            DataFusionInput::Sql(sql) => self.prepare_sql(sql, ctx).await,
+            DataFusionInput::SubstraitBytes(plan_bytes) => {
+                self.prepare_substrait_bytes(plan_bytes, ctx).await
+            }
+            DataFusionInput::SubstraitJson(plan_json) => {
+                self.prepare_substrait_json(plan_json, ctx).await
+            }
+        }
+    }
+
+    async fn prepare_sql(&self, sql: &str, ctx: &SessionContext) -> DFResult<PreparedLogicalPlan> {
+        let input_decode_start = Instant::now();
+        let mut statements = split_sql_statements(ctx, sql)?;
+        let input_decode_duration = input_decode_start.elapsed();
+
         let last = statements
             .pop()
             .ok_or_else(|| DataFusionError::Plan("no SQL statements provided".to_string()))?;
@@ -264,7 +501,167 @@ impl DataFusionService {
             ctx.sql(&statement).await?.collect().await?;
         }
 
+        let logical_planning_start = Instant::now();
         let df = ctx.sql(&last).await?;
-        df.execute_stream().await
+        let logical_plan = df.into_optimized_plan()?;
+        let logical_planning_duration = logical_planning_start.elapsed();
+
+        Ok(PreparedLogicalPlan {
+            input: DataFusionInputMetadata::Sql {
+                sql: sql.to_string(),
+            },
+            logical_plan,
+            input_decode_duration,
+            logical_planning_duration,
+        })
     }
+
+    async fn prepare_substrait_bytes(
+        &self,
+        plan_bytes: &[u8],
+        ctx: &SessionContext,
+    ) -> DFResult<PreparedLogicalPlan> {
+        use prost::Message;
+
+        let input_decode_start = Instant::now();
+        let plan = SubstraitPlan::decode(plan_bytes)
+            .map_err(|err| datafusion::error::DataFusionError::External(Box::new(err)))?;
+        let plan_json = substrait_plan_json(&plan)?;
+        let input_decode_duration = input_decode_start.elapsed();
+
+        self.prepare_substrait_plan(plan, plan_json, input_decode_duration, ctx)
+            .await
+    }
+
+    async fn prepare_substrait_json(
+        &self,
+        plan_json: &str,
+        ctx: &SessionContext,
+    ) -> DFResult<PreparedLogicalPlan> {
+        let input_decode_start = Instant::now();
+        let plan: SubstraitPlan = serde_json::from_str(plan_json).map_err(|err| {
+            datafusion::error::DataFusionError::Plan(format!("invalid Substrait plan JSON: {err}"))
+        })?;
+        let input_decode_duration = input_decode_start.elapsed();
+
+        self.prepare_substrait_plan(plan, plan_json.to_string(), input_decode_duration, ctx)
+            .await
+    }
+
+    async fn prepare_substrait_plan(
+        &self,
+        plan: SubstraitPlan,
+        plan_json: String,
+        input_decode_duration: Duration,
+        ctx: &SessionContext,
+    ) -> DFResult<PreparedLogicalPlan> {
+        let state = ctx.state();
+        let logical_planning_start = Instant::now();
+        let logical_plan = crate::substrait::logical_plan_from_substrait(
+            &plan,
+            &state,
+            self.builder.substrait_extensions(),
+        )
+        .await?;
+        let logical_planning_duration = logical_planning_start.elapsed();
+
+        tracing::debug!(
+            plan = %logical_plan.display_indent(),
+            "substrait plan converted to DataFusion logical plan"
+        );
+
+        Ok(PreparedLogicalPlan {
+            input: DataFusionInputMetadata::Substrait { plan_json },
+            logical_plan,
+            input_decode_duration,
+            logical_planning_duration,
+        })
+    }
+}
+
+fn substrait_execution_from_datafusion(
+    execution: DataFusionExecution,
+) -> DFResult<SubstraitExecution> {
+    let DataFusionExecution { stream, metadata } = execution;
+    let DataFusionExecutionMetadata {
+        input,
+        output: _,
+        logical_plan,
+        physical_plan,
+        input_decode_duration,
+        logical_planning_duration,
+        physical_planning_duration,
+        stream_creation_duration,
+    } = metadata;
+    let DataFusionInputMetadata::Substrait { plan_json } = input else {
+        return Err(DataFusionError::Internal(
+            "expected Substrait execution metadata".to_string(),
+        ));
+    };
+
+    Ok(SubstraitExecution {
+        stream,
+        metadata: SubstraitExecutionMetadata {
+            substrait_plan_json: plan_json,
+            logical_plan,
+            physical_plan,
+            substrait_decode_duration: input_decode_duration,
+            substrait_to_logical_duration: logical_planning_duration,
+            logical_to_physical_duration: physical_planning_duration,
+            stream_creation_duration,
+        },
+    })
+}
+
+fn substrait_plan_json(plan: &SubstraitPlan) -> DFResult<String> {
+    serde_json::to_string(plan).map_err(|err| {
+        datafusion::error::DataFusionError::Plan(format!(
+            "failed to serialize Substrait plan JSON: {err}"
+        ))
+    })
+}
+
+fn explain_stream(
+    logical_plan: &str,
+    physical_plan: &Arc<dyn ExecutionPlan>,
+) -> DFResult<SendableRecordBatchStream> {
+    let schema = explain_schema();
+    let physical_plan = physical_plan_display(physical_plan);
+    let plan_type: ArrayRef = Arc::new(StringArray::from(vec!["logical_plan", "physical_plan"]));
+    let plan: ArrayRef = Arc::new(StringArray::from(vec![
+        logical_plan,
+        physical_plan.as_str(),
+    ]));
+    let batch =
+        RecordBatch::try_new(Arc::clone(&schema), vec![plan_type, plan]).map_err(|err| {
+            DataFusionError::Execution(format!("failed to build explain output: {err}"))
+        })?;
+
+    Ok(Box::pin(RecordBatchStreamAdapter::new(
+        schema,
+        futures::stream::iter(vec![Ok(batch)]),
+    )))
+}
+
+fn explain_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("plan_type", DataType::Utf8, false),
+        Field::new("plan", DataType::Utf8, false),
+    ]))
+}
+
+fn physical_plan_display(physical_plan: &Arc<dyn ExecutionPlan>) -> String {
+    if physical_plan.as_any().is::<DistributedExec>() {
+        return match rewrite_distributed_plan_with_metrics(
+            Arc::clone(physical_plan),
+            DistributedMetricsFormat::PerTask,
+        ) {
+            Ok(physical_plan) => display_plan_ascii(physical_plan.as_ref(), true),
+            Err(_) => display_plan_ascii(physical_plan.as_ref(), false),
+        };
+    }
+
+    DisplayableExecutionPlan::with_metrics(physical_plan.as_ref())
+        .indent(false)
+        .to_string()
 }
