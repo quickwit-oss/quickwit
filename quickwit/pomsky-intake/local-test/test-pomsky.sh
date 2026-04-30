@@ -6,7 +6,7 @@ QUICKWIT_PORT=7280
 QUICKWIT_ENDPOINT="http://localhost:$QUICKWIT_PORT"
 POMSKY_INTAKE_ENDPOINT="0.0.0.0:8181"
 SANDBOX=sandbox
-DD_SITE=datad0g.com
+export DD_SITE=datad0g.com
 export DD_ORG_ID=2
 
 count=10

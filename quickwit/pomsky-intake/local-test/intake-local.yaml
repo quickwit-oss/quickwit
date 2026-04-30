@@ -3,4 +3,6 @@ logs_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/logs
 metrics_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/metrics
 traces_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/traces
 org_id: 2
-metadata_svc_url: https://datad0g.com/
+metric_metadata_persist_file_path: ./pomsky-intake/local-test/sandbox/metric_metadata_known.csv
+host_tags:
+  cache_path: ./pomsky-intake/local-test/sandbox/hosttags.csv
