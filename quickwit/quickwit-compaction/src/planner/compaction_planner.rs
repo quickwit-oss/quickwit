@@ -27,8 +27,7 @@ use quickwit_proto::compaction::{
     CompactionResult, MergeTaskAssignment, ReportStatusRequest, ReportStatusResponse,
 };
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::{IndexUid, NodeId, SourceId};
-use time::OffsetDateTime;
+use quickwit_proto::types::{IndexUid, NodeId, SourceId, SplitId};
 use tracing::{error, info};
 use ulid::Ulid;
 
@@ -36,17 +35,38 @@ use super::compaction_state::CompactionState;
 use super::index_config_metastore::{IndexConfigMetastore, IndexEntry};
 use crate::planner::metrics::COMPACTION_PLANNER_METRICS;
 
+/// Page size for the initial pkey-paginated backfill scan. Each tick fetches
+/// at most this many splits; we drain the table over multiple ticks.
+const SCAN_PAGE_SIZE: usize = 20_000;
+
+/// Whether the planner is still doing its initial enumeration of every
+/// Published split, or has switched to delta scanning.
+enum ScanCursor {
+    /// Initial backfill: paginate by `(index_uid, split_id)` using the splits
+    /// primary key. `None` = start from the beginning; `Some(...)` = resume
+    /// after this pkey.
+    Backfill(Option<(IndexUid, SplitId)>),
+    /// Steady state: filter by `update_timestamp >= update_timestamp_cursor`.
+    Delta,
+}
+
 pub struct CompactionPlanner {
     state: CompactionState,
     index_config_metastore: IndexConfigMetastore,
-    cursor: i64,
+    /// Two-phase scan cursor: pkey pagination during initial drain, then
+    /// `update_timestamp` delta thereafter.
+    scan_cursor: ScanCursor,
+    /// Lower bound on `update_timestamp` for delta-mode scans. Advanced for
+    /// every Published split observed (whether or not it is tracked) so we
+    /// don't repeatedly re-fetch policy-mature or already-known splits.
+    update_timestamp_cursor: i64,
     metastore: MetastoreServiceClient,
 }
 
 impl Debug for CompactionPlanner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("CompactionPlanner")
-            .field("cursor", &self.cursor)
+            .field("update_timestamp_cursor", &self.update_timestamp_cursor)
             .finish()
     }
 }
@@ -112,20 +132,38 @@ impl Handler<ReportStatusRequest> for CompactionPlanner {
     }
 }
 
-const STARTUP_LOOKBACK: Duration = Duration::from_secs(24 * 60 * 60);
-
 impl CompactionPlanner {
     pub fn new(metastore: MetastoreServiceClient) -> Self {
-        let cursor = OffsetDateTime::now_utc().unix_timestamp() - STARTUP_LOOKBACK.as_secs() as i64;
         CompactionPlanner {
             state: CompactionState::new(),
             index_config_metastore: IndexConfigMetastore::new(metastore.clone()),
-            cursor,
+            scan_cursor: ScanCursor::Backfill(None),
+            update_timestamp_cursor: 0,
             metastore,
         }
     }
 
     async fn ingest_splits(&mut self, splits: Vec<Split>) {
+        // Advance the update_timestamp cursor unconditionally for every
+        // Published split observed. Splits we end up skipping (already
+        // tracked, policy-mature, config error) still move the cursor — the
+        // SQL filter already guarantees `split_state = 'Published'` so this
+        // is safe and prevents the next scan from re-fetching them.
+        if let Some(max_ts) = splits.iter().map(|s| s.update_timestamp).max() {
+            self.update_timestamp_cursor = self.update_timestamp_cursor.max(max_ts);
+        }
+        // While paginating the initial backfill, advance the pkey cursor to
+        // the last split returned. The metastore sorts by (index_uid,
+        // split_id) ASC so the last element is the largest pkey in the page.
+        if matches!(self.scan_cursor, ScanCursor::Backfill(_))
+            && let Some(last_split) = splits.last()
+        {
+            self.scan_cursor = ScanCursor::Backfill(Some((
+                last_split.split_metadata.index_uid.clone(),
+                last_split.split_metadata.split_id.clone(),
+            )));
+        }
+
         for split in splits {
             if self.state.is_split_tracked(&split.split_metadata.split_id) {
                 continue;
@@ -141,17 +179,25 @@ impl CompactionPlanner {
             if index_entry.is_split_mature(&split.split_metadata) {
                 continue;
             }
-            self.cursor = self.cursor.max(split.update_timestamp);
-            info!(max_timestamp=%self.cursor, "[compaction planner] update metastore cursor min_timestamp cursor");
             self.state.track_split(split.split_metadata);
         }
     }
 
     async fn scan_metastore(&self) -> Result<Vec<Split>> {
-        let query = ListSplitsQuery::for_all_indexes()
+        let mut query = ListSplitsQuery::for_all_indexes()
             .with_split_state(SplitState::Published)
-            .retain_immature(OffsetDateTime::now_utc())
-            .with_update_timestamp_gte(self.cursor);
+            .sort_by_index_uid()
+            .with_limit(SCAN_PAGE_SIZE);
+        match &self.scan_cursor {
+            ScanCursor::Backfill(after) => {
+                if let Some(after_pkey) = after {
+                    query.after_split = Some(after_pkey.clone());
+                }
+            }
+            ScanCursor::Delta => {
+                query = query.with_update_timestamp_gte(self.update_timestamp_cursor);
+            }
+        }
         let request = ListSplitsRequest::try_from_list_splits_query(&query)?;
         let splits = self
             .metastore
@@ -179,7 +225,17 @@ impl CompactionPlanner {
 
     async fn scan_and_plan(&mut self) -> Result<()> {
         let splits = self.scan_metastore().await?;
+        let was_full_page = splits.len() >= SCAN_PAGE_SIZE;
         self.ingest_splits(splits).await;
+        // A short page in backfill mode means we've drained the table — switch
+        // to delta scans driven by `update_timestamp_cursor` from now on.
+        if matches!(self.scan_cursor, ScanCursor::Backfill(_)) && !was_full_page {
+            info!(
+                update_timestamp_cursor=%self.update_timestamp_cursor,
+                "[compaction planner] initial backfill drained, switching to delta mode"
+            );
+            self.scan_cursor = ScanCursor::Delta;
+        }
         self.run_merge_policies();
         self.state.emit_metrics();
         Ok(())
@@ -286,6 +342,7 @@ mod tests {
         IndexMetadataResponse, ListSplitsResponse, MetastoreError, MockMetastoreService,
     };
     use quickwit_proto::types::IndexUid;
+    use time::OffsetDateTime;
 
     use super::*;
 
@@ -367,7 +424,7 @@ mod tests {
             .returning(move |_| Ok(response.clone()));
 
         let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
-        planner.cursor = 0;
+        planner.update_timestamp_cursor = 0;
 
         // Pre-populate: "in-flight" is already being compacted.
         planner.state.track_split(SplitMetadata {
@@ -390,7 +447,10 @@ mod tests {
         assert!(planner.state.is_split_tracked("fresh"));
         assert!(planner.state.is_split_tracked("in-flight"));
         assert!(!planner.state.is_split_tracked("mature"));
-        assert_eq!(planner.cursor, 3000);
+        // Cursor advances based on every observed Published split, including
+        // the policy-mature one. Otherwise mature splits would be re-fetched
+        // on every scan.
+        assert_eq!(planner.update_timestamp_cursor, 4000);
     }
 
     #[tokio::test]
@@ -404,11 +464,11 @@ mod tests {
         });
 
         let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
-        let original_cursor = planner.cursor;
+        let original_cursor = planner.update_timestamp_cursor;
 
         let result = planner.scan_and_plan().await;
         assert!(result.is_err());
-        assert_eq!(planner.cursor, original_cursor);
+        assert_eq!(planner.update_timestamp_cursor, original_cursor);
     }
 
     #[tokio::test]
@@ -425,7 +485,7 @@ mod tests {
         });
 
         let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
-        planner.cursor = 0;
+        planner.update_timestamp_cursor = 0;
         planner.ingest_splits(splits).await;
 
         assert!(!planner.state.is_split_tracked("orphan"));
@@ -452,12 +512,12 @@ mod tests {
             .returning(move |_| Ok(index_metadata_response.clone()));
 
         let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
-        planner.cursor = 0;
+        planner.update_timestamp_cursor = 0;
         planner.scan_and_plan().await.unwrap();
 
         assert!(planner.state.is_split_tracked("s1"));
         assert!(planner.state.is_split_tracked("s2"));
-        assert_eq!(planner.cursor, 6000);
+        assert_eq!(planner.update_timestamp_cursor, 6000);
     }
 
     /// Helper: creates a planner with merge_factor=2, ingests the given splits,
@@ -477,7 +537,7 @@ mod tests {
         });
 
         let mut planner = CompactionPlanner::new(MetastoreServiceClient::from_mock(mock));
-        planner.cursor = 0;
+        planner.update_timestamp_cursor = 0;
 
         let splits: Vec<Split> = split_ids
             .iter()

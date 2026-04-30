@@ -125,10 +125,7 @@ impl IndexingService {
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
     ) -> anyhow::Result<IndexingService> {
-        let split_store_space_quota = SplitStoreQuota::try_new(
-            indexer_config.split_store_max_num_splits,
-            indexer_config.split_store_max_num_bytes,
-        )?;
+        let split_store_space_quota = SplitStoreQuota::no_caching();
         let split_cache_dir_path = get_cache_directory_path(&data_dir_path);
         let local_split_store =
             IndexingSplitCache::open(split_cache_dir_path, split_store_space_quota).await?;
