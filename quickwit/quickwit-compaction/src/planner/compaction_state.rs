@@ -108,14 +108,22 @@ impl CompactionState {
         let Some(splits) = self.needs_compaction.get_mut(partition_key) else {
             return;
         };
-        for operation in merge_policy.operations(splits) {
-            for split in operation.splits_as_slice() {
-                self.needs_compaction_split_ids.remove(split.split_id());
-                self.in_flight_split_ids
-                    .insert(split.split_id().to_string());
+        // `MergePolicy::operations` emits at most one op per level per call, which under a backlog
+        // leaves the bulk of `splits` untouched per tick. Loop until no new operations are created.
+        loop {
+            let operations = merge_policy.operations(splits);
+            if operations.is_empty() {
+                break;
             }
-            self.pending_operations
-                .push(partition_key.clone(), operation);
+            for operation in operations {
+                for split in operation.splits_as_slice() {
+                    self.needs_compaction_split_ids.remove(split.split_id());
+                    self.in_flight_split_ids
+                        .insert(split.split_id().to_string());
+                }
+                self.pending_operations
+                    .push(partition_key.clone(), operation);
+            }
         }
         if splits.is_empty() {
             self.needs_compaction.remove(partition_key);
@@ -138,6 +146,7 @@ impl CompactionState {
             if let Some(inflight) = self.in_flight.remove(&failure.task_id) {
                 warn!(task_id=%failure.task_id, error=%failure.error_message, "compaction task failed");
                 for split_id in &inflight.split_ids {
+                    // these splits will be picked up again on the next metastore scan.
                     self.in_flight_split_ids.remove(split_id.as_str());
                 }
             }
@@ -183,6 +192,7 @@ impl CompactionState {
                 error!(%task_id, node_id=%inflight.node_id, "compaction task timed out");
                 COMPACTION_PLANNER_METRICS.timed_out_operations.inc();
                 for split_id in &inflight.split_ids {
+                    // these splits will be picked up again on the next metastore scan.
                     self.in_flight_split_ids.remove(split_id.as_str());
                 }
             }

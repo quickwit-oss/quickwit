@@ -25,7 +25,7 @@ use quickwit_common::split_file;
 use quickwit_directories::BundleDirectory;
 use quickwit_storage::StorageResult;
 use tantivy::Directory;
-use tantivy::directory::MmapDirectory;
+use tantivy::directory::{Advice, MmapDirectory};
 use tokio::sync::Mutex;
 use tracing::{debug, error, warn};
 use ulid::Ulid;
@@ -38,12 +38,15 @@ const SPLIT_MAX_AGE: Duration = Duration::from_secs(2 * 24 * 3_600); // 2 days
 pub fn get_tantivy_directory_from_split_bundle(
     split_file: &Path,
 ) -> StorageResult<Box<dyn Directory>> {
-    let mmap_directory = MmapDirectory::open(split_file.parent().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("couldn't find parent for {}", split_file.display()),
-        )
-    })?)?;
+    let mmap_directory = MmapDirectory::open_with_madvice(
+        split_file.parent().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("couldn't find parent for {}", split_file.display()),
+            )
+        })?,
+        Advice::Sequential,
+    )?;
     let split_fileslice = mmap_directory.open_read(Path::new(&split_file))?;
     Ok(Box::new(BundleDirectory::open_split(split_fileslice)?))
 }
