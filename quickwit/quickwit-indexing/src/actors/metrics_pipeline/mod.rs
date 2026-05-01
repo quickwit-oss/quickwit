@@ -27,6 +27,7 @@ mod parquet_doc_processor;
 mod parquet_indexer;
 mod parquet_merge_executor;
 pub(crate) mod parquet_merge_messages;
+mod parquet_merge_pipeline;
 mod parquet_merge_planner;
 mod parquet_merge_split_downloader;
 mod parquet_packager;
@@ -50,6 +51,7 @@ pub use parquet_doc_processor::{
 pub use parquet_indexer::{ParquetIndexer, ParquetIndexerCounters, ParquetSplitBatch};
 pub use parquet_merge_executor::ParquetMergeExecutor;
 pub use parquet_merge_messages::{ParquetMergeScratch, ParquetMergeTask, ParquetNewSplits};
+pub use parquet_merge_pipeline::{ParquetMergePipeline, ParquetMergePipelineParams};
 pub use parquet_merge_planner::ParquetMergePlanner;
 pub use parquet_merge_split_downloader::ParquetMergeSplitDownloader;
 pub use parquet_packager::{ParquetBatchForPackager, ParquetPackager, ParquetPackagerCounters};
