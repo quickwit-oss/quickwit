@@ -100,11 +100,8 @@ impl CompactionState {
         self.needs_compaction.keys().cloned().collect()
     }
 
-    /// Runs a merge policy on a single partition and queues the resulting
-    /// operations. After planning, time-mature stragglers left in the partition
-    /// are evicted — the metastore `retain_immature` filter keeps new mature
-    /// splits out, but splits already in memory that crossed their maturation
-    /// period benefit from an explicit sweep here.
+    /// Runs a merge policy on a single partition, queues the resulting
+    /// operations, and evicts any mature stragglers left behind.
     pub fn plan_partition(
         &mut self,
         partition_key: &CompactionPartitionKey,
@@ -114,14 +111,25 @@ impl CompactionState {
         let Some(splits) = self.needs_compaction.get_mut(partition_key) else {
             return;
         };
-        for operation in merge_policy.operations(splits) {
-            for split in operation.splits_as_slice() {
-                self.needs_compaction_split_ids.remove(split.split_id());
-                self.in_flight_split_ids
-                    .insert(split.split_id().to_string());
+        // `StableLogMergePolicy::operations` emits at most one op per level
+        // per call, which under a large backlog (e.g. 845k same-level splits)
+        // leaves the bulk of `splits` untouched per tick. Loop until the
+        // policy reports no more work — drains the partition in one call
+        // without modifying the upstream policy.
+        loop {
+            let operations = merge_policy.operations(splits);
+            if operations.is_empty() {
+                break;
             }
-            self.pending_operations
-                .push(partition_key.clone(), operation);
+            for operation in operations {
+                for split in operation.splits_as_slice() {
+                    self.needs_compaction_split_ids.remove(split.split_id());
+                    self.in_flight_split_ids
+                        .insert(split.split_id().to_string());
+                }
+                self.pending_operations
+                    .push(partition_key.clone(), operation);
+            }
         }
         splits.retain(|split| {
             if split.is_mature(now) {

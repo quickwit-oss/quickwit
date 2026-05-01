@@ -145,17 +145,8 @@ impl CompactionPlanner {
     }
 
     async fn ingest_splits(&mut self, splits: Vec<Split>) {
-        // Advance the update_timestamp cursor unconditionally for every
-        // Published split observed. Splits we end up skipping (already
-        // tracked, policy-mature, config error) still move the cursor — the
-        // SQL filter already guarantees `split_state = 'Published'` so this
-        // is safe and prevents the next scan from re-fetching them.
-        if let Some(max_ts) = splits.iter().map(|s| s.update_timestamp).max() {
-            self.update_timestamp_cursor = self.update_timestamp_cursor.max(max_ts);
-        }
-        // While paginating the initial backfill, advance the pkey cursor to
-        // the last split returned. The metastore sorts by (index_uid,
-        // split_id) ASC so the last element is the largest pkey in the page.
+        // In backfill mode, advance the pkey cursor to the last row returned
+        // (sorted by `(index_uid, split_id)` ASC).
         if matches!(self.scan_cursor, ScanCursor::Backfill(_))
             && let Some(last_split) = splits.last()
         {
@@ -166,6 +157,10 @@ impl CompactionPlanner {
         }
 
         for split in splits {
+            // Advance the cursor for every observed split (even skipped ones)
+            // so the next delta scan doesn't re-fetch them.
+            self.update_timestamp_cursor =
+                self.update_timestamp_cursor.max(split.update_timestamp);
             if self.state.is_split_tracked(&split.split_metadata.split_id) {
                 continue;
             }
