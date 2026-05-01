@@ -27,7 +27,7 @@ const HOST_TAGS_DEFAULT_TTL_MAX_SECS: u64 = 3600; // 60 minutes
 
 const HOST_TAGS_API_PATH: &str = "/api/unstable/byoc/ingest/metadata/host-tags";
 
-const DUAL_SHIP_DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
+const DUAL_SHIP_DEFAULT_POLL_INTERVAL_SECS: u64 = 15;
 const DUAL_SHIP_DEFAULT_FETCH_TIMEOUT_SECS: u64 = 10;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -433,5 +433,10 @@ mod tests {
         }
         .validate()
         .unwrap();
+    }
+
+    #[test]
+    fn test_dual_ship_default_passes_validation() {
+        DualShipConfig::default().validate().unwrap();
     }
 }
