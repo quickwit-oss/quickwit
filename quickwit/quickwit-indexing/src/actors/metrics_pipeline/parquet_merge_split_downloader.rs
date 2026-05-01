@@ -103,8 +103,19 @@ impl Handler<ParquetMergeTask> for ParquetMergeSplitDownloader {
             .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
 
         // Download each input split's Parquet file.
+        // protect_zone() tells the actor framework this I/O should not count
+        // toward the heartbeat timeout, and the kill switch check lets us
+        // abort early if the pipeline is shutting down.
         let mut downloaded_paths = Vec::with_capacity(num_inputs);
         for split in &task.merge_operation.splits {
+            if ctx.kill_switch().is_dead() {
+                debug!(
+                    split_id = %split.split_id,
+                    "kill switch activated, cancelling download"
+                );
+                return Err(ActorExitStatus::Killed);
+            }
+
             let parquet_filename = split.parquet_filename();
             let local_path = download_dir.path().join(&parquet_filename);
 
@@ -114,6 +125,7 @@ impl Handler<ParquetMergeTask> for ParquetMergeSplitDownloader {
                 "downloading parquet file"
             );
 
+            let _protect_guard = ctx.protect_zone();
             self.storage
                 .copy_to_file(Path::new(&parquet_filename), &local_path)
                 .await
