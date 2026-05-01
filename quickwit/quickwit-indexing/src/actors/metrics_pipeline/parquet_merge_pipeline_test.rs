@@ -477,11 +477,11 @@ async fn test_merge_pipeline_end_to_end() {
         merged_meta.zonemap_regexes.keys().collect::<Vec<_>>()
     );
 
-    // Tags: both the ingest and merge paths currently extract only "service"
-    // tags (see extract_service_names in split_writer.rs and merge/writer.rs).
-    // Other well-known tags (host, env, datacenter, region) are NOT yet
-    // extracted. This is a known limitation — when it's fixed, extend these
-    // assertions to cover all tag columns.
+    // low_cardinality_tags: only "service" is extracted in both the ingest
+    // and merge paths (see extract_service_names in split_writer.rs and
+    // merge/writer.rs). Other tag columns (host, env, etc.) are fully
+    // covered by zonemap regexes and row keys for pruning — this field
+    // is a secondary optimization for exact-match Postgres queries.
     assert!(
         merged_meta.low_cardinality_tags.contains_key("service"),
         "tags must include 'service'; got: {:?}",
