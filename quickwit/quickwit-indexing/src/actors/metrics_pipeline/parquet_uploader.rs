@@ -180,11 +180,12 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
             let update = ParquetSplitsUpdate {
                 index_uid: index_uid.clone(),
                 new_splits: Vec::new(),
-                replaced_split_ids: Vec::new(),
+                replaced_split_ids: batch.replaced_split_ids,
                 checkpoint_delta_opt: batch.checkpoint_delta_opt,
                 publish_lock: batch.publish_lock,
                 publish_token_opt: batch.publish_token_opt,
                 parent_span: tracing::Span::current(),
+                _merge_permit_opt: batch._merge_permit_opt,
             };
             if tx.send(SequencerCommand::Proceed(update)).is_err() {
                 warn!("sequencer receiver dropped for empty batch");
@@ -222,6 +223,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         let publish_token_opt = batch.publish_token_opt;
         let splits = batch.splits;
         let replaced_split_ids = batch.replaced_split_ids;
+        let merge_permit_opt = batch._merge_permit_opt;
         // Hold the scratch directory alive until the upload task completes.
         // For the merge path, this prevents the TempDirectory from being
         // cleaned up before the upload task reads the merged files.
@@ -322,7 +324,9 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     );
                 }
 
-                // Create ParquetSplitsUpdate and send downstream
+                // Create ParquetSplitsUpdate and send downstream.
+                // The merge permit (if present) transfers to the update so it
+                // stays alive until the publisher drops the message.
                 let update = ParquetSplitsUpdate {
                     index_uid,
                     new_splits: splits,
@@ -331,6 +335,7 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     publish_lock,
                     publish_token_opt,
                     parent_span: Span::current(),
+                    _merge_permit_opt: merge_permit_opt,
                 };
 
                 if tx.send(SequencerCommand::Proceed(update)).is_err() {
@@ -436,6 +441,7 @@ mod tests {
             publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
+            _merge_permit_opt: None,
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -531,6 +537,7 @@ mod tests {
             publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
+            _merge_permit_opt: None,
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -607,6 +614,7 @@ mod tests {
             publish_token_opt: None,
             replaced_split_ids: Vec::new(),
             _scratch_directory_opt: None,
+            _merge_permit_opt: None,
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -679,6 +687,7 @@ mod tests {
                 publish_token_opt: None,
                 replaced_split_ids: Vec::new(),
                 _scratch_directory_opt: None,
+                _merge_permit_opt: None,
             };
             uploader_mailbox.send_message(batch).await.unwrap();
         }

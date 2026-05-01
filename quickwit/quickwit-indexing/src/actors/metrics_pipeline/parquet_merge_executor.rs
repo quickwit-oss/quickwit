@@ -165,6 +165,7 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                 publish_token_opt: None,
                 replaced_split_ids,
                 _scratch_directory_opt: Some(scratch.scratch_directory),
+                _merge_permit_opt: Some(scratch.merge_permit),
             };
             ctx.send_message(&self.uploader_mailbox, batch).await?;
             return Ok(());
@@ -172,13 +173,19 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
 
         let mut merged_splits = Vec::with_capacity(outputs.len());
         for output in &outputs {
-            let metadata = merge_parquet_split_metadata(input_splits, output)
+            let mut metadata = merge_parquet_split_metadata(input_splits, output)
                 .context("failed to build merge output metadata")
                 .map_err(|e| ActorExitStatus::from(anyhow::anyhow!(e)))?;
 
-            // The merge engine writes to a temp filename (merge_output_*.parquet).
-            // Rename to {split_id}.parquet so the uploader can find it at the
-            // path derived from ParquetSplitMetadata::parquet_filename().
+            // Use the split ID that was assigned when the merge operation was
+            // planned, rather than the one generated inside
+            // merge_parquet_split_metadata(). This keeps the ID consistent
+            // across scheduling, tracing, and the final published split.
+            metadata.split_id = scratch.merge_operation.merge_split_id.clone();
+            metadata.parquet_file = metadata.split_id.to_string() + ".parquet";
+
+            // Rename the output file to match the split ID.
+            // The uploader expects files at `output_dir/{split_id}.parquet`.
             let expected_path = output_dir.join(&metadata.parquet_file);
             if output.path != expected_path {
                 std::fs::rename(&output.path, &expected_path)
@@ -215,12 +222,14 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             publish_token_opt: None,
             replaced_split_ids,
             _scratch_directory_opt: Some(scratch.scratch_directory),
+            _merge_permit_opt: Some(scratch.merge_permit),
         };
 
         ctx.send_message(&self.uploader_mailbox, batch).await?;
 
-        // The merge permit is dropped here when `scratch` goes out of scope,
-        // releasing the semaphore slot for the next merge.
+        // The merge permit is now carried by the batch — it will be held
+        // through the uploader and released when the publisher drops the
+        // ParquetSplitsUpdate message.
         info!(
             merge_split_id = %merge_split_id,
             "parquet merge complete, sent to uploader"
