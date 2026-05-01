@@ -32,7 +32,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_parquet_engine::merge::policy::{
-    CompactionScope, ParquetMergeOperation, ParquetMergePolicy,
+    CompactionScope, ParquetMergeOperation, ParquetMergePolicy, ParquetSplitMaturity,
 };
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use tantivy::Inventory;
@@ -195,15 +195,27 @@ impl ParquetMergePlanner {
 
     /// Filters and records incoming splits, skipping:
     /// - Mature splits (already at max merge ops or target size)
+    /// - Time-matured splits (created_at + maturation_period has elapsed)
     /// - Splits we've already seen (dedup via `known_split_ids`)
     /// - Pre-Phase-31 splits without a window (can't participate in compaction)
     fn record_splits_if_necessary(&mut self, splits: Vec<ParquetSplitMetadata>) {
+        let now = std::time::SystemTime::now();
         for split in splits {
-            if let quickwit_parquet_engine::merge::policy::ParquetSplitMaturity::Mature = self
+            match self
                 .merge_policy
                 .split_maturity(split.size_bytes, split.num_merge_ops)
             {
-                continue;
+                ParquetSplitMaturity::Mature => continue,
+                ParquetSplitMaturity::Immature {
+                    maturation_period, ..
+                } => {
+                    // A split that has lived past its maturation period is
+                    // effectively mature — no further merges needed. This
+                    // mirrors the Tantivy merge planner's `is_mature(now)`.
+                    if split.created_at + maturation_period <= now {
+                        continue;
+                    }
+                }
             }
             if !self.acknowledge_split(split.split_id.as_str()) {
                 continue;
