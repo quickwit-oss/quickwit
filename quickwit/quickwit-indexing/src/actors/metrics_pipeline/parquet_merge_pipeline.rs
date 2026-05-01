@@ -429,21 +429,19 @@ impl ParquetMergePipeline {
         let query = quickwit_metastore::ListParquetSplitsQuery::for_index(index_uid.clone());
         let is_sketch = quickwit_common::is_sketches_index(&index_uid.index_id);
         let records = if is_sketch {
-            let list_request =
-                quickwit_proto::metastore::ListSketchSplitsRequest::try_from_query(
-                    index_uid.clone(),
-                    &query,
-                )?;
+            let list_request = quickwit_proto::metastore::ListSketchSplitsRequest::try_from_query(
+                index_uid.clone(),
+                &query,
+            )?;
             let response = ctx
                 .protect_future(self.params.metastore.list_sketch_splits(list_request))
                 .await?;
             response.deserialize_splits()?
         } else {
-            let list_request =
-                quickwit_proto::metastore::ListMetricsSplitsRequest::try_from_query(
-                    index_uid.clone(),
-                    &query,
-                )?;
+            let list_request = quickwit_proto::metastore::ListMetricsSplitsRequest::try_from_query(
+                index_uid.clone(),
+                &query,
+            )?;
             let response = ctx
                 .protect_future(self.params.metastore.list_metrics_splits(list_request))
                 .await?;
