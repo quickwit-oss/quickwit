@@ -362,7 +362,6 @@ mod tests {
         IngestFailure, IngestFailureReason, IngestResponseV2, IngestRouterServiceClient,
         IngestSuccess, MockIngestRouterService,
     };
-    use quickwit_proto::metastore::IndexRoutingRule;
     use quickwit_proto::types::{IndexUid, Position, ShardId};
 
     use super::*;
@@ -370,10 +369,7 @@ mod tests {
     const DATADOG_INDEX_ID: &str = "datadog";
 
     fn test_index_router() -> IndexRouter {
-        IndexRouter::for_test(vec![IndexRoutingRule {
-            index_id: DATADOG_INDEX_ID.to_string(),
-            filter: "*".to_string(),
-        }])
+        IndexRouter::for_test(&[("*", DATADOG_INDEX_ID)])
     }
 
     #[tokio::test]
@@ -543,19 +539,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_datadog_ingest_logs_routes_to_multiple_indexes() {
-        let index_router = IndexRouter::for_test(vec![
-            IndexRoutingRule {
-                filter: "service:frontend".to_string(),
-                index_id: "frontend-index".to_string(),
-            },
-            IndexRoutingRule {
-                filter: "service:backend".to_string(),
-                index_id: "backend-index".to_string(),
-            },
-            IndexRoutingRule {
-                filter: "*".to_string(),
-                index_id: "catch-all-index".to_string(),
-            },
+        let index_router = IndexRouter::for_test(&[
+            ("service:frontend", "frontend-index"),
+            ("service:backend", "backend-index"),
+            ("*", "catch-all-index"),
         ]);
 
         let mut mock_ingest_router = MockIngestRouterService::new();

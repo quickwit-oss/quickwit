@@ -17,7 +17,6 @@ pub(crate) mod log_msg_accessors;
 pub mod rest_handler;
 
 pub use index_router::IndexRouter;
-#[cfg(any(test, feature = "testsuite"))]
 pub use log_msg_accessors::{custom_field_accessor, tag_accessor};
 use quickwit_proto::ServiceErrorCode;
 use quickwit_proto::ingest::router::IngestFailureReason;
