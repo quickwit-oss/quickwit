@@ -305,9 +305,9 @@ impl ParquetMergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .spawn(merge_split_downloader);
 
-        // 6. Merge planner — uses recycled mailbox/inbox so the publisher's
-        //    feedback loop (which holds a clone of the planner mailbox) survives
-        //    pipeline restarts without needing to be re-wired.
+        // 6. Merge planner — uses recycled mailbox/inbox so the publisher's feedback loop (which
+        //    holds a clone of the planner mailbox) survives pipeline restarts without needing to be
+        //    re-wired.
         let merge_planner = ParquetMergePlanner::new(
             immature_splits,
             self.params.merge_policy.clone(),
