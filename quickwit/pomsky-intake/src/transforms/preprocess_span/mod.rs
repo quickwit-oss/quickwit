@@ -136,7 +136,7 @@ fn preprocess_datadog_trace(trace: &mut TraceEvent) {
     trace.insert("discovery_timestamp", Utc::now().timestamp_millis());
 
     if let Some(Value::Integer(raw)) = trace.get("trace_id") {
-        let decimal = (*raw as u64).to_string();
+        let decimal: Value = (*raw as u64).to_string().into();
         trace.insert("trace_id", decimal.clone());
         trace.insert("trace_id_low", decimal);
     }

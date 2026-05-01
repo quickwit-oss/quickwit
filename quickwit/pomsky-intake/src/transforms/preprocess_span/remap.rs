@@ -18,9 +18,16 @@
 //! for renames, derivations, and folding of catch-all maps.
 
 use std::io::Cursor;
+use std::sync::LazyLock;
 
+use bytes::Bytes;
 use rand::RngExt as _;
 use vector::event::{ObjectMap, TraceEvent, Value};
+
+static STATUS_OK: LazyLock<Value> =
+    LazyLock::new(|| Value::Bytes(Bytes::from_static(b"ok")));
+static STATUS_ERROR: LazyLock<Value> =
+    LazyLock::new(|| Value::Bytes(Bytes::from_static(b"error")));
 
 /// Remaps a normalized Datadog span event to the schema's field shape:
 /// - rename `name` → `operation_name`, `resource` → `resource_name`
@@ -59,8 +66,8 @@ pub(super) fn remap_dd_span_to_schema(trace: &mut TraceEvent) {
     }
 
     if let Some(Value::Integer(raw)) = trace.get("error") {
-        let status = if *raw == 0 { "ok" } else { "error" };
-        trace.insert("status", status.to_string());
+        let status = if *raw == 0 { STATUS_OK.clone() } else { STATUS_ERROR.clone() };
+        trace.insert("status", status);
     }
     trace.remove("error");
 
@@ -143,8 +150,7 @@ fn decode_meta_struct_leaf(value: &Value) -> Option<Value> {
         Value::Bytes(b) => b,
         _ => return None,
     };
-    let json: serde_json::Value = rmp_serde::from_slice(bytes).ok()?;
-    Some(Value::from(json))
+    rmp_serde::from_slice(bytes).ok()
 }
 
 /// Computes the resource hash exactly as logs-backend's
