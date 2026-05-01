@@ -40,8 +40,7 @@ pub struct DualShipPollerConfig {
 /// Each cycle:
 /// 1. Reads the current watermark from the store.
 /// 2. Fetches records from the metadata service since that watermark.
-/// 3. Applies them via `replace` (full sync, watermark==0) or `merge`
-///    (incremental).
+/// 3. Applies them via `replace` (full sync, watermark==0) or `merge` (incremental).
 /// 4. Persists the CSV when anything changed and advances the watermark.
 ///
 /// On HTTP failure the cycle logs and retries on the next tick — no
@@ -112,9 +111,7 @@ async fn poll_once(
         let store_for_io = Arc::clone(store);
         let csv_path_owned = csv_path.to_path_buf();
         let write_result = tokio::task::spawn_blocking(move || {
-            let guard = store_for_io
-                .read()
-                .expect("dual-ship store lock poisoned");
+            let guard = store_for_io.read().expect("dual-ship store lock poisoned");
             write_csv_to_disk(&csv_path_owned, guard.metrics())
         })
         .await;
@@ -177,12 +174,10 @@ fn apply_records_and_set_watermark(
 /// Returns the new watermark to persist after a successful fetch.
 ///
 /// - If the response contains records, use the max `last_updated_unix`.
-/// - If the response was empty and this was an incremental poll, advance
-///   to the current unix time so we don't keep replaying the same window
-///   (matches the Go sidecar `pollOnce` behavior).
-/// - If the response was empty and this was a full sync, leave the
-///   watermark at 0 — we still need to discover any records on the next
-///   poll, which is also a full sync.
+/// - If the response was empty and this was an incremental poll, advance to the current unix time
+///   so we don't keep replaying the same window (matches the Go sidecar `pollOnce` behavior).
+/// - If the response was empty and this was a full sync, leave the watermark at 0 — we still need
+///   to discover any records on the next poll, which is also a full sync.
 fn compute_new_watermark(records: &[MetricRecord], is_full_sync: bool) -> i64 {
     if let Some(max) = records.iter().map(|record| record.last_updated_unix).max() {
         return max;
@@ -198,11 +193,12 @@ fn compute_new_watermark(records: &[MetricRecord], is_full_sync: bool) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::transforms::metric_dual_ship::types::Destination;
     use serde_json::json;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
+    use crate::transforms::metric_dual_ship::types::Destination;
 
     const ENDPOINT_PATH: &str = "/api/unstable/byoc/ingest/metadata/dual-shipped-metrics";
 

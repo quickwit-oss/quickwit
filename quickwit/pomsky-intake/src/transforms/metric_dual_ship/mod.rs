@@ -97,8 +97,8 @@ impl TransformConfig for MetricDualShipConfig {
         {
             std::fs::metadata(parent).map_err(|err| {
                 format!(
-                    "persist_file_path parent directory '{}' is not accessible: {err}; ensure \
-                     the directory exists and is writable",
+                    "persist_file_path parent directory '{}' is not accessible: {err}; ensure the \
+                     directory exists and is writable",
                     parent.display()
                 )
             })?;

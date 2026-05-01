@@ -140,10 +140,11 @@ impl DualShipFetcher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use serde_json::json;
     use wiremock::matchers::{body_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::*;
 
     fn make_client(uri: &str, timeout: Duration) -> DualShipFetcher {
         DualShipFetcher::new("test-key".to_string(), uri.to_string(), timeout)

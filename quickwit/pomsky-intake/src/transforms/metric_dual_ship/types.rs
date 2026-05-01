@@ -20,8 +20,7 @@ use thiserror::Error;
 /// Where a metric must be shipped.
 ///
 /// Wire forms:
-/// - integer (1=saas, 2=byoc, 3=dual) — matches the Go
-///   `byoc-dualship-mgr` API mapping
+/// - integer (1=saas, 2=byoc, 3=dual) — matches the Go `byoc-dualship-mgr` API mapping
 /// - lowercase string (`"saas"`, `"byoc"`, `"dual"`) — matches the CSV format
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Destination {
@@ -87,7 +86,8 @@ pub struct MetricRecord {
     pub last_updated_unix: i64,
 }
 
-/// Counts of mutations applied by [`crate::transforms::metric_dual_ship::store::DualShipStore::merge`]
+/// Counts of mutations applied by
+/// [`crate::transforms::metric_dual_ship::store::DualShipStore::merge`]
 /// or [`crate::transforms::metric_dual_ship::store::DualShipStore::replace`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ChangeSet {
