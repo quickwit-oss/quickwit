@@ -19,11 +19,10 @@
 //! publisher publishes with replaced_split_ids.
 //!
 //! Verifies:
-//! - Staged metadata (num_rows, time_range, metric_names, tags, merge_ops,
-//!   row_keys, zonemap_regexes)
+//! - Staged metadata (num_rows, time_range, metric_names, tags, merge_ops, row_keys,
+//!   zonemap_regexes)
 //! - Merged Parquet file contents (row count, column values, sort order)
-//! - Parquet KV headers (qh.sort_fields, qh.num_merge_ops, qh.row_keys,
-//!   qh.zonemap_regexes)
+//! - Parquet KV headers (qh.sort_fields, qh.num_merge_ops, qh.row_keys, qh.zonemap_regexes)
 //! - Cross-validation: metadata agrees with file contents
 
 use std::collections::{HashMap, HashSet};
@@ -264,10 +263,8 @@ fn extract_binary_column(batch: &RecordBatch, name: &str) -> Vec<Vec<u8>> {
 /// Full integration test: seed splits → merge → verify everything.
 ///
 /// Creates 2 real sorted Parquet files with DIFFERENT data:
-/// - split-a: 50 rows, metric "cpu.usage", timestamps 100–149,
-///   service="web", host="host-1"
-/// - split-b: 50 rows, metric "mem.usage", timestamps 200–249,
-///   service="api", host="host-2"
+/// - split-a: 50 rows, metric "cpu.usage", timestamps 100–149, service="web", host="host-1"
+/// - split-b: 50 rows, metric "mem.usage", timestamps 200–249, service="api", host="host-2"
 ///
 /// Then verifies the merge pipeline:
 /// 1. Plans a merge (merge_factor=2)
@@ -277,11 +274,10 @@ fn extract_binary_column(batch: &RecordBatch, name: &str) -> Vec<Vec<u8>> {
 /// 5. Publishes with replaced_split_ids matching the input splits
 ///
 /// And asserts:
-/// - Staged metadata correctness (num_rows, time_range, metric_names, tags,
-///   num_merge_ops, row_keys, zonemaps)
+/// - Staged metadata correctness (num_rows, time_range, metric_names, tags, num_merge_ops,
+///   row_keys, zonemaps)
 /// - Merged Parquet file data (row count, column values, sort order)
-/// - Parquet KV headers (qh.sort_fields, qh.num_merge_ops, qh.row_keys,
-///   qh.zonemap_regexes)
+/// - Parquet KV headers (qh.sort_fields, qh.num_merge_ops, qh.row_keys, qh.zonemap_regexes)
 /// - Cross-validation: metadata matches file contents
 #[tokio::test]
 async fn test_merge_pipeline_end_to_end() {
