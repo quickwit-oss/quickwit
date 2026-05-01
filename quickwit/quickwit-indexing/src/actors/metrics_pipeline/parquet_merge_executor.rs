@@ -134,16 +134,6 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             }
         };
 
-        // Empty output is valid (all input rows were empty). Nothing to publish.
-        if outputs.is_empty() {
-            info!(
-                merge_split_id = %merge_split_id,
-                "merge produced no output (all inputs empty)"
-            );
-            return Ok(());
-        }
-
-        // Build metadata for each output file and rename to match split IDs.
         let input_splits = &scratch.merge_operation.splits;
         let index_uid: IndexUid = input_splits[0]
             .index_uid
@@ -155,6 +145,30 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
             .iter()
             .map(|s| s.split_id.as_str().to_string())
             .collect();
+
+        // Empty output is valid (all input rows were empty). Still publish
+        // the replacement so the empty input splits get marked for deletion
+        // in the metastore — otherwise they stay Published forever since the
+        // planner already drained them from its working set.
+        if outputs.is_empty() {
+            info!(
+                merge_split_id = %merge_split_id,
+                num_replaced = replaced_split_ids.len(),
+                "merge produced no output — publishing replacement to clean up empty inputs"
+            );
+            let batch = ParquetSplitBatch {
+                index_uid,
+                splits: Vec::new(),
+                output_dir,
+                checkpoint_delta_opt: None,
+                publish_lock: PublishLock::default(),
+                publish_token_opt: None,
+                replaced_split_ids,
+                _scratch_directory_opt: Some(scratch.scratch_directory),
+            };
+            ctx.send_message(&self.uploader_mailbox, batch).await?;
+            return Ok(());
+        }
 
         let mut merged_splits = Vec::with_capacity(outputs.len());
         for output in &outputs {
