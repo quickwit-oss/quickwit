@@ -75,9 +75,8 @@ impl IndexingService {
             &index_config,
             storage.clone(),
             indexing_directory.clone(),
-            // TODO: fetch immature Parquet splits from metastore for seeding
-            // the merge planner on first spawn. For now, the planner starts
-            // empty and picks up new splits from the publisher feedback loop.
+            // None here means the pipeline's fetch_immature_splits() will
+            // query the metastore on first spawn (same path as respawn).
             None,
             ctx,
         )?;
