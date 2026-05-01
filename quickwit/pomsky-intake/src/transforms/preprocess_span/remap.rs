@@ -24,10 +24,8 @@ use bytes::Bytes;
 use rand::RngExt as _;
 use vector::event::{ObjectMap, TraceEvent, Value};
 
-static STATUS_OK: LazyLock<Value> =
-    LazyLock::new(|| Value::Bytes(Bytes::from_static(b"ok")));
-static STATUS_ERROR: LazyLock<Value> =
-    LazyLock::new(|| Value::Bytes(Bytes::from_static(b"error")));
+static STATUS_OK: LazyLock<Value> = LazyLock::new(|| Value::Bytes(Bytes::from_static(b"ok")));
+static STATUS_ERROR: LazyLock<Value> = LazyLock::new(|| Value::Bytes(Bytes::from_static(b"error")));
 
 /// Remaps a normalized Datadog span event to the schema's field shape:
 /// - rename `name` → `operation_name`, `resource` → `resource_name`
@@ -66,7 +64,11 @@ pub(super) fn remap_dd_span_to_schema(trace: &mut TraceEvent) {
     }
 
     if let Some(Value::Integer(raw)) = trace.get("error") {
-        let status = if *raw == 0 { STATUS_OK.clone() } else { STATUS_ERROR.clone() };
+        let status = if *raw == 0 {
+            STATUS_OK.clone()
+        } else {
+            STATUS_ERROR.clone()
+        };
         trace.insert("status", status);
     }
     trace.remove("error");
