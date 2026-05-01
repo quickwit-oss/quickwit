@@ -428,6 +428,7 @@ vector = { git = "https://github.com/vectordotdev/vector", rev = "fbb1e4b501d608
   "api",
   "sinks-blackhole",
   "sinks-console",
+  "sinks-datadog_metrics",
   "sinks-http",
   "sources-datadog_agent",
   "sources-http_server",

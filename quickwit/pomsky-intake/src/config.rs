@@ -27,6 +27,9 @@ const HOST_TAGS_DEFAULT_TTL_MAX_SECS: u64 = 3600; // 60 minutes
 
 const HOST_TAGS_API_PATH: &str = "/api/unstable/byoc/ingest/metadata/host-tags";
 
+const DUAL_SHIP_DEFAULT_POLL_INTERVAL_SECS: u64 = 5;
+const DUAL_SHIP_DEFAULT_FETCH_TIMEOUT_SECS: u64 = 10;
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct IntakeConfig {
     /// Datadog site (e.g. `datadoghq.com`, `datad0g.com`). Overridden by
@@ -60,6 +63,9 @@ pub struct IntakeConfig {
 
     #[serde(default)]
     pub host_tags: HostTagsConfig,
+
+    #[serde(default)]
+    pub dual_ship: DualShipConfig,
 }
 
 impl Default for IntakeConfig {
@@ -74,6 +80,7 @@ impl Default for IntakeConfig {
             org_id: default_org_id(),
             metric_metadata_persist_file_path: default_metric_metadata_persist_file_path(),
             host_tags: HostTagsConfig::default(),
+            dual_ship: DualShipConfig::default(),
         }
     }
 }
@@ -100,6 +107,7 @@ impl IntakeConfig {
             "dd_api_key must be set via config or the DD_API_KEY environment variable",
         );
         self.host_tags.validate()?;
+        self.dual_ship.validate()?;
         Ok(())
     }
 }
@@ -232,6 +240,83 @@ impl Default for HostTagsConfig {
     }
 }
 
+/// Configuration for the dual-ship metric routing component.
+///
+/// The poller fetches `/api/unstable/byoc/ingest/metadata/dual-shipped-metrics`
+/// from the same `dd_site` used elsewhere in the intake. The same
+/// `persist_file_path` is plumbed into both the `metric_dual_ship` Vector
+/// transform (for the load-on-startup path) and the spawned poller (for
+/// periodic writes).
+#[derive(Clone, Debug, Deserialize)]
+pub struct DualShipConfig {
+    /// How often to poll the metadata service, in seconds.
+    #[serde(default = "dual_ship_default_poll_interval_secs")]
+    pub poll_interval_secs: u64,
+
+    /// HTTP request timeout for a single metadata service fetch, in seconds.
+    /// Must be strictly less than `poll_interval_secs` so a slow fetch
+    /// cannot overlap the next poll cycle.
+    #[serde(default = "dual_ship_default_fetch_timeout_secs")]
+    pub fetch_timeout_secs: u64,
+
+    /// Path to the CSV file used to persist the in-memory routing map
+    /// between restarts. The watermark sidecar lives at
+    /// `{persist_file_path}.watermark`.
+    #[serde(default = "default_dual_ship_persist_file_path")]
+    pub persist_file_path: PathBuf,
+}
+
+fn dual_ship_default_poll_interval_secs() -> u64 {
+    DUAL_SHIP_DEFAULT_POLL_INTERVAL_SECS
+}
+
+fn dual_ship_default_fetch_timeout_secs() -> u64 {
+    DUAL_SHIP_DEFAULT_FETCH_TIMEOUT_SECS
+}
+
+fn default_dual_ship_persist_file_path() -> PathBuf {
+    PathBuf::from("qwdata/intake/metrics_to_saas.csv")
+}
+
+impl DualShipConfig {
+    pub fn poll_interval(&self) -> Duration {
+        Duration::from_secs(self.poll_interval_secs)
+    }
+
+    pub fn fetch_timeout(&self) -> Duration {
+        Duration::from_secs(self.fetch_timeout_secs)
+    }
+
+    /// Builds the metadata service base URL: `https://{dd_site}`. The
+    /// dual-ship endpoint path is appended by the fetcher.
+    pub fn metadata_service_url(&self, dd_site: &str) -> String {
+        let site = dd_site.trim_end_matches('/');
+        format!("https://{site}")
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.fetch_timeout_secs < self.poll_interval_secs,
+            "dual_ship.fetch_timeout_secs ({}) must be strictly less than \
+             dual_ship.poll_interval_secs ({}); otherwise a slow fetch can overlap the next poll \
+             cycle",
+            self.fetch_timeout_secs,
+            self.poll_interval_secs,
+        );
+        Ok(())
+    }
+}
+
+impl Default for DualShipConfig {
+    fn default() -> Self {
+        Self {
+            poll_interval_secs: DUAL_SHIP_DEFAULT_POLL_INTERVAL_SECS,
+            fetch_timeout_secs: DUAL_SHIP_DEFAULT_FETCH_TIMEOUT_SECS,
+            persist_file_path: default_dual_ship_persist_file_path(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,5 +401,37 @@ mod tests {
             ..HostTagsConfig::default()
         };
         config.validate().unwrap();
+    }
+
+    #[test]
+    fn test_dual_ship_metadata_service_url_strips_trailing_slash() {
+        let config = DualShipConfig::default();
+        assert_eq!(
+            config.metadata_service_url("datad0g.com/"),
+            "https://datad0g.com",
+        );
+    }
+
+    #[test]
+    fn test_dual_ship_validate_rejects_fetch_timeout_exceeding_poll_interval() {
+        let config = DualShipConfig {
+            poll_interval_secs: 5,
+            fetch_timeout_secs: 10,
+            ..DualShipConfig::default()
+        };
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains("fetch_timeout_secs"));
+        assert!(error.contains("poll_interval_secs"));
+    }
+
+    #[test]
+    fn test_dual_ship_validate_accepts_valid_intervals() {
+        DualShipConfig {
+            poll_interval_secs: 30,
+            fetch_timeout_secs: 5,
+            ..DualShipConfig::default()
+        }
+        .validate()
+        .unwrap();
     }
 }

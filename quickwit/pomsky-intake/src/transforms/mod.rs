@@ -15,6 +15,7 @@
 pub mod add_host_tags;
 pub mod connections_to_apm_metrics;
 pub mod explode_trace_spans;
+pub mod metric_dual_ship;
 pub mod metric_metadata;
 pub mod preprocess_dd_trace;
 pub mod preprocess_log;
