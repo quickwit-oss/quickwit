@@ -104,6 +104,9 @@ pub fn merge_parquet_split_metadata(
         .expect("at least one input")
         + 1;
 
+    // The generated split ID determines the expected filename. The caller
+    // (ParquetMergeExecutor) renames the merge engine's output file to match
+    // this name before handing it to the uploader.
     let split_id = ParquetSplitId::generate(first.kind);
     let parquet_file = format!("{split_id}.parquet");
 
