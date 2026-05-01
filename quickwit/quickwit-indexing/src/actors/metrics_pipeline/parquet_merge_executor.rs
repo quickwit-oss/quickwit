@@ -126,10 +126,9 @@ impl Handler<ParquetMergeScratch> for ParquetMergeExecutor {
                      the pipeline restarts with metastore re-seeding"
                 );
                 // The input splits were drained from the planner by operations().
-                // They remain published in the metastore but won't be re-planned
-                // until the pipeline restarts and re-seeds from the metastore.
-                // TODO: implement fetch_immature_parquet_splits() for respawn
-                // (same as Tantivy's fetch_immature_splits pattern).
+                // They remain published in the metastore and will be re-seeded
+                // into the planner when the pipeline respawns (via
+                // fetch_immature_splits on the ParquetMergePipeline supervisor).
                 return Ok(());
             }
             Err(panicked) => {
