@@ -72,6 +72,21 @@ impl DualShipStore {
         self.metrics.is_empty()
     }
 
+    /// Returns a borrowed view of the in-memory metrics map. Callers in the
+    /// poller acquire a read lock and pass the reference straight to
+    /// [`write_csv_to_disk`] — no clone needed.
+    pub fn metrics(&self) -> &HashMap<String, Destination> {
+        &self.metrics
+    }
+
+    /// Test-only helper to seed a specific destination, including
+    /// `Destination::Byoc` which is normally pruned from the map. Used by
+    /// transform tests that need to exercise every match arm.
+    #[cfg(test)]
+    pub fn insert_for_test(&mut self, name: &str, destination: Destination) {
+        self.metrics.insert(name.to_string(), destination);
+    }
+
     /// Applies an incremental fetch.
     /// - `byoc` removes the entry if present.
     /// - `saas`/`dual` insert or replace (last-seen wins).
@@ -127,23 +142,43 @@ impl DualShipStore {
         cs
     }
 
-    /// Persists the in-memory map to `csv_path` atomically.
-    pub fn write_csv(&self, csv_path: &Path) -> anyhow::Result<()> {
-        write_csv_atomic(csv_path, &self.metrics)
-    }
-
-    /// Persists `ts` to the watermark sidecar atomically and updates the
-    /// in-memory value on success.
-    pub fn write_watermark(&mut self, ts: i64, csv_path: &Path) -> anyhow::Result<()> {
-        write_watermark_atomic(&watermark_path(csv_path), ts)?;
+    /// Updates the in-memory watermark only. Disk persistence is performed
+    /// separately by the poller via [`write_watermark_to_disk`] outside the
+    /// store lock so the metric event hot path is never blocked on file IO.
+    pub fn set_watermark(&mut self, ts: i64) {
         self.watermark = ts;
-        Ok(())
     }
+}
+
+/// Persists the metrics map to `csv_path` atomically. Free function so the
+/// caller can pass an owned snapshot taken outside the store lock.
+pub fn write_csv_to_disk(
+    csv_path: &Path,
+    entries: &HashMap<String, Destination>,
+) -> anyhow::Result<()> {
+    write_csv_atomic(csv_path, entries)
+}
+
+/// Persists `ts` to the watermark sidecar of `csv_path` atomically. Free
+/// function so the caller can drop the store lock before performing IO.
+pub fn write_watermark_to_disk(csv_path: &Path, ts: i64) -> anyhow::Result<()> {
+    write_watermark_atomic(&watermark_path(csv_path), ts)
 }
 
 // ---------------------------------------------------------------------------
 // File IO helpers
 // ---------------------------------------------------------------------------
+
+/// Returns the parent directory of `path`, falling back to the current
+/// working directory when the path is a bare filename (parent is `None` or
+/// the empty string). `NamedTempFile::new_in("")` fails on macOS, so we
+/// must collapse the empty case to `"."`.
+fn parent_or_cwd(path: &Path) -> &Path {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    }
+}
 
 fn load_csv(path: &Path) -> anyhow::Result<HashMap<String, Destination>> {
     let file = match std::fs::File::open(path) {
@@ -213,7 +248,7 @@ fn load_watermark(path: &Path) -> anyhow::Result<i64> {
 }
 
 fn write_csv_atomic(path: &Path, entries: &HashMap<String, Destination>) -> anyhow::Result<()> {
-    let parent = path.parent().unwrap_or(Path::new("."));
+    let parent = parent_or_cwd(path);
     let temp_file = NamedTempFile::new_in(parent)?;
     let mut writer = BufWriter::new(temp_file);
 
@@ -236,7 +271,7 @@ fn write_csv_atomic(path: &Path, entries: &HashMap<String, Destination>) -> anyh
 }
 
 fn write_watermark_atomic(path: &Path, ts: i64) -> anyhow::Result<()> {
-    let parent = path.parent().unwrap_or(Path::new("."));
+    let parent = parent_or_cwd(path);
     let mut temp_file = NamedTempFile::new_in(parent)?;
     writeln!(temp_file, "{ts}")?;
     temp_file.as_file().sync_all()?;
@@ -355,7 +390,7 @@ mod tests {
             rec("alpha", Destination::Saas, 1),
             rec("bravo", Destination::Dual, 2),
         ]);
-        store.write_csv(&csv).unwrap();
+        write_csv_to_disk(&csv, store.metrics()).unwrap();
 
         let reloaded = DualShipStore::load(&csv).unwrap();
         assert_eq!(reloaded.lookup("alpha"), Some(Destination::Saas));
@@ -391,11 +426,32 @@ mod tests {
         let csv = dir.path().join("metrics_to_saas.csv");
 
         let mut store = DualShipStore::default();
-        store.write_watermark(1_700_000_000, &csv).unwrap();
+        write_watermark_to_disk(&csv, 1_700_000_000).unwrap();
+        store.set_watermark(1_700_000_000);
         assert_eq!(store.watermark(), 1_700_000_000);
 
         let reloaded = DualShipStore::load(&csv).unwrap();
         assert_eq!(reloaded.watermark(), 1_700_000_000);
+    }
+
+    #[test]
+    fn write_helpers_handle_bare_filename_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        // Run the IO with the cwd inside the temp dir so a bare filename
+        // resolves there. We restore the cwd at the end.
+        let saved_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        let mut entries = HashMap::new();
+        entries.insert("alpha".to_string(), Destination::Saas);
+        write_csv_to_disk(Path::new("bare.csv"), &entries).unwrap();
+        write_watermark_to_disk(Path::new("bare.csv"), 42).unwrap();
+
+        let reloaded = DualShipStore::load(Path::new("bare.csv")).unwrap();
+        assert_eq!(reloaded.lookup("alpha"), Some(Destination::Saas));
+        assert_eq!(reloaded.watermark(), 42);
+
+        std::env::set_current_dir(saved_cwd).unwrap();
     }
 
     #[test]

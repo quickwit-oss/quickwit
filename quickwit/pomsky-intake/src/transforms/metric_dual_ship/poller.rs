@@ -24,7 +24,7 @@ use std::time::{Duration, SystemTime};
 use tracing::{info, warn};
 
 use super::client::DualShipFetcher;
-use super::store::DualShipStore;
+use super::store::{DualShipStore, write_csv_to_disk, write_watermark_to_disk};
 use super::types::{ChangeSet, MetricRecord};
 
 pub struct DualShipPollerConfig {
@@ -94,18 +94,56 @@ async fn poll_once(
     };
 
     let new_watermark = compute_new_watermark(&records, is_full_sync);
-    let change_set = apply_records(store, &records, is_full_sync);
 
-    if change_set.total() > 0
-        && let Err(err) = persist_csv(store, csv_path)
-    {
-        warn!(%err, "failed to persist dual-ship CSV; watermark not advanced");
-        return;
+    // Apply all memory mutations under a single brief write lock. The lock
+    // is dropped before any disk IO so writers (the next poll cycle) can't
+    // be queued behind an fsync.
+    let change_set = apply_records_and_set_watermark(store, &records, is_full_sync, new_watermark);
+
+    // Memory state is now authoritative. Disk persistence is best-effort:
+    // if it fails the next successful poll will rewrite both files, and at
+    // worst startup falls back to a full sync from SaaS.
+    //
+    // The CSV writer takes a read lock inside the blocking task. Read locks
+    // don't block other readers (the metric event hot path), and the only
+    // writer is this poller — which is currently awaiting this very task —
+    // so contention is impossible.
+    if change_set.total() > 0 {
+        let store_for_io = Arc::clone(store);
+        let csv_path_owned = csv_path.to_path_buf();
+        let write_result = tokio::task::spawn_blocking(move || {
+            let guard = store_for_io
+                .read()
+                .expect("dual-ship store lock poisoned");
+            write_csv_to_disk(&csv_path_owned, guard.metrics())
+        })
+        .await;
+        match write_result {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => {
+                warn!(%err, "failed to persist dual-ship CSV; will retry on next poll");
+            }
+            Err(err) => {
+                warn!(%err, "dual-ship CSV write task panicked");
+            }
+        }
     }
 
-    if let Err(err) = persist_watermark(store, csv_path, new_watermark) {
-        warn!(%err, "failed to persist dual-ship watermark");
-        return;
+    // Watermark IO needs no lock at all — `new_watermark` is already an
+    // owned local. The in-memory copy was updated above.
+    let csv_path_owned = csv_path.to_path_buf();
+    let watermark_result = tokio::task::spawn_blocking(move || {
+        write_watermark_to_disk(&csv_path_owned, new_watermark)
+    })
+    .await;
+    match watermark_result {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => {
+            warn!(%err, "failed to persist dual-ship watermark; will retry on next poll");
+        }
+        Err(err) => {
+            warn!(%err, "dual-ship watermark write task panicked");
+        }
     }
 
     info!(
@@ -118,34 +156,22 @@ async fn poll_once(
     );
 }
 
-fn apply_records(
+/// Applies the fetched records to the in-memory store and updates the
+/// watermark under a single brief write lock. No file IO.
+fn apply_records_and_set_watermark(
     store: &Arc<RwLock<DualShipStore>>,
     records: &[MetricRecord],
     is_full_sync: bool,
+    new_watermark: i64,
 ) -> ChangeSet {
     let mut guard = store.write().expect("dual-ship store lock poisoned");
-    if is_full_sync {
+    let change_set = if is_full_sync {
         guard.replace(records)
     } else {
         guard.merge(records)
-    }
-}
-
-fn persist_csv(
-    store: &Arc<RwLock<DualShipStore>>,
-    csv_path: &std::path::Path,
-) -> anyhow::Result<()> {
-    let guard = store.read().expect("dual-ship store lock poisoned");
-    guard.write_csv(csv_path)
-}
-
-fn persist_watermark(
-    store: &Arc<RwLock<DualShipStore>>,
-    csv_path: &std::path::Path,
-    ts: i64,
-) -> anyhow::Result<()> {
-    let mut guard = store.write().expect("dual-ship store lock poisoned");
-    guard.write_watermark(ts, csv_path)
+    };
+    guard.set_watermark(new_watermark);
+    change_set
 }
 
 /// Returns the new watermark to persist after a successful fetch.
@@ -271,8 +297,8 @@ mod tests {
             destination: Destination::Saas,
             last_updated_unix: 50,
         }]);
-        seeded.write_csv(&csv).unwrap();
-        seeded.write_watermark(50, &csv).unwrap();
+        write_csv_to_disk(&csv, seeded.metrics()).unwrap();
+        write_watermark_to_disk(&csv, 50).unwrap();
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -330,11 +356,8 @@ mod tests {
 
         // Watermark > 0 so this is an incremental poll.
         let store = Arc::new(RwLock::new(DualShipStore::default()));
-        store
-            .write()
-            .unwrap()
-            .write_watermark(1_000_000_000, &csv)
-            .unwrap();
+        store.write().unwrap().set_watermark(1_000_000_000);
+        write_watermark_to_disk(&csv, 1_000_000_000).unwrap();
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))

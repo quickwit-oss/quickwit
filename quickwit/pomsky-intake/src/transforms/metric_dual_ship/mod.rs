@@ -19,7 +19,7 @@
 //! `byoc-ingest-metadata-svc`. Replaces the Vector VRL `tag_saas_metrics` +
 //! `metric_router` pair plus the standalone `byoc-dualship-mgr` Go sidecar.
 
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use serde::{Deserialize, Serialize};
@@ -59,7 +59,7 @@ pub fn global_store() -> Arc<RwLock<DualShipStore>> {
 pub struct MetricDualShipConfig {
     /// Path to the CSV file that persists the routing map between restarts.
     /// Must match the path used by the spawned dual-ship poller.
-    pub persist_file_path: String,
+    pub persist_file_path: PathBuf,
 }
 
 impl vector_lib::configurable::NamedComponent for MetricDualShipConfig {
@@ -70,7 +70,10 @@ impl vector_lib::configurable::NamedComponent for MetricDualShipConfig {
 
 impl GenerateConfig for MetricDualShipConfig {
     fn generate_config() -> toml::Value {
-        toml::Value::Table(Default::default())
+        toml::Value::try_from(MetricDualShipConfig {
+            persist_file_path: PathBuf::from("qwdata/intake/metrics_to_saas.csv"),
+        })
+        .expect("MetricDualShipConfig must serialize to TOML")
     }
 }
 
@@ -88,7 +91,7 @@ impl TransformConfig for MetricDualShipConfig {
 
         // Fail-fast on a misconfigured persist path so the operator sees the
         // problem at startup rather than at the first poll cycle.
-        let persist_path = Path::new(&self.persist_file_path);
+        let persist_path = self.persist_file_path.as_path();
         if let Some(parent) = persist_path.parent()
             && !parent.as_os_str().is_empty()
         {
@@ -269,22 +272,25 @@ mod tests {
 
     #[test]
     fn byoc_metric_routes_to_default_only() {
-        // Note: `Destination::Byoc` is normally pruned from the store — we
-        // populate it directly via the test-only accessor below to exercise
-        // the match arm.
+        // `Destination::Byoc` is normally pruned from the in-memory map by
+        // both `merge` and `replace`. The transform's match arm for
+        // `Some(Destination::Byoc)` therefore can't be reached through the
+        // public API, so we use the `#[cfg(test)]` accessor on the store to
+        // seed one directly and exercise the arm.
         let store = fresh_store();
-        // Stage a "byoc" entry by abusing the merge path: merge with byoc
-        // is a no-op against an empty store, so the cleanest way is to
-        // first add saas then merge byoc to remove it. The transform sees
-        // it as None — same routing as unknown. Add a direct test by using
-        // an internal API.
+        store
+            .write()
+            .unwrap()
+            .insert_for_test("charlie", Destination::Byoc);
+
         let mut transform = MetricDualShipTransform {
             store: store.clone(),
         };
         let mut outputs = make_outputs();
         transform.transform(make_metric("charlie"), &mut outputs);
 
-        // No record → default-only (matches the VRL fallback for byoc).
+        // Stored as Byoc → default-only (matches the VRL fallback in the
+        // original Vector pipeline).
         assert_eq!(outputs.drain().count(), 1);
         assert_eq!(outputs.drain_named(SAAS_PORT).count(), 0);
     }
@@ -299,7 +305,7 @@ mod tests {
         }
 
         let cfg = MetricDualShipConfig {
-            persist_file_path: "/tmp/dual_ship_test.csv".into(),
+            persist_file_path: PathBuf::from("/tmp/dual_ship_test.csv"),
         };
         let ctx = TransformContext::default();
         let result = cfg.build(&ctx).await;
@@ -331,7 +337,7 @@ mod tests {
         }
 
         let cfg = MetricDualShipConfig {
-            persist_file_path: "/nonexistent_dir_dual_ship/path.csv".into(),
+            persist_file_path: PathBuf::from("/nonexistent_dir_dual_ship/path.csv"),
         };
         let ctx = TransformContext::default();
         let result = cfg.build(&ctx).await;
@@ -368,7 +374,7 @@ mod tests {
         std::fs::write(&csv, b"name,destination\npreloaded,saas\n").unwrap();
 
         let cfg = MetricDualShipConfig {
-            persist_file_path: csv.to_string_lossy().into_owned(),
+            persist_file_path: csv.clone(),
         };
         let ctx = TransformContext::default();
         let _ = cfg.build(&ctx).await.expect("build should succeed");
