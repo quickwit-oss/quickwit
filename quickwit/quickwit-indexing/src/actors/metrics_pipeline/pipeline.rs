@@ -96,6 +96,12 @@ pub struct MetricsPipelineParams {
     pub partition_key: quickwit_doc_mapper::RoutingExpr,
     /// Maximum number of index partitions allowed in a workbench.
     pub max_num_partitions: NonZeroU32,
+    /// Parquet merge planner mailbox for the publisher feedback loop.
+    /// When set, the publisher sends ParquetNewSplits to the planner
+    /// after publishing ingest splits so they can be considered for merging.
+    /// `None` when no merge pipeline is running for this index.
+    pub parquet_merge_planner_mailbox_opt:
+        Option<quickwit_actors::Mailbox<super::ParquetMergePlanner>>,
 }
 
 pub struct MetricsPipeline {
@@ -313,14 +319,19 @@ impl MetricsPipeline {
             .spawn_ctx()
             .create_mailbox::<SourceActor>("SourceActor", QueueCapacity::Unbounded);
 
-        // Publisher
-        let publisher = Publisher::new(
+        // Publisher — optionally wired to the Parquet merge planner for
+        // merge feedback. When set, the publisher sends ParquetNewSplits
+        // after publishing ingest splits so they can be considered for merging.
+        let mut publisher = Publisher::new(
             super::METRICS_PUBLISHER_NAME,
             QueueCapacity::Bounded(1),
             self.params.metastore.clone(),
             None,
             Some(source_mailbox.clone()),
         );
+        if let Some(planner_mailbox) = &self.params.parquet_merge_planner_mailbox_opt {
+            publisher = publisher.set_parquet_merge_planner_mailbox(planner_mailbox.clone());
+        }
         let (publisher_mailbox, publisher_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())

@@ -85,6 +85,12 @@ struct MergePipelineHandle {
     handle: ActorHandle<MergePipeline>,
 }
 
+#[cfg(feature = "metrics")]
+struct ParquetMergePipelineHandle {
+    mailbox: Mailbox<super::metrics_pipeline::ParquetMergePlanner>,
+    handle: ActorHandle<super::metrics_pipeline::ParquetMergePipeline>,
+}
+
 pub type BoxedPipelineHandle = Box<dyn PipelineHandle>;
 
 /// The indexing service is (single) actor service running on indexer and in charge
@@ -108,6 +114,8 @@ pub struct IndexingService {
     local_split_store: Arc<IndexingSplitCache>,
     pub(crate) max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
+    #[cfg(feature = "metrics")]
+    parquet_merge_pipeline_handles: HashMap<IndexUid, ParquetMergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
     merge_io_throughput_limiter_opt: Option<Limiter>,
     pub(crate) event_broker: EventBroker,
@@ -171,6 +179,8 @@ impl IndexingService {
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
             merge_pipeline_handles: HashMap::new(),
+            #[cfg(feature = "metrics")]
+            parquet_merge_pipeline_handles: HashMap::new(),
             merge_io_throughput_limiter_opt,
             cooperative_indexing_permits,
             event_broker,
@@ -577,6 +587,49 @@ impl IndexingService {
         self.merge_pipeline_handles
             .retain(|_, merge_pipeline_handle| merge_pipeline_handle.handle.state().is_running());
         self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
+
+        // Parquet merge pipeline cleanup: shut down orphans whose parent
+        // metrics pipelines are gone, then reap completed/failed ones.
+        #[cfg(feature = "metrics")]
+        {
+            let parquet_index_uids_to_retain: HashSet<IndexUid> = self
+                .indexing_pipelines
+                .values()
+                .filter(|h| {
+                    quickwit_common::is_parquet_pipeline_index(
+                        &h.indexing_pipeline_id().index_uid.index_id,
+                    )
+                })
+                .map(|h| h.indexing_pipeline_id().index_uid.clone())
+                .collect();
+
+            let parquet_to_shutdown: Vec<IndexUid> = self
+                .parquet_merge_pipeline_handles
+                .keys()
+                .filter(|uid| !parquet_index_uids_to_retain.contains(uid))
+                .cloned()
+                .collect();
+
+            for index_uid in parquet_to_shutdown {
+                if let Some((_, handle)) =
+                    self.parquet_merge_pipeline_handles.remove_entry(&index_uid)
+                {
+                    info!(
+                        index_uid=%index_uid,
+                        "shutting down orphan parquet merge pipeline"
+                    );
+                    handle
+                        .handle
+                        .mailbox()
+                        .send_message(FinishPendingMergesAndShutdownPipeline)
+                        .await
+                        .expect("parquet merge pipeline mailbox should not be full");
+                }
+            }
+            self.parquet_merge_pipeline_handles
+                .retain(|_, handle| handle.handle.state().is_running());
+        }
+
         self.update_chitchat_running_plan().await;
 
         let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = self
@@ -618,6 +671,73 @@ impl IndexingService {
         self.merge_pipeline_handles
             .insert(merge_pipeline_id, merge_pipeline_handle);
         self.counters.num_running_merge_pipelines += 1;
+        Ok(merge_planner_mailbox)
+    }
+
+    /// Returns the Parquet merge planner mailbox for the given index, creating
+    /// a new ParquetMergePipeline if one isn't already running.
+    ///
+    /// Keyed by IndexUid (not MergePipelineId) because Parquet merge pipelines
+    /// are shared across all sources for the same index — unlike Tantivy merge
+    /// pipelines which are per-source.
+    #[cfg(feature = "metrics")]
+    pub(crate) fn get_or_create_parquet_merge_pipeline(
+        &mut self,
+        index_uid: IndexUid,
+        index_config: &IndexConfig,
+        storage: Arc<dyn quickwit_storage::Storage>,
+        indexing_directory: quickwit_common::temp_dir::TempDirectory,
+        immature_splits_opt: Option<Vec<quickwit_parquet_engine::split::ParquetSplitMetadata>>,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Mailbox<super::metrics_pipeline::ParquetMergePlanner>, IndexingError> {
+        if let Some(handle) = self.parquet_merge_pipeline_handles.get(&index_uid) {
+            return Ok(handle.mailbox.clone());
+        }
+
+        // Convert the config-crate merge policy into the engine-crate type.
+        let cfg = index_config.indexing_settings.parquet_merge_policy();
+        let engine_config = quickwit_parquet_engine::merge::policy::ParquetMergePolicyConfig {
+            merge_factor: cfg.merge_factor,
+            max_merge_factor: cfg.max_merge_factor,
+            max_merge_ops: cfg.max_merge_ops,
+            target_split_size_bytes: cfg.target_split_size_bytes,
+            maturation_period: cfg.maturation_period,
+            max_finalize_merge_operations: cfg.max_finalize_merge_operations,
+        };
+        let merge_policy: Arc<dyn quickwit_parquet_engine::merge::policy::ParquetMergePolicy> =
+            Arc::new(
+                quickwit_parquet_engine::merge::policy::ConstWriteAmplificationParquetMergePolicy::new(
+                    engine_config,
+                ),
+            );
+
+        let writer_config = quickwit_parquet_engine::storage::ParquetWriterConfig::default();
+
+        let params = super::metrics_pipeline::ParquetMergePipelineParams {
+            index_uid: index_uid.clone(),
+            indexing_directory,
+            metastore: self.metastore.clone(),
+            storage,
+            merge_policy,
+            merge_scheduler_service: self.merge_scheduler_service.clone(),
+            max_concurrent_split_uploads: self.max_concurrent_split_uploads,
+            event_broker: self.event_broker.clone(),
+            writer_config,
+        };
+
+        let pipeline = super::metrics_pipeline::ParquetMergePipeline::new(
+            params,
+            immature_splits_opt,
+            ctx.spawn_ctx(),
+        );
+        let merge_planner_mailbox = pipeline.merge_planner_mailbox().clone();
+        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
+        let handle = ParquetMergePipelineHandle {
+            mailbox: merge_planner_mailbox.clone(),
+            handle: pipeline_handle,
+        };
+        self.parquet_merge_pipeline_handles
+            .insert(index_uid, handle);
         Ok(merge_planner_mailbox)
     }
 

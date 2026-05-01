@@ -67,6 +67,21 @@ impl IndexingService {
             IndexingError::Internal(format!("failed to parse partition_key: {error}"))
         })?;
 
+        // Spawn the Parquet merge pipeline (or reuse an existing one for this
+        // index). The planner mailbox is wired into the MetricsPipeline's
+        // Publisher so newly ingested splits are fed back for merging.
+        let merge_planner_mailbox = self.get_or_create_parquet_merge_pipeline(
+            indexing_pipeline_id.index_uid.clone(),
+            &index_config,
+            storage.clone(),
+            indexing_directory.clone(),
+            // TODO: fetch immature Parquet splits from metastore for seeding
+            // the merge planner on first spawn. For now, the planner starts
+            // empty and picks up new splits from the publisher feedback loop.
+            None,
+            ctx,
+        )?;
+
         let pipeline_params = MetricsPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
@@ -83,6 +98,7 @@ impl IndexingService {
             use_sketch_processors,
             partition_key,
             max_num_partitions: index_config.doc_mapping.max_num_partitions,
+            parquet_merge_planner_mailbox_opt: Some(merge_planner_mailbox),
         };
         let pipeline = MetricsPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);
