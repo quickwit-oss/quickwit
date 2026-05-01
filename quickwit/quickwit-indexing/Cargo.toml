@@ -114,6 +114,7 @@ ci-test = []
 bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
+parquet = { workspace = true }
 proptest = { workspace = true }
 prost = { workspace = true }
 rand = { workspace = true }
