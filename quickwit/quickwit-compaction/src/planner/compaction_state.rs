@@ -22,6 +22,7 @@ use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::compaction::{CompactionFailure, CompactionInProgress, CompactionSuccess};
 use quickwit_proto::types::{DocMappingUid, IndexUid, NodeId, SourceId, SplitId};
+use time::OffsetDateTime;
 use tracing::{error, info, warn};
 
 use crate::planner::PendingOperations;
@@ -99,12 +100,17 @@ impl CompactionState {
         self.needs_compaction.keys().cloned().collect()
     }
 
-    /// Runs a merge policy on a single partition and queues the resulting operations.
+    /// Runs a merge policy on a single partition and queues the resulting
+    /// operations. After planning, time-mature stragglers left in the partition
+    /// are evicted — the metastore `retain_immature` filter keeps new mature
+    /// splits out, but splits already in memory that crossed their maturation
+    /// period benefit from an explicit sweep here.
     pub fn plan_partition(
         &mut self,
         partition_key: &CompactionPartitionKey,
         merge_policy: &Arc<dyn MergePolicy>,
     ) {
+        let now = OffsetDateTime::now_utc();
         let Some(splits) = self.needs_compaction.get_mut(partition_key) else {
             return;
         };
@@ -117,6 +123,15 @@ impl CompactionState {
             self.pending_operations
                 .push(partition_key.clone(), operation);
         }
+        splits.retain(|split| {
+            if split.is_mature(now) {
+                self.needs_compaction_split_ids.remove(split.split_id());
+                COMPACTION_PLANNER_METRICS.evicted_mature_splits.inc();
+                false
+            } else {
+                true
+            }
+        });
         if splits.is_empty() {
             self.needs_compaction.remove(partition_key);
         }
@@ -324,6 +339,31 @@ mod tests {
                 assert!(state.in_flight_split_ids.contains(split.split_id()));
             }
         }
+    }
+
+    #[test]
+    fn test_plan_partition_evicts_time_mature_stragglers() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let merge_policy = test_merge_policy();
+        let mut state = CompactionState::new();
+
+        // Single split with merge_factor=2: the policy can't form a merge, so
+        // it stays as a straggler in `needs_compaction`. create_timestamp=0
+        // plus a 60s maturation period means it is time-mature.
+        let mut straggler = test_split("straggler", &index_uid);
+        straggler.create_timestamp = 0;
+        straggler.maturity = quickwit_metastore::SplitMaturity::Immature {
+            maturation_period: Duration::from_secs(60),
+        };
+        state.track_split(straggler);
+        assert!(state.is_split_tracked("straggler"));
+
+        let keys = state.partition_keys();
+        state.plan_partition(&keys[0], &merge_policy);
+
+        assert!(!state.is_split_tracked("straggler"));
+        assert!(state.pending_operations.is_empty());
+        assert!(state.partition_keys().is_empty());
     }
 
     #[test]

@@ -22,6 +22,7 @@ pub struct CompactionPlannerMetrics {
     pub splits_needing_compaction: IntGaugeVec<1>,
     pub pending_merge_operations: IntGaugeVec<2>,
     pub timed_out_operations: IntCounter,
+    pub evicted_mature_splits: IntCounter,
     pub metastore_errors: IntCounterVec<1>,
 }
 
@@ -52,6 +53,12 @@ impl Default for CompactionPlannerMetrics {
             timed_out_operations: new_counter(
                 "timed_out_operations",
                 "cumulative number of merge operations that timed out waiting for a worker heartbeat",
+                "compaction_planner",
+                &[],
+            ),
+            evicted_mature_splits: new_counter(
+                "evicted_mature_splits",
+                "cumulative number of time-mature splits evicted from in-memory needs_compaction tracking",
                 "compaction_planner",
                 &[],
             ),

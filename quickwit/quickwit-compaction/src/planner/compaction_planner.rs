@@ -18,6 +18,7 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 use itertools::Itertools;
+use time::OffsetDateTime;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{
@@ -186,6 +187,7 @@ impl CompactionPlanner {
     async fn scan_metastore(&self) -> Result<Vec<Split>> {
         let mut query = ListSplitsQuery::for_all_indexes()
             .with_split_state(SplitState::Published)
+            .retain_immature(OffsetDateTime::now_utc())
             .sort_by_index_uid()
             .with_limit(SCAN_PAGE_SIZE);
         match &self.scan_cursor {
