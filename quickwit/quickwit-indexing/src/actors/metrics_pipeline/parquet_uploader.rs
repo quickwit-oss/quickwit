@@ -180,11 +180,12 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
             let update = ParquetSplitsUpdate {
                 index_uid: index_uid.clone(),
                 new_splits: Vec::new(),
-                replaced_split_ids: Vec::new(),
-                checkpoint_delta_opt: Some(batch.checkpoint_delta),
+                replaced_split_ids: batch.replaced_split_ids,
+                checkpoint_delta_opt: batch.checkpoint_delta_opt,
                 publish_lock: batch.publish_lock,
                 publish_token_opt: batch.publish_token_opt,
                 parent_span: tracing::Span::current(),
+                _merge_permit_opt: batch._merge_permit_opt,
             };
             if tx.send(SequencerCommand::Proceed(update)).is_err() {
                 warn!("sequencer receiver dropped for empty batch");
@@ -217,11 +218,16 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
         let counters = self.counters.clone();
 
         let output_dir = batch.output_dir;
-        let checkpoint_delta = batch.checkpoint_delta;
+        let checkpoint_delta_opt = batch.checkpoint_delta_opt;
         let publish_lock = batch.publish_lock;
         let publish_token_opt = batch.publish_token_opt;
         let splits = batch.splits;
         let replaced_split_ids = batch.replaced_split_ids;
+        let merge_permit_opt = batch._merge_permit_opt;
+        // Hold the scratch directory alive until the upload task completes.
+        // For the merge path, this prevents the TempDirectory from being
+        // cleaned up before the upload task reads the merged files.
+        let _scratch_directory_guard = batch._scratch_directory_opt;
         debug!(
             index_uid = %index_uid,
             num_splits = splits.len(),
@@ -318,15 +324,18 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
                     );
                 }
 
-                // Create ParquetSplitsUpdate and send downstream
+                // Create ParquetSplitsUpdate and send downstream.
+                // The merge permit (if present) transfers to the update so it
+                // stays alive until the publisher drops the message.
                 let update = ParquetSplitsUpdate {
                     index_uid,
                     new_splits: splits,
                     replaced_split_ids,
-                    checkpoint_delta_opt: Some(checkpoint_delta),
+                    checkpoint_delta_opt,
                     publish_lock,
                     publish_token_opt,
                     parent_span: Span::current(),
+                    _merge_permit_opt: merge_permit_opt,
                 };
 
                 if tx.send(SequencerCommand::Proceed(update)).is_err() {
@@ -335,6 +344,8 @@ impl Handler<ParquetSplitBatch> for ParquetUploader {
 
                 // Drop permit to allow next upload
                 drop(permit_guard);
+                // Drop scratch directory guard after upload completes.
+                drop(_scratch_directory_guard);
             }
             .instrument(Span::current()),
             "metrics_upload_task",
@@ -425,10 +436,12 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             splits,
             output_dir: temp_dir.path().to_path_buf(),
-            checkpoint_delta,
+            checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             replaced_split_ids: Vec::new(),
+            _scratch_directory_opt: None,
+            _merge_permit_opt: None,
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -519,10 +532,12 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             splits,
             output_dir: temp_dir.path().to_path_buf(),
-            checkpoint_delta,
+            checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             replaced_split_ids: Vec::new(),
+            _scratch_directory_opt: None,
+            _merge_permit_opt: None,
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -594,10 +609,12 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             splits: Vec::new(),
             output_dir: temp_dir.path().to_path_buf(),
-            checkpoint_delta,
+            checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             replaced_split_ids: Vec::new(),
+            _scratch_directory_opt: None,
+            _merge_permit_opt: None,
         };
 
         uploader_mailbox.send_message(batch).await.unwrap();
@@ -665,10 +682,12 @@ mod tests {
                 index_uid: IndexUid::new_with_random_ulid("test-index"),
                 splits,
                 output_dir: temp_dir.path().to_path_buf(),
-                checkpoint_delta,
+                checkpoint_delta_opt: Some(checkpoint_delta),
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,
                 replaced_split_ids: Vec::new(),
+                _scratch_directory_opt: None,
+                _merge_permit_opt: None,
             };
             uploader_mailbox.send_message(batch).await.unwrap();
         }

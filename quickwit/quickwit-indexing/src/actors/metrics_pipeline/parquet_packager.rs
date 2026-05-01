@@ -233,10 +233,12 @@ impl Handler<ParquetBatchForPackager> for ParquetPackager {
             index_uid,
             splits,
             output_dir,
-            checkpoint_delta,
+            checkpoint_delta_opt: Some(checkpoint_delta),
             publish_lock,
             publish_token_opt,
             replaced_split_ids: Vec::new(),
+            _scratch_directory_opt: None,
+            _merge_permit_opt: None,
         };
 
         ctx.send_message(&self.uploader_mailbox, split_batch)
@@ -494,7 +496,11 @@ mod tests {
             vec![1, 3]
         );
         assert_eq!(
-            split_batches[0].checkpoint_delta.source_delta,
+            split_batches[0]
+                .checkpoint_delta_opt
+                .as_ref()
+                .unwrap()
+                .source_delta,
             SourceCheckpointDelta::from_range(0..30)
         );
 

@@ -161,6 +161,7 @@ mod tests {
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             parent_span: Span::none(),
+            _merge_permit_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();
@@ -209,6 +210,7 @@ mod tests {
             publish_lock: PublishLock::default(),
             publish_token_opt: None,
             parent_span: Span::none(),
+            _merge_permit_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();
@@ -254,6 +256,7 @@ mod tests {
             publish_lock,
             publish_token_opt: None,
             parent_span: Span::none(),
+            _merge_permit_opt: None,
         };
 
         publisher_mailbox.send_message(update).await.unwrap();

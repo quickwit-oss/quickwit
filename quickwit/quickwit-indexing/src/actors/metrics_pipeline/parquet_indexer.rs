@@ -104,7 +104,6 @@ impl ParquetIndexerCounters {
 /// Message containing produced ParquetSplits for downstream processing.
 ///
 /// This is sent when the accumulator produces splits (either via threshold or force commit).
-#[derive(Debug)]
 pub struct ParquetSplitBatch {
     /// Index unique identifier for the splits in this batch.
     pub index_uid: IndexUid,
@@ -114,7 +113,8 @@ pub struct ParquetSplitBatch {
     /// The uploader uses this to locate and upload the actual file content.
     pub output_dir: PathBuf,
     /// Checkpoint delta covering all data in these splits.
-    pub checkpoint_delta: IndexCheckpointDelta,
+    /// `None` for merge operations (data was already checkpointed at ingest).
+    pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     /// Publish lock for coordinating with sources.
     pub publish_lock: PublishLock,
     /// Optional publish token.
@@ -122,6 +122,26 @@ pub struct ParquetSplitBatch {
     /// Split IDs being replaced by this batch (non-empty for merges).
     /// Empty for the ingest path.
     pub replaced_split_ids: Vec<String>,
+    /// Holds the temp directory alive until the uploader finishes reading.
+    /// `None` for the ingest path (packager manages its own temp dir).
+    /// `Some` for the merge path (executor's scratch directory).
+    pub _scratch_directory_opt: Option<quickwit_common::temp_dir::TempDirectory>,
+    /// Merge concurrency permit — carried through to the publisher so the
+    /// semaphore slot isn't released until the upload completes.
+    /// `None` for the ingest path. `Some` for the merge path.
+    pub _merge_permit_opt: Option<crate::actors::MergePermit>,
+}
+
+impl std::fmt::Debug for ParquetSplitBatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParquetSplitBatch")
+            .field("index_uid", &self.index_uid)
+            .field("num_splits", &self.splits.len())
+            .field("output_dir", &self.output_dir)
+            .field("replaced_split_ids", &self.replaced_split_ids)
+            .field("has_merge_permit", &self._merge_permit_opt.is_some())
+            .finish()
+    }
 }
 
 /// ParquetIndexer actor that accumulates RecordBatches and forwards them to ParquetPackager.
