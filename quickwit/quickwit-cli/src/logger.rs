@@ -17,19 +17,20 @@ use std::sync::Arc;
 use std::{env, fmt};
 
 use anyhow::Context;
-#[cfg(not(test))]
 use metrics_exporter_dogstatsd::DogStatsDRecorder;
-#[cfg(not(test))]
+use metrics_exporter_otel::OpenTelemetryRecorder;
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusRecorder};
-#[cfg(not(test))]
-use metrics_util::{MetricKindMask, layers::RouterBuilder};
+use metrics_util::MetricKindMask;
+use metrics_util::layers::{FanoutBuilder, RouterBuilder};
+use opentelemetry::metrics::MeterProvider;
 use opentelemetry::trace::TracerProvider;
 use opentelemetry::{KeyValue, global};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::{
-    LogExporter, Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig,
+    LogExporter, MetricExporter, Protocol as OtlpWireProtocol, SpanExporter, WithExportConfig,
 };
 use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_sdk::metrics::{SdkMeterProvider as SdkMetricsProvider, Temporality};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{BatchConfigBuilder, SdkTracerProvider};
 use opentelemetry_sdk::{Resource, trace};
@@ -49,6 +50,13 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
 
 use crate::QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY;
+
+const OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_PROTOCOL";
+const OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL";
+const OTEL_EXPORTER_OTLP_LOGS_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL";
+const OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY: &str = "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL";
+const OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY: &str =
+    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OtlpProtocol {
@@ -87,6 +95,26 @@ impl OtlpProtocol {
         }
         .context("failed to initialize OTLP traces exporter")
     }
+
+    fn metric_exporter(&self, temporality: Temporality) -> anyhow::Result<MetricExporter> {
+        match self {
+            OtlpProtocol::Grpc => MetricExporter::builder()
+                .with_tonic()
+                .with_temporality(temporality)
+                .build(),
+            OtlpProtocol::HttpProtobuf => MetricExporter::builder()
+                .with_http()
+                .with_temporality(temporality)
+                .with_protocol(OtlpWireProtocol::HttpBinary)
+                .build(),
+            OtlpProtocol::HttpJson => MetricExporter::builder()
+                .with_http()
+                .with_temporality(temporality)
+                .with_protocol(OtlpWireProtocol::HttpJson)
+                .build(),
+        }
+        .context("failed to initialize OTLP metrics exporter")
+    }
 }
 
 impl FromStr for OtlpProtocol {
@@ -110,11 +138,143 @@ impl FromStr for OtlpProtocol {
     }
 }
 
+struct OtlpExporterConfig {
+    enabled: bool,
+    default_protocol: String,
+}
+
+fn load_otlp_exporter_config() -> OtlpExporterConfig {
+    OtlpExporterConfig {
+        enabled: get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false),
+        default_protocol: get_from_env(
+            OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY,
+            "grpc".to_string(),
+            false,
+        ),
+    }
+}
+
+impl OtlpExporterConfig {
+    fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    fn traces_protocol(&self) -> anyhow::Result<OtlpProtocol> {
+        self.resolve_protocol(OTEL_EXPORTER_OTLP_TRACES_PROTOCOL_ENV_KEY)
+    }
+
+    fn logs_protocol(&self) -> anyhow::Result<OtlpProtocol> {
+        self.resolve_protocol(OTEL_EXPORTER_OTLP_LOGS_PROTOCOL_ENV_KEY)
+    }
+
+    fn metrics_protocol(&self) -> anyhow::Result<OtlpProtocol> {
+        self.resolve_protocol(OTEL_EXPORTER_OTLP_METRICS_PROTOCOL_ENV_KEY)
+    }
+
+    fn metrics_temporality(&self) -> anyhow::Result<Temporality> {
+        let temporality = get_from_env_opt::<String>(
+            OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY,
+            false,
+        );
+        temporality
+            .as_deref()
+            .map(|temporality_str| {
+                OtlpMetricsTemporality::from_str(temporality_str).with_context(|| {
+                    format!(
+                        "failed to parse environment variable \
+                         `{OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE_ENV_KEY}`"
+                    )
+                })
+            })
+            .transpose()
+            .map(|temporality| {
+                temporality
+                    .map(Temporality::from)
+                    .unwrap_or(Temporality::Cumulative)
+            })
+    }
+
+    fn resolve_protocol(&self, exporter_protocol_env_key: &str) -> anyhow::Result<OtlpProtocol> {
+        let exporter_protocol = get_from_env_opt::<String>(exporter_protocol_env_key, false);
+        let (protocol, env_key) = if let Some(protocol) = exporter_protocol {
+            (protocol, exporter_protocol_env_key)
+        } else {
+            (
+                self.default_protocol.clone(),
+                OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY,
+            )
+        };
+
+        OtlpProtocol::from_str(&protocol)
+            .with_context(|| format!("failed to parse environment variable `{env_key}`"))
+    }
+}
+
+struct OtlpMetricsTemporality(Temporality);
+
+impl FromStr for OtlpMetricsTemporality {
+    type Err = anyhow::Error;
+
+    fn from_str(temporality_str: &str) -> anyhow::Result<Self> {
+        const TEMPORALITY_DELTA: &str = "delta";
+        const TEMPORALITY_LOWMEMORY: &str = "lowmemory";
+        const TEMPORALITY_CUMULATIVE: &str = "cumulative";
+
+        match temporality_str {
+            TEMPORALITY_DELTA => Ok(Self(Temporality::Delta)),
+            TEMPORALITY_LOWMEMORY => Ok(Self(Temporality::LowMemory)),
+            TEMPORALITY_CUMULATIVE => Ok(Self(Temporality::Cumulative)),
+            other => anyhow::bail!(
+                "unsupported OTLP metrics temporality `{other}`, supported values are \
+                 `{TEMPORALITY_DELTA}`, `{TEMPORALITY_LOWMEMORY}` and `{TEMPORALITY_CUMULATIVE}`"
+            ),
+        }
+    }
+}
+
+impl From<OtlpMetricsTemporality> for Temporality {
+    fn from(temporality: OtlpMetricsTemporality) -> Self {
+        temporality.0
+    }
+}
+
+pub struct TelemetryHandle {
+    env_filter_reload_fn: EnvFilterReloadFn,
+    tracer_provider: Option<SdkTracerProvider>,
+    logger_provider: Option<SdkLoggerProvider>,
+    meter_provider: Option<SdkMetricsProvider>,
+}
+
+impl TelemetryHandle {
+    pub fn env_filter_reload_fn(&self) -> EnvFilterReloadFn {
+        self.env_filter_reload_fn.clone()
+    }
+
+    pub fn shutdown(self) -> anyhow::Result<()> {
+        if let Some(tracer_provider) = self.tracer_provider {
+            tracer_provider
+                .shutdown()
+                .context("failed to shutdown OpenTelemetry tracer provider")?;
+        }
+        if let Some(logger_provider) = self.logger_provider {
+            logger_provider
+                .shutdown()
+                .context("failed to shutdown OpenTelemetry logger provider")?;
+        }
+        if let Some(meter_provider) = self.meter_provider {
+            meter_provider
+                .shutdown()
+                .context("failed to shutdown OpenTelemetry meter provider")?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(feature = "tokio-console")]
 use crate::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY;
 
 /// Load the default logging filter from the environment. The filter can later
-/// be updated using the result callback of [setup_logging_and_tracing].
+/// be updated using the result callback of [init_telemetry].
 fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
@@ -125,19 +285,25 @@ fn startup_env_filter(level: Level) -> anyhow::Result<EnvFilter> {
 
 type ReloadLayer = tracing_subscriber::reload::Layer<EnvFilter, tracing_subscriber::Registry>;
 
-pub fn setup_logging_and_tracing(
+pub fn init_telemetry(
     level: Level,
     ansi_colors: bool,
     build_info: &BuildInfo,
-) -> anyhow::Result<(
-    EnvFilterReloadFn,
-    Option<(SdkTracerProvider, SdkLoggerProvider)>,
-)> {
+) -> anyhow::Result<TelemetryHandle> {
+    let otlp_config = load_otlp_exporter_config();
+
+    let meter_provider = init_metrics_provider(build_info, &otlp_config)?;
+
     #[cfg(feature = "tokio-console")]
     {
         if get_bool_from_env(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY, false) {
             console_subscriber::init();
-            return Ok((quickwit_serve::do_nothing_env_filter_reload_fn(), None));
+            return Ok(TelemetryHandle {
+                env_filter_reload_fn: quickwit_serve::do_nothing_env_filter_reload_fn(),
+                tracer_provider: None,
+                logger_provider: None,
+                meter_provider,
+            });
         }
     }
     global::set_text_map_propagator(TraceContextPropagator::new());
@@ -166,56 +332,24 @@ pub fn setup_logging_and_tracing(
         reloadable_env_filter,
     )?;
 
+    let env_filter_reload_fn: EnvFilterReloadFn = Arc::new(move |env_filter_def: &str| {
+        let new_env_filter = EnvFilter::try_new(env_filter_def)?;
+        reload_handle.reload(new_env_filter)?;
+        Ok(())
+    });
+
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
-    let provider_opt = if get_bool_from_env(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY, false) {
-        let global_protocol_str =
-            get_from_env("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc".to_string(), false);
-        let global_protocol = OtlpProtocol::from_str(&global_protocol_str)?;
-
-        let traces_protocol_opt =
-            get_from_env_opt::<String>("OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", false);
-        let traces_protocol = traces_protocol_opt
-            .as_deref()
-            .map(OtlpProtocol::from_str)
-            .transpose()?
-            .unwrap_or(global_protocol);
-
-        let span_exporter = traces_protocol.span_exporter()?;
-        let span_processor = trace::BatchSpanProcessor::builder(span_exporter)
-            .with_batch_config(
-                BatchConfigBuilder::default()
-                    // Quickwit can generate a lot of spans, especially in debug mode, and the
-                    // default queue size of 2048 is too small.
-                    .with_max_queue_size(32_768)
-                    .build(),
-            )
-            .build();
-
+    let telemetry_handle = if otlp_config.is_enabled() {
         let resource = Resource::builder()
             .with_service_name("quickwit")
             .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
             .build();
 
-        let logs_protocol_opt =
-            get_from_env_opt::<String>("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", false);
-        let logs_protocol = logs_protocol_opt
-            .as_deref()
-            .map(OtlpProtocol::from_str)
-            .transpose()?
-            .unwrap_or(global_protocol);
-        let log_exporter = logs_protocol.log_exporter()?;
-        let logger_provider = SdkLoggerProvider::builder()
-            .with_resource(resource.clone())
-            .with_batch_exporter(log_exporter)
-            .build();
+        let tracer_provider = init_tracer_provider(&otlp_config, resource.clone())?;
+        let logger_provider = init_logger_provider(&otlp_config, resource)?;
 
-        let tracing_provider = opentelemetry_sdk::trace::SdkTracerProvider::builder()
-            .with_span_processor(span_processor)
-            .with_resource(resource)
-            .build();
-
-        let tracer = tracing_provider.tracer("quickwit");
+        let tracer = tracer_provider.tracer("quickwit");
         let telemetry_layer = tracing_opentelemetry::layer().with_tracer(tracer);
 
         // Bridge between tracing logs and otel tracing events
@@ -226,42 +360,97 @@ pub fn setup_logging_and_tracing(
             .with(logs_otel_layer)
             .try_init()
             .context("failed to register tracing subscriber")?;
-        Some((tracing_provider, logger_provider))
+
+        TelemetryHandle {
+            env_filter_reload_fn,
+            tracer_provider: Some(tracer_provider),
+            logger_provider: Some(logger_provider),
+            meter_provider,
+        }
     } else {
         registry
             .try_init()
             .context("failed to register tracing subscriber")?;
-        None
+        TelemetryHandle {
+            env_filter_reload_fn,
+            tracer_provider: None,
+            logger_provider: None,
+            meter_provider,
+        }
     };
 
-    Ok((
-        Arc::new(move |env_filter_def: &str| {
-            let new_env_filter = EnvFilter::try_new(env_filter_def)?;
-            reload_handle.reload(new_env_filter)?;
-            Ok(())
-        }),
-        provider_opt,
-    ))
+    Ok(telemetry_handle)
+}
+
+fn init_tracer_provider(
+    otlp_config: &OtlpExporterConfig,
+    resource: Resource,
+) -> anyhow::Result<SdkTracerProvider> {
+    let traces_protocol = otlp_config.traces_protocol()?;
+    let span_exporter = traces_protocol.span_exporter()?;
+    let span_processor = trace::BatchSpanProcessor::builder(span_exporter)
+        .with_batch_config(
+            BatchConfigBuilder::default()
+                // Quickwit can generate a lot of spans, especially in debug mode, and the
+                // default queue size of 2048 is too small.
+                .with_max_queue_size(32_768)
+                .build(),
+        )
+        .build();
+
+    Ok(opentelemetry_sdk::trace::SdkTracerProvider::builder()
+        .with_span_processor(span_processor)
+        .with_resource(resource)
+        .build())
+}
+
+fn init_logger_provider(
+    otlp_config: &OtlpExporterConfig,
+    resource: Resource,
+) -> anyhow::Result<SdkLoggerProvider> {
+    let logs_protocol = otlp_config.logs_protocol()?;
+    let log_exporter = logs_protocol.log_exporter()?;
+    Ok(SdkLoggerProvider::builder()
+        .with_resource(resource)
+        .with_batch_exporter(log_exporter)
+        .build())
 }
 
 /// Set up the global metrics recorder and invariant recorder.
-#[cfg(not(test))]
-pub fn setup_metrics(build_info: &BuildInfo) -> anyhow::Result<()> {
+fn init_metrics_provider(
+    build_info: &BuildInfo,
+    otlp_config: &OtlpExporterConfig,
+) -> anyhow::Result<Option<SdkMetricsProvider>> {
     let prometheus_recorder = install_prometheus_recorder()?;
+
+    let (quickwit_recorder, meter_provider) = if otlp_config.is_enabled() {
+        let (otlp_recorder, meter_provider) =
+            install_otlp_metrics_recorder(build_info, otlp_config)?;
+        let recorder = FanoutBuilder::default()
+            .add_recorder(prometheus_recorder)
+            .add_recorder(otlp_recorder)
+            .build();
+        (recorder, Some(meter_provider))
+    } else {
+        let recorder = FanoutBuilder::default()
+            .add_recorder(prometheus_recorder)
+            .build();
+        (recorder, None)
+    };
+
     let dogstatsd_recorder = install_dogstatsd_recorder(build_info)?;
 
     let mut router = RouterBuilder::from_recorder(metrics::NoopRecorder);
     router
-        .add_route(MetricKindMask::ALL, "quickwit_", prometheus_recorder)
+        .add_route(MetricKindMask::ALL, "quickwit_", quickwit_recorder)
         .add_route(MetricKindMask::ALL, "pomsky.invariant.", dogstatsd_recorder);
     let recorder = router.build();
     metrics::set_global_recorder(recorder)
         .map_err(|_| anyhow::anyhow!("failed to install global metrics recorder"))?;
     quickwit_common::metrics::describe_metrics();
-    Ok(())
+    Ok(meter_provider)
 }
 
-#[cfg(not(test))]
 fn install_prometheus_recorder() -> anyhow::Result<PrometheusRecorder> {
     let mut prometheus_builder = PrometheusBuilder::new();
     for (name, buckets) in quickwit_common::metrics::histogram_buckets() {
@@ -278,7 +467,30 @@ fn install_prometheus_recorder() -> anyhow::Result<PrometheusRecorder> {
     Ok(prometheus_recorder)
 }
 
-#[cfg(not(test))]
+fn install_otlp_metrics_recorder(
+    build_info: &BuildInfo,
+    otlp_config: &OtlpExporterConfig,
+) -> anyhow::Result<(OpenTelemetryRecorder, SdkMetricsProvider)> {
+    let metrics_protocol = otlp_config.metrics_protocol()?;
+    let temporality = otlp_config.metrics_temporality()?;
+    let metric_exporter = metrics_protocol.metric_exporter(temporality)?;
+    let resource = Resource::builder()
+        .with_service_name("quickwit")
+        .with_attribute(KeyValue::new("service.version", build_info.version.clone()))
+        .build();
+    let metrics_provider = SdkMetricsProvider::builder()
+        .with_resource(resource)
+        .with_periodic_exporter(metric_exporter)
+        .build();
+    let meter = metrics_provider.meter("quickwit");
+
+    let recorder = OpenTelemetryRecorder::new(meter);
+    for (name, buckets) in quickwit_common::metrics::histogram_buckets() {
+        recorder.set_histogram_bounds(&metrics::KeyName::from(name), buckets);
+    }
+    Ok((recorder, metrics_provider))
+}
+
 fn install_dogstatsd_recorder(build_info: &BuildInfo) -> anyhow::Result<DogStatsDRecorder> {
     // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
     // deprecated and can be removed after 2026-04-01.
@@ -320,7 +532,6 @@ fn install_dogstatsd_recorder(build_info: &BuildInfo) -> anyhow::Result<DogStats
     Ok(recorder)
 }
 
-#[cfg(not(test))]
 fn invariant_recorder(invariant_id: quickwit_dst::invariants::InvariantId, passed: bool) {
     let name = invariant_id.as_str();
     metrics::counter!("pomsky.invariant.checked", "invariant" => name).increment(1);
@@ -592,6 +803,7 @@ pub(super) mod jemalloc_profiled {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
     use std::sync::{Arc, Mutex};
 
     use tracing_subscriber::layer::SubscriberExt;
@@ -610,6 +822,121 @@ mod tests {
             OtlpProtocol::HttpJson
         );
         assert!(OtlpProtocol::from_str("http/xml").is_err());
+    }
+
+    fn otlp_exporter_config(default_protocol: &str) -> OtlpExporterConfig {
+        OtlpExporterConfig {
+            enabled: true,
+            default_protocol: default_protocol.to_string(),
+        }
+    }
+
+    struct EnvVarGuard {
+        key: &'static str,
+        previous_value: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let guard = Self {
+                key,
+                previous_value: std::env::var_os(key),
+            };
+            unsafe { std::env::set_var(key, value) };
+            guard
+        }
+
+        fn remove(key: &'static str) -> Self {
+            let guard = Self {
+                key,
+                previous_value: std::env::var_os(key),
+            };
+            unsafe { std::env::remove_var(key) };
+            guard
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(previous_value) = &self.previous_value {
+                unsafe { std::env::set_var(self.key, previous_value) };
+            } else {
+                unsafe { std::env::remove_var(self.key) };
+            }
+        }
+    }
+
+    #[test]
+    fn test_otlp_exporter_config_uses_signal_specific_protocol() {
+        const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_SIGNAL_PROTOCOL";
+
+        let _guard = EnvVarGuard::set(TEST_PROTOCOL_ENV_KEY, "http/json");
+
+        assert_eq!(
+            otlp_exporter_config("grpc")
+                .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
+                .unwrap(),
+            OtlpProtocol::HttpJson
+        );
+    }
+
+    #[test]
+    fn test_otlp_exporter_config_falls_back_to_default_protocol() {
+        const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_DEFAULT_PROTOCOL_FALLBACK";
+
+        let _guard = EnvVarGuard::remove(TEST_PROTOCOL_ENV_KEY);
+
+        assert_eq!(
+            otlp_exporter_config("http/protobuf")
+                .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
+                .unwrap(),
+            OtlpProtocol::HttpProtobuf
+        );
+    }
+
+    #[test]
+    fn test_otlp_exporter_config_signal_protocol_error_names_signal_env_var() {
+        const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_INVALID_SIGNAL_PROTOCOL";
+
+        let _guard = EnvVarGuard::set(TEST_PROTOCOL_ENV_KEY, "http/xml");
+
+        let error = otlp_exporter_config("grpc")
+            .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
+            .unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains(TEST_PROTOCOL_ENV_KEY));
+        assert!(error.contains("unsupported OTLP protocol `http/xml`"));
+    }
+
+    #[test]
+    fn test_otlp_exporter_config_default_protocol_error_names_default_env_var() {
+        const TEST_PROTOCOL_ENV_KEY: &str = "QW_TEST_OTLP_INVALID_DEFAULT_PROTOCOL";
+
+        let _guard = EnvVarGuard::remove(TEST_PROTOCOL_ENV_KEY);
+
+        let error = otlp_exporter_config("http/xml")
+            .resolve_protocol(TEST_PROTOCOL_ENV_KEY)
+            .unwrap_err();
+        let error = format!("{error:#}");
+        assert!(error.contains(OTEL_EXPORTER_OTLP_PROTOCOL_ENV_KEY));
+        assert!(error.contains("unsupported OTLP protocol `http/xml`"));
+    }
+
+    #[test]
+    fn test_otlp_metrics_temporality_from_str() {
+        assert_eq!(
+            Temporality::from(OtlpMetricsTemporality::from_str("delta").unwrap()),
+            Temporality::Delta
+        );
+        assert_eq!(
+            Temporality::from(OtlpMetricsTemporality::from_str("lowmemory").unwrap()),
+            Temporality::LowMemory
+        );
+        assert_eq!(
+            Temporality::from(OtlpMetricsTemporality::from_str("cumulative").unwrap()),
+            Temporality::Cumulative
+        );
+        assert!(OtlpMetricsTemporality::from_str("invalid").is_err());
     }
 
     /// A shared buffer writer for capturing log output in tests.

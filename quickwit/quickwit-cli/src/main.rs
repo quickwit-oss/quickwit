@@ -22,7 +22,7 @@ use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{CliCommand, build_cli};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
-use quickwit_cli::logger::setup_logging_and_tracing;
+use quickwit_cli::logger::{TelemetryHandle, init_telemetry};
 use quickwit_cli::{busy_detector, install_default_crypto_ring_provider};
 use quickwit_common::runtimes::scrape_tokio_runtime_metrics;
 use quickwit_serve::BuildInfo;
@@ -42,11 +42,6 @@ fn get_main_runtime_num_threads() -> usize {
 fn main() -> anyhow::Result<()> {
     let (command, ansi_colors) = parse_cli_command();
 
-    #[cfg(not(test))]
-    let build_info = BuildInfo::get();
-    #[cfg(not(test))]
-    quickwit_cli::logger::setup_metrics(build_info)?;
-
     let main_runtime_num_threads: usize = get_main_runtime_num_threads();
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -57,9 +52,21 @@ fn main() -> anyhow::Result<()> {
         .build()
         .context("failed to start main Tokio runtime")?;
 
-    scrape_tokio_runtime_metrics(rt.handle(), "main");
+    rt.block_on(async move {
+        #[cfg(feature = "openssl-support")]
+        unsafe {
+            openssl_probe::init_openssl_env_vars()
+        };
+        install_default_crypto_ring_provider();
 
-    rt.block_on(main_impl(command, ansi_colors))
+        let telemetry_handle =
+            init_telemetry(command.default_log_level(), ansi_colors, BuildInfo::get())?;
+
+        let runtime_handle = tokio::runtime::Handle::current();
+        scrape_tokio_runtime_metrics(&runtime_handle, "main");
+
+        main_impl(command, telemetry_handle).await
+    })
 }
 
 fn parse_cli_command() -> (CliCommand, bool) {
@@ -95,23 +102,16 @@ fn register_build_info_metric() {
     quickwit_common::metrics::register_info("build_info", "Quickwit's build info", build_kvs);
 }
 
-async fn main_impl(command: CliCommand, ansi_colors: bool) -> anyhow::Result<()> {
-    #[cfg(feature = "openssl-support")]
-    unsafe {
-        openssl_probe::init_openssl_env_vars()
-    };
+async fn main_impl(command: CliCommand, telemetry_handle: TelemetryHandle) -> anyhow::Result<()> {
     register_build_info_metric();
-
-    install_default_crypto_ring_provider();
 
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    let build_info = BuildInfo::get();
-    let (env_filter_reload_fn, tracer_provider_opt) =
-        setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
-
-    let return_code: i32 = if let Err(command_error) = command.execute(env_filter_reload_fn).await {
+    let return_code: i32 = if let Err(command_error) = command
+        .execute(telemetry_handle.env_filter_reload_fn())
+        .await
+    {
         error!(error=%command_error, "command failed");
         eprintln!(
             "{} command failed: {:?}\n",
@@ -123,14 +123,7 @@ async fn main_impl(command: CliCommand, ansi_colors: bool) -> anyhow::Result<()>
         0
     };
 
-    if let Some((trace_provider, logs_provider)) = tracer_provider_opt {
-        trace_provider
-            .shutdown()
-            .context("failed to shutdown OpenTelemetry tracer provider")?;
-        logs_provider
-            .shutdown()
-            .context("failed to shutdown OpenTelemetry logs provider")?;
-    }
+    telemetry_handle.shutdown()?;
 
     std::process::exit(return_code)
 }
