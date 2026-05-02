@@ -14,7 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, Labels, counter, gauge};
 
 pub(crate) static ONGOING_NUM_DELETE_OPERATIONS_TOTAL: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
@@ -24,6 +24,8 @@ pub(crate) static ONGOING_NUM_DELETE_OPERATIONS_TOTAL: LazyLock<Gauge> = LazyLoc
     )
 });
 
+pub(crate) const INDEX_LABELS: Labels<1> = Labels::new(["index"]);
+
 pub(crate) static GC_DELETED_SPLITS: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "gc_deleted_splits_total",
@@ -32,6 +34,8 @@ pub(crate) static GC_DELETED_SPLITS: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
+pub(crate) const GC_RESULT_SPLIT_TYPE_LABELS: Labels<2> = Labels::new(["result", "split_type"]);
+
 pub(crate) static GC_DELETED_BYTES: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "gc_deleted_bytes_total",
@@ -39,6 +43,8 @@ pub(crate) static GC_DELETED_BYTES: LazyLock<Counter> = LazyLock::new(|| {
         subsystem: "quickwit_janitor",
     )
 });
+
+pub(crate) const GC_SPLIT_TYPE_LABELS: Labels<1> = Labels::new(["split_type"]);
 
 pub(crate) static GC_RUNS: LazyLock<Counter> = LazyLock::new(|| {
     counter!(

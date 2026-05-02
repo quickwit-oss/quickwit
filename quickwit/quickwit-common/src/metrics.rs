@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use metrics_exporter_prometheus::PrometheusHandle;
 pub use prometheus::{exponential_buckets, linear_buckets};
-use quickwit_metrics::{Gauge, gauge};
+use quickwit_metrics::{Gauge, Labels, gauge};
 
 const SYSTEM: &str = "quickwit";
 
@@ -117,6 +117,8 @@ static IN_FLIGHT_DATA_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
+const COMPONENT_LABELS: Labels<1> = Labels::new(["component"]);
+
 pub static IN_FLIGHT_REST_SERVER: LazyLock<Gauge> =
     LazyLock::new(|| in_flight_data_gauge("rest_server"));
 
@@ -168,7 +170,8 @@ pub static IN_FLIGHT_OTHER_SOURCE: LazyLock<Gauge> =
     LazyLock::new(|| in_flight_data_gauge("pulsar_source"));
 
 fn in_flight_data_gauge(component: &'static str) -> Gauge {
-    gauge!(parent: &*IN_FLIGHT_DATA_BYTES, "component" => component)
+    let labels = COMPONENT_LABELS.with_values([component]);
+    gauge!(parent: &*IN_FLIGHT_DATA_BYTES, labels: &labels)
 }
 
 fn metric_key_name(subsystem: &str, name: &str) -> String {

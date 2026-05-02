@@ -45,7 +45,6 @@ use crate::models::{
 };
 
 const PLAIN_TEXT: &str = "plain_text";
-
 pub(super) struct JsonDoc {
     json_obj: JsonObject,
     num_bytes: usize,
@@ -284,17 +283,17 @@ impl Serialize for DocProcessorCounter {
 impl DocProcessorCounter {
     fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
         let index_label = quickwit_common::metrics::index_label(index);
+        let labels = crate::metrics::INDEX_DOCS_PROCESSED_STATUS_LABELS
+            .with_values([index_label.to_string(), outcome.to_string()]);
         DocProcessorCounter {
             num_docs: Default::default(),
             num_docs_metric: counter!(
                 parent: &crate::metrics::PROCESSED_DOCS_TOTAL,
-                "index" => index_label.to_string(),
-                "docs_processed_status" => outcome.to_string(),
+                labels: &labels,
             ),
             num_bytes_metric: counter!(
                 parent: &crate::metrics::PROCESSED_BYTES,
-                "index" => index_label.to_string(),
-                "docs_processed_status" => outcome.to_string(),
+                labels: &labels,
             ),
         }
     }

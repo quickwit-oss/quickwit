@@ -20,7 +20,10 @@ use std::sync::{Arc, LazyLock};
 
 use bytesize::ByteSize;
 use quickwit_common::metrics::{exponential_buckets, linear_buckets};
-use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
+use quickwit_metrics::{Counter, Gauge, Histogram, Labels, counter, gauge, histogram};
+
+pub(crate) const STATUS_LABELS: Labels<1> = Labels::new(["status"]);
+pub(crate) const AFFINITY_LABELS: Labels<1> = Labels::new(["affinity"]);
 
 fn print_if_not_null(
     field_name: &'static str,

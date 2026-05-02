@@ -123,9 +123,14 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
+        let labels = crate::metrics::INDEX_LABELS.with_values([params
+            .pipeline_id
+            .index_uid
+            .index_id
+            .clone()]);
         let indexing_pipelines_gauge = gauge!(
             parent: &crate::metrics::INDEXING_PIPELINES,
-            "index" => params.pipeline_id.index_uid.index_id.clone(),
+            labels: &labels,
         );
         let mut indexing_pipelines_gauge_guard = GaugeGuard::from_gauge(&indexing_pipelines_gauge);
         indexing_pipelines_gauge_guard.increment(1.0);

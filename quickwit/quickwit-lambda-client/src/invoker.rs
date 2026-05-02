@@ -170,14 +170,15 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
         let result = self.invoke_leaf_search_with_retry(request).await;
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
+        let labels = crate::metrics::STATUS_LABELS.with_values([status]);
         counter!(
             parent: &crate::metrics::LEAF_SEARCH_REQUESTS_TOTAL,
-            "status" => status,
+            labels: &labels,
         )
         .increment(1);
         histogram!(
             parent: &crate::metrics::LEAF_SEARCH_DURATION_SECONDS,
-            "status" => status,
+            labels: &labels,
         )
         .record(elapsed);
         result

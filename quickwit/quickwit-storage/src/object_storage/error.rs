@@ -64,11 +64,8 @@ pub trait ToStorageErrorKind {
 impl ToStorageErrorKind for GetObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
         let error_code = self.code().unwrap_or("unknown").to_string();
-        counter!(
-            parent: &crate::OBJECT_STORAGE_GET_ERRORS_TOTAL,
-            "code" => error_code,
-        )
-        .increment(1);
+        let labels = crate::metrics::OBJECT_STORAGE_GET_ERROR_LABELS.with_values([error_code]);
+        counter!(parent: &crate::OBJECT_STORAGE_GET_ERRORS_TOTAL, labels: &labels).increment(1);
         match self {
             GetObjectError::InvalidObjectState(_) => StorageErrorKind::Service,
             GetObjectError::NoSuchKey(_) => StorageErrorKind::NotFound,

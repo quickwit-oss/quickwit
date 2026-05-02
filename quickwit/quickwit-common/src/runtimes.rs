@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use quickwit_metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, Labels, counter, gauge};
 use tokio::runtime::Runtime;
 use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 
@@ -55,6 +55,8 @@ static TOKIO_WORKER_THREADS: std::sync::LazyLock<Gauge> = std::sync::LazyLock::n
         subsystem: "runtime",
     )
 });
+
+const RUNTIME_TYPE_LABELS: Labels<1> = Labels::new(["runtime_type"]);
 
 /// Describes which runtime an actor should run on.
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
@@ -214,14 +216,15 @@ struct RuntimeMetricsRecorder {
 
 impl RuntimeMetricsRecorder {
     pub fn new(label: &'static str) -> Self {
+        let labels = RUNTIME_TYPE_LABELS.with_values([label]);
         Self {
-            scheduled_tasks: gauge!(parent: &*TOKIO_SCHEDULED_TASKS, "runtime_type" => label),
+            scheduled_tasks: gauge!(parent: &*TOKIO_SCHEDULED_TASKS, labels: &labels),
             worker_busy_duration_milliseconds_total: counter!(
                 parent: &*TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL,
-                "runtime_type" => label,
+                labels: &labels,
             ),
-            worker_busy_ratio: gauge!(parent: &*TOKIO_WORKER_BUSY_RATIO, "runtime_type" => label),
-            worker_threads: gauge!(parent: &*TOKIO_WORKER_THREADS, "runtime_type" => label),
+            worker_busy_ratio: gauge!(parent: &*TOKIO_WORKER_BUSY_RATIO, labels: &labels),
+            worker_threads: gauge!(parent: &*TOKIO_WORKER_THREADS, labels: &labels),
         }
     }
 

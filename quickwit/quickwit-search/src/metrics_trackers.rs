@@ -69,19 +69,20 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
             ) => (*num_targeted_splits, "cancelled"),
         };
 
+        let labels = crate::metrics::STATUS_LABELS.with_values([status]);
         counter!(
             parent: &crate::metrics::ROOT_SEARCH_REQUESTS_TOTAL,
-            "status" => status,
+            labels: &labels,
         )
         .increment(1);
         histogram!(
             parent: &crate::metrics::ROOT_SEARCH_REQUEST_DURATION_SECONDS,
-            "status" => status,
+            labels: &labels,
         )
         .record(self.start.elapsed().as_secs_f64());
         histogram!(
             parent: &crate::metrics::ROOT_SEARCH_TARGETED_SPLITS,
-            "status" => status,
+            labels: &labels,
         )
         .record(num_targeted_splits as f64);
     }
@@ -120,19 +121,20 @@ where F: Future<Output = Result<LeafSearchResponse, SearchError>>
 {
     fn drop(self: Pin<&mut Self>) {
         let status = self.status.unwrap_or("cancelled");
+        let labels = crate::metrics::STATUS_LABELS.with_values([status]);
         counter!(
             parent: &crate::metrics::LEAF_SEARCH_REQUESTS_TOTAL,
-            "status" => status,
+            labels: &labels,
         )
         .increment(1);
         histogram!(
             parent: &crate::metrics::LEAF_SEARCH_REQUEST_DURATION_SECONDS,
-            "status" => status,
+            labels: &labels,
         )
         .record(self.start.elapsed().as_secs_f64());
         histogram!(
             parent: &crate::metrics::LEAF_SEARCH_TARGETED_SPLITS,
-            "status" => status,
+            labels: &labels,
         )
         .record(self.targeted_splits as f64);
     }

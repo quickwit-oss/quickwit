@@ -109,10 +109,11 @@ pub async fn start_ingest_api_service(
 macro_rules! with_lock_metrics {
     ($future:expr, $operation:expr, $kind:expr) => {
         {
+            let labels =
+                $crate::ingest_v2::metrics::WAL_LOCK_METRIC_LABELS.with_values([$operation, $kind]);
             quickwit_metrics::gauge!(
                 parent: &$crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
-                "operation" => $operation,
-                "type" => $kind,
+                labels: &labels,
             )
             .increment(1.0);
 
@@ -128,14 +129,12 @@ macro_rules! with_lock_metrics {
             }
             quickwit_metrics::gauge!(
                 parent: &$crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
-                "operation" => $operation,
-                "type" => $kind,
+                labels: &labels,
             )
             .decrement(1.0);
             quickwit_metrics::histogram!(
                 parent: &$crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS,
-                "operation" => $operation,
-                "type" => $kind,
+                labels: &labels,
             )
             .record(elapsed.as_secs_f64());
 

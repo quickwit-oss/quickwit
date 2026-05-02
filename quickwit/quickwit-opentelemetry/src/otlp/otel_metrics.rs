@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
@@ -235,22 +236,19 @@ impl OtlpGrpcMetricsService {
         let num_bytes = doc_batch.num_bytes() as u64;
         self.store_metrics(index_id.clone(), doc_batch).await?;
 
+        let labels = crate::otlp::metrics::OTLP_GRPC_LABELS.with_values([
+            Cow::Borrowed("metrics"),
+            Cow::Owned(index_id),
+            Cow::Borrowed("grpc"),
+            Cow::Borrowed("protobuf"),
+        ]);
         counter!(
             parent: &crate::otlp::metrics::INGESTED_DATA_POINTS_TOTAL,
-            "service" => "metrics",
-            "index" => index_id.clone(),
-            "transport" => "grpc",
-            "format" => "protobuf",
+            labels: &labels,
         )
         .increment(num_data_points - num_parse_errors);
-        counter!(
-            parent: &crate::otlp::metrics::INGESTED_BYTES_TOTAL,
-            "service" => "metrics",
-            "index" => index_id,
-            "transport" => "grpc",
-            "format" => "protobuf",
-        )
-        .increment(num_bytes);
+        counter!(parent: &crate::otlp::metrics::INGESTED_BYTES_TOTAL, labels: &labels)
+            .increment(num_bytes);
 
         let response = ExportMetricsServiceResponse {
             partial_success: Some(ExportMetricsPartialSuccess {
@@ -339,12 +337,15 @@ impl OtlpGrpcMetricsService {
     ) -> Result<ExportMetricsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
+        let labels = crate::otlp::metrics::OTLP_GRPC_LABELS.with_values([
+            Cow::Borrowed("metrics"),
+            Cow::Owned(index_id.clone()),
+            Cow::Borrowed("grpc"),
+            Cow::Borrowed("protobuf"),
+        ]);
         counter!(
             parent: &crate::otlp::metrics::REQUESTS_TOTAL,
-            "service" => "metrics",
-            "index" => index_id.clone(),
-            "transport" => "grpc",
-            "format" => "protobuf",
+            labels: &labels,
         )
         .increment(1);
 
@@ -353,10 +354,7 @@ impl OtlpGrpcMetricsService {
             err @ Err(_) => {
                 counter!(
                     parent: &crate::otlp::metrics::REQUEST_ERRORS_TOTAL,
-                    "service" => "metrics",
-                    "index" => index_id.clone(),
-                    "transport" => "grpc",
-                    "format" => "protobuf",
+                    labels: &labels,
                 )
                 .increment(1);
                 (err, "true")
@@ -364,13 +362,16 @@ impl OtlpGrpcMetricsService {
         };
 
         let elapsed = start.elapsed().as_secs_f64();
+        let duration_labels = crate::otlp::metrics::OTLP_GRPC_ERROR_LABELS.with_values([
+            Cow::Borrowed("metrics"),
+            Cow::Owned(index_id),
+            Cow::Borrowed("grpc"),
+            Cow::Borrowed("protobuf"),
+            Cow::Borrowed(is_error),
+        ]);
         histogram!(
             parent: &crate::otlp::metrics::REQUEST_DURATION_SECONDS,
-            "service" => "metrics",
-            "index" => index_id,
-            "transport" => "grpc",
-            "format" => "protobuf",
-            "error" => is_error,
+            labels: &duration_labels,
         )
         .record(elapsed);
 

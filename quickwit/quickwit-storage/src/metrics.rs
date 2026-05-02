@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
 use quickwit_config::CacheConfig;
-use quickwit_metrics::{Counter, Gauge, GaugeGuard, Histogram, counter, gauge, histogram};
+use quickwit_metrics::{Counter, Gauge, GaugeGuard, Histogram, Labels, counter, gauge, histogram};
 
 static GET_SLICE_TIMEOUT_OUTCOME_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -119,6 +119,8 @@ pub static OBJECT_STORAGE_GET_ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(||
     )
 });
 
+pub(crate) const OBJECT_STORAGE_GET_ERROR_LABELS: Labels<1> = Labels::new(["code"]);
+
 pub static OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "object_storage_get_slice_in_flight_count",
@@ -187,37 +189,18 @@ pub struct SingleCacheMetrics {
 
 impl CacheMetrics {
     pub fn for_component(component_name: &str) -> Self {
+        let component_name = component_name.to_string();
+        let labels = CACHE_LABELS.with_values([component_name.clone()]);
         CacheMetrics {
-            component_name: component_name.to_string(),
+            component_name,
             cache_metrics: SingleCacheMetrics {
-                in_cache_count: gauge!(
-                    parent: &*CACHE_IN_CACHE_COUNT,
-                    "component_name" => component_name.to_string(),
-                ),
-                in_cache_num_bytes: gauge!(
-                    parent: &*CACHE_IN_CACHE_NUM_BYTES,
-                    "component_name" => component_name.to_string(),
-                ),
-                hits_num_items: counter!(
-                    parent: &*CACHE_HITS_TOTAL,
-                    "component_name" => component_name.to_string(),
-                ),
-                hits_num_bytes: counter!(
-                    parent: &*CACHE_HITS_BYTES,
-                    "component_name" => component_name.to_string(),
-                ),
-                misses_num_items: counter!(
-                    parent: &*CACHE_MISSES_TOTAL,
-                    "component_name" => component_name.to_string(),
-                ),
-                evict_num_items: counter!(
-                    parent: &*CACHE_EVICT_TOTAL,
-                    "component_name" => component_name.to_string(),
-                ),
-                evict_num_bytes: counter!(
-                    parent: &*CACHE_EVICT_BYTES,
-                    "component_name" => component_name.to_string(),
-                ),
+                in_cache_count: gauge!(parent: &*CACHE_IN_CACHE_COUNT, labels: &labels),
+                in_cache_num_bytes: gauge!(parent: &*CACHE_IN_CACHE_NUM_BYTES, labels: &labels),
+                hits_num_items: counter!(parent: &*CACHE_HITS_TOTAL, labels: &labels),
+                hits_num_bytes: counter!(parent: &*CACHE_HITS_BYTES, labels: &labels),
+                misses_num_items: counter!(parent: &*CACHE_MISSES_TOTAL, labels: &labels),
+                evict_num_items: counter!(parent: &*CACHE_EVICT_TOTAL, labels: &labels),
+                evict_num_bytes: counter!(parent: &*CACHE_EVICT_BYTES, labels: &labels),
             },
             virtual_caches_metrics: RwLock::default(),
         }
@@ -231,48 +214,36 @@ impl CacheMetrics {
 
         let capacity = config.capacity().as_u64().to_string();
         let policy = config.policy().to_string();
+        let labels =
+            VIRTUAL_CACHE_LABELS.with_values([self.component_name.clone(), capacity, policy]);
         let new_virtual_cache_metrics = SingleCacheMetrics {
             in_cache_count: gauge!(
                 parent: &*VIRTUAL_CACHE_IN_CACHE_COUNT,
-                "component_name" => self.component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
+                labels: &labels,
             ),
             in_cache_num_bytes: gauge!(
                 parent: &*VIRTUAL_CACHE_IN_CACHE_NUM_BYTES,
-                "component_name" => self.component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
+                labels: &labels,
             ),
             hits_num_items: counter!(
                 parent: &*VIRTUAL_CACHE_HITS_TOTAL,
-                "component_name" => self.component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
+                labels: &labels,
             ),
             hits_num_bytes: counter!(
                 parent: &*VIRTUAL_CACHE_HITS_BYTES,
-                "component_name" => self.component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
+                labels: &labels,
             ),
             misses_num_items: counter!(
                 parent: &*VIRTUAL_CACHE_MISSES_TOTAL,
-                "component_name" => self.component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
+                labels: &labels,
             ),
             evict_num_items: counter!(
                 parent: &*VIRTUAL_CACHE_EVICT_TOTAL,
-                "component_name" => self.component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
+                labels: &labels,
             ),
             evict_num_bytes: counter!(
                 parent: &*VIRTUAL_CACHE_EVICT_BYTES,
-                "component_name" => self.component_name.clone(),
-                "capacity" => capacity,
-                "policy" => policy,
+                labels: &labels,
             ),
         };
 
@@ -284,6 +255,9 @@ impl CacheMetrics {
             .clone()
     }
 }
+
+const CACHE_LABELS: Labels<1> = Labels::new(["component_name"]);
+const VIRTUAL_CACHE_LABELS: Labels<3> = Labels::new(["component_name", "capacity", "policy"]);
 
 static CACHE_IN_CACHE_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(

@@ -206,9 +206,10 @@ impl DeleteTaskPlanner {
                 let index_label =
                     quickwit_common::metrics::index_label(self.index_uid.index_id.as_str())
                         .to_string();
+                let labels = crate::metrics::INDEX_LABELS.with_values([index_label]);
                 gauge!(
                     parent: &crate::metrics::ONGOING_NUM_DELETE_OPERATIONS_TOTAL,
-                    "index" => index_label,
+                    labels: &labels,
                 )
                 .set(self.ongoing_delete_operations_inventory.list().len() as f64);
             }

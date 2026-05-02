@@ -43,14 +43,9 @@ impl LoadShield {
             quickwit_common::get_from_env_opt(&max_concurrency_env_key, false);
         let in_flight_semaphore_opt = max_in_flight_opt.map(Semaphore::new);
         let concurrency_semaphore_opt = max_concurrency_opt.map(Semaphore::new);
-        let pending_gauge = gauge!(
-            parent: &crate::metrics::PENDING_REQUESTS,
-            "endpoint_group" => endpoint_group,
-        );
-        let ongoing_gauge = gauge!(
-            parent: &crate::metrics::ONGOING_REQUESTS,
-            "endpoint_group" => endpoint_group,
-        );
+        let labels = crate::metrics::ENDPOINT_GROUP_LABELS.with_values([endpoint_group]);
+        let pending_gauge = gauge!(parent: &crate::metrics::PENDING_REQUESTS, labels: &labels);
+        let ongoing_gauge = gauge!(parent: &crate::metrics::ONGOING_REQUESTS, labels: &labels);
         LoadShield {
             in_flight_semaphore_opt,
             concurrency_semaphore_opt,

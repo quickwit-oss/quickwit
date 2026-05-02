@@ -140,18 +140,13 @@ pub(crate) async fn start_rest_server(
         let status = info.status();
         let method = info.method().as_str().to_string();
         let status_code = status.as_str().to_string();
+        let labels = crate::metrics::HTTP_REQUEST_LABELS.with_values([method, status_code]);
         histogram!(
             parent: &crate::metrics::REQUEST_DURATION_SECS,
-            "method" => method.clone(),
-            "status_code" => status_code.clone(),
+            labels: &labels,
         )
         .record(elapsed.as_secs_f64());
-        counter!(
-            parent: &crate::metrics::HTTP_REQUESTS_TOTAL,
-            "method" => method,
-            "status_code" => status_code,
-        )
-        .increment(1);
+        counter!(parent: &crate::metrics::HTTP_REQUESTS_TOTAL, labels: &labels).increment(1);
     });
     // Docs routes
     let api_doc = warp::path("openapi.json")

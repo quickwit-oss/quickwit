@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -55,20 +56,23 @@ impl GcRunResult {
 
 fn gc_metrics(split_type: &str) -> GcMetrics {
     let split_type = split_type.to_string();
+    let success_labels = crate::metrics::GC_RESULT_SPLIT_TYPE_LABELS
+        .with_values([Cow::Borrowed("success"), Cow::Owned(split_type.clone())]);
+    let split_type_labels = crate::metrics::GC_SPLIT_TYPE_LABELS.with_values([split_type.clone()]);
+    let error_labels = crate::metrics::GC_RESULT_SPLIT_TYPE_LABELS
+        .with_values([Cow::Borrowed("error"), Cow::Owned(split_type)]);
     GcMetrics {
         deleted_splits: counter!(
             parent: &crate::metrics::GC_DELETED_SPLITS,
-            "result" => "success",
-            "split_type" => split_type.clone(),
+            labels: &success_labels,
         ),
         deleted_bytes: counter!(
             parent: &crate::metrics::GC_DELETED_BYTES,
-            "split_type" => split_type.clone(),
+            labels: &split_type_labels,
         ),
         failed_splits: counter!(
             parent: &crate::metrics::GC_DELETED_SPLITS,
-            "result" => "error",
-            "split_type" => split_type,
+            labels: &error_labels,
         ),
     }
 }

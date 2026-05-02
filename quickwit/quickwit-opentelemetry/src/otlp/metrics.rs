@@ -15,7 +15,12 @@
 use std::sync::LazyLock;
 
 use quickwit_common::metrics::exponential_buckets;
-use quickwit_metrics::{Counter, Histogram, counter, histogram};
+use quickwit_metrics::{Counter, Histogram, Labels, counter, histogram};
+
+pub(crate) const OTLP_GRPC_LABELS: Labels<4> =
+    Labels::new(["service", "index", "transport", "format"]);
+pub(crate) const OTLP_GRPC_ERROR_LABELS: Labels<5> =
+    Labels::new(["service", "index", "transport", "format", "error"]);
 
 pub(crate) static REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(

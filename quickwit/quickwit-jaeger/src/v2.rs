@@ -61,10 +61,10 @@ macro_rules! metrics {
         let start = std::time::Instant::now();
         let operation = stringify!($operation);
         let index = $index;
+        let labels = crate::metrics::OPERATION_INDEX_LABELS.with_values([operation, index]);
         counter!(
             parent: &crate::metrics::REQUESTS_TOTAL,
-            "operation" => operation,
-            "index" => index,
+            labels: &labels,
         )
         .increment(1);
         let (res, is_error) = match $expr {
@@ -74,19 +74,18 @@ macro_rules! metrics {
             err @ Err(_) => {
                 counter!(
                     parent: &crate::metrics::REQUEST_ERRORS_TOTAL,
-                    "operation" => operation,
-                    "index" => index,
+                    labels: &labels,
                 )
                 .increment(1);
                 (err, "true")
             },
         };
         let elapsed = start.elapsed().as_secs_f64();
+        let duration_labels =
+            crate::metrics::OPERATION_INDEX_ERROR_LABELS.with_values([operation, index, is_error]);
         histogram!(
             parent: &crate::metrics::REQUEST_DURATION_SECONDS,
-            "operation" => operation,
-            "index" => index,
-            "error" => is_error,
+            labels: &duration_labels,
         )
         .record(elapsed);
 
@@ -442,19 +441,20 @@ async fn stream_otel_spans_impl(
 
     record_send(operation_name, num_spans, num_bytes);
 
-    counter!(
-        parent: &crate::metrics::FETCHED_TRACES_TOTAL,
-        "operation" => operation_name,
-        "index" => OTEL_TRACES_INDEX_ID,
-    )
-    .increment(trace_ids.len() as u64);
+    let labels =
+        crate::metrics::OPERATION_INDEX_LABELS.with_values([operation_name, OTEL_TRACES_INDEX_ID]);
+    counter!(parent: &crate::metrics::FETCHED_TRACES_TOTAL, labels: &labels)
+        .increment(trace_ids.len() as u64);
 
     let elapsed = request_start.elapsed().as_secs_f64();
+    let duration_labels = crate::metrics::OPERATION_INDEX_ERROR_LABELS.with_values([
+        operation_name,
+        OTEL_TRACES_INDEX_ID,
+        "false",
+    ]);
     histogram!(
         parent: &crate::metrics::REQUEST_DURATION_SECONDS,
-        "operation" => operation_name,
-        "index" => OTEL_TRACES_INDEX_ID,
-        "error" => "false",
+        labels: &duration_labels,
     )
     .record(elapsed);
 

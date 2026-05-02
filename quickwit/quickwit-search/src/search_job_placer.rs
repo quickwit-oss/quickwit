@@ -218,11 +218,8 @@ impl SearchJobPlacer {
                 1 => "1",
                 _ => "> 1",
             };
-            counter!(
-                parent: &crate::metrics::JOB_ASSIGNED_TOTAL,
-                "affinity" => metric_node_idx,
-            )
-            .increment(1);
+            let labels = crate::metrics::AFFINITY_LABELS.with_values([metric_node_idx]);
+            counter!(parent: &crate::metrics::JOB_ASSIGNED_TOTAL, labels: &labels).increment(1);
             chosen_node.load += job.cost();
 
             job_assignments

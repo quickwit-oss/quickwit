@@ -369,9 +369,10 @@ impl IngestRouter {
             let az_locality = state_guard
                 .routing_table
                 .classify_az_locality(&ingester_node.node_id, &self.ingester_pool);
+            let labels = crate::ingest_v2::metrics::AZ_ROUTING_LABELS.with_values([az_locality]);
             counter!(
                 parent: &crate::ingest_v2::metrics::INGEST_ATTEMPTS,
-                "az_routing" => az_locality,
+                labels: &labels,
             )
             .increment(1);
             let persist_subrequest = PersistSubrequest {
