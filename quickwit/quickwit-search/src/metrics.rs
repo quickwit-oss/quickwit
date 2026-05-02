@@ -106,7 +106,7 @@ impl fmt::Display for SplitSearchOutcomeCounters {
 impl SplitSearchOutcomeCounters {
     /// Create a new SplitSearchOutcomeCounters instance, registered in prometheus.
     pub fn new_registered() -> Self {
-        Self::new_registered_from_counter(&*SPLIT_SEARCH_OUTCOME)
+        Self::new_registered_from_counter(&SPLIT_SEARCH_OUTCOME)
     }
 
     /// Create a new SplitSearchOutcomeCounters instance that is not reported.

@@ -367,9 +367,7 @@ impl ParquetMergePipeline {
         handles.merge_planner.refresh_observe();
         handles.merge_uploader.refresh_observe();
         handles.merge_publisher.refresh_observe();
-        let num_ongoing_merges = crate::metrics::INDEXER_METRICS
-            .ongoing_merge_operations
-            .get();
+        let num_ongoing_merges = crate::metrics::ONGOING_MERGE_OPERATIONS.get();
         self.statistics = self
             .previous_generations_statistics
             .clone()
@@ -379,7 +377,7 @@ impl ParquetMergePipeline {
             )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
-            .set_ongoing_merges(usize::try_from(num_ongoing_merges).unwrap_or(0));
+            .set_ongoing_merges(num_ongoing_merges.max(0.0) as usize);
     }
 
     async fn perform_health_check(

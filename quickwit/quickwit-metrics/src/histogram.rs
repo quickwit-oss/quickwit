@@ -107,7 +107,7 @@ impl HistogramInner {
 
 /// A registered histogram metric backed by [`metrics::Histogram`].
 ///
-/// Created via the [`histogram!`] macro, either as a base declaration with
+/// Created via the `histogram!` macro, either as a base declaration with
 /// static labels or as a child that extends a parent's labels at runtime.
 ///
 /// Histograms do not support the `observable` flag — they have no shadow

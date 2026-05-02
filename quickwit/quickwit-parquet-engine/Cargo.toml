@@ -17,7 +17,6 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 parquet = { workspace = true }
 prost = { workspace = true }
-quickwit-common = { workspace = true }
 quickwit-metrics = { workspace = true }
 quickwit-dst = { workspace = true }
 quickwit-proto = { workspace = true }

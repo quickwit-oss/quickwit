@@ -96,7 +96,7 @@ impl GaugeInner {
 
 /// A registered gauge metric backed by [`metrics::Gauge`].
 ///
-/// Created via the [`gauge!`] macro, either as a base declaration with
+/// Created via the `gauge!` macro, either as a base declaration with
 /// static labels or as a child that extends a parent's labels at runtime.
 ///
 /// Unlike counters, gauges can go **up and down** — they represent a

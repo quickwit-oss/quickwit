@@ -101,7 +101,7 @@ impl CounterInner {
 
 /// A registered counter metric backed by [`metrics::Counter`].
 ///
-/// Created via the [`counter!`] macro, either as a base declaration with
+/// Created via the `counter!` macro, either as a base declaration with
 /// static labels or as a child that extends a parent's labels at runtime.
 ///
 /// Counters are **monotonically increasing** — use [`increment`](Self::increment)

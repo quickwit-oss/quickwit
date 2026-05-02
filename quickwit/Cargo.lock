@@ -9109,7 +9109,6 @@ dependencies = [
  "parquet",
  "proptest",
  "prost 0.14.3",
- "quickwit-common",
  "quickwit-dst",
  "quickwit-metrics",
  "quickwit-proto",
