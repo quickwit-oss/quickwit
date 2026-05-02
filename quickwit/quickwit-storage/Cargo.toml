@@ -51,6 +51,7 @@ azure_storage_blobs = { workspace = true, optional = true }
 
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 

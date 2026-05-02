@@ -19,7 +19,7 @@ use std::task::{Context, Poll, ready};
 use std::time::Instant;
 
 use pin_project::{pin_project, pinned_drop};
-use quickwit_common::metrics::{counter, histogram};
+use quickwit_metrics::{counter, histogram};
 use quickwit_proto::search::LeafSearchResponse;
 
 use crate::SearchError;

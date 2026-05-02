@@ -14,7 +14,8 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{Counter, Histogram, counter, exponential_buckets, histogram};
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metrics::{Counter, Histogram, counter, histogram};
 
 pub struct OtlpServiceMetrics {
     pub requests_total: Counter,

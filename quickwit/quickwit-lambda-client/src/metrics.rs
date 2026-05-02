@@ -16,7 +16,8 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{Counter, Histogram, counter, exponential_buckets, histogram};
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metrics::{Counter, Histogram, counter, histogram};
 
 /// From 100ms to 73s seconds
 fn duration_buckets() -> Vec<f64> {

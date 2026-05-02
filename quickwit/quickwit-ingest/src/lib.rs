@@ -109,7 +109,7 @@ pub async fn start_ingest_api_service(
 macro_rules! with_lock_metrics {
     ($future:expr, $operation:expr, $kind:expr) => {
         {
-            quickwit_common::metrics::gauge!(
+            quickwit_metrics::gauge!(
                 parent: &$crate::ingest_v2::metrics::INGEST_V2_METRICS
                     .wal_acquire_lock_requests_in_flight,
                 "operation" => $operation,
@@ -127,14 +127,14 @@ macro_rules! with_lock_metrics {
                     "lock acquisition took {}ms", elapsed.as_millis()
                 );
             }
-            quickwit_common::metrics::gauge!(
+            quickwit_metrics::gauge!(
                 parent: &$crate::ingest_v2::metrics::INGEST_V2_METRICS
                     .wal_acquire_lock_requests_in_flight,
                 "operation" => $operation,
                 "type" => $kind,
             )
             .decrement(1.0);
-            quickwit_common::metrics::histogram!(
+            quickwit_metrics::histogram!(
                 parent: &$crate::ingest_v2::metrics::INGEST_V2_METRICS
                     .wal_acquire_lock_request_duration_secs,
                 "operation" => $operation,

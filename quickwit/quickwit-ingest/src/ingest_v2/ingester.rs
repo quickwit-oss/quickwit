@@ -25,11 +25,12 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use mrecordlog::error::CreateQueueError;
 use quickwit_cluster::Cluster;
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS, counter};
+use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::{ServiceStream, rate_limited_error, rate_limited_warn};
+use quickwit_metrics::{GaugeGuard, counter};
 use quickwit_proto::control_plane::{
     AdviseResetShardsRequest, ControlPlaneService, ControlPlaneServiceClient,
 };
@@ -1126,8 +1127,8 @@ impl IngesterService for Ingester {
                 _ => None,
             })
             .sum::<usize>();
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_persist);
-        gauge_guard.add(request_size_bytes as i64);
+        let mut _gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_persist);
+        _gauge_guard.increment(request_size_bytes as f64);
 
         self.persist_inner(persist_request).await
     }

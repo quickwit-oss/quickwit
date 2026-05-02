@@ -17,10 +17,9 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use quickwit_metrics::{Counter, Gauge, counter, gauge};
 use tokio::runtime::Runtime;
 use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
-
-use crate::metrics::{Counter, Gauge, counter, gauge};
 
 static RUNTIMES: OnceLock<HashMap<RuntimeType, tokio::runtime::Runtime>> = OnceLock::new();
 

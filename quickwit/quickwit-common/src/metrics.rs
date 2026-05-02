@@ -14,9 +14,51 @@
 
 use std::collections::BTreeMap;
 use std::sync::{LazyLock, OnceLock};
+#[cfg(not(test))]
+use std::time::Duration;
 
-use super::{Gauge, SYSTEM};
-use crate::gauge;
+use metrics_exporter_prometheus::PrometheusHandle;
+pub use prometheus::{exponential_buckets, linear_buckets};
+use quickwit_metrics::{Gauge, gauge};
+
+const SYSTEM: &str = "quickwit";
+
+static PROMETHEUS_HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
+
+pub fn set_prometheus_handle(handle: PrometheusHandle) -> Result<(), String> {
+    #[cfg(not(test))]
+    let upkeep_handle = handle.clone();
+    PROMETHEUS_HANDLE
+        .set(handle)
+        .map_err(|_| "Prometheus metrics renderer is already installed".to_string())?;
+    #[cfg(not(test))]
+    spawn_prometheus_upkeep(upkeep_handle)?;
+    Ok(())
+}
+
+pub fn metrics_text_payload() -> Result<String, String> {
+    let handle = PROMETHEUS_HANDLE
+        .get()
+        .ok_or_else(|| "Prometheus metrics rendering is not installed yet".to_string())?;
+    Ok(handle.render())
+}
+
+#[cfg(not(test))]
+fn spawn_prometheus_upkeep(handle: PrometheusHandle) -> Result<(), String> {
+    // Quickwit serves the existing `/metrics` route itself, so we build only the
+    // Prometheus recorder instead of using the exporter's HTTP listener. That lower-level
+    // API does not spawn the upkeep task that periodically drains histogram buffers.
+    std::thread::Builder::new()
+        .name("metrics-exporter-prometheus-upkeep".to_string())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(5));
+                handle.run_upkeep();
+            }
+        })
+        .map(|_| ())
+        .map_err(|error| format!("failed to spawn Prometheus metrics upkeep thread: {error}"))
+}
 
 pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'static str, String>) {
     let key_name = metric_key_name("", name);
@@ -180,5 +222,65 @@ fn metric_key_name(subsystem: &str, name: &str) -> String {
         format!("{SYSTEM}_{name}")
     } else {
         format!("{SYSTEM}_{subsystem}_{name}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use metrics::with_local_recorder;
+    use metrics_exporter_prometheus::PrometheusBuilder;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    use super::*;
+
+    #[test]
+    fn metrics_text_payload_renders_prometheus_handle() {
+        let recorder = PrometheusBuilder::new().build_recorder();
+        set_prometheus_handle(recorder.handle()).expect("Prometheus handle should be set once");
+
+        with_local_recorder(&recorder, || {
+            register_info(
+                "prometheus_payload_info",
+                "prometheus payload info",
+                BTreeMap::new(),
+            );
+        });
+
+        let payload = metrics_text_payload().expect("Prometheus payload should render");
+        assert!(payload.contains("# HELP quickwit_prometheus_payload_info"));
+        assert!(payload.contains("quickwit_prometheus_payload_info 1"));
+    }
+
+    #[test]
+    fn register_info_records_labeled_counter() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        with_local_recorder(&recorder, || {
+            let labels = BTreeMap::from([("version", "test".to_string())]);
+            register_info("build_info_test", "build info test", labels);
+        });
+
+        let snapshot = snapshotter.snapshot().into_vec();
+        let (_, _, description, value) = snapshot
+            .into_iter()
+            .find(|(composite_key, _, _, _)| {
+                let (_, key) = composite_key.clone().into_parts();
+                key.name() == "quickwit_build_info_test"
+                    && key
+                        .labels()
+                        .any(|label| label.key() == "version" && label.value() == "test")
+            })
+            .expect("build info metric should be recorded");
+        assert_eq!(description.as_deref(), Some("build info test"));
+        assert_eq!(value, DebugValue::Counter(1));
+    }
+
+    #[test]
+    fn bucket_helpers_are_reexported() {
+        assert_eq!(linear_buckets(0.0, 1.0, 3).unwrap(), vec![0.0, 1.0, 2.0]);
+        assert_eq!(
+            exponential_buckets(1.0, 2.0, 3).unwrap(),
+            vec![1.0, 2.0, 4.0]
+        );
     }
 }

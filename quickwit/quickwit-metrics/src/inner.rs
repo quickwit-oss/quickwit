@@ -76,7 +76,7 @@ macro_rules! __key_info_metadata {
         observable: $observable:expr,
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:literal
+        subsystem: $subsystem:tt
         $(, $label:literal => $value:literal)* $(,)?
     ) => {
         const KEY_NAME: &str = $crate::__key_name!($subsystem, $name);

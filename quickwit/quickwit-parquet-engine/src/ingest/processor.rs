@@ -18,7 +18,7 @@ use std::io::Cursor;
 
 use arrow::ipc::reader::StreamReader;
 use arrow::record_batch::RecordBatch;
-use quickwit_common::metrics::counter;
+use quickwit_metrics::counter;
 use tracing::{debug, instrument, warn};
 
 use crate::metrics::PARQUET_ENGINE_METRICS;

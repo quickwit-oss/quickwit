@@ -14,7 +14,8 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{Histogram, exponential_buckets, histogram};
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metrics::{Histogram, histogram};
 
 pub struct CliMetrics {
     pub thread_unpark_duration_microseconds: Histogram,

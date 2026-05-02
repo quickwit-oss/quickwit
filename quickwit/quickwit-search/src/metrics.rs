@@ -19,9 +19,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock};
 
 use bytesize::ByteSize;
-use quickwit_common::metrics::{
-    Counter, Gauge, Histogram, counter, exponential_buckets, gauge, histogram, linear_buckets,
-};
+use quickwit_common::metrics::{exponential_buckets, linear_buckets};
+use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
 
 fn print_if_not_null(
     field_name: &'static str,

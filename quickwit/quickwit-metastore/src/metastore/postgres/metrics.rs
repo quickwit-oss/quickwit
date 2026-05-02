@@ -14,7 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{Gauge, gauge};
+use quickwit_metrics::{Gauge, gauge};
 
 #[derive(Clone)]
 pub(super) struct PostgresMetrics {

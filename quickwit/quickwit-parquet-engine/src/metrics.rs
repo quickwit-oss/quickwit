@@ -19,7 +19,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{Counter, Histogram, counter, histogram};
+use quickwit_metrics::{Counter, Histogram, counter, histogram};
 
 /// Histogram buckets for duration measurements (in seconds).
 /// Covers sub-millisecond to multi-second operations.

@@ -20,8 +20,9 @@
 use std::fmt;
 
 use arrow::record_batch::RecordBatch;
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+use quickwit_metrics::GaugeGuard;
 
 /// Batch of parquet data as Arrow RecordBatch for the parquet indexing pipeline.
 ///
@@ -66,7 +67,7 @@ impl ProcessedParquetBatch {
             .sum();
 
         let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.indexer_mailbox);
-        gauge_guard.add(memory_size);
+        gauge_guard.increment(memory_size as f64);
 
         Self {
             batches,

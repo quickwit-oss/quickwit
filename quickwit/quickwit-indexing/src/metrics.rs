@@ -14,7 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, counter, gauge};
 
 pub struct IndexerMetrics {
     pub processed_docs_total: Counter,

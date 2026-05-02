@@ -34,9 +34,9 @@ use async_speed_limit::clock::StandardClock;
 use async_speed_limit::limiter::Consume;
 use bytesize::ByteSize;
 use pin_project::pin_project;
+use quickwit_metrics::{Counter, counter};
 use tokio::io::AsyncWrite;
 
-use crate::metrics::{Counter, counter};
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
 // Max 1MB at a time.
@@ -341,6 +341,7 @@ mod tests {
     use std::time::Duration;
 
     use bytesize::ByteSize;
+    use quickwit_metrics::counter;
     use tokio::io::{AsyncWriteExt, sink};
     use tokio::time::Instant;
 
@@ -348,7 +349,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_controlled_writer_limited_async() {
-        let io_controls = IoControls::default().set_throughput_limit(ByteSize::mb(2));
+        let io_controls = IoControls::default()
+            .set_bytes_counter(counter!(
+                name: "test_controlled_writer_limited_async_num_bytes",
+                description: "Test bytes counter.",
+                subsystem: "",
+                observable: true,
+            ))
+            .set_throughput_limit(ByteSize::mb(2));
         let mut controlled_write = io_controls.clone().wrap_write(sink());
         let buf = vec![44u8; 1_000];
         let start = Instant::now();
@@ -365,7 +373,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_controlled_writer_no_limit_async() {
-        let io_controls = IoControls::default();
+        let io_controls = IoControls::default().set_bytes_counter(counter!(
+            name: "test_controlled_writer_no_limit_async_num_bytes",
+            description: "Test bytes counter.",
+            subsystem: "",
+            observable: true,
+        ));
         let mut controlled_write = io_controls.clone().wrap_write(sink());
         let buf = vec![44u8; 1_000];
         let start = Instant::now();
@@ -381,7 +394,14 @@ mod tests {
 
     #[test]
     fn test_controlled_writer_limited_sync() {
-        let io_controls = IoControls::default().set_throughput_limit(ByteSize::mb(2));
+        let io_controls = IoControls::default()
+            .set_bytes_counter(counter!(
+                name: "test_controlled_writer_limited_sync_num_bytes",
+                description: "Test bytes counter.",
+                subsystem: "",
+                observable: true,
+            ))
+            .set_throughput_limit(ByteSize::mb(2));
         let mut controlled_write = io_controls.clone().wrap_write(std::io::sink());
         let buf = vec![44u8; 1_000];
         let start = Instant::now();
@@ -398,7 +418,12 @@ mod tests {
 
     #[test]
     fn test_controlled_writer_no_limit_sync() {
-        let io_controls = IoControls::default();
+        let io_controls = IoControls::default().set_bytes_counter(counter!(
+            name: "test_controlled_writer_no_limit_sync_num_bytes",
+            description: "Test bytes counter.",
+            subsystem: "",
+            observable: true,
+        ));
         let mut controlled_write = io_controls.clone().wrap_write(std::io::sink());
         let buf = vec![44u8; 1_000];
         let start = Instant::now();

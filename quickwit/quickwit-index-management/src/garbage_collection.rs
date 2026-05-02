@@ -20,13 +20,13 @@ use std::time::Duration;
 use anyhow::Context;
 use futures::{Future, StreamExt};
 use itertools::Itertools;
-use quickwit_common::metrics::Counter;
 use quickwit_common::pretty::PrettySample;
 use quickwit_common::{Progress, rate_limited_info};
 use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
     SplitMetadata, SplitState,
 };
+use quickwit_metrics::Counter;
 use quickwit_proto::metastore::{
     DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
     MetastoreService, MetastoreServiceClient,

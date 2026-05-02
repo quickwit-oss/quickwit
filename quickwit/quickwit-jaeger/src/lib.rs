@@ -21,8 +21,8 @@ use std::time::Instant;
 use itertools::{Either, Itertools};
 use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
-use quickwit_common::metrics::{counter, histogram};
 use quickwit_config::JaegerConfig;
+use quickwit_metrics::{counter, histogram};
 use quickwit_opentelemetry::otlp::{
     Event as QwEvent, Link as QwLink, OTEL_TRACES_INDEX_ID, Span as QwSpan, SpanFingerprint,
     SpanId, SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId,

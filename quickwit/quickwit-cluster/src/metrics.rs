@@ -18,7 +18,7 @@ use std::sync::{LazyLock, Weak};
 use std::time::Duration;
 
 use chitchat::{Chitchat, ChitchatId};
-use quickwit_common::metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, counter, gauge};
 use tokio::sync::Mutex;
 
 use crate::member::NodeStateExt;

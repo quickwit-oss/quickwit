@@ -20,9 +20,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS, counter};
+use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
+use quickwit_metrics::{GaugeGuard, counter};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsSubrequest,
@@ -587,8 +588,8 @@ impl IngestRouterService for IngestRouter {
     async fn ingest(&self, ingest_request: IngestRequestV2) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingest_router);
-        gauge_guard.add(request_size_bytes as i64);
+        let mut _gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingest_router);
+        _gauge_guard.increment(request_size_bytes as f64);
         let num_subrequests = ingest_request.subrequests.len();
 
         let _permit = self

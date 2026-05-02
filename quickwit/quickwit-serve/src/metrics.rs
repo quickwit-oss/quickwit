@@ -14,9 +14,8 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{
-    Counter, Gauge, Histogram, counter, exponential_buckets, gauge, histogram,
-};
+use quickwit_common::metrics::exponential_buckets;
+use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
 
 pub struct ServeMetrics {
     pub http_requests_total: Counter,

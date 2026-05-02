@@ -14,7 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, counter, gauge};
 
 pub struct IngestMetrics {
     pub docs_bytes_total: Counter,

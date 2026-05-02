@@ -14,7 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, counter, gauge};
 
 #[derive(Debug, Clone, Copy)]
 pub struct ShardLocalityMetrics {

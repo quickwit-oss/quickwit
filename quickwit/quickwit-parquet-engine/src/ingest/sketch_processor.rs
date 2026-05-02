@@ -16,7 +16,7 @@
 
 use arrow::array::AsArray;
 use arrow::record_batch::RecordBatch;
-use quickwit_common::metrics::counter;
+use quickwit_metrics::counter;
 use tracing::{debug, instrument, warn};
 
 use super::processor::IngestError;

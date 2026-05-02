@@ -20,9 +20,9 @@ use bytes::Bytes;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, DeferableReplyHandler, Handler, QueueCapacity,
 };
-use quickwit_common::metrics::counter;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::tower::Cost;
+use quickwit_metrics::counter;
 use quickwit_proto::ingest::RateLimitingCause;
 use tracing::{error, info};
 use ulid::Ulid;

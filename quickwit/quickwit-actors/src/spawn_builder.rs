@@ -16,7 +16,7 @@ use std::fmt;
 use std::time::Duration;
 
 use anyhow::Context;
-use quickwit_common::metrics::Counter;
+use quickwit_metrics::Counter;
 use sync_wrapper::SyncWrapper;
 use tokio::sync::watch;
 use tracing::{debug, error, info};

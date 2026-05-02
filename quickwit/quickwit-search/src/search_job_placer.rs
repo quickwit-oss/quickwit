@@ -21,9 +21,9 @@ use std::net::SocketAddr;
 use anyhow::bail;
 use async_trait::async_trait;
 use quickwit_common::SocketAddrLegacyHash;
-use quickwit_common::metrics::counter;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
+use quickwit_metrics::counter;
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use tracing::{info, warn};
 

@@ -22,7 +22,6 @@ use quickwit_actors::{
 };
 use quickwit_common::KillSwitch;
 use quickwit_common::io::{IoControls, Limiter};
-use quickwit_common::metrics::counter;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::RetentionPolicy;
@@ -31,6 +30,7 @@ use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
     SplitState,
 };
+use quickwit_metrics::counter;
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::{
     ListSplitsRequest, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,

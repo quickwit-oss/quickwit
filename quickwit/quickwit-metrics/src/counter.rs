@@ -261,7 +261,7 @@ macro_rules! counter {
     (
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:literal
+        subsystem: $subsystem:tt
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{
         $crate::counter!(
@@ -277,7 +277,7 @@ macro_rules! counter {
     (
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:literal,
+        subsystem: $subsystem:tt,
         observable: $observable:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{

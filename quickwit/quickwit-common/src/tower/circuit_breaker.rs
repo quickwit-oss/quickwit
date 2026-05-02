@@ -19,10 +19,9 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use pin_project::pin_project;
+use quickwit_metrics::Counter;
 use tokio::time::Instant;
 use tower::{Layer, Service};
-
-use crate::metrics::Counter;
 
 /// The circuit breaker layer implements the [circuit breaker pattern](https://martinfowler.com/bliki/CircuitBreaker.html).
 ///
@@ -302,7 +301,7 @@ mod tests {
 
         const TIMEOUT: Duration = Duration::from_millis(500);
 
-        let int_counter = crate::metrics::counter!(
+        let int_counter = quickwit_metrics::counter!(
             name: "circuit_break_total_test",
             description: "test circuit breaker counter",
             subsystem: "",

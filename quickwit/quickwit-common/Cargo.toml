@@ -14,11 +14,9 @@ license.workspace = true
 anyhow = { workspace = true }
 async-speed-limit = { workspace = true }
 async-trait = { workspace = true }
-atomic_float = { workspace = true }
 backtrace = { workspace = true, optional = true }
 bytesize = { workspace = true }
 coarsetime = { workspace = true }
-const_format = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
 fnv = { workspace = true }
@@ -30,13 +28,12 @@ http = { workspace = true }
 hyper = { workspace = true }
 hyper-util = { workspace = true, optional = true }
 itertools = { workspace = true }
-inventory = { workspace = true }
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
-metrics-util = { workspace = true }
 pin-project = { workspace = true }
 pnet = { workspace = true }
 prometheus = { workspace = true }
+quickwit-metrics = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
@@ -68,6 +65,7 @@ jemalloc-profiled = [
 
 [dev-dependencies]
 hyper-util = { workspace = true }
+metrics-util = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }
 serial_test = { workspace = true }

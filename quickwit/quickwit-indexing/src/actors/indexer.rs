@@ -27,12 +27,13 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Command, Handler, Mailbox, QueueCapacity,
 };
 use quickwit_common::io::IoControls;
-use quickwit_common::metrics::GaugeGuard;
+use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::{IndexingPipelineId, PipelineMetrics};
 use quickwit_proto::metastore::{
     LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
@@ -221,7 +222,7 @@ impl IndexerState {
 
         let mut split_builders_guard =
             GaugeGuard::from_gauge(&crate::metrics::INDEXER_METRICS.split_builders);
-        split_builders_guard.add(1);
+        split_builders_guard.increment(1.0);
 
         let workbench = IndexingWorkbench {
             workbench_id,
@@ -233,11 +234,7 @@ impl IndexerState {
             publish_lock,
             publish_token_opt,
             last_delete_opstamp,
-            memory_usage: GaugeGuard::from_gauge(
-                &quickwit_common::metrics::MEMORY_METRICS
-                    .in_flight
-                    .index_writer,
-            ),
+            memory_usage: GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.index_writer),
             cooperative_indexing_period,
             split_builders_guard,
         };
@@ -335,7 +332,7 @@ impl IndexerState {
             memory_usage_delta += mem_usage_after as i64 - mem_usage_before as i64;
             ctx.record_progress();
         }
-        memory_usage.add(memory_usage_delta);
+        memory_usage.increment(memory_usage_delta as f64);
         Ok(())
     }
 }

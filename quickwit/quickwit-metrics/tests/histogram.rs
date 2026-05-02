@@ -115,3 +115,51 @@ fn config_stored() {
     assert_eq!(config.info.metadata.target(), "sub");
     assert_eq!((config.buckets_fn)(), vec![1.0, 2.0]);
 }
+
+#[test]
+fn timer_records_value_on_drop() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "h_timer_drop",
+            description: "timer histogram",
+            subsystem: "test",
+            buckets: vec![1.0, 5.0, 10.0]
+        );
+        let _timer = h.start_timer();
+    });
+
+    let (name, labels, value) = &entries[0];
+    assert_eq!(name, "quickwit_test_h_timer_drop");
+    assert!(labels.is_empty());
+    match value {
+        DebugValue::Histogram(vals) => {
+            assert_eq!(vals.len(), 1);
+            assert!(vals[0].into_inner() >= 0.0);
+        }
+        other => panic!("expected Histogram, got {other:?}"),
+    }
+}
+
+#[test]
+fn timer_observe_duration_records_once() {
+    let entries = with_recorder(|| {
+        let h = histogram!(
+            name: "h_timer_observe_duration",
+            description: "timer histogram",
+            subsystem: "test",
+            buckets: vec![1.0, 5.0, 10.0]
+        );
+        h.start_timer().observe_duration();
+    });
+
+    let (name, labels, value) = &entries[0];
+    assert_eq!(name, "quickwit_test_h_timer_observe_duration");
+    assert!(labels.is_empty());
+    match value {
+        DebugValue::Histogram(vals) => {
+            assert_eq!(vals.len(), 1);
+            assert!(vals[0].into_inner() >= 0.0);
+        }
+        other => panic!("expected Histogram, got {other:?}"),
+    }
+}

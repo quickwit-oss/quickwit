@@ -64,6 +64,7 @@ metrics-util = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-dst = { workspace = true }
 quickwit-index-management = { workspace = true }

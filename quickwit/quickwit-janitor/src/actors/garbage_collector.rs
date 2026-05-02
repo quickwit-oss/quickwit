@@ -20,10 +20,10 @@ use async_trait::async_trait;
 use futures::{StreamExt, stream};
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_common::is_parquet_pipeline_index;
-use quickwit_common::metrics::counter;
 use quickwit_common::shared_consts::split_deletion_grace_period;
 use quickwit_index_management::{GcMetrics, run_garbage_collect, run_parquet_garbage_collect};
 use quickwit_metastore::ListIndexesMetadataResponseExt;
+use quickwit_metrics::counter;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };

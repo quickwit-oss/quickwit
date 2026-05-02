@@ -18,11 +18,11 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use prost::Message;
-use quickwit_common::metrics::{counter, histogram};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
 use quickwit_ingest::{CommitType, JsonDocBatchV2Builder};
+use quickwit_metrics::{counter, histogram};
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;

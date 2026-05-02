@@ -15,11 +15,11 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use quickwit_common::metrics::{counter, histogram};
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig, load_index_config_from_user_config};
 use quickwit_ingest::CommitType;
+use quickwit_metrics::{counter, histogram};
 use quickwit_parquet_engine::schema::REQUIRED_FIELDS;
 use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;

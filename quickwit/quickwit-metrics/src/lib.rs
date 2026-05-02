@@ -136,7 +136,8 @@
 //!
 //! ```rust,ignore
 //! {
-//!     let _guard = GaugeGuard::increment(&ACTIVE_CONNS, 1.0);
+//!     let mut _guard = GaugeGuard::from_gauge(&ACTIVE_CONNS);
+//!     _guard.increment(1.0);
 //!     // ... connection is alive here ...
 //! }
 //! // gauge decremented automatically on drop
@@ -310,7 +311,7 @@ pub mod __inventory {
 // ─── Public types ───
 pub use counter::Counter;
 pub use gauge::{Gauge, GaugeGuard};
-pub use histogram::{Histogram, HistogramConfig};
+pub use histogram::{Histogram, HistogramConfig, HistogramTimer};
 pub use labels::{LabelValues, Labels};
 // ─── metrics-rs re-exports ───
 pub use metrics::{CounterFn, GaugeFn, HistogramFn};

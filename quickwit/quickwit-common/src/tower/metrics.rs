@@ -19,9 +19,10 @@ use std::time::Instant;
 
 use futures::{Future, ready};
 use pin_project::{pin_project, pinned_drop};
+use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
 use tower::{Layer, Service};
 
-use crate::metrics::{Counter, Gauge, Histogram, counter, exponential_buckets, gauge, histogram};
+use crate::metrics::exponential_buckets;
 
 pub trait RpcName {
     fn rpc_name() -> &'static str;

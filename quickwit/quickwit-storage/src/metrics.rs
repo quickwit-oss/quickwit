@@ -17,8 +17,8 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
-use quickwit_common::metrics::{Counter, Gauge, GaugeGuard, Histogram, counter, gauge, histogram};
 use quickwit_config::CacheConfig;
+use quickwit_metrics::{Counter, Gauge, GaugeGuard, Histogram, counter, gauge, histogram};
 
 /// Counters associated to storage operations.
 pub struct StorageMetrics {
@@ -460,9 +460,9 @@ pub fn object_storage_get_slice_in_flight_guards(
     let mut bytes_guard = GaugeGuard::from_gauge(
         &crate::STORAGE_METRICS.object_storage_get_slice_in_flight_num_bytes,
     );
-    bytes_guard.add_f64(get_request_size as f64);
+    bytes_guard.increment(get_request_size as f64);
     let mut count_guard =
         GaugeGuard::from_gauge(&crate::STORAGE_METRICS.object_storage_get_slice_in_flight_count);
-    count_guard.add(1);
+    count_guard.increment(1.0);
     (bytes_guard, count_guard)
 }

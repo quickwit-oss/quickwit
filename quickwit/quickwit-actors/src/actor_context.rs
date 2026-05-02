@@ -20,8 +20,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use quickwit_common::metrics::Counter;
 use quickwit_common::{KillSwitch, Progress, ProtectedZoneGuard};
+use quickwit_metrics::Counter;
 use tokio::sync::{oneshot, watch};
 use tracing::{debug, error};
 

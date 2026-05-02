@@ -15,8 +15,9 @@
 use std::fmt;
 
 use bytes::Bytes;
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+use quickwit_metrics::GaugeGuard;
 
 pub struct RawDocBatch {
     // Do not directly append documents to this vector; otherwise, in-flight metrics will be
@@ -36,7 +37,7 @@ impl RawDocBatch {
         let delta = docs.iter().map(|doc| doc.len() as i64).sum::<i64>();
         let mut gauge_guard =
             GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.doc_processor_mailbox);
-        gauge_guard.add(delta);
+        gauge_guard.increment(delta as f64);
 
         Self {
             docs,

@@ -18,11 +18,11 @@ use std::pin::Pin;
 
 use bytesize::ByteSize;
 use futures::{Stream, StreamExt, TryStreamExt, stream};
+use quickwit_metrics::{Gauge, GaugeGuard};
 use tokio::sync::{mpsc, watch};
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
 use tracing::warn;
 
-use crate::metrics::{Gauge, GaugeGuard};
 use crate::tower::RpcName;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
@@ -240,8 +240,7 @@ where T: fmt::Debug
 impl<T> InFlightValue<T> {
     pub fn new(value: T, value_size: ByteSize, gauge: &'static Gauge) -> Self {
         let mut gauge_guard = GaugeGuard::from_gauge(gauge);
-        gauge_guard.add(value_size.as_u64() as i64);
-
+        gauge_guard.increment(value_size.as_u64() as f64);
         Self(value, gauge_guard)
     }
 
@@ -285,8 +284,9 @@ impl<T> TrackedUnboundedSender<T> {
 mod tests {
     use std::sync::LazyLock;
 
+    use quickwit_metrics::{Gauge, gauge};
+
     use super::*;
-    use crate::metrics::{Gauge, gauge};
 
     #[tokio::test]
     async fn test_service_stream_map() {

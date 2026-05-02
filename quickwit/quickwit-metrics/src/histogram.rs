@@ -13,6 +13,7 @@
 // limitations under the License.
 
 use std::sync::{Arc, LazyLock};
+use std::time::Instant;
 
 use dashmap::DashMap;
 use metrics::HistogramFn;
@@ -174,6 +175,11 @@ impl Histogram {
     pub fn record(&self, value: f64) {
         self.0.inner.record(value);
     }
+
+    /// Starts a timer that records the elapsed time in seconds when dropped.
+    pub fn start_timer(&self) -> HistogramTimer {
+        HistogramTimer::new(self.clone())
+    }
 }
 
 /// Bridges `Histogram` into the `metrics` recorder trait so it can be
@@ -181,6 +187,41 @@ impl Histogram {
 impl HistogramFn for Histogram {
     fn record(&self, value: f64) {
         Self::record(self, value);
+    }
+}
+
+/// RAII timer that records elapsed wall-clock time into a [`Histogram`].
+#[derive(Debug)]
+pub struct HistogramTimer {
+    histogram: Histogram,
+    start: Instant,
+    observed: bool,
+}
+
+impl HistogramTimer {
+    fn new(histogram: Histogram) -> Self {
+        Self {
+            histogram,
+            start: Instant::now(),
+            observed: false,
+        }
+    }
+
+    /// Records the elapsed duration immediately.
+    ///
+    /// The timer is consumed so the duration is not recorded again on drop.
+    pub fn observe_duration(self) {
+        let mut timer = self;
+        timer.observed = true;
+        timer.histogram.record(timer.start.elapsed().as_secs_f64());
+    }
+}
+
+impl Drop for HistogramTimer {
+    fn drop(&mut self) {
+        if !self.observed {
+            self.histogram.record(self.start.elapsed().as_secs_f64());
+        }
     }
 }
 
@@ -218,7 +259,7 @@ macro_rules! histogram {
     (
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:literal,
+        subsystem: $subsystem:tt,
         buckets: $buckets:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{

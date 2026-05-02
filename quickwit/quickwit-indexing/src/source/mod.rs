@@ -92,7 +92,7 @@ pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
 pub use queue_sources::sqs_queue;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
-use quickwit_common::metrics::{GaugeGuard, MEMORY_METRICS};
+use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{
@@ -101,6 +101,7 @@ use quickwit_config::{
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreResult, MetastoreService,
@@ -551,8 +552,8 @@ impl BatchBuilder {
     pub fn add_doc(&mut self, doc: Bytes) {
         let num_bytes = doc.len();
         self.docs.push(doc);
-        self.gauge_guard.add(num_bytes as i64);
         self.num_bytes += num_bytes as u64;
+        self.gauge_guard.increment(num_bytes as f64);
     }
 
     pub fn force_commit(&mut self) {
@@ -567,7 +568,7 @@ impl BatchBuilder {
     pub fn clear(&mut self) {
         self.docs.clear();
         self.checkpoint_delta = SourceCheckpointDelta::default();
-        self.gauge_guard.sub(self.num_bytes as i64);
+        self.gauge_guard.increment(-(self.num_bytes as f64));
         self.num_bytes = 0;
     }
 }

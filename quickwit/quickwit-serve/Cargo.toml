@@ -61,6 +61,7 @@ zstd = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-metrics = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
 quickwit-datafusion = { workspace = true, optional = true }

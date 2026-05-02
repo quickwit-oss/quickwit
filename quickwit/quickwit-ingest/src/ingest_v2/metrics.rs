@@ -15,9 +15,8 @@
 use std::sync::LazyLock;
 
 use mrecordlog::ResourceUsage;
-use quickwit_common::metrics::{
-    Counter, Gauge, Histogram, counter, exponential_buckets, gauge, histogram, linear_buckets,
-};
+use quickwit_common::metrics::{exponential_buckets, linear_buckets};
+use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
 
 // Counter vec counting the different outcomes of ingest requests as
 // measure at the end of the router work.

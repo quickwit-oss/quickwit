@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Weak};
 use std::time::Instant;
 
-use quickwit_common::metrics::{Counter, Gauge, GaugeGuard, gauge};
+use quickwit_metrics::{Counter, Gauge, GaugeGuard, gauge};
 use tokio::sync::oneshot;
 
 use crate::channel_with_priority::{Receiver, Sender, TrySendError};
@@ -395,7 +395,7 @@ impl<A: Actor> Inbox<A> {
 
 fn get_actor_inboxes_count_gauge_guard() -> GaugeGuard {
     let mut gauge_guard = GaugeGuard::from_gauge(&INBOX_GAUGE);
-    gauge_guard.add(1);
+    gauge_guard.increment(1.0);
     gauge_guard
 }
 
@@ -452,7 +452,7 @@ mod tests {
     use std::mem;
     use std::time::Duration;
 
-    use quickwit_common::metrics::counter;
+    use quickwit_metrics::counter;
 
     use super::*;
     use crate::tests::{Ping, PingReceiverActor};

@@ -461,12 +461,12 @@ impl ShardTable {
         // can update the metrics for this specific index.
         if index_label == index_id {
             let shard_stats = table_entry.shards_stats();
-            quickwit_common::metrics::gauge!(
+            quickwit_metrics::gauge!(
                 parent: &crate::metrics::CONTROL_PLANE_METRICS.open_shards,
                 "index_id" => index_label.to_string(),
             )
             .set(shard_stats.num_open_shards as f64);
-            quickwit_common::metrics::gauge!(
+            quickwit_metrics::gauge!(
                 parent: &crate::metrics::CONTROL_PLANE_METRICS.closed_shards,
                 "index_id" => index_label.to_string(),
             )
@@ -484,12 +484,12 @@ impl ShardTable {
                 num_closed_shards += 1;
             }
         }
-        quickwit_common::metrics::gauge!(
+        quickwit_metrics::gauge!(
             parent: &crate::metrics::CONTROL_PLANE_METRICS.open_shards,
             "index_id" => index_label.to_string(),
         )
         .set(num_open_shards as f64);
-        quickwit_common::metrics::gauge!(
+        quickwit_metrics::gauge!(
             parent: &crate::metrics::CONTROL_PLANE_METRICS.closed_shards,
             "index_id" => index_label.to_string(),
         )

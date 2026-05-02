@@ -447,13 +447,13 @@ fn init_metrics_provider(
     let recorder = router.build();
     metrics::set_global_recorder(recorder)
         .map_err(|_| anyhow::anyhow!("failed to install global metrics recorder"))?;
-    quickwit_common::metrics::describe_metrics();
+    quickwit_metrics::describe_metrics();
     Ok(meter_provider)
 }
 
 fn install_prometheus_recorder() -> anyhow::Result<PrometheusRecorder> {
     let mut prometheus_builder = PrometheusBuilder::new();
-    for (name, buckets) in quickwit_common::metrics::histogram_buckets() {
+    for (name, buckets) in quickwit_metrics::histogram_buckets() {
         prometheus_builder = prometheus_builder
             .set_buckets_for_metric(Matcher::Full(name.to_string()), &buckets)
             .with_context(|| {
@@ -485,7 +485,7 @@ fn install_otlp_metrics_recorder(
     let meter = metrics_provider.meter("quickwit");
 
     let recorder = OpenTelemetryRecorder::new(meter);
-    for (name, buckets) in quickwit_common::metrics::histogram_buckets() {
+    for (name, buckets) in quickwit_metrics::histogram_buckets() {
         recorder.set_histogram_bounds(&metrics::KeyName::from(name), buckets);
     }
     Ok((recorder, metrics_provider))

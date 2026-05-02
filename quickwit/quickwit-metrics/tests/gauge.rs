@@ -91,7 +91,8 @@ fn guard_decrements_on_drop() {
         );
         g.set(0.0);
         {
-            let _guard = GaugeGuard::increment(&g, 5.0);
+            let mut _guard = GaugeGuard::from_gauge(&g);
+            _guard.increment(5.0);
         }
     });
 
@@ -109,13 +110,38 @@ fn guard_after_set() {
         );
         g.set(10.0);
         {
-            let guard = GaugeGuard::increment(&g, 3.0);
-            assert_eq!(guard.value(), 3.0);
+            let mut guard = GaugeGuard::from_gauge(&g);
+            guard.increment(3.0);
+            assert_eq!(guard.get(), 3.0);
         }
     });
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].2, DebugValue::Gauge(10.0.into()));
+}
+
+#[test]
+fn mutable_guard_tracks_delta() {
+    let entries = with_recorder(|| {
+        let g = gauge!(
+            name: "g_mutable_guard",
+            description: "mutable guard",
+            subsystem: "test",
+        );
+        g.set(0.0);
+        {
+            let mut guard = GaugeGuard::from_gauge(&g);
+            assert_eq!(guard.get(), 0.0);
+            guard.increment(5.0);
+            guard.increment(-2.0);
+            guard.increment(0.5);
+            guard.increment(-1.5);
+            assert_eq!(guard.get(), 2.0);
+        }
+    });
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].2, DebugValue::Gauge(0.0.into()));
 }
 
 #[test]
@@ -127,8 +153,10 @@ fn multiple_guards() {
             subsystem: "test",
         );
         g.set(0.0);
-        let guard_a = GaugeGuard::increment(&g, 2.0);
-        let guard_b = GaugeGuard::increment(&g, 5.0);
+        let mut guard_a = GaugeGuard::from_gauge(&g);
+        guard_a.increment(2.0);
+        let mut guard_b = GaugeGuard::from_gauge(&g);
+        guard_b.increment(5.0);
         drop(guard_b);
         drop(guard_a);
     });
@@ -194,7 +222,8 @@ fn observable_guard_matches_recorder() {
         );
         g.set(0.0);
         {
-            let _guard = GaugeGuard::increment(&g, 5.0);
+            let mut _guard = GaugeGuard::from_gauge(&g);
+            _guard.increment(5.0);
             assert_eq!(g.get(), 5.0);
         }
         g

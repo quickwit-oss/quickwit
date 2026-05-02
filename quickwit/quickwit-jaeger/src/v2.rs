@@ -19,7 +19,7 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use prost_types::Timestamp as WellKnownTimestamp;
-use quickwit_common::metrics::{counter, histogram};
+use quickwit_metrics::{counter, histogram};
 use quickwit_opentelemetry::otlp::{
     OTEL_TRACES_INDEX_ID, Span as QwSpan, TraceId,
     extract_otel_traces_index_id_patterns_from_metadata,

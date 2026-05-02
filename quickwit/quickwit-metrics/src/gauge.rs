@@ -224,45 +224,50 @@ impl GaugeFn for Gauge {
     }
 }
 
-/// RAII guard that increments a [`Gauge`] on creation and decrements it
-/// by the same amount when dropped.
+/// RAII guard that tracks increments to a [`Gauge`] and decrements the
+/// tracked amount when dropped.
 ///
 /// Useful for tracking in-flight work (connections, requests, etc.)
 /// with automatic cleanup on scope exit — even via `?`, `return`, or
 /// a panic.
 ///
 /// ```ignore
-/// let _guard = GaugeGuard::increment(&gauge, 1.0);
+/// let mut guard = GaugeGuard::from_gauge(&gauge);
+/// guard.increment(1.0);
 /// // gauge is incremented by 1.0
 /// // ... do work ...
-/// // gauge is decremented by 1.0 when _guard drops
+/// // gauge is decremented by 1.0 when guard drops
 /// ```
 #[derive(Debug)]
 pub struct GaugeGuard {
     gauge: Gauge,
-    value: f64,
+    delta: f64,
 }
 
 impl GaugeGuard {
-    /// Increments `gauge` by `value` and returns a guard that will
-    /// decrement it back when dropped.
-    pub fn increment(gauge: &Gauge, value: f64) -> Self {
-        gauge.increment(value);
+    /// Creates a guard that tracks `gauge` without changing its value.
+    pub fn from_gauge(gauge: &Gauge) -> Self {
         Self {
             gauge: gauge.clone(),
-            value,
+            delta: 0.0,
         }
     }
 
+    /// Adds `delta` to the gauge and to the value this guard tracks.
+    pub fn increment(&mut self, delta: f64) {
+        self.delta += delta;
+        self.gauge.increment(delta);
+    }
+
     /// Returns the value this guard is tracking.
-    pub fn value(&self) -> f64 {
-        self.value
+    pub fn get(&self) -> f64 {
+        self.delta
     }
 }
 
 impl Drop for GaugeGuard {
     fn drop(&mut self) {
-        self.gauge.decrement(self.value);
+        self.gauge.decrement(self.delta);
     }
 }
 
@@ -291,7 +296,8 @@ impl Drop for GaugeGuard {
 ///
 /// ```ignore
 /// let child = gauge!(parent: base, "method" => method);
-/// let _guard = GaugeGuard::increment(&child, 1.0);
+/// let mut guard = GaugeGuard::from_gauge(&child);
+/// guard.increment(1.0);
 /// ```
 #[macro_export]
 macro_rules! gauge {
@@ -300,7 +306,7 @@ macro_rules! gauge {
     (
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:literal
+        subsystem: $subsystem:tt
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{
         $crate::gauge!(
@@ -316,7 +322,7 @@ macro_rules! gauge {
     (
         name: $name:literal,
         description: $description:literal,
-        subsystem: $subsystem:literal,
+        subsystem: $subsystem:tt,
         observable: $observable:expr
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{

@@ -14,7 +14,7 @@
 
 use std::sync::LazyLock;
 
-use quickwit_common::metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, counter, gauge};
 
 pub struct JanitorMetrics {
     pub ongoing_num_delete_operations_total: Gauge,

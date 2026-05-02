@@ -22,9 +22,9 @@ use std::time::Duration;
 use anyhow::Context;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
-use quickwit_common::metrics::GaugeGuard;
 use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
 use quickwit_metastore::SplitMetadata;
+use quickwit_metrics::GaugeGuard;
 use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SplitSearchError};
 use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
@@ -150,7 +150,7 @@ impl MiniKV {
     pub async fn put(&self, key: Vec<u8>, payload: Vec<u8>, ttl: Duration) {
         let mut metric_guard =
             GaugeGuard::from_gauge(&crate::SEARCH_METRICS.searcher_local_kv_store_size_bytes);
-        metric_guard.add(payload.len() as i64);
+        metric_guard.increment(payload.len() as f64);
         let mut cache_lock = self.ttl_with_cache.write().await;
         cache_lock.insert(
             key,

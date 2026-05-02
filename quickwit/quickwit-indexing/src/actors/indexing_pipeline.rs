@@ -23,12 +23,12 @@ use quickwit_actors::{
     QueueCapacity, Supervisable,
 };
 use quickwit_common::KillSwitch;
-use quickwit_common::metrics::{GaugeGuard, counter, gauge};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
+use quickwit_metrics::{GaugeGuard, counter, gauge};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_proto::types::ShardId;
@@ -128,7 +128,7 @@ impl IndexingPipeline {
             "index" => params.pipeline_id.index_uid.index_id.clone(),
         );
         let mut indexing_pipelines_gauge_guard = GaugeGuard::from_gauge(&indexing_pipelines_gauge);
-        indexing_pipelines_gauge_guard.add(1);
+        indexing_pipelines_gauge_guard.increment(1.0);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
             params,
