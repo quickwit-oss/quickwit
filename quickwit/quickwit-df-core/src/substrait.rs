@@ -70,7 +70,7 @@ use datafusion_substrait::logical_plan::consumer::{
 use datafusion_substrait::substrait::proto::read_rel::{
     NamedTable as SubstraitNamedTable, ReadType,
 };
-use datafusion_substrait::substrait::proto::{Plan, ReadRel};
+use datafusion_substrait::substrait::proto::{ExtensionSingleRel, Plan, ReadRel};
 
 use crate::data_source::QuickwitSubstraitConsumerExt;
 
@@ -178,6 +178,32 @@ impl SubstraitConsumer for QuickwitSubstraitConsumer<'_> {
 
         // No extension claimed this rel — use the standard path (catalog lookup).
         from_read_rel(self, rel).await
+    }
+
+    async fn consume_extension_single(&self, rel: &ExtensionSingleRel) -> DFResult<LogicalPlan> {
+        let input_rel = rel.input.as_deref().ok_or_else(|| {
+            DataFusionError::Plan("ExtensionSingleRel missing input relation".to_string())
+        })?;
+        let input = self.consume_rel(input_rel).await?;
+
+        for extension in self.extensions_for_reads {
+            if let Some(plan) = extension
+                .try_consume_extension_single_rel(rel, input.clone())
+                .await?
+            {
+                return Ok(plan);
+            }
+        }
+
+        if let Some(detail) = rel.detail.as_ref() {
+            return Err(DataFusionError::NotImplemented(format!(
+                "Missing handler for ExtensionSingleRel: {}",
+                detail.type_url
+            )));
+        }
+        Err(DataFusionError::NotImplemented(
+            "Missing handler for ExtensionSingleRel".to_string(),
+        ))
     }
 }
 

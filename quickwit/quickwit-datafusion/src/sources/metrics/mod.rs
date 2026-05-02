@@ -21,6 +21,7 @@
 //! session / worker / Substrait layer.
 
 pub(crate) mod factory;
+pub(crate) mod gapfill;
 pub(crate) mod index_resolver;
 pub(crate) mod metastore_provider;
 pub(crate) mod optimizer;
@@ -48,6 +49,7 @@ use quickwit_parquet_engine::split::ParquetSplitKind;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 
 use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory, SKETCHES_FILE_TYPE};
+use self::gapfill::{GapFillExtensionPlanner, try_consume_gap_fill_extension};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
 use self::optimizer::SortedSeriesStreamingAggregateRule;
 use self::sketch_udf::{create_dd_quantile_udf, create_dd_sketch_udaf};
@@ -266,6 +268,7 @@ impl QuickwitRuntimePlugin for MetricsDataSource {
                 config.options_mut().optimizer.repartition_file_scans = false;
             })
             .with_physical_optimizer_rule(Arc::new(SortedSeriesStreamingAggregateRule))
+            .with_extension_planner(Arc::new(GapFillExtensionPlanner))
             .with_table_factory(METRICS_FILE_TYPE, factory)
             .with_table_factory(SKETCHES_FILE_TYPE, sketches_factory)
             .with_udaf(Arc::new(create_dd_sketch_udaf()))
@@ -334,5 +337,13 @@ impl QuickwitSubstraitConsumerExt for MetricsDataSource {
         )
         .await?;
         Ok(provider.map(|provider| (index_name.to_string(), provider)))
+    }
+
+    async fn try_consume_extension_single_rel(
+        &self,
+        rel: &datafusion_substrait::substrait::proto::ExtensionSingleRel,
+        input: datafusion::logical_expr::LogicalPlan,
+    ) -> DFResult<Option<datafusion::logical_expr::LogicalPlan>> {
+        try_consume_gap_fill_extension(rel, input)
     }
 }

@@ -40,9 +40,13 @@ use datafusion::catalog::{
 };
 use datafusion::error::{DataFusionError, Result as DFResult};
 use datafusion::execution::SessionStateBuilder;
+use datafusion::execution::context::QueryPlanner;
 use datafusion::execution::memory_pool::{GreedyMemoryPool, MemoryPool};
 use datafusion::execution::object_store::ObjectStoreRegistry;
 use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
+use datafusion::logical_expr::LogicalPlan;
+use datafusion::physical_plan::ExecutionPlan;
+use datafusion::physical_planner::{DefaultPhysicalPlanner, ExtensionPlanner, PhysicalPlanner};
 use datafusion::prelude::{SessionConfig, SessionContext};
 use datafusion_distributed::{
     DistributedExt, DistributedPhysicalOptimizerRule, TaskEstimator, WorkerResolver,
@@ -333,6 +337,33 @@ impl DataFusionSessionBuilder {
 }
 
 struct ArcWorkerResolver(Arc<dyn WorkerResolver + Send + Sync>);
+
+pub(crate) struct QuickwitQueryPlanner {
+    pub(crate) extension_planners: Vec<Arc<dyn ExtensionPlanner + Send + Sync>>,
+}
+
+impl std::fmt::Debug for QuickwitQueryPlanner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QuickwitQueryPlanner")
+            .field("num_extension_planners", &self.extension_planners.len())
+            .finish()
+    }
+}
+
+#[async_trait::async_trait]
+impl QueryPlanner for QuickwitQueryPlanner {
+    async fn create_physical_plan(
+        &self,
+        logical_plan: &LogicalPlan,
+        session_state: &datafusion::execution::SessionState,
+    ) -> DFResult<Arc<dyn ExecutionPlan>> {
+        let planner =
+            DefaultPhysicalPlanner::with_extension_planners(self.extension_planners.clone());
+        planner
+            .create_physical_plan(logical_plan, session_state)
+            .await
+    }
+}
 
 impl WorkerResolver for ArcWorkerResolver {
     fn get_urls(&self) -> Result<Vec<url::Url>, DataFusionError> {

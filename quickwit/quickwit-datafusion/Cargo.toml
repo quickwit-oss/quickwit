@@ -16,6 +16,7 @@ bytes = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 prost = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -40,6 +41,7 @@ datafusion-distributed = "1.0"
 object_store = "0.13"
 
 [dev-dependencies]
+base64 = { workspace = true }
 bytesize = { workspace = true }
 datafusion = "53"
 datafusion-substrait = "53"
