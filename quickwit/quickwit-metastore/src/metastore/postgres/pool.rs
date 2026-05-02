@@ -21,8 +21,6 @@ use sqlx::{
     Acquire, Database, Describe, Either, Error, Execute, Executor, Pool, Postgres, Transaction,
 };
 
-use super::metrics::POSTGRES_METRICS;
-
 #[derive(Debug)]
 pub(super) struct TrackedPool<DB: Database> {
     inner_pool: Pool<DB>,
@@ -50,15 +48,11 @@ impl<'a, DB: Database> Acquire<'a> for &TrackedPool<DB> {
     fn acquire(self) -> BoxFuture<'static, Result<Self::Connection, Error>> {
         let acquire_conn_fut = self.inner_pool.acquire();
 
-        POSTGRES_METRICS
-            .active_connections
-            .set(self.inner_pool.size() as f64);
-        POSTGRES_METRICS
-            .idle_connections
-            .set(self.inner_pool.num_idle() as f64);
+        super::metrics::ACTIVE_CONNECTIONS.set(self.inner_pool.size() as f64);
+        super::metrics::IDLE_CONNECTIONS.set(self.inner_pool.num_idle() as f64);
 
         Box::pin(async move {
-            let mut _gauge_guard = GaugeGuard::from_gauge(&POSTGRES_METRICS.acquire_connections);
+            let mut _gauge_guard = GaugeGuard::from_gauge(&super::metrics::ACQUIRE_CONNECTIONS);
             _gauge_guard.increment(1.0);
 
             let conn = acquire_conn_fut.await?;

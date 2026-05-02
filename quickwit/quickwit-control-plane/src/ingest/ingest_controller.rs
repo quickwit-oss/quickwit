@@ -1024,9 +1024,7 @@ impl IngestController {
 
         let shards_to_rebalance: Vec<Shard> = self.compute_shards_to_rebalance(model);
 
-        crate::metrics::CONTROL_PLANE_METRICS
-            .rebalance_shards
-            .set(shards_to_rebalance.len() as f64);
+        crate::metrics::REBALANCE_SHARDS.set(shards_to_rebalance.len() as f64);
 
         if shards_to_rebalance.is_empty() {
             debug!("skipping rebalance: no shards to rebalance");
@@ -1049,16 +1047,12 @@ impl IngestController {
             .await
             .inspect_err(|error| {
                 error!(%error, "failed to open shards during rebalance");
-                crate::metrics::CONTROL_PLANE_METRICS
-                    .rebalance_shards
-                    .set(0.0);
+                crate::metrics::REBALANCE_SHARDS.set(0.0);
             })?;
 
         let num_opened_shards: usize = per_source_num_opened_shards.values().sum();
 
-        crate::metrics::CONTROL_PLANE_METRICS
-            .rebalance_shards
-            .set(num_opened_shards as f64);
+        crate::metrics::REBALANCE_SHARDS.set(num_opened_shards as f64);
 
         for source_uid in per_source_num_opened_shards.keys() {
             // We temporarily disable the ability the scale down the number of shards for

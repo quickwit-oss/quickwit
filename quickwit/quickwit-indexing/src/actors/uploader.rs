@@ -41,7 +41,6 @@ use tracing::{Instrument, Span, debug, info, instrument, warn};
 use crate::actors::Publisher;
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::merge_policy::{MergePolicy, MergeTask};
-use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate, create_split_metadata,
 };
@@ -205,21 +204,21 @@ impl Uploader {
                 UploaderType::IndexUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_INDEX,
                     gauge!(
-                        parent: &INDEXER_METRICS.available_concurrent_upload_permits,
+                        parent: &crate::metrics::AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
                         "component" => "indexer",
                     ),
                 ),
                 UploaderType::MergeUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
                     gauge!(
-                        parent: &INDEXER_METRICS.available_concurrent_upload_permits,
+                        parent: &crate::metrics::AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
                         "component" => "merger",
                     ),
                 ),
                 UploaderType::DeleteUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
                     gauge!(
-                        parent: &INDEXER_METRICS.available_concurrent_upload_permits,
+                        parent: &crate::metrics::AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
                         "component" => "merger",
                     ),
                 ),

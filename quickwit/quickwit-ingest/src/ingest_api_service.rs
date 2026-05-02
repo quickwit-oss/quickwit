@@ -27,7 +27,6 @@ use quickwit_proto::ingest::RateLimitingCause;
 use tracing::{error, info};
 use ulid::Ulid;
 
-use crate::metrics::INGEST_METRICS;
 use crate::notifications::Notifications;
 use crate::{
     CommitType, CreateQueueIfNotExistsRequest, CreateQueueIfNotExistsResponse, CreateQueueRequest,
@@ -203,11 +202,11 @@ impl IngestApiService {
 
             num_docs += batch_num_docs;
             counter!(
-                parent: &INGEST_METRICS.docs_bytes_total,
+                parent: &crate::metrics::DOCS_BYTES_TOTAL,
                 "validity" => "valid",
             )
             .increment(batch_num_bytes as u64);
-            counter!(parent: &INGEST_METRICS.docs_total, "validity" => "valid")
+            counter!(parent: &crate::metrics::DOCS_TOTAL, "validity" => "valid")
                 .increment(batch_num_docs as u64);
         }
         // TODO we could fsync here and disable autosync to have better i/o perfs.

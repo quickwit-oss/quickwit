@@ -14,7 +14,6 @@
 
 use std::time::Duration;
 
-use quickwit_common::metrics::MEMORY_METRICS;
 use tikv_jemallocator::Jemalloc;
 use tracing::error;
 
@@ -30,8 +29,6 @@ pub static GLOBAL: Jemalloc = Jemalloc;
 const JEMALLOC_METRICS_POLLING_INTERVAL: Duration = Duration::from_secs(1);
 
 pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
-    let memory_metrics = MEMORY_METRICS.clone();
-
     // Obtain a MIB for the `epoch`, `stats.active`, `stats.allocated`, and `stats.resident` keys:
     let epoch_mib = tikv_jemalloc_ctl::epoch::mib()?;
     let active_mib = tikv_jemalloc_ctl::stats::active::mib()?;
@@ -48,13 +45,13 @@ pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
 
         // Read statistics using MIB keys:
         let active = active_mib.read()?;
-        memory_metrics.active_bytes.set(active as f64);
+        quickwit_common::metrics::MEMORY_ACTIVE_BYTES.set(active as f64);
 
         let allocated = allocated_mib.read()?;
-        memory_metrics.allocated_bytes.set(allocated as f64);
+        quickwit_common::metrics::MEMORY_ALLOCATED_BYTES.set(allocated as f64);
 
         let resident = resident_mib.read()?;
-        memory_metrics.resident_bytes.set(resident as f64);
+        quickwit_common::metrics::MEMORY_RESIDENT_BYTES.set(resident as f64);
     }
 }
 

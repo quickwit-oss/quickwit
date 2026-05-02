@@ -37,7 +37,6 @@ use tracing::{Instrument, Span, debug, info, instrument, warn};
 use super::{ParquetSplitBatch, ParquetSplitsUpdate};
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::{Publisher, UploaderCounters, UploaderType};
-use crate::metrics::INDEXER_METRICS;
 
 /// Concurrent upload permits for metrics uploader.
 /// Uses same permit pool as indexer uploads.
@@ -124,7 +123,7 @@ impl ParquetUploader {
         let concurrent_upload_permits = CONCURRENT_UPLOAD_PERMITS_METRICS
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_uploads));
         let gauge = gauge!(
-            parent: &INDEXER_METRICS.available_concurrent_upload_permits,
+            parent: &crate::metrics::AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
             "component" => "metrics",
         );
         gauge.set(concurrent_upload_permits.available_permits() as f64);

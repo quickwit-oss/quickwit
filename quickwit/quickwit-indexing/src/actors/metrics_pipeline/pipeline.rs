@@ -145,7 +145,7 @@ impl Actor for MetricsPipeline {
 impl MetricsPipeline {
     pub fn new(params: MetricsPipelineParams) -> Self {
         let indexing_pipelines_gauge = gauge!(
-            parent: &crate::metrics::INDEXER_METRICS.indexing_pipelines,
+            parent: &crate::metrics::INDEXING_PIPELINES,
             "index" => params.pipeline_id.index_uid.index_id.clone(),
         );
         let mut indexing_pipelines_gauge_guard = GaugeGuard::from_gauge(&indexing_pipelines_gauge);

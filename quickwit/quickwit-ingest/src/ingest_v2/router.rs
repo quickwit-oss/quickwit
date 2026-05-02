@@ -20,7 +20,6 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
-use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_metrics::{GaugeGuard, counter};
@@ -46,12 +45,10 @@ use super::debouncing::{
     DebouncedGetOrCreateOpenShardsRequest, GetOrCreateOpenShardsRequestDebouncer,
 };
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
-use super::metrics::IngestResultMetrics;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
-use super::{IngesterPool, pending_subrequests};
+use super::{IngesterPool, metrics, pending_subrequests};
 use crate::get_ingest_router_buffer_size;
-use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
 fn ingest_request_timeout() -> Duration {
@@ -373,7 +370,7 @@ impl IngestRouter {
                 .routing_table
                 .classify_az_locality(&ingester_node.node_id, &self.ingester_pool);
             counter!(
-                parent: &INGEST_V2_METRICS.ingest_attempts,
+                parent: &crate::ingest_v2::metrics::INGEST_ATTEMPTS,
                 "az_routing" => az_locality,
             )
             .increment(1);
@@ -494,40 +491,37 @@ impl IngestRouter {
 
 fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_subrequests: usize) {
     let num_subrequests = num_subrequests as u64;
-    let ingest_results_metrics: &IngestResultMetrics = &INGEST_V2_METRICS.ingest_results;
     match ingest_result {
         Ok(ingest_response) => {
-            ingest_results_metrics
-                .success
-                .increment(ingest_response.successes.len() as u64);
+            metrics::INGEST_RESULT_SUCCESS.increment(ingest_response.successes.len() as u64);
             for ingest_failure in &ingest_response.failures {
                 match ingest_failure.reason() {
                     IngestFailureReason::CircuitBreaker => {
-                        ingest_results_metrics.circuit_breaker.increment(1);
+                        metrics::INGEST_RESULT_CIRCUIT_BREAKER.increment(1);
                     }
                     IngestFailureReason::Unspecified => {
-                        ingest_results_metrics.unspecified.increment(1)
+                        metrics::INGEST_RESULT_UNSPECIFIED.increment(1)
                     }
                     IngestFailureReason::IndexNotFound => {
-                        ingest_results_metrics.index_not_found.increment(1)
+                        metrics::INGEST_RESULT_INDEX_NOT_FOUND.increment(1)
                     }
                     IngestFailureReason::SourceNotFound => {
-                        ingest_results_metrics.source_not_found.increment(1)
+                        metrics::INGEST_RESULT_SOURCE_NOT_FOUND.increment(1)
                     }
-                    IngestFailureReason::Internal => ingest_results_metrics.internal.increment(1),
+                    IngestFailureReason::Internal => metrics::INGEST_RESULT_INTERNAL.increment(1),
                     IngestFailureReason::NoShardsAvailable => {
-                        ingest_results_metrics.no_shards_available.increment(1)
+                        metrics::INGEST_RESULT_NO_SHARDS_AVAILABLE.increment(1)
                     }
                     IngestFailureReason::ShardRateLimited => {
-                        ingest_results_metrics.shard_rate_limited.increment(1)
+                        metrics::INGEST_RESULT_SHARD_RATE_LIMITED.increment(1)
                     }
-                    IngestFailureReason::WalFull => ingest_results_metrics.wal_full.increment(1),
-                    IngestFailureReason::Timeout => ingest_results_metrics.timeout.increment(1),
+                    IngestFailureReason::WalFull => metrics::INGEST_RESULT_WAL_FULL.increment(1),
+                    IngestFailureReason::Timeout => metrics::INGEST_RESULT_TIMEOUT.increment(1),
                     IngestFailureReason::RouterLoadShedding => {
-                        ingest_results_metrics.router_load_shedding.increment(1)
+                        metrics::INGEST_RESULT_ROUTER_LOAD_SHEDDING.increment(1)
                     }
                     IngestFailureReason::LoadShedding => {
-                        ingest_results_metrics.load_shedding.increment(1)
+                        metrics::INGEST_RESULT_LOAD_SHEDDING.increment(1)
                     }
                 }
             }
@@ -535,49 +529,35 @@ fn update_ingest_metrics(ingest_result: &IngestV2Result<IngestResponseV2>, num_s
         Err(ingest_error) => match ingest_error {
             IngestV2Error::TooManyRequests(rate_limiting_cause) => match rate_limiting_cause {
                 RateLimitingCause::RouterLoadShedding => {
-                    ingest_results_metrics
-                        .router_load_shedding
-                        .increment(num_subrequests);
+                    metrics::INGEST_RESULT_ROUTER_LOAD_SHEDDING.increment(num_subrequests);
                 }
-                RateLimitingCause::LoadShedding => ingest_results_metrics
-                    .load_shedding
-                    .increment(num_subrequests),
+                RateLimitingCause::LoadShedding => {
+                    metrics::INGEST_RESULT_LOAD_SHEDDING.increment(num_subrequests)
+                }
                 RateLimitingCause::WalFull => {
-                    ingest_results_metrics.wal_full.increment(num_subrequests);
+                    metrics::INGEST_RESULT_WAL_FULL.increment(num_subrequests);
                 }
                 RateLimitingCause::CircuitBreaker => {
-                    ingest_results_metrics
-                        .circuit_breaker
-                        .increment(num_subrequests);
+                    metrics::INGEST_RESULT_CIRCUIT_BREAKER.increment(num_subrequests);
                 }
                 RateLimitingCause::ShardRateLimiting => {
-                    ingest_results_metrics
-                        .shard_rate_limited
-                        .increment(num_subrequests);
+                    metrics::INGEST_RESULT_SHARD_RATE_LIMITED.increment(num_subrequests);
                 }
                 RateLimitingCause::Unknown => {
-                    ingest_results_metrics
-                        .unspecified
-                        .increment(num_subrequests);
+                    metrics::INGEST_RESULT_UNSPECIFIED.increment(num_subrequests);
                 }
             },
             IngestV2Error::Timeout(_) => {
-                ingest_results_metrics
-                    .router_timeout
-                    .increment(num_subrequests);
+                metrics::INGEST_RESULT_ROUTER_TIMEOUT.increment(num_subrequests);
             }
             IngestV2Error::ShardNotFound { .. } => {
-                ingest_results_metrics
-                    .shard_not_found
-                    .increment(num_subrequests);
+                metrics::INGEST_RESULT_SHARD_NOT_FOUND.increment(num_subrequests);
             }
             IngestV2Error::Unavailable(_) => {
-                ingest_results_metrics
-                    .unavailable
-                    .increment(num_subrequests);
+                metrics::INGEST_RESULT_UNAVAILABLE.increment(num_subrequests);
             }
             IngestV2Error::Internal(_) => {
-                ingest_results_metrics.internal.increment(num_subrequests);
+                metrics::INGEST_RESULT_INTERNAL.increment(num_subrequests);
             }
         },
     }
@@ -588,7 +568,8 @@ impl IngestRouterService for IngestRouter {
     async fn ingest(&self, ingest_request: IngestRequestV2) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
-        let mut _gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingest_router);
+        let mut _gauge_guard =
+            GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_INGEST_ROUTER);
         _gauge_guard.increment(request_size_bytes as f64);
         let num_subrequests = ingest_request.subrequests.len();
 

@@ -332,9 +332,8 @@ impl SearchPermitActor {
 
     fn assign_available_permits(&mut self) {
         while let Some(permit_request) = self.pop_next_request_if_serviceable() {
-            let mut ongoing_gauge_guard = GaugeGuard::from_gauge(
-                &crate::SEARCH_METRICS.leaf_search_single_split_tasks_ongoing,
-            );
+            let mut ongoing_gauge_guard =
+                GaugeGuard::from_gauge(&crate::metrics::LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING);
             ongoing_gauge_guard.increment(1.0);
             self.total_memory_allocated += permit_request.permit_size;
             self.num_warmup_slots_available -= 1;
@@ -350,8 +349,7 @@ impl SearchPermitActor {
                 // created SearchPermit which releases the resources
                 .ok();
         }
-        crate::SEARCH_METRICS
-            .leaf_search_single_split_tasks_pending
+        crate::metrics::LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING
             .set(self.permits_requests.len() as f64);
     }
 }

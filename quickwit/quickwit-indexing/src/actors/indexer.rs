@@ -27,7 +27,6 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Command, Handler, Mailbox, QueueCapacity,
 };
 use quickwit_common::io::IoControls;
-use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
@@ -220,8 +219,7 @@ impl IndexerState {
         let publish_lock = self.publish_lock.clone();
         let publish_token_opt = self.publish_token_opt.clone();
 
-        let mut split_builders_guard =
-            GaugeGuard::from_gauge(&crate::metrics::INDEXER_METRICS.split_builders);
+        let mut split_builders_guard = GaugeGuard::from_gauge(&crate::metrics::SPLIT_BUILDERS);
         split_builders_guard.increment(1.0);
 
         let workbench = IndexingWorkbench {
@@ -234,7 +232,7 @@ impl IndexerState {
             publish_lock,
             publish_token_opt,
             last_delete_opstamp,
-            memory_usage: GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.index_writer),
+            memory_usage: GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_INDEX_WRITER),
             cooperative_indexing_period,
             split_builders_guard,
         };

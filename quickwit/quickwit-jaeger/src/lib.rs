@@ -52,8 +52,6 @@ use tonic::Status;
 use tracing::field::Empty;
 use tracing::{Span as RuntimeSpan, debug, error, instrument, warn};
 
-pub(crate) use crate::metrics::JAEGER_SERVICE_METRICS;
-
 mod metrics;
 mod v1;
 mod v2;
@@ -417,7 +415,7 @@ impl JaegerService {
             current_span.record("num_bytes", num_bytes_total);
 
             counter!(
-                parent: &JAEGER_SERVICE_METRICS.fetched_traces_total,
+                parent: &crate::metrics::FETCHED_TRACES_TOTAL,
                 "operation" => operation_name,
                 "index" => OTEL_TRACES_INDEX_ID,
             )
@@ -425,7 +423,7 @@ impl JaegerService {
 
             let elapsed = request_start.elapsed().as_secs_f64();
             histogram!(
-                parent: &JAEGER_SERVICE_METRICS.request_duration_seconds,
+                parent: &crate::metrics::REQUEST_DURATION_SECONDS,
                 "operation" => operation_name,
                 "index" => OTEL_TRACES_INDEX_ID,
                 "error" => "false",
@@ -438,7 +436,7 @@ impl JaegerService {
 
 pub(crate) fn record_error(operation_name: &'static str, request_start: Instant) {
     counter!(
-        parent: &JAEGER_SERVICE_METRICS.request_errors_total,
+        parent: &crate::metrics::REQUEST_ERRORS_TOTAL,
         "operation" => operation_name,
         "index" => OTEL_TRACES_INDEX_ID,
     )
@@ -446,7 +444,7 @@ pub(crate) fn record_error(operation_name: &'static str, request_start: Instant)
 
     let elapsed = request_start.elapsed().as_secs_f64();
     histogram!(
-        parent: &JAEGER_SERVICE_METRICS.request_duration_seconds,
+        parent: &crate::metrics::REQUEST_DURATION_SECONDS,
         "operation" => operation_name,
         "index" => OTEL_TRACES_INDEX_ID,
         "error" => "true",
@@ -456,13 +454,13 @@ pub(crate) fn record_error(operation_name: &'static str, request_start: Instant)
 
 pub(crate) fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
     counter!(
-        parent: &JAEGER_SERVICE_METRICS.fetched_spans_total,
+        parent: &crate::metrics::FETCHED_SPANS_TOTAL,
         "operation" => operation_name,
         "index" => OTEL_TRACES_INDEX_ID,
     )
     .increment(num_spans as u64);
     counter!(
-        parent: &JAEGER_SERVICE_METRICS.transferred_bytes_total,
+        parent: &crate::metrics::TRANSFERRED_BYTES_TOTAL,
         "operation" => operation_name,
         "index" => OTEL_TRACES_INDEX_ID,
     )

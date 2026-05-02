@@ -226,12 +226,8 @@ impl MergeSchedulerService {
                 _merge_permit: merge_permit,
             };
             self.pending_merge_bytes -= merge_task.merge_operation.total_num_bytes();
-            crate::metrics::INDEXER_METRICS
-                .pending_merge_operations
-                .set(self.pending_merge_queue.len() as f64);
-            crate::metrics::INDEXER_METRICS
-                .pending_merge_bytes
-                .set(self.pending_merge_bytes as f64);
+            crate::metrics::PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
+            crate::metrics::PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
             match split_downloader_mailbox.try_send_message(merge_task) {
                 Ok(_) => {}
                 Err(quickwit_actors::TrySendError::Full(_)) => {
@@ -295,9 +291,7 @@ impl MergeSchedulerService {
 
         let num_merges =
             self.merge_concurrency as i64 - self.merge_semaphore.available_permits() as i64;
-        crate::metrics::INDEXER_METRICS
-            .ongoing_merge_operations
-            .set(num_merges as f64);
+        crate::metrics::ONGOING_MERGE_OPERATIONS.set(num_merges as f64);
     }
 }
 
@@ -381,12 +375,8 @@ impl Handler<ScheduleMerge> for MergeSchedulerService {
         };
         self.pending_merge_bytes += scheduled_merge.merge_operation.total_num_bytes();
         self.pending_merge_queue.push(scheduled_merge);
-        crate::metrics::INDEXER_METRICS
-            .pending_merge_operations
-            .set(self.pending_merge_queue.len() as f64);
-        crate::metrics::INDEXER_METRICS
-            .pending_merge_bytes
-            .set(self.pending_merge_bytes as f64);
+        crate::metrics::PENDING_MERGE_OPERATIONS.set(self.pending_merge_queue.len() as f64);
+        crate::metrics::PENDING_MERGE_BYTES.set(self.pending_merge_bytes as f64);
         self.schedule_pending_merges(ctx);
         Ok(())
     }

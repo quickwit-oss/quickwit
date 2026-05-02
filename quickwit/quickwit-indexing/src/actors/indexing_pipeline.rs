@@ -124,7 +124,7 @@ impl Actor for IndexingPipeline {
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
         let indexing_pipelines_gauge = gauge!(
-            parent: &crate::metrics::INDEXER_METRICS.indexing_pipelines,
+            parent: &crate::metrics::INDEXING_PIPELINES,
             "index" => params.pipeline_id.index_uid.index_id.clone(),
         );
         let mut indexing_pipelines_gauge_guard = GaugeGuard::from_gauge(&indexing_pipelines_gauge);
@@ -314,7 +314,7 @@ impl IndexingPipeline {
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
-                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                parent: &crate::metrics::BACKPRESSURE_MICROS,
                 "actor_name" => "publisher",
             ))
             .spawn(publisher);
@@ -323,7 +323,7 @@ impl IndexingPipeline {
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
-                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                parent: &crate::metrics::BACKPRESSURE_MICROS,
                 "actor_name" => "sequencer",
             ))
             .set_kill_switch(self.kill_switch.clone())
@@ -343,7 +343,7 @@ impl IndexingPipeline {
         let (uploader_mailbox, uploader_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
-                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                parent: &crate::metrics::BACKPRESSURE_MICROS,
                 "actor_name" => "uploader",
             ))
             .set_kill_switch(self.kill_switch.clone())
@@ -377,7 +377,7 @@ impl IndexingPipeline {
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
-                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                parent: &crate::metrics::BACKPRESSURE_MICROS,
                 "actor_name" => "indexer",
             ))
             .set_kill_switch(self.kill_switch.clone())
@@ -394,7 +394,7 @@ impl IndexingPipeline {
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
-                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                parent: &crate::metrics::BACKPRESSURE_MICROS,
                 "actor_name" => "doc_processor",
             ))
             .set_kill_switch(self.kill_switch.clone())

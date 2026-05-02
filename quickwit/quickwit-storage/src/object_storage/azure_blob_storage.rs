@@ -47,8 +47,8 @@ use crate::metrics::object_storage_get_slice_in_flight_guards;
 use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, STORAGE_METRICS, Storage,
-    StorageError, StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
+    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult,
 };
 
 /// Azure object storage resolver.
@@ -240,10 +240,8 @@ impl AzureBlobStorage {
         name: &'a str,
         payload: Box<dyn crate::PutPayload>,
     ) -> StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_parts.increment(1);
-        crate::STORAGE_METRICS
-            .object_storage_upload_num_bytes
-            .increment(payload.len());
+        crate::OBJECT_STORAGE_PUT_PARTS.increment(1);
+        crate::OBJECT_STORAGE_UPLOAD_NUM_BYTES.increment(payload.len());
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
@@ -276,10 +274,8 @@ impl AzureBlobStorage {
             .map(|(num, range)| {
                 let moved_blob_client = blob_client.clone();
                 let moved_payload = payload.clone();
-                crate::STORAGE_METRICS.object_storage_put_parts.increment(1);
-                crate::STORAGE_METRICS
-                    .object_storage_upload_num_bytes
-                    .increment(range.end - range.start);
+                crate::OBJECT_STORAGE_PUT_PARTS.increment(1);
+                crate::OBJECT_STORAGE_UPLOAD_NUM_BYTES.increment(range.end - range.start);
                 async move {
                     retry(&self.retry_params, || async {
                         // zero pad block ids to make them sortable as strings
@@ -349,7 +345,7 @@ impl Storage for AzureBlobStorage {
         path: &Path,
         payload: Box<dyn crate::PutPayload>,
     ) -> crate::StorageResult<()> {
-        crate::STORAGE_METRICS.object_storage_put_total.increment(1);
+        crate::OBJECT_STORAGE_PUT_TOTAL.increment(1);
         let name = self.blob_name(path);
         let total_len = payload.len();
         let part_num_bytes = self.multipart_policy.part_num_bytes(total_len);
@@ -376,9 +372,7 @@ impl Storage for AzureBlobStorage {
                 .compat();
             let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
             let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-            STORAGE_METRICS
-                .object_storage_download_num_bytes
-                .increment(num_bytes_copied);
+            crate::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.increment(num_bytes_copied);
         }
         output.flush().await?;
         Ok(())
@@ -577,9 +571,7 @@ async fn download_all(
             segments.push(bytes);
         }
     }
-    crate::STORAGE_METRICS
-        .object_storage_download_num_bytes
-        .increment(total_num_bytes as u64);
+    crate::OBJECT_STORAGE_DOWNLOAD_NUM_BYTES.increment(total_num_bytes as u64);
     Ok(coalesce_segments(segments, total_num_bytes))
 }
 

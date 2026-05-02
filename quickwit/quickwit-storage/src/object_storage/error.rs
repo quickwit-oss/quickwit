@@ -65,7 +65,7 @@ impl ToStorageErrorKind for GetObjectError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
         let error_code = self.code().unwrap_or("unknown").to_string();
         counter!(
-            parent: &crate::STORAGE_METRICS.object_storage_get_errors_total,
+            parent: &crate::OBJECT_STORAGE_GET_ERRORS_TOTAL,
             "code" => error_code,
         )
         .increment(1);

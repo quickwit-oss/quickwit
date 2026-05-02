@@ -17,17 +17,7 @@ use std::sync::LazyLock;
 use quickwit_common::metrics::exponential_buckets;
 use quickwit_metrics::{Counter, Histogram, counter, histogram};
 
-pub struct OtlpServiceMetrics {
-    pub requests_total: Counter,
-    pub request_errors_total: Counter,
-    pub request_duration_seconds: Histogram,
-    pub ingested_log_records_total: Counter,
-    pub ingested_spans_total: Counter,
-    pub ingested_data_points_total: Counter,
-    pub ingested_bytes_total: Counter,
-}
-
-static REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "requests_total",
         description: "Number of requests",
@@ -35,7 +25,7 @@ static REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static REQUEST_ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static REQUEST_ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "request_errors_total",
         description: "Number of failed requests",
@@ -43,7 +33,7 @@ static REQUEST_ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "request_duration_seconds",
         description: "Duration of requests",
@@ -52,7 +42,7 @@ static REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-static INGESTED_LOG_RECORDS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static INGESTED_LOG_RECORDS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "ingested_log_records_total",
         description: "Number of log records ingested",
@@ -60,7 +50,7 @@ static INGESTED_LOG_RECORDS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static INGESTED_SPANS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static INGESTED_SPANS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "ingested_spans_total",
         description: "Number of spans ingested",
@@ -68,7 +58,7 @@ static INGESTED_SPANS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static INGESTED_DATA_POINTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static INGESTED_DATA_POINTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "ingested_data_points_total",
         description: "Number of metric data points ingested",
@@ -76,28 +66,10 @@ static INGESTED_DATA_POINTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static INGESTED_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static INGESTED_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "ingested_bytes_total",
         description: "Number of bytes ingested",
         subsystem: "otlp",
     )
 });
-
-impl Default for OtlpServiceMetrics {
-    fn default() -> Self {
-        Self {
-            requests_total: REQUESTS_TOTAL.clone(),
-            request_errors_total: REQUEST_ERRORS_TOTAL.clone(),
-            request_duration_seconds: REQUEST_DURATION_SECONDS.clone(),
-            ingested_log_records_total: INGESTED_LOG_RECORDS_TOTAL.clone(),
-            ingested_spans_total: INGESTED_SPANS_TOTAL.clone(),
-            ingested_data_points_total: INGESTED_DATA_POINTS_TOTAL.clone(),
-            ingested_bytes_total: INGESTED_BYTES_TOTAL.clone(),
-        }
-    }
-}
-
-/// `OTLP_SERVICE_METRICS` exposes metrics for each OTLP service.
-pub static OTLP_SERVICE_METRICS: LazyLock<OtlpServiceMetrics> =
-    LazyLock::new(OtlpServiceMetrics::default);

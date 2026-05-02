@@ -17,15 +17,7 @@ use std::sync::LazyLock;
 use quickwit_common::metrics::exponential_buckets;
 use quickwit_metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
 
-pub struct ServeMetrics {
-    pub http_requests_total: Counter,
-    pub request_duration_secs: Histogram,
-    pub ongoing_requests: Gauge,
-    pub pending_requests: Gauge,
-    pub circuit_break_total: Counter,
-}
-
-static HTTP_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static HTTP_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "http_requests_total",
         description: "Total number of HTTP requests processed.",
@@ -33,7 +25,7 @@ static HTTP_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static REQUEST_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static REQUEST_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "request_duration_secs",
         description: "Response time in seconds",
@@ -43,7 +35,7 @@ static REQUEST_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-static ONGOING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
+pub(crate) static ONGOING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "ongoing_requests",
         description: "Number of ongoing requests.",
@@ -51,7 +43,7 @@ static ONGOING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
-static PENDING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
+pub(crate) static PENDING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "pending_requests",
         description: "Number of pending requests.",
@@ -59,25 +51,10 @@ static PENDING_REQUESTS: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
-static CIRCUIT_BREAK_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static CIRCUIT_BREAK_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "circuit_break_total",
         description: "Circuit breaker counter",
         subsystem: "grpc",
     )
 });
-
-impl Default for ServeMetrics {
-    fn default() -> Self {
-        ServeMetrics {
-            http_requests_total: HTTP_REQUESTS_TOTAL.clone(),
-            request_duration_secs: REQUEST_DURATION_SECS.clone(),
-            ongoing_requests: ONGOING_REQUESTS.clone(),
-            pending_requests: PENDING_REQUESTS.clone(),
-            circuit_break_total: CIRCUIT_BREAK_TOTAL.clone(),
-        }
-    }
-}
-
-/// Serve counters exposes a bunch a set of metrics about the request received to quickwit.
-pub static SERVE_METRICS: LazyLock<ServeMetrics> = LazyLock::new(ServeMetrics::default);

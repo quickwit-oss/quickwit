@@ -29,31 +29,7 @@ fn duration_buckets() -> Vec<f64> {
     ]
 }
 
-/// Metrics for the Pomsky Parquet Engine.
-#[derive(Clone)]
-pub struct ParquetEngineMetrics {
-    /// Total number of batches accumulated during indexing.
-    pub index_batches_total: Counter,
-    /// Total number of rows accumulated during indexing.
-    pub index_rows_total: Counter,
-    /// Total number of bytes received from IPC payloads during ingestion, by kind
-    /// (points/sketches).
-    pub ingest_bytes_total: Counter,
-    /// Histogram of add_batch durations (seconds), including any triggered flush.
-    pub index_batch_duration_seconds: Histogram,
-    /// Total number of splits written to storage.
-    pub splits_written_total: Counter,
-    /// Total bytes written to split files.
-    pub splits_bytes_written: Counter,
-    /// Histogram of query execution durations (seconds).
-    pub query_duration_seconds: Histogram,
-    /// Total number of rows returned from queries.
-    pub query_rows_returned: Counter,
-    /// Errors by operation type and kind (points/sketches).
-    pub errors_total: Counter,
-}
-
-static INDEX_BATCHES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static INDEX_BATCHES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "index_batches_total",
         description: "Total number of batches accumulated during indexing.",
@@ -61,7 +37,7 @@ static INDEX_BATCHES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static INDEX_ROWS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static INDEX_ROWS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "index_rows_total",
         description: "Total number of rows accumulated during indexing.",
@@ -69,7 +45,7 @@ static INDEX_ROWS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static INGEST_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static INGEST_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "ingest_bytes_total",
         description: "Total number of bytes received from IPC payloads during ingestion.",
@@ -77,7 +53,7 @@ static INGEST_BYTES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static INDEX_BATCH_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static INDEX_BATCH_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "index_batch_duration_seconds",
         description: "Histogram of add_batch durations in seconds, including any triggered flush.",
@@ -86,7 +62,8 @@ static INDEX_BATCH_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-static SPLITS_WRITTEN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+#[allow(dead_code)]
+pub(crate) static SPLITS_WRITTEN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "splits_written_total",
         description: "Total number of splits written to storage.",
@@ -94,7 +71,8 @@ static SPLITS_WRITTEN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static SPLITS_BYTES_WRITTEN: LazyLock<Counter> = LazyLock::new(|| {
+#[allow(dead_code)]
+pub(crate) static SPLITS_BYTES_WRITTEN: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "splits_bytes_written",
         description: "Total bytes written to split files.",
@@ -102,7 +80,8 @@ static SPLITS_BYTES_WRITTEN: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static QUERY_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+#[allow(dead_code)]
+pub(crate) static QUERY_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "query_duration_seconds",
         description: "Histogram of query execution durations in seconds.",
@@ -111,7 +90,8 @@ static QUERY_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-static QUERY_ROWS_RETURNED: LazyLock<Counter> = LazyLock::new(|| {
+#[allow(dead_code)]
+pub(crate) static QUERY_ROWS_RETURNED: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "query_rows_returned",
         description: "Total number of rows returned from queries.",
@@ -119,30 +99,10 @@ static QUERY_ROWS_RETURNED: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static ERRORS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "errors_total",
         description: "Total errors by operation type and kind.",
         subsystem: "metrics_engine",
     )
 });
-
-impl Default for ParquetEngineMetrics {
-    fn default() -> Self {
-        Self {
-            index_batches_total: INDEX_BATCHES_TOTAL.clone(),
-            index_rows_total: INDEX_ROWS_TOTAL.clone(),
-            ingest_bytes_total: INGEST_BYTES_TOTAL.clone(),
-            index_batch_duration_seconds: INDEX_BATCH_DURATION_SECONDS.clone(),
-            splits_written_total: SPLITS_WRITTEN_TOTAL.clone(),
-            splits_bytes_written: SPLITS_BYTES_WRITTEN.clone(),
-            query_duration_seconds: QUERY_DURATION_SECONDS.clone(),
-            query_rows_returned: QUERY_ROWS_RETURNED.clone(),
-            errors_total: ERRORS_TOTAL.clone(),
-        }
-    }
-}
-
-/// Global metrics instance for the metrics engine.
-pub static PARQUET_ENGINE_METRICS: LazyLock<ParquetEngineMetrics> =
-    LazyLock::new(ParquetEngineMetrics::default);

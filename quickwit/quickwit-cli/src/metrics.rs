@@ -17,11 +17,7 @@ use std::sync::LazyLock;
 use quickwit_common::metrics::exponential_buckets;
 use quickwit_metrics::{Histogram, histogram};
 
-pub struct CliMetrics {
-    pub thread_unpark_duration_microseconds: Histogram,
-}
-
-static THREAD_UNPARK_DURATION_MICROSECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static THREAD_UNPARK_DURATION_MICROSECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "thread_unpark_duration_microseconds",
         description: "Duration for which a thread of the main tokio runtime is unparked.",
@@ -29,14 +25,3 @@ static THREAD_UNPARK_DURATION_MICROSECONDS: LazyLock<Histogram> = LazyLock::new(
         buckets: exponential_buckets(5.0, 5.0, 5).unwrap(),
     )
 });
-
-impl Default for CliMetrics {
-    fn default() -> Self {
-        CliMetrics {
-            thread_unpark_duration_microseconds: THREAD_UNPARK_DURATION_MICROSECONDS.clone(),
-        }
-    }
-}
-
-/// Serve counters exposes a bunch a set of metrics about the request received to quickwit.
-pub static CLI_METRICS: LazyLock<CliMetrics> = LazyLock::new(CliMetrics::default);

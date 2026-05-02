@@ -20,7 +20,6 @@
 use std::fmt;
 
 use arrow::record_batch::RecordBatch;
-use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 use quickwit_metrics::GaugeGuard;
 
@@ -66,7 +65,8 @@ impl ProcessedParquetBatch {
             .map(|col| col.get_array_memory_size() as i64)
             .sum();
 
-        let mut gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.indexer_mailbox);
+        let mut gauge_guard =
+            GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_INDEXER_MAILBOX);
         gauge_guard.increment(memory_size as f64);
 
         Self {

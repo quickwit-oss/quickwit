@@ -25,7 +25,6 @@ use arrow::record_batch::RecordBatch;
 use tracing::{debug, info};
 
 use super::config::ParquetIndexingConfig;
-use crate::metrics::PARQUET_ENGINE_METRICS;
 
 /// Error type for index operations.
 #[derive(Debug, thiserror::Error)]
@@ -89,10 +88,8 @@ impl ParquetBatchAccumulator {
         let batch_bytes = estimate_batch_bytes(&batch);
 
         // Record index metrics
-        PARQUET_ENGINE_METRICS.index_batches_total.increment(1);
-        PARQUET_ENGINE_METRICS
-            .index_rows_total
-            .increment(batch_rows as u64);
+        crate::metrics::INDEX_BATCHES_TOTAL.increment(1);
+        crate::metrics::INDEX_ROWS_TOTAL.increment(batch_rows as u64);
 
         // Merge fields into union schema before pushing (we need the schema reference)
         for field in batch.schema().fields() {
@@ -127,9 +124,7 @@ impl ParquetBatchAccumulator {
         };
 
         // Record batch processing duration
-        PARQUET_ENGINE_METRICS
-            .index_batch_duration_seconds
-            .record(start.elapsed().as_secs_f64());
+        crate::metrics::INDEX_BATCH_DURATION_SECONDS.record(start.elapsed().as_secs_f64());
 
         Ok(flushed)
     }

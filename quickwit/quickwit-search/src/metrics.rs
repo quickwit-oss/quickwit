@@ -158,23 +158,6 @@ impl SplitSearchOutcomeCounters {
     }
 }
 
-pub struct SearchMetrics {
-    pub root_search_requests_total: Counter,
-    pub root_search_request_duration_seconds: Histogram,
-    pub root_search_targeted_splits: Histogram,
-    pub leaf_search_requests_total: Counter,
-    pub leaf_search_request_duration_seconds: Histogram,
-    pub leaf_search_targeted_splits: Histogram,
-    pub leaf_list_terms_splits_total: Counter,
-    pub split_search_outcome_total: SplitSearchOutcomeCounters,
-    pub leaf_search_split_duration_secs: Histogram,
-    pub job_assigned_total: Counter,
-    pub leaf_search_single_split_tasks_pending: Gauge,
-    pub leaf_search_single_split_tasks_ongoing: Gauge,
-    pub leaf_search_single_split_warmup_num_bytes: Histogram,
-    pub searcher_local_kv_store_size_bytes: Gauge,
-}
-
 /// From 0.008s to 131.072s
 fn duration_buckets() -> Vec<f64> {
     exponential_buckets(0.008, 2.0, 15).unwrap()
@@ -216,7 +199,10 @@ static SPLIT_SEARCH_OUTCOME: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static LEAF_SEARCH_SINGLE_SPLIT_TASKS: LazyLock<Gauge> = LazyLock::new(|| {
+pub(crate) static SPLIT_SEARCH_OUTCOME_TOTAL: LazyLock<SplitSearchOutcomeCounters> =
+    LazyLock::new(SplitSearchOutcomeCounters::new_registered);
+
+static LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "leaf_search_single_split_tasks",
         description: "Number of single split search tasks pending or ongoing",
@@ -224,7 +210,13 @@ static LEAF_SEARCH_SINGLE_SPLIT_TASKS: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
-static ROOT_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING: LazyLock<Gauge> =
+    LazyLock::new(|| gauge!(parent: &*LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "ongoing"));
+
+pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING: LazyLock<Gauge> =
+    LazyLock::new(|| gauge!(parent: &*LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "pending"));
+
+static ROOT_SEARCH_REQUESTS_TOTAL_BASE: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "root_search_requests_total",
         description: "Total number of root search gRPC requests processed.",
@@ -232,7 +224,10 @@ static ROOT_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static ROOT_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> =
+    LazyLock::new(|| counter!(parent: &*ROOT_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server"));
+
+static ROOT_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "root_search_request_duration_seconds",
         description: "Duration of root search gRPC requests in seconds.",
@@ -241,7 +236,14 @@ static ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new
     )
 });
 
-static ROOT_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        parent: &*ROOT_SEARCH_REQUEST_DURATION_SECONDS_BASE,
+        "kind" => "server",
+    )
+});
+
+pub(crate) static ROOT_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "root_search_targeted_splits",
         description: "Number of splits targeted per root search GRPC request.",
@@ -250,7 +252,7 @@ static ROOT_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-static LEAF_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+static LEAF_SEARCH_REQUESTS_TOTAL_BASE: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "leaf_search_requests_total",
         description: "Total number of leaf search gRPC requests processed.",
@@ -258,7 +260,10 @@ static LEAF_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static LEAF_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static LEAF_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> =
+    LazyLock::new(|| counter!(parent: &*LEAF_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server"));
+
+static LEAF_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "leaf_search_request_duration_seconds",
         description: "Duration of leaf search gRPC requests in seconds.",
@@ -267,7 +272,14 @@ static LEAF_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new
     )
 });
 
-static LEAF_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static LEAF_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+    histogram!(
+        parent: &*LEAF_SEARCH_REQUEST_DURATION_SECONDS_BASE,
+        "kind" => "server",
+    )
+});
+
+pub(crate) static LEAF_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "leaf_search_targeted_splits",
         description: "Number of splits targeted per leaf search GRPC request.",
@@ -276,7 +288,7 @@ static LEAF_SEARCH_TARGETED_SPLITS: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-static LEAF_LIST_TERMS_SPLITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static LEAF_LIST_TERMS_SPLITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "leaf_list_terms_splits_total",
         description: "Number of list terms splits total",
@@ -284,7 +296,7 @@ static LEAF_LIST_TERMS_SPLITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static LEAF_SEARCH_SPLIT_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static LEAF_SEARCH_SPLIT_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "leaf_search_split_duration_secs",
         description: "Number of seconds required to run a leaf search over a single split. The timer starts after the semaphore is obtained.",
@@ -293,16 +305,18 @@ static LEAF_SEARCH_SPLIT_DURATION_SECS: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
-        name: "leaf_search_single_split_warmup_num_bytes",
-        description: "Size of the short lived cache for a single split once the warmup is done.",
-        subsystem: "search",
-        buckets: pseudo_exponential_bytes_buckets(),
-    )
-});
+pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES: LazyLock<Histogram> = LazyLock::new(
+    || {
+        histogram!(
+            name: "leaf_search_single_split_warmup_num_bytes",
+            description: "Size of the short lived cache for a single split once the warmup is done.",
+            subsystem: "search",
+            buckets: pseudo_exponential_bytes_buckets(),
+        )
+    },
+);
 
-static JOB_ASSIGNED_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static JOB_ASSIGNED_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "job_assigned_total",
         description: "Number of job assigned to searchers, per affinity rank.",
@@ -310,56 +324,10 @@ static JOB_ASSIGNED_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static SEARCHER_LOCAL_KV_STORE_SIZE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+pub(crate) static SEARCHER_LOCAL_KV_STORE_SIZE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "searcher_local_kv_store_size_bytes",
         description: "Size of the searcher kv store in bytes. This store is used to cache scroll contexts.",
         subsystem: "search",
     )
 });
-
-impl Default for SearchMetrics {
-    fn default() -> Self {
-        SearchMetrics {
-            root_search_requests_total: counter!(
-                parent: &*ROOT_SEARCH_REQUESTS_TOTAL,
-                "kind" => "server",
-            ),
-            root_search_request_duration_seconds: histogram!(
-                parent: &*ROOT_SEARCH_REQUEST_DURATION_SECONDS,
-                "kind" => "server",
-            ),
-            root_search_targeted_splits: ROOT_SEARCH_TARGETED_SPLITS.clone(),
-            leaf_search_requests_total: counter!(
-                parent: &*LEAF_SEARCH_REQUESTS_TOTAL,
-                "kind" => "server",
-            ),
-            leaf_search_request_duration_seconds: histogram!(
-                parent: &*LEAF_SEARCH_REQUEST_DURATION_SECONDS,
-                "kind" => "server",
-            ),
-            leaf_search_targeted_splits: LEAF_SEARCH_TARGETED_SPLITS.clone(),
-
-            leaf_list_terms_splits_total: LEAF_LIST_TERMS_SPLITS_TOTAL.clone(),
-            split_search_outcome_total: SplitSearchOutcomeCounters::new_registered(),
-
-            leaf_search_split_duration_secs: LEAF_SEARCH_SPLIT_DURATION_SECS.clone(),
-            leaf_search_single_split_tasks_ongoing: gauge!(
-                parent: &*LEAF_SEARCH_SINGLE_SPLIT_TASKS,
-                "status" => "ongoing",
-            ),
-            leaf_search_single_split_tasks_pending: gauge!(
-                parent: &*LEAF_SEARCH_SINGLE_SPLIT_TASKS,
-                "status" => "pending",
-            ),
-            leaf_search_single_split_warmup_num_bytes: LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES
-                .clone(),
-            job_assigned_total: JOB_ASSIGNED_TOTAL.clone(),
-            searcher_local_kv_store_size_bytes: SEARCHER_LOCAL_KV_STORE_SIZE_BYTES.clone(),
-        }
-    }
-}
-
-/// `SEARCH_METRICS` exposes a bunch a set of storage/cache related metrics through a prometheus
-/// endpoint.
-pub static SEARCH_METRICS: LazyLock<SearchMetrics> = LazyLock::new(SearchMetrics::default);

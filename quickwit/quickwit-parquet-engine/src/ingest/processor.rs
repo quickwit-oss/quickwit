@@ -21,7 +21,6 @@ use arrow::record_batch::RecordBatch;
 use quickwit_metrics::counter;
 use tracing::{debug, instrument, warn};
 
-use crate::metrics::PARQUET_ENGINE_METRICS;
 use crate::schema::validate_required_fields;
 
 /// Error type for ingest operations.
@@ -65,7 +64,7 @@ impl ParquetIngestProcessor {
     pub fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
         // Record bytes ingested
         counter!(
-            parent: &PARQUET_ENGINE_METRICS.ingest_bytes_total,
+            parent: &crate::metrics::INGEST_BYTES_TOTAL,
             "kind" => "points",
         )
         .increment(ipc_bytes.len() as u64);
@@ -74,7 +73,7 @@ impl ParquetIngestProcessor {
             Ok(batch) => batch,
             Err(e) => {
                 counter!(
-                    parent: &PARQUET_ENGINE_METRICS.errors_total,
+                    parent: &crate::metrics::ERRORS_TOTAL,
                     "operation" => "ingest",
                     "kind" => "points",
                 )
@@ -85,7 +84,7 @@ impl ParquetIngestProcessor {
 
         if let Err(e) = self.validate_schema(&batch) {
             counter!(
-                parent: &PARQUET_ENGINE_METRICS.errors_total,
+                parent: &crate::metrics::ERRORS_TOTAL,
                 "operation" => "ingest",
                 "kind" => "points",
             )

@@ -27,7 +27,7 @@ use quickwit_metrics::counter;
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use tracing::{info, warn};
 
-use crate::{SEARCH_METRICS, SearchJob, SearchServiceClient, SearcherPool};
+use crate::{SearchJob, SearchServiceClient, SearcherPool};
 
 /// Job.
 /// The unit in which distributed search is performed.
@@ -219,7 +219,7 @@ impl SearchJobPlacer {
                 _ => "> 1",
             };
             counter!(
-                parent: &SEARCH_METRICS.job_assigned_total,
+                parent: &crate::metrics::JOB_ASSIGNED_TOTAL,
                 "affinity" => metric_node_idx,
             )
             .increment(1);

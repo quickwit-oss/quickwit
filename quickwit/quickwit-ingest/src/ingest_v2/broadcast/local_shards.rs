@@ -30,7 +30,6 @@ use tracing::{debug, warn};
 
 use super::{BROADCAST_INTERVAL_PERIOD, make_key, parse_key};
 use crate::RateMibPerSec;
-use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::ingest_v2::state::WeakIngesterState;
 
 const ONE_MIB: ByteSize = ByteSize::mib(1);
@@ -195,11 +194,9 @@ impl ShardThroughputTimeSeriesMap {
                 .average()
                 .as_u64()
                 .div_ceil(ONE_MIB.as_u64());
-            INGEST_V2_METRICS
-                .shard_st_throughput_mib
+            crate::ingest_v2::metrics::SHARD_ST_THROUGHPUT_MIB
                 .record(short_term_ingestion_rate_mib_per_sec_u64 as f64);
-            INGEST_V2_METRICS
-                .shard_lt_throughput_mib
+            crate::ingest_v2::metrics::SHARD_LT_THROUGHPUT_MIB
                 .record(long_term_ingestion_rate_mib_per_sec_u64 as f64);
 
             let short_term_ingestion_rate =
@@ -300,10 +297,8 @@ impl BroadcastLocalShardsTask {
                 }
             }
         }
-        INGEST_V2_METRICS.open_shards.set(num_open_shards as f64);
-        INGEST_V2_METRICS
-            .closed_shards
-            .set(num_closed_shards as f64);
+        crate::ingest_v2::metrics::OPEN_SHARDS.set(num_open_shards as f64);
+        crate::ingest_v2::metrics::CLOSED_SHARDS.set(num_closed_shards as f64);
 
         let snapshot = LocalShardsSnapshot {
             per_source_shard_infos,

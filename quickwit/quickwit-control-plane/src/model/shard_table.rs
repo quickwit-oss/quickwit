@@ -462,12 +462,12 @@ impl ShardTable {
         if index_label == index_id {
             let shard_stats = table_entry.shards_stats();
             quickwit_metrics::gauge!(
-                parent: &crate::metrics::CONTROL_PLANE_METRICS.open_shards,
+                parent: &crate::metrics::OPEN_SHARDS,
                 "index_id" => index_label.to_string(),
             )
             .set(shard_stats.num_open_shards as f64);
             quickwit_metrics::gauge!(
-                parent: &crate::metrics::CONTROL_PLANE_METRICS.closed_shards,
+                parent: &crate::metrics::CLOSED_SHARDS,
                 "index_id" => index_label.to_string(),
             )
             .set(shard_stats.num_closed_shards as f64);
@@ -485,12 +485,12 @@ impl ShardTable {
             }
         }
         quickwit_metrics::gauge!(
-            parent: &crate::metrics::CONTROL_PLANE_METRICS.open_shards,
+            parent: &crate::metrics::OPEN_SHARDS,
             "index_id" => index_label.to_string(),
         )
         .set(num_open_shards as f64);
         quickwit_metrics::gauge!(
-            parent: &crate::metrics::CONTROL_PLANE_METRICS.closed_shards,
+            parent: &crate::metrics::CLOSED_SHARDS,
             "index_id" => index_label.to_string(),
         )
         .set(num_closed_shards as f64);

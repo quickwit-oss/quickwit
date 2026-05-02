@@ -18,7 +18,6 @@ use std::time::{Duration, Instant};
 use bytesize::ByteSize;
 use futures::{Future, StreamExt};
 use mrecordlog::error::CreateQueueError;
-use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::{ServiceStream, rate_limited_warn};
 use quickwit_metrics::GaugeGuard;
 use quickwit_proto::ingest::ingester::{
@@ -39,7 +38,6 @@ use super::models::IngesterShard;
 use super::mrecordlog_utils::check_enough_capacity;
 use super::state::IngesterState;
 use crate::ingest_v2::mrecordlog_utils::{AppendDocBatchError, append_non_empty_doc_batch};
-use crate::metrics::INGEST_METRICS;
 use crate::{estimate_size, with_lock_metrics};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
@@ -505,7 +503,8 @@ impl ReplicationTask {
             )));
         }
         let request_size_bytes = replicate_request.num_bytes();
-        let mut _gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_replicate);
+        let mut _gauge_guard =
+            GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_INGESTER_REPLICATE);
         _gauge_guard.increment(request_size_bytes as f64);
 
         self.current_replication_seqno += 1;
@@ -668,12 +667,8 @@ impl ReplicationTask {
                 .expect("replica shard should be initialized")
                 .set_replication_position_inclusive(current_position_inclusive.clone(), now);
 
-            INGEST_METRICS
-                .replicated_num_bytes_total
-                .increment(batch_num_bytes);
-            INGEST_METRICS
-                .replicated_num_docs_total
-                .increment(batch_num_docs);
+            crate::metrics::REPLICATED_NUM_BYTES_TOTAL.increment(batch_num_bytes);
+            crate::metrics::REPLICATED_NUM_DOCS_TOTAL.increment(batch_num_docs);
 
             let replicate_success = ReplicateSuccess {
                 subrequest_id: subrequest.subrequest_id,

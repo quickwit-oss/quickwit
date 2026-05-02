@@ -41,8 +41,7 @@ impl QuickwitCache {
     /// Creates a [`QuickwitCache`] with a cache on fast fields.
     pub fn new(cache_config: &CacheConfig) -> Self {
         let mut quickwit_cache = QuickwitCache::empty();
-        let fast_field_cache_counters: &'static CacheMetrics =
-            &crate::STORAGE_METRICS.fast_field_cache;
+        let fast_field_cache_counters: &'static CacheMetrics = &crate::FAST_FIELD_CACHE;
         quickwit_cache.add_route(
             ".fast",
             Arc::new(SimpleCache::from_config(

@@ -51,7 +51,6 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{Span as RuntimeSpan, debug, error, instrument};
 
-use crate::metrics::JAEGER_SERVICE_METRICS;
 use crate::{
     JaegerService, TimeIntervalSecs, TracesDataStream, get_operations_impl, get_services_impl,
     json_deserialize, record_error, record_send, to_duration_millis,
@@ -63,7 +62,7 @@ macro_rules! metrics {
         let operation = stringify!($operation);
         let index = $index;
         counter!(
-            parent: &JAEGER_SERVICE_METRICS.requests_total,
+            parent: &crate::metrics::REQUESTS_TOTAL,
             "operation" => operation,
             "index" => index,
         )
@@ -74,7 +73,7 @@ macro_rules! metrics {
             },
             err @ Err(_) => {
                 counter!(
-                    parent: &JAEGER_SERVICE_METRICS.request_errors_total,
+                    parent: &crate::metrics::REQUEST_ERRORS_TOTAL,
                     "operation" => operation,
                     "index" => index,
                 )
@@ -84,7 +83,7 @@ macro_rules! metrics {
         };
         let elapsed = start.elapsed().as_secs_f64();
         histogram!(
-            parent: &JAEGER_SERVICE_METRICS.request_duration_seconds,
+            parent: &crate::metrics::REQUEST_DURATION_SECONDS,
             "operation" => operation,
             "index" => index,
             "error" => is_error,
@@ -444,7 +443,7 @@ async fn stream_otel_spans_impl(
     record_send(operation_name, num_spans, num_bytes);
 
     counter!(
-        parent: &JAEGER_SERVICE_METRICS.fetched_traces_total,
+        parent: &crate::metrics::FETCHED_TRACES_TOTAL,
         "operation" => operation_name,
         "index" => OTEL_TRACES_INDEX_ID,
     )
@@ -452,7 +451,7 @@ async fn stream_otel_spans_impl(
 
     let elapsed = request_start.elapsed().as_secs_f64();
     histogram!(
-        parent: &JAEGER_SERVICE_METRICS.request_duration_seconds,
+        parent: &crate::metrics::REQUEST_DURATION_SECONDS,
         "operation" => operation_name,
         "index" => OTEL_TRACES_INDEX_ID,
         "error" => "false",

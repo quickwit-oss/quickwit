@@ -40,7 +40,6 @@ use super::{
     extract_otel_index_id_from_metadata, ingest_doc_batch_v2, is_zero, parse_log_record_body,
 };
 use crate::otlp::extract_attributes;
-use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
 pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_9";
 
@@ -241,7 +240,7 @@ impl OtlpGrpcLogsService {
         self.store_logs(index_id.clone(), doc_batch).await?;
 
         counter!(
-            parent: &OTLP_SERVICE_METRICS.ingested_log_records_total,
+            parent: &crate::otlp::metrics::INGESTED_LOG_RECORDS_TOTAL,
             "service" => "logs",
             "index" => index_id.clone(),
             "transport" => "grpc",
@@ -249,7 +248,7 @@ impl OtlpGrpcLogsService {
         )
         .increment(num_log_records);
         counter!(
-            parent: &OTLP_SERVICE_METRICS.ingested_bytes_total,
+            parent: &crate::otlp::metrics::INGESTED_BYTES_TOTAL,
             "service" => "logs",
             "index" => index_id,
             "transport" => "grpc",
@@ -327,7 +326,7 @@ impl OtlpGrpcLogsService {
         let start = std::time::Instant::now();
 
         counter!(
-            parent: &OTLP_SERVICE_METRICS.requests_total,
+            parent: &crate::otlp::metrics::REQUESTS_TOTAL,
             "service" => "logs",
             "index" => index_id.clone(),
             "transport" => "grpc",
@@ -338,7 +337,7 @@ impl OtlpGrpcLogsService {
             ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
                 counter!(
-                    parent: &OTLP_SERVICE_METRICS.request_errors_total,
+                    parent: &crate::otlp::metrics::REQUEST_ERRORS_TOTAL,
                     "service" => "logs",
                     "index" => index_id.clone(),
                     "transport" => "grpc",
@@ -350,7 +349,7 @@ impl OtlpGrpcLogsService {
         };
         let elapsed = start.elapsed().as_secs_f64();
         histogram!(
-            parent: &OTLP_SERVICE_METRICS.request_duration_seconds,
+            parent: &crate::otlp::metrics::REQUEST_DURATION_SECONDS,
             "service" => "logs",
             "index" => index_id,
             "transport" => "grpc",

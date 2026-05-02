@@ -22,7 +22,6 @@ use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
 use futures::StreamExt;
 use mrecordlog::Record;
-use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::stream_utils::{InFlightValue, TrackedSender};
 use quickwit_common::{ServiceStream, spawn_named_task};
@@ -81,8 +80,10 @@ impl FetchStreamTask {
             .as_u64()
             .map(|offset| offset + 1)
             .unwrap_or_default();
-        let (fetch_message_tx, fetch_stream) =
-            ServiceStream::new_bounded_with_gauge(3, &MEMORY_METRICS.in_flight.fetch_stream);
+        let (fetch_message_tx, fetch_stream) = ServiceStream::new_bounded_with_gauge(
+            3,
+            &quickwit_common::metrics::IN_FLIGHT_FETCH_STREAM,
+        );
         let mut fetch_task = Self {
             shard_id: open_fetch_stream_request.shard_id().clone(),
             queue_id: open_fetch_stream_request.queue_id(),
@@ -559,7 +560,7 @@ async fn fault_tolerant_fetch_stream(
                         let in_flight_value = InFlightValue::new(
                             fetch_message,
                             batch_size,
-                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
+                            &quickwit_common::metrics::IN_FLIGHT_MULTI_FETCH_STREAM,
                         );
                         if fetch_message_tx.send(Ok(in_flight_value)).await.is_err() {
                             // The consumer was dropped.
@@ -572,7 +573,7 @@ async fn fault_tolerant_fetch_stream(
                         let in_flight_value = InFlightValue::new(
                             fetch_message,
                             ByteSize(0),
-                            &MEMORY_METRICS.in_flight.multi_fetch_stream,
+                            &quickwit_common::metrics::IN_FLIGHT_MULTI_FETCH_STREAM,
                         );
                         // We ignore the send error if the consumer was dropped because we're going
                         // to return anyway.

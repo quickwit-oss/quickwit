@@ -23,7 +23,6 @@ use quickwit_metrics::{counter, histogram};
 use quickwit_proto::search::LeafSearchResponse;
 
 use crate::SearchError;
-use crate::metrics::SEARCH_METRICS;
 
 // root
 
@@ -71,17 +70,17 @@ impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
         };
 
         counter!(
-            parent: &SEARCH_METRICS.root_search_requests_total,
+            parent: &crate::metrics::ROOT_SEARCH_REQUESTS_TOTAL,
             "status" => status,
         )
         .increment(1);
         histogram!(
-            parent: &SEARCH_METRICS.root_search_request_duration_seconds,
+            parent: &crate::metrics::ROOT_SEARCH_REQUEST_DURATION_SECONDS,
             "status" => status,
         )
         .record(self.start.elapsed().as_secs_f64());
         histogram!(
-            parent: &SEARCH_METRICS.root_search_targeted_splits,
+            parent: &crate::metrics::ROOT_SEARCH_TARGETED_SPLITS,
             "status" => status,
         )
         .record(num_targeted_splits as f64);
@@ -122,17 +121,17 @@ where F: Future<Output = Result<LeafSearchResponse, SearchError>>
     fn drop(self: Pin<&mut Self>) {
         let status = self.status.unwrap_or("cancelled");
         counter!(
-            parent: &SEARCH_METRICS.leaf_search_requests_total,
+            parent: &crate::metrics::LEAF_SEARCH_REQUESTS_TOTAL,
             "status" => status,
         )
         .increment(1);
         histogram!(
-            parent: &SEARCH_METRICS.leaf_search_request_duration_seconds,
+            parent: &crate::metrics::LEAF_SEARCH_REQUEST_DURATION_SECONDS,
             "status" => status,
         )
         .record(self.start.elapsed().as_secs_f64());
         histogram!(
-            parent: &SEARCH_METRICS.leaf_search_targeted_splits,
+            parent: &crate::metrics::LEAF_SEARCH_TARGETED_SPLITS,
             "status" => status,
         )
         .record(self.targeted_splits as f64);

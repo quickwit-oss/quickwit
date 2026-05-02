@@ -22,37 +22,12 @@ pub struct ShardLocalityMetrics {
     pub num_local_shards: usize,
 }
 
-pub struct ControlPlaneMetrics {
-    // Indexes and shards tracked by the control plane.
-    pub indexes_total: Gauge,
-    pub open_shards: Gauge,
-    pub closed_shards: Gauge,
-
-    // Operations performed by the control plane.
-    pub apply_plan_total: Counter,
-    pub rebalance_shards: Gauge,
-    pub restart_total: Counter,
-    pub schedule_total: Counter,
-
-    // Metastore errors.
-    pub metastore_error_aborted: Counter,
-    pub metastore_error_maybe_executed: Counter,
-
-    // Indexing plan metrics.
-    pub local_shards: Gauge,
-    pub remote_shards: Gauge,
+pub fn set_shard_locality_metrics(shard_locality_metrics: ShardLocalityMetrics) {
+    LOCAL_SHARDS.set(shard_locality_metrics.num_local_shards as f64);
+    REMOTE_SHARDS.set(shard_locality_metrics.num_remote_shards as f64);
 }
 
-impl ControlPlaneMetrics {
-    pub fn set_shard_locality_metrics(&self, shard_locality_metrics: ShardLocalityMetrics) {
-        self.local_shards
-            .set(shard_locality_metrics.num_local_shards as f64);
-        self.remote_shards
-            .set(shard_locality_metrics.num_remote_shards as f64);
-    }
-}
-
-static INDEXES_TOTAL: LazyLock<Gauge> = LazyLock::new(|| {
+pub(crate) static INDEXES_TOTAL: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "indexes_total",
         description: "Number of indexes tracked by the control plane.",
@@ -68,6 +43,12 @@ static SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
+pub(crate) static OPEN_SHARDS: LazyLock<Gauge> =
+    LazyLock::new(|| gauge!(parent: &*SHARDS, "state" => "open"));
+
+pub(crate) static CLOSED_SHARDS: LazyLock<Gauge> =
+    LazyLock::new(|| gauge!(parent: &*SHARDS, "state" => "closed"));
+
 static INDEXED_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "indexed_shards",
@@ -76,7 +57,13 @@ static INDEXED_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
-static APPLY_PLAN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static LOCAL_SHARDS: LazyLock<Gauge> =
+    LazyLock::new(|| gauge!(parent: &*INDEXED_SHARDS, "locality" => "local"));
+
+pub(crate) static REMOTE_SHARDS: LazyLock<Gauge> =
+    LazyLock::new(|| gauge!(parent: &*INDEXED_SHARDS, "locality" => "remote"));
+
+pub(crate) static APPLY_PLAN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "apply_plan_total",
         description: "Number of control plane `apply plan` operations.",
@@ -84,7 +71,7 @@ static APPLY_PLAN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static REBALANCE_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
+pub(crate) static REBALANCE_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "rebalance_shards",
         description: "Number of shards rebalanced by the control plane.",
@@ -92,7 +79,7 @@ static REBALANCE_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
-static RESTART_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static RESTART_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "restart_total",
         description: "Number of control plane restarts.",
@@ -100,7 +87,7 @@ static RESTART_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static SCHEDULE_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static SCHEDULE_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "schedule_total",
         description: "Number of control plane `schedule` operations.",
@@ -108,7 +95,7 @@ static SCHEDULE_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static METASTORE_ERROR_ABORTED: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static METASTORE_ERROR_ABORTED: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "metastore_error_aborted",
         description: "Number of aborted metastore transaction (= do not trigger a control plane restart)",
@@ -116,36 +103,10 @@ static METASTORE_ERROR_ABORTED: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static METASTORE_ERROR_MAYBE_EXECUTED: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static METASTORE_ERROR_MAYBE_EXECUTED: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "metastore_error_maybe_executed",
         description: "Number of metastore transaction with an uncertain outcome (= do trigger a control plane restart)",
         subsystem: "control_plane",
     )
 });
-
-impl Default for ControlPlaneMetrics {
-    fn default() -> Self {
-        let open_shards = gauge!(parent: &*SHARDS, "state" => "open");
-        let closed_shards = gauge!(parent: &*SHARDS, "state" => "closed");
-        let local_shards = gauge!(parent: &*INDEXED_SHARDS, "locality" => "local");
-        let remote_shards = gauge!(parent: &*INDEXED_SHARDS, "locality" => "remote");
-
-        ControlPlaneMetrics {
-            indexes_total: INDEXES_TOTAL.clone(),
-            open_shards,
-            closed_shards,
-            apply_plan_total: APPLY_PLAN_TOTAL.clone(),
-            rebalance_shards: REBALANCE_SHARDS.clone(),
-            restart_total: RESTART_TOTAL.clone(),
-            schedule_total: SCHEDULE_TOTAL.clone(),
-            metastore_error_aborted: METASTORE_ERROR_ABORTED.clone(),
-            metastore_error_maybe_executed: METASTORE_ERROR_MAYBE_EXECUTED.clone(),
-            local_shards,
-            remote_shards,
-        }
-    }
-}
-
-pub static CONTROL_PLANE_METRICS: LazyLock<ControlPlaneMetrics> =
-    LazyLock::new(ControlPlaneMetrics::default);

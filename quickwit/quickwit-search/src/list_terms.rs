@@ -214,8 +214,7 @@ async fn leaf_list_terms_single_split(
     storage: Arc<dyn Storage>,
     split: SplitIdAndFooterOffsets,
 ) -> crate::Result<LeafListTermsResponse> {
-    let cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+    let cache = ByteRangeCache::with_infinite_capacity(&quickwit_storage::SHORTLIVED_CACHE);
     let (index, _) =
         open_index_with_caches(searcher_context, storage, &split, None, Some(cache)).await?;
     let split_schema = index.schema();
@@ -354,12 +353,8 @@ pub async fn leaf_list_terms(
             async move {
                 let leaf_split_search_permit = search_permit_recv.await;
                 // TODO dedicated counter and timer?
-                crate::SEARCH_METRICS
-                    .leaf_list_terms_splits_total
-                    .increment(1);
-                let timer = crate::SEARCH_METRICS
-                    .leaf_search_split_duration_secs
-                    .start_timer();
+                crate::metrics::LEAF_LIST_TERMS_SPLITS_TOTAL.increment(1);
+                let timer = crate::metrics::LEAF_SEARCH_SPLIT_DURATION_SECS.start_timer();
                 let leaf_search_single_split_res = leaf_list_terms_single_split(
                     &searcher_context_clone,
                     request,

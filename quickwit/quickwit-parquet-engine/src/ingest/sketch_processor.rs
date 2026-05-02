@@ -20,7 +20,6 @@ use quickwit_metrics::counter;
 use tracing::{debug, instrument, warn};
 
 use super::processor::IngestError;
-use crate::metrics::PARQUET_ENGINE_METRICS;
 use crate::schema::validate_required_sketch_fields;
 
 /// Processor that converts Arrow IPC bytes to RecordBatch for DDSketch data.
@@ -43,7 +42,7 @@ impl SketchParquetIngestProcessor {
     #[instrument(skip(self, ipc_bytes), fields(bytes_len = ipc_bytes.len()))]
     pub fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
         counter!(
-            parent: &PARQUET_ENGINE_METRICS.ingest_bytes_total,
+            parent: &crate::metrics::INGEST_BYTES_TOTAL,
             "kind" => "sketches",
         )
         .increment(ipc_bytes.len() as u64);
@@ -52,7 +51,7 @@ impl SketchParquetIngestProcessor {
             Ok(batch) => batch,
             Err(err) => {
                 counter!(
-                    parent: &PARQUET_ENGINE_METRICS.errors_total,
+                    parent: &crate::metrics::ERRORS_TOTAL,
                     "operation" => "ingest",
                     "kind" => "sketches",
                 )
@@ -63,7 +62,7 @@ impl SketchParquetIngestProcessor {
 
         if let Err(err) = self.validate_schema(&batch) {
             counter!(
-                parent: &PARQUET_ENGINE_METRICS.errors_total,
+                parent: &crate::metrics::ERRORS_TOTAL,
                 "operation" => "ingest",
                 "kind" => "sketches",
             )
@@ -73,7 +72,7 @@ impl SketchParquetIngestProcessor {
 
         if let Err(err) = self.validate_sketch_arrays(&batch) {
             counter!(
-                parent: &PARQUET_ENGINE_METRICS.errors_total,
+                parent: &crate::metrics::ERRORS_TOTAL,
                 "operation" => "ingest",
                 "kind" => "sketches",
             )

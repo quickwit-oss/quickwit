@@ -127,7 +127,6 @@ use warp::{Filter, Rejection};
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
 pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::ingest_api::{RestIngestResponse, RestParseFailure};
-pub use crate::metrics::SERVE_METRICS;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]
 use crate::rest::recover_fn;
@@ -926,7 +925,7 @@ fn ingester_service_layer_stack(
             PersistCircuitBreakerEvaluator.make_layer(
                 3,
                 Duration::from_millis(500),
-                crate::metrics::SERVE_METRICS.circuit_break_total.clone(),
+                crate::metrics::CIRCUIT_BREAK_TOTAL.clone(),
             ),
         )
         .stack_open_replication_stream_layer(quickwit_common::tower::OneTaskPerCallLayer)

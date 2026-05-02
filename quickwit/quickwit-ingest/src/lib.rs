@@ -110,8 +110,7 @@ macro_rules! with_lock_metrics {
     ($future:expr, $operation:expr, $kind:expr) => {
         {
             quickwit_metrics::gauge!(
-                parent: &$crate::ingest_v2::metrics::INGEST_V2_METRICS
-                    .wal_acquire_lock_requests_in_flight,
+                parent: &$crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
                 "operation" => $operation,
                 "type" => $kind,
             )
@@ -128,15 +127,13 @@ macro_rules! with_lock_metrics {
                 );
             }
             quickwit_metrics::gauge!(
-                parent: &$crate::ingest_v2::metrics::INGEST_V2_METRICS
-                    .wal_acquire_lock_requests_in_flight,
+                parent: &$crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
                 "operation" => $operation,
                 "type" => $kind,
             )
             .decrement(1.0);
             quickwit_metrics::histogram!(
-                parent: &$crate::ingest_v2::metrics::INGEST_V2_METRICS
-                    .wal_acquire_lock_request_duration_secs,
+                parent: &$crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS,
                 "operation" => $operation,
                 "type" => $kind,
             )

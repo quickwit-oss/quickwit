@@ -38,8 +38,6 @@ use serde::Serialize;
 use tantivy::Inventory;
 use tracing::{debug, info};
 
-use crate::metrics::JANITOR_METRICS;
-
 const PLANNER_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 
@@ -209,7 +207,7 @@ impl DeleteTaskPlanner {
                     quickwit_common::metrics::index_label(self.index_uid.index_id.as_str())
                         .to_string();
                 gauge!(
-                    parent: &JANITOR_METRICS.ongoing_num_delete_operations_total,
+                    parent: &crate::metrics::ONGOING_NUM_DELETE_OPERATIONS_TOTAL,
                     "index" => index_label,
                 )
                 .set(self.ongoing_delete_operations_inventory.list().len() as f64);

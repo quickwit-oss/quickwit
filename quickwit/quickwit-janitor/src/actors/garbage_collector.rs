@@ -32,8 +32,6 @@ use quickwit_storage::{Storage, StorageResolver};
 use serde::Serialize;
 use tracing::{debug, error, info};
 
-use crate::metrics::JANITOR_METRICS;
-
 const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
 /// Result of a GC run (tantivy or parquet).
@@ -59,16 +57,16 @@ fn gc_metrics(split_type: &str) -> GcMetrics {
     let split_type = split_type.to_string();
     GcMetrics {
         deleted_splits: counter!(
-            parent: &JANITOR_METRICS.gc_deleted_splits,
+            parent: &crate::metrics::GC_DELETED_SPLITS,
             "result" => "success",
             "split_type" => split_type.clone(),
         ),
         deleted_bytes: counter!(
-            parent: &JANITOR_METRICS.gc_deleted_bytes,
+            parent: &crate::metrics::GC_DELETED_BYTES,
             "split_type" => split_type.clone(),
         ),
         failed_splits: counter!(
-            parent: &JANITOR_METRICS.gc_deleted_splits,
+            parent: &crate::metrics::GC_DELETED_SPLITS,
             "result" => "error",
             "split_type" => split_type,
         ),
@@ -207,7 +205,7 @@ impl GarbageCollector {
 
             let tantivy_run_duration = tantivy_start.elapsed().as_secs();
             counter!(
-                parent: &JANITOR_METRICS.gc_seconds_total,
+                parent: &crate::metrics::GC_SECONDS_TOTAL,
                 "split_type" => "tantivy",
             )
             .increment(tantivy_run_duration);
@@ -216,7 +214,7 @@ impl GarbageCollector {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run += 1;
                     counter!(
-                        parent: &JANITOR_METRICS.gc_runs,
+                        parent: &crate::metrics::GC_RUNS,
                         "result" => "success",
                         "split_type" => "tantivy",
                     )
@@ -240,7 +238,7 @@ impl GarbageCollector {
                 Err(error) => {
                     self.counters.num_failed_gc_run += 1;
                     counter!(
-                        parent: &JANITOR_METRICS.gc_runs,
+                        parent: &crate::metrics::GC_RUNS,
                         "result" => "error",
                         "split_type" => "tantivy",
                     )
@@ -268,7 +266,7 @@ impl GarbageCollector {
 
             let parquet_run_duration = parquet_start.elapsed().as_secs();
             counter!(
-                parent: &JANITOR_METRICS.gc_seconds_total,
+                parent: &crate::metrics::GC_SECONDS_TOTAL,
                 "split_type" => "parquet",
             )
             .increment(parquet_run_duration);
@@ -277,7 +275,7 @@ impl GarbageCollector {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run += 1;
                     counter!(
-                        parent: &JANITOR_METRICS.gc_runs,
+                        parent: &crate::metrics::GC_RUNS,
                         "result" => "success",
                         "split_type" => "parquet",
                     )
@@ -297,7 +295,7 @@ impl GarbageCollector {
                 Err(error) => {
                     self.counters.num_failed_gc_run += 1;
                     counter!(
-                        parent: &JANITOR_METRICS.gc_runs,
+                        parent: &crate::metrics::GC_RUNS,
                         "result" => "error",
                         "split_type" => "parquet",
                     )

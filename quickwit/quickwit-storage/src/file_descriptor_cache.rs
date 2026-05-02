@@ -88,10 +88,7 @@ impl FileDescriptorCache {
         Self::new(
             NonZeroU32::new(max_fd_limit).unwrap(),
             fd_cache_capacity,
-            crate::STORAGE_METRICS
-                .fd_cache_metrics
-                .cache_metrics
-                .clone(),
+            crate::FD_CACHE_METRICS.cache_metrics.clone(),
         )
     }
 

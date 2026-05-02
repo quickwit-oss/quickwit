@@ -44,11 +44,11 @@ impl LoadShield {
         let in_flight_semaphore_opt = max_in_flight_opt.map(Semaphore::new);
         let concurrency_semaphore_opt = max_concurrency_opt.map(Semaphore::new);
         let pending_gauge = gauge!(
-            parent: &crate::metrics::SERVE_METRICS.pending_requests,
+            parent: &crate::metrics::PENDING_REQUESTS,
             "endpoint_group" => endpoint_group,
         );
         let ongoing_gauge = gauge!(
-            parent: &crate::metrics::SERVE_METRICS.ongoing_requests,
+            parent: &crate::metrics::ONGOING_REQUESTS,
             "endpoint_group" => endpoint_group,
         );
         LoadShield {

@@ -29,14 +29,7 @@ fn payload_size_buckets() -> Vec<f64> {
     exponential_buckets(1024.0, 4.0, 8).unwrap()
 }
 
-pub struct LambdaMetrics {
-    pub leaf_search_requests_total: Counter,
-    pub leaf_search_duration_seconds: Histogram,
-    pub leaf_search_request_payload_size_bytes: Histogram,
-    pub leaf_search_response_payload_size_bytes: Histogram,
-}
-
-static LEAF_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static LEAF_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "leaf_search_requests_total",
         description: "Total number of Lambda leaf search invocations.",
@@ -44,7 +37,7 @@ static LEAF_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-static LEAF_SEARCH_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static LEAF_SEARCH_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
         name: "leaf_search_duration_seconds",
         description: "Duration of Lambda leaf search invocations in seconds.",
@@ -53,34 +46,22 @@ static LEAF_SEARCH_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-static LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
-        name: "leaf_search_request_payload_size_bytes",
-        description: "Size of the request payload sent to Lambda in bytes.",
-        subsystem: "lambda",
-        buckets: payload_size_buckets(),
-    )
-});
+pub(crate) static LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES: LazyLock<Histogram> =
+    LazyLock::new(|| {
+        histogram!(
+            name: "leaf_search_request_payload_size_bytes",
+            description: "Size of the request payload sent to Lambda in bytes.",
+            subsystem: "lambda",
+            buckets: payload_size_buckets(),
+        )
+    });
 
-static LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
-        name: "leaf_search_response_payload_size_bytes",
-        description: "Size of the response payload received from Lambda in bytes.",
-        subsystem: "lambda",
-        buckets: payload_size_buckets(),
-    )
-});
-
-impl Default for LambdaMetrics {
-    fn default() -> Self {
-        LambdaMetrics {
-            leaf_search_requests_total: LEAF_SEARCH_REQUESTS_TOTAL.clone(),
-            leaf_search_duration_seconds: LEAF_SEARCH_DURATION_SECONDS.clone(),
-            leaf_search_request_payload_size_bytes: LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES.clone(),
-            leaf_search_response_payload_size_bytes: LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES
-                .clone(),
-        }
-    }
-}
-
-pub static LAMBDA_METRICS: LazyLock<LambdaMetrics> = LazyLock::new(LambdaMetrics::default);
+pub(crate) static LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES: LazyLock<Histogram> =
+    LazyLock::new(|| {
+        histogram!(
+            name: "leaf_search_response_payload_size_bytes",
+            description: "Size of the response payload received from Lambda in bytes.",
+            subsystem: "lambda",
+            buckets: payload_size_buckets(),
+        )
+    });

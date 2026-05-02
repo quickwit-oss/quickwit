@@ -529,7 +529,7 @@ async fn leaf_search_single_split(
 
     let split_id = split.split_id.to_string();
     let byte_range_cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::STORAGE_METRICS.shortlived_cache);
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::SHORTLIVED_CACHE);
     let (index, hot_directory) = open_index_with_caches(
         &ctx.searcher_context,
         storage,
@@ -591,9 +591,7 @@ async fn leaf_search_single_split(
             "current leaf search is consuming more memory than the initial allocation"
         );
     }
-    crate::SEARCH_METRICS
-        .leaf_search_single_split_warmup_num_bytes
-        .record(warmup_size.as_u64() as f64);
+    crate::metrics::LEAF_SEARCH_SINGLE_SPLIT_WARMUP_NUM_BYTES.record(warmup_size.as_u64() as f64);
     search_permit.update_memory_usage(warmup_size);
     search_permit.free_warmup_slot();
 
@@ -1822,7 +1820,7 @@ impl SplitSearchState {
 impl Drop for SplitSearchStateGuard {
     fn drop(&mut self) {
         self.state
-            .increment(&crate::metrics::SEARCH_METRICS.split_search_outcome_total);
+            .increment(&crate::metrics::SPLIT_SEARCH_OUTCOME_TOTAL);
         self.state
             .increment(&self.local_split_search_outcome_counters);
     }
@@ -1863,9 +1861,7 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     mut search_permit: SearchPermit,
 ) {
-    let timer = crate::SEARCH_METRICS
-        .leaf_search_split_duration_secs
-        .start_timer();
+    let timer = crate::metrics::LEAF_SEARCH_SPLIT_DURATION_SECS.start_timer();
     let leaf_search_single_split_opt_res: crate::Result<Option<LeafSearchResponse>> =
         leaf_search_single_split(
             request,

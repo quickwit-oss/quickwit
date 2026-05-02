@@ -39,7 +39,6 @@ use tracing::{Span as RuntimeSpan, error, instrument, warn};
 use super::arrow_metrics::{ArrowDocBatchV2Builder, ArrowMetricsBatchBuilder};
 use super::{OtelSignal, extract_otel_index_id_from_metadata, ingest_doc_batch_v2};
 use crate::otlp::extract_attributes;
-use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
 pub const OTEL_METRICS_INDEX_ID: &str = "otel-metrics-v0_9";
 
@@ -237,7 +236,7 @@ impl OtlpGrpcMetricsService {
         self.store_metrics(index_id.clone(), doc_batch).await?;
 
         counter!(
-            parent: &OTLP_SERVICE_METRICS.ingested_data_points_total,
+            parent: &crate::otlp::metrics::INGESTED_DATA_POINTS_TOTAL,
             "service" => "metrics",
             "index" => index_id.clone(),
             "transport" => "grpc",
@@ -245,7 +244,7 @@ impl OtlpGrpcMetricsService {
         )
         .increment(num_data_points - num_parse_errors);
         counter!(
-            parent: &OTLP_SERVICE_METRICS.ingested_bytes_total,
+            parent: &crate::otlp::metrics::INGESTED_BYTES_TOTAL,
             "service" => "metrics",
             "index" => index_id,
             "transport" => "grpc",
@@ -341,7 +340,7 @@ impl OtlpGrpcMetricsService {
         let start = std::time::Instant::now();
 
         counter!(
-            parent: &OTLP_SERVICE_METRICS.requests_total,
+            parent: &crate::otlp::metrics::REQUESTS_TOTAL,
             "service" => "metrics",
             "index" => index_id.clone(),
             "transport" => "grpc",
@@ -353,7 +352,7 @@ impl OtlpGrpcMetricsService {
             ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
                 counter!(
-                    parent: &OTLP_SERVICE_METRICS.request_errors_total,
+                    parent: &crate::otlp::metrics::REQUEST_ERRORS_TOTAL,
                     "service" => "metrics",
                     "index" => index_id.clone(),
                     "transport" => "grpc",
@@ -366,7 +365,7 @@ impl OtlpGrpcMetricsService {
 
         let elapsed = start.elapsed().as_secs_f64();
         histogram!(
-            parent: &OTLP_SERVICE_METRICS.request_duration_seconds,
+            parent: &crate::otlp::metrics::REQUEST_DURATION_SECONDS,
             "service" => "metrics",
             "index" => index_id,
             "transport" => "grpc",

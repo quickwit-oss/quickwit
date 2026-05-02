@@ -48,7 +48,7 @@ impl LeafSearchCache {
         LeafSearchCache {
             content: MemorySizedCache::from_config(
                 config,
-                &quickwit_storage::STORAGE_METRICS.partial_request_cache,
+                &quickwit_storage::PARTIAL_REQUEST_CACHE,
             ),
         }
     }
@@ -195,10 +195,7 @@ pub struct PredicateCacheImpl {
 impl PredicateCacheImpl {
     pub fn new(config: &CacheConfig) -> Self {
         PredicateCacheImpl {
-            content: MemorySizedCache::from_config(
-                config,
-                &quickwit_storage::STORAGE_METRICS.predicate_cache,
-            ),
+            content: MemorySizedCache::from_config(config, &quickwit_storage::PREDICATE_CACHE),
         }
     }
 }

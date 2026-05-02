@@ -45,7 +45,6 @@ use super::{
     OtelSignal, TryFromSpanIdError, TryFromTraceIdError, extract_otel_index_id_from_metadata,
     ingest_doc_batch_v2, is_zero,
 };
-use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{SpanId, TraceId, extract_attributes};
 
 pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_9";
@@ -703,7 +702,7 @@ impl OtlpGrpcTracesService {
         self.store_spans(index_id.clone(), doc_batch).await?;
 
         counter!(
-            parent: &OTLP_SERVICE_METRICS.ingested_spans_total,
+            parent: &crate::otlp::metrics::INGESTED_SPANS_TOTAL,
             "service" => "trace",
             "index" => index_id.clone(),
             "transport" => "grpc",
@@ -711,7 +710,7 @@ impl OtlpGrpcTracesService {
         )
         .increment(num_spans);
         counter!(
-            parent: &OTLP_SERVICE_METRICS.ingested_bytes_total,
+            parent: &crate::otlp::metrics::INGESTED_BYTES_TOTAL,
             "service" => "trace",
             "index" => index_id,
             "transport" => "grpc",
@@ -789,7 +788,7 @@ impl OtlpGrpcTracesService {
         let start = std::time::Instant::now();
 
         counter!(
-            parent: &OTLP_SERVICE_METRICS.requests_total,
+            parent: &crate::otlp::metrics::REQUESTS_TOTAL,
             "service" => "trace",
             "index" => index_id.clone(),
             "transport" => "grpc",
@@ -800,7 +799,7 @@ impl OtlpGrpcTracesService {
             ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
                 counter!(
-                    parent: &OTLP_SERVICE_METRICS.request_errors_total,
+                    parent: &crate::otlp::metrics::REQUEST_ERRORS_TOTAL,
                     "service" => "trace",
                     "index" => index_id.clone(),
                     "transport" => "grpc",
@@ -812,7 +811,7 @@ impl OtlpGrpcTracesService {
         };
         let elapsed = start.elapsed().as_secs_f64();
         histogram!(
-            parent: &OTLP_SERVICE_METRICS.request_duration_seconds,
+            parent: &crate::otlp::metrics::REQUEST_DURATION_SECONDS,
             "service" => "trace",
             "index" => index_id,
             "transport" => "grpc",

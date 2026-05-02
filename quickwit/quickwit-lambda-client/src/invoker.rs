@@ -30,8 +30,6 @@ use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, Lea
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
 use tracing::{debug, info, instrument, warn};
 
-use crate::metrics::LAMBDA_METRICS;
-
 /// Upper bound on the retry-after hint we will honor from Lambda rate-limit responses.
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(10);
 
@@ -173,12 +171,12 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
         counter!(
-            parent: &LAMBDA_METRICS.leaf_search_requests_total,
+            parent: &crate::metrics::LEAF_SEARCH_REQUESTS_TOTAL,
             "status" => status,
         )
         .increment(1);
         histogram!(
-            parent: &LAMBDA_METRICS.leaf_search_duration_seconds,
+            parent: &crate::metrics::LEAF_SEARCH_DURATION_SECONDS,
             "status" => status,
         )
         .record(elapsed);
@@ -235,9 +233,7 @@ impl AwsLambdaInvoker {
         let payload_json = serde_json::to_vec(&payload)
             .map_err(|e| SearchError::Internal(format!("JSON serialization error: {}", e)))?;
 
-        LAMBDA_METRICS
-            .leaf_search_request_payload_size_bytes
-            .record(payload_json.len() as f64);
+        crate::metrics::LEAF_SEARCH_REQUEST_PAYLOAD_SIZE_BYTES.record(payload_json.len() as f64);
 
         debug!(
             payload_size = payload_json.len(),
@@ -277,8 +273,7 @@ impl AwsLambdaInvoker {
             .payload()
             .ok_or_else(|| SearchError::Internal("no response payload from Lambda".into()))?;
 
-        LAMBDA_METRICS
-            .leaf_search_response_payload_size_bytes
+        crate::metrics::LEAF_SEARCH_RESPONSE_PAYLOAD_SIZE_BYTES
             .record(response_payload.as_ref().len() as f64);
 
         let lambda_response: LambdaSearchResponsePayload =

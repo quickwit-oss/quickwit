@@ -25,7 +25,6 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use mrecordlog::error::CreateQueueError;
 use quickwit_cluster::Cluster;
-use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -52,7 +51,6 @@ use super::broadcast::{BroadcastIngesterCapacityScoreTask, BroadcastLocalShardsT
 use super::doc_mapper::validate_doc_batch;
 use super::fetch::FetchStreamTask;
 use super::idle::CloseIdleShardsTask;
-use super::metrics::INGEST_V2_METRICS;
 use super::models::IngesterShard;
 use super::mrecordlog_utils::{
     AppendDocBatchError, append_non_empty_doc_batch, check_enough_capacity,
@@ -334,7 +332,7 @@ impl Ingester {
                     now.elapsed().pretty_display()
                 );
                 counter!(
-                    parent: &INGEST_V2_METRICS.reset_shards_operations_total,
+                    parent: &crate::ingest_v2::metrics::RESET_SHARDS_OPERATIONS_TOTAL,
                     "status" => "success",
                 )
                 .increment(1);
@@ -346,7 +344,7 @@ impl Ingester {
                 warn!("advise reset shards request failed: {error}");
 
                 counter!(
-                    parent: &INGEST_V2_METRICS.reset_shards_operations_total,
+                    parent: &crate::ingest_v2::metrics::RESET_SHARDS_OPERATIONS_TOTAL,
                     "status" => "error",
                 )
                 .increment(1);
@@ -355,7 +353,7 @@ impl Ingester {
                 warn!("advise reset shards request timed out");
 
                 counter!(
-                    parent: &INGEST_V2_METRICS.reset_shards_operations_total,
+                    parent: &crate::ingest_v2::metrics::RESET_SHARDS_OPERATIONS_TOTAL,
                     "status" => "timeout",
                 )
                 .increment(1);
@@ -572,12 +570,12 @@ impl Ingester {
 
                 if valid_doc_batch.is_empty() {
                     counter!(
-                        parent: &crate::metrics::INGEST_METRICS.docs_total,
+                        parent: &crate::metrics::DOCS_TOTAL,
                         "validity" => "invalid",
                     )
                     .increment(parse_failures.len() as u64);
                     counter!(
-                        parent: &crate::metrics::INGEST_METRICS.docs_bytes_total,
+                        parent: &crate::metrics::DOCS_BYTES_TOTAL,
                         "validity" => "invalid",
                     )
                     .increment(original_batch_num_bytes);
@@ -595,23 +593,23 @@ impl Ingester {
                 };
 
                 counter!(
-                    parent: &crate::metrics::INGEST_METRICS.docs_total,
+                    parent: &crate::metrics::DOCS_TOTAL,
                     "validity" => "valid",
                 )
                 .increment(valid_doc_batch.num_docs() as u64);
                 counter!(
-                    parent: &crate::metrics::INGEST_METRICS.docs_bytes_total,
+                    parent: &crate::metrics::DOCS_BYTES_TOTAL,
                     "validity" => "valid",
                 )
                 .increment(valid_doc_batch.num_bytes() as u64);
                 if !parse_failures.is_empty() {
                     counter!(
-                        parent: &crate::metrics::INGEST_METRICS.docs_total,
+                        parent: &crate::metrics::DOCS_TOTAL,
                         "validity" => "invalid",
                     )
                     .increment(parse_failures.len() as u64);
                     counter!(
-                        parent: &crate::metrics::INGEST_METRICS.docs_bytes_total,
+                        parent: &crate::metrics::DOCS_BYTES_TOTAL,
                         "validity" => "invalid",
                     )
                     .increment(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
@@ -1127,7 +1125,8 @@ impl IngesterService for Ingester {
                 _ => None,
             })
             .sum::<usize>();
-        let mut _gauge_guard = GaugeGuard::from_gauge(&MEMORY_METRICS.in_flight.ingester_persist);
+        let mut _gauge_guard =
+            GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_INGESTER_PERSIST);
         _gauge_guard.increment(request_size_bytes as f64);
 
         self.persist_inner(persist_request).await

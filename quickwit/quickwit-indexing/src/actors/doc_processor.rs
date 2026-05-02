@@ -287,12 +287,12 @@ impl DocProcessorCounter {
         DocProcessorCounter {
             num_docs: Default::default(),
             num_docs_metric: counter!(
-                parent: &crate::metrics::INDEXER_METRICS.processed_docs_total,
+                parent: &crate::metrics::PROCESSED_DOCS_TOTAL,
                 "index" => index_label.to_string(),
                 "docs_processed_status" => outcome.to_string(),
             ),
             num_bytes_metric: counter!(
-                parent: &crate::metrics::INDEXER_METRICS.processed_bytes,
+                parent: &crate::metrics::PROCESSED_BYTES,
                 "index" => index_label.to_string(),
                 "docs_processed_status" => outcome.to_string(),
             ),

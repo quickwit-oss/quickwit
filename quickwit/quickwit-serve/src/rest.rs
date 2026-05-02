@@ -141,13 +141,13 @@ pub(crate) async fn start_rest_server(
         let method = info.method().as_str().to_string();
         let status_code = status.as_str().to_string();
         histogram!(
-            parent: &crate::SERVE_METRICS.request_duration_secs,
+            parent: &crate::metrics::REQUEST_DURATION_SECS,
             "method" => method.clone(),
             "status_code" => status_code.clone(),
         )
         .record(elapsed.as_secs_f64());
         counter!(
-            parent: &crate::SERVE_METRICS.http_requests_total,
+            parent: &crate::metrics::HTTP_REQUESTS_TOTAL,
             "method" => method,
             "status_code" => status_code,
         )

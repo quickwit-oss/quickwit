@@ -92,7 +92,6 @@ pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 #[cfg(feature = "sqs")]
 pub use queue_sources::sqs_queue;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
-use quickwit_common::metrics::MEMORY_METRICS;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{
@@ -530,13 +529,13 @@ impl BatchBuilder {
 
     pub fn with_capacity(capacity: usize, source_type: SourceType) -> Self {
         let gauge = match source_type {
-            SourceType::File => MEMORY_METRICS.in_flight.file(),
-            SourceType::IngestV2 => MEMORY_METRICS.in_flight.ingest(),
-            SourceType::Kafka => MEMORY_METRICS.in_flight.kafka(),
-            SourceType::Kinesis => MEMORY_METRICS.in_flight.kinesis(),
-            SourceType::PubSub => MEMORY_METRICS.in_flight.pubsub(),
-            SourceType::Pulsar => MEMORY_METRICS.in_flight.pulsar(),
-            _ => MEMORY_METRICS.in_flight.other(),
+            SourceType::File => &quickwit_common::metrics::IN_FLIGHT_FILE_SOURCE,
+            SourceType::IngestV2 => &quickwit_common::metrics::IN_FLIGHT_INGEST_SOURCE,
+            SourceType::Kafka => &quickwit_common::metrics::IN_FLIGHT_KAFKA_SOURCE,
+            SourceType::Kinesis => &quickwit_common::metrics::IN_FLIGHT_KINESIS_SOURCE,
+            SourceType::PubSub => &quickwit_common::metrics::IN_FLIGHT_PUBSUB_SOURCE,
+            SourceType::Pulsar => &quickwit_common::metrics::IN_FLIGHT_PULSAR_SOURCE,
+            _ => &quickwit_common::metrics::IN_FLIGHT_OTHER_SOURCE,
         };
         let gauge_guard = GaugeGuard::from_gauge(gauge);
 

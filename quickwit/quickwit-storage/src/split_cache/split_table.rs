@@ -152,23 +152,19 @@ impl SplitTable {
             Status::Downloading { .. } => &mut self.downloading_splits,
             Status::OnDisk { num_bytes } => {
                 self.on_disk_bytes -= num_bytes;
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
+                crate::metrics::SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_count
                     .decrement(1.0);
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
+                crate::metrics::SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_num_bytes
                     .decrement(num_bytes as f64);
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
+                crate::metrics::SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .evict_num_items
                     .increment(1);
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
+                crate::metrics::SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .evict_num_bytes
                     .increment(num_bytes);
@@ -220,13 +216,11 @@ impl SplitTable {
             Status::Downloading { .. } => self.downloading_splits.insert(split_info.split_key),
             Status::OnDisk { num_bytes } => {
                 self.on_disk_bytes += num_bytes;
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
+                crate::metrics::SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_count
                     .increment(1.0);
-                crate::metrics::STORAGE_METRICS
-                    .searcher_split_cache
+                crate::metrics::SEARCHER_SPLIT_CACHE
                     .cache_metrics
                     .in_cache_num_bytes
                     .increment(num_bytes as f64);

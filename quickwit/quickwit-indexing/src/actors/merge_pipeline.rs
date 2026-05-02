@@ -274,7 +274,7 @@ impl MergePipeline {
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
-                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                parent: &crate::metrics::BACKPRESSURE_MICROS,
                 "actor_name" => "merge_publisher",
             ))
             .spawn(merge_publisher);
@@ -323,7 +323,7 @@ impl MergePipeline {
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
-                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                parent: &crate::metrics::BACKPRESSURE_MICROS,
                 "actor_name" => "merge_executor",
             ))
             .spawn(merge_executor);
@@ -338,7 +338,7 @@ impl MergePipeline {
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
-                parent: &crate::metrics::INDEXER_METRICS.backpressure_micros,
+                parent: &crate::metrics::BACKPRESSURE_MICROS,
                 "actor_name" => "merge_split_downloader",
             ))
             .spawn(merge_split_downloader);
@@ -395,9 +395,7 @@ impl MergePipeline {
         handles.merge_planner.refresh_observe();
         handles.merge_uploader.refresh_observe();
         handles.merge_publisher.refresh_observe();
-        let num_ongoing_merges = crate::metrics::INDEXER_METRICS
-            .ongoing_merge_operations
-            .get();
+        let num_ongoing_merges = crate::metrics::ONGOING_MERGE_OPERATIONS.get();
         self.statistics = self
             .previous_generations_statistics
             .clone()

@@ -74,100 +74,6 @@ pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'sta
     });
 }
 
-#[derive(Clone)]
-pub struct MemoryMetrics {
-    pub active_bytes: Gauge,
-    pub allocated_bytes: Gauge,
-    pub resident_bytes: Gauge,
-    pub in_flight: InFlightDataGauges,
-}
-
-impl Default for MemoryMetrics {
-    fn default() -> Self {
-        Self {
-            active_bytes: MEMORY_ACTIVE_BYTES.clone(),
-            allocated_bytes: MEMORY_ALLOCATED_BYTES.clone(),
-            resident_bytes: MEMORY_RESIDENT_BYTES.clone(),
-            in_flight: InFlightDataGauges::default(),
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct InFlightDataGauges {
-    pub rest_server: Gauge,
-    pub ingest_router: Gauge,
-    pub ingester_persist: Gauge,
-    pub ingester_replicate: Gauge,
-    pub wal: Gauge,
-    pub fetch_stream: Gauge,
-    pub multi_fetch_stream: Gauge,
-    pub doc_processor_mailbox: Gauge,
-    pub indexer_mailbox: Gauge,
-    pub index_writer: Gauge,
-}
-
-impl Default for InFlightDataGauges {
-    fn default() -> Self {
-        Self {
-            rest_server: in_flight_data_gauge("rest_server"),
-            ingest_router: in_flight_data_gauge("ingest_router"),
-            ingester_persist: in_flight_data_gauge("ingester_persist"),
-            ingester_replicate: in_flight_data_gauge("ingester_replicate"),
-            wal: in_flight_data_gauge("wal"),
-            fetch_stream: in_flight_data_gauge("fetch_stream"),
-            multi_fetch_stream: in_flight_data_gauge("multi_fetch_stream"),
-            doc_processor_mailbox: in_flight_data_gauge("doc_processor_mailbox"),
-            indexer_mailbox: in_flight_data_gauge("indexer_mailbox"),
-            index_writer: in_flight_data_gauge("index_writer"),
-        }
-    }
-}
-
-impl InFlightDataGauges {
-    #[inline]
-    pub fn file(&self) -> &'static Gauge {
-        static GAUGE: OnceLock<Gauge> = OnceLock::new();
-        GAUGE.get_or_init(|| in_flight_data_gauge("file_source"))
-    }
-
-    #[inline]
-    pub fn ingest(&self) -> &'static Gauge {
-        static GAUGE: OnceLock<Gauge> = OnceLock::new();
-        GAUGE.get_or_init(|| in_flight_data_gauge("ingest_source"))
-    }
-
-    #[inline]
-    pub fn kafka(&self) -> &'static Gauge {
-        static GAUGE: OnceLock<Gauge> = OnceLock::new();
-        GAUGE.get_or_init(|| in_flight_data_gauge("kafka_source"))
-    }
-
-    #[inline]
-    pub fn kinesis(&self) -> &'static Gauge {
-        static GAUGE: OnceLock<Gauge> = OnceLock::new();
-        GAUGE.get_or_init(|| in_flight_data_gauge("kinesis_source"))
-    }
-
-    #[inline]
-    pub fn pubsub(&self) -> &'static Gauge {
-        static GAUGE: OnceLock<Gauge> = OnceLock::new();
-        GAUGE.get_or_init(|| in_flight_data_gauge("pubsub_source"))
-    }
-
-    #[inline]
-    pub fn pulsar(&self) -> &'static Gauge {
-        static GAUGE: OnceLock<Gauge> = OnceLock::new();
-        GAUGE.get_or_init(|| in_flight_data_gauge("pulsar_source"))
-    }
-
-    #[inline]
-    pub fn other(&self) -> &'static Gauge {
-        static GAUGE: OnceLock<Gauge> = OnceLock::new();
-        GAUGE.get_or_init(|| in_flight_data_gauge("pulsar_source"))
-    }
-}
-
 pub fn index_label(index_id: &str) -> &str {
     static PER_INDEX_METRICS_ENABLED: LazyLock<bool> =
         LazyLock::new(|| !crate::get_bool_from_env("QW_DISABLE_PER_INDEX_METRICS", false));
@@ -179,9 +85,7 @@ pub fn index_label(index_id: &str) -> &str {
     }
 }
 
-pub static MEMORY_METRICS: LazyLock<MemoryMetrics> = LazyLock::new(MemoryMetrics::default);
-
-static MEMORY_ACTIVE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+pub static MEMORY_ACTIVE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "active_bytes",
         description: "Total number of bytes in active pages allocated by the application, as reported by jemalloc `stats.active`.",
@@ -189,7 +93,7 @@ static MEMORY_ACTIVE_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
-static MEMORY_ALLOCATED_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+pub static MEMORY_ALLOCATED_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "allocated_bytes",
         description: "Total number of bytes allocated by the application, as reported by jemalloc `stats.allocated`.",
@@ -197,7 +101,7 @@ static MEMORY_ALLOCATED_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
-static MEMORY_RESIDENT_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
+pub static MEMORY_RESIDENT_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
         name: "resident_bytes",
         description: " Total number of bytes in physically resident data pages mapped by the allocator, as reported by jemalloc `stats.resident`.",
@@ -212,6 +116,56 @@ static IN_FLIGHT_DATA_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
         subsystem: "memory",
     )
 });
+
+pub static IN_FLIGHT_REST_SERVER: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("rest_server"));
+
+pub static IN_FLIGHT_INGEST_ROUTER: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("ingest_router"));
+
+pub static IN_FLIGHT_INGESTER_PERSIST: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("ingester_persist"));
+
+pub static IN_FLIGHT_INGESTER_REPLICATE: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("ingester_replicate"));
+
+pub static IN_FLIGHT_WAL: LazyLock<Gauge> = LazyLock::new(|| in_flight_data_gauge("wal"));
+
+pub static IN_FLIGHT_FETCH_STREAM: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("fetch_stream"));
+
+pub static IN_FLIGHT_MULTI_FETCH_STREAM: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("multi_fetch_stream"));
+
+pub static IN_FLIGHT_DOC_PROCESSOR_MAILBOX: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("doc_processor_mailbox"));
+
+pub static IN_FLIGHT_INDEXER_MAILBOX: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("indexer_mailbox"));
+
+pub static IN_FLIGHT_INDEX_WRITER: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("index_writer"));
+
+pub static IN_FLIGHT_FILE_SOURCE: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("file_source"));
+
+pub static IN_FLIGHT_INGEST_SOURCE: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("ingest_source"));
+
+pub static IN_FLIGHT_KAFKA_SOURCE: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("kafka_source"));
+
+pub static IN_FLIGHT_KINESIS_SOURCE: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("kinesis_source"));
+
+pub static IN_FLIGHT_PUBSUB_SOURCE: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("pubsub_source"));
+
+pub static IN_FLIGHT_PULSAR_SOURCE: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("pulsar_source"));
+
+pub static IN_FLIGHT_OTHER_SOURCE: LazyLock<Gauge> =
+    LazyLock::new(|| in_flight_data_gauge("pulsar_source"));
 
 fn in_flight_data_gauge(component: &'static str) -> Gauge {
     gauge!(parent: &*IN_FLIGHT_DATA_BYTES, "component" => component)
