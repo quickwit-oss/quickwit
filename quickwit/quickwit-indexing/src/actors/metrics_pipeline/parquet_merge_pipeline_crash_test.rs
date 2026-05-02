@@ -71,7 +71,9 @@ async fn create_and_upload_splits(
     metas
 }
 
-fn make_merge_policy(merge_factor: usize) -> Arc<dyn quickwit_parquet_engine::merge::policy::ParquetMergePolicy> {
+fn make_merge_policy(
+    merge_factor: usize,
+) -> Arc<dyn quickwit_parquet_engine::merge::policy::ParquetMergePolicy> {
     Arc::new(ConstWriteAmplificationParquetMergePolicy::new(
         ParquetMergePolicyConfig {
             merge_factor,
@@ -203,8 +205,7 @@ async fn test_merge_pipeline_crash_and_restart() {
         writer_config: ParquetWriterConfig::default(),
     };
 
-    let pipeline =
-        ParquetMergePipeline::new(params, Some(initial_splits), universe.spawn_ctx());
+    let pipeline = ParquetMergePipeline::new(params, Some(initial_splits), universe.spawn_ctx());
     let (_pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(pipeline);
 
     // --- Wait for post-restart publish ---
@@ -327,8 +328,7 @@ async fn test_merge_pipeline_multi_round() {
         writer_config: ParquetWriterConfig::default(),
     };
 
-    let pipeline =
-        ParquetMergePipeline::new(params, Some(initial_splits), universe.spawn_ctx());
+    let pipeline = ParquetMergePipeline::new(params, Some(initial_splits), universe.spawn_ctx());
     let (_pipeline_mailbox, _pipeline_handle) = universe.spawn_builder().spawn(pipeline);
 
     // --- Wait for a round-2 merge (num_merge_ops >= 2) ---
@@ -336,13 +336,7 @@ async fn test_merge_pipeline_multi_round() {
     wait_until_predicate(
         || {
             let staged = staged_metadata.clone();
-            async move {
-                staged
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .any(|s| s.num_merge_ops >= 2)
-            }
+            async move { staged.lock().unwrap().iter().any(|s| s.num_merge_ops >= 2) }
         },
         Duration::from_secs(60),
         Duration::from_millis(200),

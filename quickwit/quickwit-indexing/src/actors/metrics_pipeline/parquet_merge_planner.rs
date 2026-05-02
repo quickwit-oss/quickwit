@@ -614,8 +614,8 @@ mod tests {
             .build();
 
         // Override created_at to control time-based maturity.
-        split.created_at = std::time::SystemTime::now()
-            - std::time::Duration::from_secs(created_secs_ago);
+        split.created_at =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(created_secs_ago);
 
         if has_window {
             split.window = Some(0..3600);

@@ -63,7 +63,10 @@ pub enum MergePipelineAction {
     /// Ingest a new split with given row count.
     IngestSplit { num_rows: u64 },
     /// Plan a merge of splits at a given level.
-    PlanMerge { level: u32, split_ids: BTreeSet<u32> },
+    PlanMerge {
+        level: u32,
+        split_ids: BTreeSet<u32>,
+    },
     /// Complete an in-flight merge.
     CompleteMerge { merge_id: u32 },
     /// Pipeline crashes: planner state lost, in-flight merges lost.
@@ -215,8 +218,7 @@ impl Model for MergePipelineModel {
                 }
 
                 // Add to in-flight.
-                s.in_flight_merges
-                    .insert(merge_id, (split_ids, level));
+                s.in_flight_merges.insert(merge_id, (split_ids, level));
             }
             MergePipelineAction::CompleteMerge { merge_id } => {
                 let (input_ids, level) = match s.in_flight_merges.remove(&merge_id) {
