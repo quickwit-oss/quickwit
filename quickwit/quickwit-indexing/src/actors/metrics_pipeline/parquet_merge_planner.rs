@@ -590,6 +590,134 @@ mod tests {
         universe.assert_quit().await;
     }
 
+    // -----------------------------------------------------------------------
+    // Property tests
+    // -----------------------------------------------------------------------
+
+    /// Generate a split with random maturity-relevant properties.
+    fn make_split_with_maturity(
+        split_id: &str,
+        size_bytes: u64,
+        num_merge_ops: u32,
+        created_secs_ago: u64,
+        has_window: bool,
+    ) -> ParquetSplitMetadata {
+        let mut split = ParquetSplitMetadata::metrics_builder()
+            .split_id(ParquetSplitId::new(split_id))
+            .index_uid("test-index:00000000000000000000000001")
+            .partition_id(0)
+            .time_range(TimeRange::new(1000, 2000))
+            .num_rows(100)
+            .size_bytes(size_bytes)
+            .sort_fields("metric_name|host|timestamp_secs/V2")
+            .num_merge_ops(num_merge_ops)
+            .build();
+
+        // Override created_at to control time-based maturity.
+        split.created_at = std::time::SystemTime::now()
+            - std::time::Duration::from_secs(created_secs_ago);
+
+        if has_window {
+            split.window = Some(0..3600);
+        } else {
+            split.window = None;
+        }
+        split
+    }
+
+    proptest::proptest! {
+        /// Verify that no merge task ever contains a split that should have
+        /// been filtered: mature by ops, mature by size, mature by time, or
+        /// missing a window.
+        #[test]
+        fn proptest_planner_never_merges_mature_or_windowless_splits(
+            splits_data in proptest::collection::vec(
+                (
+                    1u64..300_000_000,   // size_bytes
+                    0u32..6,             // num_merge_ops
+                    0u64..7200,          // created_secs_ago
+                    proptest::bool::ANY, // has_window
+                ),
+                2..20,
+            )
+        ) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let universe = Universe::with_accelerated_time();
+                let (downloader_mailbox, downloader_inbox) =
+                    universe.create_test_mailbox();
+                // max_merge_ops=5, target=256MiB, maturation=3600s
+                let policy = make_policy(2);
+
+                let splits: Vec<ParquetSplitMetadata> = splits_data
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &(size, ops, age, has_w))| {
+                        make_split_with_maturity(
+                            &format!("prop-{i}"),
+                            size,
+                            ops,
+                            age,
+                            has_w,
+                        )
+                    })
+                    .collect();
+
+                let planner = ParquetMergePlanner::new(
+                    splits.clone(),
+                    policy.clone(),
+                    downloader_mailbox,
+                    universe.get_or_spawn_one(),
+                );
+                let (_planner_mailbox, _planner_handle) =
+                    universe.spawn_builder().spawn(planner);
+
+                // Give the planner time to process initial splits and plan.
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+                let tasks = downloader_inbox
+                    .drain_for_test_typed::<ParquetMergeTask>();
+
+                let now = std::time::SystemTime::now();
+                for task in &tasks {
+                    for split in &task.merge_operation.splits {
+                        // No mature-by-ops split.
+                        assert!(
+                            split.num_merge_ops < 5,
+                            "merge task contains ops-mature split: {} has ops={}",
+                            split.split_id, split.num_merge_ops
+                        );
+                        // No mature-by-size split.
+                        assert!(
+                            split.size_bytes < 256 * 1024 * 1024,
+                            "merge task contains size-mature split: {} has size={}",
+                            split.split_id, split.size_bytes
+                        );
+                        // No time-matured split.
+                        let age = now
+                            .duration_since(split.created_at)
+                            .unwrap_or_default();
+                        assert!(
+                            age < std::time::Duration::from_secs(3600),
+                            "merge task contains time-mature split: {} age={:?}",
+                            split.split_id, age
+                        );
+                        // No windowless split.
+                        assert!(
+                            split.window.is_some(),
+                            "merge task contains windowless split: {}",
+                            split.split_id
+                        );
+                    }
+                }
+                universe.assert_quit().await;
+            });
+        }
+    }
+
     #[tokio::test]
     async fn test_planner_finalize_and_quit() {
         let universe = Universe::with_accelerated_time();
