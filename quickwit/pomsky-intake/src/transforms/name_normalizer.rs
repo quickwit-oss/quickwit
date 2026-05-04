@@ -177,10 +177,14 @@ fn normalize_metric(metric: &mut Metric) {
 }
 
 fn normalize_trace(trace: &mut TraceEvent) {
-    if let Some(host) = trace.get("meta.host").and_then(|v| v.as_str())
+    // Hostname lives at top-level `host` by the time spans reach this
+    // transform — `preprocess_span::remap` promotes `meta._dd.hostname`
+    // to `host` (and OTLP traces land there too). Normalizing `meta.host`
+    // would be a no-op against the actual hostname.
+    if let Some(host) = trace.get("host").and_then(|v| v.as_str())
         && let Some(new_host) = normalize_hostname(&host)
     {
-        trace.insert("meta.host", new_host);
+        trace.insert("host", new_host);
     }
 
     let Some(meta_value) = trace.get_mut("meta") else {
@@ -193,11 +197,11 @@ fn normalize_trace(trace: &mut TraceEvent) {
     // which may rewrite them. Awaiting reviewer feedback on which keys
     // should be added to the skip-list.
     normalize_object_map(meta_value, |key| {
-        // Skip the hostname (already normalized above) and the Datadog-internal
-        // `_dd` namespace. Vector parses dots in target paths as separators, so
-        // wire-format keys like `_dd.p.tid` and `_dd.tags.container` end up as
-        // a single nested object under the `_dd` top-level key.
-        key == "host" || key == "_dd"
+        // Skip the Datadog-internal `_dd` namespace. Vector parses dots in
+        // target paths as separators, so wire-format keys like `_dd.p.tid`
+        // and `_dd.tags.container` end up as a single nested object under
+        // the `_dd` top-level key.
+        key == "_dd"
     });
 }
 
@@ -953,14 +957,14 @@ mod tests {
     }
 
     #[test]
-    fn trace_meta_host_and_tags_rewritten_dd_keys_skipped() {
+    fn trace_host_and_tags_rewritten_dd_keys_skipped() {
         // Note on `meta._dd.*` shape: Vector parses dots in target paths as
         // separators, so the wire-format flat key `_dd.p.tid` is stored as
         // `meta -> _dd -> p -> tid` (nested objects). The skip rule for the
         // top-level `_dd` key keeps the entire Datadog-internal subtree
         // untouched, regardless of what shape it takes.
         let mut trace = TraceEvent::default();
-        trace.insert("meta.host", "<weird>host");
+        trace.insert("host", "<weird>host");
         trace.insert("meta.Service", "My Service");
         trace.insert("meta.ENV", "Prod");
         trace.insert("meta._dd.p.tid", "deadbeef");
@@ -970,7 +974,7 @@ mod tests {
         let trace = events[0].as_trace();
 
         // Host rewritten by hostname rules.
-        assert_eq!(trace.get("meta.host"), Some(&Value::from("-weird-host")));
+        assert_eq!(trace.get("host"), Some(&Value::from("-weird-host")));
         // User keys rewritten by tag rules.
         assert_eq!(trace.get("meta.service"), Some(&Value::from("my_service")),);
         assert_eq!(trace.get("meta.env"), Some(&Value::from("prod")));
