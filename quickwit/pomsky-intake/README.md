@@ -16,9 +16,9 @@ Logs:
   otlp.logs ───────────┘
 
 Metrics:
-  datadog_agent.metrics ─┐
-  otlp.metrics ──────────┼──► preprocess_metric ──► add_host_tags ──► metric_metadata ───► metrics_out (Arrow IPC)
-  connections ───────────┘  (via connections_to_apm_metrics)
+  connections ─────────────────► connections_to_apm_metrics ─┐
+  datadog_agent.metrics ─────────────────────────────────────┼──► preprocess_metric ──► add_host_tags ──► metric_metadata ───► metrics_out (Arrow IPC)
+  otlp.metrics ──────────────────────────────────────────────┘
 
 Traces:
   datadog_agent.traces ───► preprocess_dd_trace ──► explode_trace_spans ─┐
@@ -50,9 +50,11 @@ traces_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/traces
 site: datadoghq.com              # default: datadoghq.com; DD_SITE env var overrides
 api_key: <your-api-key>          # DD_API_KEY env var overrides
 
-# Organization identifier and metadata service URL — used by metric_metadata.
+# Organization identifier — used by metric_metadata.
 org_id: default                  # default: "default"
-metadata_svc_url: http://localhost:9999  # default: http://localhost:9999
+
+# Path to the CSV used by metric_metadata to persist its known-metrics set across restarts.
+metric_metadata_persist_file_path: qwdata/intake/metric_metadata_known.csv  # default shown
 
 host_tags:
   poll_interval_secs: 15         # default: 15
@@ -117,22 +119,97 @@ known ones every cycle.
 
 - **Deduplication**: each metric event is checked against an in-memory `KnownMetrics` set. Only
   metrics unseen (or whose TTL has expired) are queued for flushing.
-- **Flush**: pending metrics are POSTed to `metadata_svc_url` in batches (default 200) every
-  `flush_interval_secs` (default 15 s). An early flush fires when the pending count reaches
-  `batch_size`.
+- **Flush**: pending metrics are POSTed to the metadata service (URL derived from `site`) in
+  batches (default 200) every `flush_interval_secs` (default 15 s). An early flush fires when
+  the pending count reaches `batch_size`.
 - **TTL**: each known metric expires after a random duration between `ttl_min_hours` (default 12 h)
   and `ttl_max_hours` (default 36 h) — jitter prevents thundering-herd re-submissions.
-- **Persistence**: the known-metrics set is written to a CSV at `persist_file_path` every
-  `persist_interval_secs` (default 30 s) and loaded back on startup. Writes are crash-durable
+- **Persistence**: the known-metrics set is written to a CSV at `metric_metadata_persist_file_path`
+  every `persist_interval_secs` (default 30 s) and loaded back on startup. Writes are crash-durable
   (write-to-temp + atomic rename). Expired entries loaded at startup are queued for immediate
   re-submission.
-- **Startup validation**: `DD_API_KEY` and the parent directory of `persist_file_path` must be
-  accessible at startup — misconfiguration fails fast with a descriptive error.
+- **Startup validation**: `DD_API_KEY` and the parent directory of `metric_metadata_persist_file_path`
+  must be accessible at startup — misconfiguration fails fast with a descriptive error.
 
 ### Credentials
 
-The transform reads `DD_API_KEY` directly from the environment; `org_id` and `metadata_svc_url`
-are supplied from the intake config file.
+The transform reads `DD_API_KEY` directly from the environment; `org_id` and the metadata service
+URL (derived from `site`) are supplied from the intake config file.
+
+## USM APM metrics extraction
+
+The `connections_to_apm_metrics` transform processes Datadog Agent `CollectorConnections` payloads
+received on port 8585 and emits APM-style metrics into the metrics pipeline.
+
+### What it does
+
+- **Protocol parsers**: extracts per-connection protocol stats for HTTP, HTTP/2, gRPC, Kafka,
+  Postgres, and Redis. Each parser yields `ProtoStat` records carrying service name, status code,
+  latency sketch bytes, and hit counts.
+- **Service resolution**: resolves a service name for each connection using a priority hierarchy
+  (service tag from container tags → service tag from host tags → NSX-inferred name → container ID
+  prefix → hostname fallback). Direction fixups mirror the NSX heuristics from the Go reference
+  implementation.
+- **Emitted metrics**:
+  - `universal.<proto>.<dir>.hits` — count metric per protocol and direction (inbound/outbound)
+  - `universal.<proto>.<dir>` — distribution sketch (DDSketch) per protocol and direction
+  - `trace.services_by_operation` — service × operation family for service list discovery
+- **Safety cap**: payloads with more than 1,000,000 connections are rejected before parsing to
+  bound memory use. Incoming request bodies are capped at 64 MiB.
+
+### Envelope stripping
+
+The `connections` source accepts V3–V8 agent envelopes and handles both zstd and uncompressed
+bodies. The agent timestamp is recovered from the envelope header and attached to each emitted
+event; intake time is used as a fallback when the header carries no timestamp.
+
+## Trace processing
+
+### Chunk-level field propagation
+
+`preprocess_dd_trace` runs before `explode_trace_spans` and copies chunk-level `host` and `env`
+fields into each span's `meta` map (as `meta._dd.hostname` and `meta.env`) so they survive the
+explode step, which only carries span-local data. Per-span values take precedence; chunk-level
+values are only written when the span's meta key is absent.
+
+### Span normalization (`preprocess_span`)
+
+After `explode_trace_spans`, each Datadog agent span event is normalized by `preprocess_span`:
+
+**Timestamps**
+
+| Field | Type | Value |
+|-------|------|-------|
+| `start_time` | i64 (unix ns) | span start, full nanosecond precision |
+| `timestamp` | string (RFC 3339, ms, Z) | span end = `floor((start + duration) / 1e6)` — the index's `timestamp_field` |
+| `discovery_timestamp` | i64 (unix ms) | when intake observed the span |
+
+The doc is dropped at indexing time if `timestamp` is absent.
+
+**IDs**
+
+All IDs are normalized to unsigned 64-bit decimal strings:
+
+| Wire field | Emitted field(s) | Notes |
+|-----------|-----------------|-------|
+| `trace_id` (i64) | `trace_id`, `trace_id_low` | Both hold the same lower-64-bit decimal value. `trace_id_low` is kept for schema compatibility with SaaS docs where the upper 64 bits travel separately. |
+| `span_id` (i64) | `span_id` | Unsigned decimal |
+| `parent_id` (i64) | `parent_id` | Unsigned decimal |
+
+### Schema remapping (`remap_dd_span_to_schema`)
+
+After normalization, spans are remapped to the `datadog-spans` index schema:
+
+| Operation | Detail |
+|-----------|--------|
+| Rename | `name` → `operation_name`, `resource` → `resource_name` |
+| Status | `status` derived from wire `error` flag: 0 → `"ok"`, non-zero → `"error"` |
+| Error type | `meta.error.type` lifted to top-level `error.type` |
+| Host / env | `meta._dd.hostname` → `host`, `meta.env` → `env` |
+| Resource hash | `resource_hash` = lower 64 bits of murmur3_x64_128 over the resource string, as hex |
+| Fixed fields | `single_span` and `analytics_enabled` set to `false`; `tiebreaker` set to a random positive integer |
+| Catch-all | `meta`, `metrics`, `meta_struct` (msgpack-decoded), `duration`, `span_links`, and `span_events` are folded into `custom`. The index declares `custom` with `expand_dots: true`, so dotted keys like `_dd.agent_version` are nested at indexing time. |
+| Cleanup | The leftover `start` Timestamp field is dropped (already extracted into `start_time`) |
 
 ## Local test tools
 
