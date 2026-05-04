@@ -278,16 +278,25 @@ impl RoutingTable {
     /// holds a shard for this (index_uid, source_id), so the entry stops being picked until a
     /// fresh routing update or control-plane response repopulates it.
     ///
-    /// No-op when the entry is missing, the node is absent from the entry, or the entry is at a
-    /// different incarnation than `index_uid` — a narrowing signal must never roll the table back
-    /// or shadow a fresher state.
+    /// Mirrors the incarnation handling of [`Self::apply_capacity_update`]: a stale signal
+    /// (entry newer than `index_uid`) is ignored, and a signal for a newer incarnation advances
+    /// the entry and clears stale nodes so the next attempt re-queries the control plane.
     pub fn mark_node_no_shards(&mut self, node_id: &NodeId, index_uid: &IndexUid, source_id: &str) {
         let key = (index_uid.index_id.to_string(), source_id.to_string());
         let Some(entry) = self.table.get_mut(&key) else {
             return;
         };
-        if entry.index_uid != *index_uid {
-            return;
+        match entry.index_uid.cmp(index_uid) {
+            // The entry is stale relative to the signal: advance it, drop stale nodes, and force
+            // a control-plane re-seed on the next attempt.
+            Ordering::Less => {
+                entry.index_uid = index_uid.clone();
+                entry.nodes.clear();
+                entry.seeded_from_cp = false;
+            }
+            // The signal is stale relative to the entry: leave the fresher entry alone.
+            Ordering::Greater => return,
+            Ordering::Equal => {}
         }
         if let Some(node) = entry.nodes.get_mut(node_id) {
             node.open_shard_count = 0;
@@ -936,11 +945,14 @@ mod tests {
             2
         );
 
-        // Newer incarnation argument: no-op (don't shadow a fresher entry we don't know yet).
+        // Newer incarnation argument: advance the entry, drop stale nodes, and force a CP
+        // re-seed (mirrors apply_capacity_update's Less arm). No node is inserted — the next
+        // CP query is responsible for repopulating the entry.
         let newer_index_uid = IndexUid::for_test("test-index", 2);
         table.mark_node_no_shards(&"node-2".into(), &newer_index_uid, "test-source");
         let entry = table.table.get(&key).unwrap();
-        assert_eq!(entry.index_uid, index_uid);
-        assert_eq!(entry.nodes.get("node-2").unwrap().open_shard_count, 2);
+        assert_eq!(entry.index_uid, newer_index_uid);
+        assert!(entry.nodes.is_empty());
+        assert!(!entry.seeded_from_cp);
     }
 }
