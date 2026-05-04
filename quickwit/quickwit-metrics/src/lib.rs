@@ -145,11 +145,9 @@
 //!
 //! ### 6. Observable metrics
 //!
-//! All counters and gauges expose a `get()` method. By default
-//! (non-observable), `get()` returns a sentinel (`u64::MAX` for counters,
-//! `f64::NAN` for gauges). When you need to read the actual metric value
-//! in production — for back-pressure, health checks, or conditional
-//! logging — add `observable: true`:
+//! All counters and gauges expose a `get()` method that returns the
+//! current metric value — useful for back-pressure, health checks, or
+//! conditional logging:
 //!
 //! ```rust,ignore
 //! static PENDING: LazyLock<Gauge> = LazyLock::new(|| {
@@ -157,7 +155,6 @@
 //!         name: "pending_bytes",
 //!         description: "Bytes waiting to be flushed",
 //!         subsystem: "indexer",
-//!         observable: true,
 //!     )
 //! });
 //!
@@ -166,8 +163,7 @@
 //! ```
 //!
 //! `get()` always returns a value directly (`u64` for counters, `f64` for
-//! gauges). Non-observable metrics return `u64::MAX` / `f64::NAN` and
-//! skip the shadow entirely.
+//! gauges).
 //!
 //! Under the hood, observable state lives inside the shared
 //! `Arc<…Inner>` (e.g. `Arc<CounterInner>`, `Arc<GaugeInner>`). All
@@ -331,8 +327,6 @@ pub struct MetricInfo {
     pub description: &'static str,
     /// Which `describe_*` method to call for this metric.
     pub kind: MetricKind,
-    /// Whether this metric was declared with `observable: true`.
-    pub observable: bool,
     /// Recorder metadata capturing the subsystem (target), verbosity level,
     /// and module path where the metric was declared.
     pub metadata: &'static metrics::Metadata<'static>,

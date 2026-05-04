@@ -63,15 +63,15 @@ pub fn __counter_get_or_register(
 /// Held behind an `Arc` so that all handles (`Counter` clones, thread-local
 /// caches, parent extensions with matching labels) point to the same data.
 struct CounterInner {
-    /// Static metadata (name, subsystem, description, observable flag).
+    /// Static metadata (name, subsystem, description).
     info: &'static MetricInfo,
     /// Full metric key: qualified name + all labels.
     key: metrics::Key,
     /// Recorder-provided counter handle for the actual recording backend.
     inner: metrics::Counter,
-    /// Shadow atomic for observable counters (`Some`), or `None` for
-    /// fire-and-forget counters where `get()` returns `u64::MAX`.
-    shadow: Option<AtomicU64>,
+    /// Shadow atomic that mirrors every mutation so `get()` can read
+    /// the current value without querying the recorder.
+    shadow: AtomicU64,
     /// Pre-computed cache key used for DashMap lookups, thread-local
     /// comparisons, and the `Hash` / `Eq` impls on `Counter`.
     hash: u64,
@@ -84,16 +84,11 @@ impl CounterInner {
         key: metrics::Key,
         inner: metrics::Counter,
     ) -> Self {
-        let shadow = if info.observable {
-            Some(AtomicU64::new(0))
-        } else {
-            None
-        };
         Self {
             info,
             key,
             inner,
-            shadow,
+            shadow: AtomicU64::new(0),
             hash,
         }
     }
@@ -107,10 +102,9 @@ impl CounterInner {
 /// Counters are **monotonically increasing** — use [`increment`](Self::increment)
 /// for deltas or [`absolute`](Self::absolute) to set a known total.
 ///
-/// When declared with `observable: true`, the counter holds an
-/// `AtomicU64` shadow inside its `Arc<CounterInner>`. All clones share
-/// the same atomic, so `get()` is always consistent. Non-observable
-/// counters store `None` and `get()` returns `u64::MAX`.
+/// Every counter maintains an `AtomicU64` shadow so that [`get()`](Self::get)
+/// can read the current value without querying the recorder. All clones
+/// share the same shadow via `Arc<CounterInner>`.
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct Counter(Arc<CounterInner>);
@@ -168,37 +162,22 @@ impl Counter {
         &self.0.key
     }
 
-    /// Adds `value` to the counter.
-    ///
-    /// If observable, also bumps the shadow `AtomicU64` so that
-    /// [`get()`](Self::get) reflects the update.
+    /// Adds `value` to the counter and its shadow atomic.
     pub fn increment(&self, value: u64) {
-        if let Some(s) = self.0.shadow.as_ref() {
-            s.fetch_add(value, Ordering::Relaxed);
-        }
+        self.0.shadow.fetch_add(value, Ordering::Relaxed);
         self.0.inner.increment(value);
     }
 
     /// Sets the counter to an absolute `value`, useful for process-level
     /// totals that are already tracked externally.
-    ///
-    /// If observable, also stores into the shadow `AtomicU64`.
     pub fn absolute(&self, value: u64) {
-        if let Some(s) = self.0.shadow.as_ref() {
-            s.store(value, Ordering::Relaxed);
-        }
+        self.0.shadow.store(value, Ordering::Relaxed);
         self.0.inner.absolute(value);
     }
 
-    /// Returns the current shadow counter value.
-    ///
-    /// Observable counters return the accumulated value.
-    /// Non-observable counters always return `u64::MAX`.
+    /// Returns the current counter value from the shadow atomic.
     pub fn get(&self) -> u64 {
-        match self.0.shadow.as_ref() {
-            Some(s) => s.load(Ordering::Relaxed),
-            None => u64::MAX,
-        }
+        self.0.shadow.load(Ordering::Relaxed)
     }
 }
 
@@ -219,8 +198,8 @@ impl CounterFn for Counter {
 /// # Base declaration
 ///
 /// Creates a new counter with a static name, description, subsystem, and
-/// optional static labels. By default counters are non-observable; add
-/// `observable: true` to enable `get()` readback via a shadow `AtomicU64`.
+/// optional static labels. Every counter maintains a shadow `AtomicU64`
+/// so [`get()`](Counter::get) always returns the current value.
 ///
 /// ```ignore
 /// let c = counter!(
@@ -228,18 +207,6 @@ impl CounterFn for Counter {
 ///     description: "Total number of HTTP requests",
 ///     subsystem: "http",
 ///     "env" => "prod",
-/// );
-/// c.increment(1);
-/// ```
-///
-/// With `observable: true`, `get()` returns the current value:
-///
-/// ```ignore
-/// let c = counter!(
-///     name: "requests_total",
-///     description: "Total number of HTTP requests",
-///     subsystem: "http",
-///     observable: true,
 /// );
 /// c.increment(1);
 /// assert_eq!(c.get(), 1);
@@ -256,41 +223,20 @@ impl CounterFn for Counter {
 /// ```
 #[macro_export]
 macro_rules! counter {
-    // Base declaration without observable (defaults to false).
-    // Convenience shorthand that delegates to the full base arm below.
+    // Base declaration: all-static name, labels, and key — zero allocations.
     (
         name: $name:literal,
         description: $description:literal,
         subsystem: $subsystem:tt
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{
-        $crate::counter!(
-            name: $name,
-            description: $description,
-            subsystem: $subsystem,
-            observable: false
-            $(, $label => $value)*
-        )
-    }};
-
-    // Base declaration: all-static name, labels, and key — zero allocations.
-    (
-        name: $name:literal,
-        description: $description:literal,
-        subsystem: $subsystem:tt,
-        observable: $observable:expr
-        $(, $label:literal => $value:literal)* $(,)?
-    ) => {{
-        // Expand compile-time statics: KEY_NAME, INFO, KEY, LABELS, METADATA.
         $crate::__key_info_metadata!(
             kind: $crate::MetricKind::Counter,
-            observable: $observable,
             name: $name,
             description: $description,
             subsystem: $subsystem
             $(, $label => $value)*
         );
-        // Thread-local cache + global DashMap registration.
         $crate::__metric_declaration!(
             metric_type: $crate::Counter,
             register_fn: $crate::__counter_get_or_register,

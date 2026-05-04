@@ -60,9 +60,8 @@ fn main() {
         println!("{module}");
         for (key, info) in metrics {
             println!(
-                "  {key:<width$}    kind: {}, observable: {}",
+                "  {key:<width$}    kind: {}",
                 format!("{:?}", info.kind).to_lowercase(),
-                info.observable,
                 width = max_key_len
             );
             println!("    {}", info.description);

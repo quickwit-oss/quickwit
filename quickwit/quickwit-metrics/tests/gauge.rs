@@ -176,7 +176,6 @@ fn observable_set_matches_recorder() {
             name: "og_set",
             description: "observable gauge",
             subsystem: "test",
-            observable: true
         );
         g.set(42.0);
         g
@@ -196,7 +195,6 @@ fn observable_inc_dec_matches_recorder() {
             name: "og_inc_dec",
             description: "observable inc/dec gauge",
             subsystem: "test",
-            observable: true
         );
         g.set(10.0);
         g.increment(5.0);
@@ -218,7 +216,6 @@ fn observable_guard_matches_recorder() {
             name: "og_guard",
             description: "observable gauge with guard",
             subsystem: "test",
-            observable: true
         );
         g.set(0.0);
         {
@@ -235,26 +232,12 @@ fn observable_guard_matches_recorder() {
 }
 
 #[test]
-fn non_observable_returns_nan() {
-    with_recorder(|| {
-        let g = gauge!(
-            name: "nog_get",
-            description: "non-observable gauge",
-            subsystem: "test",
-        );
-        g.set(99.0);
-        assert!(g.get().is_nan());
-    });
-}
-
-#[test]
 fn observable_parent_children_share_shadow() {
     with_recorder(|| {
         let parent = gauge!(
             name: "og_shared",
             description: "shared shadow gauge",
             subsystem: "test",
-            observable: true
         );
         let child_a = gauge!(parent: parent, "region" => "us-east");
         let child_b = gauge!(parent: parent, "region" => "us-east");

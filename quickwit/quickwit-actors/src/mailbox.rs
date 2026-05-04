@@ -525,7 +525,6 @@ mod tests {
             name: "test_counter_low_backpressure",
             description: "help for test_counter",
             subsystem: "actor",
-            observable: true,
         );
         let wait_duration = Duration::from_millis(1);
         let processed = mailbox
@@ -556,7 +555,6 @@ mod tests {
             name: "test_counter_backpressure",
             description: "help for test_counter",
             subsystem: "actor",
-            observable: true,
         );
         let wait_duration = Duration::from_millis(1);
         mailbox
@@ -592,7 +590,6 @@ mod tests {
             name: "test_counter_no_waiting_backpressure",
             description: "help for test_counter",
             subsystem: "actor",
-            observable: true,
         );
         let start = Instant::now();
         mailbox

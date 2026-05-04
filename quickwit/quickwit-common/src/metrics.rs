@@ -247,7 +247,6 @@ mod tests {
             name: "maybe_registered_counter_test",
             description: "Maybe registered counter test.",
             subsystem: "",
-            observable: true,
         );
         let counter = MaybeRegisteredCounter::registered(registered_counter.clone());
 

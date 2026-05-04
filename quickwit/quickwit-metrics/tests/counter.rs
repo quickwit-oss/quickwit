@@ -156,7 +156,6 @@ fn observable_get_matches_recorder() {
             name: "oc_get",
             description: "observable counter",
             subsystem: "test",
-            observable: true
         );
         c.increment(3);
         c.increment(7);
@@ -177,7 +176,6 @@ fn observable_absolute_matches_recorder() {
             name: "oc_abs",
             description: "observable absolute counter",
             subsystem: "test",
-            observable: true
         );
         c.absolute(42);
         c
@@ -189,26 +187,12 @@ fn observable_absolute_matches_recorder() {
 }
 
 #[test]
-fn non_observable_returns_max() {
-    with_recorder(|| {
-        let c = counter!(
-            name: "noc_get",
-            description: "non-observable counter",
-            subsystem: "test",
-        );
-        c.increment(5);
-        assert_eq!(c.get(), u64::MAX);
-    });
-}
-
-#[test]
 fn observable_parent_children_share_shadow() {
     with_recorder(|| {
         let parent = counter!(
             name: "oc_shared",
             description: "shared shadow counter",
             subsystem: "test",
-            observable: true
         );
         let child_a = counter!(parent: parent, "region" => "us-east");
         let child_b = counter!(parent: parent, "region" => "us-east");
@@ -228,7 +212,6 @@ fn observable_parent_distinct_labels_separate_shadow() {
             name: "oc_distinct",
             description: "distinct shadow counter",
             subsystem: "test",
-            observable: true
         );
         let child_a = counter!(parent: parent, "region" => "us-east");
         let child_b = counter!(parent: parent, "region" => "eu-west");

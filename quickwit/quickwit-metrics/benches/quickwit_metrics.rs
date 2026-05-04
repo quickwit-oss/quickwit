@@ -593,7 +593,6 @@ static DYN_PARENT_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
         name: "dyn_parent_counter",
         description: "bench dynamic parent counter",
         subsystem: "bench",
-        observable: true,
         "service" => "api"
     )
 });
@@ -603,7 +602,6 @@ static DYN_PARENT_GAUGE: LazyLock<Gauge> = LazyLock::new(|| {
         name: "dyn_parent_gauge",
         description: "bench dynamic parent gauge",
         subsystem: "bench",
-        observable: true,
         "service" => "api"
     )
 });
@@ -673,7 +671,6 @@ static OBS_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
         name: "obs_counter",
         description: "bench observable counter",
         subsystem: "bench",
-        observable: true
     )
 });
 
@@ -682,7 +679,6 @@ static OBS_GAUGE: LazyLock<Gauge> = LazyLock::new(|| {
         name: "obs_gauge",
         description: "bench observable gauge",
         subsystem: "bench",
-        observable: true
     )
 });
 

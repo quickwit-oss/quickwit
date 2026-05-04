@@ -74,7 +74,6 @@ pub(crate) static ONGOING_MERGE_OPERATIONS: LazyLock<Gauge> = LazyLock::new(|| {
         name: "ongoing_merge_operations",
         description: "Number of ongoing merge operations",
         subsystem: "indexing",
-        observable: true,
     )
 });
 

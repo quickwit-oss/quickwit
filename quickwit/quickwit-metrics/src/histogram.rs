@@ -266,7 +266,6 @@ macro_rules! histogram {
         // Expand compile-time statics: KEY_NAME, INFO, KEY, LABELS, METADATA.
         $crate::__key_info_metadata!(
             kind: $crate::MetricKind::Histogram,
-            observable: false,
             name: $name,
             description: $description,
             subsystem: $subsystem

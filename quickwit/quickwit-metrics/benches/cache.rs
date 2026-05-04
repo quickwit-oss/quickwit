@@ -87,7 +87,6 @@ static DYN_PARENT_COUNTER: LazyLock<Counter> = LazyLock::new(|| {
         name: "cache_dyn_parent_counter",
         description: "bench dynamic parent counter for cache benches",
         subsystem: "bench",
-        observable: true,
         "service" => "api"
     )
 });

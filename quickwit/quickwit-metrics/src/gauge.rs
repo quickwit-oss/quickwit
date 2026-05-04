@@ -63,15 +63,15 @@ pub fn __gauge_get_or_register(
 /// Held behind an `Arc` so that all handles (`Gauge` clones, thread-local
 /// caches, parent extensions with matching labels) point to the same data.
 struct GaugeInner {
-    /// Static metadata (name, subsystem, description, observable flag).
+    /// Static metadata (name, subsystem, description).
     info: &'static MetricInfo,
     /// Full metric key: qualified name + all labels.
     key: metrics::Key,
     /// Recorder-provided gauge handle for the actual recording backend.
     inner: metrics::Gauge,
-    /// Shadow atomic for observable gauges (`Some`), or `None` for
-    /// fire-and-forget gauges where `get()` returns `f64::NAN`.
-    shadow: Option<AtomicF64>,
+    /// Shadow atomic that mirrors every mutation so `get()` can read
+    /// the current value without querying the recorder.
+    shadow: AtomicF64,
     /// Pre-computed cache key used for DashMap lookups, thread-local
     /// comparisons, and the `Hash` / `Eq` impls on `Gauge`.
     hash: u64,
@@ -79,16 +79,11 @@ struct GaugeInner {
 
 impl GaugeInner {
     fn new(hash: u64, info: &'static MetricInfo, key: metrics::Key, inner: metrics::Gauge) -> Self {
-        let shadow = if info.observable {
-            Some(AtomicF64::new(0.0))
-        } else {
-            None
-        };
         Self {
             info,
             key,
             inner,
-            shadow,
+            shadow: AtomicF64::new(0.0),
             hash,
         }
     }
@@ -102,10 +97,9 @@ impl GaugeInner {
 /// Unlike counters, gauges can go **up and down** — they represent a
 /// point-in-time value such as active connections or queue depth.
 ///
-/// When declared with `observable: true`, the gauge holds an
-/// `AtomicF64` shadow inside its `Arc<GaugeInner>`. All clones share
-/// the same atomic, so `get()` is always consistent. Non-observable
-/// gauges store `None` and `get()` returns `f64::NAN`.
+/// Every gauge maintains an `AtomicF64` shadow so that [`get()`](Self::get)
+/// can read the current value without querying the recorder. All clones
+/// share the same shadow via `Arc<GaugeInner>`.
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct Gauge(Arc<GaugeInner>);
@@ -163,48 +157,27 @@ impl Gauge {
         &self.0.key
     }
 
-    /// Adds `value` to the current gauge reading.
-    ///
-    /// If observable, also bumps the shadow `AtomicF64` so that
-    /// [`get()`](Self::get) reflects the update.
+    /// Adds `value` to the current gauge reading and its shadow atomic.
     pub fn increment(&self, value: f64) {
-        if let Some(s) = self.0.shadow.as_ref() {
-            s.fetch_add(value, Ordering::Relaxed);
-        }
+        self.0.shadow.fetch_add(value, Ordering::Relaxed);
         self.0.inner.increment(value);
     }
 
-    /// Subtracts `value` from the current gauge reading.
-    ///
-    /// If observable, also decrements the shadow `AtomicF64` so that
-    /// [`get()`](Self::get) reflects the update.
+    /// Subtracts `value` from the current gauge reading and its shadow atomic.
     pub fn decrement(&self, value: f64) {
-        if let Some(s) = self.0.shadow.as_ref() {
-            s.fetch_sub(value, Ordering::Relaxed);
-        }
+        self.0.shadow.fetch_sub(value, Ordering::Relaxed);
         self.0.inner.decrement(value);
     }
 
-    /// Replaces the current gauge reading with `value`.
-    ///
-    /// If observable, also stores into the shadow `AtomicF64` so that
-    /// [`get()`](Self::get) reflects the update.
+    /// Replaces the current gauge reading and its shadow atomic with `value`.
     pub fn set(&self, value: f64) {
-        if let Some(s) = self.0.shadow.as_ref() {
-            s.store(value, Ordering::Relaxed);
-        }
+        self.0.shadow.store(value, Ordering::Relaxed);
         self.0.inner.set(value);
     }
 
-    /// Returns the current shadow gauge value.
-    ///
-    /// Observable gauges return the tracked value.
-    /// Non-observable gauges always return `f64::NAN`.
+    /// Returns the current gauge value from the shadow atomic.
     pub fn get(&self) -> f64 {
-        match self.0.shadow.as_ref() {
-            Some(s) => s.load(Ordering::Relaxed),
-            None => f64::NAN,
-        }
+        self.0.shadow.load(Ordering::Relaxed)
     }
 }
 
@@ -276,8 +249,8 @@ impl Drop for GaugeGuard {
 /// # Base declaration
 ///
 /// Creates a new gauge with a static name, description, subsystem, and
-/// optional static labels. By default gauges are non-observable; add
-/// `observable: true` to enable `get()` readback via a shadow `AtomicF64`.
+/// optional static labels. Every gauge maintains a shadow `AtomicF64`
+/// so [`get()`](Gauge::get) always returns the current value.
 ///
 /// ```ignore
 /// let g = gauge!(
@@ -301,41 +274,20 @@ impl Drop for GaugeGuard {
 /// ```
 #[macro_export]
 macro_rules! gauge {
-    // Base declaration without observable (defaults to false).
-    // Convenience shorthand that delegates to the full base arm below.
+    // Base declaration: all-static name, labels, and key — zero allocations.
     (
         name: $name:literal,
         description: $description:literal,
         subsystem: $subsystem:tt
         $(, $label:literal => $value:literal)* $(,)?
     ) => {{
-        $crate::gauge!(
-            name: $name,
-            description: $description,
-            subsystem: $subsystem,
-            observable: false
-            $(, $label => $value)*
-        )
-    }};
-
-    // Base declaration: all-static name, labels, and key — zero allocations.
-    (
-        name: $name:literal,
-        description: $description:literal,
-        subsystem: $subsystem:tt,
-        observable: $observable:expr
-        $(, $label:literal => $value:literal)* $(,)?
-    ) => {{
-        // Expand compile-time statics: KEY_NAME, INFO, KEY, LABELS, METADATA.
         $crate::__key_info_metadata!(
             kind: $crate::MetricKind::Gauge,
-            observable: $observable,
             name: $name,
             description: $description,
             subsystem: $subsystem
             $(, $label => $value)*
         );
-        // Thread-local cache + global DashMap registration.
         $crate::__metric_declaration!(
             metric_type: $crate::Gauge,
             register_fn: $crate::__gauge_get_or_register,

@@ -264,7 +264,6 @@ static CACHE_IN_CACHE_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
         name: "in_cache_count",
         description: "Count of in cache by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -273,7 +272,6 @@ static CACHE_IN_CACHE_NUM_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
         name: "in_cache_num_bytes",
         description: "Number of bytes in cache by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -282,7 +280,6 @@ static CACHE_HITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
         name: "cache_hits_total",
         description: "Number of cache hits by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -291,7 +288,6 @@ static CACHE_HITS_BYTES: LazyLock<Counter> = LazyLock::new(|| {
         name: "cache_hits_bytes",
         description: "Number of cache hits in bytes by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -300,7 +296,6 @@ static CACHE_MISSES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
         name: "cache_misses_total",
         description: "Number of cache misses by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -309,7 +304,6 @@ static CACHE_EVICT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
         name: "cache_evict_total",
         description: "Number of cache entry evicted by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -318,7 +312,6 @@ static CACHE_EVICT_BYTES: LazyLock<Counter> = LazyLock::new(|| {
         name: "cache_evict_bytes",
         description: "Number of cache entry evicted in bytes by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -327,7 +320,6 @@ static VIRTUAL_CACHE_IN_CACHE_COUNT: LazyLock<Gauge> = LazyLock::new(|| {
         name: "virtual_in_cache_count",
         description: "Count of in cache by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -336,7 +328,6 @@ static VIRTUAL_CACHE_IN_CACHE_NUM_BYTES: LazyLock<Gauge> = LazyLock::new(|| {
         name: "virtual_in_cache_num_bytes",
         description: "Number of bytes in cache by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -345,7 +336,6 @@ static VIRTUAL_CACHE_HITS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
         name: "virtual_cache_hits_total",
         description: "Number of cache hits by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -354,7 +344,6 @@ static VIRTUAL_CACHE_HITS_BYTES: LazyLock<Counter> = LazyLock::new(|| {
         name: "virtual_cache_hits_bytes",
         description: "Number of cache hits in bytes by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -363,7 +352,6 @@ static VIRTUAL_CACHE_MISSES_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
         name: "virtual_cache_misses_total",
         description: "Number of cache misses by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -372,7 +360,6 @@ static VIRTUAL_CACHE_EVICT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
         name: "virtual_cache_evict_total",
         description: "Number of cache entry evicted by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 
@@ -381,7 +368,6 @@ static VIRTUAL_CACHE_EVICT_BYTES: LazyLock<Counter> = LazyLock::new(|| {
         name: "virtual_cache_evict_bytes",
         description: "Number of cache entry evicted in bytes by component",
         subsystem: "cache",
-        observable: true,
     )
 });
 

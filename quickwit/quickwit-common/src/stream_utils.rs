@@ -304,7 +304,6 @@ mod tests {
                 name: "common",
                 description: "help",
                 subsystem: "test_tracked_service_stream_bounded",
-                observable: true,
             )
         });
 
@@ -329,7 +328,6 @@ mod tests {
                 name: "common",
                 description: "help",
                 subsystem: "test_tracked_service_stream_unbounded",
-                observable: true,
             )
         });
 

@@ -53,7 +53,6 @@ static WRITE_BYTES: LazyLock<Counter> = LazyLock::new(|| {
         name: "write_bytes",
         description: "Number of bytes written by a given component in [indexer, merger, deleter, split_downloader_{merge,delete}]",
         subsystem: "",
-        observable: true,
     )
 });
 

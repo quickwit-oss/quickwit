@@ -156,7 +156,6 @@ static SPLIT_SEARCH_OUTCOME: LazyLock<Counter> = LazyLock::new(|| {
         name: "split_search_outcome",
         description: "Count the state in which each leaf search split ended",
         subsystem: "search",
-        observable: true,
     )
 });
 

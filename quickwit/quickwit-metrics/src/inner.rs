@@ -73,7 +73,6 @@ macro_rules! __metadata {
 macro_rules! __key_info_metadata {
     (
         kind: $kind:expr,
-        observable: $observable:expr,
         name: $name:literal,
         description: $description:literal,
         subsystem: $subsystem:tt
@@ -85,7 +84,6 @@ macro_rules! __key_info_metadata {
             key_name: KEY_NAME,
             description: $description,
             kind: $kind,
-            observable: $observable,
             metadata: &METADATA,
             static_labels: &[$(($label, $value)),*],
         };
