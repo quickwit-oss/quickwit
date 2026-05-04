@@ -221,10 +221,7 @@ impl Model for MergePipelineModel {
                 s.in_flight_merges.insert(merge_id, (split_ids, level));
             }
             MergePipelineAction::CompleteMerge { merge_id } => {
-                let (input_ids, level) = match s.in_flight_merges.remove(&merge_id) {
-                    Some(v) => v,
-                    None => return None,
-                };
+                let (input_ids, level) = s.in_flight_merges.remove(&merge_id)?;
 
                 let output_id = s.next_id;
                 s.next_id += 1;
