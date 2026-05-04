@@ -260,11 +260,11 @@
 //! exists, it `Arc::clone`s and populates L1. Only on a full L2 miss does
 //! it construct the `metrics::Key`, register with the recorder, and insert.
 //!
-//! The hash is **order-independent** and **composable** via XOR-folding of
-//! per-label `FxHasher` outputs. This means
-//! `hash(parent, [A,B]) == hash(hash(parent, [A]), [B])`, which is what
-//! makes the `parent:` extension pattern work correctly without rehashing
-//! all labels.
+//! Per-label hashes (via `FxHasher`) are combined with wrapping addition
+//! (mod 2^64), which is both **commutative** (order-independent) and
+//! **associative** (composable): `hash(parent, [A,B]) ==
+//! hash(hash(parent, [A]), [B])`. This is what makes the `parent:`
+//! extension pattern work without rehashing all labels.
 
 #![deny(clippy::disallowed_methods)]
 

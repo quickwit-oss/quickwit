@@ -100,23 +100,37 @@ macro_rules! __key_info_metadata {
 
 // ─── Cache-key hashing ───
 //
-// The hash is **order-independent** and **composable**, so
-// `hash(seed, [A,B,C])` equals `hash(hash(seed, [A,B]), [C])` — this is
-// what makes the `parent:` extension pattern work correctly.
+// We need a hash that can be computed **incrementally**: the final hash
+// must equal the hash of the metric name combined with the hashes of all
+// labels, regardless of the order they are declared or added. This is
+// critical for the `parent:` extension pattern, where a child metric
+// inherits its parent's hash and folds in only the new labels — the
+// result must be identical to hashing everything from scratch.
+//
+// This requires the combining operator to be **commutative**
+// (order-independent) and **associative** (composable):
+//   `combine(combine(seed, A), B) == combine(seed, combine(A, B))`
+//
+// We use wrapping addition (mod 2^64) rather than XOR because XOR is
+// self-inverse — duplicate labels would cancel each other out
+// (`a ^ a == 0`).
 
-/// XOR-folds per-label hashes into `seed`, yielding an order-independent,
-/// composable cache key: `hash(seed, [A,B]) == hash(hash(seed, [A]), [B])`.
+/// Folds per-label hashes into `seed` via wrapping addition (mod 2^64).
+///
+/// The combining operator (wrapping add) is both **commutative** and
+/// **associative**, which guarantees order-independence and composability:
+/// `hash(seed, [A,B]) == hash(hash(seed, [A]), [B])`.
 #[doc(hidden)]
 #[inline]
 pub fn __key_hash<'a>(seed: u64, labels: impl IntoIterator<Item = (&'a str, &'a str)>) -> u64 {
-    let mut xor = seed;
+    let mut acc = seed;
     for (name, value) in labels {
         let mut h = FxHasher::default();
         name.hash(&mut h);
         value.hash(&mut h);
-        xor ^= h.finish();
+        acc = acc.wrapping_add(h.finish());
     }
-    xor
+    acc
 }
 
 /// Convenience macro that coerces label name/value expressions into `&str`
@@ -309,6 +323,19 @@ mod tests {
         #[test]
         fn empty_labels_returns_seed(seed: u64) {
             prop_assert_eq!(__key_hash(seed, std::iter::empty()), seed);
+        }
+
+        #[test]
+        fn duplicate_labels_do_not_cancel(
+            seed: u64,
+            name in "[a-z]{1,8}",
+            value in "[a-z0-9]{1,16}",
+        ) {
+            let one = __key_hash(seed, [(&*name, &*value)]);
+            let two = __key_hash(seed, [(&*name, &*value), (&*name, &*value)]);
+            prop_assert_ne!(one, seed, "single label must change the seed");
+            prop_assert_ne!(two, seed, "two identical labels must not cancel back to seed");
+            prop_assert_ne!(one, two, "one vs two identical labels must produce different hashes");
         }
     }
 }
