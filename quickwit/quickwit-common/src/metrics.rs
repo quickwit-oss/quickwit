@@ -13,17 +13,65 @@
 // limitations under the License.
 
 use std::collections::BTreeMap;
-use std::sync::{LazyLock, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock, OnceLock};
 #[cfg(not(test))]
 use std::time::Duration;
 
 use metrics_exporter_prometheus::PrometheusHandle;
 pub use prometheus::{exponential_buckets, linear_buckets};
-use quickwit_metrics::{Gauge, Labels, gauge};
+use quickwit_metrics::{Counter, Gauge, Labels, gauge};
 
 const SYSTEM: &str = "quickwit";
 
 static PROMETHEUS_HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
+
+#[derive(Clone)]
+pub struct MaybeRegisteredCounter {
+    inner: MaybeRegisteredCounterInner,
+}
+
+#[derive(Clone)]
+enum MaybeRegisteredCounterInner {
+    Local(Arc<AtomicU64>),
+    Registered(Counter),
+}
+
+impl Default for MaybeRegisteredCounter {
+    fn default() -> Self {
+        Self::local()
+    }
+}
+
+impl MaybeRegisteredCounter {
+    pub fn local() -> Self {
+        Self {
+            inner: MaybeRegisteredCounterInner::Local(Arc::new(AtomicU64::new(0))),
+        }
+    }
+
+    pub fn registered(counter: Counter) -> Self {
+        Self {
+            inner: MaybeRegisteredCounterInner::Registered(counter),
+        }
+    }
+
+    pub fn increment(&self, value: u64) {
+        match &self.inner {
+            MaybeRegisteredCounterInner::Local(counter) => {
+                counter.fetch_add(value, Ordering::Relaxed);
+            }
+            MaybeRegisteredCounterInner::Registered(counter) => counter.increment(value),
+        }
+    }
+
+    pub fn get(&self) -> u64 {
+        match &self.inner {
+            MaybeRegisteredCounterInner::Local(counter) => counter.load(Ordering::Relaxed),
+            MaybeRegisteredCounterInner::Registered(counter) => counter.get(),
+        }
+    }
+}
 
 pub fn set_prometheus_handle(handle: PrometheusHandle) -> Result<(), String> {
     #[cfg(not(test))]
@@ -187,8 +235,37 @@ mod tests {
     use metrics::with_local_recorder;
     use metrics_exporter_prometheus::PrometheusBuilder;
     use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+    use quickwit_metrics::counter;
 
     use super::*;
+
+    #[test]
+    fn maybe_registered_counter_counts_locally() {
+        let counter = MaybeRegisteredCounter::local();
+        let counter_clone = counter.clone();
+
+        counter.increment(3);
+        counter_clone.increment(4);
+
+        assert_eq!(counter.get(), 7);
+        assert_eq!(counter_clone.get(), 7);
+    }
+
+    #[test]
+    fn maybe_registered_counter_wraps_registered_counter() {
+        let registered_counter = counter!(
+            name: "maybe_registered_counter_test",
+            description: "Maybe registered counter test.",
+            subsystem: "",
+            observable: true,
+        );
+        let counter = MaybeRegisteredCounter::registered(registered_counter.clone());
+
+        counter.increment(5);
+
+        assert_eq!(counter.get(), 5);
+        assert_eq!(registered_counter.get(), 5);
+    }
 
     #[test]
     fn metrics_text_payload_renders_prometheus_handle() {
