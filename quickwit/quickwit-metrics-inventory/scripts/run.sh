@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
 # Discovers quickwit-metrics reverse dependencies, patches Cargo.toml and
-# src/main.rs, builds and runs the inventory binary, then restores both
-# files via git. Files are always restored — even on Ctrl-C or failure.
+# src/main.rs, builds and runs the inventory binary, then restores
+# Cargo.toml, Cargo.lock, and src/main.rs via git.
+# Files are always restored — even on Ctrl-C or failure.
 #
 # Usage:
 #   ./scripts/run_inventory.sh
@@ -13,9 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CRATE_DIR="$(dirname "$SCRIPT_DIR")"
 WORKSPACE_DIR="$(dirname "$CRATE_DIR")"
 CARGO_TOML="$CRATE_DIR/Cargo.toml"
+CARGO_LOCK="$WORKSPACE_DIR/Cargo.lock"
 MAIN_RS="$CRATE_DIR/src/main.rs"
 
-trap 'git restore "$CARGO_TOML" "$MAIN_RS"' EXIT
+trap 'git restore "$CARGO_TOML" "$CARGO_LOCK" "$MAIN_RS"' EXIT
 
 # --format '{lib}' outputs the Rust crate name (underscores, no version/path).
 # --prefix none removes tree decorators. tail skips the root (quickwit-metrics itself).
