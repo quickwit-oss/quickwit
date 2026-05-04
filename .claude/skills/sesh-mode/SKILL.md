@@ -44,6 +44,46 @@ Stateright      DST Tests      Production Metrics
 (exhaustive)    (simulation)   (Observability)
 ```
 
+## When a Verification Check Fails — STOP, Don't Weaken
+
+**MUST**: when a TLA+ invariant, Stateright property, or DST assertion fails,
+the **first** action is diagnosis, not modification. Verification properties
+are load-bearing — they encode the safety claim the system has to satisfy.
+Silently weakening them to make the check pass loses the proof obligation
+and hides future bugs.
+
+The failure has exactly two possible causes:
+
+1. **The implementation/model has a real bug.** Fix the bug.
+2. **The property is over-strong** — it asserts something the design does not
+   actually guarantee. *Sometimes* the right answer is to weaken or replace
+   the property — but the failing trace was probably also revealing the
+   real, weaker safety property the design *does* guarantee. Almost never
+   should the answer be just "remove the property."
+
+**Required protocol**:
+- Read the failing trace. State out loud what the property meant to claim,
+  and what the trace shows.
+- If unsure whether (1) or (2) applies — **stop and ask the user**.
+  Do not silently rewrite the property.
+- If (2) applies and you propose to weaken/replace, present the candidate
+  replacement *and* the safety property the original was reaching for, then
+  ask before changing. The replacement should usually preserve the spirit
+  via a different formulation (action property, liveness, narrower precondition)
+  — not just delete the constraint.
+
+**Forbidden** without explicit user approval:
+- Renaming an invariant to make its negation trivially true
+- Deleting an invariant that just produced a counter-example
+- Adding `=> TRUE` or other no-op weakenings
+- Changing `\A` to `\E`, `[]` to `<>`, or similar quantifier flips, when the
+  motive is to suppress a violation rather than to capture a different claim
+
+**Why**: invariants describe *the system's promise to its users*. When TLC
+finds a counter-example, it has just told you either that the implementation
+is wrong, or that you've been claiming a stronger promise than you actually
+keep. Both deserve a conscious decision, never a silent edit.
+
 ## Testing Through Production Path
 
 **MUST NOT** claim a feature works unless tested through the actual network stack.

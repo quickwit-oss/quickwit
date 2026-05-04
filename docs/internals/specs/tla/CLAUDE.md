@@ -66,7 +66,7 @@ Every spec has a `_small.cfg` (fast iteration, hundreds of states) and a
 | ParquetDataModel | 8 | millions | DM-1..DM-5 |
 | SortSchema | 49,490 | millions | SS-1..SS-5 |
 | TimeWindowedCompaction | 938 | thousands | TW-1..3, CS-1..3, MC-1..4 |
-| MergePipelineShutdown | 22 | 1,806 | NoSplitLoss, NoDuplicateMerge, FinalizeWithinBound, ShutdownOnlyWhenDrained + liveness |
+| MergePipelineShutdown | — | 217,854 | RowsConserved, NoSplitLoss, NoDuplicateMerge, NoOrphanInPlanner, NoOrphanWhenConnected, LeakIsObjectStoreOnly, MP1\_LevelHomogeneity, BoundedWriteAmp, FinalizeWithinBound, ShutdownOnlyWhenDrained + RestartReSeedsAllImmature (action) + ShutdownEventuallyCompletes, NoPersistentOrphan (liveness) |
 
 ## Creating New Specs
 

@@ -32,3 +32,6 @@ qwdata
 
 # GSD planning artifacts (local only)
 .planning
+
+# TLC model checker working directory (state dumps from `tla2tools.jar`)
+states/
