@@ -85,6 +85,8 @@ pub(crate) async fn start_cloudprem_server(
             services.metastore_client.clone(),
             services.cluster.clone(),
             services.node_config.clone(),
+            #[cfg(feature = "datafusion")]
+            services.datafusion_session_builder.clone(),
         );
         let cloudprem_service_client =
             CloudPremServiceClient::tower().build(cloudprem_service_impl);

@@ -20,40 +20,127 @@ doc_mapping:
   # CAUTION: Update this UID (this is actually an ULID) when you modify the doc mapping.
   # It has no semantic meaning. The Datadog index doc mapping is only updated
   # if and only if this UID differs from the current doc mapping UID.
-  doc_mapping_uid: "01KCKZM549X2BHRYZ330F5BMHA"
+  doc_mapping_uid: "01KQCFTFGRMNMBGHCWHWHN56C2"
   mode: lenient
 
   field_mappings:
-    - name: start_timestamp_nanos
+    - name: start_time
       type: datetime
       input_formats: [unix_timestamp]
       output_format: unix_timestamp_nanos
       indexed: false
-      fast: true
-      fast_precision: milliseconds
 
     - name: trace_id
-      type: bytes
-      input_format: hex
-      output_format: hex
-      fast: true
+      type: text
+      tokenizer: raw
 
     - name: span_id
-      type: bytes
-      input_format: hex
-      output_format: hex
-      fast: true
+      type: text
+      tokenizer: raw
 
     - name: service
       type: text
       tokenizer: raw
       fast: true
 
-    - name: name
+    - name: resource_name
       type: text
       tokenizer: raw
       fast: true
 
+    - name: operation_name
+      type: text
+      tokenizer: raw
+      fast: true
+
+    - name: env
+      type: text
+      tokenizer: raw
+      fast: true
+
+    - name: host
+      type: text
+      tokenizer: raw
+      fast: true
+
+    - name: status
+      type: text
+      tokenizer: raw
+      fast: true
+
+    - name: type
+      type: text
+      tokenizer: raw
+      fast: true
+
+    - name: parent_id
+      type: text
+      tokenizer: raw
+
+    # Decimal string holding the lower 64 bits of the trace ID. Always
+    # populated; the optional upper 64 bits live in `meta._dd.p.tid` (or
+    # `trace_id_high` upstream). Kept for compatibility with 64-bit-only
+    # trace consumers. See logs-backend ResolvedTracePayloadDecoder.
+    #
+    # When a user queries by trace_id, the original query is translated
+    # to match against both trace_id (128-bit hex) and trace_id_low
+    # (64-bit decimal), so spans from either world can be found.
+    - name: trace_id_low
+      type: text
+      tokenizer: raw
+
+    - name: resource_hash
+      type: text
+      tokenizer: raw
+      fast: true
+
+    - name: single_span
+      type: bool
+      fast: true
+
+    - name: analytics_enabled
+      type: bool
+      fast: true
+
+    - name: host_id
+      type: i64
+      fast: true
+
+    - name: tiebreaker
+      type: i64
+      fast: true
+
+    - name: discovery_timestamp
+      type: datetime
+      input_formats: [unix_timestamp]
+      output_format: unix_timestamp_millis
+      fast: true
+      fast_precision: milliseconds
+
+    - name: timestamp
+      type: datetime
+      input_formats: [rfc3339]
+      output_format: rfc3339
+      fast: true
+      fast_precision: milliseconds
+
+    - name: tags
+      type: array<text>
+      tokenizer: raw
+      fast: true
+
+    - name: custom
+      type: json
+      tokenizer: raw
+      fast: true
+      expand_dots: true
+
+    - name: error
+      type: json
+      tokenizer: raw
+      fast: true
+      expand_dots: true
+
   tag_fields: []
-  timestamp_field: start_timestamp_nanos
+  timestamp_field: timestamp
   index_field_presence: false

@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod remap;
+
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use vector::config::{
     DataType, GenerateConfig, Input, OutputId, TransformConfig, TransformContext, TransformOutput,
@@ -20,6 +23,8 @@ use vector::event::{Event, TraceEvent, Value};
 use vector::schema::Definition;
 use vector::transforms::{FunctionTransform, OutputBuffer, Transform};
 use vector_lib::config::clone_input_definitions;
+
+use self::remap::remap_dd_span_to_schema;
 
 /// Preprocesses span events (post-explode for Datadog agent, native for
 /// OTLP). Dispatches to a source-specific handler based on the event's
@@ -72,7 +77,7 @@ struct PreprocessSpan;
 
 impl FunctionTransform for PreprocessSpan {
     fn transform(&mut self, output: &mut OutputBuffer, mut event: Event) {
-        if let Event::Trace(ref mut trace) = event {
+        if let Event::Trace(trace) = &mut event {
             let source_type = trace.metadata().source_type().unwrap_or("unknown");
             match source_type {
                 "datadog_agent" => preprocess_datadog_trace(trace),
@@ -87,32 +92,64 @@ impl FunctionTransform for PreprocessSpan {
 /// After the `explode_trace_spans` transform, each Datadog agent TraceEvent
 /// represents a single span with fields at the top level.
 ///
-/// Normalizes:
-/// - `start` (DateTime) → `start_timestamp_nanos` (unix micros)
-/// - `trace_id` (i64, really u64) → 32-char hex, zero-padded or using `meta._dd.p.tid` for the
-///   upper 64 bits when present
-/// - `span_id` (i64, really u64) → 16-char hex
+/// Emits the three timestamp fields the `datadog-spans` index expects:
+/// - `start_time` — span start, full nanosecond precision (i64, unix ns)
+/// - `timestamp` — span end = `floor((start + duration) / 1e6)` as rfc3339 with millisecond
+///   precision and a `Z` suffix; this is the index's `timestamp_field`, so the doc is dropped
+///   without it
+/// - `discovery_timestamp` — when intake observed the span (i64, unix ms)
+///
+/// Also normalizes the IDs to unsigned 64-bit decimal strings:
+/// - `trace_id`, `span_id`, `parent_id` (i64, really u64) → decimal string
+/// - `trace_id_low` — copy of `trace_id` (the lower 64 bits as decimal). Kept for compatibility
+///   with SaaS docs where `trace_id` may be a 128-bit hex string and `trace_id_low` carries the
+///   lower 64 bits separately. From intake, both fields hold the same value.
+///
+/// The upper 64 bits of 128-bit Datadog trace IDs aren't reliably
+/// available on the wire (the SaaS pipeline assembles them downstream),
+/// so we emit only what we have — the lower 64 bits — in a single canonical
+/// decimal form.
 fn preprocess_datadog_trace(trace: &mut TraceEvent) {
-    if let Some(Value::Timestamp(dt)) = trace.get("start") {
-        let start_micros = dt.timestamp_micros();
-        trace.insert("start_timestamp_nanos", start_micros);
+    let start_dt_opt: Option<DateTime<Utc>> = match trace.get("start") {
+        Some(Value::Timestamp(dt)) => Some(*dt),
+        _ => None,
+    };
+    let duration_ns: i64 = match trace.get("duration") {
+        Some(Value::Integer(d)) => *d,
+        _ => 0,
+    };
+
+    if let Some(dt) = start_dt_opt
+        && let Some(start_ns) = dt.timestamp_nanos_opt()
+    {
+        trace.insert("start_time", start_ns);
+        let end_ns = start_ns.saturating_add(duration_ns);
+        let end_ms = end_ns.div_euclid(1_000_000);
+        if let Some(end_dt) = DateTime::<Utc>::from_timestamp_millis(end_ms) {
+            trace.insert(
+                "timestamp",
+                end_dt.to_rfc3339_opts(SecondsFormat::Millis, true),
+            );
+        }
     }
 
+    trace.insert("discovery_timestamp", Utc::now().timestamp_millis());
+
     if let Some(Value::Integer(raw)) = trace.get("trace_id") {
-        let lower = *raw as u64;
-        let default_upper = std::borrow::Cow::Borrowed("0000000000000000");
-        let upper_hex = trace
-            .get("meta._dd.p.tid")
-            .and_then(|value| value.as_str())
-            .unwrap_or(default_upper);
-        let hex_trace_id = format!("{upper_hex}{lower:016x}");
-        trace.insert("trace_id", hex_trace_id);
+        let decimal: Value = (*raw as u64).to_string().into();
+        trace.insert("trace_id", decimal.clone());
+        trace.insert("trace_id_low", decimal);
     }
 
     if let Some(Value::Integer(raw)) = trace.get("span_id") {
-        let hex_span_id = format!("{:016x}", *raw as u64);
-        trace.insert("span_id", hex_span_id);
+        trace.insert("span_id", (*raw as u64).to_string());
     }
+
+    if let Some(Value::Integer(raw)) = trace.get("parent_id") {
+        trace.insert("parent_id", (*raw as u64).to_string());
+    }
+
+    remap_dd_span_to_schema(trace);
 }
 
 /// OTLP spans already carry `trace_id` (32-char hex) and `span_id` (16-char
@@ -148,74 +185,104 @@ mod tests {
     }
 
     fn make_dd_trace(trace_id: i64, span_id: i64, start_nanos: i64) -> Event {
+        make_dd_trace_with_duration(trace_id, span_id, start_nanos, 0)
+    }
+
+    fn make_dd_trace_with_duration(
+        trace_id: i64,
+        span_id: i64,
+        start_nanos: i64,
+        duration_nanos: i64,
+    ) -> Event {
         let dt = Utc.timestamp_nanos(start_nanos);
         let mut trace = TraceEvent::default();
         trace
             .metadata_mut()
             .set_source_type("datadog_agent".to_string());
         trace.insert("start", dt);
+        trace.insert("duration", duration_nanos);
         trace.insert("trace_id", trace_id);
         trace.insert("span_id", span_id);
         Event::Trace(trace)
     }
 
     #[test]
-    fn test_dd_start_timestamp() {
-        // 1_724_060_143_000_000_000 ns = 1_724_060_143_000_000 µs
-        let events = run_transform(make_dd_trace(1, 1, 1_724_060_143_000_000_000));
+    fn test_dd_timestamps() {
+        // start = 2024-08-19T09:35:43.000Z, duration = 5 ms.
+        let events = run_transform(make_dd_trace_with_duration(
+            1,
+            1,
+            1_724_060_143_000_000_000,
+            5_000_000,
+        ));
+        let trace = events[0].as_trace();
         assert_eq!(
-            events[0].as_trace().get("start_timestamp_nanos"),
-            Some(&Value::Integer(1_724_060_143_000_000)),
+            trace.get("start_time"),
+            Some(&Value::Integer(1_724_060_143_000_000_000)),
         );
+        assert_eq!(
+            trace.get("timestamp"),
+            Some(&Value::from("2024-08-19T09:35:43.005Z")),
+        );
+        // `discovery_timestamp` is set to "now" — just check it's present.
+        assert!(matches!(
+            trace.get("discovery_timestamp"),
+            Some(Value::Integer(_)),
+        ));
     }
 
     #[test]
-    fn test_dd_trace_id_without_upper_bits() {
-        // trace_id 0xBC614E = 12345678, no _dd.p.tid → upper 16 chars are zeros.
+    fn test_dd_trace_id_decimal() {
+        // trace_id = 12345678 → decimal string. trace_id_low mirrors it.
         let events = run_transform(make_dd_trace(12345678, 1, 0));
-        assert_eq!(
-            events[0].as_trace().get("trace_id"),
-            Some(&Value::from("00000000000000000000000000bc614e")),
-        );
-    }
-
-    #[test]
-    fn test_dd_trace_id_with_upper_bits() {
-        let mut event = make_dd_trace(12345678, 1, 0);
-        let Event::Trace(ref mut trace) = event else {
-            unreachable!();
-        };
-        trace.insert("meta._dd.p.tid", "463ac35a21414736");
-
-        let events = run_transform(event);
-        assert_eq!(
-            events[0].as_trace().get("trace_id"),
-            Some(&Value::from("463ac35a214147360000000000bc614e")),
-        );
+        let trace = events[0].as_trace();
+        assert_eq!(trace.get("trace_id"), Some(&Value::from("12345678")));
+        assert_eq!(trace.get("trace_id_low"), Some(&Value::from("12345678")));
     }
 
     #[test]
     fn test_dd_span_id() {
-        // span_id 0xBC614E = 12345678
+        // span_id 12345678 → decimal string "12345678".
         let events = run_transform(make_dd_trace(1, 12345678, 0));
         assert_eq!(
             events[0].as_trace().get("span_id"),
-            Some(&Value::from("0000000000bc614e")),
+            Some(&Value::from("12345678")),
+        );
+    }
+
+    #[test]
+    fn test_dd_parent_id() {
+        // parent_id u64 → decimal string. Root spans have parent_id = 0.
+        let mut event = make_dd_trace(1, 1, 0);
+        let Event::Trace(trace) = &mut event else {
+            unreachable!();
+        };
+        trace.insert("parent_id", 4242i64);
+
+        let events = run_transform(event);
+        assert_eq!(
+            events[0].as_trace().get("parent_id"),
+            Some(&Value::from("4242")),
         );
     }
 
     #[test]
     fn test_dd_large_ids_reinterpreted_as_unsigned() {
         // Vector casts u64 to i64, so large u64s become negative i64s.
-        // 0xFFFFFFFFFFFFFFFF = u64::MAX = -1 as i64.
+        // u64::MAX = 18446744073709551615 = -1 as i64.
         let events = run_transform(make_dd_trace(-1, -1, 0));
+        let trace = events[0].as_trace();
         assert_eq!(
-            events[0].as_trace().get("trace_id"),
-            Some(&Value::from("0000000000000000ffffffffffffffff")),
+            trace.get("trace_id"),
+            Some(&Value::from("18446744073709551615")),
         );
         assert_eq!(
-            events[0].as_trace().get("span_id"),
-            Some(&Value::from("ffffffffffffffff")),
+            trace.get("trace_id_low"),
+            Some(&Value::from("18446744073709551615")),
+        );
+        assert_eq!(
+            trace.get("span_id"),
+            Some(&Value::from("18446744073709551615")),
         );
     }
 
@@ -251,7 +318,14 @@ mod tests {
         let event = make_trace_with_source_type("datadog_agent");
         let events = run_transform(event);
         assert_eq!(events.len(), 1);
-        assert!(events[0].as_trace().get("start_timestamp_nanos").is_none());
+        let trace = events[0].as_trace();
+        assert!(trace.get("start_time").is_none());
+        assert!(trace.get("timestamp").is_none());
+        // `discovery_timestamp` is still set even when `start` is missing.
+        assert!(matches!(
+            trace.get("discovery_timestamp"),
+            Some(Value::Integer(_)),
+        ));
     }
 
     #[test]
@@ -259,6 +333,9 @@ mod tests {
         let event = make_trace_with_source_type("unknown");
         let events = run_transform(event);
         assert_eq!(events.len(), 1);
-        assert!(events[0].as_trace().get("start_timestamp_nanos").is_none());
+        let trace = events[0].as_trace();
+        assert!(trace.get("start_time").is_none());
+        assert!(trace.get("timestamp").is_none());
+        assert!(trace.get("discovery_timestamp").is_none());
     }
 }

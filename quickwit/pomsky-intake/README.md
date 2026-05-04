@@ -7,17 +7,18 @@ and forwards the results to the Quickwit BYOC ingest API.
 ## Pipeline
 
 ```
-SOURCES                      TRANSFORMS                                    SINKS
-───────────────────────      ───────────────────────────────────────       ──────────────────
+SOURCES                      TRANSFORMS                                                     SINKS
+───────────────────────      ──────────────────────────────────────────────────────────    ──────────────────
 
 Logs:
   datadog_agent.logs ──┐
-  http_server ─────────┼──► preprocess_log ────► add_host_tags ─────────► logs_out (HTTP/JSON)
+  http_server ─────────┼──► preprocess_log ────► add_host_tags ──────────────────────────► logs_out (HTTP/JSON)
   otlp.logs ───────────┘
 
 Metrics:
-  datadog_agent.metrics ┐
-  otlp.metrics ─────────┴─► preprocess_metric ──► add_host_tags ────────► metrics_out (Arrow IPC)
+  datadog_agent.metrics ─┐
+  otlp.metrics ──────────┼──► preprocess_metric ──► add_host_tags ──► metric_metadata ───► metrics_out (Arrow IPC)
+  connections ───────────┘  (via connections_to_apm_metrics)
 
 Traces:
   datadog_agent.traces ───► preprocess_dd_trace ──► explode_trace_spans ─┐
@@ -28,24 +29,30 @@ Traces:
 
 | Port | Protocol | Source |
 |------|----------|--------|
-| 8181 | TCP | Datadog Agent |
+| 8181 | TCP | Datadog Agent (logs, metrics, traces) |
 | 8282 | HTTP | Generic HTTP |
 | 8383 | gRPC | OTLP |
 | 8384 | HTTP | OTLP |
+| 8585 | TCP | Agent CollectorConnections (APM metrics) |
+| 8686 | HTTP | Vector API (health check) |
 
 ## Configuration
 
 The config file is a YAML file with the following fields (all optional with defaults):
 
 ```yaml
-data_dir: /tmp/pomsky-intake
+data_dir: qwdata/intake          # default: qwdata/intake
 logs_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/logs
 metrics_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/metrics
 traces_endpoint: http://127.0.0.1:7280/api/datadog/v1/byoc/traces
 
 # Datadog credentials — shared across all Datadog-backed pollers.
-dd_site: datadoghq.com        # default: datadoghq.com; DD_SITE env var overrides
-dd_api_key: <your-api-key>    # DD_API_KEY env var overrides
+site: datadoghq.com              # default: datadoghq.com; DD_SITE env var overrides
+api_key: <your-api-key>          # DD_API_KEY env var overrides
+
+# Organization identifier and metadata service URL — used by metric_metadata.
+org_id: default                  # default: "default"
+metadata_svc_url: http://localhost:9999  # default: http://localhost:9999
 
 host_tags:
   poll_interval_secs: 15         # default: 15
@@ -68,15 +75,14 @@ Existing keys are never overwritten — the transform only fills in missing keys
 
 ### Credentials
 
-Both of these are **required** — the service panics at startup if either is unresolvable:
+| Config key | Env var override | Default | Required |
+|------------|-----------------|---------|----------|
+| `site` | `DD_SITE` | `datadoghq.com` | no |
+| `api_key` | `DD_API_KEY` | — | **yes** |
 
-| Setting | Source | Default |
-|---------|--------|---------|
-| `dd_site` | config file (overridden by `DD_SITE` env var) | `datadoghq.com` |
-| `dd_api_key` | config file (overridden by `DD_API_KEY` env var) | — (required) |
-
-They live at the top level of the intake config — not under `host_tags:` — because they're shared
-across all Datadog-backed pollers (host tags today, more to come).
+`api_key` is required — the service fails at startup if it cannot be resolved from either the
+config file or `DD_API_KEY`. Both keys live at the top level of the intake config (not under
+`host_tags:`) because they're shared across all Datadog-backed pollers.
 
 The metadata service URL is built as `https://{dd_site}/api/unstable/byoc/ingest/metadata/host-tags`.
 
@@ -99,6 +105,67 @@ The metadata service URL is built as `https://{dd_site}/api/unstable/byoc/ingest
 - **Lookups are lock-free**: the store uses `ArcSwap`, so the Vector hot path reads tags without
   blocking on the poller. Tag lists are shared via `Arc<[HostTag]>`, so `lookup` is one
   atomic-refcount bump with no string allocation.
+
+## Metric metadata collection
+
+The `metric_metadata` transform sits at the end of the metrics pipeline (after `add_host_tags`,
+before the Arrow IPC sink). It tracks which `(metric_name, type)` pairs have been reported to
+`byoc-ingest-metadata-svc` so that the service is notified about new metrics without re-sending
+known ones every cycle.
+
+### How it works
+
+- **Deduplication**: each metric event is checked against an in-memory `KnownMetrics` set. Only
+  metrics unseen (or whose TTL has expired) are queued for flushing.
+- **Flush**: pending metrics are POSTed to `metadata_svc_url` in batches (default 200) every
+  `flush_interval_secs` (default 15 s). An early flush fires when the pending count reaches
+  `batch_size`.
+- **TTL**: each known metric expires after a random duration between `ttl_min_hours` (default 12 h)
+  and `ttl_max_hours` (default 36 h) — jitter prevents thundering-herd re-submissions.
+- **Persistence**: the known-metrics set is written to a CSV at `persist_file_path` every
+  `persist_interval_secs` (default 30 s) and loaded back on startup. Writes are crash-durable
+  (write-to-temp + atomic rename). Expired entries loaded at startup are queued for immediate
+  re-submission.
+- **Startup validation**: `DD_API_KEY` and the parent directory of `persist_file_path` must be
+  accessible at startup — misconfiguration fails fast with a descriptive error.
+
+### Credentials
+
+The transform reads `DD_API_KEY` directly from the environment; `org_id` and `metadata_svc_url`
+are supplied from the intake config file.
+
+## Local test tools
+
+`pomsky-intake/local-test/` contains scripts for running a full end-to-end test against a local
+Quickwit/Pomsky instance without deploying to any environment.
+
+```
+local-test/
+├── test-pomsky.sh          # Orchestrator: starts Quickwit + pomsky-intake and drives traffic
+├── intake-local.yaml       # pomsky-intake config for local testing
+├── quickwit-local.yaml     # Quickwit config for local testing
+├── generate-test-logs.py   # Sends synthetic log events
+├── generate-test-metrics.py  # Sends synthetic metric events (protobuf)
+├── generate-test-traces.py   # Sends synthetic trace payloads (protobuf)
+├── upload-test-data.py     # Bulk-uploads pre-recorded test data
+├── dd_metrics.proto        # Protobuf schema for DD metrics wire format
+├── dd_metrics_pb2.py       # Generated bindings for dd_metrics.proto
+└── dd_trace_pb2.py         # Generated bindings for DD trace proto
+```
+
+Usage:
+
+```bash
+# Run from the repo root — the script resolves paths from $GOPATH
+export DD_API_KEY=<your-key>
+cd quickwit/pomsky-intake/local-test
+./test-pomsky.sh [-f <freq_secs>] [-c <count>] [-p] [-h] [-m]
+  # -f  send signals every <freq_secs> seconds (default: 1)
+  # -c  stop after <count> rounds (default: 10)
+  # -p  use local Pomsky instead of the stub sink server
+  # -h  start a local byoc-hosttags-mgr
+  # -m  start a local byoc-metrics-metadata service
+```
 
 ## Usage
 

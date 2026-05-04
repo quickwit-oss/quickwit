@@ -88,7 +88,7 @@ default-members = [
 ]
 
 [workspace.package]
-version = "0.1.25-dev"
+version = "0.1.26-dev"
 edition = "2024"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
@@ -175,6 +175,7 @@ mime_guess = "2.0"
 mini-moka = "0.10.3"
 mockall = "0.14"
 mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "306c0a7" }
+murmur3 = "0.5"
 new_string_template = "1.5"
 nom = "8.0"
 numfmt = "1.2"
@@ -229,6 +230,7 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 reqwest-middleware = "0.4"
 reqwest-retry = "0.8"
+rmp-serde = "1"
 rust-embed = "8.9"
 rustc-hash = "2.1"
 rustls = "0.23"

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Connections source — receives raw DD Agent CollectorConnections payloads,
-//! strips the V8 envelope, decompresses the zstd body, and emits one Log
+//! strips the V3-V8 envelope, decompresses the body, and emits one Log
 //! event per payload carrying the inner CollectorConnections protobuf bytes
 //! for downstream transforms to parse.
 //!
@@ -24,6 +24,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 use bytes::Bytes;
 use http::StatusCode;
+use prost::Message;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info, warn};
 use vector::config::{
@@ -34,6 +35,8 @@ use vector::schema::Definition;
 use vector_lib::configurable::NamedComponent;
 use warp::reply::Response;
 use warp::{Filter, Rejection, Reply};
+
+use crate::protos::conn::{MessageEncoding, MessageHeader};
 
 /// Receives raw agent CollectorConnections payloads over HTTP.
 ///
@@ -53,6 +56,16 @@ pub struct ConnectionsSourceConfig {
 
 // Default listen address: all interfaces, port 8585.
 const DEFAULT_PORT: u16 = 8585;
+
+/// Max accepted size of a compressed `POST /api/v1/connections` body.
+///
+/// The agent-side cap on a single CollectorConnections payload is tens of
+/// MB post-compression. 64 MiB gives us ~8-16× headroom over the largest
+/// real payload while bounding memory pressure from a misbehaving or
+/// malicious agent. Requests over this return 413 without consuming the
+/// body. Note: this is the compressed on-wire size; zstd expansion is
+/// bounded separately by the envelope decoder's inherent cost.
+const MAX_REQUEST_BODY_BYTES: u64 = 64 * 1024 * 1024; // 64 MiB
 
 fn default_address() -> SocketAddr {
     // Build from typed parts — no parsing, no possible panic.
@@ -81,6 +94,11 @@ impl GenerateConfig for ConnectionsSourceConfig {
 /// the proto itself is *not* parsed here). Downstream transforms read from
 /// this key.
 pub const CONNECTIONS_PROTO_FIELD: &str = "connections_proto";
+
+/// Key on the emitted Log event under which the source places the agent
+/// timestamp (unix seconds as `i64`) recovered from the envelope header,
+/// or the intake timestamp as a fallback. Absent when neither is present.
+pub const CONNECTIONS_TIMESTAMP_FIELD: &str = "timestamp";
 
 #[async_trait::async_trait]
 #[typetag::serde(name = "connections")]
@@ -137,6 +155,7 @@ fn build_routes(
         .and(warp::path("v1"))
         .and(warp::path("connections"))
         .and(warp::path::end())
+        .and(warp::body::content_length_limit(MAX_REQUEST_BODY_BYTES))
         .and(warp::body::bytes())
         .and(warp::any().map(move || out.clone()))
         .and_then(handle_connections);
@@ -151,7 +170,7 @@ fn build_routes(
 
 /// Handles a single POST /api/v1/connections request: decodes the envelope,
 /// decompresses the body, and emits a Log event carrying the raw
-/// CollectorConnections protobuf bytes.
+/// CollectorConnections protobuf bytes plus the recovered agent timestamp.
 ///
 /// Proto parsing is intentionally left to the downstream transform to avoid
 /// decoding the payload twice. This keeps the source focused on wire format
@@ -164,8 +183,8 @@ async fn handle_connections(
     // Zstd decompression can take 100s of µs to ~1 ms on the largest agent
     // payloads; offload from the tokio worker thread to the blocking pool.
     let decoded = tokio::task::spawn_blocking(move || decode_envelope(&body)).await;
-    let proto_bytes = match decoded {
-        Ok(Ok(b)) => b,
+    let (proto_bytes, timestamp_opt) = match decoded {
+        Ok(Ok(pair)) => pair,
         Ok(Err(err)) => {
             warn!(%err, body_len, "failed to decode connections envelope");
             return Ok(warp::reply::with_status(
@@ -188,6 +207,9 @@ async fn handle_connections(
 
     let mut log = LogEvent::default();
     log.insert(CONNECTIONS_PROTO_FIELD, proto_bytes);
+    if let Some(ts) = timestamp_opt {
+        log.insert(CONNECTIONS_TIMESTAMP_FIELD, ts);
+    }
 
     if let Err(err) = out.send_event(Event::Log(log)).await {
         error!(%err, "failed to forward connections event");
@@ -217,57 +239,129 @@ const HEADER_V6_LEN: usize = HEADER_V5_LEN + 1;
 // V7 adds agent timestamp (8).
 const HEADER_V7_LEN: usize = HEADER_V6_LEN + 8;
 // V8 prefix: version(1) + uint16 LE header length(2). The protobuf header
-// itself follows and is skipped by this source.
+// itself follows and is parsed via `MessageHeader::decode`.
 const V8_VERSION_BYTE: u8 = 0x08;
 const V8_PREFIX_LEN: usize = 1 + 2;
 
-/// Strips the DD Agent message envelope and decompresses the zstd body.
+/// Strips the DD Agent message envelope and decompresses the body, returning
+/// the inner protobuf bytes plus the best-available agent-side timestamp.
 ///
 /// Supports V3-V7 (fixed-size headers) and V8 (protobuf-encoded variable
-/// header). On success returns the decompressed body bytes — for
-/// CollectorConnections payloads this is a serialized protobuf the
-/// downstream transform will parse.
+/// header). The `MessageEncoding` field of the parsed header drives
+/// decompression so we don't have to guess. Unknown encoding values fall
+/// back to "try zstd, return raw on failure" for resilience against newer
+/// agents — matches dd-source byoc-usm-stats's `decompress` default branch.
 ///
 /// Takes `Bytes` (cheap refcount clone) and returns `Bytes` so the
 /// raw-passthrough branch can zero-copy-slice the input rather than
 /// allocating.
 ///
-/// Reference: dd-go `process/conn/message.go` `ReadHeader` / `readHeaderV8`.
-fn decode_envelope(data: &Bytes) -> Result<Bytes, String> {
-    if data.len() < V8_PREFIX_LEN {
-        return Err("payload too short".into());
-    }
-
-    let version = data[0];
-    let body_start = if version == V8_VERSION_BYTE {
-        let header_len = u16::from_le_bytes([data[1], data[2]]) as usize;
-        let start = V8_PREFIX_LEN + header_len;
-        if start > data.len() {
-            return Err(format!("V8 header length {header_len} exceeds payload"));
-        }
-        start
-    } else {
-        match version {
-            3 => HEADER_V3_LEN,
-            4 => HEADER_V4_LEN,
-            5 => HEADER_V5_LEN,
-            6 => HEADER_V6_LEN,
-            7 => HEADER_V7_LEN,
-            _ => return Err(format!("unsupported message version {version}")),
-        }
-    };
-
+/// Reference: dd-go `process/conn/message.go` `ReadHeader` (V3-V8 layouts).
+pub(crate) fn decode_envelope(data: &Bytes) -> Result<(Bytes, Option<i64>), String> {
+    let (header, body_start) = read_header(data)?;
     if body_start > data.len() {
-        return Err("payload too short for header".into());
+        return Err("payload too short for header".to_string());
     }
+    let body = decompress(header.encoding, data.slice(body_start..));
+    let timestamp_opt = preferred_timestamp(&header);
+    Ok((body, timestamp_opt))
+}
 
-    let compressed = data.slice(body_start..);
-    match zstd::decode_all(compressed.as_ref()) {
-        Ok(decompressed) => Ok(Bytes::from(decompressed)),
+/// Picks the best agent-side timestamp out of the parsed header: prefer the
+/// agent-collection timestamp (V8 field 10 / V7 fixed-offset), fall back to
+/// the intake timestamp (field 5 / V3+ fixed offset). Returns `None` if
+/// neither is set (proto3 default of 0).
+fn preferred_timestamp(h: &MessageHeader) -> Option<i64> {
+    if h.agent_timestamp != 0 {
+        Some(h.agent_timestamp)
+    } else if h.timestamp != 0 {
+        Some(h.timestamp)
+    } else {
+        None
+    }
+}
+
+fn read_header(data: &Bytes) -> Result<(MessageHeader, usize), String> {
+    if data.is_empty() {
+        return Err("payload empty".to_string());
+    }
+    let version = data[0];
+    if version == V8_VERSION_BYTE {
+        return read_header_v8(data);
+    }
+    read_header_legacy(data, version)
+}
+
+fn read_header_v8(data: &Bytes) -> Result<(MessageHeader, usize), String> {
+    if data.len() < V8_PREFIX_LEN {
+        return Err("V8 prefix truncated".into());
+    }
+    let header_len = u16::from_le_bytes([data[1], data[2]]) as usize;
+    let body_start = V8_PREFIX_LEN + header_len;
+    if body_start > data.len() {
+        return Err(format!("V8 header length {header_len} exceeds payload"));
+    }
+    let header = MessageHeader::decode(&data[V8_PREFIX_LEN..body_start])
+        .map_err(|err| format!("V8 MessageHeader decode failed: {err}"))?;
+    Ok((header, body_start))
+}
+
+fn read_header_legacy(data: &Bytes, version: u8) -> Result<(MessageHeader, usize), String> {
+    let header_len = match version {
+        3 => HEADER_V3_LEN,
+        4 => HEADER_V4_LEN,
+        5 => HEADER_V5_LEN,
+        6 => HEADER_V6_LEN,
+        7 => HEADER_V7_LEN,
+        _ => return Err(format!("unsupported message version {version}")),
+    };
+    if data.len() < header_len {
+        return Err("payload too short for legacy header".into());
+    }
+    // V3-V7 share the same first 16 bytes: version(1), encoding(1), type(1),
+    // sub_id(1), org_id(4 LE), timestamp(8 LE). V7 also carries the agent
+    // timestamp at offset 29 (immediately after V6's 29-byte sum).
+    let agent_timestamp = if version >= 7 {
+        i64::from_le_bytes(data[29..37].try_into().expect("checked length above"))
+    } else {
+        0
+    };
+    let header = MessageHeader {
+        encoding: i32::from(data[1]),
+        timestamp: i64::from_le_bytes(data[8..16].try_into().expect("checked length above")),
+        agent_timestamp,
+        ..Default::default()
+    };
+    Ok((header, header_len))
+}
+
+fn decompress(encoding: i32, body: Bytes) -> Bytes {
+    match MessageEncoding::try_from(encoding) {
+        Ok(MessageEncoding::Protobuf) => body,
+        Ok(MessageEncoding::ZstdPb)
+        | Ok(MessageEncoding::Zstd1xPb)
+        | Ok(MessageEncoding::ZstdPBxNoCgo) => match zstd::decode_all(body.as_ref()) {
+            Ok(decompressed) => Bytes::from(decompressed),
+            Err(err) => {
+                warn!(%err, "zstd-decoded body failed; passing raw bytes through");
+                body
+            }
+        },
+        Ok(MessageEncoding::Json) => {
+            warn!("JSON-encoded payload not supported; passing raw bytes through");
+            body
+        }
+        Ok(MessageEncoding::ZlibPb) => {
+            warn!("zlib-encoded payload not supported; passing raw bytes through");
+            body
+        }
         Err(_) => {
-            // Some agent versions send raw uncompressed protobuf — pass
-            // through the original slice zero-copy.
-            Ok(compressed)
+            // Unknown encoding (newer agent or corrupt header) — best-effort
+            // try zstd v1, fall back to raw. Mirrors dd-source byoc-usm-stats
+            // `internal/decoder/decoder.go::decompress` default branch.
+            zstd::decode_all(body.as_ref())
+                .map(Bytes::from)
+                .unwrap_or(body)
         }
     }
 }
@@ -279,12 +373,38 @@ mod tests {
     use super::*;
     use crate::protos::process::CollectorConnections;
 
-    fn make_v8_envelope(body: &[u8]) -> Bytes {
-        let compressed = zstd::encode_all(body, 3).unwrap();
-        // V8 prefix: version byte + 2-byte LE header length (0 here).
-        let mut envelope = vec![V8_VERSION_BYTE, 0x00, 0x00];
-        envelope.extend_from_slice(&compressed);
+    /// Builds a V8 envelope from a `MessageHeader` and a body. The body is
+    /// zstd-compressed iff the header's encoding selects a zstd variant.
+    fn make_v8_envelope(header: &MessageHeader, body: &[u8]) -> Bytes {
+        let header_bytes = header.encode_to_vec();
+        let header_len = u16::try_from(header_bytes.len()).unwrap();
+        let body_bytes = match MessageEncoding::try_from(header.encoding) {
+            Ok(MessageEncoding::ZstdPb)
+            | Ok(MessageEncoding::Zstd1xPb)
+            | Ok(MessageEncoding::ZstdPBxNoCgo) => zstd::encode_all(body, 3).unwrap(),
+            _ => body.to_vec(),
+        };
+        let mut envelope =
+            Vec::with_capacity(V8_PREFIX_LEN + header_bytes.len() + body_bytes.len());
+        envelope.push(V8_VERSION_BYTE);
+        envelope.extend_from_slice(&header_len.to_le_bytes());
+        envelope.extend_from_slice(&header_bytes);
+        envelope.extend_from_slice(&body_bytes);
         Bytes::from(envelope)
+    }
+
+    fn raw_header() -> MessageHeader {
+        MessageHeader {
+            encoding: MessageEncoding::Protobuf as i32,
+            ..Default::default()
+        }
+    }
+
+    fn zstd_header() -> MessageHeader {
+        MessageHeader {
+            encoding: MessageEncoding::Zstd1xPb as i32,
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -298,18 +418,66 @@ mod tests {
     }
 
     #[test]
-    fn test_decode_envelope_v8_roundtrip() {
+    fn test_decode_envelope_v8_protobuf_passthrough() {
         let payload = b"hello world";
-        let envelope = make_v8_envelope(payload);
-        let decoded = decode_envelope(&envelope).unwrap();
+        let envelope = make_v8_envelope(&raw_header(), payload);
+        let (decoded, ts) = decode_envelope(&envelope).unwrap();
+        assert_eq!(decoded.as_ref(), payload);
+        assert_eq!(ts, None);
+    }
+
+    #[test]
+    fn test_decode_envelope_v8_zstd_decompresses() {
+        let payload = b"compressed payload";
+        let envelope = make_v8_envelope(&zstd_header(), payload);
+        let (decoded, _ts) = decode_envelope(&envelope).unwrap();
         assert_eq!(decoded.as_ref(), payload);
     }
 
     #[test]
     fn test_decode_envelope_v8_empty_body() {
-        let envelope = make_v8_envelope(b"");
-        let decoded = decode_envelope(&envelope).unwrap();
+        let envelope = make_v8_envelope(&raw_header(), b"");
+        let (decoded, ts) = decode_envelope(&envelope).unwrap();
         assert!(decoded.is_empty());
+        assert_eq!(ts, None);
+    }
+
+    #[test]
+    fn envelope_carries_agent_timestamp() {
+        let header = MessageHeader {
+            encoding: MessageEncoding::Protobuf as i32,
+            agent_timestamp: 1_700_000_000,
+            ..Default::default()
+        };
+        let envelope = make_v8_envelope(&header, b"");
+        let (body, ts) = decode_envelope(&envelope).unwrap();
+        assert!(body.is_empty());
+        assert_eq!(ts, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn envelope_falls_back_to_intake_timestamp() {
+        let header = MessageHeader {
+            encoding: MessageEncoding::Protobuf as i32,
+            timestamp: 1_650_000_000,
+            ..Default::default()
+        };
+        let envelope = make_v8_envelope(&header, b"");
+        let (_body, ts) = decode_envelope(&envelope).unwrap();
+        assert_eq!(ts, Some(1_650_000_000));
+    }
+
+    #[test]
+    fn envelope_prefers_agent_over_intake_timestamp() {
+        let header = MessageHeader {
+            encoding: MessageEncoding::Protobuf as i32,
+            timestamp: 1_650_000_000,
+            agent_timestamp: 1_700_000_000,
+            ..Default::default()
+        };
+        let envelope = make_v8_envelope(&header, b"");
+        let (_body, ts) = decode_envelope(&envelope).unwrap();
+        assert_eq!(ts, Some(1_700_000_000));
     }
 
     #[test]
@@ -319,9 +487,9 @@ mod tests {
             ..Default::default()
         };
         let proto_bytes = cc.encode_to_vec();
-        let envelope = make_v8_envelope(&proto_bytes);
+        let envelope = make_v8_envelope(&zstd_header(), &proto_bytes);
 
-        let decoded_bytes = decode_envelope(&envelope).unwrap();
+        let (decoded_bytes, _ts) = decode_envelope(&envelope).unwrap();
         let decoded = CollectorConnections::decode(decoded_bytes.as_ref()).unwrap();
         assert_eq!(decoded.host_name, "test-host");
     }

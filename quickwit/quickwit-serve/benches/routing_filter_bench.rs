@@ -221,7 +221,11 @@ fn generate_synthetic_messages(count: usize) -> Vec<DatadogLogMsg> {
 /// Displays the message distribution as an ASCII histogram.
 fn print_distribution_histogram() {
     let rules = load_real_world_filters();
-    let router = IndexRouter::for_test(rules.clone());
+    let pairs: Vec<(&str, &str)> = rules
+        .iter()
+        .map(|r| (r.filter.as_str(), r.index_id.as_str()))
+        .collect();
+    let router = IndexRouter::for_test(&pairs);
     let messages = generate_synthetic_messages(10_000);
 
     // Count distribution
@@ -293,16 +297,8 @@ fn main() {
     runner.throughput(|msgs| msgs.len());
 
     {
-        let router = IndexRouter::for_test(vec![
-            IndexRoutingRule {
-                filter: "service:dogweb".to_string(),
-                index_id: "dogweb-index".to_string(),
-            },
-            IndexRoutingRule {
-                filter: "*".to_string(),
-                index_id: "catch-all".to_string(),
-            },
-        ]);
+        let router =
+            IndexRouter::for_test(&[("service:dogweb", "dogweb-index"), ("*", "catch-all")]);
         runner.register(
             "simple_service_match",
             move |messages: &Vec<DatadogLogMsg>| {
@@ -315,16 +311,7 @@ fn main() {
     }
 
     {
-        let router = IndexRouter::for_test(vec![
-            IndexRoutingRule {
-                filter: "datacenter:us1*".to_string(),
-                index_id: "us1-prod".to_string(),
-            },
-            IndexRoutingRule {
-                filter: "*".to_string(),
-                index_id: "catch-all".to_string(),
-            },
-        ]);
+        let router = IndexRouter::for_test(&[("datacenter:us1*", "us1-prod"), ("*", "catch-all")]);
         runner.register("simple_tag_lookup", move |messages: &Vec<DatadogLogMsg>| {
             let guard = router.get_router();
             for msg in messages.iter() {
@@ -334,19 +321,13 @@ fn main() {
     }
 
     {
-        let router = IndexRouter::for_test(vec![
-            IndexRoutingRule {
-                filter: "(service:dogw* OR service:logs-backend) AND env:prod".to_string(),
-                index_id: "prod-index".to_string(),
-            },
-            IndexRoutingRule {
-                filter: "team:(ramen OR str* OR logs)".to_string(),
-                index_id: "my-team-index".to_string(),
-            },
-            IndexRoutingRule {
-                filter: "*".to_string(),
-                index_id: "catch-all".to_string(),
-            },
+        let router = IndexRouter::for_test(&[
+            (
+                "(service:dogw* OR service:logs-backend) AND env:prod",
+                "prod-index",
+            ),
+            ("team:(ramen OR str* OR logs)", "my-team-index"),
+            ("*", "catch-all"),
         ]);
         runner.register(
             "realistic_3_indexes_table",
@@ -360,7 +341,12 @@ fn main() {
     }
 
     {
-        let router = IndexRouter::for_test(load_real_world_filters());
+        let real_world_rules = load_real_world_filters();
+        let pairs: Vec<(&str, &str)> = real_world_rules
+            .iter()
+            .map(|r| (r.filter.as_str(), r.index_id.as_str()))
+            .collect();
+        let router = IndexRouter::for_test(&pairs);
         runner.register(
             "real_world_comically_large_table",
             move |messages: &Vec<DatadogLogMsg>| {

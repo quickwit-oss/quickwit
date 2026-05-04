@@ -32,7 +32,9 @@ fn build_vector_config(data_dir: &Path, config: &IntakeConfig, print: bool) -> S
     let metrics_endpoint = &config.metrics_endpoint;
     let traces_endpoint = &config.traces_endpoint;
     let org_id = &config.org_id;
-    let metadata_svc_url = &config.metadata_svc_url;
+    let dd_site = config.resolve_dd_site();
+    let metadata_svc_url = format!("https://{}", dd_site.trim_end_matches('/'));
+    let metric_metadata_persist_file_path = config.metric_metadata_persist_file_path.display();
 
     let print_sink = if print {
         r#"
@@ -112,6 +114,7 @@ transforms:
       - add_metric_host_tags
     org_id: "{org_id}"
     metadata_svc_url: "{metadata_svc_url}"
+    persist_file_path: "{metric_metadata_persist_file_path}"
 
   preprocess_dd_traces:
     type: preprocess_dd_trace
