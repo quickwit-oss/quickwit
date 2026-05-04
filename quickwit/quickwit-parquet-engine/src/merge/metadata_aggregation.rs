@@ -93,6 +93,15 @@ pub fn merge_parquet_split_metadata(
                 first.window
             );
         }
+        if input.rg_partition_prefix_len != first.rg_partition_prefix_len {
+            bail!(
+                "input {} has rg_partition_prefix_len {}, expected {} — splits with different \
+                 prefix lengths must not appear in the same merge",
+                i,
+                input.rg_partition_prefix_len,
+                first.rg_partition_prefix_len
+            );
+        }
     }
 
     // Each merge adds one to the lineage depth. The policy uses this to
@@ -112,6 +121,13 @@ pub fn merge_parquet_split_metadata(
 
     // Data-dependent fields come from the MergeOutputFile (extracted from
     // this output's actual rows during the merge write pass).
+    //
+    // `rg_partition_prefix_len` is reset to 0: the current merge writer
+    // does not enforce row group boundary alignment with sort prefix
+    // transitions. A future PR (the streaming column-major merge engine)
+    // will produce aligned output and propagate the prefix from inputs.
+    // Until then, claiming alignment on output would be dishonest, so we
+    // demote to 0 even when inputs have a higher prefix.
     let mut metadata = ParquetSplitMetadata {
         kind: first.kind,
         partition_id: first.partition_id,
@@ -130,6 +146,7 @@ pub fn merge_parquet_split_metadata(
         num_merge_ops,
         row_keys_proto: output.row_keys_proto.clone(),
         zonemap_regexes: output.zonemap_regexes.clone(),
+        rg_partition_prefix_len: 0,
     };
 
     // Finalize: tag sets may exceed the cardinality threshold.
@@ -355,6 +372,37 @@ mod tests {
         let output = make_output(200, 9000);
         let result = merge_parquet_split_metadata(&[s0, s1], &output);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_mismatched_rg_partition_prefix_len_error() {
+        let s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s1.rg_partition_prefix_len = 1;
+
+        let output = make_output(200, 9000);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output);
+        let err = result.expect_err("merge must reject mismatched prefix lengths");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("rg_partition_prefix_len"),
+            "error should mention rg_partition_prefix_len, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_output_prefix_len_demoted_to_zero() {
+        // Until the streaming column-major writer lands, the merge writer
+        // does not enforce alignment, so the output's prefix is 0 even when
+        // every input claims a higher value. This test pins that contract.
+        let mut s0 = make_test_split("s0", (1000, 2000), 0);
+        let mut s1 = make_test_split("s1", (1000, 2000), 0);
+        s0.rg_partition_prefix_len = 3;
+        s1.rg_partition_prefix_len = 3;
+
+        let output = make_output(200, 9000);
+        let result = merge_parquet_split_metadata(&[s0, s1], &output).unwrap();
+        assert_eq!(result.rg_partition_prefix_len, 0);
     }
 
     #[test]
