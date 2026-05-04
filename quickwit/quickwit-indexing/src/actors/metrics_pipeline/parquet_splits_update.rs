@@ -22,6 +22,7 @@ use quickwit_parquet_engine::split::ParquetSplitMetadata;
 use quickwit_proto::types::{IndexUid, PublishToken};
 use tracing::Span;
 
+use super::parquet_merge_messages::ParquetMergeTask;
 use crate::models::PublishLock;
 
 /// Message sent by ParquetUploader to downstream actors after staging and uploading.
@@ -43,10 +44,10 @@ pub struct ParquetSplitsUpdate {
     pub publish_token_opt: Option<PublishToken>,
     /// Parent span for tracing.
     pub parent_span: Span,
-    /// Merge concurrency permit — held until the publisher drops this message,
-    /// ensuring the semaphore slot stays occupied while the merge output is
-    /// in flight. `None` for the ingest path.
-    pub _merge_permit_opt: Option<crate::actors::MergePermit>,
+    /// Merge task — held until the publisher drops this message, ensuring the
+    /// planner inventory guard and semaphore permit stay alive while the merge
+    /// output is in flight. `None` for the ingest path.
+    pub _merge_task_opt: Option<ParquetMergeTask>,
 }
 
 impl fmt::Debug for ParquetSplitsUpdate {
