@@ -55,6 +55,8 @@ pub struct MatureMergeConfig {
     pub max_merge_group_size: usize,
     /// Maximum total number of documents per merge operation.
     pub split_target_num_docs: usize,
+    /// Focus on splits that span this many days.
+    pub split_timestamp_days_range: u8,
     /// Number of indexes processed concurrently. Lower to avoid fetching splits
     /// metadata too eagerly.
     pub index_parallelism: usize,
@@ -74,6 +76,7 @@ impl Default for MatureMergeConfig {
             input_split_max_num_docs: 10_000,
             max_merge_group_size: 100,
             split_target_num_docs: 5_000_000,
+            split_timestamp_days_range: 0, // by default single day splits
             index_parallelism: 50,
             max_concurrent_merges: 10,
             dry_run: false,
@@ -372,7 +375,7 @@ async fn merge_mature_single_index(
 }
 
 /// Aggregates per-index results, logs per-index and global summary lines, and warns on errors.
-fn log_merge_results(results: Vec<anyhow::Result<IndexMergeSummary>>) {
+fn log_merge_results(results: Vec<anyhow::Result<IndexMergeSummary>>, dry_run: bool) {
     let mut total_planned_merges = 0usize;
     let mut total_input_splits = 0usize;
     let mut total_input_bytes = 0u64;
@@ -407,17 +410,28 @@ fn log_merge_results(results: Vec<anyhow::Result<IndexMergeSummary>>) {
             }
         }
     }
-    info!(
-        num_indexes_successfully_merged,
-        num_indexes_partially_merged,
-        num_indexes_without_opportunity,
-        total_planned_merges,
-        total_successfully_published_merges,
-        total_successfully_replaced_splits,
-        total_input_splits,
-        total_input_bytes,
-        "mature merge complete"
-    );
+    if dry_run {
+        info!(
+            num_indexes_with_opportunities = num_indexes_partially_merged,
+            num_indexes_without_opportunity,
+            total_planned_merges,
+            total_input_splits,
+            total_input_bytes,
+            "mature merge dry-run complete"
+        );
+    } else {
+        info!(
+            num_indexes_successfully_merged,
+            num_indexes_partially_merged,
+            num_indexes_without_opportunity,
+            total_planned_merges,
+            total_successfully_published_merges,
+            total_successfully_replaced_splits,
+            total_input_splits,
+            total_input_bytes,
+            "mature merge complete"
+        );
+    }
 }
 
 fn log_op_for_dry_run(op: &MergeOperation, index_id: &str) {
@@ -520,7 +534,7 @@ pub async fn merge_mature_all_indexes(
         .collect()
         .await;
 
-    log_merge_results(results);
+    log_merge_results(results, config.dry_run);
     Ok(())
 }
 

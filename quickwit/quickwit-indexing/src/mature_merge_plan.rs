@@ -83,8 +83,8 @@ fn plan_operations_for_group(
 ///
 /// Rules:
 /// - Splits without a `time_range` are skipped (cannot assign a day).
-/// - A split is only assigned to a bucket when *both* `time_range.start()` and `time_range.end()`
-///   fall on the same UTC day (i.e., the split does not span midnight).
+/// - A split is only assigned to a bucket when the UTC day number of `time_range.end()` minus the
+///   UTC day number of `time_range.start()` equals the configured number of days.
 /// - Immature splits are excluded.
 /// - Splits whose `time_range.end()` falls within the retention safety buffer are excluded.
 ///
@@ -134,8 +134,8 @@ pub fn plan_merge_operations_for_index(
             // group at the day limits.
             .map(|r| r.start() / SECS_PER_DAY);
 
-        // Both endpoints must fall on the same UTC day.
-        if start_day != end_day {
+        // Focus on splits with a specific timestamp range.
+        if end_day - start_day != (config.split_timestamp_days_range as i64) {
             continue;
         }
 
@@ -455,5 +455,40 @@ mod tests {
         assert_eq!(operations.len(), 2);
         assert!(operations[0].splits.iter().all(|s| s.partition_id == 0));
         assert!(operations[1].splits.iter().all(|s| s.partition_id == 1));
+    }
+
+    #[test]
+    fn test_plan_split_timestamp_days_range_one() {
+        let index_uid = IndexUid::for_test("test-index", 0);
+        let doc_mapping_uid = DocMappingUid::random();
+
+        let splits: Vec<SplitMetadata> = (0..60)
+            .map(|i| {
+                let mut split = mature_split_for_test(
+                    &format!("split-{i}"),
+                    &index_uid,
+                    1,
+                    doc_mapping_uid,
+                    100,
+                    RECENT_DAY,
+                );
+                split.time_range = Some(RECENT_DAY..=RECENT_DAY + i * 3600);
+                split
+            })
+            .collect();
+
+        let config = MatureMergeConfig {
+            split_timestamp_days_range: 1,
+            ..MatureMergeConfig::default()
+        };
+        let operations = plan_merge_operations_for_index(
+            &index_config_no_retention(),
+            splits,
+            now_well_after_recent_day(),
+            &config,
+        );
+
+        assert_eq!(operations.len(), 1);
+        assert_eq!(operations[0].splits.len(), 24);
     }
 }
