@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use vector::config::{
     DataType, GenerateConfig, Input, OutputId, TransformConfig, TransformContext, TransformOutput,
 };
+use vector::event::metric::TagValue;
 use vector::event::{Event, KeyString, LogEvent, Metric, ObjectMap, TraceEvent, Value};
 use vector::schema::Definition;
 use vector::transforms::{FunctionTransform, OutputBuffer, Transform};
@@ -141,18 +142,15 @@ fn normalize_metric(metric: &mut Metric) {
     let Some(tags_mut) = metric.tags_mut() else {
         return;
     };
-    // TODO(name-normalization): `into_iter_single` flattens multi-valued
-    // tags to their last value (silently losing the rest) and drops bare
-    // (no-value) tags entirely. Pre-existing single-valued tag handling is
-    // unchanged. Awaiting reviewer feedback on whether to preserve
-    // multi-value tag sets, surface a metric/log when one is observed, or
-    // keep the current "last value wins" behavior.
+    // Iterate over every value of every tag (multi-valued tags emit one
+    // entry per value) and re-insert each into the now-empty tag set. This
+    // preserves multi-valued tags through the normalization pipeline.
     let original = std::mem::take(tags_mut);
-    for (key, value) in original.into_iter_single() {
+    for (key, value) in original.into_iter_all() {
         if key == "host" {
             // Hostname normalization already covered this tag; leave it alone
             // to avoid re-running tag rules over a hostname-shaped string.
-            metric.replace_tag(key, value);
+            tags_mut.insert(key, value);
             continue;
         }
         let new_key = if is_normalized_tag_key(&key) {
@@ -164,12 +162,17 @@ fn normalize_metric(metric: &mut Metric) {
             }
             n
         };
-        let new_value = if is_normalized_tag_value(&value) {
-            value
-        } else {
-            normalize_tag_value(&value)
+        let new_value = match value {
+            TagValue::Bare => TagValue::Bare,
+            TagValue::Value(s) => {
+                if is_normalized_tag_value(&s) {
+                    TagValue::Value(s)
+                } else {
+                    TagValue::Value(normalize_tag_value(&s))
+                }
+            }
         };
-        metric.replace_tag(new_key, new_value);
+        tags_mut.insert(new_key, new_value);
     }
 }
 
@@ -745,6 +748,33 @@ mod tests {
         assert!(m.tag_value("ENV").is_none());
         // Empty-key tag dropped.
         assert!(m.tag_value("!!!").is_none());
+    }
+
+    #[test]
+    fn metric_multi_valued_tag_values_preserved() {
+        // A multi-valued tag like `key:val1,val2` must survive normalization
+        // with both values intact (only the key/values are normalized in
+        // place, none of the values are dropped).
+        let mut metric_tags = MetricTags::default();
+        metric_tags.insert("Team".to_string(), "Alpha".to_string());
+        metric_tags.insert("Team".to_string(), "Beta Squad".to_string());
+
+        let metric = Metric::new(
+            "cpu.usage",
+            MetricKind::Absolute,
+            MetricValue::Gauge { value: 1.0 },
+        )
+        .with_tags(Some(metric_tags));
+
+        let events = run(Event::Metric(metric));
+        let m = events[0].as_metric();
+        let tags = m.tags().expect("tags present");
+        let values: Vec<&str> = tags
+            .iter_all()
+            .filter_map(|(k, v)| if k == "team" { v } else { None })
+            .collect();
+        assert_eq!(values, vec!["alpha", "beta_squad"]);
+        assert!(tags.iter_all().all(|(k, _)| k != "Team"));
     }
 
     // -----------------------------------------------------------------------
