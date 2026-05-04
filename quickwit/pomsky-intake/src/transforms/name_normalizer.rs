@@ -979,10 +979,7 @@ mod tests {
         assert!(trace.get("tags.ENV").is_none());
         assert!(trace.get("tags.!!!").is_none());
         // `meta.*` preserved verbatim — original casing, no rewrite.
-        assert_eq!(
-            trace.get("meta.Service"),
-            Some(&Value::from("My Service")),
-        );
+        assert_eq!(trace.get("meta.Service"), Some(&Value::from("My Service")),);
         assert_eq!(trace.get("meta._dd.p.tid"), Some(&Value::from("deadbeef")));
     }
 }
