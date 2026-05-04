@@ -6,7 +6,7 @@
 # Files are always restored — even on Ctrl-C or failure.
 #
 # Usage:
-#   ./scripts/run_inventory.sh
+#   ./scripts/run.sh
 
 set -euo pipefail
 
