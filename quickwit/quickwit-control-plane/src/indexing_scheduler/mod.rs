@@ -330,7 +330,7 @@ impl IndexingScheduler {
         );
         let shard_locality_metrics =
             get_shard_locality_metrics(&new_physical_plan, &shard_locations);
-        crate::metrics::set_shard_locality_metrics(shard_locality_metrics);
+        shard_locality_metrics.publish();
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),

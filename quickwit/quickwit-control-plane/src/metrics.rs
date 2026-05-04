@@ -22,9 +22,11 @@ pub struct ShardLocalityMetrics {
     pub num_local_shards: usize,
 }
 
-pub fn set_shard_locality_metrics(shard_locality_metrics: ShardLocalityMetrics) {
-    LOCAL_SHARDS.set(shard_locality_metrics.num_local_shards as f64);
-    REMOTE_SHARDS.set(shard_locality_metrics.num_remote_shards as f64);
+impl ShardLocalityMetrics {
+    pub fn publish(self) {
+        LOCAL_SHARDS.set(self.num_local_shards as f64);
+        REMOTE_SHARDS.set(self.num_remote_shards as f64);
+    }
 }
 
 pub(crate) static INDEXES_TOTAL: LazyLock<Gauge> = LazyLock::new(|| {
