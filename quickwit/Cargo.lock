@@ -2622,27 +2622,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "env_filter"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bf3c259d255ca70051b30e2e95b5446cdb8949ac4cd22c0d7fd634d89f568e2"
-dependencies = [
- "log",
-]
-
-[[package]]
-name = "env_logger"
-version = "0.11.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13c863f0904021b108aa8b2f55046443e6b1ebde8fd4a15c399893aae4fa069f"
-dependencies = [
- "anstream",
- "anstyle",
- "env_filter",
- "log",
-]
-
-[[package]]
 name = "equator"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6492,7 +6471,6 @@ dependencies = [
  "bytesize",
  "coarsetime",
  "dyn-clone",
- "env_logger",
  "fnv",
  "futures",
  "home",
@@ -6523,6 +6501,7 @@ dependencies = [
  "tonic 0.14.2",
  "tower 0.5.2",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

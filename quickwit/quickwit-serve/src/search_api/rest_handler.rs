@@ -520,7 +520,6 @@ mod tests {
             hits: Vec::new(),
             snippets: None,
             elapsed_time_micros: 0u64,
-            errors: Vec::new(),
             aggregations: None,
         };
         let search_response_json: JsonValue = serde_json::to_value(search_response)?;
@@ -914,7 +913,6 @@ mod tests {
                 hits: Vec::new(),
                 num_hits: 10,
                 elapsed_time_micros: 16,
-                errors: Vec::new(),
                 ..Default::default()
             })
         });
@@ -1025,7 +1023,6 @@ mod tests {
                 }],
                 num_hits: 1,
                 elapsed_time_micros: 16,
-                errors: Vec::new(),
                 ..Default::default()
             })
         });
@@ -1045,7 +1042,6 @@ mod tests {
             "hits": [{"title": "foo", "body": "foo bar baz"}],
             "snippets": [{"title": [], "body": ["foo <em>bar</em> baz"]}],
             "elapsed_time_micros": 16,
-            "errors": [],
         });
         assert_json_eq!(resp_json, expected_response_json);
         Ok(())

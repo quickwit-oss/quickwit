@@ -843,7 +843,6 @@ mod test {
             snippets: None,
             aggregations: None,
             elapsed_time_micros: 100,
-            errors: Vec::new(),
         };
         Mock::given(method("POST"))
             .and(path("/api/v1/my-index/search"))

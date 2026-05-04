@@ -20,6 +20,7 @@ use std::time::Instant;
 
 use pin_project::{pin_project, pinned_drop};
 use quickwit_proto::search::{LeafSearchResponse, SearchResponse};
+use tracing::{Span, record_all};
 
 use crate::SearchError;
 use crate::metrics::{SEARCH_METRICS, queue_label};
@@ -34,18 +35,23 @@ pub struct SearchPlanMetricsFuture<F> {
     #[pin]
     pub tracked: F,
     pub start: Instant,
-    pub is_success: Option<bool>,
+    pub status: Option<Result<(), &'static str>>,
     pub user_agent: String,
+    pub req_span: Span,
 }
 
 #[pinned_drop]
 impl<F> PinnedDrop for SearchPlanMetricsFuture<F> {
     fn drop(self: Pin<&mut Self>) {
-        let status = match self.is_success {
+        let status = match self.status {
             // this is a partial success, actual status will be recorded during the search step
-            Some(true) => return,
-            Some(false) => "plan-error",
-            None => "plan-cancelled",
+            Some(Ok(())) => return,
+            Some(Err(error)) => error,
+            None => {
+                let _guard = self.req_span.enter();
+                tracing::info!("root search cancelled");
+                "plan-cancelled"
+            }
         };
 
         let label_values = [normalize_user_agent(&self.user_agent), status];
@@ -69,9 +75,14 @@ where F: Future<Output = crate::Result<R>>
         let this = self.project();
         let response = ready!(this.tracked.poll(cx));
         if let Err(err) = &response {
+            let _guard = this.req_span.enter();
             tracing::error!(?err, "root search planning failed");
         }
-        *this.is_success = Some(response.is_ok());
+        *this.status = match &response {
+            Ok(_) => Some(Ok(())),
+            Err(SearchError::TooManySplits(_)) => Some(Err("too-many-splits")),
+            Err(_) => Some(Err("plan-error")),
+        };
         Poll::Ready(Ok(response?))
     }
 }
@@ -87,11 +98,16 @@ pub struct RootSearchMetricsFuture<F> {
     pub num_targeted_splits: usize,
     pub status: Option<&'static str>,
     pub user_agent: String,
+    pub req_span: Span,
 }
 
 #[pinned_drop]
 impl<F> PinnedDrop for RootSearchMetricsFuture<F> {
     fn drop(self: Pin<&mut Self>) {
+        if self.status.is_none() {
+            let _guard = self.req_span.enter();
+            tracing::info!("root search cancelled");
+        }
         let status = self.status.unwrap_or("cancelled");
         let label_values = [normalize_user_agent(&self.user_agent), status];
         SEARCH_METRICS
@@ -117,18 +133,25 @@ where F: Future<Output = crate::Result<SearchResponse>>
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
         let response = ready!(this.tracked.poll(cx));
+        record_all!(this.req_span, elapsed_ms = this.start.elapsed().as_millis());
+        let _guard = this.req_span.enter();
         if let Err(err) = &response {
             tracing::error!(?err, "root search failed");
-        }
-        if let Ok(resp) = &response {
+            *this.status = Some("error");
+        } else if let Ok(resp) = &response {
             if resp.failed_splits.is_empty() {
                 *this.status = Some("success");
+                tracing::info!("root search success");
             } else {
                 *this.status = Some("partial-success");
+                tracing::error!(
+                    failed_splits = resp.failed_splits.len(),
+                    first_failed_split = ?resp.failed_splits.first().unwrap(),
+                    "root search partial success"
+                );
             }
-        } else {
-            *this.status = Some("error");
         }
+
         Poll::Ready(Ok(response?))
     }
 }

@@ -52,8 +52,6 @@ pub struct SearchResponseRest {
     pub snippets: Option<Vec<JsonValue>>,
     /// Elapsed time.
     pub elapsed_time_micros: u64,
-    /// Search errors.
-    pub errors: Vec<String>,
     /// Aggregations.
     #[schema(value_type = Object)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -107,7 +105,6 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
             hits: documents,
             snippets: snippet_opt,
             elapsed_time_micros: search_response.elapsed_time_micros,
-            errors: search_response.errors,
             aggregations: aggregations_opt,
         })
     }

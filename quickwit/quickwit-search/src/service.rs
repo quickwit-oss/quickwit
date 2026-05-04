@@ -406,7 +406,6 @@ pub(crate) async fn scroll(
         num_hits: scroll_context.total_num_hits,
         elapsed_time_micros: start.elapsed().as_micros() as u64,
         scroll_id: Some(next_scroll_id.to_string()),
-        errors: Vec::new(),
         aggregation_postcard: None,
         failed_splits: scroll_context.failed_splits,
         num_successful_splits: scroll_context.num_successful_splits,

@@ -295,8 +295,8 @@ message SearchResponse {
   // server-side and expressed in microseconds.
   uint64 elapsed_time_micros = 3;
 
-  // The searcherrors that occurred formatted as string.
-  repeated string errors = 4;
+  // deprecated `errors` field
+  reserved 4;
 
   // used to be json-encoded aggregation
   reserved 5;

@@ -45,7 +45,7 @@ use tantivy::aggregation::agg_result::AggregationResults;
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tantivy::collector::Collector;
 use tantivy::schema::{Field, FieldEntry, FieldType, Schema};
-use tracing::{debug, info, info_span, instrument};
+use tracing::{debug, info_span, instrument, record_all};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{QuickwitAggregations, make_merge_collector};
@@ -824,14 +824,6 @@ pub(crate) async fn search_partial_hits_phase(
         );
     }
 
-    if !leaf_search_response.failed_splits.is_empty() {
-        quickwit_common::rate_limited_error!(
-            limit_per_min = 6,
-            failed_splits = ?PrettySample::new(&leaf_search_response.failed_splits, 5),
-            "leaf search response contains at least one failed split"
-        );
-    }
-
     Ok(leaf_search_response)
 }
 
@@ -1043,7 +1035,6 @@ async fn root_search_aux(
         num_hits: first_phase_result.num_hits,
         hits,
         elapsed_time_micros: 0u64,
-        errors: Vec::new(),
         scroll_id: scroll_key_and_start_offset_opt
             .as_ref()
             .map(ToString::to_string),
@@ -1213,6 +1204,7 @@ async fn refine_and_list_matches(
 async fn plan_splits_for_root_search(
     search_request: &mut SearchRequest,
     metastore: &mut MetastoreServiceClient,
+    max_splits_per_search: Option<usize>,
 ) -> crate::Result<(Vec<SplitMetadata>, IndexesMetasForLeafSearch)> {
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
         index_id_patterns: search_request.index_id_patterns.clone(),
@@ -1246,10 +1238,45 @@ async fn plan_splits_for_root_search(
         secondary_timestamp_field_opt,
     )
     .await?;
+
+    let num_targeted_splits = split_metadatas.len();
+    if let Some(max_total_split_searches) = max_splits_per_search
+        && num_targeted_splits > max_total_split_searches
+    {
+        return Err(SearchError::TooManySplits(format!(
+            "Targeted split limit exceeded ({num_targeted_splits}>{max_total_split_searches})"
+        )));
+    }
+
     Ok((
         split_metadatas,
         request_metadata.indexes_meta_for_leaf_search,
     ))
+}
+
+fn record_request_span(search_request: &SearchRequest) -> tracing::Span {
+    let span = info_span!(
+        "request",
+        indexes = ?PrettySample::new(&search_request.index_id_patterns, 5),
+        user_agent = search_request.user_agent.as_deref().unwrap_or_default(),
+        query_ast = %search_request.query_ast,
+        count_required = search_request.count_hits().as_str_name(),
+        agg = tracing::field::Empty,
+        ts_range = tracing::field::Empty,
+        elapsed_ms = tracing::field::Empty,
+        targeted_splits_bytes = tracing::field::Empty,
+        num_targeted_splits = tracing::field::Empty,
+    );
+    if let Some(agg) = search_request.aggregation_request.as_ref() {
+        record_all!(span, agg = %agg);
+    }
+    if search_request.start_timestamp.is_some() || search_request.end_timestamp.is_some() {
+        record_all!(
+            span,
+            ts_range = ?search_request.start_timestamp..search_request.end_timestamp,
+        );
+    }
+    span
 }
 
 /// Performs a distributed search.
@@ -1266,45 +1293,27 @@ pub async fn root_search(
 ) -> crate::Result<SearchResponse> {
     let start_instant = Instant::now();
 
+    let req_span = record_request_span(&search_request);
+
     let (split_metadatas, indexes_meta_for_leaf_search) = SearchPlanMetricsFuture {
         start: start_instant,
         user_agent: search_request.user_agent.clone().unwrap_or_default(),
-        tracked: plan_splits_for_root_search(&mut search_request, &mut metastore),
-        is_success: None,
+        tracked: plan_splits_for_root_search(
+            &mut search_request,
+            &mut metastore,
+            searcher_context.searcher_config.max_splits_per_search,
+        ),
+        status: None,
+        req_span: req_span.clone(),
     }
     .await?;
 
-    let num_docs: usize = split_metadatas.iter().map(|split| split.num_docs).sum();
-    let num_splits = split_metadatas.len();
-
-    // It would have been nice to add those in the context of the trace span,
-    // but with our current logging setting, it makes logs too verbose.
-    info!(
-        indexes = ?PrettySample::new(&search_request.index_id_patterns, 5),
-        user_agent = search_request.user_agent.as_deref().unwrap_or_default(),
-        query_ast = search_request.query_ast.as_str(),
-        agg = search_request.aggregation_request(),
-        start_ts = ?(search_request.start_timestamp()..search_request.end_timestamp()),
-        count_required = search_request.count_hits().as_str_name(),
-        num_docs = num_docs,
-        num_splits = num_splits,
-        "root_search"
-    );
-
-    if let Some(max_total_split_searches) = searcher_context.searcher_config.max_splits_per_search
-        && max_total_split_searches < num_splits
-    {
-        tracing::error!(
-            num_splits,
-            max_total_split_searches,
-            index=?PrettySample::new(search_request.index_id_patterns, 5),
-            query=%search_request.query_ast,
-            "max total splits exceeded"
-        );
-        return Err(SearchError::InvalidArgument(format!(
-            "Number of targeted splits {num_splits} exceeds the limit {max_total_split_searches}"
-        )));
-    }
+    let targeted_splits_bytes: u64 = split_metadatas
+        .iter()
+        .map(|split| split.footer_offsets.end)
+        .sum();
+    let num_targeted_splits = split_metadatas.len();
+    record_all!(req_span, targeted_splits_bytes, num_targeted_splits);
 
     let mut search_response_result = RootSearchMetricsFuture {
         start: start_instant,
@@ -1317,7 +1326,8 @@ pub async fn root_search(
             cluster_client,
         ),
         status: None,
-        num_targeted_splits: num_splits,
+        num_targeted_splits,
+        req_span,
     }
     .await;
 
@@ -5361,7 +5371,7 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(matches!(search_error, SearchError::InvalidArgument { .. }));
+        assert!(matches!(search_error, SearchError::TooManySplits { .. }));
         Ok(())
     }
 }

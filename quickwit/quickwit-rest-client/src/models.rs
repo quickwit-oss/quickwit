@@ -83,7 +83,6 @@ pub struct SearchResponseRestClient {
     pub hits: Vec<JsonValue>,
     pub snippets: Option<Vec<JsonValue>>,
     pub elapsed_time_micros: u64,
-    pub errors: Vec<String>,
     pub aggregations: Option<JsonValue>,
 }
 

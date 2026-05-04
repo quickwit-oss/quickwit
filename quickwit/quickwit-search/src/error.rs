@@ -46,6 +46,8 @@ pub enum SearchError {
     Timeout(String),
     #[error("too many requests")]
     TooManyRequests,
+    #[error("too many splits: {0}")]
+    TooManySplits(String),
     #[error("service unavailable: {0}")]
     Unavailable(String),
 }
@@ -87,6 +89,7 @@ impl ServiceError for SearchError {
             }
             Self::Timeout(_) => ServiceErrorCode::Timeout,
             Self::TooManyRequests => ServiceErrorCode::TooManyRequests,
+            Self::TooManySplits(_) => ServiceErrorCode::BadRequest,
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }

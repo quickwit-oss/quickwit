@@ -217,9 +217,6 @@ pub struct SearchResponse {
     /// server-side and expressed in microseconds.
     #[prost(uint64, tag = "3")]
     pub elapsed_time_micros: u64,
-    /// The searcherrors that occurred formatted as string.
-    #[prost(string, repeated, tag = "4")]
-    pub errors: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Postcard-encoded aggregation response
     #[prost(bytes = "vec", optional, tag = "9")]
     pub aggregation_postcard: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
