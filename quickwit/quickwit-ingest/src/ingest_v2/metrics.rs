@@ -27,49 +27,49 @@ static INGEST_RESULT_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
 });
 
 pub(super) static INGEST_RESULT_SUCCESS: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "success"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "success"));
 
 pub(super) static INGEST_RESULT_CIRCUIT_BREAKER: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "circuit_breaker"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "circuit_breaker"));
 
 pub(super) static INGEST_RESULT_UNSPECIFIED: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "unspecified"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "unspecified"));
 
 pub(super) static INGEST_RESULT_INDEX_NOT_FOUND: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "index_not_found"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "index_not_found"));
 
 pub(super) static INGEST_RESULT_SOURCE_NOT_FOUND: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "source_not_found"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "source_not_found"));
 
 pub(super) static INGEST_RESULT_INTERNAL: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "internal"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "internal"));
 
 pub(super) static INGEST_RESULT_NO_SHARDS_AVAILABLE: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "no_shards_available"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "no_shards_available"));
 
 pub(super) static INGEST_RESULT_SHARD_RATE_LIMITED: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "shard_rate_limited"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "shard_rate_limited"));
 
 pub(super) static INGEST_RESULT_WAL_FULL: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "wal_full"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "wal_full"));
 
 pub(super) static INGEST_RESULT_TIMEOUT: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "timeout"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "timeout"));
 
 pub(super) static INGEST_RESULT_ROUTER_TIMEOUT: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "router_timeout"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "router_timeout"));
 
 pub(super) static INGEST_RESULT_ROUTER_LOAD_SHEDDING: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "router_load_shedding"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "router_load_shedding"));
 
 pub(super) static INGEST_RESULT_LOAD_SHEDDING: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "load_shedding"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "load_shedding"));
 
 pub(super) static INGEST_RESULT_SHARD_NOT_FOUND: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "shard_not_found"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "shard_not_found"));
 
 pub(super) static INGEST_RESULT_UNAVAILABLE: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*INGEST_RESULT_TOTAL, "result" => "unavailable"));
+    LazyLock::new(|| counter!(parent: INGEST_RESULT_TOTAL, "result" => "unavailable"));
 
 pub(super) static INGEST_ATTEMPTS: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -98,10 +98,10 @@ static SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
 });
 
 pub(super) static OPEN_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: &*SHARDS, "state" => "open"));
+    LazyLock::new(|| gauge!(parent: SHARDS, "state" => "open"));
 
 pub(super) static CLOSED_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: &*SHARDS, "state" => "closed"));
+    LazyLock::new(|| gauge!(parent: SHARDS, "state" => "closed"));
 
 pub(super) static SHARD_LT_THROUGHPUT_MIB: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(

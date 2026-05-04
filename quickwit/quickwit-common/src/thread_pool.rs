@@ -63,8 +63,8 @@ impl ThreadPool {
             .build()
             .expect("failed to spawn thread pool");
         let labels = THREAD_POOL_LABELS.with_values([name]);
-        let ongoing_tasks = gauge!(parent: &*THREAD_POOL_ONGOING_TASKS, labels: &labels);
-        let pending_tasks = gauge!(parent: &*THREAD_POOL_PENDING_TASKS, labels: &labels);
+        let ongoing_tasks = gauge!(parent: THREAD_POOL_ONGOING_TASKS, labels: &labels);
+        let pending_tasks = gauge!(parent: THREAD_POOL_PENDING_TASKS, labels: &labels);
         ThreadPool {
             thread_pool: Arc::new(thread_pool),
             ongoing_tasks,

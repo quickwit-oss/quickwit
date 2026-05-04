@@ -217,7 +217,7 @@ pub static IN_FLIGHT_OTHER_SOURCE: LazyLock<Gauge> =
 
 fn in_flight_data_gauge(component: &'static str) -> Gauge {
     let labels = COMPONENT_LABELS.with_values([component]);
-    gauge!(parent: &*IN_FLIGHT_DATA_BYTES, labels: &labels)
+    gauge!(parent: IN_FLIGHT_DATA_BYTES, labels: &labels)
 }
 
 #[cfg(test)]

@@ -111,7 +111,7 @@ impl IoControls {
     pub fn set_component(mut self, component: &str) -> Self {
         let labels = COMPONENT_LABELS.with_values([component.to_string()]);
         self.bytes_counter =
-            MaybeRegisteredCounter::registered(counter!(parent: &*WRITE_BYTES, labels: &labels));
+            MaybeRegisteredCounter::registered(counter!(parent: WRITE_BYTES, labels: &labels));
         self
     }
 

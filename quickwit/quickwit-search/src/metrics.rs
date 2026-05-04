@@ -171,10 +171,10 @@ static LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE: LazyLock<Gauge> = LazyLock::new(|| {
 });
 
 pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: &*LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "ongoing"));
+    LazyLock::new(|| gauge!(parent: LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "ongoing"));
 
 pub(crate) static LEAF_SEARCH_SINGLE_SPLIT_TASKS_PENDING: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: &*LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "pending"));
+    LazyLock::new(|| gauge!(parent: LEAF_SEARCH_SINGLE_SPLIT_TASKS_BASE, "status" => "pending"));
 
 static ROOT_SEARCH_REQUESTS_TOTAL_BASE: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -185,7 +185,7 @@ static ROOT_SEARCH_REQUESTS_TOTAL_BASE: LazyLock<Counter> = LazyLock::new(|| {
 });
 
 pub(crate) static ROOT_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*ROOT_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server"));
+    LazyLock::new(|| counter!(parent: ROOT_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server"));
 
 static ROOT_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
@@ -198,7 +198,7 @@ static ROOT_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyLock<Histogram> = LazyLock
 
 pub(crate) static ROOT_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
-        parent: &*ROOT_SEARCH_REQUEST_DURATION_SECONDS_BASE,
+        parent: ROOT_SEARCH_REQUEST_DURATION_SECONDS_BASE,
         "kind" => "server",
     )
 });
@@ -221,7 +221,7 @@ static LEAF_SEARCH_REQUESTS_TOTAL_BASE: LazyLock<Counter> = LazyLock::new(|| {
 });
 
 pub(crate) static LEAF_SEARCH_REQUESTS_TOTAL: LazyLock<Counter> =
-    LazyLock::new(|| counter!(parent: &*LEAF_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server"));
+    LazyLock::new(|| counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL_BASE, "kind" => "server"));
 
 static LEAF_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
@@ -234,7 +234,7 @@ static LEAF_SEARCH_REQUEST_DURATION_SECONDS_BASE: LazyLock<Histogram> = LazyLock
 
 pub(crate) static LEAF_SEARCH_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
-        parent: &*LEAF_SEARCH_REQUEST_DURATION_SECONDS_BASE,
+        parent: LEAF_SEARCH_REQUEST_DURATION_SECONDS_BASE,
         "kind" => "server",
     )
 });

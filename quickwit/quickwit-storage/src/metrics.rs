@@ -31,14 +31,14 @@ static GET_SLICE_TIMEOUT_OUTCOME_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
 
 pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_0_TIMEOUT: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
-        parent: &*GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+        parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
         "outcome" => "success_after_0_timeout",
     )
 });
 
 pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
-        parent: &*GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+        parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
         "outcome" => "success_after_1_timeout",
     )
 });
@@ -46,14 +46,14 @@ pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT: LazyLock<Counter> = LazyLo
 pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT: LazyLock<Counter> =
     LazyLock::new(|| {
         counter!(
-            parent: &*GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+            parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
             "outcome" => "success_after_2+_timeout",
         )
     });
 
 pub static GET_SLICE_TIMEOUT_ALL_TIMEOUTS: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
-        parent: &*GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
+        parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
         "outcome" => "all_timeouts",
     )
 });
@@ -77,28 +77,28 @@ static OBJECT_STORAGE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
 
 pub static OBJECT_STORAGE_DELETE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
-        parent: &*OBJECT_STORAGE_REQUESTS_TOTAL,
+        parent: OBJECT_STORAGE_REQUESTS_TOTAL,
         "action" => "delete_object",
     )
 });
 
 pub static OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
-        parent: &*OBJECT_STORAGE_REQUESTS_TOTAL,
+        parent: OBJECT_STORAGE_REQUESTS_TOTAL,
         "action" => "delete_objects",
     )
 });
 
 pub static OBJECT_STORAGE_DELETE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
-        parent: &*OBJECT_STORAGE_REQUEST_DURATION,
+        parent: OBJECT_STORAGE_REQUEST_DURATION,
         "action" => "delete_object",
     )
 });
 
 pub static OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
-        parent: &*OBJECT_STORAGE_REQUEST_DURATION,
+        parent: OBJECT_STORAGE_REQUEST_DURATION,
         "action" => "delete_objects",
     )
 });
@@ -194,13 +194,13 @@ impl CacheMetrics {
         CacheMetrics {
             component_name,
             cache_metrics: SingleCacheMetrics {
-                in_cache_count: gauge!(parent: &*CACHE_IN_CACHE_COUNT, labels: &labels),
-                in_cache_num_bytes: gauge!(parent: &*CACHE_IN_CACHE_NUM_BYTES, labels: &labels),
-                hits_num_items: counter!(parent: &*CACHE_HITS_TOTAL, labels: &labels),
-                hits_num_bytes: counter!(parent: &*CACHE_HITS_BYTES, labels: &labels),
-                misses_num_items: counter!(parent: &*CACHE_MISSES_TOTAL, labels: &labels),
-                evict_num_items: counter!(parent: &*CACHE_EVICT_TOTAL, labels: &labels),
-                evict_num_bytes: counter!(parent: &*CACHE_EVICT_BYTES, labels: &labels),
+                in_cache_count: gauge!(parent: CACHE_IN_CACHE_COUNT, labels: &labels),
+                in_cache_num_bytes: gauge!(parent: CACHE_IN_CACHE_NUM_BYTES, labels: &labels),
+                hits_num_items: counter!(parent: CACHE_HITS_TOTAL, labels: &labels),
+                hits_num_bytes: counter!(parent: CACHE_HITS_BYTES, labels: &labels),
+                misses_num_items: counter!(parent: CACHE_MISSES_TOTAL, labels: &labels),
+                evict_num_items: counter!(parent: CACHE_EVICT_TOTAL, labels: &labels),
+                evict_num_bytes: counter!(parent: CACHE_EVICT_BYTES, labels: &labels),
             },
             virtual_caches_metrics: RwLock::default(),
         }
@@ -218,31 +218,31 @@ impl CacheMetrics {
             VIRTUAL_CACHE_LABELS.with_values([self.component_name.clone(), capacity, policy]);
         let new_virtual_cache_metrics = SingleCacheMetrics {
             in_cache_count: gauge!(
-                parent: &*VIRTUAL_CACHE_IN_CACHE_COUNT,
+                parent: VIRTUAL_CACHE_IN_CACHE_COUNT,
                 labels: &labels,
             ),
             in_cache_num_bytes: gauge!(
-                parent: &*VIRTUAL_CACHE_IN_CACHE_NUM_BYTES,
+                parent: VIRTUAL_CACHE_IN_CACHE_NUM_BYTES,
                 labels: &labels,
             ),
             hits_num_items: counter!(
-                parent: &*VIRTUAL_CACHE_HITS_TOTAL,
+                parent: VIRTUAL_CACHE_HITS_TOTAL,
                 labels: &labels,
             ),
             hits_num_bytes: counter!(
-                parent: &*VIRTUAL_CACHE_HITS_BYTES,
+                parent: VIRTUAL_CACHE_HITS_BYTES,
                 labels: &labels,
             ),
             misses_num_items: counter!(
-                parent: &*VIRTUAL_CACHE_MISSES_TOTAL,
+                parent: VIRTUAL_CACHE_MISSES_TOTAL,
                 labels: &labels,
             ),
             evict_num_items: counter!(
-                parent: &*VIRTUAL_CACHE_EVICT_TOTAL,
+                parent: VIRTUAL_CACHE_EVICT_TOTAL,
                 labels: &labels,
             ),
             evict_num_bytes: counter!(
-                parent: &*VIRTUAL_CACHE_EVICT_BYTES,
+                parent: VIRTUAL_CACHE_EVICT_BYTES,
                 labels: &labels,
             ),
         };

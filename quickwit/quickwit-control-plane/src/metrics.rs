@@ -46,10 +46,10 @@ static SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
 });
 
 pub(crate) static OPEN_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: &*SHARDS, "state" => "open"));
+    LazyLock::new(|| gauge!(parent: SHARDS, "state" => "open"));
 
 pub(crate) static CLOSED_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: &*SHARDS, "state" => "closed"));
+    LazyLock::new(|| gauge!(parent: SHARDS, "state" => "closed"));
 
 pub(crate) const INDEX_ID_LABELS: Labels<1> = Labels::new(["index_id"]);
 
@@ -62,10 +62,10 @@ static INDEXED_SHARDS: LazyLock<Gauge> = LazyLock::new(|| {
 });
 
 pub(crate) static LOCAL_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: &*INDEXED_SHARDS, "locality" => "local"));
+    LazyLock::new(|| gauge!(parent: INDEXED_SHARDS, "locality" => "local"));
 
 pub(crate) static REMOTE_SHARDS: LazyLock<Gauge> =
-    LazyLock::new(|| gauge!(parent: &*INDEXED_SHARDS, "locality" => "remote"));
+    LazyLock::new(|| gauge!(parent: INDEXED_SHARDS, "locality" => "remote"));
 
 pub(crate) static APPLY_PLAN_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(

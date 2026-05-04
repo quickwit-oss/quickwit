@@ -109,10 +109,10 @@ impl GrpcMetricsLayer {
     pub fn new(subsystem: &'static str, kind: &'static str) -> Self {
         let labels = GRPC_SERVICE_LABELS.with_values([subsystem, kind]);
         Self {
-            requests_total: counter!(parent: &*GRPC_REQUESTS_TOTAL, labels: &labels),
-            requests_in_flight: gauge!(parent: &*GRPC_REQUESTS_IN_FLIGHT, labels: &labels),
+            requests_total: counter!(parent: GRPC_REQUESTS_TOTAL, labels: &labels),
+            requests_in_flight: gauge!(parent: GRPC_REQUESTS_IN_FLIGHT, labels: &labels),
             request_duration_seconds: histogram!(
-                parent: &*GRPC_REQUEST_DURATION_SECONDS,
+                parent: GRPC_REQUEST_DURATION_SECONDS,
                 labels: &labels,
             ),
         }
