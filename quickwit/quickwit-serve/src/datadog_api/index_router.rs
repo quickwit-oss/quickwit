@@ -98,7 +98,16 @@ impl IndexRouter {
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test(rules: Vec<quickwit_proto::metastore::IndexRoutingRule>) -> Self {
+    pub fn for_test(rules: &[(&str, &str)]) -> Self {
+        let rules = rules
+            .iter()
+            .map(
+                |(filter, index_id)| quickwit_proto::metastore::IndexRoutingRule {
+                    filter: filter.to_string(),
+                    index_id: index_id.to_string(),
+                },
+            )
+            .collect();
         Self {
             log_router_storage: Arc::new(ArcSwap::from(Arc::new(
                 LogRouter::create_from_rules(rules).unwrap(),
@@ -168,23 +177,11 @@ mod tests {
 
     #[test]
     fn test_routing() {
-        let router = IndexRouter::for_test(vec![
-            IndexRoutingRule {
-                filter: "service:test".to_string(),
-                index_id: "exact-match".to_string(),
-            },
-            IndexRoutingRule {
-                filter: "service:te*".to_string(),
-                index_id: "prefix-match".to_string(),
-            },
-            IndexRoutingRule {
-                filter: "service:*".to_string(),
-                index_id: "any-service".to_string(),
-            },
-            IndexRoutingRule {
-                filter: "*".to_string(),
-                index_id: "catch-all".to_string(),
-            },
+        let router = IndexRouter::for_test(&[
+            ("service:test", "exact-match"),
+            ("service:te*", "prefix-match"),
+            ("service:*", "any-service"),
+            ("*", "catch-all"),
         ]);
 
         let guard = router.get_router();

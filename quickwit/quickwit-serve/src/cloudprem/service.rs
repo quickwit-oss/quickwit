@@ -10,10 +10,16 @@ use quickwit_cluster::{Cluster, ClusterNode};
 use quickwit_common::ServiceStream;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{NodeConfig, RetentionPolicy, SourceConfig, validate_identifier};
+#[cfg(feature = "datafusion")]
+use quickwit_datafusion::{
+    DataFusionService as QuickwitDataFusionService, DataFusionSessionBuilder,
+};
 use quickwit_metastore::{
     CreateIndexResponseExt, IndexMetadataResponseExt, ListIndexesMetadataResponseExt,
 };
 use quickwit_proto::ServiceError;
+#[cfg(feature = "datafusion")]
+use quickwit_proto::cloudprem::cloudprem_substrait_request;
 use quickwit_proto::cloudprem::index::{
     IndexConfig as IndexConfigProto, IndexMetadata as IndexMetadataProto,
     RetentionPolicy as RetentionPolicyProto,
@@ -21,13 +27,13 @@ use quickwit_proto::cloudprem::index::{
 use quickwit_proto::cloudprem::metrics::{Label, MetricFamily, metric};
 use quickwit_proto::cloudprem::{
     AggregationRequest, AggregationResponse, CloudPremError, CloudPremResult, CloudPremService,
-    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteIndexResponse,
-    EsHttpRequest, EsHttpResponse, Event, EventTracker, FetchOneRequest, FetchOneResponse,
-    GetClusterDiagnosticsRequest, GetClusterDiagnosticsResponse, GetIndexRoutingTableRequest,
-    GetIndexRoutingTableResponse, GetIndexesRequest, GetIndexesResponse, ListRequest, ListResponse,
-    NodeDiagnostics, NodeMetrics, PingRequest, PingResponse, PullClusterMetricsResponse,
-    SetIndexRoutingTableRequest, SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest,
-    UpdateIndexResponse,
+    CloudpremSubstraitRequest, CloudpremSubstraitResponse, CreateIndexRequest, CreateIndexResponse,
+    DeleteIndexRequest, DeleteIndexResponse, EsHttpRequest, EsHttpResponse, Event, EventTracker,
+    FetchOneRequest, FetchOneResponse, GetClusterDiagnosticsRequest, GetClusterDiagnosticsResponse,
+    GetIndexRoutingTableRequest, GetIndexRoutingTableResponse, GetIndexesRequest,
+    GetIndexesResponse, ListRequest, ListResponse, NodeDiagnostics, NodeMetrics, PingRequest,
+    PingResponse, PullClusterMetricsResponse, SetIndexRoutingTableRequest,
+    SetIndexRoutingTableResponse, Statistics, UpdateIndexRequest, UpdateIndexResponse,
 };
 use quickwit_proto::developer::{
     DeveloperService as _, DeveloperServiceClient, GetNodeDiagnosticsRequest, PullMetricsRequest,
@@ -71,12 +77,45 @@ fn resolve_index_patterns(index_id_patterns: &[String]) -> Vec<String> {
 const PULL_METRICS_TIMEOUT: Duration = Duration::from_secs(1);
 const GET_NODE_DIAGNOSTICS_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[cfg(feature = "datafusion")]
+fn encode_record_batches_as_arrow_ipc(
+    batches: &[arrow::array::RecordBatch],
+) -> CloudPremResult<Vec<u8>> {
+    let mut ipc_buf = Vec::new();
+    if let Some(batch) = batches.first() {
+        let mut writer =
+            arrow::ipc::writer::StreamWriter::try_new(&mut ipc_buf, &batch.schema())
+                .map_err(|error| CloudPremError::Internal(format!("ipc error: {error}")))?;
+        for batch in batches {
+            writer
+                .write(batch)
+                .map_err(|error| CloudPremError::Internal(format!("ipc error: {error}")))?;
+        }
+        writer
+            .finish()
+            .map_err(|error| CloudPremError::Internal(format!("ipc error: {error}")))?;
+    }
+    Ok(ipc_buf)
+}
+
+#[cfg(feature = "datafusion")]
+async fn collect_stream_as_arrow_ipc(
+    stream: quickwit_datafusion::SendableRecordBatchStream,
+) -> CloudPremResult<Vec<u8>> {
+    let batches = datafusion::physical_plan::common::collect(stream)
+        .await
+        .map_err(|error| CloudPremError::Internal(format!("execution error: {error}")))?;
+    encode_record_batches_as_arrow_ipc(&batches)
+}
+
 #[allow(dead_code)]
 pub struct CloudPremServiceImpl {
     search_service: Arc<dyn SearchService>,
     metastore_client: MetastoreServiceClient,
     cluster: Cluster,
     node_config: Arc<NodeConfig>,
+    #[cfg(feature = "datafusion")]
+    datafusion_session_builder: Option<Arc<DataFusionSessionBuilder>>,
 }
 
 impl fmt::Debug for CloudPremServiceImpl {
@@ -91,12 +130,17 @@ impl CloudPremServiceImpl {
         metastore_client: MetastoreServiceClient,
         cluster: Cluster,
         node_config: Arc<NodeConfig>,
+        #[cfg(feature = "datafusion")] datafusion_session_builder: Option<
+            Arc<DataFusionSessionBuilder>,
+        >,
     ) -> Self {
         CloudPremServiceImpl {
             search_service,
             metastore_client,
             cluster,
             node_config,
+            #[cfg(feature = "datafusion")]
+            datafusion_session_builder,
         }
     }
 }
@@ -470,6 +514,138 @@ impl CloudPremService for CloudPremServiceImpl {
             node_metrics.push(single_node_metrics);
         }
         Ok(PullClusterMetricsResponse { node_metrics })
+    }
+
+    async fn substrait_search(
+        &self,
+        request: CloudpremSubstraitRequest,
+    ) -> CloudPremResult<CloudpremSubstraitResponse> {
+        #[cfg(not(feature = "datafusion"))]
+        {
+            let _ = request;
+            return Err(CloudPremError::Internal(
+                "datafusion support is disabled at compile time".to_string(),
+            ));
+        }
+
+        #[cfg(feature = "datafusion")]
+        {
+            use datafusion_sql::parser::DFParserBuilder;
+
+            let session_builder = self.datafusion_session_builder.as_ref().ok_or_else(|| {
+                CloudPremError::Internal(
+                    "datafusion not configured; set QW_ENABLE_DATAFUSION_ENDPOINT=true".to_string(),
+                )
+            })?;
+
+            let CloudpremSubstraitRequest {
+                org_id,
+                scope,
+                source,
+                tags,
+                mut settings,
+                query,
+            } = request;
+            let explain = matches!(settings.remove("explain"), Some(value) if value == "true");
+            debug!(
+                org_id,
+                included_indices = ?scope.as_ref().map(|scope| &scope.included_indices),
+                query_source = ?source.as_ref().map(|source| (&source.source, &source.query_name, &source.client_id)),
+                tag_count = tags.len(),
+                explain,
+                "executing cloudprem substrait request"
+            );
+
+            let datafusion_service = QuickwitDataFusionService::new(Arc::clone(session_builder));
+            let sql = match query {
+                Some(cloudprem_substrait_request::Query::StringQuery(sql)) => sql,
+                Some(cloudprem_substrait_request::Query::SubstraitPlan(plan_bytes)) => {
+                    let stream = if explain {
+                        datafusion_service
+                            .explain_substrait(&plan_bytes, &settings)
+                            .await
+                            .map_err(|error| {
+                                CloudPremError::Internal(format!("plan error: {error}"))
+                            })?
+                    } else {
+                        datafusion_service
+                            .execute_substrait(&plan_bytes, &settings)
+                            .await
+                            .map_err(|error| {
+                                CloudPremError::Internal(format!("execution error: {error}"))
+                            })?
+                    };
+                    let ipc_buf = collect_stream_as_arrow_ipc(stream).await?;
+                    return Ok(CloudpremSubstraitResponse {
+                        arrow_ipc_bytes: ipc_buf,
+                    });
+                }
+                None => return Err(CloudPremError::Internal("missing query".to_string())),
+            };
+
+            let ctx = session_builder
+                .build_session_with_properties(&settings)
+                .map_err(|error| CloudPremError::Internal(format!("session error: {error}")))?;
+
+            let mut statements = DFParserBuilder::new(sql.as_str())
+                .build()
+                .and_then(|mut parser| parser.parse_statements())
+                .map_err(|error| CloudPremError::Internal(format!("parse error: {error}")))?;
+
+            let mut last_df = None;
+            while let Some(statement) = statements.pop_front() {
+                let plan = ctx
+                    .state()
+                    .statement_to_plan(statement)
+                    .await
+                    .map_err(|error| CloudPremError::Internal(format!("plan error: {error}")))?;
+                let df = ctx
+                    .execute_logical_plan(plan)
+                    .await
+                    .map_err(|error| CloudPremError::Internal(format!("sql error: {error}")))?;
+                last_df = Some(df);
+            }
+            let df = last_df
+                .ok_or_else(|| CloudPremError::Internal("no statements provided".to_string()))?;
+
+            if explain {
+                let plan = df
+                    .create_physical_plan()
+                    .await
+                    .map_err(|error| CloudPremError::Internal(format!("plan error: {error}")))?;
+                let plan_text = format!(
+                    "{}",
+                    datafusion::physical_plan::displayable(plan.as_ref()).indent(true)
+                );
+                let schema = arrow::datatypes::Schema::new(vec![arrow::datatypes::Field::new(
+                    "plan",
+                    arrow::datatypes::DataType::Utf8,
+                    false,
+                )]);
+                let batch = arrow::array::RecordBatch::try_new(
+                    Arc::new(schema),
+                    vec![Arc::new(arrow::array::StringArray::from(vec![
+                        plan_text.as_str(),
+                    ]))],
+                )
+                .map_err(|error| {
+                    CloudPremError::Internal(format!("record batch error: {error}"))
+                })?;
+                let ipc_buf = encode_record_batches_as_arrow_ipc(&[batch])?;
+                return Ok(CloudpremSubstraitResponse {
+                    arrow_ipc_bytes: ipc_buf,
+                });
+            }
+
+            let batches = df
+                .collect()
+                .await
+                .map_err(|error| CloudPremError::Internal(format!("execution error: {error}")))?;
+            let ipc_buf = encode_record_batches_as_arrow_ipc(&batches)?;
+            Ok(CloudpremSubstraitResponse {
+                arrow_ipc_bytes: ipc_buf,
+            })
+        }
     }
 
     async fn inverted_request_stream(
@@ -999,6 +1175,8 @@ mod tests {
             metastore_client,
             cluster,
             node_config,
+            #[cfg(feature = "datafusion")]
+            None,
         )
     }
 

@@ -169,7 +169,6 @@ impl TransformConfig for MetricMetadataConfig {
         let flush_client = FlushClient::new(
             api_key,
             self.metadata_svc_url.clone(),
-            self.org_id.clone(),
             Duration::from_secs(self.http_timeout_secs),
         )
         .map_err(|err| format!("failed to build HTTP client: {err}"))?;
@@ -617,7 +616,6 @@ metadata_svc_url: "http://localhost:9999"
             flush_client: FlushClient::new(
                 "test-key".to_string(),
                 "http://localhost:9999".to_string(),
-                "test-org".to_string(),
                 Duration::from_secs(10),
             )
             .expect("test client build should succeed"),
@@ -818,7 +816,6 @@ metadata_svc_url: "http://localhost:9999"
             flush_client: FlushClient::new(
                 "test-key".to_string(),
                 mock_server.uri(),
-                "test-org".to_string(),
                 Duration::from_secs(5),
             )
             .expect("test client build should succeed"),
@@ -884,10 +881,9 @@ metadata_svc_url: "http://localhost:9999"
                 "test-key",
                 "DD-API-KEY header mismatch"
             );
-            // Verify the request body contains org_id and records
+            // Verify the request body contains records
             let body: serde_json::Value =
                 serde_json::from_slice(&req.body).expect("body should be valid JSON");
-            assert_eq!(body["org_id"], "test-org", "body org_id mismatch: {body}");
             assert!(
                 body["records"].is_array(),
                 "body should have records array: {body}"
@@ -965,7 +961,6 @@ metadata_svc_url: "http://localhost:9999"
             flush_client: FlushClient::new(
                 "test-key".to_string(),
                 mock_server.uri(),
-                "test-org".to_string(),
                 Duration::from_secs(5),
             )
             .expect("test client build should succeed"),

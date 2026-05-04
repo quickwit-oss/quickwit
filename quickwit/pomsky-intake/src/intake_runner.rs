@@ -143,20 +143,35 @@ transforms:
       - explode_dd_trace_spans
       - otlp.traces
 
+  normalize_log_names:
+    type: name_normalizer
+    inputs:
+      - preprocess_logs
+
+  normalize_metric_names:
+    type: name_normalizer
+    inputs:
+      - metric_dual_ship
+
+  normalize_trace_names:
+    type: name_normalizer
+    inputs:
+      - preprocess_spans
+
   add_log_host_tags:
     type: add_host_tags
     inputs:
-      - preprocess_logs
+      - normalize_log_names
 
   add_metric_host_tags:
     type: add_host_tags
     inputs:
-      - metric_dual_ship
+      - normalize_metric_names
 
   add_trace_host_tags:
     type: add_host_tags
     inputs:
-      - preprocess_spans
+      - normalize_trace_names
 
 sinks:
   logs_out:
@@ -301,4 +316,41 @@ pub fn run_intake(config: IntakeConfig, print: bool) -> anyhow::Result<()> {
     drop(config_file);
     info!("intake service terminated");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use vector::config::{Format, load_from_str};
+
+    use super::*;
+
+    /// Validates that the YAML emitted by [`build_vector_config`] is a
+    /// well-formed Vector topology — every transform/sink references an
+    /// upstream source/transform that actually exists, every component type
+    /// is registered, and the schema parses. This is the cheapest check
+    /// available for catching pipeline-wiring typos (e.g. an `inputs:` ref
+    /// that points at a non-existent transform name) without spinning up the
+    /// full intake binary or hitting the network.
+    fn assert_vector_config_loads(print: bool) {
+        let config = IntakeConfig::default();
+        let yaml = build_vector_config(&PathBuf::from("/tmp/pomsky-intake-test"), &config, print);
+        if let Err(errors) = load_from_str(&yaml, Format::Yaml) {
+            panic!(
+                "vector rejected the generated config:\n--- yaml ---\n{yaml}\n--- errors ---\n{}",
+                errors.join("\n"),
+            );
+        }
+    }
+
+    #[test]
+    fn build_vector_config_topology_is_valid() {
+        assert_vector_config_loads(false);
+    }
+
+    #[test]
+    fn build_vector_config_topology_with_print_sink_is_valid() {
+        assert_vector_config_loads(true);
+    }
 }

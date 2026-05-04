@@ -7,7 +7,7 @@ pub struct AnyRequest {
     pub context: ::core::option::Option<Context>,
     #[prost(
         oneof = "any_request::Request",
-        tags = "11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31, 99"
+        tags = "11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 99"
     )]
     pub request: ::core::option::Option<any_request::Request>,
 }
@@ -46,6 +46,8 @@ pub mod any_request {
         GetIndexRoutingTable(super::GetIndexRoutingTableRequest),
         #[prost(message, tag = "28")]
         SetIndexRoutingTable(super::SetIndexRoutingTableRequest),
+        #[prost(message, tag = "29")]
+        SubstraitSearch(super::CloudpremSubstraitRequest),
         #[prost(message, tag = "30")]
         EsQuery(super::EsHttpRequest),
         #[prost(message, tag = "31")]
@@ -62,7 +64,7 @@ pub struct AnyResponse {
     pub grpc_code: u32,
     #[prost(
         oneof = "any_response::Response",
-        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 30, 31"
+        tags = "9, 10, 11, 12, 13, 14, 15, 17, 18, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31"
     )]
     pub response: ::core::option::Option<any_response::Response>,
 }
@@ -109,6 +111,8 @@ pub mod any_response {
         GetIndexRoutingTable(super::GetIndexRoutingTableResponse),
         #[prost(message, tag = "28")]
         SetIndexRoutingTable(super::SetIndexRoutingTableResponse),
+        #[prost(message, tag = "29")]
+        SubstraitSearch(super::CloudpremSubstraitResponse),
         #[prost(message, tag = "30")]
         EsQuery(super::EsHttpResponse),
         #[prost(message, tag = "31")]
@@ -814,6 +818,55 @@ pub struct EsHttpResponse {
     #[prost(bytes = "bytes", tag = "2")]
     pub body: ::prost::bytes::Bytes,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloudpremSubstraitRequest {
+    #[prost(int64, tag = "1")]
+    pub org_id: i64,
+    #[prost(message, optional, tag = "2")]
+    pub scope: ::core::option::Option<Scope>,
+    #[prost(message, optional, tag = "5")]
+    pub source: ::core::option::Option<cloudprem_substrait_request::QuerySource>,
+    #[prost(message, repeated, tag = "6")]
+    pub tags: ::prost::alloc::vec::Vec<cloudprem_substrait_request::Tag>,
+    #[prost(map = "string, string", tag = "7")]
+    pub settings: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+    #[prost(oneof = "cloudprem_substrait_request::Query", tags = "3, 4")]
+    pub query: ::core::option::Option<cloudprem_substrait_request::Query>,
+}
+/// Nested message and enum types in `CloudpremSubstraitRequest`.
+pub mod cloudprem_substrait_request {
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct QuerySource {
+        #[prost(string, tag = "1")]
+        pub source: ::prost::alloc::string::String,
+        #[prost(string, tag = "2")]
+        pub query_name: ::prost::alloc::string::String,
+        #[prost(string, tag = "3")]
+        pub client_id: ::prost::alloc::string::String,
+    }
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct Tag {
+        #[prost(string, tag = "1")]
+        pub key: ::prost::alloc::string::String,
+        #[prost(string, tag = "2")]
+        pub value: ::prost::alloc::string::String,
+    }
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Query {
+        #[prost(bytes, tag = "3")]
+        SubstraitPlan(::prost::alloc::vec::Vec<u8>),
+        #[prost(string, tag = "4")]
+        StringQuery(::prost::alloc::string::String),
+    }
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CloudpremSubstraitResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub arrow_ipc_bytes: ::prost::alloc::vec::Vec<u8>,
+}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -897,6 +950,11 @@ impl RpcName for GetClusterDiagnosticsRequest {
 impl RpcName for EsHttpRequest {
     fn rpc_name() -> &'static str {
         "es_query"
+    }
+}
+impl RpcName for CloudpremSubstraitRequest {
+    fn rpc_name() -> &'static str {
+        "substrait_search"
     }
 }
 impl RpcName for AnyResponse {
@@ -984,6 +1042,12 @@ pub trait CloudPremService: std::fmt::Debug + Send + Sync + 'static {
         &self,
         request: EsHttpRequest,
     ) -> crate::cloudprem::CloudPremResult<EsHttpResponse>;
+    ///Executes a DataFusion SQL or Substrait query via the OSS DataFusion session builder.
+    ///Requires QW_ENABLE_DATAFUSION_ENDPOINT=true and the Searcher role.
+    async fn substrait_search(
+        &self,
+        request: CloudpremSubstraitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse>;
     ///Response are sent to the bridge by the front, which initialised the connection
     async fn inverted_request_stream(
         &self,
@@ -1193,6 +1257,12 @@ impl CloudPremService for CloudPremServiceClient {
     ) -> crate::cloudprem::CloudPremResult<EsHttpResponse> {
         self.inner.0.es_query(request).await
     }
+    async fn substrait_search(
+        &self,
+        request: CloudpremSubstraitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse> {
+        self.inner.0.substrait_search(request).await
+    }
     async fn inverted_request_stream(
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
@@ -1310,6 +1380,12 @@ pub mod mock_cloud_prem_service {
             request: super::EsHttpRequest,
         ) -> crate::cloudprem::CloudPremResult<super::EsHttpResponse> {
             self.inner.lock().await.es_query(request).await
+        }
+        async fn substrait_search(
+            &self,
+            request: super::CloudpremSubstraitRequest,
+        ) -> crate::cloudprem::CloudPremResult<super::CloudpremSubstraitResponse> {
+            self.inner.lock().await.substrait_search(request).await
         }
         async fn inverted_request_stream(
             &self,
@@ -1589,6 +1665,22 @@ impl tower::Service<EsHttpRequest> for InnerCloudPremServiceClient {
         Box::pin(fut)
     }
 }
+impl tower::Service<CloudpremSubstraitRequest> for InnerCloudPremServiceClient {
+    type Response = CloudpremSubstraitResponse;
+    type Error = crate::cloudprem::CloudPremError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: CloudpremSubstraitRequest) -> Self::Future {
+        let svc = self.clone();
+        let fut = async move { svc.0.substrait_search(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<quickwit_common::ServiceStream<AnyResponse>>
 for InnerCloudPremServiceClient {
     type Response = CloudPremServiceStream<AnyRequest>;
@@ -1694,6 +1786,11 @@ struct CloudPremServiceTowerServiceStack {
         EsHttpResponse,
         crate::cloudprem::CloudPremError,
     >,
+    substrait_search_svc: quickwit_common::tower::BoxService<
+        CloudpremSubstraitRequest,
+        CloudpremSubstraitResponse,
+        crate::cloudprem::CloudPremError,
+    >,
     inverted_request_stream_svc: quickwit_common::tower::BoxService<
         quickwit_common::ServiceStream<AnyResponse>,
         CloudPremServiceStream<AnyRequest>,
@@ -1797,6 +1894,12 @@ impl CloudPremService for CloudPremServiceTowerServiceStack {
         request: EsHttpRequest,
     ) -> crate::cloudprem::CloudPremResult<EsHttpResponse> {
         self.es_query_svc.clone().ready().await?.call(request).await
+    }
+    async fn substrait_search(
+        &self,
+        request: CloudpremSubstraitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse> {
+        self.substrait_search_svc.clone().ready().await?.call(request).await
     }
     async fn inverted_request_stream(
         &self,
@@ -1965,6 +2068,16 @@ type EsQueryLayer = quickwit_common::tower::BoxLayer<
     EsHttpResponse,
     crate::cloudprem::CloudPremError,
 >;
+type SubstraitSearchLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        CloudpremSubstraitRequest,
+        CloudpremSubstraitResponse,
+        crate::cloudprem::CloudPremError,
+    >,
+    CloudpremSubstraitRequest,
+    CloudpremSubstraitResponse,
+    crate::cloudprem::CloudPremError,
+>;
 type InvertedRequestStreamLayer = quickwit_common::tower::BoxLayer<
     quickwit_common::tower::BoxService<
         quickwit_common::ServiceStream<AnyResponse>,
@@ -1993,6 +2106,7 @@ pub struct CloudPremServiceTowerLayerStack {
     set_index_routing_table_layers: Vec<SetIndexRoutingTableLayer>,
     get_cluster_diagnostics_layers: Vec<GetClusterDiagnosticsLayer>,
     es_query_layers: Vec<EsQueryLayer>,
+    substrait_search_layers: Vec<SubstraitSearchLayer>,
     inverted_request_stream_layers: Vec<InvertedRequestStreamLayer>,
 }
 impl CloudPremServiceTowerLayerStack {
@@ -2414,6 +2528,33 @@ impl CloudPremServiceTowerLayerStack {
         >>::Service as tower::Service<EsHttpRequest>>::Future: Send + 'static,
         L: tower::Layer<
                 quickwit_common::tower::BoxService<
+                    CloudpremSubstraitRequest,
+                    CloudpremSubstraitResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CloudpremSubstraitRequest,
+                CloudpremSubstraitResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service: tower::Service<
+                CloudpremSubstraitRequest,
+                Response = CloudpremSubstraitResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CloudpremSubstraitRequest,
+                CloudpremSubstraitResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >>::Service as tower::Service<
+            CloudpremSubstraitRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
                     quickwit_common::ServiceStream<AnyResponse>,
                     CloudPremServiceStream<AnyRequest>,
                     crate::cloudprem::CloudPremError,
@@ -2467,6 +2608,8 @@ impl CloudPremServiceTowerLayerStack {
         self.get_cluster_diagnostics_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.es_query_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.substrait_search_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self.inverted_request_stream_layers
             .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
@@ -2793,6 +2936,27 @@ impl CloudPremServiceTowerLayerStack {
         self.es_query_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
+    pub fn stack_substrait_search_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CloudpremSubstraitRequest,
+                    CloudpremSubstraitResponse,
+                    crate::cloudprem::CloudPremError,
+                >,
+            > + Send + Sync + 'static,
+        L::Service: tower::Service<
+                CloudpremSubstraitRequest,
+                Response = CloudpremSubstraitResponse,
+                Error = crate::cloudprem::CloudPremError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            CloudpremSubstraitRequest,
+        >>::Future: Send + 'static,
+    {
+        self.substrait_search_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
     pub fn stack_inverted_request_stream_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<
@@ -3003,6 +3167,14 @@ impl CloudPremServiceTowerLayerStack {
                 quickwit_common::tower::BoxService::new(inner_client.clone()),
                 |svc, layer| layer.layer(svc),
             );
+        let substrait_search_svc = self
+            .substrait_search_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(inner_client.clone()),
+                |svc, layer| layer.layer(svc),
+            );
         let inverted_request_stream_svc = self
             .inverted_request_stream_layers
             .into_iter()
@@ -3029,6 +3201,7 @@ impl CloudPremServiceTowerLayerStack {
             set_index_routing_table_svc,
             get_cluster_diagnostics_svc,
             es_query_svc,
+            substrait_search_svc,
             inverted_request_stream_svc,
         };
         CloudPremServiceClient::new(tower_svc_stack)
@@ -3224,6 +3397,15 @@ where
             Future = BoxFuture<EsHttpResponse, crate::cloudprem::CloudPremError>,
         >
         + tower::Service<
+            CloudpremSubstraitRequest,
+            Response = CloudpremSubstraitResponse,
+            Error = crate::cloudprem::CloudPremError,
+            Future = BoxFuture<
+                CloudpremSubstraitResponse,
+                crate::cloudprem::CloudPremError,
+            >,
+        >
+        + tower::Service<
             quickwit_common::ServiceStream<AnyResponse>,
             Response = CloudPremServiceStream<AnyRequest>,
             Error = crate::cloudprem::CloudPremError,
@@ -3327,6 +3509,12 @@ where
         &self,
         request: EsHttpRequest,
     ) -> crate::cloudprem::CloudPremResult<EsHttpResponse> {
+        self.clone().call(request).await
+    }
+    async fn substrait_search(
+        &self,
+        request: CloudpremSubstraitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse> {
         self.clone().call(request).await
     }
     async fn inverted_request_stream(
@@ -3594,6 +3782,20 @@ where
                 EsHttpRequest::rpc_name(),
             ))
     }
+    async fn substrait_search(
+        &self,
+        request: CloudpremSubstraitRequest,
+    ) -> crate::cloudprem::CloudPremResult<CloudpremSubstraitResponse> {
+        self.inner
+            .clone()
+            .substrait_search(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|status| crate::error::grpc_status_to_service_error(
+                status,
+                CloudpremSubstraitRequest::rpc_name(),
+            ))
+    }
     async fn inverted_request_stream(
         &self,
         request: quickwit_common::ServiceStream<AnyResponse>,
@@ -3815,6 +4017,17 @@ for CloudPremServiceGrpcServerAdapter {
         self.inner
             .0
             .es_query(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(crate::error::grpc_error_to_grpc_status)
+    }
+    async fn substrait_search(
+        &self,
+        request: tonic::Request<CloudpremSubstraitRequest>,
+    ) -> Result<tonic::Response<CloudpremSubstraitResponse>, tonic::Status> {
+        self.inner
+            .0
+            .substrait_search(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(crate::error::grpc_error_to_grpc_status)
@@ -4332,6 +4545,34 @@ pub mod cloud_prem_service_grpc_client {
                 .insert(GrpcMethod::new("cloudprem.CloudPremService", "EsQuery"));
             self.inner.unary(req, path, codec).await
         }
+        /// Executes a DataFusion SQL or Substrait query via the OSS DataFusion session builder.
+        /// Requires QW_ENABLE_DATAFUSION_ENDPOINT=true and the Searcher role.
+        pub async fn substrait_search(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CloudpremSubstraitRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloudpremSubstraitResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/cloudprem.CloudPremService/SubstraitSearch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("cloudprem.CloudPremService", "SubstraitSearch"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Response are sent to the bridge by the front, which initialised the connection
         pub async fn inverted_request_stream(
             &mut self,
@@ -4490,6 +4731,15 @@ pub mod cloud_prem_service_grpc_server {
             &self,
             request: tonic::Request<super::EsHttpRequest>,
         ) -> std::result::Result<tonic::Response<super::EsHttpResponse>, tonic::Status>;
+        /// Executes a DataFusion SQL or Substrait query via the OSS DataFusion session builder.
+        /// Requires QW_ENABLE_DATAFUSION_ENDPOINT=true and the Searcher role.
+        async fn substrait_search(
+            &self,
+            request: tonic::Request<super::CloudpremSubstraitRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloudpremSubstraitResponse>,
+            tonic::Status,
+        >;
         /// Server streaming response type for the InvertedRequestStream method.
         type InvertedRequestStreamStream: tonic::codegen::tokio_stream::Stream<
                 Item = std::result::Result<super::AnyRequest, tonic::Status>,
@@ -5325,6 +5575,55 @@ pub mod cloud_prem_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = EsQuerySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/cloudprem.CloudPremService/SubstraitSearch" => {
+                    #[allow(non_camel_case_types)]
+                    struct SubstraitSearchSvc<T: CloudPremServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: CloudPremServiceGrpc,
+                    > tonic::server::UnaryService<super::CloudpremSubstraitRequest>
+                    for SubstraitSearchSvc<T> {
+                        type Response = super::CloudpremSubstraitResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CloudpremSubstraitRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as CloudPremServiceGrpc>::substrait_search(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SubstraitSearchSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

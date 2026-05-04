@@ -24,6 +24,7 @@ pub(crate) struct ByocApiMetrics {
     pub log_requests_total: DDCounters,
     pub log_request_duration_seconds: DDHistograms,
     pub log_bytes_total: Counter,
+    pub log_unmatched_events_total: Counter,
     pub metric_requests_total: DDCounters,
     pub metric_request_duration_seconds: DDHistograms,
     pub metric_bytes_total: Counter,
@@ -51,7 +52,8 @@ impl Default for ByocApiMetrics {
                 DD_STATUS_CODES,
                 std::slice::from_ref(&log),
             ),
-            log_bytes_total: counter!("byoc_ingest_bytes.count", vec![log]),
+            log_bytes_total: counter!("byoc_ingest_bytes.count", vec![log.clone()]),
+            log_unmatched_events_total: counter!("byoc_ingest_unmatched_events.count", vec![log]),
 
             metric_requests_total: DDCounters::new(
                 "byoc_ingest_requests.count",
