@@ -99,7 +99,7 @@ jobs:
           shared-key: "quickwit-cargo"
       - name: Install nextest
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/install-action@aba36d755ec7ca22d38b12111787c26115943952
+        uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1
         with:
           tool: cargo-nextest
       - name: cargo check without metrics
@@ -171,17 +171,17 @@ jobs:
           shared-key: "quickwit-cargo"
       - name: Install cargo deny
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@59027ebf20a9617c4e819eb53ccd2673cb162b89 # v3.0.3
+        uses: taiki-e/cache-cargo-install-action@f9eed3e4680f27610dc6d8c67be1b88593f7dade # v3.0.6
         with:
           tool: cargo-deny@0.19.4
       - name: Install cargo machete
         if: always() && steps.modified.outputs.rust_src == 'true'
-        uses: taiki-e/cache-cargo-install-action@59027ebf20a9617c4e819eb53ccd2673cb162b89 # v3.0.3
+        uses: taiki-e/cache-cargo-install-action@f9eed3e4680f27610dc6d8c67be1b88593f7dade # v3.0.6
         with:
           tool: cargo-machete
       - name: Install diesel-guard
         if: always() && steps.modified.outputs.migrations == 'true'
-        uses: taiki-e/cache-cargo-install-action@59027ebf20a9617c4e819eb53ccd2673cb162b89 # v3.0.3
+        uses: taiki-e/cache-cargo-install-action@f9eed3e4680f27610dc6d8c67be1b88593f7dade # v3.0.6
         with:
           tool: diesel-guard@0.10.0
       - name: cargo clippy
@@ -227,7 +227,7 @@ jobs:
           toolchain: stable
 
       - name: Cache cargo tools
-        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cargo/bin
           key: ${{ runner.os }}-cargo-tools-${{ hashFiles('**/Cargo.lock') }}
