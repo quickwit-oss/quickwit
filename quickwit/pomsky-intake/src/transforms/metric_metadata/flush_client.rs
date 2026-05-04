@@ -159,9 +159,7 @@ fn build_request_body(pending: &HashMap<String, MetricTypeInfo>) -> UpsertReques
             interval: i64::from(info.interval),
         })
         .collect();
-    UpsertRequest {
-        records,
-    }
+    UpsertRequest { records }
 }
 
 // ---------------------------------------------------------------------------
