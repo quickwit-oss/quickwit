@@ -247,6 +247,15 @@ impl ParquetMergePlanner {
     /// - Time-matured splits (created_at + maturation_period has elapsed)
     /// - Splits we've already seen (dedup via `known_split_ids`)
     /// - Pre-Phase-31 splits without a window (can't participate in compaction)
+    ///
+    /// TODO(CS-3): when `ParquetMergePolicyConfig` grows a
+    /// `compaction_start_time: Option<i64>` field (and the merge policy
+    /// exposes it), filter here on `split.window.start >= compaction_start_time`
+    /// and add a `check_invariant!(InvariantId::CS3, ...)` over
+    /// `scoped_young_splits` to verify no pre-threshold split slipped
+    /// through. The TLA+ model in `time_windowed_compaction.rs` and the
+    /// `CS-3` registry entry already define the invariant; production
+    /// just lacks the configurable threshold today.
     fn record_splits_if_necessary(&mut self, splits: Vec<ParquetSplitMetadata>) {
         let now = std::time::SystemTime::now();
         for split in splits {
