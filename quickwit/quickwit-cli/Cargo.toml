@@ -58,6 +58,7 @@ tracing-subscriber = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-directories = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-index-management = { workspace = true }
 quickwit-indexing = { workspace = true }
@@ -69,6 +70,7 @@ quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }
 quickwit-telemetry = { workspace = true }
+tantivy = { workspace = true }
 
 [dev-dependencies]
 predicates = { workspace = true }

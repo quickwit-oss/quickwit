@@ -21,6 +21,7 @@ use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{Context, bail};
+use bytesize::ByteSize;
 use clap::{ArgMatches, Command, arg};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
@@ -36,6 +37,7 @@ use quickwit_config::{
     CLI_SOURCE_ID, IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams,
     TransformConfig, VecSourceParams,
 };
+use quickwit_directories::BundleDirectory;
 use quickwit_index_management::{IndexService, clear_cache_directory};
 use quickwit_indexing::IndexingPipeline;
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergeSchedulerService};
@@ -54,6 +56,9 @@ use quickwit_serve::{
     BodyFormat, SearchRequestQueryString, SortBy, search_request_from_api_request,
 };
 use quickwit_storage::{BundleStorage, Storage};
+use tantivy::Index;
+use tantivy::directory::FileSlice;
+use tantivy::schema::FieldType;
 use thousands::Separable;
 use tracing::{debug, info};
 
@@ -134,6 +139,16 @@ pub fn build_tool_command() -> Command {
                         .display_order(2)
                         .required(true),
                     arg!(--"target-dir" <TARGET_DIR> "Directory to extract the split to."),
+                ])
+            )
+        .subcommand(
+            Command::new("analyze-split-file")
+                .about("Analyze a local split file.")
+                .long_about("Analyzes the contents of a local .split file. Does not require a node config or metastore access.")
+                .args(&[
+                    arg!(--"split-file" <SPLIT_FILE> "Path to the local .split file to analyze.")
+                        .display_order(1)
+                        .required(true),
                 ])
             )
         .subcommand(
@@ -274,6 +289,11 @@ pub struct ExtractSplitArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub struct AnalyzeSplitFileArgs {
+    pub split_file: PathBuf,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub enum ToolCliCommand {
     GarbageCollect(GarbageCollectIndexArgs),
     LocalIngest(LocalIngestDocsArgs),
@@ -281,6 +301,7 @@ pub enum ToolCliCommand {
     Merge(MergeArgs),
     MatureMerge(MatureMergeArgs),
     ExtractSplit(ExtractSplitArgs),
+    AnalyzeSplitFile(AnalyzeSplitFileArgs),
 }
 
 impl ToolCliCommand {
@@ -295,6 +316,7 @@ impl ToolCliCommand {
             "merge" => Self::parse_merge_args(submatches),
             "merge-mature" => Self::parse_mature_merge_args(submatches),
             "extract-split" => Self::parse_extract_split_args(submatches),
+            "analyze-split-file" => Self::analyze_split_file_args(submatches),
             _ => bail!("unknown tool subcommand `{subcommand}`"),
         }
     }
@@ -516,6 +538,14 @@ impl ToolCliCommand {
         }))
     }
 
+    fn analyze_split_file_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
+        let split_file = matches
+            .remove_one::<String>("split-file")
+            .map(PathBuf::from)
+            .expect("`split-file` should be a required arg.");
+        Ok(Self::AnalyzeSplitFile(AnalyzeSplitFileArgs { split_file }))
+    }
+
     pub async fn execute(self) -> anyhow::Result<()> {
         match self {
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
@@ -524,6 +554,7 @@ impl ToolCliCommand {
             Self::Merge(args) => merge_cli(args).await,
             Self::MatureMerge(args) => merge_mature_cli(args).await,
             Self::ExtractSplit(args) => extract_split_cli(args).await,
+            Self::AnalyzeSplitFile(args) => analyze_split_file_cli(args).await,
         }
     }
 }
@@ -914,6 +945,149 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     }
 
     println!("{} Split successfully extracted.", "✔".color(GREEN_COLOR));
+    Ok(())
+}
+
+fn print_per_field(
+    label: &str,
+    usage: &tantivy::space_usage::PerFieldSpaceUsage,
+    // Per-JSON-field sub-key breakdown: field_name -> sorted (sub_key, bytes)
+    json_sub_keys: &std::collections::HashMap<String, Vec<(String, u64)>>,
+) {
+    let total = usage.total().get_bytes();
+    if total == 0 {
+        return;
+    }
+    let mut fields: Vec<_> = usage.fields().collect();
+    fields.sort_by_key(|f| std::cmp::Reverse(f.total()));
+    println!("  {label:<14}  {}", ByteSize(total));
+    for field in &fields {
+        println!(
+            "    {:<40}  {}",
+            field.field_name(),
+            ByteSize(field.total().get_bytes())
+        );
+        if let Some(sub_keys) = json_sub_keys.get(field.field_name()) {
+            for (key, bytes) in sub_keys {
+                println!("      {:<38}  {}", key, ByteSize(*bytes));
+            }
+        }
+    }
+}
+
+async fn analyze_split_file_cli(args: AnalyzeSplitFileArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "extract-split-file");
+    println!("❯ Extracting split file...");
+
+    let split_file_path = args.split_file.canonicalize().with_context(|| {
+        format!(
+            "failed to resolve split file path `{}`",
+            args.split_file.display()
+        )
+    })?;
+    let split_data_vec = std::fs::read(&split_file_path)
+        .with_context(|| format!("failed to read split file `{}`", split_file_path.display()))?;
+
+    // --- Tantivy space usage analysis ---
+    let file_slice = FileSlice::from(split_data_vec);
+    match BundleDirectory::open_split(file_slice)
+        .and_then(|dir| Index::open(dir).map_err(std::io::Error::other))
+    {
+        Ok(index) => {
+            let reader = index.reader()?;
+            let searcher = reader.searcher();
+            let seg_reader = searcher.segment_reader(0);
+            let schema = index.schema();
+            let usage = searcher.space_usage()?;
+            if let Some(seg) = usage.segments().first() {
+                println!("\n{} docs:", seg.num_docs());
+
+                // Scan each JSON field's term dictionary and accumulate postings / positions
+                // bytes separately per top-level sub-key.
+                // Result maps: field_name -> sorted Vec<(sub_key, bytes)>
+                let mut postings_sub_keys: std::collections::HashMap<String, Vec<(String, u64)>> =
+                    std::collections::HashMap::new();
+                let mut positions_sub_keys: std::collections::HashMap<String, Vec<(String, u64)>> =
+                    std::collections::HashMap::new();
+                for (field, field_entry) in schema.fields() {
+                    if !matches!(field_entry.field_type(), FieldType::JsonObject(_)) {
+                        continue;
+                    }
+                    let inv_index = seg_reader.inverted_index(field)?;
+                    let mut stream = inv_index.terms().stream()?;
+                    let mut postings_per_key: std::collections::BTreeMap<String, u64> =
+                        std::collections::BTreeMap::new();
+                    let mut positions_per_key: std::collections::BTreeMap<String, u64> =
+                        std::collections::BTreeMap::new();
+                    // Term key layout for JSON fields: [path bytes][0x00][value type][value bytes]
+                    // Path segments are separated by 0x01. No type-code prefix in the SSTable key.
+                    while let Some((key_bytes, term_info)) = stream.next() {
+                        let path_end = key_bytes
+                            .iter()
+                            .position(|&b| b == 0x00)
+                            .unwrap_or(key_bytes.len());
+                        let path_bytes = &key_bytes[..path_end];
+                        // Replace 0x01 segment separators with '.' to reconstruct the full path.
+                        let full_path: String = path_bytes
+                            .split(|&b| b == 0x01)
+                            .map(|seg| std::str::from_utf8(seg).unwrap_or("<non-utf8>"))
+                            .collect::<Vec<_>>()
+                            .join(".");
+                        let top_key = full_path;
+                        *postings_per_key.entry(top_key.clone()).or_default() +=
+                            term_info.postings_range.len() as u64;
+                        *positions_per_key.entry(top_key).or_default() +=
+                            term_info.positions_range.len() as u64;
+                    }
+                    let field_name = field_entry.name().to_string();
+                    let mut postings_sorted: Vec<_> = postings_per_key.into_iter().collect();
+                    postings_sorted.sort_by(|a, b| b.1.cmp(&a.1));
+                    postings_sub_keys.insert(field_name.clone(), postings_sorted);
+                    let mut positions_sorted: Vec<_> = positions_per_key.into_iter().collect();
+                    positions_sorted.retain(|(_, b)| *b > 0);
+                    positions_sorted.sort_by(|a, b| b.1.cmp(&a.1));
+                    positions_sub_keys.insert(field_name, positions_sorted);
+                }
+
+                print_per_field(
+                    "term dict",
+                    seg.termdict(),
+                    &std::collections::HashMap::new(),
+                );
+                print_per_field("postings", seg.postings(), &postings_sub_keys);
+                print_per_field("positions", seg.positions(), &positions_sub_keys);
+                print_per_field(
+                    "fast fields",
+                    seg.fast_fields(),
+                    &std::collections::HashMap::new(),
+                );
+                print_per_field(
+                    "field norms",
+                    seg.fieldnorms(),
+                    &std::collections::HashMap::new(),
+                );
+                let store = seg.store();
+                let store_total = store.total().get_bytes();
+                if store_total > 0 {
+                    println!("  {:<14}  {}", "store", ByteSize(store_total));
+                    println!(
+                        "    {:<40}  {}",
+                        "data",
+                        ByteSize(store.data_usage().get_bytes())
+                    );
+                    println!(
+                        "    {:<40}  {}",
+                        "offsets",
+                        ByteSize(store.offsets_usage().get_bytes())
+                    );
+                }
+                println!();
+            }
+        }
+        Err(err) => {
+            debug!("could not open split as tantivy index for space analysis: {err:#}");
+        }
+    }
     Ok(())
 }
 
