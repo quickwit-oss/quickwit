@@ -29,7 +29,6 @@ use super::types::{MetadataMetricType, MetricTypeInfo};
 /// Field names match Go `UpsertMetricMetadataRequest` exactly.
 #[derive(Serialize)]
 struct UpsertRequest {
-    org_id: String,
     records: Vec<UpsertRecord>,
 }
 
@@ -87,14 +86,12 @@ pub struct FlushClient {
     client: reqwest::Client,
     api_key: String,
     metadata_svc_url: String,
-    org_id: String,
 }
 
 impl FlushClient {
     pub fn new(
         api_key: String,
         metadata_svc_url: String,
-        org_id: String,
         timeout: Duration,
     ) -> Result<Self, reqwest::Error> {
         let client = reqwest::Client::builder().timeout(timeout).build()?;
@@ -102,7 +99,6 @@ impl FlushClient {
             client,
             api_key,
             metadata_svc_url,
-            org_id,
         })
     }
 
@@ -110,7 +106,7 @@ impl FlushClient {
         &self,
         pending: &HashMap<String, MetricTypeInfo>,
     ) -> Result<Vec<String>, FlushError> {
-        let body = build_request_body(&self.org_id, pending);
+        let body = build_request_body(pending);
         let url = format!(
             "{}/api/unstable/byoc/ingest/metadata/metric-metadata",
             self.metadata_svc_url
@@ -154,7 +150,7 @@ impl FlushClient {
     }
 }
 
-fn build_request_body(org_id: &str, pending: &HashMap<String, MetricTypeInfo>) -> UpsertRequest {
+fn build_request_body(pending: &HashMap<String, MetricTypeInfo>) -> UpsertRequest {
     let records = pending
         .iter()
         .map(|(name, info)| UpsertRecord {
@@ -163,10 +159,7 @@ fn build_request_body(org_id: &str, pending: &HashMap<String, MetricTypeInfo>) -
             interval: i64::from(info.interval),
         })
         .collect();
-    UpsertRequest {
-        org_id: org_id.to_string(),
-        records,
-    }
+    UpsertRequest { records }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +181,6 @@ mod tests {
         FlushClient::new(
             "test-key".to_string(),
             server_uri.to_string(),
-            "org-123".to_string(),
             Duration::from_secs(5),
         )
         .expect("client build should succeed")
@@ -454,7 +446,6 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .and(wiremock::matchers::body_json(serde_json::json!({
-                "org_id": "org-123",
                 "records": [
                     {
                         "metric_name": "system.cpu.user",
@@ -490,7 +481,6 @@ mod tests {
         Mock::given(method("POST"))
             .and(path("/api/unstable/byoc/ingest/metadata/metric-metadata"))
             .and(wiremock::matchers::body_json(serde_json::json!({
-                "org_id": "org-123",
                 "records": [
                     {
                         "metric_name": "cpu.idle",
@@ -535,7 +525,6 @@ mod tests {
         let client = FlushClient::new(
             "test-key".to_string(),
             mock_server.uri(),
-            "org-123".to_string(),
             Duration::from_millis(1),
         )
         .expect("client build should succeed");
