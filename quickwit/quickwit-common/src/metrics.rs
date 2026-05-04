@@ -22,8 +22,6 @@ use metrics_exporter_prometheus::PrometheusHandle;
 pub use prometheus::{exponential_buckets, linear_buckets};
 use quickwit_metrics::{Counter, Gauge, Labels, gauge};
 
-const SYSTEM: &str = "quickwit";
-
 static PROMETHEUS_HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
 
 #[derive(Clone)]
@@ -109,7 +107,7 @@ fn spawn_prometheus_upkeep(handle: PrometheusHandle) -> Result<(), String> {
 }
 
 pub fn register_info(name: &'static str, help: &'static str, kvs: BTreeMap<&'static str, String>) {
-    let key_name = metric_key_name("", name);
+    let key_name = format!("quickwit_{name}");
     let labels = kvs
         .into_iter()
         .map(|(label, value)| metrics::Label::new(label, value))
@@ -220,14 +218,6 @@ pub static IN_FLIGHT_OTHER_SOURCE: LazyLock<Gauge> =
 fn in_flight_data_gauge(component: &'static str) -> Gauge {
     let labels = COMPONENT_LABELS.with_values([component]);
     gauge!(parent: &*IN_FLIGHT_DATA_BYTES, labels: &labels)
-}
-
-fn metric_key_name(subsystem: &str, name: &str) -> String {
-    if subsystem.is_empty() {
-        format!("{SYSTEM}_{name}")
-    } else {
-        format!("{SYSTEM}_{subsystem}_{name}")
-    }
 }
 
 #[cfg(test)]
