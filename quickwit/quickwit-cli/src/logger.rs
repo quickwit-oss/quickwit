@@ -421,11 +421,10 @@ fn init_metrics_provider(
     build_info: &BuildInfo,
     otlp_config: &OtlpExporterConfig,
 ) -> anyhow::Result<Option<SdkMetricsProvider>> {
-    let prometheus_recorder = install_prometheus_recorder()?;
+    let prometheus_recorder = build_prometheus_recorder()?;
 
     let (quickwit_recorder, meter_provider) = if otlp_config.is_enabled() {
-        let (otlp_recorder, meter_provider) =
-            install_otlp_metrics_recorder(build_info, otlp_config)?;
+        let (otlp_recorder, meter_provider) = build_otlp_metrics_recorder(build_info, otlp_config)?;
         let recorder = FanoutBuilder::default()
             .add_recorder(prometheus_recorder)
             .add_recorder(otlp_recorder)
@@ -438,7 +437,7 @@ fn init_metrics_provider(
         (recorder, None)
     };
 
-    let dogstatsd_recorder = install_dogstatsd_recorder(build_info)?;
+    let dogstatsd_recorder = build_dogstatsd_recorder(build_info)?;
 
     let mut router = RouterBuilder::from_recorder(metrics::NoopRecorder);
     router
@@ -451,7 +450,7 @@ fn init_metrics_provider(
     Ok(meter_provider)
 }
 
-fn install_prometheus_recorder() -> anyhow::Result<PrometheusRecorder> {
+fn build_prometheus_recorder() -> anyhow::Result<PrometheusRecorder> {
     let mut prometheus_builder = PrometheusBuilder::new();
     for (name, buckets) in quickwit_metrics::histogram_buckets() {
         prometheus_builder = prometheus_builder
@@ -467,7 +466,7 @@ fn install_prometheus_recorder() -> anyhow::Result<PrometheusRecorder> {
     Ok(prometheus_recorder)
 }
 
-fn install_otlp_metrics_recorder(
+fn build_otlp_metrics_recorder(
     build_info: &BuildInfo,
     otlp_config: &OtlpExporterConfig,
 ) -> anyhow::Result<(OpenTelemetryRecorder, SdkMetricsProvider)> {
@@ -491,7 +490,7 @@ fn install_otlp_metrics_recorder(
     Ok((recorder, metrics_provider))
 }
 
-fn install_dogstatsd_recorder(build_info: &BuildInfo) -> anyhow::Result<DogStatsDRecorder> {
+fn build_dogstatsd_recorder(build_info: &BuildInfo) -> anyhow::Result<DogStatsDRecorder> {
     // Reading both `CLOUDPREM_*` and `CP_*` env vars for backward compatibility. The former is
     // deprecated and can be removed after 2026-04-01.
     let host: String = quickwit_common::get_from_env_opt("CLOUDPREM_DOGSTATSD_SERVER_HOST", false)
