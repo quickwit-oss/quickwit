@@ -18,7 +18,7 @@
 //! [`CompactionScope`], invokes [`ParquetMergePolicy::operations()`], and
 //! dispatches merge tasks to the [`MergeSchedulerService`].
 //!
-//! Follows the same pattern as the Tantivy [`MergePlanner`] but uses
+//! Follows the same pattern as the Tantivy `MergePlanner` but uses
 //! Parquet-specific types:
 //!
 //! - `CompactionScope` instead of `MergePartition`
@@ -31,6 +31,8 @@ use std::time::Instant;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_dst::check_invariant;
+use quickwit_dst::invariants::InvariantId;
 use quickwit_parquet_engine::merge::policy::{
     CompactionScope, ParquetMergeOperation, ParquetMergePolicy, ParquetSplitMaturity,
 };
@@ -65,7 +67,7 @@ struct PlanParquetMerge {
 /// partitions, or sort schemas are never merged together — doing so would
 /// violate temporal pruning (TW-3) or sort order (MC-3) guarantees.
 ///
-/// Follows the same pattern as the Tantivy [`MergePlanner`] but with
+/// Follows the same pattern as the Tantivy `MergePlanner` but with
 /// `CompactionScope` instead of `MergePartition` and Parquet-specific types.
 pub struct ParquetMergePlanner {
     /// Splits grouped by compaction scope that are eligible for merging.
@@ -179,6 +181,30 @@ impl ParquetMergePlanner {
         merge_split_downloader_mailbox: Mailbox<ParquetMergeSplitDownloader>,
         merge_scheduler_service: Mailbox<MergeSchedulerService>,
     ) -> Self {
+        // MP-11 (RestartReSeedsAllImmature): every split the metastore
+        // reports as still-immature should land in scoped_young_splits,
+        // unless filtered by the merge policy as mature/expired or by being
+        // pre-Phase-31. We compute the expected count, then verify the
+        // recorded count matches after seeding.
+        let now = std::time::SystemTime::now();
+        let expected_immature: Vec<ParquetSplitMetadata> = immature_splits
+            .iter()
+            .filter(|split| {
+                match merge_policy.split_maturity(split.size_bytes, split.num_merge_ops) {
+                    ParquetSplitMaturity::Mature => false,
+                    ParquetSplitMaturity::Immature {
+                        maturation_period, ..
+                    } => split.created_at + maturation_period > now,
+                }
+            })
+            .filter(|split| CompactionScope::from_split(split).is_some())
+            .cloned()
+            .collect();
+        let expected_immature_ids: HashSet<String> = expected_immature
+            .iter()
+            .map(|s| s.split_id.as_str().to_string())
+            .collect();
+
         let mut planner = Self {
             scoped_young_splits: HashMap::new(),
             known_split_ids: HashSet::new(),
@@ -190,6 +216,28 @@ impl ParquetMergePlanner {
             incarnation_started_at: Instant::now(),
         };
         planner.record_splits_if_necessary(immature_splits);
+
+        // After re-seeding: every expected-immature split must be
+        // acknowledged (in known_split_ids) AND placed in a scope bucket.
+        // Anything missing means a split fell through the cracks during
+        // recovery — exactly the failure mode MP-11 protects against.
+        let recorded_in_scope: HashSet<String> = planner
+            .scoped_young_splits
+            .values()
+            .flatten()
+            .map(|s| s.split_id.as_str().to_string())
+            .collect();
+        let all_recorded = expected_immature_ids
+            .iter()
+            .all(|id| planner.known_split_ids.contains(id) && recorded_in_scope.contains(id));
+        check_invariant!(
+            InvariantId::MP11,
+            all_recorded,
+            ": planner re-seed dropped immature splits (expected={}, recorded_in_scope={})",
+            expected_immature_ids.len(),
+            recorded_in_scope.len()
+        );
+
         planner
     }
 
