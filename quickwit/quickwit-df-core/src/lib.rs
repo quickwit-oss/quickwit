@@ -44,8 +44,10 @@ pub use data_source::{
 pub use datafusion::execution::SendableRecordBatchStream;
 pub use datafusion_distributed::{Worker, WorkerResolver};
 pub use service::{
-    DataFusionExecution, DataFusionExecutionMetadata, DataFusionInput, DataFusionInputMetadata,
-    DataFusionOutput, DataFusionRequest, DataFusionService, SubstraitExecution,
+    DataFusionExecution, DataFusionExecutionMetadata, DataFusionExecutionStatistics,
+    DataFusionInput, DataFusionInputMetadata, DataFusionMetricStatistics, DataFusionOutput,
+    DataFusionPhysicalPlanMetadata, DataFusionPlanMetricStatistics, DataFusionPruningStatistics,
+    DataFusionRatioStatistics, DataFusionRequest, DataFusionService, SubstraitExecution,
     SubstraitExecutionMetadata,
 };
 pub use session::DataFusionSessionBuilder;
