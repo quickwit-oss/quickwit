@@ -102,7 +102,7 @@ const REGION_LABEL: Labels<1> = Labels::new(["region"]);
 fn track_connection(region: &'static str) -> GaugeGuard {
     let lv = REGION_LABEL.with_values([region]);
     let g = gauge!(parent: HTTP_ACTIVE_CONNECTIONS, labels: &lv);
-    let mut guard = GaugeGuard::from_gauge(&g);
+    let guard = GaugeGuard::from_gauge(&g);
     guard.increment(1.0);
     guard
 }
@@ -160,7 +160,7 @@ fn handle_request(method: &'static str, path: &'static str, region: &'static str
         "method" => method,
     );
     {
-        let mut _guard = GaugeGuard::from_gauge(&conn_gauge);
+        let _guard = GaugeGuard::from_gauge(&conn_gauge);
         _guard.increment(1.0);
     }
 

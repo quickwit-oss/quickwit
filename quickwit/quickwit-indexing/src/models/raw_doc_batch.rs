@@ -34,7 +34,7 @@ impl RawDocBatch {
         force_commit: bool,
     ) -> Self {
         let delta = docs.iter().map(|doc| doc.len() as i64).sum::<i64>();
-        let mut gauge_guard =
+        let gauge_guard =
             GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_DOC_PROCESSOR_MAILBOX);
         gauge_guard.increment(delta as f64);
 

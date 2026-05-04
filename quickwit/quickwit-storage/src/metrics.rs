@@ -413,9 +413,9 @@ pub static CACHE_METRICS_FOR_TESTS: LazyLock<CacheMetrics> =
 pub fn object_storage_get_slice_in_flight_guards(
     get_request_size: usize,
 ) -> (GaugeGuard, GaugeGuard) {
-    let mut bytes_guard = GaugeGuard::from_gauge(&OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES);
+    let bytes_guard = GaugeGuard::from_gauge(&OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_NUM_BYTES);
     bytes_guard.increment(get_request_size as f64);
-    let mut count_guard = GaugeGuard::from_gauge(&OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT);
+    let count_guard = GaugeGuard::from_gauge(&OBJECT_STORAGE_GET_SLICE_IN_FLIGHT_COUNT);
     count_guard.increment(1.0);
     (bytes_guard, count_guard)
 }

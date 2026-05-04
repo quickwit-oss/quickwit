@@ -232,7 +232,7 @@ impl GaugeFn for Gauge {
 /// a panic.
 ///
 /// ```ignore
-/// let mut guard = GaugeGuard::from_gauge(&gauge);
+/// let guard = GaugeGuard::from_gauge(&gauge);
 /// guard.increment(1.0);
 /// // gauge is incremented by 1.0
 /// // ... do work ...
@@ -241,7 +241,7 @@ impl GaugeFn for Gauge {
 #[derive(Debug)]
 pub struct GaugeGuard {
     gauge: Gauge,
-    delta: f64,
+    delta: AtomicF64,
 }
 
 impl GaugeGuard {
@@ -249,25 +249,25 @@ impl GaugeGuard {
     pub fn from_gauge(gauge: &Gauge) -> Self {
         Self {
             gauge: gauge.clone(),
-            delta: 0.0,
+            delta: AtomicF64::new(0.0),
         }
     }
 
     /// Adds `delta` to the gauge and to the value this guard tracks.
-    pub fn increment(&mut self, delta: f64) {
-        self.delta += delta;
+    pub fn increment(&self, delta: f64) {
+        self.delta.fetch_add(delta, Ordering::Relaxed);
         self.gauge.increment(delta);
     }
 
     /// Returns the value this guard is tracking.
-    pub fn get(&self) -> f64 {
-        self.delta
+    pub fn delta(&self) -> f64 {
+        self.delta.load(Ordering::Relaxed)
     }
 }
 
 impl Drop for GaugeGuard {
     fn drop(&mut self) {
-        self.gauge.decrement(self.delta);
+        self.gauge.decrement(self.delta.load(Ordering::Relaxed));
     }
 }
 
@@ -296,7 +296,7 @@ impl Drop for GaugeGuard {
 ///
 /// ```ignore
 /// let child = gauge!(parent: base, "method" => method);
-/// let mut guard = GaugeGuard::from_gauge(&child);
+/// let guard = GaugeGuard::from_gauge(&child);
 /// guard.increment(1.0);
 /// ```
 #[macro_export]

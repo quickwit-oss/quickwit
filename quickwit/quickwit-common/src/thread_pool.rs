@@ -101,7 +101,7 @@ impl ThreadPool {
     {
         let span = tracing::Span::current();
         let ongoing_tasks = self.ongoing_tasks.clone();
-        let mut pending_tasks_guard = GaugeGuard::from_gauge(&self.pending_tasks);
+        let pending_tasks_guard = GaugeGuard::from_gauge(&self.pending_tasks);
         pending_tasks_guard.increment(1.0);
         let (tx, rx) = oneshot::channel();
         self.thread_pool.spawn(move || {
@@ -110,7 +110,7 @@ impl ThreadPool {
                 return;
             }
             let _guard = span.enter();
-            let mut _ongoing_task_guard = GaugeGuard::from_gauge(&ongoing_tasks);
+            let _ongoing_task_guard = GaugeGuard::from_gauge(&ongoing_tasks);
             _ongoing_task_guard.increment(1.0);
             let result = cpu_intensive_fn();
             let _ = tx.send(result);

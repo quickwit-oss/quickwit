@@ -131,12 +131,12 @@
 //!
 //! ### 5. Use `GaugeGuard` for RAII-based gauge balancing
 //!
-//! [`GaugeGuard`] increments a gauge on creation and decrements it on drop,
-//! which is useful for tracking in-flight resources like active connections.
+//! [`GaugeGuard`] tracks gauge increments and decrements them on drop, which is
+//! useful for tracking in-flight resources like active connections.
 //!
 //! ```rust,ignore
 //! {
-//!     let mut _guard = GaugeGuard::from_gauge(&ACTIVE_CONNS);
+//!     let _guard = GaugeGuard::from_gauge(&ACTIVE_CONNS);
 //!     _guard.increment(1.0);
 //!     // ... connection is alive here ...
 //! }

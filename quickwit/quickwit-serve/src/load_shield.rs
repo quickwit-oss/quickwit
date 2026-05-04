@@ -75,12 +75,12 @@ impl LoadShield {
     }
 
     pub async fn acquire_permit(&'static self) -> Result<LoadShieldPermit, warp::Rejection> {
-        let mut pending_gauge_guard = GaugeGuard::from_gauge(&self.pending_gauge);
+        let pending_gauge_guard = GaugeGuard::from_gauge(&self.pending_gauge);
         pending_gauge_guard.increment(1.0);
         let in_flight_permit_opt = self.acquire_in_flight_permit().await?;
         let concurrency_permit_opt = self.acquire_concurrency_permit().await;
         drop(pending_gauge_guard);
-        let mut ongoing_gauge_guard = GaugeGuard::from_gauge(&self.ongoing_gauge);
+        let ongoing_gauge_guard = GaugeGuard::from_gauge(&self.ongoing_gauge);
         ongoing_gauge_guard.increment(1.0);
         Ok(LoadShieldPermit {
             _in_flight_permit_opt: in_flight_permit_opt,

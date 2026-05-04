@@ -219,7 +219,7 @@ impl IndexerState {
         let publish_lock = self.publish_lock.clone();
         let publish_token_opt = self.publish_token_opt.clone();
 
-        let mut split_builders_guard = GaugeGuard::from_gauge(&crate::metrics::SPLIT_BUILDERS);
+        let split_builders_guard = GaugeGuard::from_gauge(&crate::metrics::SPLIT_BUILDERS);
         split_builders_guard.increment(1.0);
 
         let workbench = IndexingWorkbench {
@@ -578,7 +578,7 @@ impl Indexer {
 
     fn memory_usage(&self) -> ByteSize {
         if let Some(workbench) = &self.indexing_workbench_opt {
-            ByteSize(workbench.memory_usage.get() as u64)
+            ByteSize(workbench.memory_usage.delta() as u64)
         } else {
             ByteSize(0u64)
         }
