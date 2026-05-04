@@ -79,23 +79,12 @@ pub fn limiter(throughput: ByteSize) -> Limiter {
         .build()
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct IoControls {
     throughput_limiter_opt: Option<Limiter>,
     bytes_counter: MaybeRegisteredCounter,
     progress: Progress,
     kill_switch: KillSwitch,
-}
-
-impl Default for IoControls {
-    fn default() -> Self {
-        IoControls {
-            throughput_limiter_opt: None,
-            progress: Progress::default(),
-            kill_switch: KillSwitch::default(),
-            bytes_counter: MaybeRegisteredCounter::default(),
-        }
-    }
 }
 
 impl IoControls {
