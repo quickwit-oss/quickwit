@@ -141,11 +141,6 @@ pub struct DataFusionExecution {
     pub metadata: DataFusionExecutionMetadata,
 }
 
-pub struct SubstraitExecution {
-    pub stream: SendableRecordBatchStream,
-    pub metadata: SubstraitExecutionMetadata,
-}
-
 pub struct DataFusionExecutionMetadata {
     pub input: DataFusionInputMetadata,
     pub output: DataFusionOutput,
@@ -157,16 +152,6 @@ pub struct DataFusionExecutionMetadata {
     pub stream_creation_duration: Duration,
     pub analyze_execution_duration: Option<Duration>,
     pub analyze_output_rows: Option<usize>,
-}
-
-pub struct SubstraitExecutionMetadata {
-    pub substrait_plan_json: String,
-    pub logical_plan: String,
-    pub physical_plan: Arc<dyn ExecutionPlan>,
-    pub substrait_decode_duration: Duration,
-    pub substrait_to_logical_duration: Duration,
-    pub logical_to_physical_duration: Duration,
-    pub stream_creation_duration: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -225,18 +210,8 @@ pub struct DataFusionRatioStatistics {
 }
 
 impl DataFusionExecutionMetadata {
-    pub fn physical_plan_display(&self) -> String {
-        physical_plan_display(&self.physical_plan)
-    }
-
     pub fn physical_plan_metadata(&self) -> DataFusionPhysicalPlanMetadata {
         physical_plan_metadata(&self.physical_plan)
-    }
-}
-
-impl SubstraitExecutionMetadata {
-    pub fn physical_plan_display(&self) -> String {
-        physical_plan_display(&self.physical_plan)
     }
 }
 
@@ -496,160 +471,6 @@ impl DataFusionService {
         })
     }
 
-    /// Execute a Substrait plan encoded as protobuf bytes.
-    ///
-    /// Prefer [`DataFusionService::execute`] for new call sites.
-    pub async fn execute_substrait(
-        &self,
-        plan_bytes: &[u8],
-        properties: &HashMap<String, String>,
-    ) -> DFResult<SendableRecordBatchStream> {
-        Ok(self
-            .execute(DataFusionRequest::records(
-                DataFusionInput::SubstraitBytes(plan_bytes),
-                properties,
-            ))
-            .await?
-            .stream)
-    }
-
-    /// Execute a Substrait plan and return planning metadata.
-    ///
-    /// Prefer [`DataFusionService::execute`] for new call sites.
-    pub async fn execute_substrait_with_metadata(
-        &self,
-        plan_bytes: &[u8],
-        properties: &HashMap<String, String>,
-    ) -> DFResult<SubstraitExecution> {
-        substrait_execution_from_datafusion(
-            self.execute(DataFusionRequest::records(
-                DataFusionInput::SubstraitBytes(plan_bytes),
-                properties,
-            ))
-            .await?,
-        )
-    }
-
-    /// Execute a Substrait plan from its proto3 JSON representation.
-    ///
-    /// Prefer [`DataFusionService::execute`] for new call sites.
-    pub async fn execute_substrait_json(
-        &self,
-        plan_json: &str,
-        properties: &HashMap<String, String>,
-    ) -> DFResult<SendableRecordBatchStream> {
-        Ok(self
-            .execute(DataFusionRequest::records(
-                DataFusionInput::SubstraitJson(plan_json),
-                properties,
-            ))
-            .await?
-            .stream)
-    }
-
-    /// Execute a proto3 JSON Substrait plan and return planning metadata.
-    ///
-    /// Prefer [`DataFusionService::execute`] for new call sites.
-    pub async fn execute_substrait_json_with_metadata(
-        &self,
-        plan_json: &str,
-        properties: &HashMap<String, String>,
-    ) -> DFResult<SubstraitExecution> {
-        substrait_execution_from_datafusion(
-            self.execute(DataFusionRequest::records(
-                DataFusionInput::SubstraitJson(plan_json),
-                properties,
-            ))
-            .await?,
-        )
-    }
-
-    /// Return EXPLAIN output for a Substrait plan encoded as protobuf bytes.
-    ///
-    /// Prefer [`DataFusionService::execute`] for new call sites.
-    pub async fn explain_substrait(
-        &self,
-        plan_bytes: &[u8],
-        properties: &HashMap<String, String>,
-    ) -> DFResult<SendableRecordBatchStream> {
-        Ok(self
-            .execute(DataFusionRequest::explain(
-                DataFusionInput::SubstraitBytes(plan_bytes),
-                properties,
-            ))
-            .await?
-            .stream)
-    }
-
-    /// Return EXPLAIN output and planning metadata for a Substrait plan.
-    ///
-    /// Prefer [`DataFusionService::execute`] for new call sites.
-    pub async fn explain_substrait_with_metadata(
-        &self,
-        plan_bytes: &[u8],
-        properties: &HashMap<String, String>,
-    ) -> DFResult<SubstraitExecution> {
-        substrait_execution_from_datafusion(
-            self.execute(DataFusionRequest::explain(
-                DataFusionInput::SubstraitBytes(plan_bytes),
-                properties,
-            ))
-            .await?,
-        )
-    }
-
-    /// Return EXPLAIN output for a proto3 JSON Substrait plan.
-    ///
-    /// Prefer [`DataFusionService::execute`] for new call sites.
-    pub async fn explain_substrait_json(
-        &self,
-        plan_json: &str,
-        properties: &HashMap<String, String>,
-    ) -> DFResult<SendableRecordBatchStream> {
-        Ok(self
-            .execute(DataFusionRequest::explain(
-                DataFusionInput::SubstraitJson(plan_json),
-                properties,
-            ))
-            .await?
-            .stream)
-    }
-
-    /// Return EXPLAIN output and planning metadata for a proto3 JSON Substrait
-    /// plan.
-    ///
-    /// Prefer [`DataFusionService::execute`] for new call sites.
-    pub async fn explain_substrait_json_with_metadata(
-        &self,
-        plan_json: &str,
-        properties: &HashMap<String, String>,
-    ) -> DFResult<SubstraitExecution> {
-        substrait_execution_from_datafusion(
-            self.execute(DataFusionRequest::explain(
-                DataFusionInput::SubstraitJson(plan_json),
-                properties,
-            ))
-            .await?,
-        )
-    }
-
-    /// Execute one or more SQL statements from a single SQL string.
-    ///
-    /// Prefer [`DataFusionService::execute`] for new call sites.
-    pub async fn execute_sql(
-        &self,
-        sql: &str,
-        properties: &HashMap<String, String>,
-    ) -> DFResult<SendableRecordBatchStream> {
-        Ok(self
-            .execute(DataFusionRequest::records(
-                DataFusionInput::Sql(sql),
-                properties,
-            ))
-            .await?
-            .stream)
-    }
-
     async fn prepare_logical_plan(
         &self,
         input: DataFusionInput<'_>,
@@ -755,42 +576,6 @@ impl DataFusionService {
             logical_planning_duration,
         })
     }
-}
-
-fn substrait_execution_from_datafusion(
-    execution: DataFusionExecution,
-) -> DFResult<SubstraitExecution> {
-    let DataFusionExecution { stream, metadata } = execution;
-    let DataFusionExecutionMetadata {
-        input,
-        output: _,
-        logical_plan,
-        physical_plan,
-        input_decode_duration,
-        logical_planning_duration,
-        physical_planning_duration,
-        stream_creation_duration,
-        analyze_execution_duration: _,
-        analyze_output_rows: _,
-    } = metadata;
-    let DataFusionInputMetadata::Substrait { plan_json } = input else {
-        return Err(DataFusionError::Internal(
-            "expected Substrait execution metadata".to_string(),
-        ));
-    };
-
-    Ok(SubstraitExecution {
-        stream,
-        metadata: SubstraitExecutionMetadata {
-            substrait_plan_json: plan_json,
-            logical_plan,
-            physical_plan,
-            substrait_decode_duration: input_decode_duration,
-            substrait_to_logical_duration: logical_planning_duration,
-            logical_to_physical_duration: physical_planning_duration,
-            stream_creation_duration,
-        },
-    })
 }
 
 fn substrait_plan_json(plan: &SubstraitPlan) -> DFResult<String> {

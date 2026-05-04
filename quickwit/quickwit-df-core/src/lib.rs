@@ -47,8 +47,7 @@ pub use service::{
     DataFusionExecution, DataFusionExecutionMetadata, DataFusionExecutionStatistics,
     DataFusionInput, DataFusionInputMetadata, DataFusionMetricStatistics, DataFusionOutput,
     DataFusionPhysicalPlanMetadata, DataFusionPlanMetricStatistics, DataFusionPruningStatistics,
-    DataFusionRatioStatistics, DataFusionRequest, DataFusionService, SubstraitExecution,
-    SubstraitExecutionMetadata,
+    DataFusionRatioStatistics, DataFusionRequest, DataFusionService,
 };
 pub use session::DataFusionSessionBuilder;
 pub use task_estimator::DataSourceExecPartitionEstimator;
