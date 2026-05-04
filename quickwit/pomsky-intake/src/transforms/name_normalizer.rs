@@ -187,22 +187,17 @@ fn normalize_trace(trace: &mut TraceEvent) {
         trace.insert("host", new_host);
     }
 
-    let Some(meta_value) = trace.get_mut("meta") else {
+    // `meta` follows a different set of rules from tags (it carries
+    // Datadog-internal protocol fields and span attributes), so it is
+    // intentionally left untouched here. The `tags.*` object isn't
+    // populated for Datadog Agent spans at this stage but may exist for
+    // OTLP traces or other sources. Normalize it defensively so the
+    // contract — "after this transform, all tag keys and values are
+    // normalized" — holds regardless of source shape.
+    let Some(tags_value) = trace.get_mut("tags") else {
         return;
     };
-    // TODO(name-normalization): `_dd` is the only top-level reserved
-    // namespace we currently treat as pass-through. Other potentially
-    // reserved or protocol-significant keys under `meta` (e.g. `env`,
-    // `version`, `service`, span-link metadata) are still normalized,
-    // which may rewrite them. Awaiting reviewer feedback on which keys
-    // should be added to the skip-list.
-    normalize_object_map(meta_value, |key| {
-        // Skip the Datadog-internal `_dd` namespace. Vector parses dots in
-        // target paths as separators, so wire-format keys like `_dd.p.tid`
-        // and `_dd.tags.container` end up as a single nested object under
-        // the `_dd` top-level key.
-        key == "_dd"
-    });
+    normalize_object_map(tags_value, |_key| false);
 }
 
 /// In-place tag normalization for an `ObjectMap`-shaped value. The `skip`
@@ -957,33 +952,37 @@ mod tests {
     }
 
     #[test]
-    fn trace_host_and_tags_rewritten_dd_keys_skipped() {
-        // Note on `meta._dd.*` shape: Vector parses dots in target paths as
-        // separators, so the wire-format flat key `_dd.p.tid` is stored as
-        // `meta -> _dd -> p -> tid` (nested objects). The skip rule for the
-        // top-level `_dd` key keeps the entire Datadog-internal subtree
-        // untouched, regardless of what shape it takes.
+    fn trace_host_and_tags_rewritten_meta_left_alone() {
+        // `meta` is intentionally not normalized — it follows different
+        // rules from tags (protocol/internal fields). Tag normalization
+        // applies to the OTLP-shaped `tags.*` object instead.
         let mut trace = TraceEvent::default();
         trace.insert("host", "<weird>host");
+        trace.insert("tags.Service", "My Service");
+        trace.insert("tags.ENV", "Prod");
+        // Tag with key that normalizes to empty must be dropped.
+        trace.insert("tags.!!!", "ignored");
+        // `meta` entries — including mixed-case user keys — must pass
+        // through untouched.
         trace.insert("meta.Service", "My Service");
-        trace.insert("meta.ENV", "Prod");
         trace.insert("meta._dd.p.tid", "deadbeef");
-        trace.insert("meta._dd.tags.container", "container_id_42");
 
         let events = run(Event::Trace(trace));
         let trace = events[0].as_trace();
 
         // Host rewritten by hostname rules.
         assert_eq!(trace.get("host"), Some(&Value::from("-weird-host")));
-        // User keys rewritten by tag rules.
-        assert_eq!(trace.get("meta.service"), Some(&Value::from("my_service")),);
-        assert_eq!(trace.get("meta.env"), Some(&Value::from("prod")));
-        // The entire `_dd` subtree is preserved verbatim — both the leading
-        // underscore and the original casing/values.
-        assert_eq!(trace.get("meta._dd.p.tid"), Some(&Value::from("deadbeef")),);
+        // `tags.*` rewritten by tag rules.
+        assert_eq!(trace.get("tags.service"), Some(&Value::from("my_service")));
+        assert_eq!(trace.get("tags.env"), Some(&Value::from("prod")));
+        assert!(trace.get("tags.Service").is_none());
+        assert!(trace.get("tags.ENV").is_none());
+        assert!(trace.get("tags.!!!").is_none());
+        // `meta.*` preserved verbatim — original casing, no rewrite.
         assert_eq!(
-            trace.get("meta._dd.tags.container"),
-            Some(&Value::from("container_id_42")),
+            trace.get("meta.Service"),
+            Some(&Value::from("My Service")),
         );
+        assert_eq!(trace.get("meta._dd.p.tid"), Some(&Value::from("deadbeef")));
     }
 }
