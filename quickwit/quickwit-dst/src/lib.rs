@@ -37,6 +37,7 @@
 //! - `models::merge_pipeline` — MP-1, MP-4..MP-11 (`MergePipelineShutdown.tla`); shares state and
 //!   predicates literally with [`invariants::merge_pipeline`].
 
+pub mod events;
 pub mod invariants;
 
 #[cfg(feature = "model-checking")]

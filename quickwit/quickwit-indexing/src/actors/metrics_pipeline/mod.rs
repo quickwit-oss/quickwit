@@ -55,6 +55,10 @@ mod parquet_merge_pipeline_crash_test;
 
 #[cfg(test)]
 #[allow(clippy::disallowed_methods)]
+mod parquet_merge_pipeline_trace_conformance_test;
+
+#[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod parquet_merge_pipeline_sketch_test;
 
 pub use parquet_doc_processor::{

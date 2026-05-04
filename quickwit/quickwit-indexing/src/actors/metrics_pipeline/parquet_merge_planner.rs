@@ -32,6 +32,7 @@ use std::time::Instant;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_dst::check_invariant;
+use quickwit_dst::events::merge_pipeline::{MergePipelineEvent, record_merge_pipeline_event};
 use quickwit_dst::invariants::InvariantId;
 use quickwit_parquet_engine::merge::policy::{
     CompactionScope, ParquetMergeOperation, ParquetMergePolicy, ParquetSplitMaturity,
@@ -382,6 +383,28 @@ impl ParquetMergePlanner {
                 total_bytes = merge_operation.total_size_bytes(),
                 "scheduling parquet merge operation"
             );
+
+            // Trace event: a merge operation is being dispatched. The
+            // index_uid + window are taken from the first input (all
+            // inputs share scope by MP-3).
+            if let Some(first) = merge_operation.splits.first() {
+                let level = first.num_merge_ops;
+                let window = first.window.clone().unwrap_or(
+                    first.time_range.start_secs as i64..first.time_range.end_secs as i64,
+                );
+                record_merge_pipeline_event(&MergePipelineEvent::PlanMerge {
+                    index_uid: first.index_uid.clone(),
+                    merge_id: merge_operation.merge_split_id.as_str().to_string(),
+                    input_split_ids: merge_operation
+                        .splits
+                        .iter()
+                        .map(|s| s.split_id.as_str().to_string())
+                        .collect(),
+                    level,
+                    window,
+                });
+            }
+
             let tracked = self
                 .ongoing_merge_operations_inventory
                 .track(merge_operation);
