@@ -203,6 +203,7 @@ pub fn normalize_user_agent(user_agent: &str) -> &str {
         "wget",
         "python-httpx",
         "python-requests",
+        "elasticsearch-py",
         "go-http-client",
         "java",
         "okhttp",

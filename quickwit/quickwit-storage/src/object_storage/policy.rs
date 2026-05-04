@@ -67,9 +67,11 @@ impl MultiPartPolicy {
 impl Default for MultiPartPolicy {
     fn default() -> Self {
         MultiPartPolicy {
-            // S3 limits part size from 5M to 5GB, we want to end up with as few parts as possible
-            // since each part is charged as a put request.
-            target_part_num_bytes: 5_000_000_000, // 5GB
+            // QW originally used 5GB to limit the number of PUT requests. This
+            // is a bit excessive, and many cloud providers don't bill by
+            // request. We don't want it to be too small either because parts
+            // incur a performance overhead when a range request spans 2 parts.
+            target_part_num_bytes: 2_000_000_000, // 2GB
             multipart_threshold_num_bytes: 128 * 1_024 * 1_024, // 128 MiB
             max_num_parts: 10_000,
             max_object_num_bytes: 5_000_000_000_000u64, // S3 allows up to 5TB objects
