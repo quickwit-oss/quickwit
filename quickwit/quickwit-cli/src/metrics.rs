@@ -15,11 +15,11 @@
 use std::sync::LazyLock;
 
 use quickwit_common::metrics::exponential_buckets;
-use quickwit_metrics::{Gauge, Histogram, gauge, histogram, labels};
+use quickwit_metrics::{Counter, Histogram, counter, histogram, labels};
 use quickwit_serve::BuildInfo;
 
-static BUILD_INFO: LazyLock<Gauge> = LazyLock::new(|| {
-    gauge!(
+static BUILD_INFO: LazyLock<Counter> = LazyLock::new(|| {
+    counter!(
         name: "build_info",
         description: "Quickwit's build info",
         subsystem: "",
@@ -36,7 +36,7 @@ pub(crate) fn register_metrics(build_info: &BuildInfo) {
         "commit_tags" => commit_tags,
         "target" => build_info.build_target,
     );
-    gauge!(parent: BUILD_INFO, labels: [labels]).set(1.0);
+    counter!(parent: BUILD_INFO, labels: [labels]).increment(1);
 }
 
 pub(crate) static THREAD_UNPARK_DURATION_MICROSECONDS: LazyLock<Histogram> = LazyLock::new(|| {
