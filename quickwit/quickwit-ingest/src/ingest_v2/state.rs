@@ -310,33 +310,49 @@ impl IngesterState {
             .expect("channel should be open");
     }
 
-    pub async fn lock_partially(&self) -> IngestV2Result<PartiallyLockedIngesterState<'_>> {
+    pub async fn lock_partially(
+        &self,
+        operation: &'static str,
+    ) -> IngestV2Result<PartiallyLockedIngesterState<'_>> {
         if *self.status_rx.borrow() == IngesterStatus::Initializing {
             return Err(IngestV2Error::Internal(
                 "ingester is initializing".to_string(),
             ));
         }
-        let inner_guard = self.inner.lock().await;
+        let (inner_guard, acquired_at) =
+            track_acquire_lock(operation, "partial", self.inner.lock()).await;
 
         if inner_guard.status() == IngesterStatus::Failed {
             return Err(IngestV2Error::Internal(
                 "failed to initialize ingester".to_string(),
             ));
         }
-        let partial_lock = PartiallyLockedIngesterState { inner: inner_guard };
-        Ok(partial_lock)
+        let partially_locked_state = PartiallyLockedIngesterState {
+            inner: inner_guard,
+            operation,
+            acquired_at,
+        };
+        Ok(partially_locked_state)
     }
 
-    pub async fn lock_fully(&self) -> IngestV2Result<FullyLockedIngesterState<'_>> {
+    pub async fn lock_fully(
+        &self,
+        operation: &'static str,
+    ) -> IngestV2Result<FullyLockedIngesterState<'_>> {
         if *self.status_rx.borrow() == IngesterStatus::Initializing {
             return Err(IngestV2Error::Internal(
                 "ingester is initializing".to_string(),
             ));
         }
-        // We assume that the mrecordlog lock is the most "expensive" one to acquire, so we acquire
-        // it first.
-        let mrecordlog_opt_guard = self.mrecordlog.write().await;
-        let inner_guard = self.inner.lock().await;
+        // We assume that the mrecordlog lock is the most "expensive" one to acquire, so we
+        // acquire it first.
+        let ((mrecordlog_opt_guard, inner_guard), acquired_at) =
+            track_acquire_lock(operation, "full", async {
+                let mrecordlog_opt_guard = self.mrecordlog.write().await;
+                let inner_guard = self.inner.lock().await;
+                (mrecordlog_opt_guard, inner_guard)
+            })
+            .await;
 
         if inner_guard.status() == IngesterStatus::Failed {
             return Err(IngestV2Error::Internal(
@@ -348,11 +364,13 @@ impl IngesterState {
                 .as_mut()
                 .expect("mrecordlog should be initialized")
         });
-        let full_lock = FullyLockedIngesterState {
+        let fully_locked_state = FullyLockedIngesterState {
             inner: inner_guard,
             mrecordlog: mrecordlog_guard,
+            operation,
+            acquired_at,
         };
-        Ok(full_lock)
+        Ok(fully_locked_state)
     }
 
     // Leaks the mrecordlog lock for use in fetch tasks. It's safe to do so because fetch tasks
@@ -372,6 +390,8 @@ impl IngesterState {
 
 pub(super) struct PartiallyLockedIngesterState<'a> {
     pub inner: MutexGuard<'a, InnerIngesterState>,
+    operation: &'static str,
+    acquired_at: Instant,
 }
 
 impl fmt::Debug for PartiallyLockedIngesterState<'_> {
@@ -394,9 +414,17 @@ impl DerefMut for PartiallyLockedIngesterState<'_> {
     }
 }
 
+impl Drop for PartiallyLockedIngesterState<'_> {
+    fn drop(&mut self) {
+        warn_on_long_lock_hold(self.operation, "partial", self.acquired_at);
+    }
+}
+
 pub(super) struct FullyLockedIngesterState<'a> {
     pub inner: MutexGuard<'a, InnerIngesterState>,
     pub mrecordlog: RwLockMappedWriteGuard<'a, MultiRecordLogAsync>,
+    operation: &'static str,
+    acquired_at: Instant,
 }
 
 impl fmt::Debug for FullyLockedIngesterState<'_> {
@@ -417,6 +445,81 @@ impl DerefMut for FullyLockedIngesterState<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
+}
+
+impl Drop for FullyLockedIngesterState<'_> {
+    fn drop(&mut self) {
+        warn_on_long_lock_hold(self.operation, "full", self.acquired_at);
+    }
+}
+
+pub(super) fn warn_on_long_lock_hold(
+    operation: &'static str,
+    lock_type: &'static str,
+    acquired_at: Instant,
+) {
+    let elapsed = acquired_at.elapsed();
+
+    crate::ingest_v2::metrics::INGEST_V2_METRICS
+        .wal_lock_hold_duration_secs
+        .with_label_values([operation, lock_type])
+        .observe(elapsed.as_secs_f64());
+
+    if elapsed > Duration::from_secs(1) {
+        quickwit_common::rate_limited_warn!(
+            limit_per_min = 6,
+            "held {} lock for {} operation for {}",
+            lock_type,
+            operation,
+            elapsed.pretty_display()
+        );
+    }
+}
+
+/// Wraps a lock-acquisition future with the in-flight gauge, the acquire duration histogram, and
+/// a rate-limited warning when acquisition takes longer than 1s. Used by `lock_partially` /
+/// `lock_fully` and by other ingest_v2 sites that acquire WAL-related locks (e.g. fetch tasks
+/// reading the mrecordlog directly).
+pub(super) async fn track_acquire_lock<F, R>(
+    operation: &'static str,
+    lock_type: &'static str,
+    acquire_future: F,
+) -> (R, Instant)
+where
+    F: std::future::Future<Output = R>,
+{
+    let metrics = &crate::ingest_v2::metrics::INGEST_V2_METRICS;
+
+    metrics
+        .wal_acquire_lock_requests_in_flight
+        .with_label_values([operation, lock_type])
+        .inc();
+
+    let now = Instant::now();
+    let guard = acquire_future.await;
+    let acquired_at = Instant::now();
+
+    let elapsed = acquired_at.duration_since(now);
+
+    if elapsed > Duration::from_secs(1) {
+        quickwit_common::rate_limited_warn!(
+            limit_per_min = 6,
+            "acquiring {} lock for {} operation took {}",
+            lock_type,
+            operation,
+            elapsed.pretty_display()
+        );
+    }
+    metrics
+        .wal_acquire_lock_requests_in_flight
+        .with_label_values([operation, lock_type])
+        .dec();
+    metrics
+        .wal_acquire_lock_request_duration_secs
+        .with_label_values([operation, lock_type])
+        .observe(elapsed.as_secs_f64());
+
+    (guard, acquired_at)
 }
 
 impl FullyLockedIngesterState<'_> {
@@ -559,10 +662,10 @@ mod tests {
         assert_eq!(inner_guard.status(), IngesterStatus::Initializing);
         assert_eq!(*state.status_rx.borrow(), IngesterStatus::Initializing);
 
-        let error = state.lock_partially().await.unwrap_err().to_string();
+        let error = state.lock_partially("test").await.unwrap_err().to_string();
         assert!(error.contains("ingester is initializing"));
 
-        let error = state.lock_fully().await.unwrap_err().to_string();
+        let error = state.lock_fully("test").await.unwrap_err().to_string();
         assert!(error.contains("ingester is initializing"));
     }
 
@@ -578,10 +681,10 @@ mod tests {
             .set_status(IngesterStatus::Failed)
             .await;
 
-        let error = state.lock_partially().await.unwrap_err().to_string();
+        let error = state.lock_partially("test").await.unwrap_err().to_string();
         assert!(error.to_string().ends_with("failed to initialize ingester"));
 
-        let error = state.lock_fully().await.unwrap_err().to_string();
+        let error = state.lock_fully("test").await.unwrap_err().to_string();
         assert!(error.contains("failed to initialize ingester"));
     }
 
@@ -599,9 +702,9 @@ mod tests {
             .await
             .unwrap();
 
-        state.lock_partially().await.unwrap();
+        state.lock_partially("test").await.unwrap();
 
-        let locked_state = state.lock_fully().await.unwrap();
+        let locked_state = state.lock_fully("test").await.unwrap();
         assert_eq!(locked_state.status(), IngesterStatus::Ready);
         assert_eq!(*locked_state.status_tx.borrow(), IngesterStatus::Ready);
     }
@@ -634,7 +737,7 @@ mod tests {
         .await
         .unwrap();
         let (_temp_dir, state) = IngesterState::for_test(cluster).await;
-        let mut state_guard = state.lock_partially().await.unwrap();
+        let mut state_guard = state.lock_partially("test").await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = SourceId::from("test-source");
@@ -680,7 +783,7 @@ mod tests {
         .await
         .unwrap();
         let (_temp_dir, state) = IngesterState::for_test(cluster).await;
-        let mut locked_state = state.lock_partially().await.unwrap();
+        let mut locked_state = state.lock_partially("test").await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = SourceId::from("test-source");
@@ -730,7 +833,7 @@ mod tests {
         .await
         .unwrap();
         let (_temp_dir, state) = IngesterState::for_test(cluster).await;
-        let mut locked_state = state.lock_partially().await.unwrap();
+        let mut locked_state = state.lock_partially("test").await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
         let source_id = SourceId::from("test-source");
@@ -764,7 +867,7 @@ mod tests {
             .init(temp_dir.path(), RateLimiterSettings::default())
             .await;
 
-        let mut state_guard = state.lock_fully().await.unwrap();
+        let mut state_guard = state.lock_fully("test").await.unwrap();
         state_guard.set_status(IngesterStatus::Failed).await;
         assert_eq!(state_guard.status(), IngesterStatus::Failed);
         assert_eq!(*state.status_rx.borrow(), IngesterStatus::Failed);
@@ -795,7 +898,7 @@ mod tests {
     async fn test_get_shard_snapshot() {
         let cluster = test_cluster().await;
         let (_temp_dir, state) = IngesterState::for_test(cluster).await;
-        let mut state_guard = state.lock_partially().await.unwrap();
+        let mut state_guard = state.lock_partially("test").await.unwrap();
 
         let index_uid = IndexUid::for_test("test-index", 0);
 
