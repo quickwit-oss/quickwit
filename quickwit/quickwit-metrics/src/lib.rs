@@ -78,17 +78,17 @@
 //! by_method.increment(1);
 //! ```
 //!
-//! ### 3. Reusable label templates with `Labels<N>`
+//! ### 3. Reusable label templates with `LabelNames<N>`
 //!
-//! When several metrics share the same dynamic label names, use [`Labels<N>`]
+//! When several metrics share the same dynamic label names, use [`LabelNames<N>`]
 //! to define the template once and pair it with values at each call site.
-//! The resulting [`LabelValues<N>`] is passed via the `labels:` arm of
+//! The resulting [`Labels<N>`] is passed via the `labels:` arm of
 //! any metric macro.
 //!
 //! ```rust,ignore
 //! use quickwit_metrics::*;
 //!
-//! const ROUTE: Labels<2> = Labels::new(["method", "path"]);
+//! const ROUTE: LabelNames<2> = LabelNames::new(["method", "path"]);
 //!
 //! fn on_request(method: &'static str, path: &'static str, duration: f64) {
 //!     let route = label_values!(ROUTE, [method, path]);
@@ -313,7 +313,7 @@ pub mod __inventory {
 pub use counter::Counter;
 pub use gauge::{Gauge, GaugeGuard};
 pub use histogram::{Histogram, HistogramConfig, HistogramTimer};
-pub use labels::{LabelValues, Labels};
+pub use labels::{LabelNames, Labels};
 // ─── metrics-rs re-exports ───
 pub use metrics::{CounterFn, GaugeFn, HistogramFn};
 pub use metrics_util::MetricKind;

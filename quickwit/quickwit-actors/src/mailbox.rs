@@ -393,10 +393,6 @@ impl<A: Actor> Inbox<A> {
     }
 }
 
-fn get_actor_inboxes_count_gauge_guard() -> GaugeGuard {
-    GaugeGuard::new(&INBOX_GAUGE, 1.0)
-}
-
 pub(crate) fn create_mailbox<A: Actor>(
     actor_name: String,
     queue_capacity: QueueCapacity,
@@ -414,7 +410,7 @@ pub(crate) fn create_mailbox<A: Actor>(
     };
     let inner = InboxInner {
         rx,
-        _inboxes_count_gauge_guard: get_actor_inboxes_count_gauge_guard(),
+        _inboxes_count_gauge_guard: GaugeGuard::new(&INBOX_GAUGE, 1.0),
     };
     let inbox = Inbox {
         inner: Arc::new(inner),

@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use quickwit_metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, counter, gauge, labels};
 use tokio::runtime::Runtime;
 use tokio_metrics::{RuntimeMetrics, RuntimeMonitor};
 
@@ -214,14 +214,15 @@ struct RuntimeMetricsRecorder {
 
 impl RuntimeMetricsRecorder {
     pub fn new(label: &'static str) -> Self {
+        let labels = labels!("runtime_type" => label);
         Self {
-            scheduled_tasks: gauge!(parent: TOKIO_SCHEDULED_TASKS, "runtime_type" => label),
+            scheduled_tasks: gauge!(parent: TOKIO_SCHEDULED_TASKS, labels: labels),
             worker_busy_duration_milliseconds_total: counter!(
                 parent: TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL,
-                "runtime_type" => label,
+                labels: labels,
             ),
-            worker_busy_ratio: gauge!(parent: TOKIO_WORKER_BUSY_RATIO, "runtime_type" => label),
-            worker_threads: gauge!(parent: TOKIO_WORKER_THREADS, "runtime_type" => label),
+            worker_busy_ratio: gauge!(parent: TOKIO_WORKER_BUSY_RATIO, labels: labels),
+            worker_threads: gauge!(parent: TOKIO_WORKER_THREADS, labels: labels),
         }
     }
 

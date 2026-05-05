@@ -190,7 +190,7 @@ macro_rules! __metric_declaration {
 
 // ─── Metric extension helper ───
 //
-// Shared implementation for both metric extension arms (LabelValues and
+// Shared implementation for both metric extension arms (Labels and
 // inline labels). Each metric macro pre-computes the hash and passes the
 // label-building logic as expression fragments.
 

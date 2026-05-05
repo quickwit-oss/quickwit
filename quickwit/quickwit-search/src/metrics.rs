@@ -19,9 +19,9 @@ use std::sync::LazyLock;
 
 use bytesize::ByteSize;
 use quickwit_common::metrics::{MaybeRegisteredCounter, exponential_buckets, linear_buckets};
-use quickwit_metrics::{Counter, Gauge, Histogram, Labels, counter, gauge, histogram};
+use quickwit_metrics::{Counter, Gauge, Histogram, LabelNames, counter, gauge, histogram};
 
-pub(crate) const STATUS_LABELS: Labels<1> = Labels::new(["status"]);
+pub(crate) const STATUS_LABELS: LabelNames<1> = LabelNames::new(["status"]);
 
 fn print_if_not_null(
     field_name: &'static str,

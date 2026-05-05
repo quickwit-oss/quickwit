@@ -303,9 +303,9 @@ mod tests {
         const TIMEOUT: Duration = Duration::from_millis(500);
 
         let int_counter = counter!(
-            name: "circuit_break_total_test",
+            name: "circuit_break_total",
             description: "test circuit breaker counter",
-            subsystem: "",
+            subsystem: "test",
         );
         let mut service = ServiceBuilder::new()
             .layer(TestCircuitBreakerEvaluator.make_layer(10, TIMEOUT, int_counter))

@@ -738,8 +738,8 @@ fn observable_gauge(c: &mut Criterion) {
 // LABELS
 // ---------------------------------------------------------------------------
 
-const LABELS_1: Labels<1> = Labels::new(["method"]);
-const LABELS_3: Labels<3> = Labels::new(["method", "endpoint", "status"]);
+const LABELS_1: LabelNames<1> = LabelNames::new(["method"]);
+const LABELS_3: LabelNames<3> = LabelNames::new(["method", "endpoint", "status"]);
 
 fn labels_counter(c: &mut Criterion) {
     install_recorder();

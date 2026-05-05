@@ -81,9 +81,9 @@ static HTTP_ACTIVE_CONNECTIONS_BY_REGION: LazyLock<Gauge> = LazyLock::new(|| {
     )
 });
 
-// ─── Labels<N> examples ───
+// ─── LabelNames<N> examples ───
 
-const ROUTE_LABELS: Labels<2> = Labels::new(["method", "path"]);
+const ROUTE_LABELS: LabelNames<2> = LabelNames::new(["method", "path"]);
 
 fn record_request(method: &'static str, path: &'static str, duration: f64, size: f64) {
     let route = label_values!(ROUTE_LABELS, [method, path]);
@@ -180,7 +180,7 @@ fn main() {
     }
     println!();
 
-    println!("=== Labels<N> usage ===");
+    println!("=== LabelNames<N> usage ===");
     for &(method, path, _) in &requests {
         let duration_ms: f64 = (path.len() as f64) * 0.013;
         let size: f64 = (path.len() * 100) as f64;

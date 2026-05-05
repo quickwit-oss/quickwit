@@ -34,7 +34,6 @@ pub use grpc_service::cluster_grpc_server;
 use quickwit_common::tower::ClientGrpcConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{GrpcConfig, NodeConfig, TlsConfig};
-use quickwit_metrics::Counter;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::ingest::ingester::IngesterStatus;
 use quickwit_proto::tonic::transport::{Certificate, ClientTlsConfig, Identity};
@@ -78,10 +77,6 @@ struct CountingUdpTransport;
 
 struct CountingUdpSocket {
     socket: UdpSocket,
-    gossip_recv: Counter,
-    gossip_recv_bytes: Counter,
-    gossip_send: Counter,
-    gossip_send_bytes: Counter,
 }
 
 #[async_trait]
@@ -89,16 +84,16 @@ impl Socket for CountingUdpSocket {
     async fn send(&mut self, to: SocketAddr, msg: ChitchatMessage) -> anyhow::Result<()> {
         let msg_len = msg.serialized_len() as u64;
         self.socket.send(to, msg).await?;
-        self.gossip_send.increment(1);
-        self.gossip_send_bytes.increment(msg_len);
+        GOSSIP_SENT_MESSAGES_TOTAL.increment(1);
+        GOSSIP_SENT_BYTES_TOTAL.increment(msg_len);
         Ok(())
     }
 
     async fn recv(&mut self) -> anyhow::Result<(SocketAddr, ChitchatMessage)> {
         let (socket_addr, msg) = self.socket.recv().await?;
-        self.gossip_recv.increment(1);
+        GOSSIP_RECV_MESSAGES_TOTAL.increment(1);
         let msg_len = msg.serialized_len() as u64;
-        self.gossip_recv_bytes.increment(msg_len);
+        GOSSIP_RECV_BYTES_TOTAL.increment(msg_len);
         Ok((socket_addr, msg))
     }
 }
@@ -107,13 +102,7 @@ impl Socket for CountingUdpSocket {
 impl Transport for CountingUdpTransport {
     async fn open(&self, listen_addr: SocketAddr) -> anyhow::Result<Box<dyn Socket>> {
         let socket = UdpSocket::open(listen_addr).await?;
-        Ok(Box::new(CountingUdpSocket {
-            socket,
-            gossip_recv: GOSSIP_RECV_MESSAGES_TOTAL.clone(),
-            gossip_recv_bytes: GOSSIP_RECV_BYTES_TOTAL.clone(),
-            gossip_send: GOSSIP_SENT_MESSAGES_TOTAL.clone(),
-            gossip_send_bytes: GOSSIP_SENT_BYTES_TOTAL.clone(),
-        }))
+        Ok(Box::new(CountingUdpSocket { socket }))
     }
 }
 

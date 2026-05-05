@@ -14,15 +14,17 @@
 
 //! Reusable label templates for metric extension.
 //!
-//! [`Labels<N>`] holds label *names* at compile time; pair them with
-//! values via the [`label_values!`] macro to get a [`LabelValues<N>`] that
+//! [`LabelNames<N>`] holds label *names* at compile time; pair them with
+//! values via the [`label_values!`] macro to get a [`Labels<N>`] that
 //! the `labels:` macro arm can consume. This avoids repeating the same
-//! label names at every call site and lets a single `LabelValues<N>` be
+//! label names at every call site and lets a single `Labels<N>` be
 //! shared across counter, gauge, and histogram extensions.
+
+use metrics::SharedString;
 
 use crate::__key_hash;
 
-/// Pairs a [`Labels<N>`] template with concrete values, one per label name.
+/// Pairs a [`LabelNames<N>`] template with concrete values, one per label name.
 ///
 /// Each value is converted individually via `Into<SharedString>`, so you
 /// can freely mix `&'static str`, `String`, `Cow<'static, str>`, etc.
@@ -34,15 +36,15 @@ use crate::__key_hash;
 /// # Example
 ///
 /// ```rust,ignore
-/// const GC_LABELS: Labels<2> = Labels::new(["status", "split_type"]);
+/// const GC_KEYS: LabelNames<2> = LabelNames::new(["status", "split_type"]);
 ///
 /// // All-static — zero allocation:
-/// let lv = label_values!(GC_LABELS, ["success", "tantivy"]);
+/// let lv = label_values!(GC_KEYS, ["success", "tantivy"]);
 ///
 /// // Mixed types — &'static str and String — just work:
-/// let lv = label_values!(GC_LABELS, ["success", split_type.to_string()]);
+/// let lv = label_values!(GC_KEYS, ["success", split_type.to_string()]);
 ///
-/// // Reuse the same LabelValues across multiple metrics:
+/// // Reuse the same Labels across multiple metrics:
 /// counter!(parent: GC_COUNTER, labels: lv).increment(1);
 /// gauge!(parent: GC_GAUGE, labels: lv).set(42.0);
 /// ```
@@ -53,33 +55,53 @@ macro_rules! label_values {
     };
 }
 
+/// Creates a const `Labels` from all-static key-value pairs.
+///
+/// Every key and value must be `&'static str` literals. The result is a
+/// `const` value — zero allocation, zero runtime cost.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// const LABELS: Labels<2> = labels!("env" => "prod", "region" => "us-east-1");
+/// ```
+#[macro_export]
+macro_rules! labels {
+    ($($key:expr => $val:expr),+ $(,)?) => {
+        $crate::Labels::__from_parts(
+            [$($key),+],
+            [$($crate::__metrics::SharedString::from($val)),+],
+        )
+    };
+}
+
 /// A label-name template with a fixed number of slots.
 ///
-/// `Labels<N>` holds only the label *names* — it is `const`-constructible
+/// `LabelNames<N>` holds only the label *names* — it is `const`-constructible
 /// and carries no runtime data. Use the [`label_values!`] macro to pair
-/// the names with concrete values, producing a [`LabelValues<N>`] that
+/// the names with concrete values, producing a [`Labels<N>`] that
 /// the metric macros can consume.
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// const SPLIT_LABELS: Labels<2> = Labels::new(["source", "level"]);
+/// const SPLIT_KEYS: LabelNames<2> = LabelNames::new(["source", "level"]);
 ///
 /// // All the same type:
-/// let lv = label_values!(SPLIT_LABELS, ["prod", "info"]);
+/// let lv = label_values!(SPLIT_KEYS, ["prod", "info"]);
 ///
 /// // Mixed types:
-/// let lv = label_values!(SPLIT_LABELS, [source_uid, level.to_string()]);
+/// let lv = label_values!(SPLIT_KEYS, [source_uid, level.to_string()]);
 ///
-/// // Reuse the same LabelValues across metrics:
+/// // Reuse the same Labels across metrics:
 /// let c = counter!(parent: BASE_COUNTER, labels: lv);
 /// let g = gauge!(parent: BASE_GAUGE, labels: lv);
 /// ```
-pub struct Labels<const N: usize> {
+pub struct LabelNames<const N: usize> {
     names: [&'static str; N],
 }
 
-impl<const N: usize> Labels<N> {
+impl<const N: usize> LabelNames<N> {
     /// Creates a label template from an array of label names.
     pub const fn new(names: [&'static str; N]) -> Self {
         Self { names }
@@ -87,27 +109,36 @@ impl<const N: usize> Labels<N> {
 
     /// Internal plumbing used by [`label_values!`]. Not part of the public API.
     #[doc(hidden)]
-    pub fn __with_values<V: Into<metrics::SharedString>>(&self, values: [V; N]) -> LabelValues<N> {
-        LabelValues {
+    pub fn __with_values<V: Into<metrics::SharedString>>(&self, values: [V; N]) -> Labels<N> {
+        Labels {
             names: self.names,
             values: values.map(Into::into),
         }
     }
 }
 
-/// Concrete label names + values produced by [`label_values!`].
+/// Concrete label names + values produced by [`label_values!`] or [`labels!`].
 ///
 /// The `labels:` macro arm borrows the value internally, so a single
 /// instance can be reused across multiple metric calls. Cloning of the
 /// inner `SharedString` values only happens on the cold path (cache miss
 /// in the thread-local or global DashMap).
 #[derive(Clone)]
-pub struct LabelValues<const N: usize> {
+pub struct Labels<const N: usize> {
     names: [&'static str; N],
     values: [metrics::SharedString; N],
 }
 
-impl<const N: usize> LabelValues<N> {
+impl<const N: usize> Labels<N> {
+    /// Creates a fully-static `Labels` at compile time.
+    ///
+    /// Prefer the [`labels!`] macro which calls this constructor and
+    /// avoids repeating the array-index boilerplate.
+    #[doc(hidden)]
+    pub const fn __from_parts(names: [&'static str; N], values: [SharedString; N]) -> Self {
+        Self { names, values }
+    }
+
     /// Computes an order-independent cache-key hash by folding per-label
     /// hashes into `seed` via commutative wrapping addition, so the result
     /// is fully composable with the parent's hash.

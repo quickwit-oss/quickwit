@@ -52,7 +52,7 @@ static WRITE_BYTES: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "write_bytes",
         description: "Number of bytes written by a given component in [indexer, merger, deleter, split_downloader_{merge,delete}]",
-        subsystem: "",
+        subsystem: "io",
     )
 });
 
@@ -272,18 +272,22 @@ pub trait IoControlsAccess: Sized {
     }
 
     fn apply<F, R>(&self, f: F) -> R
-    where F: Fn(&IoControls) -> R;
+    where
+        F: Fn(&IoControls) -> R;
 }
 
 impl IoControlsAccess for IoControls {
     fn apply<F, R>(&self, f: F) -> R
-    where F: Fn(&IoControls) -> R {
+    where
+        F: Fn(&IoControls) -> R,
+    {
         f(self)
     }
 }
 
 impl<A, W> ControlledWrite<A, W>
-where A: IoControlsAccess
+where
+    A: IoControlsAccess,
 {
     pub fn underlying_wrt(&mut self) -> &mut W {
         &mut self.underlying_wrt
@@ -296,7 +300,8 @@ where A: IoControlsAccess
 }
 
 impl<A, W: io::Write> io::Write for ControlledWrite<A, W>
-where A: IoControlsAccess
+where
+    A: IoControlsAccess,
 {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let buf = truncate_bytes(buf);

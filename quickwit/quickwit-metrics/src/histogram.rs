@@ -303,8 +303,8 @@ macro_rules! histogram {
         )
     };
 
-    // Parent extension via a pre-built LabelValues<N> bundle.
-    // Same as the inline arm but hash and labels come from a LabelValues<N>.
+    // Parent extension via a pre-built Labels<N> bundle.
+    // Same as the inline arm but hash and labels come from a Labels<N>.
     (
         parent: $parent:expr,
         labels: $labels:expr $(,)?
