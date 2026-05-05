@@ -18,7 +18,7 @@ use std::fmt;
 use std::sync::LazyLock;
 
 use bytesize::ByteSize;
-use quickwit_common::metrics::{ScopedCounter, exponential_buckets, linear_buckets};
+use quickwit_common::metrics::{exponential_buckets, linear_buckets};
 use quickwit_metrics::{
     Counter, Gauge, Histogram, LabelNames, counter, gauge, histogram, label_names,
 };
@@ -27,7 +27,7 @@ pub(crate) const STATUS_LABELS: LabelNames<1> = label_names!("status");
 
 fn print_if_not_null(
     field_name: &'static str,
-    counter: &ScopedCounter,
+    counter: &Counter,
     f: &mut fmt::Formatter,
 ) -> fmt::Result {
     let val = counter.get();
@@ -37,16 +37,30 @@ fn print_if_not_null(
     Ok(())
 }
 
-#[derive(Default)]
 pub struct SplitSearchOutcomeCounters {
-    pub cancel_before_warmup: ScopedCounter,
-    pub cache_hit: ScopedCounter,
-    pub pruned_before_warmup: ScopedCounter,
-    pub cancel_warmup: ScopedCounter,
-    pub pruned_after_warmup: ScopedCounter,
-    pub cancel_cpu_queue: ScopedCounter,
-    pub cancel_cpu: ScopedCounter,
-    pub success: ScopedCounter,
+    pub cancel_before_warmup: Counter,
+    pub cache_hit: Counter,
+    pub pruned_before_warmup: Counter,
+    pub cancel_warmup: Counter,
+    pub pruned_after_warmup: Counter,
+    pub cancel_cpu_queue: Counter,
+    pub cancel_cpu: Counter,
+    pub success: Counter,
+}
+
+impl Default for SplitSearchOutcomeCounters {
+    fn default() -> Self {
+        SplitSearchOutcomeCounters {
+            cancel_before_warmup: Counter::local(),
+            cache_hit: Counter::local(),
+            pruned_before_warmup: Counter::local(),
+            cancel_warmup: Counter::local(),
+            pruned_after_warmup: Counter::local(),
+            cancel_cpu_queue: Counter::local(),
+            cancel_cpu: Counter::local(),
+            success: Counter::local(),
+        }
+    }
 }
 
 impl fmt::Display for SplitSearchOutcomeCounters {
@@ -67,10 +81,10 @@ impl SplitSearchOutcomeCounters {
     /// Create a new SplitSearchOutcomeCounters instance, registered in prometheus.
     pub fn new_global() -> Self {
         let counter = |category: &'static str| {
-            ScopedCounter::Global(counter!(
+            counter!(
                 parent: &SPLIT_SEARCH_OUTCOME,
                 "category" => category,
-            ))
+            )
         };
         SplitSearchOutcomeCounters {
             cancel_before_warmup: counter("cancel_before_warmup"),

@@ -13,59 +13,15 @@
 // limitations under the License.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, OnceLock};
+use std::sync::{LazyLock, OnceLock};
 #[cfg(not(test))]
 use std::time::Duration;
 
 use metrics_exporter_prometheus::PrometheusHandle;
 pub use prometheus::{exponential_buckets, linear_buckets};
-use quickwit_metrics::{Counter, Gauge, gauge};
+use quickwit_metrics::{Gauge, gauge};
 
 static PROMETHEUS_HANDLE: OnceLock<PrometheusHandle> = OnceLock::new();
-
-#[derive(Clone, Default)]
-pub struct LocalCounter {
-    inner: Arc<AtomicU64>,
-}
-
-impl LocalCounter {
-    pub fn increment(&self, value: u64) {
-        self.inner.fetch_add(value, Ordering::Relaxed);
-    }
-
-    pub fn get(&self) -> u64 {
-        self.inner.load(Ordering::Relaxed)
-    }
-}
-
-#[derive(Clone)]
-pub enum ScopedCounter {
-    Local(LocalCounter),
-    Global(Counter),
-}
-
-impl Default for ScopedCounter {
-    fn default() -> Self {
-        Self::Local(LocalCounter::default())
-    }
-}
-
-impl ScopedCounter {
-    pub fn increment(&self, value: u64) {
-        match self {
-            Self::Local(counter) => counter.increment(value),
-            Self::Global(counter) => counter.increment(value),
-        }
-    }
-
-    pub fn get(&self) -> u64 {
-        match self {
-            Self::Local(counter) => counter.get(),
-            Self::Global(counter) => counter.get(),
-        }
-    }
-}
 
 pub fn set_prometheus_handle(handle: PrometheusHandle) -> Result<(), String> {
     #[cfg(not(test))]
@@ -218,48 +174,8 @@ mod tests {
     use metrics::with_local_recorder;
     use metrics_exporter_prometheus::PrometheusBuilder;
     use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-    use quickwit_metrics::counter;
 
     use super::*;
-
-    #[test]
-    fn local_counter_counts_locally() {
-        let counter = LocalCounter::default();
-        let counter_clone = counter.clone();
-
-        counter.increment(3);
-        counter_clone.increment(4);
-
-        assert_eq!(counter.get(), 7);
-        assert_eq!(counter_clone.get(), 7);
-    }
-
-    #[test]
-    fn scoped_counter_counts_locally() {
-        let counter = ScopedCounter::default();
-        let counter_clone = counter.clone();
-
-        counter.increment(3);
-        counter_clone.increment(4);
-
-        assert_eq!(counter.get(), 7);
-        assert_eq!(counter_clone.get(), 7);
-    }
-
-    #[test]
-    fn scoped_counter_wraps_global_counter() {
-        let global_counter = counter!(
-            name: "scoped_counter_test",
-            description: "Scoped counter test.",
-            subsystem: "test",
-        );
-        let counter = ScopedCounter::Global(global_counter.clone());
-
-        counter.increment(5);
-
-        assert_eq!(counter.get(), 5);
-        assert_eq!(global_counter.get(), 5);
-    }
 
     #[test]
     fn metrics_text_payload_renders_prometheus_handle() {

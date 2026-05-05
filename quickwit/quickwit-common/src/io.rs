@@ -37,7 +37,6 @@ use pin_project::pin_project;
 use quickwit_metrics::{Counter, counter};
 use tokio::io::AsyncWrite;
 
-use crate::metrics::ScopedCounter;
 use crate::{KillSwitch, Progress, ProtectedZoneGuard};
 
 // Max 1MB at a time.
@@ -76,12 +75,23 @@ pub fn limiter(throughput: ByteSize) -> Limiter {
         .build()
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct IoControls {
     throughput_limiter_opt: Option<Limiter>,
-    bytes_counter: ScopedCounter,
+    bytes_counter: Counter,
     progress: Progress,
     kill_switch: KillSwitch,
+}
+
+impl Default for IoControls {
+    fn default() -> Self {
+        Self {
+            throughput_limiter_opt: None,
+            bytes_counter: Counter::local(),
+            progress: Progress::default(),
+            kill_switch: KillSwitch::default(),
+        }
+    }
 }
 
 impl IoControls {
@@ -107,10 +117,10 @@ impl IoControls {
     }
 
     pub fn set_component(mut self, component: &'static str) -> Self {
-        self.bytes_counter = ScopedCounter::Global(counter!(
+        self.bytes_counter = counter!(
             parent: WRITE_BYTES,
             "component" => component,
-        ));
+        );
         self
     }
 
@@ -127,7 +137,7 @@ impl IoControls {
     }
 
     pub fn set_bytes_counter(mut self, bytes_counter: Counter) -> Self {
-        self.bytes_counter = ScopedCounter::Global(bytes_counter);
+        self.bytes_counter = bytes_counter;
         self
     }
 
