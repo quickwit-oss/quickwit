@@ -113,8 +113,7 @@ macro_rules! with_lock_metrics {
             quickwit_metrics::gauge!(
                 parent: $crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
                 labels: [labels],
-            )
-            .increment(1.0);
+            ).increment(1.0);
 
             let now = std::time::Instant::now();
             let guard = $future;
@@ -129,13 +128,11 @@ macro_rules! with_lock_metrics {
             quickwit_metrics::gauge!(
                 parent: $crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUESTS_IN_FLIGHT,
                 labels: [labels],
-            )
-            .decrement(1.0);
+            ).decrement(1.0);
             quickwit_metrics::histogram!(
                 parent: $crate::ingest_v2::metrics::WAL_ACQUIRE_LOCK_REQUEST_DURATION_SECS,
                 labels: [labels],
-            )
-            .record(elapsed.as_secs_f64());
+            ).record(elapsed.as_secs_f64());
 
             guard
         }

@@ -174,10 +174,10 @@ fn label_composition_two_labels() {
         );
         const REGION: quickwit_metrics::LabelNames<1> = label_names!("region");
         const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
-        let child = gauge!(
-            parent: parent,
-            labels: [label_values!(REGION => "us-east"), label_values!(STATUS => "ok")],
-        );
+        let child = gauge!(parent: parent, labels: [
+            label_values!(REGION => "us-east"),
+            label_values!(STATUS => "ok"),
+        ]);
         child.set(42.0);
     });
 
@@ -207,10 +207,10 @@ fn label_composition_same_hash_as_single() {
         const REGION: quickwit_metrics::LabelNames<1> = label_names!("region");
         const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
 
-        let via_compose = gauge!(
-            parent: parent,
-            labels: [label_values!(REGION => "us"), label_values!(STATUS => "ok")],
-        );
+        let via_compose = gauge!(parent: parent, labels: [
+            label_values!(REGION => "us"),
+            label_values!(STATUS => "ok"),
+        ]);
         let via_single = gauge!(
             parent: parent,
             labels: [labels!("region" => "us", "status" => "ok")],

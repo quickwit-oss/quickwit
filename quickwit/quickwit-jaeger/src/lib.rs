@@ -420,55 +420,37 @@ impl JaegerService {
             current_span.record("num_spans", num_spans_total);
             current_span.record("num_bytes", num_bytes_total);
 
-            counter!(
-                parent: FETCHED_TRACES_TOTAL,
-                labels: [label_values!(
-                    OPERATION_INDEX_LABELS =>
-                    operation_name, OTEL_TRACES_INDEX_ID
-                )],
-            )
-            .increment(num_traces);
+            let labels = label_values!(
+                OPERATION_INDEX_LABELS => operation_name, OTEL_TRACES_INDEX_ID
+            );
+            counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels])
+                .increment(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
-            histogram!(
-                parent: REQUEST_DURATION_SECONDS,
-                labels: [label_values!(
-                    OPERATION_INDEX_ERROR_LABELS =>
-                    operation_name, OTEL_TRACES_INDEX_ID, "false"
-                )],
-            )
-            .record(elapsed);
+            let err_labels = label_values!(
+                OPERATION_INDEX_ERROR_LABELS =>
+                operation_name, OTEL_TRACES_INDEX_ID, "false"
+            );
+            histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels])
+                .record(elapsed);
         });
         Ok(ReceiverStream::new(rx))
     }
 }
 
 pub(crate) fn record_error(operation_name: &'static str, request_start: Instant) {
-    counter!(
-        parent: REQUEST_ERRORS_TOTAL,
-        labels: [label_values!(
-            OPERATION_INDEX_LABELS =>
-            operation_name, OTEL_TRACES_INDEX_ID
-        )],
-    )
-    .increment(1);
+    let labels = label_values!(OPERATION_INDEX_LABELS => operation_name, OTEL_TRACES_INDEX_ID);
+    counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).increment(1);
 
     let elapsed = request_start.elapsed().as_secs_f64();
-    histogram!(
-        parent: REQUEST_DURATION_SECONDS,
-        labels: [label_values!(
-            OPERATION_INDEX_ERROR_LABELS =>
-            operation_name, OTEL_TRACES_INDEX_ID, "true"
-        )],
-    )
-    .record(elapsed);
+    let err_labels = label_values!(
+        OPERATION_INDEX_ERROR_LABELS => operation_name, OTEL_TRACES_INDEX_ID, "true"
+    );
+    histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).record(elapsed);
 }
 
 pub(crate) fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
-    let labels = label_values!(
-        OPERATION_INDEX_LABELS =>
-        operation_name, OTEL_TRACES_INDEX_ID
-    );
+    let labels = label_values!(OPERATION_INDEX_LABELS => operation_name, OTEL_TRACES_INDEX_ID);
     counter!(parent: FETCHED_SPANS_TOTAL, labels: [labels]).increment(num_spans as u64);
     counter!(parent: TRANSFERRED_BYTES_TOTAL, labels: [labels]).increment(num_bytes as u64);
 }
@@ -1093,7 +1075,9 @@ fn collect_trace_ids(
 
 #[allow(clippy::result_large_err)]
 fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
-where T: Deserialize<'a> {
+where
+    T: Deserialize<'a>,
+{
     match serde_json::from_str(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {
@@ -1107,7 +1091,9 @@ where T: Deserialize<'a> {
 
 #[allow(clippy::result_large_err)]
 fn postcard_deserialize<'a, T>(json: &'a [u8], label: &'static str) -> Result<T, Status>
-where T: Deserialize<'a> {
+where
+    T: Deserialize<'a>,
+{
     match postcard::from_bytes(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {

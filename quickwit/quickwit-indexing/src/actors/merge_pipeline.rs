@@ -274,10 +274,7 @@ impl MergePipeline {
         let (merge_publisher_mailbox, merge_publisher_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(counter!(
-                parent: BACKPRESSURE_MICROS,
-                labels: [label_values!(ACTOR_NAME => "merge_publisher")],
-            ))
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "merge_publisher")]))
             .spawn(merge_publisher);
 
         // Merge uploader
@@ -323,10 +320,7 @@ impl MergePipeline {
         let (merge_executor_mailbox, merge_executor_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(counter!(
-                parent: BACKPRESSURE_MICROS,
-                labels: [label_values!(ACTOR_NAME => "merge_executor")],
-            ))
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "merge_executor")]))
             .spawn(merge_executor);
 
         let merge_split_downloader = MergeSplitDownloader {
@@ -338,10 +332,7 @@ impl MergePipeline {
         let (merge_split_downloader_mailbox, merge_split_downloader_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(counter!(
-                parent: BACKPRESSURE_MICROS,
-                labels: [label_values!(ACTOR_NAME => "merge_split_downloader")],
-            ))
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "merge_split_downloader")]))
             .spawn(merge_split_downloader);
 
         // Merge planner

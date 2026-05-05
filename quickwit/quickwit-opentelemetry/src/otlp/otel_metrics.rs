@@ -240,11 +240,8 @@ impl OtlpGrpcMetricsService {
         self.store_metrics(index_id.clone(), doc_batch).await?;
 
         let labels = label_values!(OTLP_GRPC_LABELS => "metrics", index_id, "grpc", "protobuf");
-        counter!(
-            parent: INGESTED_DATA_POINTS_TOTAL,
-            labels: [labels],
-        )
-        .increment(num_data_points - num_parse_errors);
+        counter!(parent: INGESTED_DATA_POINTS_TOTAL, labels: [labels])
+            .increment(num_data_points - num_parse_errors);
         counter!(parent: INGESTED_BYTES_TOTAL, labels: [labels]).increment(num_bytes);
 
         let response = ExportMetricsServiceResponse {
@@ -334,37 +331,23 @@ impl OtlpGrpcMetricsService {
     ) -> Result<ExportMetricsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = label_values!(
-            OTLP_GRPC_LABELS =>
-            "metrics", index_id.clone(), "grpc", "protobuf"
-        );
-        counter!(
-            parent: REQUESTS_TOTAL,
-            labels: [labels],
-        )
-        .increment(1);
+        let labels =
+            label_values!(OTLP_GRPC_LABELS => "metrics", index_id.clone(), "grpc", "protobuf");
+        counter!(parent: REQUESTS_TOTAL, labels: [labels]).increment(1);
 
         let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
             ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
-                counter!(
-                    parent: REQUEST_ERRORS_TOTAL,
-                    labels: [labels],
-                )
-                .increment(1);
+                counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).increment(1);
                 (err, "true")
             }
         };
 
         let elapsed = start.elapsed().as_secs_f64();
-        histogram!(
-            parent: REQUEST_DURATION_SECONDS,
-            labels: [label_values!(
-                OTLP_GRPC_ERROR_LABELS =>
-                "metrics", index_id, "grpc", "protobuf", is_error
-            )],
-        )
-        .record(elapsed);
+        let error_labels = label_values!(
+            OTLP_GRPC_ERROR_LABELS => "metrics", index_id, "grpc", "protobuf", is_error
+        );
+        histogram!(parent: REQUEST_DURATION_SECONDS, labels: [error_labels]).record(elapsed);
 
         export_res
     }

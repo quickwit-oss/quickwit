@@ -176,16 +176,8 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
         let labels = labels!("status" => status);
-        counter!(
-            parent: LEAF_SEARCH_REQUESTS_TOTAL,
-            labels: [labels],
-        )
-        .increment(1);
-        histogram!(
-            parent: LEAF_SEARCH_DURATION_SECONDS,
-            labels: [labels],
-        )
-        .record(elapsed);
+        counter!(parent: LEAF_SEARCH_REQUESTS_TOTAL, labels: [labels]).increment(1);
+        histogram!(parent: LEAF_SEARCH_DURATION_SECONDS, labels: [labels]).record(elapsed);
         result
     }
 }

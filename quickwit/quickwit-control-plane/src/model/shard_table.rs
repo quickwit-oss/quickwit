@@ -465,16 +465,10 @@ impl ShardTable {
         if index_label == index_id {
             let shard_stats = table_entry.shards_stats();
             let labels = label_values!(INDEX_ID_LABELS => index_label.to_string());
-            gauge!(
-                parent: OPEN_SHARDS,
-                labels: [labels],
-            )
-            .set(shard_stats.num_open_shards as f64);
-            gauge!(
-                parent: CLOSED_SHARDS,
-                labels: [labels],
-            )
-            .set(shard_stats.num_closed_shards as f64);
+            gauge!(parent: OPEN_SHARDS, labels: [labels])
+                .set(shard_stats.num_open_shards as f64);
+            gauge!(parent: CLOSED_SHARDS, labels: [labels])
+                .set(shard_stats.num_closed_shards as f64);
             return;
         }
         // Per-index metrics are disabled, so we update the metrics for all sources.
@@ -489,16 +483,8 @@ impl ShardTable {
             }
         }
         let labels = label_values!(INDEX_ID_LABELS => index_label.to_string());
-        gauge!(
-            parent: OPEN_SHARDS,
-            labels: [labels],
-        )
-        .set(num_open_shards as f64);
-        gauge!(
-            parent: CLOSED_SHARDS,
-            labels: [labels],
-        )
-        .set(num_closed_shards as f64);
+        gauge!(parent: OPEN_SHARDS, labels: [labels]).set(num_open_shards as f64);
+        gauge!(parent: CLOSED_SHARDS, labels: [labels]).set(num_closed_shards as f64);
     }
 
     pub fn update_shards(

@@ -210,11 +210,8 @@ impl GarbageCollector {
             .await;
 
             let tantivy_run_duration = tantivy_start.elapsed().as_secs();
-            counter!(
-                parent: GC_SECONDS_TOTAL,
-                labels: [labels_split],
-            )
-            .increment(tantivy_run_duration);
+            counter!(parent: GC_SECONDS_TOTAL, labels: [labels_split])
+                .increment(tantivy_run_duration);
 
             let result = match gc_res {
                 Ok(removal_info) => {
@@ -222,8 +219,7 @@ impl GarbageCollector {
                     counter!(
                         parent: GC_RUNS,
                         labels: [labels_split, label_values!(labels_result => "success")],
-                    )
-                    .increment(1);
+                    ).increment(1);
                     GcRunResult {
                         num_deleted_splits: removal_info.removed_split_entries.len(),
                         num_deleted_bytes: removal_info
@@ -245,8 +241,7 @@ impl GarbageCollector {
                     counter!(
                         parent: GC_RUNS,
                         labels: [labels_split, label_values!(labels_result => "error")],
-                    )
-                    .increment(1);
+                    ).increment(1);
                     error!(error=?error, "failed to run garbage collection");
                     GcRunResult::failed()
                 }
@@ -271,11 +266,8 @@ impl GarbageCollector {
             .await;
 
             let parquet_run_duration = parquet_start.elapsed().as_secs();
-            counter!(
-                parent: GC_SECONDS_TOTAL,
-                labels: [labels_split],
-            )
-            .increment(parquet_run_duration);
+            counter!(parent: GC_SECONDS_TOTAL, labels: [labels_split])
+                .increment(parquet_run_duration);
 
             let result = match gc_res {
                 Ok(removal_info) => {
@@ -283,8 +275,7 @@ impl GarbageCollector {
                     counter!(
                         parent: GC_RUNS,
                         labels: [labels_split, label_values!(labels_result => "success")],
-                    )
-                    .increment(1);
+                    ).increment(1);
                     GcRunResult {
                         num_deleted_splits: removal_info.removed_split_count(),
                         num_deleted_bytes: removal_info.removed_bytes() as usize,
@@ -302,8 +293,7 @@ impl GarbageCollector {
                     counter!(
                         parent: GC_RUNS,
                         labels: [labels_split, label_values!(labels_result => "error")],
-                    )
-                    .increment(1);
+                    ).increment(1);
                     error!(error=?error, "failed to run parquet garbage collection");
                     GcRunResult::failed()
                 }

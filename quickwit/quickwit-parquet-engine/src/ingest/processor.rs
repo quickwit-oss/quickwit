@@ -66,30 +66,21 @@ impl ParquetIngestProcessor {
         let labels_kind = labels!("kind" => "points");
         let labels_operation = labels!("operation" => "ingest");
         // Record bytes ingested
-        counter!(
-            parent: INGEST_BYTES_TOTAL,
-            labels: [labels_kind],
-        )
-        .increment(ipc_bytes.len() as u64);
+        counter!(parent: INGEST_BYTES_TOTAL, labels: [labels_kind])
+            .increment(ipc_bytes.len() as u64);
 
         let batch = match ipc_to_record_batch(ipc_bytes) {
             Ok(batch) => batch,
             Err(e) => {
-                counter!(
-                    parent: ERRORS_TOTAL,
-                    labels: [labels_kind, labels_operation],
-                )
-                .increment(1);
+                counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation])
+                    .increment(1);
                 return Err(e);
             }
         };
 
         if let Err(e) = self.validate_schema(&batch) {
-            counter!(
-                parent: ERRORS_TOTAL,
-                labels: [labels_kind, labels_operation],
-            )
-            .increment(1);
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation])
+                .increment(1);
             return Err(e);
         }
 

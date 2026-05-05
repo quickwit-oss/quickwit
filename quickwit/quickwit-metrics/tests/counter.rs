@@ -216,10 +216,9 @@ fn label_composition_two_labels() {
         );
         const REGION: quickwit_metrics::LabelNames<1> = label_names!("region");
         const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
-        let child = counter!(
-            parent: parent,
-            labels: [label_values!(REGION => "us-east"), label_values!(STATUS => "ok")],
-        );
+        let child = counter!(parent: parent, labels: [
+            label_values!(REGION => "us-east"), label_values!(STATUS => "ok"),
+        ]);
         child.increment(3);
     });
 
@@ -246,10 +245,9 @@ fn label_composition_three_labels() {
             description: "three-label composition",
             subsystem: "test",
         );
-        let child = counter!(
-            parent: parent,
-            labels: [labels!("env" => "staging"), labels!("region" => "eu"), labels!("az" => "eu-1a")],
-        );
+        let child = counter!(parent: parent, labels: [
+            labels!("env" => "staging"), labels!("region" => "eu"), labels!("az" => "eu-1a"),
+        ]);
         child.increment(7);
     });
 
@@ -279,10 +277,10 @@ fn label_composition_same_hash_as_single() {
         const REGION: quickwit_metrics::LabelNames<1> = label_names!("region");
         const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
 
-        let via_compose = counter!(
-            parent: parent,
-            labels: [label_values!(REGION => "us"), label_values!(STATUS => "ok")],
-        );
+        let via_compose = counter!(parent: parent, labels: [
+            label_values!(REGION => "us"),
+            label_values!(STATUS => "ok"),
+        ]);
         let via_single = counter!(
             parent: parent,
             labels: [labels!("region" => "us", "status" => "ok")],

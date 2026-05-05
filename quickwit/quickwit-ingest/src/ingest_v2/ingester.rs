@@ -336,8 +336,7 @@ impl Ingester {
                 counter!(
                     parent: RESET_SHARDS_OPERATIONS_TOTAL,
                     labels: [label_values!(STATUS => "success")],
-                )
-                .increment(1);
+                ).increment(1);
 
                 let wal_usage = state_guard.mrecordlog.resource_usage();
                 report_wal_usage(wal_usage);
@@ -348,8 +347,7 @@ impl Ingester {
                 counter!(
                     parent: RESET_SHARDS_OPERATIONS_TOTAL,
                     labels: [label_values!(STATUS => "error")],
-                )
-                .increment(1);
+                ).increment(1);
             }
             Err(_) => {
                 warn!("advise reset shards request timed out");
@@ -357,8 +355,7 @@ impl Ingester {
                 counter!(
                     parent: RESET_SHARDS_OPERATIONS_TOTAL,
                     labels: [label_values!(STATUS => "timeout")],
-                )
-                .increment(1);
+                ).increment(1);
             }
         };
         // We still hold the permit while sleeping so we effectively rate limit the reset shards
@@ -574,13 +571,11 @@ impl Ingester {
                     counter!(
                         parent: DOCS_TOTAL,
                         labels: [label_values!(VALIDITY => "invalid")],
-                    )
-                    .increment(parse_failures.len() as u64);
+                    ).increment(parse_failures.len() as u64);
                     counter!(
                         parent: DOCS_BYTES_TOTAL,
                         labels: [label_values!(VALIDITY => "invalid")],
-                    )
-                    .increment(original_batch_num_bytes);
+                    ).increment(original_batch_num_bytes);
                     let persist_success = PersistSuccess {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid,
@@ -597,24 +592,20 @@ impl Ingester {
                 counter!(
                     parent: DOCS_TOTAL,
                     labels: [label_values!(VALIDITY => "valid")],
-                )
-                .increment(valid_doc_batch.num_docs() as u64);
+                ).increment(valid_doc_batch.num_docs() as u64);
                 counter!(
                     parent: DOCS_BYTES_TOTAL,
                     labels: [label_values!(VALIDITY => "valid")],
-                )
-                .increment(valid_doc_batch.num_bytes() as u64);
+                ).increment(valid_doc_batch.num_bytes() as u64);
                 if !parse_failures.is_empty() {
                     counter!(
                         parent: DOCS_TOTAL,
                         labels: [label_values!(VALIDITY => "invalid")],
-                    )
-                    .increment(parse_failures.len() as u64);
+                    ).increment(parse_failures.len() as u64);
                     counter!(
                         parent: DOCS_BYTES_TOTAL,
                         labels: [label_values!(VALIDITY => "invalid")],
-                    )
-                    .increment(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
+                    ).increment(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
                 }
                 let valid_batch_num_bytes = valid_doc_batch.num_bytes() as u64;
                 shard.rate_meter.update(valid_batch_num_bytes);

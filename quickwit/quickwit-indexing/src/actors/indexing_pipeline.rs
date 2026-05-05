@@ -124,10 +124,7 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
-        let indexing_pipelines_gauge = gauge!(
-            parent: INDEXING_PIPELINES,
-            "index" => params.pipeline_id.index_uid.index_id.clone(),
-        );
+        let indexing_pipelines_gauge = gauge!(parent: INDEXING_PIPELINES, "index" => params.pipeline_id.index_uid.index_id.clone());
         let indexing_pipelines_gauge_guard = GaugeGuard::new(&indexing_pipelines_gauge, 1.0);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
@@ -313,19 +310,13 @@ impl IndexingPipeline {
         let (publisher_mailbox, publisher_handle) = ctx
             .spawn_actor()
             .set_kill_switch(self.kill_switch.clone())
-            .set_backpressure_micros_counter(counter!(
-                parent: BACKPRESSURE_MICROS,
-                labels: [label_values!(ACTOR_NAME => "publisher")],
-            ))
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "publisher")]))
             .spawn(publisher);
 
         let sequencer = Sequencer::new(publisher_mailbox);
         let (sequencer_mailbox, sequencer_handle) = ctx
             .spawn_actor()
-            .set_backpressure_micros_counter(counter!(
-                parent: BACKPRESSURE_MICROS,
-                labels: [label_values!(ACTOR_NAME => "sequencer")],
-            ))
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "sequencer")]))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(sequencer);
 
@@ -342,10 +333,7 @@ impl IndexingPipeline {
         );
         let (uploader_mailbox, uploader_handle) = ctx
             .spawn_actor()
-            .set_backpressure_micros_counter(counter!(
-                parent: BACKPRESSURE_MICROS,
-                labels: [label_values!(ACTOR_NAME => "uploader")],
-            ))
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "uploader")]))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
 
@@ -376,10 +364,7 @@ impl IndexingPipeline {
         );
         let (indexer_mailbox, indexer_handle) = ctx
             .spawn_actor()
-            .set_backpressure_micros_counter(counter!(
-                parent: BACKPRESSURE_MICROS,
-                labels: [label_values!(ACTOR_NAME => "indexer")],
-            ))
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "indexer")]))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
 
@@ -393,10 +378,7 @@ impl IndexingPipeline {
         )?;
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
-            .set_backpressure_micros_counter(counter!(
-                parent: BACKPRESSURE_MICROS,
-                labels: [label_values!(ACTOR_NAME => "doc_processor")],
-            ))
+            .set_backpressure_micros_counter(counter!(parent: BACKPRESSURE_MICROS, labels: [label_values!(ACTOR_NAME => "doc_processor")]))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(doc_processor);
         let source_runtime = SourceRuntime {

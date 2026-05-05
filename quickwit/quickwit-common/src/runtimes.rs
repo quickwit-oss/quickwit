@@ -219,8 +219,7 @@ impl RuntimeMetricsRecorder {
             scheduled_tasks: gauge!(parent: TOKIO_SCHEDULED_TASKS, labels: [labels]),
             worker_busy_duration_milliseconds_total: counter!(
                 parent: TOKIO_WORKER_BUSY_DURATION_MILLISECONDS_TOTAL,
-                labels: [labels],
-            ),
+                labels: [labels]),
             worker_busy_ratio: gauge!(parent: TOKIO_WORKER_BUSY_RATIO, labels: [labels]),
             worker_threads: gauge!(parent: TOKIO_WORKER_THREADS, labels: [labels]),
         }

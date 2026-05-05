@@ -66,30 +66,20 @@ macro_rules! metrics {
         let operation = stringify!($operation);
         let index = $index;
         let labels = label_values!(OPERATION_INDEX_LABELS => operation, index);
-        counter!(
-            parent: REQUESTS_TOTAL,
-            labels: [labels],
-        )
-        .increment(1);
+        counter!(parent: REQUESTS_TOTAL, labels: [labels]).increment(1);
         let (res, is_error) = match $expr {
-            ok @ Ok(_) => {
-                (ok, "false")
-            },
+            ok @ Ok(_) => (ok, "false"),
             err @ Err(_) => {
-                counter!(
-                    parent: REQUEST_ERRORS_TOTAL,
-                    labels: [labels],
-                )
-                .increment(1);
+                counter!(parent: REQUEST_ERRORS_TOTAL, labels: [labels]).increment(1);
                 (err, "true")
             },
         };
         let elapsed = start.elapsed().as_secs_f64();
-        histogram!(
-            parent: REQUEST_DURATION_SECONDS,
-            labels: [label_values!(OPERATION_INDEX_ERROR_LABELS => operation, index, is_error)],
-        )
-        .record(elapsed);
+        let err_labels = label_values!(
+            OPERATION_INDEX_ERROR_LABELS => operation, index, is_error
+        );
+        histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels])
+            .record(elapsed);
 
         return res.map(Response::new);
     };
@@ -443,24 +433,14 @@ async fn stream_otel_spans_impl(
 
     record_send(operation_name, num_spans, num_bytes);
 
-    counter!(
-        parent: FETCHED_TRACES_TOTAL,
-        labels: [label_values!(
-            OPERATION_INDEX_LABELS =>
-            operation_name, OTEL_TRACES_INDEX_ID
-        )],
-    )
-    .increment(trace_ids.len() as u64);
+    let labels = label_values!(OPERATION_INDEX_LABELS => operation_name, OTEL_TRACES_INDEX_ID);
+    counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels]).increment(trace_ids.len() as u64);
 
     let elapsed = request_start.elapsed().as_secs_f64();
-    histogram!(
-        parent: REQUEST_DURATION_SECONDS,
-        labels: [label_values!(
-            OPERATION_INDEX_ERROR_LABELS =>
-            operation_name, OTEL_TRACES_INDEX_ID, "false"
-        )],
-    )
-    .record(elapsed);
+    let err_labels = label_values!(
+        OPERATION_INDEX_ERROR_LABELS => operation_name, OTEL_TRACES_INDEX_ID, "false"
+    );
+    histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).record(elapsed);
 
     Ok(qw_spans)
 }

@@ -123,10 +123,7 @@ impl ParquetUploader {
         let _guard = ctx.protect_zone();
         let concurrent_upload_permits = CONCURRENT_UPLOAD_PERMITS_METRICS
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_uploads));
-        let gauge = gauge!(
-            parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
-            labels: [label_values!(COMPONENT => "metrics")],
-        );
+        let gauge = gauge!(parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS, labels: [label_values!(COMPONENT => "metrics")]);
         gauge.set(concurrent_upload_permits.available_permits() as f64);
         concurrent_upload_permits
             .acquire()
