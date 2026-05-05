@@ -40,6 +40,13 @@ fn get_main_runtime_num_threads() -> usize {
 }
 
 fn main() -> anyhow::Result<()> {
+    #[cfg(feature = "openssl-support")]
+    unsafe {
+        // SAFETY: this is done before spawning any thread, it trivially isn't done concurrently
+        // with any other enviromnent read/write operations
+        openssl_probe::init_openssl_env_vars()
+    };
+
     let (command, ansi_colors) = parse_cli_command();
 
     let main_runtime_num_threads: usize = get_main_runtime_num_threads();
@@ -53,10 +60,6 @@ fn main() -> anyhow::Result<()> {
         .context("failed to start main Tokio runtime")?;
 
     rt.block_on(async move {
-        #[cfg(feature = "openssl-support")]
-        unsafe {
-            openssl_probe::init_openssl_env_vars()
-        };
         install_default_crypto_ring_provider();
 
         let telemetry_handle =
