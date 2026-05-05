@@ -32,7 +32,7 @@ use std::fmt;
 pub enum InvariantId {
     /// SS-1: all rows within a split are sorted according to the split's schema
     SS1,
-    /// SS-2: null values sort correctly per direction (nulls last asc, first desc)
+    /// SS-2: null values always sort after non-null (nulls last, regardless of direction)
     SS2,
     /// SS-3: missing sort columns are treated as NULL
     SS3,
@@ -74,6 +74,13 @@ pub enum InvariantId {
     DM4,
     /// DM-5: timeseries_id persists through compaction without recomputation
     DM5,
+
+    /// MP-1: all splits in a merge operation have the same num_merge_ops level
+    MP1,
+    /// MP-2: every merge operation has at least 2 input splits
+    MP2,
+    /// MP-3: all splits in a merge operation share the same compaction scope
+    MP3,
 }
 
 impl InvariantId {
@@ -106,6 +113,10 @@ impl InvariantId {
             Self::DM3 => "DM-3",
             Self::DM4 => "DM-4",
             Self::DM5 => "DM-5",
+
+            Self::MP1 => "MP-1",
+            Self::MP2 => "MP-2",
+            Self::MP3 => "MP-3",
         }
     }
 
@@ -113,7 +124,7 @@ impl InvariantId {
     pub fn description(self) -> &'static str {
         match self {
             Self::SS1 => "rows sorted by split schema",
-            Self::SS2 => "null ordering correct per direction",
+            Self::SS2 => "nulls always sort after non-null",
             Self::SS3 => "missing sort columns treated as NULL",
             Self::SS4 => "sort schema immutable after write",
             Self::SS5 => "three copies of sort schema identical",
@@ -136,6 +147,10 @@ impl InvariantId {
             Self::DM3 => "no interpolation — only ingested points",
             Self::DM4 => "deterministic TSID from tags",
             Self::DM5 => "TSID persists through compaction",
+
+            Self::MP1 => "merge op splits share num_merge_ops level",
+            Self::MP2 => "merge op has at least 2 splits",
+            Self::MP3 => "merge op splits share compaction scope",
         }
     }
 }
@@ -157,6 +172,7 @@ mod tests {
         assert_eq!(InvariantId::CS3.to_string(), "CS-3");
         assert_eq!(InvariantId::MC4.to_string(), "MC-4");
         assert_eq!(InvariantId::DM5.to_string(), "DM-5");
+        assert_eq!(InvariantId::MP1.to_string(), "MP-1");
     }
 
     #[test]
@@ -182,6 +198,9 @@ mod tests {
             InvariantId::DM3,
             InvariantId::DM4,
             InvariantId::DM5,
+            InvariantId::MP1,
+            InvariantId::MP2,
+            InvariantId::MP3,
         ];
         for id in all {
             assert!(!id.description().is_empty(), "{} has empty description", id);

@@ -331,15 +331,16 @@ mod tests {
         let combined = accumulator.flush().unwrap().unwrap();
         assert_eq!(combined.num_rows(), 5);
 
-        // Union schema should have all 4 required fields + both tags
+        // Union schema should have all 4 required fields + timeseries_id + both tags
         let schema = combined.schema();
         assert!(schema.index_of("metric_name").is_ok());
         assert!(schema.index_of("metric_type").is_ok());
         assert!(schema.index_of("timestamp_secs").is_ok());
         assert!(schema.index_of("value").is_ok());
+        assert!(schema.index_of("timeseries_id").is_ok());
         assert!(schema.index_of("service").is_ok());
         assert!(schema.index_of("host").is_ok());
-        assert_eq!(schema.fields().len(), 6);
+        assert_eq!(schema.fields().len(), 7);
 
         // First 3 rows should have null "host", last 2 rows should have null "service"
         let host_idx = schema.index_of("host").unwrap();
@@ -390,8 +391,8 @@ mod tests {
             "duplicate columns in union schema: {field_names:?}"
         );
 
-        // 4 required + service + host = 6
-        assert_eq!(schema.fields().len(), 6);
+        // 4 required + timeseries_id + service + host = 7
+        assert_eq!(schema.fields().len(), 7);
 
         // Rows from batch1 have no "host" → 3 nulls; batch2 has "host" for all 2 rows → 0 nulls.
         let host_idx = schema.index_of("host").unwrap();

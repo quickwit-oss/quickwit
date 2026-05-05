@@ -43,6 +43,8 @@ pub use doc_mapping::{DocMapping, Mode, ModeType};
 pub use error::{DocParsingError, QueryParserError};
 use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
 use quickwit_proto::types::DocMappingUid;
+#[cfg(feature = "metrics")]
+pub use routing_expression::ArrowRowContext;
 pub use routing_expression::RoutingExpr;
 
 /// Field name reserved for storing the source document.

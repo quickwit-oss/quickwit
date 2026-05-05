@@ -1,8 +1,9 @@
 # GAP-004: Incomplete Split Metadata for Compaction and Query Pruning
 
-**Status**: Open
+**Status**: Partially resolved
 **Discovered**: 2026-02-19
 **Context**: Codebase analysis during Phase 1 locality compaction design
+**Resolution**: PRs #6287–#6295 added sort_schema, window, min/max (RowKeys), regex (zonemap), and sorting_columns to MetricsSplitMetadata and Parquet KV metadata. Remaining: Parquet column index + offset index enabling, PostgreSQL migration for new columns.
 
 ## Problem
 
@@ -111,16 +112,16 @@ Rich per-split (per-file) metadata for query pruning is standard in modern colum
 
 ## Next Steps
 
-- [ ] Add `sort_schema`, `window_start`, `window_duration_secs` to `MetricsSplitMetadata`
-- [ ] Add `SortColumnValue` tagged union type (string, i64, u64, f64, null)
-- [ ] Add `schema_column_min_values`, `schema_column_max_values`, `schema_column_regexes` to `MetricsSplitMetadata`
-- [ ] Create PostgreSQL migration adding new columns to `metrics_splits`
-- [ ] Update `PgMetricsSplit` and `InsertableMetricsSplit` in `postgres.rs`
+- [x] Add `sort_schema`, `window_start`, `window_duration_secs` to `MetricsSplitMetadata` — PR #6292 (`sort_fields`, `window` fields in `metadata.rs`)
+- [x] Add `SortColumnValue` tagged union type (string, i64, u64, f64, null) — PR #6292 (proto `ColumnValue` with `oneof` in `event_store_sortschema.proto`)
+- [x] Add `schema_column_min_values`, `schema_column_max_values`, `schema_column_regexes` to `MetricsSplitMetadata` — PR #6292 (`row_keys_proto: Option<Vec<u8>>` for min/max RowKeys), PR #6295 (`zonemap_regexes: HashMap<String, String>`)
+- [ ] Create PostgreSQL migration adding new columns to `metrics_splits` — partially done in PR #6292 (`InsertableMetricsSplit` has `row_keys`); full migration pending
+- [ ] Update `PgMetricsSplit` and `InsertableMetricsSplit` in `postgres.rs` — partially done in PR #6292; zonemap columns pending
 - [ ] Enable Parquet column index and offset index in writer properties
-- [ ] Set `sorting_columns` in Parquet file metadata based on sort schema
-- [ ] Write `sort_schema`, `schema_column_min_values`, `schema_column_max_values`, `schema_column_regexes`, `window_start`, `window_duration_secs` to Parquet `key_value_metadata`
-- [ ] Compute per-column min/max during split writing (scan sort + metadata-only columns)
-- [ ] Compute per-column regex during split writing (follow Husky implementation)
+- [x] Set `sorting_columns` in Parquet file metadata based on sort schema — PR #6287 (`sorting_columns()` method in `writer.rs`)
+- [x] Write `sort_schema`, `schema_column_min_values`, `schema_column_max_values`, `schema_column_regexes`, `window_start`, `window_duration_secs` to Parquet `key_value_metadata` — PR #6292 (`qh.sort_fields`, `qh.row_keys`, `qh.row_keys_json`, `qh.window_start`, `qh.window_duration_secs`), PR #6295 (`qh.zonemap_regexes`)
+- [x] Compute per-column min/max during split writing (scan sort + metadata-only columns) — PR #6292 (`extract_row_keys()` reads first/last row of sorted batch)
+- [x] Compute per-column regex during split writing (follow Husky implementation) — PR #6295 (`extract_zonemap_regexes()` with ported Go DFA automaton)
 
 ## References
 

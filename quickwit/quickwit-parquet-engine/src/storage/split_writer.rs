@@ -54,13 +54,13 @@ impl ParquetSplitWriter {
         config: ParquetWriterConfig,
         base_path: impl Into<PathBuf>,
         table_config: &TableConfig,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, super::ParquetWriteError> {
+        Ok(Self {
             kind,
-            writer: ParquetWriter::new(config, table_config),
+            writer: ParquetWriter::new(config, table_config)?,
             base_path: base_path.into(),
             table_config: table_config.clone(),
-        }
+        })
     }
 
     /// Get the base path for split files.
@@ -147,11 +147,15 @@ impl ParquetSplitWriter {
         let mut metadata = builder.build();
 
         // Write with compaction metadata embedded in Parquet KV metadata.
-        let size_bytes =
-            self.writer
-                .write_to_file_with_metadata(batch, &file_path, Some(&metadata))?;
+        // The writer sorts the batch and extracts RowKeys + zonemap regexes
+        // from the sorted data, returning them alongside the byte count.
+        let (size_bytes, (row_keys_proto, zonemap_regexes)) = self
+            .writer
+            .write_to_file_with_metadata(batch, &file_path, Some(&metadata))?;
 
         metadata.size_bytes = size_bytes;
+        metadata.row_keys_proto = row_keys_proto;
+        metadata.zonemap_regexes = zonemap_regexes;
 
         info!(
             split_id = %split_id,
@@ -166,7 +170,7 @@ impl ParquetSplitWriter {
 }
 
 /// Extracts the time range (min/max timestamp_secs) from a RecordBatch.
-fn extract_time_range(batch: &RecordBatch) -> Result<TimeRange, ParquetWriteError> {
+pub(crate) fn extract_time_range(batch: &RecordBatch) -> Result<TimeRange, ParquetWriteError> {
     let timestamp_idx = batch
         .schema()
         .index_of("timestamp_secs")
@@ -190,76 +194,93 @@ fn extract_time_range(batch: &RecordBatch) -> Result<TimeRange, ParquetWriteErro
 }
 
 /// Extracts distinct metric names from a RecordBatch.
-fn extract_metric_names(batch: &RecordBatch) -> Result<HashSet<String>, ParquetWriteError> {
+pub(crate) fn extract_metric_names(
+    batch: &RecordBatch,
+) -> Result<HashSet<String>, ParquetWriteError> {
     let metric_idx = batch
         .schema()
         .index_of("metric_name")
         .map_err(|_| ParquetWriteError::SchemaValidation("missing metric_name column".into()))?;
-    let metric_col = batch.column(metric_idx);
-    let mut names = HashSet::new();
-
-    // The column is Dictionary(Int32, Utf8)
-    if let Some(dict_array) = metric_col
-        .as_any()
-        .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
-    {
-        let values = dict_array.values();
-        if let Some(string_values) = values.as_any().downcast_ref::<arrow::array::StringArray>() {
-            // Get all dictionary values that are actually used
-            for i in 0..dict_array.len() {
-                if !dict_array.is_null(i)
-                    && let Ok(key) = dict_array.keys().value(i).try_into()
-                {
-                    let key: usize = key;
-                    if key < string_values.len() && !string_values.is_null(key) {
-                        names.insert(string_values.value(key).to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(names)
+    extract_distinct_strings(batch.column(metric_idx))
 }
 
 /// Extracts distinct service names from a RecordBatch.
-fn extract_service_names(batch: &RecordBatch) -> Result<HashSet<String>, ParquetWriteError> {
+pub(crate) fn extract_service_names(
+    batch: &RecordBatch,
+) -> Result<HashSet<String>, ParquetWriteError> {
     let service_idx = match batch.schema().index_of("service").ok() {
         Some(idx) => idx,
         None => return Ok(HashSet::new()),
     };
-    let service_col = batch.column(service_idx);
-    let mut names = HashSet::new();
+    extract_distinct_strings(batch.column(service_idx))
+}
 
-    // The column is Dictionary(Int32, Utf8)
-    if let Some(dict_array) = service_col
+/// Extracts distinct non-null string values from a column.
+///
+/// Handles both Dictionary(Int32, Utf8) encoding (common at ingest) and
+/// plain Utf8/LargeUtf8 (possible after optimize_output_batch in the merge
+/// path when cardinality is too high for dictionary encoding).
+fn extract_distinct_strings(
+    col: &dyn arrow::array::Array,
+) -> Result<HashSet<String>, ParquetWriteError> {
+    let mut values = HashSet::new();
+
+    // Try Dictionary(Int32, Utf8) first — the common case at ingest.
+    if let Some(dict_array) = col
         .as_any()
         .downcast_ref::<arrow::array::DictionaryArray<arrow::datatypes::Int32Type>>()
+        && let Some(string_values) = dict_array
+            .values()
+            .as_any()
+            .downcast_ref::<arrow::array::StringArray>()
     {
-        let values = dict_array.values();
-        if let Some(string_values) = values.as_any().downcast_ref::<arrow::array::StringArray>() {
-            // Get all dictionary values that are actually used
-            for i in 0..dict_array.len() {
-                if !dict_array.is_null(i)
-                    && let Ok(key) = dict_array.keys().value(i).try_into()
-                {
-                    let key: usize = key;
-                    if key < string_values.len() && !string_values.is_null(key) {
-                        names.insert(string_values.value(key).to_string());
-                    }
+        for i in 0..dict_array.len() {
+            if !dict_array.is_null(i)
+                && let Ok(key) = dict_array.keys().value(i).try_into()
+            {
+                let key: usize = key;
+                if key < string_values.len() && !string_values.is_null(key) {
+                    values.insert(string_values.value(key).to_string());
                 }
             }
         }
+        return Ok(values);
     }
 
-    Ok(names)
+    // Fall back to plain Utf8 (after optimize_output_batch strips dictionary
+    // encoding for high-cardinality columns).
+    if let Some(string_array) = col.as_any().downcast_ref::<arrow::array::StringArray>() {
+        for i in 0..string_array.len() {
+            if !string_array.is_null(i) {
+                values.insert(string_array.value(i).to_string());
+            }
+        }
+        return Ok(values);
+    }
+
+    // LargeUtf8 variant.
+    if let Some(string_array) = col
+        .as_any()
+        .downcast_ref::<arrow::array::LargeStringArray>()
+    {
+        for i in 0..string_array.len() {
+            if !string_array.is_null(i) {
+                values.insert(string_array.value(i).to_string());
+            }
+        }
+        return Ok(values);
+    }
+
+    // Unrecognized column type — return empty rather than error, since the
+    // column may legitimately be a type we don't extract strings from.
+    Ok(values)
 }
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use arrow::array::{ArrayRef, Float64Array, UInt8Array, UInt64Array};
+    use arrow::array::{ArrayRef, Float64Array, Int64Array, UInt8Array, UInt64Array};
     use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 
     use super::*;
@@ -281,6 +302,7 @@ mod tests {
             Field::new("metric_type", DataType::UInt8, false),
             Field::new("timestamp_secs", DataType::UInt64, false),
             Field::new("value", DataType::Float64, false),
+            Field::new("timeseries_id", DataType::Int64, false),
         ];
         if service_names.is_some() {
             fields.push(Field::new("service", dict_type.clone(), true));
@@ -295,8 +317,16 @@ mod tests {
         let timestamp_secs: ArrayRef = Arc::new(UInt64Array::from(timestamps.to_vec()));
         let values: Vec<f64> = (0..num_rows).map(|i| 42.0 + i as f64).collect();
         let value: ArrayRef = Arc::new(Float64Array::from(values));
+        let timeseries_ids: Vec<i64> = (0..num_rows).map(|i| 1000 + i as i64).collect();
+        let timeseries_id: ArrayRef = Arc::new(Int64Array::from(timeseries_ids));
 
-        let mut columns: Vec<ArrayRef> = vec![metric_name, metric_type, timestamp_secs, value];
+        let mut columns: Vec<ArrayRef> = vec![
+            metric_name,
+            metric_type,
+            timestamp_secs,
+            value,
+            timeseries_id,
+        ];
 
         if let Some(svc_names) = service_names {
             columns.push(create_dict_array(svc_names));
@@ -343,7 +373,8 @@ mod tests {
             config,
             temp_dir.path(),
             &TableConfig::default(),
-        );
+        )
+        .unwrap();
 
         let batch = create_test_batch(10);
         let metadata = writer.write_split(&batch, "test-index").unwrap();
@@ -370,7 +401,8 @@ mod tests {
             config,
             temp_dir.path(),
             &TableConfig::default(),
-        );
+        )
+        .unwrap();
 
         // Create batch with timestamps [100, 150, 200]
         let batch = create_test_batch_with_options(
@@ -396,7 +428,8 @@ mod tests {
             config,
             temp_dir.path(),
             &TableConfig::default(),
-        );
+        )
+        .unwrap();
 
         // Create batch with specific metric names
         let batch = create_test_batch_with_options(

@@ -87,6 +87,11 @@ pub struct ListParquetSplitsQuery {
     pub mature: Bound<OffsetDateTime>,
     /// Limit number of results.
     pub limit: Option<usize>,
+    /// Only return splits whose split_id are lexicographically after this split
+    pub after_split_id: Option<String>,
+    /// Filter splits whose `time_range_end` (exclusive upper bound) <= this
+    /// value.
+    pub max_time_range_end: Option<i64>,
 }
 
 impl Default for ListParquetSplitsQuery {
@@ -108,6 +113,8 @@ impl Default for ListParquetSplitsQuery {
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
             limit: None,
+            after_split_id: None,
+            max_time_range_end: None,
         }
     }
 }
@@ -143,6 +150,30 @@ impl ListParquetSplitsQuery {
     /// Filter by metric names.
     pub fn with_metric_names(mut self, names: Vec<String>) -> Self {
         self.metric_names = names;
+        self
+    }
+
+    /// Filter splits updated at or before the given timestamp (epoch seconds).
+    pub fn with_update_timestamp_lte(mut self, timestamp: i64) -> Self {
+        self.update_timestamp.end = Bound::Included(timestamp);
+        self
+    }
+
+    /// Limit number of results returned.
+    pub fn with_limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// Set the pagination cursor: return only splits with split_id > `split_id`.
+    pub fn with_after_split_id(mut self, split_id: impl Into<String>) -> Self {
+        self.after_split_id = Some(split_id.into());
+        self
+    }
+
+    /// Filter splits whose `time_range_end` (exclusive) <= the given timestamp.
+    pub fn with_max_time_range_end(mut self, timestamp: i64) -> Self {
+        self.max_time_range_end = Some(timestamp);
         self
     }
 

@@ -15,9 +15,15 @@
 //! Storage layer for Parquet files.
 
 mod config;
-mod split_writer;
+pub(crate) mod split_writer;
 mod writer;
 
 pub use config::{Compression, ParquetWriterConfig};
 pub use split_writer::ParquetSplitWriter;
+// Re-export metadata constants for use by the merge module and tests.
+pub(crate) use writer::{
+    PARQUET_META_NUM_MERGE_OPS, PARQUET_META_ROW_KEYS, PARQUET_META_ROW_KEYS_JSON,
+    PARQUET_META_SORT_FIELDS, PARQUET_META_WINDOW_DURATION, PARQUET_META_WINDOW_START,
+    PARQUET_META_ZONEMAP_REGEXES,
+};
 pub use writer::{ParquetWriteError, ParquetWriter};

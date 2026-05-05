@@ -28,8 +28,8 @@ use quickwit_metastore::checkpoint::SourceCheckpointDelta;
 /// This message type is sent from ParquetDocProcessor to ParquetIndexer, carrying
 /// pre-processed Arrow data that can be directly accumulated and written to Parquet.
 pub struct ProcessedParquetBatch {
-    /// The Arrow RecordBatch containing parquet pipeline data.
-    pub batch: RecordBatch,
+    /// The Arrow RecordBatches in this source batch.
+    pub batches: Vec<RecordBatch>,
     /// Checkpoint delta for this batch.
     pub checkpoint_delta: SourceCheckpointDelta,
     /// Force commit flag - when true, accumulator should flush immediately.
@@ -50,10 +50,18 @@ impl ProcessedParquetBatch {
         checkpoint_delta: SourceCheckpointDelta,
         force_commit: bool,
     ) -> Self {
-        // Estimate memory usage from the RecordBatch
-        let memory_size: i64 = batch
-            .columns()
+        Self::new_batches(vec![batch], checkpoint_delta, force_commit)
+    }
+
+    /// Create a new ProcessedParquetBatch from multiple processed Arrow batches.
+    pub fn new_batches(
+        batches: Vec<RecordBatch>,
+        checkpoint_delta: SourceCheckpointDelta,
+        force_commit: bool,
+    ) -> Self {
+        let memory_size: i64 = batches
             .iter()
+            .flat_map(|batch| batch.columns())
             .map(|col| col.get_array_memory_size() as i64)
             .sum();
 
@@ -61,7 +69,7 @@ impl ProcessedParquetBatch {
         gauge_guard.add(memory_size);
 
         Self {
-            batch,
+            batches,
             checkpoint_delta,
             force_commit,
             _gauge_guard: gauge_guard,
@@ -70,14 +78,14 @@ impl ProcessedParquetBatch {
 
     /// Returns the number of rows in the batch.
     pub fn num_rows(&self) -> usize {
-        self.batch.num_rows()
+        self.batches.iter().map(|batch| batch.num_rows()).sum()
     }
 
     /// Returns the estimated memory size of the batch in bytes.
     pub fn memory_size(&self) -> usize {
-        self.batch
-            .columns()
+        self.batches
             .iter()
+            .flat_map(|batch| batch.columns())
             .map(|col| col.get_array_memory_size())
             .sum()
     }
@@ -86,8 +94,8 @@ impl ProcessedParquetBatch {
 impl fmt::Debug for ProcessedParquetBatch {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProcessedParquetBatch")
-            .field("num_rows", &self.batch.num_rows())
-            .field("num_columns", &self.batch.num_columns())
+            .field("num_rows", &self.num_rows())
+            .field("num_batches", &self.batches.len())
             .field("checkpoint_delta", &self.checkpoint_delta)
             .field("force_commit", &self.force_commit)
             .finish()

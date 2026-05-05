@@ -40,6 +40,9 @@ pub struct Publisher {
     pub(crate) queue_capacity: QueueCapacity,
     pub(crate) metastore: MetastoreServiceClient,
     pub(crate) merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
+    #[cfg(feature = "metrics")]
+    pub(crate) parquet_merge_planner_mailbox_opt:
+        Option<Mailbox<super::metrics_pipeline::ParquetMergePlanner>>,
     pub(crate) source_mailbox_opt: Option<Mailbox<SourceActor>>,
     pub(crate) counters: PublisherCounters,
 }
@@ -57,9 +60,23 @@ impl Publisher {
             queue_capacity,
             metastore,
             merge_planner_mailbox_opt,
+            #[cfg(feature = "metrics")]
+            parquet_merge_planner_mailbox_opt: None,
             source_mailbox_opt,
             counters: PublisherCounters::default(),
         }
+    }
+
+    /// Sets the Parquet merge planner mailbox for merge feedback.
+    /// Post-construction setter because the Publisher is created before the
+    /// planner mailbox is available (bottom-up actor spawn order).
+    #[cfg(feature = "metrics")]
+    pub fn set_parquet_merge_planner_mailbox(
+        mut self,
+        mailbox: Mailbox<super::metrics_pipeline::ParquetMergePlanner>,
+    ) -> Self {
+        self.parquet_merge_planner_mailbox_opt = Some(mailbox);
+        self
     }
 }
 

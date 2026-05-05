@@ -26,7 +26,7 @@ use azure_storage::Error as AzureError;
 use azure_storage::prelude::*;
 use azure_storage_blobs::blob::operations::GetBlobResponse;
 use azure_storage_blobs::prelude::*;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures::io::Error as FutureError;
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
@@ -44,6 +44,7 @@ use tracing::{instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
 use crate::metrics::object_storage_get_slice_in_flight_guards;
+use crate::stable_deref_bytes::into_owned_bytes;
 use crate::storage::SendableAsync;
 use crate::{
     BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, STORAGE_METRICS, Storage,
@@ -203,12 +204,12 @@ impl AzureBlobStorage {
         key_path.to_string_lossy().to_string()
     }
 
-    /// Downloads a blob as vector of bytes.
-    async fn get_to_vec(
+    /// Downloads a blob as `Bytes` — zero-copy when the blob arrives as a single chunk.
+    async fn get_to_bytes(
         &self,
         path: &Path,
         range_opt: Option<Range<usize>>,
-    ) -> StorageResult<Vec<u8>> {
+    ) -> StorageResult<Bytes> {
         let name = self.blob_name(path);
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
         retry(&self.retry_params, || async {
@@ -226,10 +227,8 @@ impl AzureBlobStorage {
                 let stream = self.container_client.blob_client(&name).get().into_stream();
                 (stream, None)
             };
-            let mut buf: Vec<u8> = Vec::with_capacity(capacity);
-            download_all(&mut response_stream, &mut buf).await?;
-
-            Result::<_, AzureErrorWrapper>::Ok(buf)
+            let bytes = download_all(&mut response_stream).await?;
+            Result::<_, AzureErrorWrapper>::Ok(bytes)
         })
         .await
         .map_err(StorageError::from)
@@ -442,9 +441,9 @@ impl Storage for AzureBlobStorage {
 
     #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        self.get_to_vec(path, Some(range.clone()))
+        self.get_to_bytes(path, Some(range.clone()))
             .await
-            .map(OwnedBytes::new)
+            .map(into_owned_bytes)
             .map_err(|err| {
                 err.add_context(format!(
                     "failed to fetch slice {:?} for object: {}/{}",
@@ -493,9 +492,9 @@ impl Storage for AzureBlobStorage {
     #[instrument(level = "debug", skip(self), fields(fetched_bytes_len))]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let data = self
-            .get_to_vec(path, None)
+            .get_to_bytes(path, None)
             .await
-            .map(OwnedBytes::new)
+            .map(into_owned_bytes)
             .map_err(|err| {
                 err.add_context(format!(
                     "failed to fetch object: {}/{}",
@@ -559,28 +558,45 @@ pub fn parse_azure_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     Some((container, prefix))
 }
 
-/// Collect a download stream into an output buffer.
+/// Collect a download stream into a single [`Bytes`].
+///
+/// `Bytes` segments yielded by the SDK are preserved so that the single-segment case avoids the
+/// extra copy into a contiguous buffer. When more than one segment is received, they are
+/// concatenated exactly once into a freshly allocated `Bytes`.
 async fn download_all(
     chunk_stream: &mut Pageable<GetBlobResponse, AzureError>,
-    output: &mut Vec<u8>,
-) -> Result<(), AzureErrorWrapper> {
-    output.clear();
+) -> Result<Bytes, AzureErrorWrapper> {
+    let mut segments: Vec<Bytes> = Vec::new();
+    let mut total_num_bytes: usize = 0;
     while let Some(chunk_result) = chunk_stream.next().await {
         let chunk_response = chunk_result?;
-        let chunk_response_body_stream = chunk_response
-            .data
-            .map_err(FutureError::other)
-            .into_async_read()
-            .compat();
-        let mut body_stream_reader = BufReader::new(chunk_response_body_stream);
-        let num_bytes_copied = tokio::io::copy_buf(&mut body_stream_reader, output).await?;
-        crate::STORAGE_METRICS
-            .object_storage_download_num_bytes
-            .inc_by(num_bytes_copied);
+        let mut data_stream = chunk_response.data;
+        while let Some(bytes_res) = data_stream.next().await {
+            let bytes = bytes_res?;
+            total_num_bytes += bytes.len();
+            segments.push(bytes);
+        }
     }
-    // When calling `get_all`, the Vec capacity is not properly set.
-    output.shrink_to_fit();
-    Ok(())
+    crate::STORAGE_METRICS
+        .object_storage_download_num_bytes
+        .inc_by(total_num_bytes as u64);
+    Ok(coalesce_segments(segments, total_num_bytes))
+}
+
+/// Returns a single [`Bytes`] covering `segments`. Zero-copy when there is at most one segment;
+/// otherwise a single allocation concatenates them.
+fn coalesce_segments(mut segments: Vec<Bytes>, total_num_bytes: usize) -> Bytes {
+    match segments.len() {
+        0 => Bytes::new(),
+        1 => segments.remove(0),
+        _ => {
+            let mut out = BytesMut::with_capacity(total_num_bytes);
+            for segment in segments {
+                out.extend_from_slice(&segment);
+            }
+            out.freeze()
+        }
+    }
 }
 
 #[derive(Error, Debug)]
