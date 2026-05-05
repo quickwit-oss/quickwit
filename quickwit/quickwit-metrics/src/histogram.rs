@@ -13,10 +13,10 @@
 // limitations under the License.
 
 use std::sync::{Arc, LazyLock};
-use std::time::Instant;
 
 use dashmap::DashMap;
 use metrics::HistogramFn;
+use quanta::Instant;
 
 use crate::MetricInfo;
 
@@ -175,11 +175,6 @@ impl Histogram {
     pub fn record(&self, value: f64) {
         self.0.inner.record(value);
     }
-
-    /// Starts a timer that records the elapsed time in seconds when dropped.
-    pub fn start_timer(&self) -> HistogramTimer {
-        HistogramTimer::new(self.clone())
-    }
 }
 
 /// Bridges `Histogram` into the `metrics` recorder trait so it can be
@@ -199,9 +194,10 @@ pub struct HistogramTimer {
 }
 
 impl HistogramTimer {
-    fn new(histogram: Histogram) -> Self {
+    /// Starts a timer that records the elapsed time in seconds when dropped.
+    pub fn new(histogram: &Histogram) -> Self {
         Self {
-            histogram,
+            histogram: histogram.clone(),
             start: Instant::now(),
             observed: false,
         }

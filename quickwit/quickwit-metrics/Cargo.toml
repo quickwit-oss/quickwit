@@ -17,6 +17,7 @@ inventory = { workspace = true }
 const_format = { workspace = true }
 atomic_float = { workspace = true }
 dashmap = { workspace = true }
+quanta = { workspace = true }
 rustc-hash = { workspace = true }
 
 [dev-dependencies]
