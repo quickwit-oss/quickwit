@@ -195,7 +195,10 @@ pub struct PredicateCacheImpl {
 impl PredicateCacheImpl {
     pub fn new(config: &CacheConfig) -> Self {
         PredicateCacheImpl {
-            content: MemorySizedCache::from_config(config, &quickwit_storage::metrics::PREDICATE_CACHE),
+            content: MemorySizedCache::from_config(
+                config,
+                &quickwit_storage::metrics::PREDICATE_CACHE,
+            ),
         }
     }
 }

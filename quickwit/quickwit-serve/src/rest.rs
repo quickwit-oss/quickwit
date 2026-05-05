@@ -106,9 +106,7 @@ impl CompressionPredicate {
 
 impl Predicate for CompressionPredicate {
     fn should_compress<B>(&self, response: &http::Response<B>) -> bool
-    where
-        B: http_body::Body,
-    {
+    where B: http_body::Body {
         if let Some(size_above) = self.size_above_opt {
             size_above.should_compress(response)
         } else {

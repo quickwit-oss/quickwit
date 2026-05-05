@@ -139,8 +139,7 @@ fn handle_request(method: &'static str, path: &'static str, region: &'static str
     } else {
         "200"
     };
-    counter!(parent: HTTP_REQUESTS_BY_METHOD, "path" => path, "status" => status)
-        .increment(1);
+    counter!(parent: HTTP_REQUESTS_BY_METHOD, "path" => path, "status" => status).increment(1);
 
     let conn_gauge = gauge!(parent: HTTP_ACTIVE_CONNECTIONS_BY_REGION, "method" => method);
     {

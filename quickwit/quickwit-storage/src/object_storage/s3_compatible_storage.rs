@@ -649,8 +649,9 @@ impl S3CompatibleObjectStorage {
             let delete_objects_res: StorageResult<DeleteObjectsOutput> =
                 aws_retry(&self.retry_params, || async {
                     crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.increment(1);
-                    let _timer =
-                        HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION);
+                    let _timer = HistogramTimer::new(
+                        &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
+                    );
                     self.s3_client
                         .delete_objects()
                         .bucket(self.bucket.clone())
@@ -797,7 +798,8 @@ impl Storage for S3CompatibleObjectStorage {
         let key = self.key(path);
         let delete_res = aws_retry(&self.retry_params, || async {
             crate::metrics::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.increment(1);
-            let _timer = HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
+            let _timer =
+                HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
             self.s3_client
                 .delete_object()
                 .bucket(&bucket)

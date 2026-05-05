@@ -789,8 +789,7 @@ impl OtlpGrpcTracesService {
             }
         };
         let elapsed = start.elapsed().as_secs_f64();
-        let error_labels =
-            label_values!(OTLP_GRPC_ERROR_LABELS => "trace", index_id, "grpc", "protobuf", is_error);
+        let error_labels = label_values!(OTLP_GRPC_ERROR_LABELS => "trace", index_id, "grpc", "protobuf", is_error);
         histogram!(parent: REQUEST_DURATION_SECONDS, labels: [error_labels]).record(elapsed);
 
         export_res

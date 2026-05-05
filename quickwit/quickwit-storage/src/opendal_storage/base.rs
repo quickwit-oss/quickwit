@@ -169,8 +169,9 @@ impl Storage for OpendalStorage {
                 let mut bulk_error = BulkDeleteError::default();
                 for (index, path) in paths.iter().enumerate() {
                     crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.increment(1);
-                    let _timer =
-                        HistogramTimer::new(&crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION);
+                    let _timer = HistogramTimer::new(
+                        &crate::metrics::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION,
+                    );
                     let result = self.op.delete(&path.as_os_str().to_string_lossy()).await;
                     if let Err(err) = result {
                         let storage_error_kind = err.kind();

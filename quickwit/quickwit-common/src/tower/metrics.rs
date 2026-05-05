@@ -165,8 +165,7 @@ impl<F> PinnedDrop for ResponseFuture<F> {
 }
 
 impl<F, T, E> Future for ResponseFuture<F>
-where
-    F: Future<Output = Result<T, E>>,
+where F: Future<Output = Result<T, E>>
 {
     type Output = Result<T, E>;
 

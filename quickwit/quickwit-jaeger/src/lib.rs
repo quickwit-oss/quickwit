@@ -423,16 +423,14 @@ impl JaegerService {
             let labels = label_values!(
                 OPERATION_INDEX_LABELS => operation_name, OTEL_TRACES_INDEX_ID
             );
-            counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels])
-                .increment(num_traces);
+            counter!(parent: FETCHED_TRACES_TOTAL, labels: [labels]).increment(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
             let err_labels = label_values!(
                 OPERATION_INDEX_ERROR_LABELS =>
                 operation_name, OTEL_TRACES_INDEX_ID, "false"
             );
-            histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels])
-                .record(elapsed);
+            histogram!(parent: REQUEST_DURATION_SECONDS, labels: [err_labels]).record(elapsed);
         });
         Ok(ReceiverStream::new(rx))
     }
@@ -1075,9 +1073,7 @@ fn collect_trace_ids(
 
 #[allow(clippy::result_large_err)]
 fn json_deserialize<'a, T>(json: &'a str, label: &'static str) -> Result<T, Status>
-where
-    T: Deserialize<'a>,
-{
+where T: Deserialize<'a> {
     match serde_json::from_str(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {
@@ -1091,9 +1087,7 @@ where
 
 #[allow(clippy::result_large_err)]
 fn postcard_deserialize<'a, T>(json: &'a [u8], label: &'static str) -> Result<T, Status>
-where
-    T: Deserialize<'a>,
-{
+where T: Deserialize<'a> {
     match postcard::from_bytes(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {

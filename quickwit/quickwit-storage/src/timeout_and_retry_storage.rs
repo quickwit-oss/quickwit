@@ -100,7 +100,8 @@ impl Storage for TimeoutAndRetryStorage {
                     match attempt_id {
                         0 => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_0_TIMEOUT.increment(1),
                         1 => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT.increment(1),
-                        _ => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT.increment(1),
+                        _ => crate::metrics::GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT
+                            .increment(1),
                     }
                     return result;
                 }

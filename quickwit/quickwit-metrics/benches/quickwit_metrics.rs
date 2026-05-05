@@ -113,7 +113,8 @@ fn on_the_fly_counter(c: &mut Criterion) {
                 name: "otf_counter",
                 description: "bench counter",
                 subsystem: "bench"
-            ).increment(1);
+            )
+            .increment(1);
         });
     });
 
@@ -124,7 +125,8 @@ fn on_the_fly_counter(c: &mut Criterion) {
                 description: "bench counter",
                 subsystem: "bench",
                 "service" => "api"
-            ).increment(1);
+            )
+            .increment(1);
         });
     });
 
@@ -137,7 +139,8 @@ fn on_the_fly_counter(c: &mut Criterion) {
                 "service" => "api",
                 "method" => "GET",
                 "endpoint" => "/health"
-            ).increment(1);
+            )
+            .increment(1);
         });
     });
 
@@ -152,7 +155,8 @@ fn on_the_fly_counter(c: &mut Criterion) {
                 "endpoint" => "/health",
                 "status" => "200",
                 "region" => "us-east-1"
-            ).increment(1);
+            )
+            .increment(1);
         });
     });
 
@@ -170,7 +174,8 @@ fn on_the_fly_gauge(c: &mut Criterion) {
                 name: "otf_gauge",
                 description: "bench gauge",
                 subsystem: "bench"
-            ).set(42.0);
+            )
+            .set(42.0);
         });
     });
 
@@ -181,7 +186,8 @@ fn on_the_fly_gauge(c: &mut Criterion) {
                 description: "bench gauge",
                 subsystem: "bench",
                 "service" => "api"
-            ).set(42.0);
+            )
+            .set(42.0);
         });
     });
 
@@ -194,7 +200,8 @@ fn on_the_fly_gauge(c: &mut Criterion) {
                 "service" => "api",
                 "method" => "GET",
                 "endpoint" => "/health"
-            ).set(42.0);
+            )
+            .set(42.0);
         });
     });
 
@@ -209,7 +216,8 @@ fn on_the_fly_gauge(c: &mut Criterion) {
                 "endpoint" => "/health",
                 "status" => "200",
                 "region" => "us-east-1"
-            ).set(42.0);
+            )
+            .set(42.0);
         });
     });
 
@@ -228,7 +236,8 @@ fn on_the_fly_histogram(c: &mut Criterion) {
                 description: "bench histogram",
                 subsystem: "bench",
                 buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0]
-            ).record(0.123);
+            )
+            .record(0.123);
         });
     });
 
@@ -240,7 +249,8 @@ fn on_the_fly_histogram(c: &mut Criterion) {
                 subsystem: "bench",
                 buckets: vec![0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0],
                 "service" => "api"
-            ).record(0.123);
+            )
+            .record(0.123);
         });
     });
 
@@ -254,7 +264,8 @@ fn on_the_fly_histogram(c: &mut Criterion) {
                 "service" => "api",
                 "method" => "GET",
                 "endpoint" => "/health"
-            ).record(0.123);
+            )
+            .record(0.123);
         });
     });
 
@@ -270,7 +281,8 @@ fn on_the_fly_histogram(c: &mut Criterion) {
                 "endpoint" => "/health",
                 "status" => "200",
                 "region" => "us-east-1"
-            ).record(0.123);
+            )
+            .record(0.123);
         });
     });
 
@@ -510,7 +522,8 @@ fn parent_counter(c: &mut Criterion) {
                 "method" => "GET",
                 "endpoint" => "/health",
                 "status" => "200"
-            ).increment(1);
+            )
+            .increment(1);
         });
     });
 
@@ -536,7 +549,8 @@ fn parent_gauge(c: &mut Criterion) {
                 "method" => "GET",
                 "endpoint" => "/health",
                 "status" => "200"
-            ).set(42.0);
+            )
+            .set(42.0);
         });
     });
 
@@ -562,7 +576,8 @@ fn parent_histogram(c: &mut Criterion) {
                 "method" => "GET",
                 "endpoint" => "/health",
                 "status" => "200"
-            ).record(0.123);
+            )
+            .record(0.123);
         });
     });
 
@@ -744,7 +759,8 @@ fn labels_counter(c: &mut Criterion) {
             counter!(
                 parent: PARENT_COUNTER,
                 labels: [label_values!(LABELS_3 => "GET", "/health", "200")]
-            ).increment(1);
+            )
+            .increment(1);
         });
     });
 
@@ -753,7 +769,8 @@ fn labels_counter(c: &mut Criterion) {
             counter!(
                 parent: PARENT_COUNTER,
                 labels: [label_values!(LABELS_1 => "GET".to_string())]
-            ).increment(1);
+            )
+            .increment(1);
         });
     });
 
@@ -765,8 +782,7 @@ fn labels_counter(c: &mut Criterion) {
         b.iter(|| {
             let m = methods[idx % methods.len()];
             idx += 1;
-            counter!(parent: PARENT_COUNTER, labels: [label_values!(LABELS_1 => m)])
-                .increment(1);
+            counter!(parent: PARENT_COUNTER, labels: [label_values!(LABELS_1 => m)]).increment(1);
         });
     });
 
@@ -781,8 +797,7 @@ fn labels_gauge(c: &mut Criterion) {
 
     group.bench_function("static/1", |b| {
         b.iter(|| {
-            gauge!(parent: PARENT_GAUGE, labels: [label_values!(LABELS_1 => "GET")])
-                .set(42.0);
+            gauge!(parent: PARENT_GAUGE, labels: [label_values!(LABELS_1 => "GET")]).set(42.0);
         });
     });
 
@@ -791,7 +806,8 @@ fn labels_gauge(c: &mut Criterion) {
             gauge!(
                 parent: PARENT_GAUGE,
                 labels: [label_values!(LABELS_3 => "GET", "/health", "200")]
-            ).set(42.0);
+            )
+            .set(42.0);
         });
     });
 
@@ -816,7 +832,8 @@ fn labels_histogram(c: &mut Criterion) {
             histogram!(
                 parent: PARENT_HISTOGRAM,
                 labels: [label_values!(LABELS_3 => "GET", "/health", "200")]
-            ).record(0.123);
+            )
+            .record(0.123);
         });
     });
 
@@ -843,7 +860,8 @@ fn composite_counter(c: &mut Criterion) {
             counter!(
                 parent: PARENT_COUNTER,
                 labels: [label_values!(COMP_ALL_3 => "GET", "/health", "200")],
-            ).increment(1);
+            )
+            .increment(1);
         });
     });
 
@@ -853,7 +871,8 @@ fn composite_counter(c: &mut Criterion) {
                 label_values!(COMP_METHOD => "GET"),
                 label_values!(COMP_ENDPOINT => "/health"),
                 label_values!(COMP_STATUS => "200"),
-            ]).increment(1);
+            ])
+            .increment(1);
         });
     });
 
@@ -862,7 +881,8 @@ fn composite_counter(c: &mut Criterion) {
             counter!(parent: PARENT_COUNTER, labels: [
                 label_values!(COMP_METHOD => "GET"),
                 label_values!(COMP_ENDPOINT => "/health"),
-            ]).increment(1);
+            ])
+            .increment(1);
         });
     });
 
@@ -880,7 +900,8 @@ fn composite_gauge(c: &mut Criterion) {
             gauge!(
                 parent: PARENT_GAUGE,
                 labels: [label_values!(COMP_ALL_3 => "GET", "/health", "200")],
-            ).set(42.0);
+            )
+            .set(42.0);
         });
     });
 
@@ -890,7 +911,8 @@ fn composite_gauge(c: &mut Criterion) {
                 label_values!(COMP_METHOD => "GET"),
                 label_values!(COMP_ENDPOINT => "/health"),
                 label_values!(COMP_STATUS => "200"),
-            ]).set(42.0);
+            ])
+            .set(42.0);
         });
     });
 
@@ -899,7 +921,8 @@ fn composite_gauge(c: &mut Criterion) {
             gauge!(parent: PARENT_GAUGE, labels: [
                 label_values!(COMP_METHOD => "GET"),
                 label_values!(COMP_ENDPOINT => "/health"),
-            ]).set(42.0);
+            ])
+            .set(42.0);
         });
     });
 
@@ -917,7 +940,8 @@ fn composite_histogram(c: &mut Criterion) {
             histogram!(
                 parent: PARENT_HISTOGRAM,
                 labels: [label_values!(COMP_ALL_3 => "GET", "/health", "200")],
-            ).record(0.123);
+            )
+            .record(0.123);
         });
     });
 
@@ -927,7 +951,8 @@ fn composite_histogram(c: &mut Criterion) {
                 label_values!(COMP_METHOD => "GET"),
                 label_values!(COMP_ENDPOINT => "/health"),
                 label_values!(COMP_STATUS => "200"),
-            ]).record(0.123);
+            ])
+            .record(0.123);
         });
     });
 
@@ -936,7 +961,8 @@ fn composite_histogram(c: &mut Criterion) {
             histogram!(parent: PARENT_HISTOGRAM, labels: [
                 label_values!(COMP_METHOD => "GET"),
                 label_values!(COMP_ENDPOINT => "/health"),
-            ]).record(0.123);
+            ])
+            .record(0.123);
         });
     });
 

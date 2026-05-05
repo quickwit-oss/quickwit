@@ -79,8 +79,7 @@ impl ParquetIngestProcessor {
         };
 
         if let Err(e) = self.validate_schema(&batch) {
-            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation])
-                .increment(1);
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).increment(1);
             return Err(e);
         }
 
