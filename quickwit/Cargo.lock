@@ -8850,6 +8850,7 @@ dependencies = [
  "anyhow",
  "arrow",
  "base64 0.22.1",
+ "bytes",
  "chrono",
  "parquet",
  "proptest",

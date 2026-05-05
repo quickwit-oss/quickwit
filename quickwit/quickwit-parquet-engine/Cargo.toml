@@ -29,6 +29,7 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 
 [dev-dependencies]
+bytes = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
