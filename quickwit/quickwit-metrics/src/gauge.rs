@@ -234,6 +234,12 @@ impl GaugeGuard {
         self.gauge.increment(delta);
     }
 
+    /// Subtracts `delta` from the gauge and from the value this guard tracks.
+    pub fn decrement(&self, delta: f64) {
+        self.delta.fetch_sub(delta, Ordering::Relaxed);
+        self.gauge.decrement(delta);
+    }
+
     /// Returns the value this guard is tracking.
     pub fn delta(&self) -> f64 {
         self.delta.load(Ordering::Relaxed)

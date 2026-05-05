@@ -572,7 +572,7 @@ impl BatchBuilder {
     pub fn clear(&mut self) {
         self.docs.clear();
         self.checkpoint_delta = SourceCheckpointDelta::default();
-        self.gauge_guard.increment(-(self.num_bytes as f64));
+        self.gauge_guard.decrement(self.num_bytes as f64);
         self.num_bytes = 0;
     }
 }
