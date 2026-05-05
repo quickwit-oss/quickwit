@@ -20,6 +20,7 @@
 use quickwit_actors::ActorContext;
 use quickwit_common::{is_parquet_pipeline_index, is_sketches_index, temp_dir};
 use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_doc_mapper::RoutingExpr;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::{IndexingError, IndexingPipelineId};
 
@@ -57,6 +58,29 @@ impl IndexingService {
                 IndexingError::Internal(message)
             })?;
 
+        let partition_key_str = index_config
+            .doc_mapping
+            .partition_key
+            .as_deref()
+            .unwrap_or("");
+        let partition_key = RoutingExpr::new(partition_key_str).map_err(|error| {
+            IndexingError::Internal(format!("failed to parse partition_key: {error}"))
+        })?;
+
+        // Spawn the Parquet merge pipeline (or reuse an existing one for this
+        // index). The planner mailbox is wired into the MetricsPipeline's
+        // Publisher so newly ingested splits are fed back for merging.
+        let merge_planner_mailbox = self.get_or_create_parquet_merge_pipeline(
+            indexing_pipeline_id.index_uid.clone(),
+            &index_config,
+            storage.clone(),
+            indexing_directory.clone(),
+            // None here means the pipeline's fetch_immature_splits() will
+            // query the metastore on first spawn (same path as respawn).
+            None,
+            ctx,
+        )?;
+
         let pipeline_params = MetricsPipelineParams {
             pipeline_id: indexing_pipeline_id.clone(),
             metastore: self.metastore.clone(),
@@ -71,6 +95,9 @@ impl IndexingService {
             params_fingerprint,
             event_broker: self.event_broker.clone(),
             use_sketch_processors,
+            partition_key,
+            max_num_partitions: index_config.doc_mapping.max_num_partitions,
+            parquet_merge_planner_mailbox_opt: Some(merge_planner_mailbox),
         };
         let pipeline = MetricsPipeline::new(pipeline_params);
         let (mailbox, handle) = ctx.spawn_actor().spawn(pipeline);

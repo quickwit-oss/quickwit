@@ -22,6 +22,7 @@ use std::{fmt, io};
 
 use anyhow::{Context as AnyhhowContext, anyhow};
 use async_trait::async_trait;
+use aws_config::stalled_stream_protection::StalledStreamProtectionConfig;
 use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_sdk_s3::Client as S3Client;
 use aws_sdk_s3::config::{
@@ -145,7 +146,11 @@ pub async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_http_client(aws_config.http_client());
     s3_config.set_retry_config(aws_config.retry_config().cloned());
     s3_config.set_sleep_impl(aws_config.sleep_impl());
-    s3_config.set_stalled_stream_protection(aws_config.stalled_stream_protection());
+    let stalled_stream_protection = StalledStreamProtectionConfig::enabled()
+        .upload_enabled(!s3_storage_config.disable_stalled_stream_protection_upload)
+        .download_enabled(!s3_storage_config.disable_stalled_stream_protection_download)
+        .build();
+    s3_config.set_stalled_stream_protection(Some(stalled_stream_protection));
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
     if s3_storage_config.disable_checksums {

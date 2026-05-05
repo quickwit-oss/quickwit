@@ -32,8 +32,10 @@ use quickwit_datafusion::{DataFusionSessionBuilder, QuickwitObjectStoreRegistry}
 use quickwit_parquet_engine::timeseries_id::compute_timeseries_id;
 
 mod common;
+mod metrics_splits;
 
-use common::{TestSandbox, create_metrics_index, publish_split};
+use common::{TestSandbox, create_metrics_index};
+use metrics_splits::publish_split;
 
 /// Build a RecordBatch with ONLY the 4 required columns — no tag columns.
 fn make_narrow_batch(metric_name: &str, timestamps: &[u64], values: &[f64]) -> RecordBatch {

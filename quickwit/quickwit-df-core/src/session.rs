@@ -255,12 +255,20 @@ impl DataFusionSessionBuilder {
 
     pub fn check_invariants(&self) -> DFResult<()> {
         let mut seen_udfs: HashSet<String> = HashSet::new();
+        let mut seen_udafs: HashSet<String> = HashSet::new();
         for plugin in &self.runtime_plugins {
             let registration = plugin.registration();
             for name in registration.udf_names() {
                 if !seen_udfs.insert(name.clone()) {
                     return Err(DataFusionError::Configuration(format!(
                         "two runtime plugins both register a scalar UDF named '{name}'"
+                    )));
+                }
+            }
+            for name in registration.udaf_names() {
+                if !seen_udafs.insert(name.clone()) {
+                    return Err(DataFusionError::Configuration(format!(
+                        "two runtime plugins both register an aggregate UDF named '{name}'"
                     )));
                 }
             }

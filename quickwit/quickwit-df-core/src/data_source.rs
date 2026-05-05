@@ -35,7 +35,7 @@ use datafusion::catalog::TableProviderFactory;
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;
 use datafusion::execution::SessionStateBuilder;
-use datafusion::logical_expr::ScalarUDF;
+use datafusion::logical_expr::{AggregateUDF, ScalarUDF};
 use datafusion::physical_optimizer::PhysicalOptimizerRule;
 use datafusion::prelude::SessionConfig;
 
@@ -53,6 +53,7 @@ pub struct QuickwitRuntimeRegistration {
     session_config_setters: Vec<SessionConfigSetter>,
     physical_optimizer_rules: Vec<Arc<dyn PhysicalOptimizerRule + Send + Sync>>,
     udfs: Vec<Arc<ScalarUDF>>,
+    udafs: Vec<Arc<AggregateUDF>>,
     table_factories: Vec<(String, Arc<dyn TableProviderFactory>)>,
 }
 
@@ -67,6 +68,11 @@ impl QuickwitRuntimeRegistration {
 
     pub fn with_udf(mut self, udf: Arc<ScalarUDF>) -> Self {
         self.udfs.push(udf);
+        self
+    }
+
+    pub fn with_udaf(mut self, udaf: Arc<AggregateUDF>) -> Self {
+        self.udafs.push(udaf);
         self
     }
 
@@ -91,6 +97,13 @@ impl QuickwitRuntimeRegistration {
         self.udfs.iter().map(|udf| udf.name().to_string()).collect()
     }
 
+    pub(crate) fn udaf_names(&self) -> Vec<String> {
+        self.udafs
+            .iter()
+            .map(|udaf| udaf.name().to_string())
+            .collect()
+    }
+
     pub fn apply_to_config(&self, config: &mut SessionConfig) {
         for setter in &self.session_config_setters {
             setter(config);
@@ -107,6 +120,13 @@ impl QuickwitRuntimeRegistration {
                 .scalar_functions()
                 .get_or_insert_default()
                 .extend(self.udfs);
+        }
+
+        if !self.udafs.is_empty() {
+            builder
+                .aggregate_functions()
+                .get_or_insert_default()
+                .extend(self.udafs);
         }
 
         for (key, factory) in self.table_factories {
@@ -126,6 +146,7 @@ impl QuickwitRuntimeRegistration {
         self.physical_optimizer_rules
             .extend(other.physical_optimizer_rules);
         self.udfs.extend(other.udfs);
+        self.udafs.extend(other.udafs);
         self.table_factories.extend(other.table_factories);
     }
 }

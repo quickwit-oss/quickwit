@@ -62,12 +62,7 @@ pub fn extract_row_keys(
     let mut max_values = Vec::with_capacity(sort_schema.column.len());
 
     for col_def in &sort_schema.column {
-        // Normalize legacy "timestamp" token to the physical column name.
-        let col_name = if col_def.name == "timestamp" {
-            "timestamp_secs"
-        } else {
-            &col_def.name
-        };
+        let col_name = crate::sort_fields::normalize_column_name(&col_def.name);
         let batch_idx = match batch_schema.index_of(col_name) {
             Ok(idx) => idx,
             Err(_) => {

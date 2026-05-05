@@ -119,6 +119,74 @@ impl Default for StableLogMergePolicyConfig {
     }
 }
 
+// --- Parquet merge policy config ---
+//
+// The types are always available (for OpenAPI schema generation in
+// quickwit-serve). The IndexingSettings fields that use them are
+// gated behind cfg(feature = "metrics").
+
+fn default_target_split_size_bytes() -> u64 {
+    256 * 1024 * 1024 // 256 MiB
+}
+
+fn default_max_finalize_merge_operations() -> usize {
+    3
+}
+
+/// Configuration for the Parquet (metrics/sketches) merge policy.
+///
+/// Controls how Parquet splits within a compaction scope are merged.
+/// Splits at the same `num_merge_ops` level are greedily accumulated
+/// until reaching `max_merge_factor` or `target_split_size_bytes`.
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ParquetMergePolicyConfig {
+    /// Minimum number of splits to trigger a merge.
+    #[serde(default = "default_merge_factor")]
+    pub merge_factor: usize,
+    /// Maximum number of splits in a single merge operation.
+    #[serde(default = "default_max_merge_factor")]
+    pub max_merge_factor: usize,
+    /// Maximum number of merges a split can undergo before becoming mature.
+    /// Bounds total write amplification.
+    #[serde(default = "default_parquet_max_merge_ops")]
+    pub max_merge_ops: u32,
+    /// Target size for merged output splits in bytes. Merges are triggered
+    /// when accumulated bytes reach this threshold, even if `merge_factor`
+    /// is not reached.
+    #[serde(default = "default_target_split_size_bytes")]
+    pub target_split_size_bytes: u64,
+    /// Duration after creation when a split becomes mature regardless of
+    /// size or merge count. Mature splits are never merged.
+    #[schema(value_type = String)]
+    #[serde(default = "default_maturation_period")]
+    #[serde(deserialize_with = "parse_human_duration")]
+    #[serde(serialize_with = "serialize_duration")]
+    pub maturation_period: Duration,
+    /// Maximum number of merge operations emitted during cold-window
+    /// finalization at shutdown. Set to 0 to disable.
+    #[serde(default = "default_max_finalize_merge_operations")]
+    #[serde(skip_serializing_if = "is_zero")]
+    pub max_finalize_merge_operations: usize,
+}
+
+fn default_parquet_max_merge_ops() -> u32 {
+    4
+}
+
+impl Default for ParquetMergePolicyConfig {
+    fn default() -> Self {
+        Self {
+            merge_factor: default_merge_factor(),
+            max_merge_factor: default_max_merge_factor(),
+            max_merge_ops: default_parquet_max_merge_ops(),
+            target_split_size_bytes: default_target_split_size_bytes(),
+            maturation_period: default_maturation_period(),
+            max_finalize_merge_operations: default_max_finalize_merge_operations(),
+        }
+    }
+}
+
 fn parse_human_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where D: Deserializer<'de> {
     let value: String = Deserialize::deserialize(deserializer)?;

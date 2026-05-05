@@ -49,6 +49,8 @@ pub use merge_pipeline::{
 pub(crate) use merge_planner::MergePlanner;
 #[cfg(test)]
 pub(crate) use merge_planner::RunFinalizeMergePolicyAndQuit;
+#[cfg(feature = "metrics")]
+pub use merge_scheduler_service::schedule_parquet_merge;
 pub use merge_scheduler_service::{MergePermit, MergeSchedulerService, schedule_merge};
 pub use merge_split_downloader::MergeSplitDownloader;
 #[cfg(feature = "metrics")]

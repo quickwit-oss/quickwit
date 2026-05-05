@@ -837,3 +837,77 @@ proptest! {
         );
     }
 }
+
+#[test]
+fn test_descending_column_inverts_key_order() {
+    // With an ascending sort schema, service "alpha" < "zebra" in the key.
+    // With a descending service column, the key order must invert:
+    // "zebra" < "alpha" in the composite key (because the bytes are
+    // bitwise-NOTed for descending columns).
+    let asc_schema = "metric_name|service|timeseries_id|timestamp_secs/V2";
+    let desc_schema = "metric_name|-service|timeseries_id|timestamp_secs/V2";
+
+    let batch_alpha = build_single_row_batch("cpu", Some("alpha"), None, 100);
+    let batch_zebra = build_single_row_batch("cpu", Some("zebra"), None, 100);
+
+    // Ascending: alpha key < zebra key.
+    let asc_alpha = compute_sorted_series_column(asc_schema, &batch_alpha).unwrap();
+    let asc_zebra = compute_sorted_series_column(asc_schema, &batch_zebra).unwrap();
+    assert!(
+        asc_alpha.value(0) < asc_zebra.value(0),
+        "ascending: alpha key must be less than zebra key"
+    );
+
+    // Descending: zebra key < alpha key (inverted).
+    let desc_alpha = compute_sorted_series_column(desc_schema, &batch_alpha).unwrap();
+    let desc_zebra = compute_sorted_series_column(desc_schema, &batch_zebra).unwrap();
+    assert!(
+        desc_zebra.value(0) < desc_alpha.value(0),
+        "descending: zebra key must be less than alpha key (bytes inverted)"
+    );
+
+    // Keys from different schemas must differ (the encoding is different).
+    assert_ne!(
+        asc_alpha.value(0),
+        desc_alpha.value(0),
+        "ascending and descending keys for same data must differ"
+    );
+}
+
+#[test]
+fn test_descending_column_null_sorts_after_non_null() {
+    // When a descending column has a null value, the null row must still
+    // sort after non-null rows in the composite key (matching the writer's
+    // nulls_first=false behavior). The ordinal bytes must NOT be inverted
+    // — only the value bytes — so that null rows (which skip the column)
+    // have a higher key than non-null rows.
+    //
+    // Sort schema: metric_name | -service | timeseries_id | timestamp_secs
+    // Physical order (writer): beta, alpha, null (descending service, nulls last)
+    // Key order must match: key(beta) < key(alpha) < key(null)
+    let desc_schema = "metric_name|-service|timeseries_id|timestamp_secs/V2";
+
+    let batch_beta = build_single_row_batch("cpu", Some("beta"), None, 100);
+    let batch_alpha = build_single_row_batch("cpu", Some("alpha"), None, 100);
+    let batch_null = build_single_row_batch("cpu", None, None, 100);
+
+    let key_beta = compute_sorted_series_column(desc_schema, &batch_beta).unwrap();
+    let key_alpha = compute_sorted_series_column(desc_schema, &batch_alpha).unwrap();
+    let key_null = compute_sorted_series_column(desc_schema, &batch_null).unwrap();
+
+    // Descending: beta before alpha (inverted value bytes).
+    assert!(
+        key_beta.value(0) < key_alpha.value(0),
+        "descending: beta key must be less than alpha key"
+    );
+
+    // Null must sort after both non-null values.
+    assert!(
+        key_alpha.value(0) < key_null.value(0),
+        "null service must have a larger key than non-null alpha"
+    );
+    assert!(
+        key_beta.value(0) < key_null.value(0),
+        "null service must have a larger key than non-null beta"
+    );
+}
