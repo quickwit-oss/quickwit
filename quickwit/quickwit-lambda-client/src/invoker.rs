@@ -25,7 +25,7 @@ use base64::prelude::*;
 use prost::Message;
 use quickwit_common::retry::RetryParams;
 use quickwit_lambda_server::{LambdaSearchRequestPayload, LambdaSearchResponsePayload};
-use quickwit_metrics::{counter, histogram};
+use quickwit_metrics::{counter, histogram, labels};
 use quickwit_proto::search::{LambdaSearchResponses, LambdaSingleSplitResult, LeafSearchRequest};
 use quickwit_search::{LambdaLeafSearchInvoker, SearchError};
 use tracing::{debug, info, instrument, warn};
@@ -175,14 +175,15 @@ impl LambdaLeafSearchInvoker for AwsLambdaInvoker {
         let result = self.invoke_leaf_search_with_retry(request).await;
         let elapsed = start.elapsed().as_secs_f64();
         let status = if result.is_ok() { "success" } else { "error" };
+        let labels = labels!("status" => status);
         counter!(
             parent: LEAF_SEARCH_REQUESTS_TOTAL,
-            "status" => status,
+            labels: labels,
         )
         .increment(1);
         histogram!(
             parent: LEAF_SEARCH_DURATION_SECONDS,
-            "status" => status,
+            labels: labels,
         )
         .record(elapsed);
         result
