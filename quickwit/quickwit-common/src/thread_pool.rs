@@ -110,8 +110,8 @@ impl ThreadPool {
                 return;
             }
             let _guard = span.enter();
-            let _ongoing_task_guard = GaugeGuard::from_gauge(&ongoing_tasks);
-            _ongoing_task_guard.increment(1.0);
+            let ongoing_task_guard = GaugeGuard::from_gauge(&ongoing_tasks);
+            ongoing_task_guard.increment(1.0);
             let result = cpu_intensive_fn();
             let _ = tx.send(result);
         });
