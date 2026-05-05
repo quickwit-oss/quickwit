@@ -21,7 +21,7 @@ use hyper_util::server::conn::auto::Builder;
 use hyper_util::service::TowerToHyperService;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::{disable_ingest_v1, enable_ingest_v2};
-use quickwit_metrics::{counter, histogram};
+use quickwit_metrics::{counter, histogram, labels};
 use quickwit_search::SearchService;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::{TcpListener, TcpStream};
@@ -106,7 +106,9 @@ impl CompressionPredicate {
 
 impl Predicate for CompressionPredicate {
     fn should_compress<B>(&self, response: &http::Response<B>) -> bool
-    where B: http_body::Body {
+    where
+        B: http_body::Body,
+    {
         if let Some(size_above) = self.size_above_opt {
             size_above.should_compress(response)
         } else {
@@ -138,19 +140,18 @@ pub(crate) async fn start_rest_server(
 ) -> anyhow::Result<()> {
     let request_counter = warp::log::custom(|info: Info| {
         let elapsed = info.elapsed();
-        let status = info.status();
-        let method = info.method().as_str().to_string();
-        let status_code = status.as_str().to_string();
+        let labels = labels!(
+            "method" => info.method().as_str().to_string(),
+            "status_code" => info.status().as_str().to_string()
+        );
         histogram!(
             parent: REQUEST_DURATION_SECS,
-            "method" => method.clone(),
-            "status_code" => status_code.clone(),
+            labels: [labels],
         )
         .record(elapsed.as_secs_f64());
         counter!(
             parent: HTTP_REQUESTS_TOTAL,
-            "method" => method,
-            "status_code" => status_code,
+            labels: [labels],
         )
         .increment(1);
     });

@@ -24,7 +24,8 @@ use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
 use quickwit_metrics::counter;
 
-use crate::{OBJECT_STORAGE_GET_ERRORS_TOTAL, StorageError, StorageErrorKind};
+use crate::metrics::OBJECT_STORAGE_GET_ERRORS_TOTAL;
+use crate::{StorageError, StorageErrorKind};
 
 impl<E> From<SdkError<E>> for StorageError
 where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static

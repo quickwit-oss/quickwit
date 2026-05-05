@@ -38,7 +38,7 @@ impl CachingDirectory {
     /// removing any item from the cache.
     pub fn new_unbounded(underlying: Arc<dyn Directory>) -> CachingDirectory {
         let byte_range_cache =
-            ByteRangeCache::with_infinite_capacity(&quickwit_storage::SHORTLIVED_CACHE);
+            ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
         CachingDirectory::new(underlying, byte_range_cache)
     }
 

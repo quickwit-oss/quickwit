@@ -23,7 +23,7 @@ use tantivy::directory::OwnedBytes;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use ulid::Ulid;
 
-use crate::FD_CACHE_METRICS;
+use crate::metrics::FD_CACHE_METRICS;
 use crate::metrics::SingleCacheMetrics;
 
 pub struct FileDescriptorCache {

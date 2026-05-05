@@ -533,7 +533,7 @@ async fn leaf_search_single_split(
 
     let split_id = split.split_id.to_string();
     let byte_range_cache =
-        ByteRangeCache::with_infinite_capacity(&quickwit_storage::SHORTLIVED_CACHE);
+        ByteRangeCache::with_infinite_capacity(&quickwit_storage::metrics::SHORTLIVED_CACHE);
     let (index, hot_directory) = open_index_with_caches(
         &ctx.searcher_context,
         storage,

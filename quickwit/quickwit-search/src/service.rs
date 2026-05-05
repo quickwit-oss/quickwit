@@ -459,7 +459,7 @@ impl SearcherContext {
     ) -> Self {
         let global_split_footer_cache = MemorySizedCache::from_config(
             &searcher_config.split_footer_cache,
-            &quickwit_storage::SPLIT_FOOTER_CACHE,
+            &quickwit_storage::metrics::SPLIT_FOOTER_CACHE,
         );
         let leaf_search_split_semaphore = SearchPermitProvider::new(
             searcher_config.max_num_concurrent_split_searches,

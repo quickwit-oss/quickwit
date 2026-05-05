@@ -21,7 +21,8 @@ use quickwit_config::CacheConfig;
 
 use crate::cache::{MemorySizedCache, StorageCache};
 use crate::metrics::CacheMetrics;
-use crate::{FAST_FIELD_CACHE, OwnedBytes};
+use crate::metrics::FAST_FIELD_CACHE;
+use crate::OwnedBytes;
 
 const FULL_SLICE: Range<usize> = 0..usize::MAX;
 
