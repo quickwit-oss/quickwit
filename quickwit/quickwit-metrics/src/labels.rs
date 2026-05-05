@@ -53,18 +53,18 @@ macro_rules! label_names {
 /// const GC_KEYS: LabelNames<2> = label_names!("status", "split_type");
 ///
 /// // All-static — zero allocation:
-/// let lv = label_values!(names: GC_KEYS, "success", "tantivy");
+/// let lv = label_values!(GC_KEYS => "success", "tantivy");
 ///
 /// // Mixed types — &'static str and String — just work:
-/// let lv = label_values!(names: GC_KEYS, "success", split_type.to_string());
+/// let lv = label_values!(GC_KEYS => "success", split_type.to_string());
 ///
 /// // Reuse the same Labels across multiple metrics:
-/// counter!(parent: GC_COUNTER, labels: lv).increment(1);
-/// gauge!(parent: GC_GAUGE, labels: lv).set(42.0);
+/// counter!(parent: GC_COUNTER, labels: [lv]).increment(1);
+/// gauge!(parent: GC_GAUGE, labels: [lv]).set(42.0);
 /// ```
 #[macro_export]
 macro_rules! label_values {
-    (names: $labels:expr, $($val:expr),+ $(,)?) => {
+    ($labels:expr => $($val:expr),+ $(,)?) => {
         $labels.__with_values([$(Into::<$crate::__metrics::SharedString>::into($val)),+])
     };
 }
@@ -102,14 +102,14 @@ macro_rules! labels {
 /// const SPLIT_KEYS: LabelNames<2> = label_names!("source", "level");
 ///
 /// // All the same type:
-/// let lv = label_values!(names: SPLIT_KEYS, "prod", "info");
+/// let lv = label_values!(SPLIT_KEYS => "prod", "info");
 ///
 /// // Mixed types:
-/// let lv = label_values!(names: SPLIT_KEYS, source_uid, level.to_string());
+/// let lv = label_values!(SPLIT_KEYS => source_uid, level.to_string());
 ///
 /// // Reuse the same Labels across metrics:
-/// let c = counter!(parent: BASE_COUNTER, labels: lv);
-/// let g = gauge!(parent: BASE_GAUGE, labels: lv);
+/// let c = counter!(parent: BASE_COUNTER, labels: [lv]);
+/// let g = gauge!(parent: BASE_GAUGE, labels: [lv]);
 /// ```
 pub struct LabelNames<const N: usize> {
     names: [&'static str; N],

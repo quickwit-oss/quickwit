@@ -240,7 +240,7 @@ impl OtlpGrpcMetricsService {
         self.store_metrics(index_id.clone(), doc_batch).await?;
 
         let labels =
-            label_values!(names: OTLP_GRPC_LABELS, "metrics", index_id, "grpc", "protobuf");
+            label_values!(OTLP_GRPC_LABELS => "metrics", index_id, "grpc", "protobuf");
         counter!(
             parent: INGESTED_DATA_POINTS_TOTAL,
             labels: [labels],
@@ -336,7 +336,7 @@ impl OtlpGrpcMetricsService {
         let start = std::time::Instant::now();
 
         let labels = label_values!(
-            names: OTLP_GRPC_LABELS,
+            OTLP_GRPC_LABELS =>
             "metrics", index_id.clone(), "grpc", "protobuf"
         );
         counter!(
@@ -361,7 +361,7 @@ impl OtlpGrpcMetricsService {
         histogram!(
             parent: REQUEST_DURATION_SECONDS,
             labels: [label_values!(
-                names: OTLP_GRPC_ERROR_LABELS,
+                OTLP_GRPC_ERROR_LABELS =>
                 "metrics", index_id, "grpc", "protobuf", is_error
             )],
         )

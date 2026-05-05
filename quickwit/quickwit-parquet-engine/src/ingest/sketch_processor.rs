@@ -58,14 +58,12 @@ impl SketchParquetIngestProcessor {
         };
 
         if let Err(err) = self.validate_schema(&batch) {
-            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation])
-                .increment(1);
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).increment(1);
             return Err(err);
         }
 
         if let Err(err) = self.validate_sketch_arrays(&batch) {
-            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation])
-                .increment(1);
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation]).increment(1);
             return Err(err);
         }
 

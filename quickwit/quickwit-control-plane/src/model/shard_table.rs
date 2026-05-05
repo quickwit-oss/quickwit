@@ -464,7 +464,7 @@ impl ShardTable {
         // can update the metrics for this specific index.
         if index_label == index_id {
             let shard_stats = table_entry.shards_stats();
-            let labels = label_values!(names: INDEX_ID_LABELS, index_label.to_string());
+            let labels = label_values!(INDEX_ID_LABELS => index_label.to_string());
             gauge!(
                 parent: OPEN_SHARDS,
                 labels: [labels],
@@ -488,7 +488,7 @@ impl ShardTable {
                 num_closed_shards += 1;
             }
         }
-        let labels = label_values!(names: INDEX_ID_LABELS, index_label.to_string());
+        let labels = label_values!(INDEX_ID_LABELS => index_label.to_string());
         gauge!(
             parent: OPEN_SHARDS,
             labels: [labels],

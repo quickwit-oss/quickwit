@@ -705,7 +705,7 @@ impl OtlpGrpcTracesService {
         let num_bytes = doc_batch.num_bytes() as u64;
         self.store_spans(index_id.clone(), doc_batch).await?;
 
-        let labels = label_values!(names: OTLP_GRPC_LABELS, "trace", index_id, "grpc", "protobuf");
+        let labels = label_values!(OTLP_GRPC_LABELS => "trace", index_id, "grpc", "protobuf");
         counter!(
             parent: INGESTED_SPANS_TOTAL,
             labels: [labels],
@@ -786,7 +786,7 @@ impl OtlpGrpcTracesService {
         let start = std::time::Instant::now();
 
         let labels = label_values!(
-            names: OTLP_GRPC_LABELS,
+            OTLP_GRPC_LABELS =>
             "trace", index_id.clone(), "grpc", "protobuf"
         );
         counter!(
@@ -809,7 +809,7 @@ impl OtlpGrpcTracesService {
         histogram!(
             parent: REQUEST_DURATION_SECONDS,
             labels: [label_values!(
-                names: OTLP_GRPC_ERROR_LABELS,
+                OTLP_GRPC_ERROR_LABELS =>
                 "trace", index_id, "grpc", "protobuf", is_error
             )],
         )

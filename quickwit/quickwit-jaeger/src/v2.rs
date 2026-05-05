@@ -65,7 +65,7 @@ macro_rules! metrics {
         let start = std::time::Instant::now();
         let operation = stringify!($operation);
         let index = $index;
-        let labels = label_values!(names: OPERATION_INDEX_LABELS, operation, index);
+        let labels = label_values!(OPERATION_INDEX_LABELS => operation, index);
         counter!(
             parent: REQUESTS_TOTAL,
             labels: [labels],
@@ -87,7 +87,7 @@ macro_rules! metrics {
         let elapsed = start.elapsed().as_secs_f64();
         histogram!(
             parent: REQUEST_DURATION_SECONDS,
-            labels: [label_values!(names: OPERATION_INDEX_ERROR_LABELS, operation, index, is_error)],
+            labels: [label_values!(OPERATION_INDEX_ERROR_LABELS => operation, index, is_error)],
         )
         .record(elapsed);
 
@@ -446,7 +446,7 @@ async fn stream_otel_spans_impl(
     counter!(
         parent: FETCHED_TRACES_TOTAL,
         labels: [label_values!(
-            names: OPERATION_INDEX_LABELS,
+            OPERATION_INDEX_LABELS =>
             operation_name, OTEL_TRACES_INDEX_ID
         )],
     )
@@ -456,7 +456,7 @@ async fn stream_otel_spans_impl(
     histogram!(
         parent: REQUEST_DURATION_SECONDS,
         labels: [label_values!(
-            names: OPERATION_INDEX_ERROR_LABELS,
+            OPERATION_INDEX_ERROR_LABELS =>
             operation_name, OTEL_TRACES_INDEX_ID, "false"
         )],
     )

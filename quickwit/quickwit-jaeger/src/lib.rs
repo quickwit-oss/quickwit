@@ -423,7 +423,7 @@ impl JaegerService {
             counter!(
                 parent: FETCHED_TRACES_TOTAL,
                 labels: [label_values!(
-                    names: OPERATION_INDEX_LABELS,
+                    OPERATION_INDEX_LABELS =>
                     operation_name, OTEL_TRACES_INDEX_ID
                 )],
             )
@@ -433,7 +433,7 @@ impl JaegerService {
             histogram!(
                 parent: REQUEST_DURATION_SECONDS,
                 labels: [label_values!(
-                    names: OPERATION_INDEX_ERROR_LABELS,
+                    OPERATION_INDEX_ERROR_LABELS =>
                     operation_name, OTEL_TRACES_INDEX_ID, "false"
                 )],
             )
@@ -447,7 +447,7 @@ pub(crate) fn record_error(operation_name: &'static str, request_start: Instant)
     counter!(
         parent: REQUEST_ERRORS_TOTAL,
         labels: [label_values!(
-            names: OPERATION_INDEX_LABELS,
+            OPERATION_INDEX_LABELS =>
             operation_name, OTEL_TRACES_INDEX_ID
         )],
     )
@@ -457,7 +457,7 @@ pub(crate) fn record_error(operation_name: &'static str, request_start: Instant)
     histogram!(
         parent: REQUEST_DURATION_SECONDS,
         labels: [label_values!(
-            names: OPERATION_INDEX_ERROR_LABELS,
+            OPERATION_INDEX_ERROR_LABELS =>
             operation_name, OTEL_TRACES_INDEX_ID, "true"
         )],
     )
@@ -466,7 +466,7 @@ pub(crate) fn record_error(operation_name: &'static str, request_start: Instant)
 
 pub(crate) fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
     let labels = label_values!(
-        names: OPERATION_INDEX_LABELS,
+        OPERATION_INDEX_LABELS =>
         operation_name, OTEL_TRACES_INDEX_ID
     );
     counter!(parent: FETCHED_SPANS_TOTAL, labels: [labels]).increment(num_spans as u64);

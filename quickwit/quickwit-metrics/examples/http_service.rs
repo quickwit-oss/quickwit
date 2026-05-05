@@ -86,14 +86,14 @@ static HTTP_ACTIVE_CONNECTIONS_BY_REGION: LazyLock<Gauge> = LazyLock::new(|| {
 const ROUTE_LABELS: LabelNames<2> = label_names!("method", "path");
 
 fn record_request(method: &'static str, path: &'static str, duration: f64, size: f64) {
-    let route = label_values!(names: ROUTE_LABELS, method, path);
+    let route = label_values!(ROUTE_LABELS => method, path);
     histogram!(parent: HTTP_REQUEST_DURATION, labels: [route]).record(duration);
     histogram!(parent: HTTP_RESPONSE_SIZE, labels: [route]).record(size);
     counter!(parent: HTTP_REQUESTS_TOTAL, labels: [route]).increment(1);
 }
 
 fn record_dynamic_request(method: String, path: String, duration: f64) {
-    let route = label_values!(names: ROUTE_LABELS, method, path);
+    let route = label_values!(ROUTE_LABELS => method, path);
     histogram!(parent: HTTP_REQUEST_DURATION, labels: [route]).record(duration);
 }
 
