@@ -29,6 +29,7 @@ use quickwit_common::pretty::PrettySample;
 use quickwit_common::uri::Uri;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{Automaton, DocMapper, FastFieldWarmupInfo, TermRange, WarmupInfo};
+use quickwit_metrics::HistogramTimer;
 use quickwit_proto::search::lambda_single_split_result::Outcome;
 use quickwit_proto::search::{
     CountHits, LeafSearchRequest, LeafSearchResponse, PartialHit, ResourceStats, SearchRequest,
@@ -1863,7 +1864,7 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     mut search_permit: SearchPermit,
 ) {
-    let timer = LEAF_SEARCH_SPLIT_DURATION_SECS.start_timer();
+    let timer = HistogramTimer::new(&LEAF_SEARCH_SPLIT_DURATION_SECS);
     let leaf_search_single_split_opt_res: crate::Result<Option<LeafSearchResponse>> =
         leaf_search_single_split(
             request,

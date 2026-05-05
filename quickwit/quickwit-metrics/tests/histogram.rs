@@ -17,7 +17,7 @@ mod common;
 use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-use quickwit_metrics::histogram;
+use quickwit_metrics::{HistogramTimer, histogram};
 
 #[test]
 fn base_records_value() {
@@ -125,7 +125,7 @@ fn timer_records_value_on_drop() {
             subsystem: "test",
             buckets: vec![1.0, 5.0, 10.0]
         );
-        let _timer = h.start_timer();
+        let _timer = HistogramTimer::new(&h);
     });
 
     let (name, labels, value) = &entries[0];
@@ -149,7 +149,7 @@ fn timer_observe_duration_records_once() {
             subsystem: "test",
             buckets: vec![1.0, 5.0, 10.0]
         );
-        h.start_timer().observe_duration();
+        HistogramTimer::new(&h).observe_duration();
     });
 
     let (name, labels, value) = &entries[0];

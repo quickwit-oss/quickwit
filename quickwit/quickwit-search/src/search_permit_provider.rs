@@ -337,8 +337,7 @@ impl SearchPermitActor {
     fn assign_available_permits(&mut self) {
         while let Some(permit_request) = self.pop_next_request_if_serviceable() {
             let ongoing_gauge_guard =
-                GaugeGuard::from_gauge(&LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING);
-            ongoing_gauge_guard.increment(1.0);
+                GaugeGuard::new(&LEAF_SEARCH_SINGLE_SPLIT_TASKS_ONGOING, 1.0);
             self.total_memory_allocated += permit_request.permit_size;
             self.num_warmup_slots_available -= 1;
             permit_request

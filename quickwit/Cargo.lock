@@ -9064,6 +9064,7 @@ dependencies = [
  "metrics-util",
  "papaya",
  "proptest",
+ "quanta",
  "rustc-hash",
 ]
 

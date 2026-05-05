@@ -128,8 +128,7 @@ impl IndexingPipeline {
             parent: INDEXING_PIPELINES,
             "index" => params.pipeline_id.index_uid.index_id.clone(),
         );
-        let indexing_pipelines_gauge_guard = GaugeGuard::from_gauge(&indexing_pipelines_gauge);
-        indexing_pipelines_gauge_guard.increment(1.0);
+        let indexing_pipelines_gauge_guard = GaugeGuard::new(&indexing_pipelines_gauge, 1.0);
         let params_fingerprint = params.params_fingerprint;
         IndexingPipeline {
             params,

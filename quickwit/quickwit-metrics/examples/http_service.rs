@@ -99,9 +99,7 @@ fn record_dynamic_request(method: String, path: String, duration: f64) {
 
 fn track_connection(region: &'static str) -> GaugeGuard {
     let g = gauge!(parent: HTTP_ACTIVE_CONNECTIONS, "region" => region);
-    let guard = GaugeGuard::from_gauge(&g);
-    guard.increment(1.0);
-    guard
+    GaugeGuard::new(&g, 1.0)
 }
 
 // ─── Prometheus setup ───
@@ -157,8 +155,7 @@ fn handle_request(method: &'static str, path: &'static str, region: &'static str
         "method" => method,
     );
     {
-        let _guard = GaugeGuard::from_gauge(&conn_gauge);
-        _guard.increment(1.0);
+        let _guard = GaugeGuard::new(&conn_gauge, 1.0);
     }
 
     println!("  [{region}] {method} {path} -> {status} ({duration_ms:.3}s)");

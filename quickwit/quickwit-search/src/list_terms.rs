@@ -23,6 +23,7 @@ use itertools::{Either, Itertools};
 use quickwit_common::pretty::PrettySample;
 use quickwit_config::build_doc_mapper;
 use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata};
+use quickwit_metrics::HistogramTimer;
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{
     LeafListTermsRequest, LeafListTermsResponse, ListTermsRequest, ListTermsResponse,
@@ -355,7 +356,7 @@ pub async fn leaf_list_terms(
                 let leaf_split_search_permit = search_permit_recv.await;
                 // TODO dedicated counter and timer?
                 LEAF_LIST_TERMS_SPLITS_TOTAL.increment(1);
-                let timer = LEAF_SEARCH_SPLIT_DURATION_SECS.start_timer();
+                let timer = HistogramTimer::new(&LEAF_SEARCH_SPLIT_DURATION_SECS);
                 let leaf_search_single_split_res = leaf_list_terms_single_split(
                     &searcher_context_clone,
                     request,

@@ -91,8 +91,7 @@ fn guard_decrements_on_drop() {
         );
         g.set(0.0);
         {
-            let _guard = GaugeGuard::from_gauge(&g);
-            _guard.increment(5.0);
+            let _guard = GaugeGuard::new(&g, 5.0);
         }
     });
 
@@ -110,8 +109,7 @@ fn guard_after_set() {
         );
         g.set(10.0);
         {
-            let guard = GaugeGuard::from_gauge(&g);
-            guard.increment(3.0);
+            let guard = GaugeGuard::new(&g, 3.0);
             assert_eq!(guard.delta(), 3.0);
         }
     });
@@ -130,13 +128,13 @@ fn guard_tracks_delta() {
         );
         g.set(0.0);
         {
-            let guard = GaugeGuard::from_gauge(&g);
-            assert_eq!(guard.delta(), 0.0);
+            let guard = GaugeGuard::new(&g, 2.0);
+            assert_eq!(guard.delta(), 2.0);
             guard.increment(5.0);
             guard.increment(-2.0);
             guard.increment(0.5);
             guard.increment(-1.5);
-            assert_eq!(guard.delta(), 2.0);
+            assert_eq!(guard.delta(), 4.0);
         }
     });
 
@@ -153,10 +151,8 @@ fn multiple_guards() {
             subsystem: "test",
         );
         g.set(0.0);
-        let guard_a = GaugeGuard::from_gauge(&g);
-        guard_a.increment(2.0);
-        let guard_b = GaugeGuard::from_gauge(&g);
-        guard_b.increment(5.0);
+        let guard_a = GaugeGuard::new(&g, 2.0);
+        let guard_b = GaugeGuard::new(&g, 5.0);
         drop(guard_b);
         drop(guard_a);
     });
@@ -219,8 +215,7 @@ fn observable_guard_matches_recorder() {
         );
         g.set(0.0);
         {
-            let _guard = GaugeGuard::from_gauge(&g);
-            _guard.increment(5.0);
+            let _guard = GaugeGuard::new(&g, 5.0);
             assert_eq!(g.get(), 5.0);
         }
         g

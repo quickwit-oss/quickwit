@@ -220,8 +220,7 @@ impl IndexerState {
         let publish_lock = self.publish_lock.clone();
         let publish_token_opt = self.publish_token_opt.clone();
 
-        let split_builders_guard = GaugeGuard::from_gauge(&SPLIT_BUILDERS);
-        split_builders_guard.increment(1.0);
+        let split_builders_guard = GaugeGuard::new(&SPLIT_BUILDERS, 1.0);
 
         let workbench = IndexingWorkbench {
             workbench_id,
@@ -233,7 +232,7 @@ impl IndexerState {
             publish_lock,
             publish_token_opt,
             last_delete_opstamp,
-            memory_usage: GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_INDEX_WRITER),
+            memory_usage: GaugeGuard::new(&quickwit_common::metrics::IN_FLIGHT_INDEX_WRITER, 0.0),
             cooperative_indexing_period,
             split_builders_guard,
         };

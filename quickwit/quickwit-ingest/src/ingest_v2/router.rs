@@ -569,9 +569,10 @@ impl IngestRouterService for IngestRouter {
     async fn ingest(&self, ingest_request: IngestRequestV2) -> IngestV2Result<IngestResponseV2> {
         let request_size_bytes = ingest_request.num_bytes();
 
-        let mut _gauge_guard =
-            GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_INGEST_ROUTER);
-        _gauge_guard.increment(request_size_bytes as f64);
+        let _gauge_guard = GaugeGuard::new(
+            &quickwit_common::metrics::IN_FLIGHT_INGEST_ROUTER,
+            request_size_bytes as f64,
+        );
         let num_subrequests = ingest_request.subrequests.len();
 
         let _permit = self

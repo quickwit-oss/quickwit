@@ -51,9 +51,10 @@ impl ProcessedDocBatch {
         force_commit: bool,
     ) -> Self {
         let delta = docs.iter().map(|doc| doc.num_bytes as i64).sum::<i64>();
-        let gauge_guard =
-            GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_INDEXER_MAILBOX);
-        gauge_guard.increment(delta as f64);
+        let gauge_guard = GaugeGuard::new(
+            &quickwit_common::metrics::IN_FLIGHT_INDEXER_MAILBOX,
+            delta as f64,
+        );
         Self {
             docs,
             checkpoint_delta,

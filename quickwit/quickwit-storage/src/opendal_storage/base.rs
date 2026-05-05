@@ -20,6 +20,7 @@ use async_trait::async_trait;
 use futures::AsyncWriteExt as FuturesAsyncWriteExt;
 use opendal::{DeleteInput, IntoDeleteInput, Operator};
 use quickwit_common::uri::Uri;
+use quickwit_metrics::HistogramTimer;
 use tokio::io::{AsyncRead, AsyncWriteExt as TokioAsyncWriteExt};
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 
@@ -153,7 +154,7 @@ impl Storage for OpendalStorage {
     async fn delete(&self, path: &Path) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
         crate::OBJECT_STORAGE_DELETE_REQUESTS_TOTAL.increment(1);
-        let _timer = crate::OBJECT_STORAGE_DELETE_REQUEST_DURATION.start_timer();
+        let _timer = HistogramTimer::new(&crate::OBJECT_STORAGE_DELETE_REQUEST_DURATION);
         self.op.delete(&path).await?;
         Ok(())
     }
@@ -168,7 +169,8 @@ impl Storage for OpendalStorage {
                 let mut bulk_error = BulkDeleteError::default();
                 for (index, path) in paths.iter().enumerate() {
                     crate::OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL.increment(1);
-                    let _timer = crate::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION.start_timer();
+                    let _timer =
+                        HistogramTimer::new(&crate::OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION);
                     let result = self.op.delete(&path.as_os_str().to_string_lossy()).await;
                     if let Err(err) = result {
                         let storage_error_kind = err.kind();

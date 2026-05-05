@@ -212,6 +212,7 @@ pulsar = { version = "6.6", default-features = false, features = [
   "compression",
   "tokio-runtime",
 ] }
+quanta = "0.12"
 quick_cache = "0.6.18"
 quote = "1.0"
 rand = "0.10"

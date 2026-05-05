@@ -52,8 +52,7 @@ impl<'a, DB: Database> Acquire<'a> for &TrackedPool<DB> {
         super::metrics::IDLE_CONNECTIONS.set(self.inner_pool.num_idle() as f64);
 
         Box::pin(async move {
-            let _gauge_guard = GaugeGuard::from_gauge(&super::metrics::ACQUIRE_CONNECTIONS);
-            _gauge_guard.increment(1.0);
+            let _gauge_guard = GaugeGuard::new(&super::metrics::ACQUIRE_CONNECTIONS, 1.0);
 
             let conn = acquire_conn_fut.await?;
             Ok(conn)

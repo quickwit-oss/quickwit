@@ -142,8 +142,7 @@
 //!
 //! ```rust,ignore
 //! {
-//!     let _guard = GaugeGuard::from_gauge(&ACTIVE_CONNS);
-//!     _guard.increment(1.0);
+//!     let _guard = GaugeGuard::new(&ACTIVE_CONNS, 1.0);
 //!     // ... connection is alive here ...
 //! }
 //! // gauge decremented automatically on drop
