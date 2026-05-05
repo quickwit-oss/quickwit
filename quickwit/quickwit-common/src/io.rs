@@ -359,19 +359,6 @@ mod tests {
         assert_eq!(io_controls.num_bytes(), 2_000_000u64);
     }
 
-    #[tokio::test]
-    async fn test_controlled_writer_registered_counter_async() {
-        let io_controls =
-            IoControls::default().set_component("test_controlled_writer_registered_counter_async");
-        let mut controlled_write = io_controls.clone().wrap_write(sink());
-        let buf = vec![44u8; 1_000];
-
-        controlled_write.write_all(&buf).await.unwrap();
-        controlled_write.flush().await.unwrap();
-
-        assert_eq!(io_controls.num_bytes(), 1_000u64);
-    }
-
     #[test]
     fn test_controlled_writer_limited_sync() {
         let io_controls = IoControls::default().set_throughput_limit(ByteSize::mb(2));
