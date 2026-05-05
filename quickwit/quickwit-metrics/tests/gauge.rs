@@ -17,7 +17,7 @@ mod common;
 use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-use quickwit_metrics::{GaugeGuard, gauge, label_names, label_values, labels};
+use quickwit_metrics::{Gauge, GaugeGuard, gauge, label_names, label_values, labels};
 
 #[test]
 fn set() {
@@ -305,4 +305,46 @@ fn observable_parent_children_share_shadow() {
         assert_eq!(child_a.get(), 8.0);
         assert_eq!(child_b.get(), 8.0);
     });
+}
+
+#[test]
+fn local_set_and_get() {
+    let g = Gauge::local();
+    assert_eq!(g.get(), 0.0);
+    g.set(42.0);
+    assert_eq!(g.get(), 42.0);
+}
+
+#[test]
+fn local_increment_decrement() {
+    let g = Gauge::local();
+    g.increment(10.0);
+    g.decrement(3.0);
+    assert_eq!(g.get(), 7.0);
+}
+
+#[test]
+fn local_gauges_are_independent() {
+    let a = Gauge::local();
+    let b = Gauge::local();
+    a.set(5.0);
+    b.set(9.0);
+    assert_eq!(a.get(), 5.0);
+    assert_eq!(b.get(), 9.0);
+}
+
+#[test]
+fn local_gauges_are_never_equal() {
+    let a = Gauge::local();
+    let b = Gauge::local();
+    assert_ne!(a, b);
+}
+
+#[test]
+fn local_gauge_clone_is_equal() {
+    let a = Gauge::local();
+    let b = a.clone();
+    assert_eq!(a, b);
+    a.set(7.0);
+    assert_eq!(b.get(), 7.0);
 }

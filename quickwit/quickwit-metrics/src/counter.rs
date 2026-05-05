@@ -115,23 +115,23 @@ impl std::fmt::Debug for Counter {
     }
 }
 
-/// Uses the pre-computed cache-key hash so counters can be stored in
-/// `HashMap`/`HashSet` without re-hashing the key contents.
-impl std::hash::Hash for Counter {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.get_hash().hash(state);
-    }
-}
-
-/// Two counters are equal when they share the same cache-key hash,
-/// i.e. they were declared with identical name + labels.
+/// Two counters are equal when they point to the same `Arc` allocation,
+/// i.e. they were produced by cloning the same handle. The global
+/// `DashMap` guarantees that all call sites with identical name + labels
+/// share one `Arc`, so identity equality implies semantic equality.
 impl PartialEq for Counter {
     fn eq(&self, other: &Self) -> bool {
-        self.get_hash() == other.get_hash()
+        Arc::as_ptr(&self.0) == Arc::as_ptr(&other.0)
     }
 }
 
 impl Eq for Counter {}
+
+impl std::hash::Hash for Counter {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        Arc::as_ptr(&self.0).hash(state);
+    }
+}
 
 impl Counter {
     // NOTE: never call it directly, use the macro instead because it ensures the hash is
@@ -151,8 +151,8 @@ impl Counter {
         self.0.info
     }
 
-    /// Returns the pre-computed cache-key hash for this counter.
-    pub fn get_hash(&self) -> u64 {
+    #[doc(hidden)]
+    pub fn __hash(&self) -> u64 {
         self.0.hash
     }
 
@@ -178,6 +178,25 @@ impl Counter {
     /// Returns the current counter value from the shadow atomic.
     pub fn get(&self) -> u64 {
         self.0.shadow.load(Ordering::Relaxed)
+    }
+
+    /// Returns a detached counter with a noop recorder and its own shadow atomic.
+    pub fn local() -> Counter {
+        // Static key from empty parts — clone is free (Cow::Borrowed).
+        static KEY: metrics::Key = metrics::Key::from_static_parts("", &[]);
+        static METADATA: metrics::Metadata<'static> =
+            metrics::Metadata::new("local", metrics::Level::DEBUG, None);
+        static INFO: MetricInfo = MetricInfo {
+            key_name: "",
+            description: "local counter",
+            kind: crate::MetricKind::Counter,
+            metadata: &METADATA,
+            static_labels: &[],
+        };
+        // Hash is irrelevant: equality is based on Arc identity (see
+        // PartialEq impl), and local counters never enter the DashMap.
+        let inner = CounterInner::new(0, &INFO, KEY.clone(), metrics::Counter::noop());
+        Counter(Arc::new(inner))
     }
 }
 
@@ -258,7 +277,7 @@ macro_rules! counter {
             parent: $parent,
             metric_info: $parent.__info(),
             // Seed with parent hash, fold in each (name, value) pair.
-            hash: $crate::__key_hash!($parent.get_hash(), $(($label, $value)),+),
+            hash: $crate::__key_hash!($parent.__hash(), $(($label, $value)),+),
             label_count: $crate::__count!($($label)*),
             labels_iter: [$($crate::__metrics::Label::new($label, $value)),+].into_iter()
         )
@@ -275,7 +294,7 @@ macro_rules! counter {
             parent: $parent,
             metric_info: $parent.__info(),
             hash: $crate::__key_hash(
-                $parent.get_hash(),
+                $parent.__hash(),
                 std::iter::empty()$(.chain($labels.iter()))+,
             ),
             label_count: 0usize $(+ $labels.len())+,

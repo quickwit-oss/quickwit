@@ -17,7 +17,7 @@ mod common;
 use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-use quickwit_metrics::{counter, label_names, label_values, labels};
+use quickwit_metrics::{Counter, counter, label_names, label_values, labels};
 
 #[test]
 fn base_increments() {
@@ -310,4 +310,39 @@ fn observable_parent_distinct_labels_separate_shadow() {
         assert_eq!(child_a.get(), 3);
         assert_eq!(child_b.get(), 7);
     });
+}
+
+#[test]
+fn local_increments_shadow_only() {
+    let c = Counter::local();
+    assert_eq!(c.get(), 0);
+    c.increment(10);
+    c.increment(3);
+    assert_eq!(c.get(), 13);
+}
+
+#[test]
+fn local_counters_are_independent() {
+    let a = Counter::local();
+    let b = Counter::local();
+    a.increment(5);
+    b.increment(9);
+    assert_eq!(a.get(), 5);
+    assert_eq!(b.get(), 9);
+}
+
+#[test]
+fn local_counters_are_never_equal() {
+    let a = Counter::local();
+    let b = Counter::local();
+    assert_ne!(a, b);
+}
+
+#[test]
+fn local_counter_clone_is_equal() {
+    let a = Counter::local();
+    let b = a.clone();
+    assert_eq!(a, b);
+    a.increment(1);
+    assert_eq!(b.get(), 1);
 }

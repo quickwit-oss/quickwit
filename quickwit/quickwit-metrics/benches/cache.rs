@@ -100,7 +100,7 @@ fn key_hash_bench(c: &mut Criterion) {
 
     install_recorder();
     let _ = &*DYN_PARENT_COUNTER;
-    let parent_hash = DYN_PARENT_COUNTER.get_hash();
+    let parent_hash = DYN_PARENT_COUNTER.__hash();
 
     let mut group = c.benchmark_group("cache/key_hash");
 
