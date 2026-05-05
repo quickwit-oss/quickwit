@@ -114,8 +114,10 @@ pub(crate) struct Body {
 
 impl Body {
     pub fn new(content: Bytes, load_shield_permit: LoadShieldPermit) -> Body {
-        let gauge_guard = GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_REST_SERVER);
-        gauge_guard.increment(content.len() as f64);
+        let gauge_guard = GaugeGuard::new(
+            &quickwit_common::metrics::IN_FLIGHT_REST_SERVER,
+            content.len() as f64,
+        );
         Body {
             content,
             _gauge_guard: gauge_guard,

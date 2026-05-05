@@ -394,9 +394,7 @@ impl<A: Actor> Inbox<A> {
 }
 
 fn get_actor_inboxes_count_gauge_guard() -> GaugeGuard {
-    let gauge_guard = GaugeGuard::from_gauge(&INBOX_GAUGE);
-    gauge_guard.increment(1.0);
-    gauge_guard
+    GaugeGuard::new(&INBOX_GAUGE, 1.0)
 }
 
 pub(crate) fn create_mailbox<A: Actor>(

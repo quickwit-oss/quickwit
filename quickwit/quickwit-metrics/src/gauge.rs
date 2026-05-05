@@ -205,8 +205,7 @@ impl GaugeFn for Gauge {
 /// a panic.
 ///
 /// ```ignore
-/// let guard = GaugeGuard::from_gauge(&gauge);
-/// guard.increment(1.0);
+/// let guard = GaugeGuard::new(&gauge, 1.0);
 /// // gauge is incremented by 1.0
 /// // ... do work ...
 /// // gauge is decremented by 1.0 when guard drops
@@ -218,11 +217,14 @@ pub struct GaugeGuard {
 }
 
 impl GaugeGuard {
-    /// Creates a guard that tracks `gauge` without changing its value.
-    pub fn from_gauge(gauge: &Gauge) -> Self {
+    /// Creates a guard that adds `delta` to `gauge` and tracks it until drop.
+    pub fn new(gauge: &Gauge, delta: f64) -> Self {
+        if delta != 0.0 {
+            gauge.increment(delta);
+        }
         Self {
             gauge: gauge.clone(),
-            delta: AtomicF64::new(0.0),
+            delta: AtomicF64::new(delta),
         }
     }
 
@@ -269,8 +271,7 @@ impl Drop for GaugeGuard {
 ///
 /// ```ignore
 /// let child = gauge!(parent: base, "method" => method);
-/// let guard = GaugeGuard::from_gauge(&child);
-/// guard.increment(1.0);
+/// let guard = GaugeGuard::new(&child, 1.0);
 /// ```
 #[macro_export]
 macro_rules! gauge {

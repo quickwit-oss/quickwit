@@ -537,7 +537,7 @@ impl BatchBuilder {
             SourceType::Pulsar => &quickwit_common::metrics::IN_FLIGHT_PULSAR_SOURCE,
             _ => &quickwit_common::metrics::IN_FLIGHT_OTHER_SOURCE,
         };
-        let gauge_guard = GaugeGuard::from_gauge(gauge);
+        let gauge_guard = GaugeGuard::new(gauge, 0.0);
 
         Self {
             docs: Vec::with_capacity(capacity),

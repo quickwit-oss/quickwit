@@ -1125,9 +1125,10 @@ impl IngesterService for Ingester {
                 _ => None,
             })
             .sum::<usize>();
-        let mut _gauge_guard =
-            GaugeGuard::from_gauge(&quickwit_common::metrics::IN_FLIGHT_INGESTER_PERSIST);
-        _gauge_guard.increment(request_size_bytes as f64);
+        let _gauge_guard = GaugeGuard::new(
+            &quickwit_common::metrics::IN_FLIGHT_INGESTER_PERSIST,
+            request_size_bytes as f64,
+        );
 
         self.persist_inner(persist_request).await
     }

@@ -153,8 +153,7 @@ impl MetricsPipeline {
             parent: &crate::metrics::INDEXING_PIPELINES,
             labels: &labels,
         );
-        let indexing_pipelines_gauge_guard = GaugeGuard::from_gauge(&indexing_pipelines_gauge);
-        indexing_pipelines_gauge_guard.increment(1.0);
+        let indexing_pipelines_gauge_guard = GaugeGuard::new(&indexing_pipelines_gauge, 1.0);
         let params_fingerprint = params.params_fingerprint;
         MetricsPipeline {
             params,
