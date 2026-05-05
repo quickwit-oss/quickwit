@@ -33,7 +33,7 @@ use crate::__key_hash;
 /// ```
 #[macro_export]
 macro_rules! label_names {
-    ($($name:expr),+ $(,)?) => {
+    ($($name:literal),+ $(,)?) => {
         $crate::LabelNames::__new([$($name),+])
     };
 }
@@ -81,7 +81,15 @@ macro_rules! label_values {
 /// ```
 #[macro_export]
 macro_rules! labels {
-    ($($key:expr => $val:expr),+ $(,)?) => {
+    // All-literal arm: const-compatible via SharedString::const_str.
+    ($($key:literal => $val:literal),+ $(,)?) => {
+        $crate::Labels::__from_parts(
+            [$($key),+],
+            [$($crate::__metrics::SharedString::const_str($val)),+],
+        )
+    };
+    // General arm: accepts any expression convertible to SharedString.
+    ($($key:literal => $val:expr),+ $(,)?) => {
         $crate::Labels::__from_parts(
             [$($key),+],
             [$($crate::__metrics::SharedString::from($val)),+],

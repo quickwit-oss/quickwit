@@ -251,7 +251,7 @@ mod tests {
         let global_counter = counter!(
             name: "scoped_counter_test",
             description: "Scoped counter test.",
-            subsystem: "",
+            subsystem: "test",
         );
         let counter = ScopedCounter::Global(global_counter.clone());
 

@@ -19,7 +19,16 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
 use quickwit_config::CacheConfig;
-use quickwit_metrics::{Counter, Gauge, GaugeGuard, Histogram, counter, gauge, histogram};
+use quickwit_metrics::{
+    Counter, Gauge, GaugeGuard, Histogram, LabelNames, Labels, counter, gauge, histogram,
+    label_names, label_values, labels,
+};
+
+const ACTION_DELETE_OBJECT: Labels<1> = labels!("action" => "delete_object");
+const OUTCOME: LabelNames<1> = label_names!("outcome");
+const COMPONENT_NAME: LabelNames<1> = label_names!("component_name");
+const COMPONENT_CAPACITY_POLICY: LabelNames<3> =
+    label_names!("component_name", "capacity", "policy");
 
 static GET_SLICE_TIMEOUT_OUTCOME_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -29,34 +38,21 @@ static GET_SLICE_TIMEOUT_OUTCOME_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     )
 });
 
-pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_0_TIMEOUT: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
-        parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
-        "outcome" => "success_after_0_timeout",
-    )
-});
+pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_0_TIMEOUT: LazyLock<Counter> = LazyLock::new(
+    || counter!(parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL, labels: [label_values!(OUTCOME => "success_after_0_timeout")]),
+);
 
-pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
-        parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
-        "outcome" => "success_after_1_timeout",
-    )
-});
+pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_1_TIMEOUT: LazyLock<Counter> = LazyLock::new(
+    || counter!(parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL, labels: [label_values!(OUTCOME => "success_after_1_timeout")]),
+);
 
-pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT: LazyLock<Counter> =
-    LazyLock::new(|| {
-        counter!(
-            parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
-            "outcome" => "success_after_2+_timeout",
-        )
-    });
+pub static GET_SLICE_TIMEOUT_SUCCESS_AFTER_2_PLUS_TIMEOUT: LazyLock<Counter> = LazyLock::new(
+    || counter!(parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL, labels: [label_values!(OUTCOME => "success_after_2+_timeout")]),
+);
 
-pub static GET_SLICE_TIMEOUT_ALL_TIMEOUTS: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
-        parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL,
-        "outcome" => "all_timeouts",
-    )
-});
+pub static GET_SLICE_TIMEOUT_ALL_TIMEOUTS: LazyLock<Counter> = LazyLock::new(
+    || counter!(parent: GET_SLICE_TIMEOUT_OUTCOME_TOTAL, labels: [label_values!(OUTCOME => "all_timeouts")]),
+);
 
 static OBJECT_STORAGE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -75,33 +71,21 @@ static OBJECT_STORAGE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
     )
 });
 
-pub static OBJECT_STORAGE_DELETE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
-        parent: OBJECT_STORAGE_REQUESTS_TOTAL,
-        "action" => "delete_object",
-    )
-});
+pub static OBJECT_STORAGE_DELETE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(
+    || counter!(parent: OBJECT_STORAGE_REQUESTS_TOTAL, labels: [ACTION_DELETE_OBJECT]),
+);
 
-pub static OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
-    counter!(
-        parent: OBJECT_STORAGE_REQUESTS_TOTAL,
-        "action" => "delete_objects",
-    )
-});
+pub static OBJECT_STORAGE_BULK_DELETE_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(
+    || counter!(parent: OBJECT_STORAGE_REQUESTS_TOTAL, labels: [ACTION_DELETE_OBJECT]),
+);
 
-pub static OBJECT_STORAGE_DELETE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
-        parent: OBJECT_STORAGE_REQUEST_DURATION,
-        "action" => "delete_object",
-    )
-});
+pub static OBJECT_STORAGE_DELETE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(
+    || histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECT]),
+);
 
-pub static OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(|| {
-    histogram!(
-        parent: OBJECT_STORAGE_REQUEST_DURATION,
-        "action" => "delete_objects",
-    )
-});
+pub static OBJECT_STORAGE_BULK_DELETE_REQUEST_DURATION: LazyLock<Histogram> = LazyLock::new(
+    || histogram!(parent: OBJECT_STORAGE_REQUEST_DURATION, labels: [ACTION_DELETE_OBJECT]),
+);
 
 pub static OBJECT_STORAGE_GET_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
@@ -147,7 +131,7 @@ pub static OBJECT_STORAGE_PUT_PARTS: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
         name: "object_storage_puts_parts",
         description: "Number of object parts uploaded.",
-        subsystem: "",
+        subsystem: "storage",
     )
 });
 
@@ -188,16 +172,17 @@ pub struct SingleCacheMetrics {
 impl CacheMetrics {
     pub fn for_component(component_name: &str) -> Self {
         let component_name = component_name.to_string();
+        let labels = label_values!(COMPONENT_NAME => component_name.clone());
         CacheMetrics {
-            component_name: component_name.clone(),
+            component_name,
             cache_metrics: SingleCacheMetrics {
-                in_cache_count: gauge!(parent: CACHE_IN_CACHE_COUNT, "component_name" => component_name.clone()),
-                in_cache_num_bytes: gauge!(parent: CACHE_IN_CACHE_NUM_BYTES, "component_name" => component_name.clone()),
-                hits_num_items: counter!(parent: CACHE_HITS_TOTAL, "component_name" => component_name.clone()),
-                hits_num_bytes: counter!(parent: CACHE_HITS_BYTES, "component_name" => component_name.clone()),
-                misses_num_items: counter!(parent: CACHE_MISSES_TOTAL, "component_name" => component_name.clone()),
-                evict_num_items: counter!(parent: CACHE_EVICT_TOTAL, "component_name" => component_name.clone()),
-                evict_num_bytes: counter!(parent: CACHE_EVICT_BYTES, "component_name" => component_name),
+                in_cache_count: gauge!(parent: CACHE_IN_CACHE_COUNT, labels: [labels]),
+                in_cache_num_bytes: gauge!(parent: CACHE_IN_CACHE_NUM_BYTES, labels: [labels]),
+                hits_num_items: counter!(parent: CACHE_HITS_TOTAL, labels: [labels]),
+                hits_num_bytes: counter!(parent: CACHE_HITS_BYTES, labels: [labels]),
+                misses_num_items: counter!(parent: CACHE_MISSES_TOTAL, labels: [labels]),
+                evict_num_items: counter!(parent: CACHE_EVICT_TOTAL, labels: [labels]),
+                evict_num_bytes: counter!(parent: CACHE_EVICT_BYTES, labels: [labels]),
             },
             virtual_caches_metrics: RwLock::default(),
         }
@@ -209,52 +194,20 @@ impl CacheMetrics {
             return virtual_cache_metrics.clone();
         }
 
-        let capacity = config.capacity().as_u64().to_string();
-        let policy = config.policy().to_string();
-        let component_name = self.component_name.clone();
+        let labels = label_values!(
+            COMPONENT_CAPACITY_POLICY =>
+            self.component_name.clone(),
+            config.capacity().as_u64().to_string(),
+            config.policy().to_string(),
+        );
         let new_virtual_cache_metrics = SingleCacheMetrics {
-            in_cache_count: gauge!(
-                parent: VIRTUAL_CACHE_IN_CACHE_COUNT,
-                "component_name" => component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
-            ),
-            in_cache_num_bytes: gauge!(
-                parent: VIRTUAL_CACHE_IN_CACHE_NUM_BYTES,
-                "component_name" => component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
-            ),
-            hits_num_items: counter!(
-                parent: VIRTUAL_CACHE_HITS_TOTAL,
-                "component_name" => component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
-            ),
-            hits_num_bytes: counter!(
-                parent: VIRTUAL_CACHE_HITS_BYTES,
-                "component_name" => component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
-            ),
-            misses_num_items: counter!(
-                parent: VIRTUAL_CACHE_MISSES_TOTAL,
-                "component_name" => component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
-            ),
-            evict_num_items: counter!(
-                parent: VIRTUAL_CACHE_EVICT_TOTAL,
-                "component_name" => component_name.clone(),
-                "capacity" => capacity.clone(),
-                "policy" => policy.clone(),
-            ),
-            evict_num_bytes: counter!(
-                parent: VIRTUAL_CACHE_EVICT_BYTES,
-                "component_name" => component_name,
-                "capacity" => capacity,
-                "policy" => policy,
-            ),
+            in_cache_count: gauge!(parent: VIRTUAL_CACHE_IN_CACHE_COUNT, labels: [labels]),
+            in_cache_num_bytes: gauge!(parent: VIRTUAL_CACHE_IN_CACHE_NUM_BYTES, labels: [labels]),
+            hits_num_items: counter!(parent: VIRTUAL_CACHE_HITS_TOTAL, labels: [labels]),
+            hits_num_bytes: counter!(parent: VIRTUAL_CACHE_HITS_BYTES, labels: [labels]),
+            misses_num_items: counter!(parent: VIRTUAL_CACHE_MISSES_TOTAL, labels: [labels]),
+            evict_num_items: counter!(parent: VIRTUAL_CACHE_EVICT_TOTAL, labels: [labels]),
+            evict_num_bytes: counter!(parent: VIRTUAL_CACHE_EVICT_BYTES, labels: [labels]),
         };
 
         self.virtual_caches_metrics

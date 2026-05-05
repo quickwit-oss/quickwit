@@ -30,25 +30,25 @@ pub trait RpcName {
 
 static GRPC_REQUESTS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(
-        name: "grpc_requests_total",
+        name: "requests_total",
         description: "Total number of gRPC requests processed.",
-        subsystem: "",
+        subsystem: "grpc",
     )
 });
 
 static GRPC_REQUESTS_IN_FLIGHT: LazyLock<Gauge> = LazyLock::new(|| {
     gauge!(
-        name: "grpc_requests_in_flight",
+        name: "requests_in_flight",
         description: "Number of gRPC requests in-flight.",
-        subsystem: "",
+        subsystem: "grpc",
     )
 });
 
 static GRPC_REQUEST_DURATION_SECONDS: LazyLock<Histogram> = LazyLock::new(|| {
     histogram!(
-        name: "grpc_request_duration_seconds",
+        name: "request_duration_seconds",
         description: "Duration of request in seconds.",
-        subsystem: "",
+        subsystem: "grpc",
         buckets: exponential_buckets(0.001, 2.0, 12).unwrap(),
     )
 });
@@ -165,7 +165,8 @@ impl<F> PinnedDrop for ResponseFuture<F> {
 }
 
 impl<F, T, E> Future for ResponseFuture<F>
-where F: Future<Output = Result<T, E>>
+where
+    F: Future<Output = Result<T, E>>,
 {
     type Output = Result<T, E>;
 
