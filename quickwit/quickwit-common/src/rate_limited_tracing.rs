@@ -223,7 +223,7 @@ mod tests {
 
     use coarsetime::{Duration, Instant};
 
-    use super::{should_log, ShouldLog};
+    use super::{ShouldLog, should_log};
 
     // TODO as this is atomic code, we should test it with multiple threads to verify it behaves
     // like we'd expect, maybe using something like `loom`?
