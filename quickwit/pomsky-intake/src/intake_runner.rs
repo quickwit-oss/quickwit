@@ -25,6 +25,10 @@ use vector::extra_context::ExtraContext;
 use crate::IntakeConfig;
 use crate::host_tags::HostTagsStore;
 use crate::host_tags_poller::{self, HostTagsPollerConfig, UnknownHostsCollector};
+use crate::transforms::metric_dual_ship::{
+    DualShipFetcher, DualShipPollerConfig, global_store as dual_ship_global_store,
+    run_dual_ship_poller,
+};
 
 fn build_vector_config(data_dir: &Path, config: &IntakeConfig, print: bool) -> String {
     let data_dir = data_dir.display();
@@ -35,6 +39,7 @@ fn build_vector_config(data_dir: &Path, config: &IntakeConfig, print: bool) -> S
     let dd_site = config.resolve_dd_site();
     let metadata_svc_url = format!("https://{}", dd_site.trim_end_matches('/'));
     let metric_metadata_persist_file_path = config.metric_metadata_persist_file_path.display();
+    let dual_ship_persist_file_path = config.dual_ship.persist_file_path.display();
 
     let print_sink = if print {
         r#"
@@ -108,6 +113,12 @@ transforms:
       - otlp.metrics
       - connections_to_apm_metrics
 
+  metric_dual_ship:
+    type: metric_dual_ship
+    inputs:
+      - preprocess_metrics
+    persist_file_path: "{dual_ship_persist_file_path}"
+
   metric_metadata:
     type: metric_metadata
     inputs:
@@ -140,7 +151,7 @@ transforms:
   normalize_metric_names:
     type: name_normalizer
     inputs:
-      - preprocess_metrics
+      - metric_dual_ship
 
   normalize_trace_names:
     type: name_normalizer
@@ -179,6 +190,13 @@ sinks:
     inputs:
       - metric_metadata
     uri: "{metrics_endpoint}"
+
+  datadog_metrics:
+    type: datadog_metrics
+    inputs:
+      - metric_dual_ship.saas
+    default_api_key: "${{DD_API_KEY}}"
+    site: "{dd_site}"
 
   traces_out:
     type: http
@@ -221,6 +239,38 @@ fn spawn_host_tags_poller(config: &IntakeConfig, handle: &tokio::runtime::Handle
     info!("spawned host-tags poller");
 }
 
+/// Spawns the dual-ship poller on the Vector runtime.
+///
+/// Panics if `dd_api_key` cannot be resolved — the same precondition the
+/// `metric_dual_ship` transform enforces at build time. The poller writes
+/// into the same `global_store()` the transform reads from, so the routing
+/// decisions on the metric event hot path see updates as soon as they are
+/// merged in.
+fn spawn_dual_ship_poller(config: &IntakeConfig, handle: &tokio::runtime::Handle) {
+    let dd_site = config.resolve_dd_site();
+    let dd_api_key = config
+        .resolve_dd_api_key()
+        .expect("DD API key should be set via config or DD_API_KEY env var");
+    let dual_ship_config = &config.dual_ship;
+    let metadata_service_url = dual_ship_config.metadata_service_url(&dd_site);
+
+    let fetcher = DualShipFetcher::new(
+        dd_api_key,
+        metadata_service_url,
+        dual_ship_config.fetch_timeout(),
+    )
+    .expect("failed to build dual-ship HTTP client");
+
+    let poller_config = DualShipPollerConfig {
+        store: dual_ship_global_store(),
+        fetcher,
+        poll_interval: dual_ship_config.poll_interval(),
+        csv_path: dual_ship_config.persist_file_path.clone(),
+    };
+    handle.spawn(run_dual_ship_poller(poller_config));
+    info!("spawned dual-ship poller");
+}
+
 /// Starts Vector in-process with the default processing pipeline config.
 ///
 /// This function is **blocking** — Vector creates its own tokio runtime and
@@ -252,6 +302,7 @@ pub fn run_intake(config: IntakeConfig, print: bool) -> anyhow::Result<()> {
         .map_err(|code| anyhow::anyhow!("failed to prepare intake service (exit code {code})"))?;
 
     spawn_host_tags_poller(&config, runtime.handle());
+    spawn_dual_ship_poller(&config, runtime.handle());
 
     let started = app
         .start(runtime.handle())

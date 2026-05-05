@@ -15025,6 +15025,7 @@ dependencies = [
  "procfs 0.18.0",
  "prost 0.12.6",
  "prost-build 0.12.6",
+ "prost-reflect",
  "prost-types 0.12.6",
  "quick-junit",
  "rand 0.9.4",

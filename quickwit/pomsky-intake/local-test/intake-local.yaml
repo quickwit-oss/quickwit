@@ -6,3 +6,5 @@ org_id: 2
 metric_metadata_persist_file_path: ./pomsky-intake/local-test/sandbox/metric_metadata_known.csv
 host_tags:
   cache_path: ./pomsky-intake/local-test/sandbox/hosttags.csv
+dual_ship:
+  persist_file_path: ./pomsky-intake/local-test/sandbox/metrics_to_saas.csv
