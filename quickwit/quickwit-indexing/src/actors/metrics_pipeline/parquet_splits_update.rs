@@ -43,6 +43,10 @@ pub struct ParquetSplitsUpdate {
     pub publish_token_opt: Option<PublishToken>,
     /// Parent span for tracing.
     pub parent_span: Span,
+    /// Merge concurrency permit — held until the publisher drops this message,
+    /// ensuring the semaphore slot stays occupied while the merge output is
+    /// in flight. `None` for the ingest path.
+    pub _merge_permit_opt: Option<crate::actors::MergePermit>,
 }
 
 impl fmt::Debug for ParquetSplitsUpdate {

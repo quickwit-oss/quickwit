@@ -34,11 +34,14 @@ use datafusion::logical_expr::{Expr, TableProviderFilterPushDown, TableType};
 use datafusion::physical_expr::{LexOrdering, PhysicalSortExpr};
 use datafusion::physical_plan::ExecutionPlan;
 use datafusion_datasource::PartitionedFile;
+use datafusion_datasource::file_groups::FileGroup;
 use datafusion_datasource::file_scan_config::FileScanConfigBuilder;
 use datafusion_datasource_parquet::source::ParquetSource;
 use datafusion_physical_plan::expressions::Column;
 use quickwit_common::uri::Uri;
+use quickwit_parquet_engine::sorted_series::SORTED_SERIES_COLUMN;
 use quickwit_parquet_engine::split::ParquetSplitMetadata;
+use quickwit_parquet_engine::table_config::ProductType;
 use tracing::debug;
 
 use super::predicate;
@@ -207,9 +210,15 @@ impl TableProvider for MetricsTableProvider {
         let mut builder =
             FileScanConfigBuilder::new(self.object_store_url.clone(), Arc::new(parquet_source));
 
-        // Add each split as its own file group (one file per partition)
-        for file in file_groups {
-            builder = builder.with_file(file);
+        // Add each split as its own file group (one file per partition). Empty
+        // scans still need one empty partition so single-partition operators
+        // such as COUNT(*) can satisfy their distribution requirement.
+        if file_groups.is_empty() {
+            builder = builder.with_file_group(FileGroup::new(vec![]));
+        } else {
+            for file in file_groups {
+                builder = builder.with_file(file);
+            }
         }
 
         if let Some(proj) = projection {
@@ -220,11 +229,14 @@ impl TableProvider for MetricsTableProvider {
             builder = builder.with_limit(Some(lim));
         }
 
-        // Advertise only the contiguous prefix of the writer sort order present
-        // in the table schema. Later keys are not globally ordered if an
-        // earlier discriminator is hidden by the declared schema.
-        if let Some(ordering) = metrics_output_ordering(&self.schema) {
-            builder = builder.with_output_ordering(vec![ordering]);
+        // Advertise every ordering the writer physically guarantees for each
+        // split. `sorted_series` is a materialized composite prefix of the
+        // writer sort schema, so it is the preferred single-column series key
+        // for streaming rollups. The expanded sort schema remains useful for
+        // queries that group/filter on the raw tag columns.
+        let output_orderings = metrics_output_orderings(&self.schema, &splits);
+        if !output_orderings.is_empty() {
+            builder = builder.with_output_ordering(output_orderings);
         }
 
         let file_scan_config = builder.build();
@@ -265,25 +277,78 @@ fn column_name_from_expr(expr: &Expr) -> Option<String> {
     predicate::column_name(expr)
 }
 
-fn metrics_output_ordering(schema: &SchemaRef) -> Option<LexOrdering> {
-    let sort_options = SortOptions {
+fn sort_expr(
+    schema: &SchemaRef,
+    col_name: &str,
+    sort_options: SortOptions,
+) -> Option<PhysicalSortExpr> {
+    schema
+        .index_of(col_name)
+        .ok()
+        .map(|idx| PhysicalSortExpr::new(Arc::new(Column::new(col_name, idx)), sort_options))
+}
+
+fn metrics_output_orderings(
+    schema: &SchemaRef,
+    splits: &[ParquetSplitMetadata],
+) -> Vec<LexOrdering> {
+    if !splits_have_default_metrics_sort(splits) {
+        return Vec::new();
+    }
+
+    let ascending = SortOptions {
         descending: false,
         nulls_first: false,
     };
-    let sort_exprs: Vec<PhysicalSortExpr> = METRICS_SORT_ORDER
+    let timestamp_descending = SortOptions {
+        descending: true,
+        nulls_first: false,
+    };
+
+    let mut orderings = Vec::new();
+
+    if let Some(sorted_series) = sort_expr(schema, SORTED_SERIES_COLUMN, ascending) {
+        let mut sort_exprs = vec![sorted_series];
+        if let Some(timestamp) = sort_expr(schema, "timestamp_secs", timestamp_descending) {
+            sort_exprs.push(timestamp);
+        }
+        if let Some(ordering) = LexOrdering::new(sort_exprs) {
+            orderings.push(ordering);
+        }
+    }
+
+    // Advertise only the contiguous prefix of the expanded writer sort order
+    // present in the table schema. Later keys are not globally ordered if an
+    // earlier discriminator is hidden by the declared schema.
+    let expanded_sort_exprs: Vec<PhysicalSortExpr> = METRICS_SORT_ORDER
         .iter()
         .map_while(|col_name| {
-            schema.index_of(col_name).ok().map(|idx| {
-                PhysicalSortExpr::new(Arc::new(Column::new(col_name, idx)), sort_options)
-            })
+            let sort_options = if *col_name == "timestamp_secs" {
+                timestamp_descending
+            } else {
+                ascending
+            };
+            sort_expr(schema, col_name, sort_options)
         })
         .collect();
-    LexOrdering::new(sort_exprs)
+    if let Some(ordering) = LexOrdering::new(expanded_sort_exprs) {
+        orderings.push(ordering);
+    }
+
+    orderings
+}
+
+fn splits_have_default_metrics_sort(splits: &[ParquetSplitMetadata]) -> bool {
+    splits.is_empty()
+        || splits
+            .iter()
+            .all(|split| split.sort_fields.as_str() == ProductType::Metrics.default_sort_fields())
 }
 
 #[cfg(test)]
 mod tests {
     use arrow::datatypes::{DataType, Field, Schema};
+    use quickwit_parquet_engine::split::TimeRange;
 
     use super::*;
 
@@ -309,31 +374,106 @@ mod tests {
             .collect()
     }
 
+    fn ordering_column_options(ordering: &LexOrdering) -> Vec<SortOptions> {
+        ordering.iter().map(|expr| expr.options).collect()
+    }
+
     fn expected_names(names: &[&str]) -> Vec<String> {
         names.iter().map(|name| name.to_string()).collect()
+    }
+
+    fn split_with_sort_fields(sort_fields: &str) -> ParquetSplitMetadata {
+        ParquetSplitMetadata::metrics_builder()
+            .index_uid("test-index")
+            .time_range(TimeRange::new(0, 1))
+            .sort_fields(sort_fields)
+            .build()
     }
 
     #[test]
     fn metrics_output_ordering_stops_at_first_missing_sort_key() {
         let schema = schema_with_columns(&["metric_name", "service", "timestamp_secs"]);
 
-        let ordering = metrics_output_ordering(&schema).unwrap();
+        let orderings = metrics_output_orderings(&schema, &[]);
 
         assert_eq!(
-            ordering_column_names(&ordering),
+            ordering_column_names(&orderings[0]),
             expected_names(&["metric_name", "service"])
         );
     }
 
     #[test]
-    fn metrics_output_ordering_keeps_timestamp_after_all_discriminators() {
+    fn metrics_output_ordering_keeps_descending_timestamp_after_all_discriminators() {
         let schema = schema_with_columns(METRICS_SORT_ORDER);
 
-        let ordering = metrics_output_ordering(&schema).unwrap();
+        let orderings = metrics_output_orderings(&schema, &[]);
 
         assert_eq!(
-            ordering_column_names(&ordering),
+            ordering_column_names(&orderings[0]),
             expected_names(METRICS_SORT_ORDER)
+        );
+        let options = ordering_column_options(&orderings[0]);
+        assert!(
+            !options[..options.len() - 1]
+                .iter()
+                .any(|option| option.descending),
+            "non-timestamp metrics sort columns should be ascending"
+        );
+        assert!(
+            options.last().unwrap().descending,
+            "timestamp_secs must be advertised as descending to match the writer"
+        );
+    }
+
+    #[test]
+    fn metrics_output_ordering_prefers_sorted_series_when_declared() {
+        let schema = schema_with_columns(&[
+            "metric_name",
+            "timestamp_secs",
+            SORTED_SERIES_COLUMN,
+            "service",
+        ]);
+
+        let orderings = metrics_output_orderings(&schema, &[]);
+
+        assert_eq!(
+            ordering_column_names(&orderings[0]),
+            expected_names(&[SORTED_SERIES_COLUMN, "timestamp_secs"])
+        );
+        assert!(
+            ordering_column_options(&orderings[0])[1].descending,
+            "timestamp_secs must remain descending within sorted_series"
+        );
+        assert_eq!(
+            ordering_column_names(&orderings[1]),
+            expected_names(&["metric_name", "service"])
+        );
+    }
+
+    #[test]
+    fn metrics_output_ordering_requires_known_default_sort_fields() {
+        let schema = schema_with_columns(&[
+            "metric_name",
+            "timestamp_secs",
+            SORTED_SERIES_COLUMN,
+            "service",
+        ]);
+        let unknown_sort_split = split_with_sort_fields("");
+        let descending_tag_split =
+            split_with_sort_fields("metric_name|-service|timeseries_id|timestamp_secs/V2");
+        let default_sort_split = split_with_sort_fields(ProductType::Metrics.default_sort_fields());
+
+        assert!(
+            metrics_output_orderings(&schema, &[unknown_sort_split]).is_empty(),
+            "must not advertise ordering for old or unknown sort metadata"
+        );
+        assert!(
+            metrics_output_orderings(&schema, &[descending_tag_split]).is_empty(),
+            "must not advertise sorted_series ordering for non-default sort metadata"
+        );
+        assert!(
+            !metrics_output_orderings(&schema, &[default_sort_split]).is_empty(),
+            "default metrics sort metadata should enable the advertised ordering"
         );
     }
 }

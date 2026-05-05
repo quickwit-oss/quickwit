@@ -139,11 +139,15 @@ pub fn append_sorted_series_column(
 // Internal helpers
 // -----------------------------------------------------------------------
 
-/// A resolved key column: its ordinal position in the sort schema and
-/// its index in the RecordBatch.
+/// A resolved key column: its ordinal position in the sort schema,
+/// its index in the RecordBatch, and its sort direction.
 struct KeyColumn {
     ordinal: u8,
     batch_idx: usize,
+    /// Whether this column sorts descending. When true, the storekey
+    /// bytes for this column are bitwise-NOTed so that ascending memcmp
+    /// on the composite key gives the correct descending order.
+    descending: bool,
 }
 
 /// The resolved key schema: tag columns plus mandatory timeseries_id.
@@ -179,19 +183,25 @@ fn resolve_key_columns(
                      — it is the only guaranteed discriminator for series identity"
                 )
             })?;
+            // timeseries_id is a hash — direction is always ascending
+            // (it's a tiebreaker, not a semantic ordering).
             ts_id_column = Some(KeyColumn {
                 ordinal: ordinal as u8,
                 batch_idx: idx,
+                descending: false,
             });
             break;
         }
-        if col.name == "timestamp_secs" || col.name == "timestamp" {
+        if crate::sort_fields::is_timestamp_column_name(&col.name) {
             break;
         }
+        let is_descending = col.sort_direction
+            == quickwit_proto::sortschema::SortColumnDirection::SortDirectionDescending as i32;
         if let Ok(idx) = batch_schema.index_of(&col.name) {
             tag_columns.push(KeyColumn {
                 ordinal: ordinal as u8,
                 batch_idx: idx,
+                descending: is_descending,
             });
         }
     }
@@ -210,6 +220,12 @@ fn resolve_key_columns(
 }
 
 /// Encode a single row's sorted series key into `buf`.
+///
+/// For ascending columns, storekey bytes are written directly — memcmp
+/// gives ascending order. For descending columns, the storekey bytes for
+/// that column's (ordinal, value) pair are bitwise-NOTed so that ascending
+/// memcmp on the composite key gives the correct descending order.
+/// This is the standard ordered-code technique (see Google's OrderedCode).
 fn encode_row_key(
     tag_columns: &[KeyColumn],
     ts_id_column: &KeyColumn,
@@ -224,15 +240,29 @@ fn encode_row_key(
             continue;
         }
         let value = extract_string_value(col.as_ref(), row_idx)?;
-        storekey::encode(&mut *buf, &kc.ordinal)
-            .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
-        storekey::encode(&mut *buf, value).map_err(|e| anyhow!("storekey encode value: {}", e))?;
+        if kc.descending {
+            // Ordinal is written normally (ascending) so that null rows
+            // (which skip this column entirely) sort after non-null rows
+            // — matching the writer's nulls_first=false behavior.
+            // Only the value bytes are inverted to reverse the sort order.
+            storekey::encode(&mut *buf, &kc.ordinal)
+                .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
+            let start = buf.len();
+            storekey::encode(&mut *buf, value)
+                .map_err(|e| anyhow!("storekey encode value: {}", e))?;
+            invert_bytes(&mut buf[start..]);
+        } else {
+            storekey::encode(&mut *buf, &kc.ordinal)
+                .map_err(|e| anyhow!("storekey encode ordinal: {}", e))?;
+            storekey::encode(&mut *buf, value)
+                .map_err(|e| anyhow!("storekey encode value: {}", e))?;
+        }
     }
 
     // Append timeseries_id with its ordinal as the final discriminator.
     // timeseries_id is mandatory (validated by resolve_key_columns) and
     // non-nullable (computed deterministically at ingest), so we assert
-    // rather than silently skip.
+    // rather than silently skip. Always ascending (it's a hash tiebreaker).
     let col = batch.column(ts_id_column.batch_idx);
     debug_assert!(
         !col.is_null(row_idx),
@@ -246,6 +276,16 @@ fn encode_row_key(
         .map_err(|e| anyhow!("storekey encode timeseries_id: {}", e))?;
 
     Ok(())
+}
+
+/// Bitwise-NOT a byte slice in place, inverting the sort order for
+/// descending columns in the composite key. This is the standard
+/// ordered-code technique: if ascending bytes A < B, then !A > !B,
+/// so memcmp on the inverted bytes gives descending order.
+fn invert_bytes(bytes: &mut [u8]) {
+    for byte in bytes.iter_mut() {
+        *byte = !*byte;
+    }
 }
 
 /// Extract a string value from a column at the given row.

@@ -192,6 +192,27 @@ pub fn default_merge_policy() -> Arc<dyn MergePolicy> {
     merge_policy_from_settings(&indexing_settings)
 }
 
+/// Creates a Parquet merge policy from the index's `ParquetMergePolicyConfig`.
+#[cfg(feature = "metrics")]
+pub fn parquet_merge_policy_from_settings(
+    settings: &IndexingSettings,
+) -> Arc<dyn quickwit_parquet_engine::merge::policy::ParquetMergePolicy> {
+    let config = settings.parquet_merge_policy();
+    let engine_config = quickwit_parquet_engine::merge::policy::ParquetMergePolicyConfig {
+        merge_factor: config.merge_factor,
+        max_merge_factor: config.max_merge_factor,
+        max_merge_ops: config.max_merge_ops,
+        target_split_size_bytes: config.target_split_size_bytes,
+        maturation_period: config.maturation_period,
+        max_finalize_merge_operations: config.max_finalize_merge_operations,
+    };
+    Arc::new(
+        quickwit_parquet_engine::merge::policy::ConstWriteAmplificationParquetMergePolicy::new(
+            engine_config,
+        ),
+    )
+}
+
 pub fn nop_merge_policy() -> Arc<dyn MergePolicy> {
     Arc::new(NopMergePolicy)
 }

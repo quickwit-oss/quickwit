@@ -23,7 +23,9 @@
 pub(crate) mod factory;
 pub(crate) mod index_resolver;
 pub(crate) mod metastore_provider;
+pub(crate) mod optimizer;
 pub(crate) mod predicate;
+pub(crate) mod sketch_udf;
 pub(crate) mod table_provider;
 
 #[cfg(any(test, feature = "testsuite"))]
@@ -38,14 +40,17 @@ use datafusion::arrow;
 use datafusion::catalog::{MemorySchemaProvider, SchemaProvider, TableProviderFactory};
 use datafusion::datasource::TableProvider;
 use datafusion::error::Result as DFResult;
-use quickwit_common::is_metrics_index;
+use quickwit_common::{is_metrics_index, is_parquet_pipeline_index, is_sketches_index};
 use quickwit_df_core::{
     QuickwitRuntimePlugin, QuickwitRuntimeRegistration, QuickwitSubstraitConsumerExt,
 };
+use quickwit_parquet_engine::split::ParquetSplitKind;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 
-use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory};
+use self::factory::{METRICS_FILE_TYPE, MetricsTableProviderFactory, SKETCHES_FILE_TYPE};
 use self::index_resolver::{MetastoreIndexResolver, MetricsIndexResolver};
+use self::optimizer::SortedSeriesStreamingAggregateRule;
+use self::sketch_udf::{create_dd_quantile_udf, create_dd_sketch_udaf};
 use self::table_provider::MetricsTableProvider;
 
 /// Returns `true` when `err` wraps a [`MetastoreError::NotFound`].
@@ -99,15 +104,16 @@ async fn resolve_metrics_table_provider(
     index_resolver: &dyn MetricsIndexResolver,
     index_name: &str,
     schema: SchemaRef,
+    split_kind: ParquetSplitKind,
 ) -> DFResult<Option<Arc<dyn TableProvider>>> {
-    // Only claim indexes backed by the metrics (parquet) pipeline. This
+    // Only claim indexes backed by the parquet pipeline. This
     // remains a naming-prefix check today so sibling sources can coexist
     // without racing to claim every index.
-    if !is_metrics_index(index_name) {
+    if !is_parquet_pipeline_index(index_name) {
         return Ok(None);
     }
 
-    match index_resolver.resolve(index_name).await {
+    match index_resolver.resolve(index_name, split_kind).await {
         Ok((split_provider, index_uri)) => {
             let provider = MetricsTableProvider::new(schema, split_provider, index_uri)?;
             Ok(Some(Arc::new(provider)))
@@ -122,6 +128,16 @@ async fn resolve_metrics_table_provider(
     }
 }
 
+fn split_kind_from_index_name(index_name: &str) -> Option<ParquetSplitKind> {
+    if is_metrics_index(index_name) {
+        Some(ParquetSplitKind::Metrics)
+    } else if is_sketches_index(index_name) {
+        Some(ParquetSplitKind::Sketches)
+    } else {
+        None
+    }
+}
+
 /// Minimal 4-column schema — always present in every OSS metrics parquet file.
 fn minimal_base_schema() -> SchemaRef {
     let dict = DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8));
@@ -131,6 +147,23 @@ fn minimal_base_schema() -> SchemaRef {
         Field::new("timestamp_secs", DataType::UInt64, false),
         Field::new("value", DataType::Float64, false),
     ]))
+}
+
+/// Minimal sketch schema — always present in every DDSketch parquet file.
+fn minimal_sketch_schema() -> SchemaRef {
+    Arc::new(ArrowSchema::new(
+        quickwit_parquet_engine::schema::sketch_fields::SketchParquetField::all()
+            .iter()
+            .map(|field| field.to_arrow_field())
+            .collect::<Vec<_>>(),
+    ))
+}
+
+fn minimal_schema_for_kind(split_kind: ParquetSplitKind) -> SchemaRef {
+    match split_kind {
+        ParquetSplitKind::Metrics => minimal_base_schema(),
+        ParquetSplitKind::Sketches => minimal_sketch_schema(),
+    }
 }
 
 /// Native OSS `SchemaProvider` for metrics indexes.
@@ -168,7 +201,7 @@ impl SchemaProvider for MetricsSchemaProvider {
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 if let Ok(mut resolved_names) = resolver.list_index_names().await {
-                    resolved_names.retain(|id| is_metrics_index(id));
+                    resolved_names.retain(|id| is_parquet_pipeline_index(id));
                     names.append(&mut resolved_names);
                 }
             })
@@ -183,8 +216,16 @@ impl SchemaProvider for MetricsSchemaProvider {
             return Ok(Some(provider));
         }
 
-        resolve_metrics_table_provider(self.index_resolver.as_ref(), name, minimal_base_schema())
-            .await
+        let Some(split_kind) = split_kind_from_index_name(name) else {
+            return Ok(None);
+        };
+        resolve_metrics_table_provider(
+            self.index_resolver.as_ref(),
+            name,
+            minimal_schema_for_kind(split_kind),
+            split_kind,
+        )
+        .await
     }
 
     fn table_exist(&self, name: &str) -> bool {
@@ -209,8 +250,26 @@ impl QuickwitRuntimePlugin for MetricsDataSource {
     fn registration(&self) -> QuickwitRuntimeRegistration {
         let factory: Arc<dyn TableProviderFactory> = Arc::new(MetricsTableProviderFactory::new(
             Arc::clone(&self.index_resolver),
+            ParquetSplitKind::Metrics,
         ));
-        QuickwitRuntimeRegistration::default().with_table_factory(METRICS_FILE_TYPE, factory)
+        let sketches_factory: Arc<dyn TableProviderFactory> =
+            Arc::new(MetricsTableProviderFactory::new(
+                Arc::clone(&self.index_resolver),
+                ParquetSplitKind::Sketches,
+            ));
+        QuickwitRuntimeRegistration::default()
+            .with_session_config_setter(|config| {
+                config
+                    .options_mut()
+                    .optimizer
+                    .enable_round_robin_repartition = false;
+                config.options_mut().optimizer.repartition_file_scans = false;
+            })
+            .with_physical_optimizer_rule(Arc::new(SortedSeriesStreamingAggregateRule))
+            .with_table_factory(METRICS_FILE_TYPE, factory)
+            .with_table_factory(SKETCHES_FILE_TYPE, sketches_factory)
+            .with_udaf(Arc::new(create_dd_sketch_udaf()))
+            .with_udf(Arc::new(create_dd_quantile_udf()))
     }
 }
 
@@ -260,11 +319,20 @@ impl QuickwitSubstraitConsumerExt for MetricsDataSource {
         };
         let index_name = index_name.as_str();
 
-        // Use the producer-declared schema if available; fall back to minimal base schema.
-        let schema = schema_hint.unwrap_or_else(minimal_base_schema);
-        let provider =
-            resolve_metrics_table_provider(self.index_resolver.as_ref(), index_name, schema)
-                .await?;
+        let Some(split_kind) = split_kind_from_index_name(index_name) else {
+            return Ok(None);
+        };
+
+        // Use the producer-declared schema if available; fall back to the
+        // minimal schema for the index family.
+        let schema = schema_hint.unwrap_or_else(|| minimal_schema_for_kind(split_kind));
+        let provider = resolve_metrics_table_provider(
+            self.index_resolver.as_ref(),
+            index_name,
+            schema,
+            split_kind,
+        )
+        .await?;
         Ok(provider.map(|provider| (index_name.to_string(), provider)))
     }
 }

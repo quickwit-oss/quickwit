@@ -37,6 +37,8 @@ use quickwit_proto::types::DocUid;
 
 use super::otel_metrics::{MetricDataPoint, MetricType};
 
+const COMPUTED_TIMESERIES_ID_FIELD: &str = "timeseries_id";
+
 /// Builder for creating Arrow RecordBatch from MetricDataPoints.
 ///
 /// Accumulates data points and discovers the schema dynamically at `finish()`
@@ -70,7 +72,12 @@ impl ArrowMetricsBatchBuilder {
         let mut tag_keys: BTreeSet<&str> = BTreeSet::new();
         for dp in &self.data_points {
             for key in dp.tags.keys() {
-                tag_keys.insert(key.as_str());
+                // Exclude any user-provided tag named "timeseries_id" to prevent collision with the
+                // computed column. TODO: if user sets "timeseries_id" as a tag, we
+                // are excluding it.
+                if key != COMPUTED_TIMESERIES_ID_FIELD {
+                    tag_keys.insert(key.as_str());
+                }
             }
         }
         let sorted_tag_keys: Vec<&str> = tag_keys.into_iter().collect();
@@ -86,9 +93,11 @@ impl ArrowMetricsBatchBuilder {
         fields.push(Field::new("metric_type", DataType::UInt8, false));
         fields.push(Field::new("timestamp_secs", DataType::UInt64, false));
         fields.push(Field::new("value", DataType::Float64, false));
-        // TODO: customer could submit a timeseries_id tag, and I don't think we want to explicitly
-        // reserve it.
-        fields.push(Field::new("timeseries_id", DataType::Int64, false));
+        fields.push(Field::new(
+            COMPUTED_TIMESERIES_ID_FIELD,
+            DataType::Int64,
+            false,
+        ));
 
         for &tag_key in &sorted_tag_keys {
             fields.push(Field::new(
@@ -132,11 +141,9 @@ impl ArrowMetricsBatchBuilder {
             // TODO: can we not have to compute the timeseries for every point? especially with
             // compaction, there may be many points with the same tags, in the same
             // batch.
-            timeseries_id_builder.append_value(compute_timeseries_id(
-                &dp.metric_name,
-                dp.metric_type as u8,
-                &dp.tags,
-            ));
+            let timeseries_id =
+                compute_metric_timeseries_id(&dp.metric_name, dp.metric_type, &dp.tags);
+            timeseries_id_builder.append_value(timeseries_id);
 
             // Only touch builders for tags this data point has.
             for (tag_key, tag_val) in &dp.tags {
@@ -183,6 +190,22 @@ impl ArrowMetricsBatchBuilder {
     pub fn is_empty(&self) -> bool {
         self.data_points.is_empty()
     }
+}
+
+// Computes timeseries_id for a metric data point. If the user provided a timeseries_id tag, we will
+// remove it.
+fn compute_metric_timeseries_id(
+    metric_name: &str,
+    metric_type: MetricType,
+    tags: &HashMap<String, String>,
+) -> i64 {
+    if !tags.contains_key(COMPUTED_TIMESERIES_ID_FIELD) {
+        return compute_timeseries_id(metric_name, metric_type as u8, tags);
+    }
+
+    let mut filtered_tags = tags.clone();
+    filtered_tags.remove(COMPUTED_TIMESERIES_ID_FIELD);
+    compute_timeseries_id(metric_name, metric_type as u8, &filtered_tags)
 }
 
 /// Error type for Arrow IPC operations.
@@ -409,6 +432,35 @@ mod tests {
         assert_eq!(batch.num_rows(), 1);
         // 5 fixed columns + 9 tag columns
         assert_eq!(batch.num_columns(), 14);
+    }
+
+    #[test]
+    fn test_arrow_batch_filters_user_timeseries_id_tag() {
+        let mut dp = make_test_data_point();
+        dp.tags
+            .insert("timeseries_id".to_string(), "user-provided".to_string());
+
+        let mut builder = ArrowMetricsBatchBuilder::with_capacity(1);
+        builder.append(dp);
+
+        let batch = builder.finish();
+        let schema = batch.schema();
+        assert_eq!(
+            schema
+                .fields()
+                .iter()
+                .filter(|field| field.name().as_str() == "timeseries_id")
+                .count(),
+            1
+        );
+        assert_eq!(schema.index_of("timeseries_id").unwrap(), 4);
+        assert!(schema.index_of("service").is_ok());
+
+        quickwit_parquet_engine::sorted_series::append_sorted_series_column(
+            quickwit_parquet_engine::table_config::ProductType::Metrics.default_sort_fields(),
+            &batch,
+        )
+        .unwrap();
     }
 
     #[test]

@@ -594,7 +594,9 @@ This section describes indexing settings for a given index.
 | ------------- | ------------- | ------------- |
 | `commit_timeout_secs`      | Maximum number of seconds before committing a split since its creation.   | `60` |
 | `split_num_docs_target` | Target number of docs per split.   | `10000000` |
-| `merge_policy` | Describes the strategy used to trigger split merge operations (see [Merge policies](#merge-policies) section below). |
+| `merge_policy` | Describes the strategy used to trigger split merge operations for logs/traces (see [Merge policies](#merge-policies) section below). |
+| `parquet_merge_policy` | Describes the merge policy for Parquet (metrics/sketches) splits (see [Parquet merge policy](#parquet-merge-policy) section below). |
+| `parquet_indexing` | Parquet-specific indexing settings: sort schema, window duration (see [Parquet indexing settings](#parquet-indexing-settings) section below). |
 | `resources.heap_size`      | Indexer heap size per source per index.   | `2000000000` |
 | `docstore_compression_level` | Level of compression used by zstd for the docstore. Lower values may increase ingest speed, at the cost of index size | `8` |
 | `docstore_blocksize` | Size of blocks in the docstore, in bytes. Lower values may improve doc retrieval speed, at the cost of index size | `1000000` |
@@ -687,6 +689,86 @@ indexing_settings:
         type: "no_merge"
 ```
 
+### Parquet indexing settings
+
+*For indexes using the Parquet indexing pipeline (metrics, sketches).*
+
+These settings control how the Parquet pipeline sorts, windows, and writes incoming data. They affect both ingest-time performance and downstream query/compaction efficiency.
+
+```yaml
+version: 0.7
+index_id: "my-metrics-index"
+# ...
+indexing_settings:
+  parquet_indexing:
+    sort_fields: "metric_name|service|env|host|timeseries_id|timestamp_secs/V2"
+    window_duration_secs: 900
+```
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `sort_fields` | Sort schema for row ordering in Parquet files (see syntax below). When omitted, the product-type default is used. | `metric_name\|service\|env\|datacenter\|region\|host\|timeseries_id\|timestamp_secs/V2` |
+| `window_duration_secs` | Time window duration in seconds for split partitioning. Must evenly divide 3600. Larger values = fewer splits but coarser time pruning. | `900` (15 minutes) |
+
+#### Sort schema syntax
+
+The sort schema uses pipe-delimited column names with a `/V2` version suffix:
+
+```text
+column1|column2|...|timestamp_secs/V2
+```
+
+**Column types** are inferred from name suffixes:
+- `__s` → string (e.g., `custom_tag__s`)
+- `__i` → int64 (e.g., `priority__i`)
+- Well-known names like `metric_name`, `service`, `env`, `host`, `timestamp_secs`, and `timeseries_id` have built-in type mappings and don't need suffixes.
+
+**Sort direction** defaults to ascending for most columns and descending for timestamp columns. Override with `+` (ascending) or `-` (descending) as a prefix or suffix on the column name:
+
+```text
+# Explicit descending timestamp
+metric_name|host|-timestamp_secs/V2
+
+# Ascending host (default), descending timestamp (default)
+metric_name|host|timestamp_secs/V2
+```
+
+**How the sort schema affects behavior:**
+- **Query pruning**: queries filtering on leading columns (e.g., `metric_name`) can skip entire splits whose row key ranges don't match.
+- **Compression**: grouping similar values together (e.g., all rows for the same metric name) improves columnar compression ratios.
+- **Compaction scope**: splits with different sort schemas are never merged together. Changing the sort schema on an existing index creates a new compaction scope — old splits are not re-sorted.
+
+**The `&` marker** (advanced) sets the LSM comparison cutoff: columns after `&` are used for sort order but not for compaction locality decisions. For example, `metric_name|&host|timestamp_secs/V2` sorts by metric_name then host, but only metric_name determines which splits can be merged.
+
+#### Parquet merge policy
+
+*For indexes using the Parquet indexing pipeline (metrics, sketches).*
+
+The Parquet merge policy controls how Parquet splits within a compaction scope (same time window, partition, and sort schema) are merged. It uses a constant write amplification strategy: splits at the same merge level are greedily accumulated until reaching `max_merge_factor` or `target_split_size_bytes`.
+
+```yaml
+version: 0.7
+index_id: "my-metrics-index"
+# ...
+indexing_settings:
+  parquet_merge_policy:
+    merge_factor: 10
+    max_merge_factor: 12
+    max_merge_ops: 4
+    target_split_size_bytes: 268435456
+    maturation_period: 48h
+    max_finalize_merge_operations: 3
+```
+
+
+| Variable      | Description   | Default value |
+| ------------- | ------------- | ------------- |
+| `merge_factor` | Minimum number of splits to trigger a merge. | `10` |
+| `max_merge_factor` | Maximum number of splits in a single merge operation. | `12` |
+| `max_merge_ops` | Maximum number of merges a split can undergo before becoming mature. Bounds total write amplification. | `4` |
+| `target_split_size_bytes` | Target size for merged output splits in bytes. Merges trigger when accumulated bytes reach this threshold, even if `merge_factor` is not reached. | `268435456` (256 MiB) |
+| `maturation_period` | Duration after creation when a split becomes mature (never merged again). | `48h` |
+| `max_finalize_merge_operations` | *(advanced)* Maximum number of merge operations emitted during cold-window finalization at pipeline shutdown. Set to `0` to disable. | `3` |
 
 
 ### Indexer memory usage
