@@ -329,9 +329,9 @@ macro_rules! gauge {
             parent: $parent,
             metric_info: $parent.__info(),
             // Seed with parent hash, fold in each (name, value) pair.
-            hash: label_values.hash($parent.get_hash()),
+            hash: label_values.__hash($parent.get_hash()),
             label_count: label_values.len(),
-            labels_iter: label_values.to_labels()
+            labels_iter: label_values.__to_labels()
         )
     }};
 }

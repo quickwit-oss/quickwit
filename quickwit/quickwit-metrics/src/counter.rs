@@ -276,9 +276,9 @@ macro_rules! counter {
             register_fn: $crate::__counter_get_or_register,
             parent: $parent,
             metric_info: $parent.__info(),
-            hash: label_values.hash($parent.get_hash()),
+            hash: label_values.__hash($parent.get_hash()),
             label_count: label_values.len(),
-            labels_iter: label_values.to_labels()
+            labels_iter: label_values.__to_labels()
         )
     }};
 }

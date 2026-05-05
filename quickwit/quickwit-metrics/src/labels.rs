@@ -27,6 +27,10 @@ use crate::__key_hash;
 /// Each value is converted individually via `Into<SharedString>`, so you
 /// can freely mix `&'static str`, `String`, `Cow<'static, str>`, etc.
 ///
+/// Use this macro when the same label names are shared across multiple
+/// metrics or call sites. For single-use labels, prefer the inline
+/// `"key" => value` syntax directly in the metric macro.
+///
 /// # Example
 ///
 /// ```rust,ignore
@@ -38,7 +42,9 @@ use crate::__key_hash;
 /// // Mixed types — &'static str and String — just work:
 /// let lv = label_values!(GC_LABELS, ["success", split_type.to_string()]);
 ///
-/// counter!(parent: *GC_COUNTER, labels: lv).increment(1);
+/// // Reuse the same LabelValues across multiple metrics:
+/// counter!(parent: GC_COUNTER, labels: lv).increment(1);
+/// gauge!(parent: GC_GAUGE, labels: lv).set(42.0);
 /// ```
 #[macro_export]
 macro_rules! label_values {
@@ -91,10 +97,10 @@ impl<const N: usize> Labels<N> {
 
 /// Concrete label names + values produced by [`label_values!`].
 ///
-/// Passed by reference (`&LabelValues<N>`) to the `labels:` macro arm so
-/// a single instance can be reused across multiple metric calls. Cloning
-/// of the inner `SharedString` values only happens on the cold path
-/// (global DashMap miss).
+/// The `labels:` macro arm borrows the value internally, so a single
+/// instance can be reused across multiple metric calls. Cloning of the
+/// inner `SharedString` values only happens on the cold path (cache miss
+/// in the thread-local or global DashMap).
 #[derive(Clone)]
 pub struct LabelValues<const N: usize> {
     names: [&'static str; N],
@@ -102,11 +108,11 @@ pub struct LabelValues<const N: usize> {
 }
 
 impl<const N: usize> LabelValues<N> {
-    /// Computes the order-independent cache-key hash, seeded with a
-    /// parent hash so the result is fully composable:
-    /// `hash(parent, [A,B]) == __key_hash(parent, [A,B])`.
+    /// Computes an order-independent cache-key hash by folding per-label
+    /// hashes into `seed` via commutative wrapping addition, so the result
+    /// is fully composable with the parent's hash.
     #[doc(hidden)]
-    pub fn hash(&self, seed: u64) -> u64 {
+    pub fn __hash(&self, seed: u64) -> u64 {
         __key_hash(
             seed,
             self.names
@@ -119,7 +125,7 @@ impl<const N: usize> LabelValues<N> {
     /// Builds `metrics::Label`s by cloning the stored names and values.
     /// Only called on the cold path (global DashMap miss).
     #[doc(hidden)]
-    pub fn to_labels(&self) -> impl Iterator<Item = metrics::Label> + '_ {
+    pub fn __to_labels(&self) -> impl Iterator<Item = metrics::Label> + '_ {
         self.names
             .iter()
             .zip(self.values.iter())
