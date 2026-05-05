@@ -32,7 +32,7 @@ mod common;
 mod metrics_splits;
 
 use common::{TestSandbox, create_metrics_index};
-use metrics_splits::publish_split;
+use metrics_splits::{publish_split, publish_split_with_tag_metadata};
 
 // ── Setup ──────────────────────────────────────────────────────────
 
@@ -480,6 +480,176 @@ async fn test_in_list_tag_filter_returns_all_matching_rows() {
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_writer_zonemap_metadata_pruning_skips_unreadable_nonmatching_split() {
+    use quickwit_datafusion::test_utils::make_batch_with_tags;
+
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
+
+    let index_uid =
+        create_metrics_index(&metastore, "test-tag-metadata-prune", data_dir.path()).await;
+    // Publish without exact low-cardinality tag metadata. If this query succeeds
+    // after deleting staging.parquet, pruning came from writer-generated
+    // zonemap_regexes rather than exact tag sets.
+    publish_split_with_tag_metadata(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "prod",
+        &make_batch_with_tags(
+            "cpu.usage",
+            &[100, 200],
+            &[1.0, 2.0],
+            Some("web"),
+            Some("prod"),
+            None,
+            None,
+            None,
+        ),
+        false,
+    )
+    .await;
+    publish_split_with_tag_metadata(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "staging",
+        &make_batch_with_tags(
+            "cpu.usage",
+            &[100, 200],
+            &[10.0, 20.0],
+            Some("web"),
+            Some("staging"),
+            None,
+            None,
+            None,
+        ),
+        false,
+    )
+    .await;
+
+    std::fs::remove_file(data_dir.path().join("staging.parquet"))
+        .expect("remove nonmatching staging parquet file");
+
+    let sql = r#"
+        CREATE OR REPLACE EXTERNAL TABLE "test-tag-metadata-prune" (
+          metric_name VARCHAR NOT NULL, metric_type TINYINT,
+          timestamp_secs BIGINT NOT NULL, value DOUBLE NOT NULL, service VARCHAR, env VARCHAR
+        ) STORED AS metrics LOCATION 'test-tag-metadata-prune';
+        SELECT COUNT(*) AS cnt, SUM(value) AS total
+        FROM "test-tag-metadata-prune"
+        WHERE env = 'prod'"#;
+    let batches = run_sql(&builder, sql).await;
+    assert_eq!(total_rows(&batches), 1);
+    let cnt = batches[0]
+        .column_by_name("cnt")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<arrow::array::Int64Array>()
+        .unwrap()
+        .value(0);
+    assert_eq!(cnt, 2);
+    let total = batches[0]
+        .column_by_name("total")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .unwrap()
+        .value(0);
+    assert!(
+        (total - 3.0).abs() < 0.01,
+        "expected only prod split values to be scanned"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_writer_zonemap_prefix_like_pruning_skips_unreadable_nonmatching_split() {
+    use quickwit_datafusion::test_utils::make_batch_with_tags;
+
+    let sandbox = start_sandbox().await;
+    let metastore = sandbox.metastore.clone();
+    let data_dir = &sandbox.data_dir;
+    let builder = session_builder(&sandbox);
+
+    let index_uid =
+        create_metrics_index(&metastore, "test-tag-prefix-like-prune", data_dir.path()).await;
+    // Publish without exact low-cardinality tag metadata. If this query succeeds
+    // after deleting host-08.parquet, pruning came from writer-generated
+    // zonemap_regexes rather than exact tag sets.
+    publish_split_with_tag_metadata(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "host-07",
+        &make_batch_with_tags(
+            "cpu.usage",
+            &[100, 200],
+            &[1.0, 2.0],
+            None,
+            None,
+            None,
+            None,
+            Some("ID-0701"),
+        ),
+        false,
+    )
+    .await;
+    publish_split_with_tag_metadata(
+        &metastore,
+        &index_uid,
+        data_dir.path(),
+        "host-08",
+        &make_batch_with_tags(
+            "cpu.usage",
+            &[100, 200],
+            &[10.0, 20.0],
+            None,
+            None,
+            None,
+            None,
+            Some("ID-0801"),
+        ),
+        false,
+    )
+    .await;
+
+    std::fs::remove_file(data_dir.path().join("host-08.parquet"))
+        .expect("remove nonmatching host-08 parquet file");
+
+    let sql = r#"
+        CREATE OR REPLACE EXTERNAL TABLE "test-tag-prefix-like-prune" (
+          metric_name VARCHAR NOT NULL, metric_type TINYINT,
+          timestamp_secs BIGINT NOT NULL, value DOUBLE NOT NULL, host VARCHAR
+        ) STORED AS metrics LOCATION 'test-tag-prefix-like-prune';
+        SELECT COUNT(*) AS cnt, SUM(value) AS total
+        FROM "test-tag-prefix-like-prune"
+        WHERE host LIKE 'ID-07%'"#;
+    let batches = run_sql(&builder, sql).await;
+    assert_eq!(total_rows(&batches), 1);
+    let cnt = batches[0]
+        .column_by_name("cnt")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<arrow::array::Int64Array>()
+        .unwrap()
+        .value(0);
+    assert_eq!(cnt, 2);
+    let total = batches[0]
+        .column_by_name("total")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .unwrap()
+        .value(0);
+    assert!(
+        (total - 3.0).abs() < 0.01,
+        "expected only host-07 split values to be scanned"
+    );
+}
+
 /// Demonstrates the `sum:metric{filter} by {groups}.rollup(agg, interval)` pattern
 /// over wide-format parquet data — no context/points JOIN needed.
 ///
@@ -680,8 +850,9 @@ async fn test_rollup_nested_aggregation() {
         "expected scan/partial stage parallelism to stay split-bounded:\n{plan_str}"
     );
     assert!(
-        plan_str.contains("file_groups={4 groups"),
-        "expected one scan partition per split, not byte-range split partitions:\n{plan_str}"
+        plan_str.contains("file_groups={3 groups"),
+        "expected one scan partition per matching split after metadata pruning, not byte-range \
+         split partitions:\n{plan_str}"
     );
 
     let batches = df.collect().await.unwrap();
