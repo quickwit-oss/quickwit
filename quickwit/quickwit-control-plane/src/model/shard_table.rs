@@ -467,12 +467,12 @@ impl ShardTable {
             let labels = label_values!(names: INDEX_ID_LABELS, index_label.to_string());
             gauge!(
                 parent: OPEN_SHARDS,
-                labels: labels,
+                labels: [labels],
             )
             .set(shard_stats.num_open_shards as f64);
             gauge!(
                 parent: CLOSED_SHARDS,
-                labels: labels,
+                labels: [labels],
             )
             .set(shard_stats.num_closed_shards as f64);
             return;
@@ -491,12 +491,12 @@ impl ShardTable {
         let labels = label_values!(names: INDEX_ID_LABELS, index_label.to_string());
         gauge!(
             parent: OPEN_SHARDS,
-            labels: labels,
+            labels: [labels],
         )
         .set(num_open_shards as f64);
         gauge!(
             parent: CLOSED_SHARDS,
-            labels: labels,
+            labels: [labels],
         )
         .set(num_closed_shards as f64);
     }

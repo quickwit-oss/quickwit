@@ -42,7 +42,7 @@ macro_rules! metrics {
         let labels = label_values!(names: OPERATION_INDEX_LABELS, operation, index);
         counter!(
             parent: REQUESTS_TOTAL,
-            labels: labels,
+            labels: [labels],
         )
         .increment(1);
         let (res, is_error) = match $expr {
@@ -52,7 +52,7 @@ macro_rules! metrics {
             err @ Err(_) => {
                 counter!(
                     parent: REQUEST_ERRORS_TOTAL,
-                    labels: labels,
+                    labels: [labels],
                 )
                 .increment(1);
                 (err, "true")
@@ -61,7 +61,7 @@ macro_rules! metrics {
         let elapsed = start.elapsed().as_secs_f64();
         histogram!(
             parent: REQUEST_DURATION_SECONDS,
-            labels: label_values!(names: OPERATION_INDEX_ERROR_LABELS, operation, index, is_error),
+            labels: [label_values!(names: OPERATION_INDEX_ERROR_LABELS, operation, index, is_error)],
         )
         .record(elapsed);
 

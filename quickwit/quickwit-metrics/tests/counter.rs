@@ -218,8 +218,7 @@ fn label_composition_two_labels() {
         const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
         let child = counter!(
             parent: parent,
-            labels: label_values!(names: REGION, "us-east"),
-                    label_values!(names: STATUS, "ok"),
+            labels: [label_values!(names: REGION, "us-east"), label_values!(names: STATUS, "ok")],
         );
         child.increment(3);
     });
@@ -249,9 +248,7 @@ fn label_composition_three_labels() {
         );
         let child = counter!(
             parent: parent,
-            labels: labels!("env" => "staging"),
-                    labels!("region" => "eu"),
-                    labels!("az" => "eu-1a"),
+            labels: [labels!("env" => "staging"), labels!("region" => "eu"), labels!("az" => "eu-1a")],
         );
         child.increment(7);
     });
@@ -284,12 +281,11 @@ fn label_composition_same_hash_as_single() {
 
         let via_compose = counter!(
             parent: parent,
-            labels: label_values!(names: REGION, "us"),
-                    label_values!(names: STATUS, "ok"),
+            labels: [label_values!(names: REGION, "us"), label_values!(names: STATUS, "ok")],
         );
         let via_single = counter!(
             parent: parent,
-            labels: labels!("region" => "us", "status" => "ok"),
+            labels: [labels!("region" => "us", "status" => "ok")],
         );
         via_compose.increment(1);
         via_single.increment(2);

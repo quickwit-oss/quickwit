@@ -111,8 +111,7 @@ fn label_composition_two_labels() {
         const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
         let child = histogram!(
             parent: parent,
-            labels: label_values!(names: REGION, "us-east"),
-                    label_values!(names: STATUS, "ok"),
+            labels: [label_values!(names: REGION, "us-east"), label_values!(names: STATUS, "ok")],
         );
         child.record(2.5);
     });
@@ -149,9 +148,7 @@ fn label_composition_three_labels() {
         );
         let child = histogram!(
             parent: parent,
-            labels: labels!("env" => "staging"),
-                    labels!("region" => "eu"),
-                    labels!("az" => "eu-1a"),
+            labels: [labels!("env" => "staging"), labels!("region" => "eu"), labels!("az" => "eu-1a")],
         );
         child.record(0.1);
     });

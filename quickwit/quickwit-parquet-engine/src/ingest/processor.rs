@@ -18,7 +18,7 @@ use std::io::Cursor;
 
 use arrow::ipc::reader::StreamReader;
 use arrow::record_batch::RecordBatch;
-use quickwit_metrics::counter;
+use quickwit_metrics::{counter, labels};
 use tracing::{debug, instrument, warn};
 
 use crate::metrics::{ERRORS_TOTAL, INGEST_BYTES_TOTAL};
@@ -63,10 +63,12 @@ impl ParquetIngestProcessor {
     /// Returns error if IPC is malformed or schema doesn't match.
     #[instrument(skip(self, ipc_bytes), fields(bytes_len = ipc_bytes.len()))]
     pub fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
+        let labels_kind = labels!("kind" => "points");
+        let labels_operation = labels!("operation" => "ingest");
         // Record bytes ingested
         counter!(
             parent: INGEST_BYTES_TOTAL,
-            "kind" => "points",
+            labels: [labels_kind],
         )
         .increment(ipc_bytes.len() as u64);
 
@@ -75,8 +77,7 @@ impl ParquetIngestProcessor {
             Err(e) => {
                 counter!(
                     parent: ERRORS_TOTAL,
-                    "operation" => "ingest",
-                    "kind" => "points",
+                    labels: [labels_kind, labels_operation],
                 )
                 .increment(1);
                 return Err(e);
@@ -86,8 +87,7 @@ impl ParquetIngestProcessor {
         if let Err(e) = self.validate_schema(&batch) {
             counter!(
                 parent: ERRORS_TOTAL,
-                "operation" => "ingest",
-                "kind" => "points",
+                labels: [labels_kind, labels_operation],
             )
             .increment(1);
             return Err(e);

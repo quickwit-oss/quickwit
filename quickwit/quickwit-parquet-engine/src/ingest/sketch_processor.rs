@@ -16,7 +16,7 @@
 
 use arrow::array::AsArray;
 use arrow::record_batch::RecordBatch;
-use quickwit_metrics::counter;
+use quickwit_metrics::{counter, labels};
 use tracing::{debug, instrument, warn};
 
 use super::processor::IngestError;
@@ -42,42 +42,30 @@ impl SketchParquetIngestProcessor {
     /// sketch arrays are inconsistent.
     #[instrument(skip(self, ipc_bytes), fields(bytes_len = ipc_bytes.len()))]
     pub fn process_ipc(&self, ipc_bytes: &[u8]) -> Result<RecordBatch, IngestError> {
-        counter!(
-            parent: INGEST_BYTES_TOTAL,
-            "kind" => "sketches",
-        )
-        .increment(ipc_bytes.len() as u64);
+        let labels_kind = labels!("kind" => "sketches");
+        let labels_operation = labels!("operation" => "ingest");
+
+        counter!(parent: INGEST_BYTES_TOTAL, labels: [labels_kind])
+            .increment(ipc_bytes.len() as u64);
 
         let batch = match super::processor::ipc_to_record_batch(ipc_bytes) {
             Ok(batch) => batch,
             Err(err) => {
-                counter!(
-                    parent: ERRORS_TOTAL,
-                    "operation" => "ingest",
-                    "kind" => "sketches",
-                )
-                .increment(1);
+                counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation])
+                    .increment(1);
                 return Err(err);
             }
         };
 
         if let Err(err) = self.validate_schema(&batch) {
-            counter!(
-                parent: ERRORS_TOTAL,
-                "operation" => "ingest",
-                "kind" => "sketches",
-            )
-            .increment(1);
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation])
+                .increment(1);
             return Err(err);
         }
 
         if let Err(err) = self.validate_sketch_arrays(&batch) {
-            counter!(
-                parent: ERRORS_TOTAL,
-                "operation" => "ingest",
-                "kind" => "sketches",
-            )
-            .increment(1);
+            counter!(parent: ERRORS_TOTAL, labels: [labels_kind, labels_operation])
+                .increment(1);
             return Err(err);
         }
 

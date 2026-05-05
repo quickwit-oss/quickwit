@@ -708,11 +708,11 @@ impl OtlpGrpcTracesService {
         let labels = label_values!(names: OTLP_GRPC_LABELS, "trace", index_id, "grpc", "protobuf");
         counter!(
             parent: INGESTED_SPANS_TOTAL,
-            labels: labels,
+            labels: [labels],
         )
         .increment(num_spans);
         counter!(parent: INGESTED_BYTES_TOTAL,
-            labels: labels
+            labels: [labels],
         )
         .increment(num_bytes);
 
@@ -791,7 +791,7 @@ impl OtlpGrpcTracesService {
         );
         counter!(
             parent: REQUESTS_TOTAL,
-            labels: labels,
+            labels: [labels],
         )
         .increment(1);
         let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
@@ -799,7 +799,7 @@ impl OtlpGrpcTracesService {
             err @ Err(_) => {
                 counter!(
                     parent: REQUEST_ERRORS_TOTAL,
-                    labels: labels,
+                    labels: [labels],
                 )
                 .increment(1);
                 (err, "true")
@@ -808,10 +808,10 @@ impl OtlpGrpcTracesService {
         let elapsed = start.elapsed().as_secs_f64();
         histogram!(
             parent: REQUEST_DURATION_SECONDS,
-            labels: label_values!(
+            labels: [label_values!(
                 names: OTLP_GRPC_ERROR_LABELS,
                 "trace", index_id, "grpc", "protobuf", is_error
-            ),
+            )],
         )
         .record(elapsed);
 

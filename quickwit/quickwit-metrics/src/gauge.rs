@@ -327,7 +327,7 @@ macro_rules! gauge {
     // __bind_labels! tt-muncher — zero allocation on the hot path.
     (
         parent: $parent:expr,
-        labels: $($labels:expr),+ $(,)?
+        labels: [$($labels:expr),+ $(,)?] $(,)?
     ) => {{
         $crate::__bind_labels!(
             metric_type: $crate::Gauge,

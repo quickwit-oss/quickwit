@@ -335,7 +335,7 @@ impl Ingester {
                 );
                 counter!(
                     parent: RESET_SHARDS_OPERATIONS_TOTAL,
-                    labels: label_values!(names: STATUS, "success"),
+                    labels: [label_values!(names: STATUS, "success")],
                 )
                 .increment(1);
 
@@ -347,7 +347,7 @@ impl Ingester {
 
                 counter!(
                     parent: RESET_SHARDS_OPERATIONS_TOTAL,
-                    labels: label_values!(names: STATUS, "error"),
+                    labels: [label_values!(names: STATUS, "error")],
                 )
                 .increment(1);
             }
@@ -356,7 +356,7 @@ impl Ingester {
 
                 counter!(
                     parent: RESET_SHARDS_OPERATIONS_TOTAL,
-                    labels: label_values!(names: STATUS, "timeout"),
+                    labels: [label_values!(names: STATUS, "timeout")],
                 )
                 .increment(1);
             }
@@ -573,12 +573,12 @@ impl Ingester {
                 if valid_doc_batch.is_empty() {
                     counter!(
                         parent: DOCS_TOTAL,
-                        labels: label_values!(names: VALIDITY, "invalid"),
+                        labels: [label_values!(names: VALIDITY, "invalid")],
                     )
                     .increment(parse_failures.len() as u64);
                     counter!(
                         parent: DOCS_BYTES_TOTAL,
-                        labels: label_values!(names: VALIDITY, "invalid"),
+                        labels: [label_values!(names: VALIDITY, "invalid")],
                     )
                     .increment(original_batch_num_bytes);
                     let persist_success = PersistSuccess {
@@ -596,23 +596,23 @@ impl Ingester {
 
                 counter!(
                     parent: DOCS_TOTAL,
-                    labels: label_values!(names: VALIDITY, "valid"),
+                    labels: [label_values!(names: VALIDITY, "valid")],
                 )
                 .increment(valid_doc_batch.num_docs() as u64);
                 counter!(
                     parent: DOCS_BYTES_TOTAL,
-                    labels: label_values!(names: VALIDITY, "valid"),
+                    labels: [label_values!(names: VALIDITY, "valid")],
                 )
                 .increment(valid_doc_batch.num_bytes() as u64);
                 if !parse_failures.is_empty() {
                     counter!(
                         parent: DOCS_TOTAL,
-                        labels: label_values!(names: VALIDITY, "invalid"),
+                        labels: [label_values!(names: VALIDITY, "invalid")],
                     )
                     .increment(parse_failures.len() as u64);
                     counter!(
                         parent: DOCS_BYTES_TOTAL,
-                        labels: label_values!(names: VALIDITY, "invalid"),
+                        labels: [label_values!(names: VALIDITY, "invalid")],
                     )
                     .increment(original_batch_num_bytes - valid_doc_batch.num_bytes() as u64);
                 }

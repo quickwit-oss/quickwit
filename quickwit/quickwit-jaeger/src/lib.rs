@@ -422,20 +422,20 @@ impl JaegerService {
 
             counter!(
                 parent: FETCHED_TRACES_TOTAL,
-                labels: label_values!(
+                labels: [label_values!(
                     names: OPERATION_INDEX_LABELS,
                     operation_name, OTEL_TRACES_INDEX_ID
-                ),
+                )],
             )
             .increment(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
             histogram!(
                 parent: REQUEST_DURATION_SECONDS,
-                labels: label_values!(
+                labels: [label_values!(
                     names: OPERATION_INDEX_ERROR_LABELS,
                     operation_name, OTEL_TRACES_INDEX_ID, "false"
-                ),
+                )],
             )
             .record(elapsed);
         });
@@ -446,20 +446,20 @@ impl JaegerService {
 pub(crate) fn record_error(operation_name: &'static str, request_start: Instant) {
     counter!(
         parent: REQUEST_ERRORS_TOTAL,
-        labels: label_values!(
+        labels: [label_values!(
             names: OPERATION_INDEX_LABELS,
             operation_name, OTEL_TRACES_INDEX_ID
-        ),
+        )],
     )
     .increment(1);
 
     let elapsed = request_start.elapsed().as_secs_f64();
     histogram!(
         parent: REQUEST_DURATION_SECONDS,
-        labels: label_values!(
+        labels: [label_values!(
             names: OPERATION_INDEX_ERROR_LABELS,
             operation_name, OTEL_TRACES_INDEX_ID, "true"
-        ),
+        )],
     )
     .record(elapsed);
 }
@@ -469,8 +469,8 @@ pub(crate) fn record_send(operation_name: &'static str, num_spans: usize, num_by
         names: OPERATION_INDEX_LABELS,
         operation_name, OTEL_TRACES_INDEX_ID
     );
-    counter!(parent: FETCHED_SPANS_TOTAL, labels: labels).increment(num_spans as u64);
-    counter!(parent: TRANSFERRED_BYTES_TOTAL, labels: labels).increment(num_bytes as u64);
+    counter!(parent: FETCHED_SPANS_TOTAL, labels: [labels]).increment(num_spans as u64);
+    counter!(parent: TRANSFERRED_BYTES_TOTAL, labels: [labels]).increment(num_bytes as u64);
 }
 
 #[allow(deprecated)]

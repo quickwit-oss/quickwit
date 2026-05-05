@@ -294,11 +294,11 @@ impl DocProcessorCounter {
             num_docs: Default::default(),
             num_docs_metric: counter!(
                 parent: PROCESSED_DOCS_TOTAL,
-                labels: labels,
+                labels: [labels],
             ),
             num_bytes_metric: counter!(
                 parent: PROCESSED_BYTES,
-                labels: labels,
+                labels: [labels],
             ),
         }
     }

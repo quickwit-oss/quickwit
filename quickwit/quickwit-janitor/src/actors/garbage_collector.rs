@@ -23,7 +23,7 @@ use quickwit_common::is_parquet_pipeline_index;
 use quickwit_common::shared_consts::split_deletion_grace_period;
 use quickwit_index_management::{GcMetrics, run_garbage_collect, run_parquet_garbage_collect};
 use quickwit_metastore::ListIndexesMetadataResponseExt;
-use quickwit_metrics::counter;
+use quickwit_metrics::{counter, label_names, label_values};
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -191,7 +191,12 @@ impl GarbageCollector {
         }
 
         // Run Tantivy GC
+        let labels_result = label_names!("result");
+        let labels_split = label_names!("split_type");
+
         if !tantivy_storages.is_empty() {
+            let labels_split = label_values!(names: labels_split, "tantivy");
+
             let tantivy_start = Instant::now();
             let gc_res = run_garbage_collect(
                 tantivy_storages,
@@ -207,7 +212,7 @@ impl GarbageCollector {
             let tantivy_run_duration = tantivy_start.elapsed().as_secs();
             counter!(
                 parent: GC_SECONDS_TOTAL,
-                "split_type" => "tantivy",
+                labels: [labels_split],
             )
             .increment(tantivy_run_duration);
 
@@ -216,8 +221,7 @@ impl GarbageCollector {
                     self.counters.num_successful_gc_run += 1;
                     counter!(
                         parent: GC_RUNS,
-                        "result" => "success",
-                        "split_type" => "tantivy",
+                        labels: [labels_split, label_values!(names: labels_result, "success")],
                     )
                     .increment(1);
                     GcRunResult {
@@ -240,8 +244,7 @@ impl GarbageCollector {
                     self.counters.num_failed_gc_run += 1;
                     counter!(
                         parent: GC_RUNS,
-                        "result" => "error",
-                        "split_type" => "tantivy",
+                        labels: [labels_split, label_values!(names: labels_result, "error")],
                     )
                     .increment(1);
                     error!(error=?error, "failed to run garbage collection");
@@ -253,6 +256,8 @@ impl GarbageCollector {
 
         // Run Parquet GC
         if !parquet_storages.is_empty() {
+            let labels_split = label_values!(names: labels_split, "parquet");
+
             let parquet_start = Instant::now();
             let gc_res = run_parquet_garbage_collect(
                 parquet_storages,
@@ -268,7 +273,7 @@ impl GarbageCollector {
             let parquet_run_duration = parquet_start.elapsed().as_secs();
             counter!(
                 parent: GC_SECONDS_TOTAL,
-                "split_type" => "parquet",
+                labels: [labels_split],
             )
             .increment(parquet_run_duration);
 
@@ -277,8 +282,7 @@ impl GarbageCollector {
                     self.counters.num_successful_gc_run += 1;
                     counter!(
                         parent: GC_RUNS,
-                        "result" => "success",
-                        "split_type" => "parquet",
+                        labels: [labels_split, label_values!(names: labels_result, "success")],
                     )
                     .increment(1);
                     GcRunResult {
@@ -297,8 +301,7 @@ impl GarbageCollector {
                     self.counters.num_failed_gc_run += 1;
                     counter!(
                         parent: GC_RUNS,
-                        "result" => "error",
-                        "split_type" => "parquet",
+                        labels: [labels_split, label_values!(names: labels_result, "error")],
                     )
                     .increment(1);
                     error!(error=?error, "failed to run parquet garbage collection");

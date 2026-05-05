@@ -243,10 +243,10 @@ impl OtlpGrpcMetricsService {
             label_values!(names: OTLP_GRPC_LABELS, "metrics", index_id, "grpc", "protobuf");
         counter!(
             parent: INGESTED_DATA_POINTS_TOTAL,
-            labels: labels,
+            labels: [labels],
         )
         .increment(num_data_points - num_parse_errors);
-        counter!(parent: INGESTED_BYTES_TOTAL, labels: labels).increment(num_bytes);
+        counter!(parent: INGESTED_BYTES_TOTAL, labels: [labels]).increment(num_bytes);
 
         let response = ExportMetricsServiceResponse {
             partial_success: Some(ExportMetricsPartialSuccess {
@@ -341,7 +341,7 @@ impl OtlpGrpcMetricsService {
         );
         counter!(
             parent: REQUESTS_TOTAL,
-            labels: labels,
+            labels: [labels],
         )
         .increment(1);
 
@@ -350,7 +350,7 @@ impl OtlpGrpcMetricsService {
             err @ Err(_) => {
                 counter!(
                     parent: REQUEST_ERRORS_TOTAL,
-                    labels: labels,
+                    labels: [labels],
                 )
                 .increment(1);
                 (err, "true")
@@ -360,10 +360,10 @@ impl OtlpGrpcMetricsService {
         let elapsed = start.elapsed().as_secs_f64();
         histogram!(
             parent: REQUEST_DURATION_SECONDS,
-            labels: label_values!(
+            labels: [label_values!(
                 names: OTLP_GRPC_ERROR_LABELS,
                 "metrics", index_id, "grpc", "protobuf", is_error
-            ),
+            )],
         )
         .record(elapsed);
 

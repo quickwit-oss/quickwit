@@ -246,10 +246,10 @@ impl OtlpGrpcLogsService {
         let labels = label_values!(names: OTLP_GRPC_LABELS, "logs", index_id, "grpc", "protobuf");
         counter!(
             parent: INGESTED_LOG_RECORDS_TOTAL,
-            labels: labels,
+            labels: [labels],
         )
         .increment(num_log_records);
-        counter!(parent: INGESTED_BYTES_TOTAL, labels: labels).increment(num_bytes);
+        counter!(parent: INGESTED_BYTES_TOTAL, labels: [labels]).increment(num_bytes);
 
         let response = ExportLogsServiceResponse {
             // `rejected_log_records=0` and `error_message=""` is consided a "full" success.
@@ -326,7 +326,7 @@ impl OtlpGrpcLogsService {
         );
         counter!(
             parent: REQUESTS_TOTAL,
-            labels: labels,
+            labels: [labels],
         )
         .increment(1);
         let (export_res, is_error) = match self.export_inner(request, index_id.clone()).await {
@@ -334,7 +334,7 @@ impl OtlpGrpcLogsService {
             err @ Err(_) => {
                 counter!(
                     parent: REQUEST_ERRORS_TOTAL,
-                    labels: labels,
+                    labels: [labels],
                 )
                 .increment(1);
                 (err, "true")
@@ -343,10 +343,10 @@ impl OtlpGrpcLogsService {
         let elapsed = start.elapsed().as_secs_f64();
         histogram!(
             parent: REQUEST_DURATION_SECONDS,
-            labels: label_values!(
+            labels: [label_values!(
                 names: OTLP_GRPC_ERROR_LABELS,
                 "logs", index_id, "grpc", "protobuf", is_error
-            ),
+            )],
         )
         .record(elapsed);
 

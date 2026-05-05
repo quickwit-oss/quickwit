@@ -751,7 +751,7 @@ fn labels_counter(c: &mut Criterion) {
         b.iter(|| {
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(names: LABELS_1, "GET")
+                labels: [label_values!(names: LABELS_1, "GET")]
             )
             .increment(1);
         });
@@ -761,7 +761,7 @@ fn labels_counter(c: &mut Criterion) {
         b.iter(|| {
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(names: LABELS_3, "GET", "/health", "200")
+                labels: [label_values!(names: LABELS_3, "GET", "/health", "200")]
             )
             .increment(1);
         });
@@ -771,7 +771,7 @@ fn labels_counter(c: &mut Criterion) {
         b.iter(|| {
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(names: LABELS_1, "GET".to_string())
+                labels: [label_values!(names: LABELS_1, "GET".to_string())]
             )
             .increment(1);
         });
@@ -787,7 +787,7 @@ fn labels_counter(c: &mut Criterion) {
             idx += 1;
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(names: LABELS_1, m)
+                labels: [label_values!(names: LABELS_1, m)]
             )
             .increment(1);
         });
@@ -806,7 +806,7 @@ fn labels_gauge(c: &mut Criterion) {
         b.iter(|| {
             gauge!(
                 parent: PARENT_GAUGE,
-                labels: label_values!(names: LABELS_1, "GET")
+                labels: [label_values!(names: LABELS_1, "GET")]
             )
             .set(42.0);
         });
@@ -816,7 +816,7 @@ fn labels_gauge(c: &mut Criterion) {
         b.iter(|| {
             gauge!(
                 parent: PARENT_GAUGE,
-                labels: label_values!(names: LABELS_3, "GET", "/health", "200")
+                labels: [label_values!(names: LABELS_3, "GET", "/health", "200")]
             )
             .set(42.0);
         });
@@ -835,7 +835,7 @@ fn labels_histogram(c: &mut Criterion) {
         b.iter(|| {
             histogram!(
                 parent: PARENT_HISTOGRAM,
-                labels: label_values!(names: LABELS_1, "GET")
+                labels: [label_values!(names: LABELS_1, "GET")]
             )
             .record(0.123);
         });
@@ -845,7 +845,7 @@ fn labels_histogram(c: &mut Criterion) {
         b.iter(|| {
             histogram!(
                 parent: PARENT_HISTOGRAM,
-                labels: label_values!(names: LABELS_3, "GET", "/health", "200")
+                labels: [label_values!(names: LABELS_3, "GET", "/health", "200")]
             )
             .record(0.123);
         });
@@ -873,7 +873,7 @@ fn composite_counter(c: &mut Criterion) {
         b.iter(|| {
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(names: COMP_ALL_3, "GET", "/health", "200"),
+                labels: [label_values!(names: COMP_ALL_3, "GET", "/health", "200")],
             )
             .increment(1);
         });
@@ -883,9 +883,11 @@ fn composite_counter(c: &mut Criterion) {
         b.iter(|| {
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(names: COMP_METHOD, "GET"),
-                        label_values!(names: COMP_ENDPOINT, "/health"),
-                        label_values!(names: COMP_STATUS, "200"),
+                labels: [
+                    label_values!(names: COMP_METHOD, "GET"),
+                    label_values!(names: COMP_ENDPOINT, "/health"),
+                    label_values!(names: COMP_STATUS, "200"),
+                ],
             )
             .increment(1);
         });
@@ -895,8 +897,10 @@ fn composite_counter(c: &mut Criterion) {
         b.iter(|| {
             counter!(
                 parent: PARENT_COUNTER,
-                labels: label_values!(names: COMP_METHOD, "GET"),
-                        label_values!(names: COMP_ENDPOINT, "/health"),
+                labels: [
+                    label_values!(names: COMP_METHOD, "GET"),
+                    label_values!(names: COMP_ENDPOINT, "/health"),
+                ],
             )
             .increment(1);
         });
@@ -915,7 +919,7 @@ fn composite_gauge(c: &mut Criterion) {
         b.iter(|| {
             gauge!(
                 parent: PARENT_GAUGE,
-                labels: label_values!(names: COMP_ALL_3, "GET", "/health", "200"),
+                labels: [label_values!(names: COMP_ALL_3, "GET", "/health", "200")],
             )
             .set(42.0);
         });
@@ -925,9 +929,11 @@ fn composite_gauge(c: &mut Criterion) {
         b.iter(|| {
             gauge!(
                 parent: PARENT_GAUGE,
-                labels: label_values!(names: COMP_METHOD, "GET"),
-                        label_values!(names: COMP_ENDPOINT, "/health"),
-                        label_values!(names: COMP_STATUS, "200"),
+                labels: [
+                    label_values!(names: COMP_METHOD, "GET"),
+                    label_values!(names: COMP_ENDPOINT, "/health"),
+                    label_values!(names: COMP_STATUS, "200"),
+                ],
             )
             .set(42.0);
         });
@@ -937,8 +943,10 @@ fn composite_gauge(c: &mut Criterion) {
         b.iter(|| {
             gauge!(
                 parent: PARENT_GAUGE,
-                labels: label_values!(names: COMP_METHOD, "GET"),
-                        label_values!(names: COMP_ENDPOINT, "/health"),
+                labels: [
+                    label_values!(names: COMP_METHOD, "GET"),
+                    label_values!(names: COMP_ENDPOINT, "/health"),
+                ],
             )
             .set(42.0);
         });
@@ -957,7 +965,7 @@ fn composite_histogram(c: &mut Criterion) {
         b.iter(|| {
             histogram!(
                 parent: PARENT_HISTOGRAM,
-                labels: label_values!(names: COMP_ALL_3, "GET", "/health", "200"),
+                labels: [label_values!(names: COMP_ALL_3, "GET", "/health", "200")],
             )
             .record(0.123);
         });
@@ -967,9 +975,11 @@ fn composite_histogram(c: &mut Criterion) {
         b.iter(|| {
             histogram!(
                 parent: PARENT_HISTOGRAM,
-                labels: label_values!(names: COMP_METHOD, "GET"),
-                        label_values!(names: COMP_ENDPOINT, "/health"),
-                        label_values!(names: COMP_STATUS, "200"),
+                labels: [
+                    label_values!(names: COMP_METHOD, "GET"),
+                    label_values!(names: COMP_ENDPOINT, "/health"),
+                    label_values!(names: COMP_STATUS, "200"),
+                ],
             )
             .record(0.123);
         });
@@ -979,8 +989,10 @@ fn composite_histogram(c: &mut Criterion) {
         b.iter(|| {
             histogram!(
                 parent: PARENT_HISTOGRAM,
-                labels: label_values!(names: COMP_METHOD, "GET"),
-                        label_values!(names: COMP_ENDPOINT, "/health"),
+                labels: [
+                    label_values!(names: COMP_METHOD, "GET"),
+                    label_values!(names: COMP_ENDPOINT, "/health"),
+                ],
             )
             .record(0.123);
         });

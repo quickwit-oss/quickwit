@@ -125,7 +125,7 @@ impl ParquetUploader {
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_uploads));
         let gauge = gauge!(
             parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
-            labels: label_values!(names: COMPONENT, "metrics"),
+            labels: [label_values!(names: COMPONENT, "metrics")],
         );
         gauge.set(concurrent_upload_permits.available_permits() as f64);
         concurrent_upload_permits
