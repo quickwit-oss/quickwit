@@ -264,21 +264,22 @@ macro_rules! counter {
         )
     };
 
-    // Parent extension via a pre-built Labels<N> bundle.
-    // Same as the inline arm but hash and labels come from a Labels<N>.
+    // Parent extension via one or more pre-built Labels<N> bundles.
+    // Composes hash, count, and label iterators across all labels via the
+    // __bind_labels! tt-muncher — zero allocation on the hot path.
     (
         parent: $parent:expr,
-        labels: $labels:expr $(,)?
+        labels: $($labels:expr),+ $(,)?
     ) => {{
-        let label_values = &($labels);
-        $crate::__metric_extension!(
+        $crate::__bind_labels!(
             metric_type: $crate::Counter,
             register_fn: $crate::__counter_get_or_register,
             parent: $parent,
             metric_info: $parent.__info(),
-            hash: label_values.__hash($parent.get_hash()),
-            label_count: label_values.len(),
-            labels_iter: label_values.__to_labels()
+            hash: $parent.get_hash(),
+            count: 0usize,
+            iter: std::iter::empty::<$crate::__metrics::Label>(),
+            $(next: $labels,)+
         )
     }};
 }

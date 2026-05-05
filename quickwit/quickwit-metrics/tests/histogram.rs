@@ -17,7 +17,7 @@ mod common;
 use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-use quickwit_metrics::{HistogramTimer, histogram};
+use quickwit_metrics::{HistogramTimer, histogram, label_names, label_values, labels};
 
 #[test]
 fn base_records_value() {
@@ -93,6 +93,79 @@ fn parent_extends_labels() {
         &[
             ("env".to_string(), "prod".to_string()),
             ("region".to_string(), "eu".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn label_composition_two_labels() {
+    let entries = with_recorder(|| {
+        let parent = histogram!(
+            name: "h_compose_two",
+            description: "two-label composition",
+            subsystem: "test",
+            buckets: vec![1.0, 5.0],
+            "env" => "prod",
+        );
+        const REGION: quickwit_metrics::LabelNames<1> = label_names!("region");
+        const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
+        let child = histogram!(
+            parent: parent,
+            labels: label_values!(names: REGION, "us-east"),
+                    label_values!(names: STATUS, "ok"),
+        );
+        child.record(2.5);
+    });
+
+    let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 3);
+    assert!(child_entry.is_some(), "composed child not found");
+    let (name, labels, value) = child_entry.unwrap();
+    assert_eq!(name, "quickwit_test_h_compose_two");
+    assert_eq!(
+        labels,
+        &[
+            ("env".to_string(), "prod".to_string()),
+            ("region".to_string(), "us-east".to_string()),
+            ("status".to_string(), "ok".to_string()),
+        ]
+    );
+    match value {
+        DebugValue::Histogram(vals) => {
+            assert_eq!(vals.len(), 1);
+            assert_eq!(vals[0].into_inner(), 2.5);
+        }
+        other => panic!("expected Histogram, got {other:?}"),
+    }
+}
+
+#[test]
+fn label_composition_three_labels() {
+    let entries = with_recorder(|| {
+        let parent = histogram!(
+            name: "h_compose_three",
+            description: "three-label composition",
+            subsystem: "test",
+            buckets: vec![1.0],
+        );
+        let child = histogram!(
+            parent: parent,
+            labels: labels!("env" => "staging"),
+                    labels!("region" => "eu"),
+                    labels!("az" => "eu-1a"),
+        );
+        child.record(0.1);
+    });
+
+    let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 3);
+    assert!(child_entry.is_some(), "composed child not found");
+    let (name, labels, _) = child_entry.unwrap();
+    assert_eq!(name, "quickwit_test_h_compose_three");
+    assert_eq!(
+        labels,
+        &[
+            ("env".to_string(), "staging".to_string()),
+            ("region".to_string(), "eu".to_string()),
+            ("az".to_string(), "eu-1a".to_string()),
         ]
     );
 }

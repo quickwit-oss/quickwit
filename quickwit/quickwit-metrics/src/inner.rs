@@ -251,6 +251,65 @@ macro_rules! __metric_extension {
     }};
 }
 
+/// Recursive tt-muncher that binds each `Labels<N>` expression exactly once,
+/// then folds hash, count, and iterator chain across all of them before
+/// delegating to [`__metric_extension!`].
+///
+/// Each recursion step creates a nested scope so that earlier bindings remain
+/// live when the base case finally emits the extension. Zero allocation on
+/// the hot path.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __bind_labels {
+    // Base case: no more labels to peel. Emit __metric_extension!.
+    (
+        metric_type: $metric_type:ty,
+        register_fn: $register_fn:path,
+        parent: $parent:expr,
+        metric_info: $metric_info:expr,
+        hash: $hash:expr,
+        count: $count:expr,
+        iter: $iter:expr,
+    ) => {
+        $crate::__metric_extension!(
+            metric_type: $metric_type,
+            register_fn: $register_fn,
+            parent: $parent,
+            metric_info: $metric_info,
+            hash: $hash,
+            label_count: $count,
+            labels_iter: $iter
+        )
+    };
+
+    // Recursive case: bind the next labels expr, fold into hash/count/iter,
+    // then recurse with remaining labels.
+    (
+        metric_type: $metric_type:ty,
+        register_fn: $register_fn:path,
+        parent: $parent:expr,
+        metric_info: $metric_info:expr,
+        hash: $hash:expr,
+        count: $count:expr,
+        iter: $iter:expr,
+        next: $next:expr $(, next: $rest:expr)* $(,)?
+    ) => {{
+        let __ref = &$next;
+        let hash = $crate::__key_hash($hash, __ref.iter());
+        let count = $count + __ref.len();
+        $crate::__bind_labels!(
+            metric_type: $metric_type,
+            register_fn: $register_fn,
+            parent: $parent,
+            metric_info: $metric_info,
+            hash: hash,
+            count: count,
+            iter: $iter.chain(__ref.__to_labels()),
+            $(next: $rest,)*
+        )
+    }};
+}
+
 // ─── Tests ───
 
 #[cfg(test)]

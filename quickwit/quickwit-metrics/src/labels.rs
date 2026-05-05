@@ -159,13 +159,7 @@ impl<const N: usize> Labels<N> {
     /// is fully composable with the parent's hash.
     #[doc(hidden)]
     pub fn __hash(&self, seed: u64) -> u64 {
-        __key_hash(
-            seed,
-            self.names
-                .iter()
-                .zip(self.values.iter())
-                .map(|(n, v)| (*n, v.as_ref())),
-        )
+        __key_hash(seed, self.iter())
     }
 
     /// Builds `metrics::Label`s by cloning the stored names and values.
@@ -176,6 +170,14 @@ impl<const N: usize> Labels<N> {
             .iter()
             .zip(self.values.iter())
             .map(|(n, v)| metrics::Label::new(*n, v.clone()))
+    }
+
+    /// Returns an iterator of `(&str, &str)` name-value pairs.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.names
+            .iter()
+            .zip(self.values.iter())
+            .map(|(n, v)| (*n, v.as_ref()))
     }
 
     /// Number of labels.

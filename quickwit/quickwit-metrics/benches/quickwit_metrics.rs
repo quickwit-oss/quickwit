@@ -855,6 +855,141 @@ fn labels_histogram(c: &mut Criterion) {
 }
 
 // ---------------------------------------------------------------------------
+// COMPOSITE LABELS
+// ---------------------------------------------------------------------------
+
+const COMP_METHOD: LabelNames<1> = label_names!("method");
+const COMP_ENDPOINT: LabelNames<1> = label_names!("endpoint");
+const COMP_STATUS: LabelNames<1> = label_names!("status");
+const COMP_ALL_3: LabelNames<3> = label_names!("method", "endpoint", "status");
+
+fn composite_counter(c: &mut Criterion) {
+    install_recorder();
+    let _ = &*PARENT_COUNTER;
+
+    let mut group = c.benchmark_group("macros/composite/counter");
+
+    group.bench_function("single_3", |b| {
+        b.iter(|| {
+            counter!(
+                parent: PARENT_COUNTER,
+                labels: label_values!(names: COMP_ALL_3, "GET", "/health", "200"),
+            )
+            .increment(1);
+        });
+    });
+
+    group.bench_function("compose_1x3", |b| {
+        b.iter(|| {
+            counter!(
+                parent: PARENT_COUNTER,
+                labels: label_values!(names: COMP_METHOD, "GET"),
+                        label_values!(names: COMP_ENDPOINT, "/health"),
+                        label_values!(names: COMP_STATUS, "200"),
+            )
+            .increment(1);
+        });
+    });
+
+    group.bench_function("compose_1x2", |b| {
+        b.iter(|| {
+            counter!(
+                parent: PARENT_COUNTER,
+                labels: label_values!(names: COMP_METHOD, "GET"),
+                        label_values!(names: COMP_ENDPOINT, "/health"),
+            )
+            .increment(1);
+        });
+    });
+
+    group.finish();
+}
+
+fn composite_gauge(c: &mut Criterion) {
+    install_recorder();
+    let _ = &*PARENT_GAUGE;
+
+    let mut group = c.benchmark_group("macros/composite/gauge");
+
+    group.bench_function("single_3", |b| {
+        b.iter(|| {
+            gauge!(
+                parent: PARENT_GAUGE,
+                labels: label_values!(names: COMP_ALL_3, "GET", "/health", "200"),
+            )
+            .set(42.0);
+        });
+    });
+
+    group.bench_function("compose_1x3", |b| {
+        b.iter(|| {
+            gauge!(
+                parent: PARENT_GAUGE,
+                labels: label_values!(names: COMP_METHOD, "GET"),
+                        label_values!(names: COMP_ENDPOINT, "/health"),
+                        label_values!(names: COMP_STATUS, "200"),
+            )
+            .set(42.0);
+        });
+    });
+
+    group.bench_function("compose_1x2", |b| {
+        b.iter(|| {
+            gauge!(
+                parent: PARENT_GAUGE,
+                labels: label_values!(names: COMP_METHOD, "GET"),
+                        label_values!(names: COMP_ENDPOINT, "/health"),
+            )
+            .set(42.0);
+        });
+    });
+
+    group.finish();
+}
+
+fn composite_histogram(c: &mut Criterion) {
+    install_recorder();
+    let _ = &*PARENT_HISTOGRAM;
+
+    let mut group = c.benchmark_group("macros/composite/histogram");
+
+    group.bench_function("single_3", |b| {
+        b.iter(|| {
+            histogram!(
+                parent: PARENT_HISTOGRAM,
+                labels: label_values!(names: COMP_ALL_3, "GET", "/health", "200"),
+            )
+            .record(0.123);
+        });
+    });
+
+    group.bench_function("compose_1x3", |b| {
+        b.iter(|| {
+            histogram!(
+                parent: PARENT_HISTOGRAM,
+                labels: label_values!(names: COMP_METHOD, "GET"),
+                        label_values!(names: COMP_ENDPOINT, "/health"),
+                        label_values!(names: COMP_STATUS, "200"),
+            )
+            .record(0.123);
+        });
+    });
+
+    group.bench_function("compose_1x2", |b| {
+        b.iter(|| {
+            histogram!(
+                parent: PARENT_HISTOGRAM,
+                labels: label_values!(names: COMP_METHOD, "GET"),
+                        label_values!(names: COMP_ENDPOINT, "/health"),
+            )
+            .record(0.123);
+        });
+    });
+
+    group.finish();
+}
+
+// ---------------------------------------------------------------------------
 
 criterion_group!(
     on_the_fly_benches,
@@ -888,11 +1023,19 @@ criterion_group!(
     labels_histogram,
 );
 
+criterion_group!(
+    composite_benches,
+    composite_counter,
+    composite_gauge,
+    composite_histogram,
+);
+
 criterion_main!(
     on_the_fly_benches,
     static_benches,
     parent_benches,
     dynamic_benches,
     observable_benches,
-    labels_benches
+    labels_benches,
+    composite_benches,
 );

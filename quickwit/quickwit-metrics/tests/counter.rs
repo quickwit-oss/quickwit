@@ -17,7 +17,7 @@ mod common;
 use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-use quickwit_metrics::counter;
+use quickwit_metrics::{counter, label_names, label_values, labels};
 
 #[test]
 fn base_increments() {
@@ -202,6 +202,100 @@ fn observable_parent_children_share_shadow() {
 
         assert_eq!(child_a.get(), 10);
         assert_eq!(child_b.get(), 10);
+    });
+}
+
+#[test]
+fn label_composition_two_labels() {
+    let entries = with_recorder(|| {
+        let parent = counter!(
+            name: "c_compose_two",
+            description: "two-label composition",
+            subsystem: "test",
+            "env" => "prod",
+        );
+        const REGION: quickwit_metrics::LabelNames<1> = label_names!("region");
+        const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
+        let child = counter!(
+            parent: parent,
+            labels: label_values!(names: REGION, "us-east"),
+                    label_values!(names: STATUS, "ok"),
+        );
+        child.increment(3);
+    });
+
+    let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 3);
+    assert!(child_entry.is_some(), "composed child not found");
+    let (name, labels, value) = child_entry.unwrap();
+    assert_eq!(name, "quickwit_test_c_compose_two");
+    assert_eq!(
+        labels,
+        &[
+            ("env".to_string(), "prod".to_string()),
+            ("region".to_string(), "us-east".to_string()),
+            ("status".to_string(), "ok".to_string()),
+        ]
+    );
+    assert_eq!(*value, DebugValue::Counter(3));
+}
+
+#[test]
+fn label_composition_three_labels() {
+    let entries = with_recorder(|| {
+        let parent = counter!(
+            name: "c_compose_three",
+            description: "three-label composition",
+            subsystem: "test",
+        );
+        let child = counter!(
+            parent: parent,
+            labels: labels!("env" => "staging"),
+                    labels!("region" => "eu"),
+                    labels!("az" => "eu-1a"),
+        );
+        child.increment(7);
+    });
+
+    let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 3);
+    assert!(child_entry.is_some(), "composed child not found");
+    let (name, labels, value) = child_entry.unwrap();
+    assert_eq!(name, "quickwit_test_c_compose_three");
+    assert_eq!(
+        labels,
+        &[
+            ("env".to_string(), "staging".to_string()),
+            ("region".to_string(), "eu".to_string()),
+            ("az".to_string(), "eu-1a".to_string()),
+        ]
+    );
+    assert_eq!(*value, DebugValue::Counter(7));
+}
+
+#[test]
+fn label_composition_same_hash_as_single() {
+    with_recorder(|| {
+        let parent = counter!(
+            name: "c_compose_hash",
+            description: "hash equivalence",
+            subsystem: "test",
+        );
+        const REGION: quickwit_metrics::LabelNames<1> = label_names!("region");
+        const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
+
+        let via_compose = counter!(
+            parent: parent,
+            labels: label_values!(names: REGION, "us"),
+                    label_values!(names: STATUS, "ok"),
+        );
+        let via_single = counter!(
+            parent: parent,
+            labels: labels!("region" => "us", "status" => "ok"),
+        );
+        via_compose.increment(1);
+        via_single.increment(2);
+
+        assert_eq!(via_compose.get(), 3);
+        assert_eq!(via_single.get(), 3);
     });
 }
 

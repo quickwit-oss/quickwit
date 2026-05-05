@@ -17,7 +17,7 @@ mod common;
 use common::with_recorder;
 use metrics::with_local_recorder;
 use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-use quickwit_metrics::{GaugeGuard, gauge};
+use quickwit_metrics::{GaugeGuard, gauge, label_names, label_values, labels};
 
 #[test]
 fn set() {
@@ -159,6 +159,70 @@ fn multiple_guards() {
 
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].2, DebugValue::Gauge(0.0.into()));
+}
+
+// ── Label composition ──
+
+#[test]
+fn label_composition_two_labels() {
+    let entries = with_recorder(|| {
+        let parent = gauge!(
+            name: "g_compose_two",
+            description: "two-label composition",
+            subsystem: "test",
+            "env" => "prod",
+        );
+        const REGION: quickwit_metrics::LabelNames<1> = label_names!("region");
+        const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
+        let child = gauge!(
+            parent: parent,
+            labels: label_values!(names: REGION, "us-east"),
+                    label_values!(names: STATUS, "ok"),
+        );
+        child.set(42.0);
+    });
+
+    let child_entry = entries.iter().find(|(_, labels, _)| labels.len() == 3);
+    assert!(child_entry.is_some(), "composed child not found");
+    let (name, labels, value) = child_entry.unwrap();
+    assert_eq!(name, "quickwit_test_g_compose_two");
+    assert_eq!(
+        labels,
+        &[
+            ("env".to_string(), "prod".to_string()),
+            ("region".to_string(), "us-east".to_string()),
+            ("status".to_string(), "ok".to_string()),
+        ]
+    );
+    assert_eq!(*value, DebugValue::Gauge(42.0.into()));
+}
+
+#[test]
+fn label_composition_same_hash_as_single() {
+    with_recorder(|| {
+        let parent = gauge!(
+            name: "g_compose_hash",
+            description: "hash equivalence",
+            subsystem: "test",
+        );
+        const REGION: quickwit_metrics::LabelNames<1> = label_names!("region");
+        const STATUS: quickwit_metrics::LabelNames<1> = label_names!("status");
+
+        let via_compose = gauge!(
+            parent: parent,
+            labels: label_values!(names: REGION, "us"),
+                    label_values!(names: STATUS, "ok"),
+        );
+        let via_single = gauge!(
+            parent: parent,
+            labels: labels!("region" => "us", "status" => "ok"),
+        );
+        via_compose.set(5.0);
+        via_single.increment(3.0);
+
+        assert_eq!(via_compose.get(), 8.0);
+        assert_eq!(via_single.get(), 8.0);
+    });
 }
 
 // ── Observable gauge ──
