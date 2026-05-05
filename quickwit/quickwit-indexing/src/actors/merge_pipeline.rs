@@ -30,7 +30,7 @@ use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
     SplitState,
 };
-use quickwit_metrics::counter;
+use quickwit_metrics::{counter, label_values};
 use quickwit_proto::indexing::MergePipelineId;
 use quickwit_proto::metastore::{
     ListSplitsRequest, MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
@@ -45,7 +45,7 @@ use crate::actors::pipeline_shared::wait_duration_before_retry;
 use crate::actors::publisher::DisconnectMergePlanner;
 use crate::actors::{MergeSchedulerService, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
-use crate::metrics::{BACKPRESSURE_MICROS, ONGOING_MERGE_OPERATIONS};
+use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, ONGOING_MERGE_OPERATIONS};
 use crate::models::MergeStatistics;
 use crate::split_store::IndexingSplitStore;
 
@@ -276,7 +276,7 @@ impl MergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                "actor_name" => "merge_publisher",
+                labels: label_values!(ACTOR_NAME, ["merge_publisher"]),
             ))
             .spawn(merge_publisher);
 
@@ -325,7 +325,7 @@ impl MergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                "actor_name" => "merge_executor",
+                labels: label_values!(ACTOR_NAME, ["merge_executor"]),
             ))
             .spawn(merge_executor);
 
@@ -340,7 +340,7 @@ impl MergePipeline {
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                "actor_name" => "merge_split_downloader",
+                labels: label_values!(ACTOR_NAME, ["merge_split_downloader"]),
             ))
             .spawn(merge_split_downloader);
 

@@ -17,6 +17,7 @@ use std::sync::LazyLock;
 
 use bytes::Bytes;
 use flate2::read::{MultiGzDecoder, ZlibDecoder};
+use quickwit_common::metrics::IN_FLIGHT_REST_SERVER;
 use quickwit_common::thread_pool::run_cpu_intensive;
 use quickwit_metrics::GaugeGuard;
 use thiserror::Error;
@@ -115,7 +116,7 @@ pub(crate) struct Body {
 impl Body {
     pub fn new(content: Bytes, load_shield_permit: LoadShieldPermit) -> Body {
         let gauge_guard = GaugeGuard::new(
-            &quickwit_common::metrics::IN_FLIGHT_REST_SERVER,
+            &IN_FLIGHT_REST_SERVER,
             content.len() as f64,
         );
         Body {

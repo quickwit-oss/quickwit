@@ -24,7 +24,7 @@ use quickwit_common::rate_limited_tracing::rate_limited_warn;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
-use quickwit_metrics::{Counter, counter};
+use quickwit_metrics::{Counter, counter, labels};
 use quickwit_opentelemetry::otlp::{
     JsonLogIterator, JsonSpanIterator, OtlpLogsError, OtlpTracesError, parse_otlp_logs_json,
     parse_otlp_logs_protobuf, parse_otlp_spans_json, parse_otlp_spans_protobuf,
@@ -239,7 +239,8 @@ impl Iterator for JsonDocIterator {
 }
 
 impl<E> From<Result<JsonDoc, E>> for JsonDocIterator
-where E: Into<DocProcessorError>
+where
+    E: Into<DocProcessorError>,
 {
     fn from(result: Result<JsonDoc, E>) -> Self {
         match result {
@@ -276,26 +277,31 @@ pub struct DocProcessorCounter {
 
 impl Serialize for DocProcessorCounter {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         serializer.serialize_u64(self.get_num_docs())
     }
 }
 
 impl DocProcessorCounter {
-    fn for_index_and_doc_processor_outcome(index: &str, outcome: &str) -> DocProcessorCounter {
-        let index_label = quickwit_common::metrics::index_label(index).to_string();
-        let outcome = outcome.to_string();
+    fn for_index_and_doc_processor_outcome(
+        index: &str,
+        outcome: &'static str,
+    ) -> DocProcessorCounter {
+        let labels = labels!(
+            "index" => quickwit_common::metrics::index_label(index).to_string(),
+            "docs_processed_status" => outcome
+        );
         DocProcessorCounter {
             num_docs: Default::default(),
             num_docs_metric: counter!(
                 parent: PROCESSED_DOCS_TOTAL,
-                "index" => index_label.clone(),
-                "docs_processed_status" => outcome.clone(),
+                labels: labels,
             ),
             num_bytes_metric: counter!(
                 parent: PROCESSED_BYTES,
-                "index" => index_label,
-                "docs_processed_status" => outcome,
+                labels: labels,
             ),
         }
     }

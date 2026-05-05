@@ -14,7 +14,10 @@
 
 use std::sync::LazyLock;
 
-use quickwit_metrics::{Counter, Gauge, counter, gauge};
+use quickwit_metrics::{Counter, Gauge, LabelNames, counter, gauge};
+
+pub(crate) const ACTOR_NAME: LabelNames<1> = LabelNames::new(["actor_name"]);
+pub(crate) const COMPONENT: LabelNames<1> = LabelNames::new(["component"]);
 
 pub(crate) static PROCESSED_DOCS_TOTAL: LazyLock<Counter> = LazyLock::new(|| {
     counter!(

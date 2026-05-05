@@ -28,7 +28,7 @@ use quickwit_common::spawn_named_task;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
-use quickwit_metrics::gauge;
+use quickwit_metrics::{gauge, label_values};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, StageSplitsRequest};
 use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use quickwit_proto::types::{IndexUid, PublishToken};
@@ -41,7 +41,7 @@ use tracing::{Instrument, Span, debug, info, instrument, warn};
 use crate::actors::Publisher;
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::merge_policy::{MergePolicy, MergeTask};
-use crate::metrics::AVAILABLE_CONCURRENT_UPLOAD_PERMITS;
+use crate::metrics::{AVAILABLE_CONCURRENT_UPLOAD_PERMITS, COMPONENT};
 use crate::models::{
     EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate, create_split_metadata,
 };
@@ -206,21 +206,21 @@ impl Uploader {
                     &CONCURRENT_UPLOAD_PERMITS_INDEX,
                     gauge!(
                         parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
-                        "component" => "indexer",
+                        labels: label_values!(COMPONENT, ["indexer"]),
                     ),
                 ),
                 UploaderType::MergeUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
                     gauge!(
                         parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
-                        "component" => "merger",
+                        labels: label_values!(COMPONENT, ["merger"]),
                     ),
                 ),
                 UploaderType::DeleteUploader => (
                     &CONCURRENT_UPLOAD_PERMITS_MERGE,
                     gauge!(
                         parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
-                        "component" => "merger",
+                        labels: label_values!(COMPONENT, ["merger"]),
                     ),
                 ),
             };

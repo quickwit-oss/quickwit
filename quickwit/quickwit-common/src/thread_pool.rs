@@ -16,7 +16,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use futures::{Future, TryFutureExt};
-use quickwit_metrics::{Gauge, GaugeGuard, gauge};
+use quickwit_metrics::{Gauge, GaugeGuard, gauge, labels};
 use tokio::sync::oneshot;
 use tracing::error;
 
@@ -60,8 +60,9 @@ impl ThreadPool {
         let thread_pool = rayon_pool_builder
             .build()
             .expect("failed to spawn thread pool");
-        let ongoing_tasks = gauge!(parent: THREAD_POOL_ONGOING_TASKS, "pool" => name);
-        let pending_tasks = gauge!(parent: THREAD_POOL_PENDING_TASKS, "pool" => name);
+        let labels = labels!("pool" => name);
+        let ongoing_tasks = gauge!(parent: THREAD_POOL_ONGOING_TASKS, labels: labels);
+        let pending_tasks = gauge!(parent: THREAD_POOL_PENDING_TASKS, labels: labels);
         ThreadPool {
             thread_pool: Arc::new(thread_pool),
             ongoing_tasks,

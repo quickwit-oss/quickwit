@@ -20,6 +20,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
+use quickwit_common::metrics::IN_FLIGHT_INGEST_ROUTER;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::{rate_limited_error, rate_limited_warn};
 use quickwit_metrics::{GaugeGuard, counter};
@@ -570,7 +571,7 @@ impl IngestRouterService for IngestRouter {
         let request_size_bytes = ingest_request.num_bytes();
 
         let _gauge_guard = GaugeGuard::new(
-            &quickwit_common::metrics::IN_FLIGHT_INGEST_ROUTER,
+            &IN_FLIGHT_INGEST_ROUTER,
             request_size_bytes as f64,
         );
         let num_subrequests = ingest_request.subrequests.len();

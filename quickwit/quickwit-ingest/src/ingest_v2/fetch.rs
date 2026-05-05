@@ -22,6 +22,7 @@ use bytes::{BufMut, BytesMut};
 use bytesize::ByteSize;
 use futures::StreamExt;
 use mrecordlog::Record;
+use quickwit_common::metrics::{IN_FLIGHT_FETCH_STREAM, IN_FLIGHT_MULTI_FETCH_STREAM};
 use quickwit_common::retry::RetryParams;
 use quickwit_common::stream_utils::{InFlightValue, TrackedSender};
 use quickwit_common::{ServiceStream, spawn_named_task};
@@ -82,7 +83,7 @@ impl FetchStreamTask {
             .unwrap_or_default();
         let (fetch_message_tx, fetch_stream) = ServiceStream::new_bounded_with_gauge(
             3,
-            &quickwit_common::metrics::IN_FLIGHT_FETCH_STREAM,
+            &IN_FLIGHT_FETCH_STREAM,
         );
         let mut fetch_task = Self {
             shard_id: open_fetch_stream_request.shard_id().clone(),
@@ -560,7 +561,7 @@ async fn fault_tolerant_fetch_stream(
                         let in_flight_value = InFlightValue::new(
                             fetch_message,
                             batch_size,
-                            &quickwit_common::metrics::IN_FLIGHT_MULTI_FETCH_STREAM,
+                            &IN_FLIGHT_MULTI_FETCH_STREAM,
                         );
                         if fetch_message_tx.send(Ok(in_flight_value)).await.is_err() {
                             // The consumer was dropped.
@@ -573,7 +574,7 @@ async fn fault_tolerant_fetch_stream(
                         let in_flight_value = InFlightValue::new(
                             fetch_message,
                             ByteSize(0),
-                            &quickwit_common::metrics::IN_FLIGHT_MULTI_FETCH_STREAM,
+                            &IN_FLIGHT_MULTI_FETCH_STREAM,
                         );
                         // We ignore the send error if the consumer was dropped because we're going
                         // to return anyway.

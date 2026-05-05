@@ -665,6 +665,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::ServiceStream;
+    use quickwit_common::metrics::IN_FLIGHT_FETCH_STREAM;
     use quickwit_common::stream_utils::InFlightValue;
     use quickwit_config::{IndexingSettings, SourceConfig, SourceParams};
     use quickwit_ingest::IngesterPoolEntry;
@@ -1436,7 +1437,7 @@ mod tests {
         let in_flight_value = InFlightValue::new(
             fetch_message,
             batch_size,
-            &quickwit_common::metrics::IN_FLIGHT_FETCH_STREAM,
+            &IN_FLIGHT_FETCH_STREAM,
         );
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
@@ -1453,7 +1454,7 @@ mod tests {
         let in_flight_value = InFlightValue::new(
             fetch_message,
             batch_size,
-            &quickwit_common::metrics::IN_FLIGHT_FETCH_STREAM,
+            &IN_FLIGHT_FETCH_STREAM,
         );
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
@@ -1467,7 +1468,7 @@ mod tests {
         let in_flight_value = InFlightValue::new(
             fetch_message,
             ByteSize(0),
-            &quickwit_common::metrics::IN_FLIGHT_FETCH_STREAM,
+            &IN_FLIGHT_FETCH_STREAM,
         );
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 
@@ -1528,7 +1529,7 @@ mod tests {
         let in_flight_value = InFlightValue::new(
             fetch_message,
             batch_size,
-            &quickwit_common::metrics::IN_FLIGHT_FETCH_STREAM,
+            &IN_FLIGHT_FETCH_STREAM,
         );
         fetch_message_tx.send(Ok(in_flight_value)).await.unwrap();
 

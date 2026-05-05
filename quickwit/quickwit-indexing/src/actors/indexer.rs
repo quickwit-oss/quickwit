@@ -27,6 +27,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, Command, Handler, Mailbox, QueueCapacity,
 };
 use quickwit_common::io::IoControls;
+use quickwit_common::metrics::IN_FLIGHT_INDEX_WRITER;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
@@ -232,7 +233,7 @@ impl IndexerState {
             publish_lock,
             publish_token_opt,
             last_delete_opstamp,
-            memory_usage: GaugeGuard::new(&quickwit_common::metrics::IN_FLIGHT_INDEX_WRITER, 0.0),
+            memory_usage: GaugeGuard::new(&IN_FLIGHT_INDEX_WRITER, 0.0),
             cooperative_indexing_period,
             split_builders_guard,
         };

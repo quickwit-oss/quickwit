@@ -25,6 +25,7 @@ use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use mrecordlog::error::CreateQueueError;
 use quickwit_cluster::Cluster;
+use quickwit_common::metrics::IN_FLIGHT_INGESTER_PERSIST;
 use quickwit_common::pretty::PrettyDisplay;
 use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -1127,7 +1128,7 @@ impl IngesterService for Ingester {
             })
             .sum::<usize>();
         let _gauge_guard = GaugeGuard::new(
-            &quickwit_common::metrics::IN_FLIGHT_INGESTER_PERSIST,
+            &IN_FLIGHT_INGESTER_PERSIST,
             request_size_bytes as f64,
         );
 

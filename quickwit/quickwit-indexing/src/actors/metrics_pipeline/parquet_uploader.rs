@@ -27,7 +27,7 @@ use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_common::spawn_named_task;
 use quickwit_metastore::StageParquetSplitsRequestExt;
-use quickwit_metrics::gauge;
+use quickwit_metrics::{gauge, label_values};
 use quickwit_parquet_engine::split::{ParquetSplitKind, ParquetSplitMetadata};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_storage::Storage;
@@ -37,7 +37,7 @@ use tracing::{Instrument, Span, debug, info, instrument, warn};
 use super::{ParquetSplitBatch, ParquetSplitsUpdate};
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::{Publisher, UploaderCounters, UploaderType};
-use crate::metrics::AVAILABLE_CONCURRENT_UPLOAD_PERMITS;
+use crate::metrics::{AVAILABLE_CONCURRENT_UPLOAD_PERMITS, COMPONENT};
 
 /// Concurrent upload permits for metrics uploader.
 /// Uses same permit pool as indexer uploads.
@@ -125,7 +125,7 @@ impl ParquetUploader {
             .get_or_init(|| Semaphore::const_new(self.max_concurrent_uploads));
         let gauge = gauge!(
             parent: AVAILABLE_CONCURRENT_UPLOAD_PERMITS,
-            "component" => "metrics",
+            labels: label_values!(COMPONENT, ["metrics"]),
         );
         gauge.set(concurrent_upload_permits.available_permits() as f64);
         concurrent_upload_permits

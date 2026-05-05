@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use bytesize::ByteSize;
 use futures::{Future, StreamExt};
 use mrecordlog::error::CreateQueueError;
+use quickwit_common::metrics::IN_FLIGHT_INGESTER_REPLICATE;
 use quickwit_common::{ServiceStream, rate_limited_warn};
 use quickwit_metrics::GaugeGuard;
 use quickwit_proto::ingest::ingester::{
@@ -505,7 +506,7 @@ impl ReplicationTask {
         }
         let request_size_bytes = replicate_request.num_bytes();
         let _gauge_guard = GaugeGuard::new(
-            &quickwit_common::metrics::IN_FLIGHT_INGESTER_REPLICATE,
+            &IN_FLIGHT_INGESTER_REPLICATE,
             request_size_bytes as f64,
         );
 

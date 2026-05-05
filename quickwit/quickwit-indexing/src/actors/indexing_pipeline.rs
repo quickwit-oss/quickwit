@@ -28,7 +28,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::{IndexingSettings, RetentionPolicy, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
-use quickwit_metrics::{GaugeGuard, counter, gauge};
+use quickwit_metrics::{GaugeGuard, counter, gauge, label_values};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_proto::types::ShardId;
@@ -45,7 +45,7 @@ use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
-use crate::metrics::{BACKPRESSURE_MICROS, INDEXING_PIPELINES};
+use crate::metrics::{ACTOR_NAME, BACKPRESSURE_MICROS, INDEXING_PIPELINES};
 use crate::models::IndexingStatistics;
 use crate::source::{
     AssignShards, Assignment, SourceActor, SourceRuntime, quickwit_supported_sources,
@@ -315,7 +315,7 @@ impl IndexingPipeline {
             .set_kill_switch(self.kill_switch.clone())
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                "actor_name" => "publisher",
+                labels: label_values!(ACTOR_NAME, ["publisher"]),
             ))
             .spawn(publisher);
 
@@ -324,7 +324,7 @@ impl IndexingPipeline {
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                "actor_name" => "sequencer",
+                labels: label_values!(ACTOR_NAME, ["sequencer"]),
             ))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(sequencer);
@@ -344,7 +344,7 @@ impl IndexingPipeline {
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                "actor_name" => "uploader",
+                labels: label_values!(ACTOR_NAME, ["uploader"]),
             ))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(uploader);
@@ -378,7 +378,7 @@ impl IndexingPipeline {
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                "actor_name" => "indexer",
+                labels: label_values!(ACTOR_NAME, ["indexer"]),
             ))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(indexer);
@@ -395,7 +395,7 @@ impl IndexingPipeline {
             .spawn_actor()
             .set_backpressure_micros_counter(counter!(
                 parent: BACKPRESSURE_MICROS,
-                "actor_name" => "doc_processor",
+                labels: label_values!(ACTOR_NAME, ["doc_processor"]),
             ))
             .set_kill_switch(self.kill_switch.clone())
             .spawn(doc_processor);

@@ -100,6 +100,11 @@ use quickwit_config::{
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
+use quickwit_common::metrics::{
+    IN_FLIGHT_FILE_SOURCE, IN_FLIGHT_INGEST_SOURCE, IN_FLIGHT_KAFKA_SOURCE,
+    IN_FLIGHT_KINESIS_SOURCE, IN_FLIGHT_OTHER_SOURCE, IN_FLIGHT_PUBSUB_SOURCE,
+    IN_FLIGHT_PULSAR_SOURCE,
+};
 use quickwit_metrics::GaugeGuard;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
@@ -529,13 +534,13 @@ impl BatchBuilder {
 
     pub fn with_capacity(capacity: usize, source_type: SourceType) -> Self {
         let gauge = match source_type {
-            SourceType::File => &quickwit_common::metrics::IN_FLIGHT_FILE_SOURCE,
-            SourceType::IngestV2 => &quickwit_common::metrics::IN_FLIGHT_INGEST_SOURCE,
-            SourceType::Kafka => &quickwit_common::metrics::IN_FLIGHT_KAFKA_SOURCE,
-            SourceType::Kinesis => &quickwit_common::metrics::IN_FLIGHT_KINESIS_SOURCE,
-            SourceType::PubSub => &quickwit_common::metrics::IN_FLIGHT_PUBSUB_SOURCE,
-            SourceType::Pulsar => &quickwit_common::metrics::IN_FLIGHT_PULSAR_SOURCE,
-            _ => &quickwit_common::metrics::IN_FLIGHT_OTHER_SOURCE,
+            SourceType::File => &IN_FLIGHT_FILE_SOURCE,
+            SourceType::IngestV2 => &IN_FLIGHT_INGEST_SOURCE,
+            SourceType::Kafka => &IN_FLIGHT_KAFKA_SOURCE,
+            SourceType::Kinesis => &IN_FLIGHT_KINESIS_SOURCE,
+            SourceType::PubSub => &IN_FLIGHT_PUBSUB_SOURCE,
+            SourceType::Pulsar => &IN_FLIGHT_PULSAR_SOURCE,
+            _ => &IN_FLIGHT_OTHER_SOURCE,
         };
         let gauge_guard = GaugeGuard::new(gauge, 0.0);
 
